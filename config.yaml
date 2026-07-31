@@ -1,0 +1,29 @@
+# Nora configuration
+signal_cli:
+  base_url: "http://127.0.0.1:18080"
+  account: "+85290000100"         # Nora's Signal number (the linked account)
+  nora_sender_id: "nora"          # how Nora's own messages are tagged in DB
+
+honcho:
+  base_url: "http://127.0.0.1:8000"
+  workspace_id: "nora"
+
+llm:
+  base_url: "http://localhost:20128/v1"   # OmniRoute OpenAI-compatible
+  model: "deepseek-v4-flash"               # configurable; cheap default
+  api_key_env: "OMNIROUTE_API_KEY"         # read from env, not hardcoded
+  max_tokens: 400
+  temperature: 0.7
+
+buffer:
+  db_path: "~/workspace/nora/data/messages.db"
+  max_per_group: 500            # rolling window cap
+  context_window: 40            # how many recent msgs to inject as context
+
+tag:
+  trigger: "@Nora"             # case-insensitive substring match
+  min_interval_seconds: 5      # debounce: ignore rapid re-tags
+
+logging:
+  level: "INFO"
+  path: "~/workspace/nora/data/nora.log"

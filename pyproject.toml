@@ -1,0 +1,18 @@
+[project]
+name = "nora"
+version = "1.0.0"
+description = "A private ambient Signal group agent"
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.9",
+    "aiosqlite>=0.20",
+    "openai>=1.40",
+    "PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["nora"]
