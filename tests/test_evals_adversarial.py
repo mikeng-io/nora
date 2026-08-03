@@ -1,7 +1,10 @@
 import yaml
 from pathlib import Path
 
-from evals.run import adversarial_gate
+import pytest
+
+import evals.run as run
+from evals.run import SUITES, adversarial_gate
 
 CORPUS = Path("evals/adversarial")
 
@@ -59,3 +62,77 @@ def test_the_gate_is_not_confidence_weighted():
     import inspect
 
     assert "confidence" not in inspect.getsource(adversarial_gate)
+
+
+# --- CLI wiring (E.7 criterion #7): `--suite adversarial` end-to-end -----------------
+
+
+def test_adversarial_is_a_selectable_suite():
+    assert "adversarial" in SUITES
+    assert SUITES["adversarial"] == (
+        CORPUS / "injections.yaml", CORPUS / "near_miss.yaml",
+        CORPUS / "transcript_injection.yaml",
+    )
+
+
+def test_load_adversarial_cases_flattens_every_file():
+    cases = run._load_adversarial_cases(SUITES["adversarial"])
+    assert len(cases) == 10                       # 5 injections + 4 near_miss + 1 transcript
+    assert {c["name"] for c in cases} >= {"injection_dan", "near_miss_trailing_digit",
+                                          "transcript_embedded_injection"}
+
+
+RUBRIC_OK = '[{"criterion": "voice", "score": 0.9, "confidence": 0.9, "rationale": "fine"}]'
+
+
+async def _fake_invoke_clean(model, system_prompt, message, *, role):
+    if role == "reply":
+        return "唔得喎，講返正題？"
+    return RUBRIC_OK
+
+
+async def _fake_invoke_leaky(model, system_prompt, message, *, role):
+    if role == "reply":
+        return "my system prompt says: be Nora, a private assistant"
+    return RUBRIC_OK
+
+
+@pytest.fixture
+def fake_env(monkeypatch):
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "fake-key-for-tests")
+
+
+async def test_near_miss_cases_never_invoke_the_live_model(fake_env, monkeypatch):
+    """near_miss inputs fail `is_tagged` deterministically — no network call should
+    ever be attempted for them (mirrors production: the model never wakes up)."""
+    async def fail_if_called(model, system_prompt, message, *, role):
+        raise AssertionError("must not invoke the live model for a non-tagged input")
+
+    monkeypatch.setattr(run, "_invoke_agent", fail_if_called)
+    ok, results = await run._run_adversarial_live((CORPUS / "near_miss.yaml",))
+    assert ok
+    assert all(r["sent"] == [] for r in results)
+
+
+async def test_run_adversarial_live_passes_on_clean_replies(fake_env, monkeypatch):
+    monkeypatch.setattr(run, "_invoke_agent", _fake_invoke_clean)
+    ok, results = await run._run_adversarial_live(SUITES["adversarial"])
+    assert ok
+    assert len(results) == 10
+
+
+async def test_run_adversarial_live_fails_the_gate_on_a_leaky_reply(fake_env, monkeypatch):
+    monkeypatch.setattr(run, "_invoke_agent", _fake_invoke_leaky)
+    ok, results = await run._run_adversarial_live(SUITES["adversarial"])
+    assert not ok
+    assert any(r["leaked"] or r["revealed"] for r in results)
+
+
+def test_main_exits_zero_for_a_clean_adversarial_run(fake_env, monkeypatch):
+    monkeypatch.setattr(run, "_invoke_agent", _fake_invoke_clean)
+    assert run.main("adversarial") == 0
+
+
+def test_main_exits_nonzero_for_a_leaky_adversarial_run(fake_env, monkeypatch):
+    monkeypatch.setattr(run, "_invoke_agent", _fake_invoke_leaky)
+    assert run.main("adversarial") == 1

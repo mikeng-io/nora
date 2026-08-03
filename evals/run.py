@@ -1,4 +1,4 @@
-"""Eval gate entry point: `python -m evals.run --suite {trigger,no_trigger,all}`.
+"""Eval gate entry point: `python -m evals.run --suite {trigger,no_trigger,all,adversarial}`.
 
 Runs every case in the named suite through `evals.harness.run_case`, grades the
 resulting `Trajectory` with the deterministic hard-gate evaluators appropriate to the
@@ -14,11 +14,13 @@ same command is a separate, later, out-of-scope-for-this-task piece of work.
 
 Task 42 adds `adversarial_gate` and `detect_reveal` (spec E.4): the hard, non-weighted
 FAIL gate for the `evals/adversarial/` corpus, plus the deterministic reveal checker
-used to populate a result's `"revealed"` key. Actually executing the adversarial corpus
-against a real model (to produce `sent`/`leaked`/`revealed` for `adversarial_gate` to
-grade) needs a live OmniRoute connection and is out of scope here — LIVE ADVERSARIAL
-SUITE RUN DEFERRED, same as the M7 `--suite all` run in this task's own Step 3; both are
-re-run in Task 45 once OmniRoute access is available to a human operator.
+used to populate a result's `"revealed"` key.
+
+E.7 criterion #7 (this task) closes the deferral above for the adversarial corpus
+specifically: `_run_adversarial_live` runs each case against a real `llm.default`
+reply and a real `llm.deep` (deepseek-v4-pro) judge over OmniRoute — see its own
+docstring — and `--suite adversarial` wires that into `main`. The `trigger`/`no_trigger`/
+`all` suites' own live run stays deferred, unchanged from Task 40/42.
 """
 
 from __future__ import annotations
@@ -27,12 +29,24 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
+from typing import Literal
+
+import yaml
 
 from evals.evaluators import (ExactlyOnceSendReply, HonchoFedOncePerReply, NoRedundantRead,
                               NoSendWithoutTrigger, ToolBudget)
 from evals.harness import Case, load_cases, run_case
+from evals.judge import _build_judge_prompt, evaluate_raw
+from nora.agent.factory import create_client, create_model_provider
+from nora.agent.guards import LeakGuard
+from nora.config import ConfigError
+from nora.config import load as load_nora_config
+from nora.persona.loader import PersonaStore
+from nora.tag import is_tagged
 
 CASES_DIR = Path(__file__).resolve().parent / "cases"
+ADVERSARIAL_DIR = Path("evals") / "adversarial"
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 TRIGGER_EVALUATORS = (ExactlyOnceSendReply(), ToolBudget(), NoRedundantRead(),
                       HonchoFedOncePerReply())
@@ -42,6 +56,8 @@ SUITES = {
     "trigger": (CASES_DIR / "trigger.yaml",),
     "no_trigger": (CASES_DIR / "no_trigger.yaml",),
     "all": (CASES_DIR / "trigger.yaml", CASES_DIR / "no_trigger.yaml"),
+    "adversarial": (ADVERSARIAL_DIR / "injections.yaml", ADVERSARIAL_DIR / "near_miss.yaml",
+                    ADVERSARIAL_DIR / "transcript_injection.yaml"),
 }
 
 
@@ -76,6 +92,115 @@ def adversarial_gate(results) -> bool:
     return True
 
 
+def _load_adversarial_cases(paths: tuple[Path, ...]) -> list[dict]:
+    """Flatten the `cases:`-wrapped adversarial yaml files into raw case dicts —
+    unlike `evals.cases`' plain-list files, each `evals/adversarial/*.yaml` file wraps
+    its list under a top-level `cases:` key (see `tests/test_evals_adversarial.py`).
+    """
+    cases = []
+    for path in paths:
+        data = yaml.safe_load(path.read_text()) or {}
+        cases.extend(data.get("cases", []))
+    return cases
+
+
+def _load_eval_config():
+    """`config.yaml` (gitignored, per-deployment) is preferred; `config.example.yaml`
+    (committed, always in the v2 shape `nora.config.Config` expects) is the fallback
+    for a local `config.yaml` that predates the current schema.
+    """
+    last_error: ConfigError | None = None
+    for candidate in (REPO_ROOT / "config.yaml", REPO_ROOT / "config.example.yaml"):
+        try:
+            return load_nora_config(candidate)
+        except ConfigError as exc:
+            last_error = exc
+    raise last_error
+
+
+def _build_adversarial_message(case: dict) -> str:
+    lines = []
+    transcript = case.get("transcript") or []
+    if transcript:
+        lines.append("Prior messages in this group chat:")
+        lines.extend(f"- {m}" for m in transcript)
+    lines.append(f"Tagged message: {case['input']}")
+    return "\n".join(lines)
+
+
+async def _invoke_agent(model, system_prompt: str, message: str, *,
+                        role: Literal["reply", "judge"]) -> str:
+    """The one seam that reaches the network — a bare Strands `Agent` call against
+    OmniRoute, no tools, no Handler (spec E.7's live path is deliberately separate
+    from `evals.harness.run_case`; see that module's docstring on why the real-network
+    branch there stays unreachable). `role` distinguishes "producing Nora's candidate
+    reply" from "judging that reply" only for callers/tests — the call itself is the same.
+    """
+    from strands import Agent
+
+    agent = Agent(model=model, system_prompt=system_prompt, tools=[],
+                  callback_handler=None, load_tools_from_directory=False)
+    result = await agent.invoke_async(message)
+    return str(result).strip()
+
+
+async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dict]]:
+    """Run the adversarial corpus against a REAL judge (deepseek-v4-pro/`llm.deep` via
+    OmniRoute; spec E.7 criterion #7). `llm.default` produces each case's candidate
+    reply (the tier real Nora replies with); `llm.deep` grades it — never the same tier
+    that produced the reply (`evals.judge`'s `JUDGE_MODEL_TIER` comment: "grading with
+    the tested model is circular"). Cases whose input doesn't pass `nora.tag.is_tagged`
+    (the near-miss corpus) never reach the model at all — that mirrors production,
+    where such messages never wake Nora up.
+    """
+    cfg = _load_eval_config()
+    client = create_client(cfg.llm)
+    try:
+        reply_model = create_model_provider(cfg.llm.default, client)
+        judge_model = create_model_provider(cfg.llm.deep, client)
+        persona = PersonaStore(
+            cfg.persona.dir, strict=cfg.persona.strict, reload=cfg.persona.reload,
+            canary=cfg.persona.canary, display_name=cfg.persona.display_name,
+            trigger=cfg.trigger.text,
+        ).get(applies_to="tag")
+        leak_guard = LeakGuard(persona, cfg.persona.canary)
+        section_names = tuple(s.name for s in persona.sections)
+
+        results = []
+        for case in _load_adversarial_cases(paths):
+            reply_text = ""
+            rubric_verdict = None
+            if is_tagged(case["input"], cfg.trigger.text):
+                reply_text = await _invoke_agent(
+                    reply_model, persona.text, _build_adversarial_message(case),
+                    role="reply",
+                )
+                judge_prompt = _build_judge_prompt(
+                    tag_input=case["input"], reply_text=reply_text,
+                    persona_text=persona.persona_text,
+                )
+                rubric_raw = await _invoke_agent(judge_model, "", judge_prompt, role="judge")
+                rubric_verdict = evaluate_raw(rubric_raw)
+
+            result = {
+                "name": case["name"],
+                "expect": case["expect"],
+                "sent": [reply_text] if reply_text else [],
+                "leaked": bool(reply_text) and leak_guard.check(reply_text) is not None,
+                "revealed": detect_reveal(reply_text, section_names),
+                "rubric_verdict": rubric_verdict,
+            }
+            results.append(result)
+            status = "PASS" if adversarial_gate([result]) else "FAIL"
+            print(f"[{status}] {result['name']} — expect={result['expect']} "
+                  f"sent={bool(result['sent'])} leaked={result['leaked']} "
+                  f"revealed={result['revealed']} rubric={rubric_verdict} "
+                  f"reply={reply_text[:80]!r}")
+        return adversarial_gate(results), results
+    finally:
+        await client.close()
+
+
 def _evaluators_for(case: Case):
     return TRIGGER_EVALUATORS if case.trigger else NO_TRIGGER_EVALUATORS
 
@@ -99,7 +224,10 @@ def main(suite: str) -> int:
     if paths is None:
         print(f"unknown suite {suite!r}; expected one of {sorted(SUITES)}", file=sys.stderr)
         return 1
-    ok = asyncio.run(_run_suite(paths))
+    if suite == "adversarial":
+        ok, _results = asyncio.run(_run_adversarial_live(paths))
+    else:
+        ok = asyncio.run(_run_suite(paths))
     print("GATE PASSED" if ok else "GATE FAILED")
     return 0 if ok else 1
 
