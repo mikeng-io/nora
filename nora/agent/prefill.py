@@ -18,6 +18,11 @@ def escape(text: str) -> str:
     return _escape(str(text))
 
 
+def _escape_attr(text: str) -> str:
+    """Like escape(), but also escapes double-quotes for use inside a "..." attribute value."""
+    return _escape(str(text), {'"': "&quot;"})
+
+
 def _message(role: str, text: str) -> dict:
     return {"role": role, "content": [{"text": text}]}
 
@@ -49,7 +54,7 @@ def _transcript_block(ctx: TagContext, display_name: str) -> str:
 def _peer_card_block(ctx: TagContext) -> str:
     if not ctx.peer_card:
         return ""
-    who = escape(ctx.tagger.name if ctx.tagger else "them")
+    who = _escape_attr(ctx.tagger.name if ctx.tagger else "them")
     facts = "\n".join(f"- {escape(f)}" for f in ctx.peer_card)
     return f'<peer_card person="{who}">\n{facts}\n</peer_card>\n'
 
@@ -64,7 +69,7 @@ def build_prefill(ctx: TagContext, *, display_name: str, context_window: int) ->
 
 def build_tag_message(ctx: TagContext, *, tagger_name: str) -> str:
     return (
-        f'<tag_message from="{escape(tagger_name)}">\n'
+        f'<tag_message from="{_escape_attr(tagger_name)}">\n'
         f"{escape(ctx.message.body)}\n"
         "</tag_message>"
     )
