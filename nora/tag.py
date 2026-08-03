@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import time
 import unicodedata
+from collections.abc import Callable, Hashable
 
 # Zero-width and bidi-control characters used to smuggle a trigger past a naive match.
 _INVISIBLE = dict.fromkeys(
@@ -45,16 +46,26 @@ def is_tagged(body: str, trigger: str) -> bool:
 
 
 class Debounce:
-    """Ignore rapid re-tags in the same group. Rate limiting, not conversation state."""
+    """R-9: a second tag for the same conversation inside the window is dropped.
 
-    def __init__(self, min_interval_seconds: float):
-        self.min_interval = min_interval_seconds
-        self._last: dict[str, float] = {}
+    The clock is injected so tests are deterministic and never sleep. A blocked tag
+    does NOT reset the window — otherwise a burst would starve the conversation.
+    """
 
-    def allow(self, group_id: str) -> bool:
-        now = time.monotonic()
-        last = self._last.get(group_id, 0.0)
-        if now - last < self.min_interval:
+    def __init__(
+        self,
+        min_interval_seconds: float,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._interval = float(min_interval_seconds)
+        self._clock = clock
+        self._last: dict[Hashable, float] = {}
+
+    def allow(self, key: Hashable) -> bool:
+        now = self._clock()
+        last = self._last.get(key)
+        if last is not None and (now - last) < self._interval:
             return False
-        self._last[group_id] = now
+        self._last[key] = now
         return True
