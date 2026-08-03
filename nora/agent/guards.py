@@ -149,3 +149,71 @@ class Deliverer:
             self._metrics.inc("nora_replies_total", status="failed")
             self._metrics.inc("nora_silent_failures_total", reason="send_failed")
         return ok
+
+
+class ReplyGuard:
+    """Model-facing veto logic (R-2/R-3/R-4/R-7). Constructed fresh per tag.
+
+    `evaluate` is pure and SDK-free so every rule is testable without strands; the
+    hook adapter in _before_tool is a thin translation layer (RK-2).
+    """
+
+    BUDGETS = {"read_buffer": 2, "read_peer_card": 1, "send_reply": 1}
+
+    def __init__(self, *, conversation_id: str, deliverer=None, metrics=METRICS) -> None:
+        self._conversation_id = conversation_id
+        self._deliverer = deliverer
+        self._metrics = metrics
+        self.counts: dict[str, int] = dict.fromkeys(self.BUDGETS, 0)
+
+    def _veto(self, rule: str, message: str) -> str:
+        self._metrics.inc("nora_guard_vetoes_total", rule=rule)
+        log.warning("guard veto %s: %s", rule, message)
+        return message
+
+    def record(self, tool_name: str) -> None:
+        if tool_name in self.counts:
+            self.counts[tool_name] += 1
+
+    def evaluate(self, tool_name: str, tool_input: dict) -> str | None:
+        if tool_name not in self.BUDGETS:
+            return self._veto(
+                "R-7", f"The tool {tool_name!r} does not exist. Use read_buffer, "
+                       "read_peer_card or send_reply.",
+            )
+
+        target = (tool_input or {}).get("conversation_id")
+        if tool_name in ("send_reply", "read_buffer"):
+            if not target:
+                return self._veto("R-3", "conversation_id is required and must be the "
+                                         "conversation you were tagged in.")
+            if target != self._conversation_id:
+                log.error("cross_conversation_send_blocked: %s != %s",
+                          target, self._conversation_id)
+                return self._veto(
+                    "R-3", "You may only act on this conversation — the one that tagged you.",
+                )
+
+        if self.counts[tool_name] >= self.BUDGETS[tool_name]:
+            if tool_name == "send_reply":
+                return self._veto(
+                    "R-2", "You already sent your reply. Do not call send_reply again — "
+                           "finish your turn.",
+                )
+            return self._veto(
+                "R-7", f"You already called {tool_name} "
+                       f"{self.counts[tool_name]} time(s) and have that context. "
+                       "Answer from what you already have.",
+            )
+
+        if tool_name == "send_reply":
+            text = (tool_input or {}).get("text") or ""
+            if not text.strip():
+                return self._veto("R-4", "Your reply text is empty. "
+                                         "Send real text or end your turn.")
+            if self._deliverer is not None and self._deliverer.attempted:
+                return self._veto(
+                    "R-2", "You already sent your reply. Do not call send_reply again — "
+                           "finish your turn.",
+                )
+        return None
