@@ -84,6 +84,7 @@ class Deliverer:
         self._persona_sha256 = persona.sha256
         self._attempted = False
         self._delivered = False
+        self._last_text: str | None = None
 
     @property
     def delivered(self) -> bool:
@@ -92,6 +93,10 @@ class Deliverer:
     @property
     def attempted(self) -> bool:
         return self._attempted
+
+    @property
+    def last_text(self) -> str | None:
+        return self._last_text
 
     async def deliver(self, text: str, *, source: str = "tool") -> bool:
         if self._attempted:                                    # R-2
@@ -146,6 +151,7 @@ class Deliverer:
 
         if ok:
             self._delivered = True
+            self._last_text = text
             self._metrics.inc("nora_replies_total", status="sent")
         else:
             self._metrics.inc("nora_replies_total", status="failed")

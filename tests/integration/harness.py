@@ -127,6 +127,14 @@ class Harness:
     def agents_constructed(self) -> int:
         return self._agents.value
 
+    @property
+    def last_prefill(self):
+        return self.handler._last_prefill
+
+    @property
+    def last_limits(self):
+        return self.handler._last_limits
+
     async def drain(self) -> None:
         """Await every background task `Handler._spawn` has launched, including ones
         spawned by tasks that are themselves still in flight (e.g. `_feed_ambient`).
@@ -135,15 +143,25 @@ class Harness:
             await asyncio.gather(*list(self.handler._bg), return_exceptions=True)
 
 
-def _build_config(tmp_path: Path, *, persons_path: Path) -> Config:
+def _build_config(
+    tmp_path: Path, *, persons_path: Path,
+    invocation_timeout: float | None = None,
+    debounce: float | None = None,
+) -> Config:
     cfg_path = tmp_path / "config.yaml"
     shutil.copy(REPO_ROOT / "config.example.yaml", cfg_path)
     base = load_config(cfg_path)
+    trigger = base.trigger
+    if invocation_timeout is not None:
+        trigger = dataclasses.replace(trigger, invocation_timeout_seconds=invocation_timeout)
+    if debounce is not None:
+        trigger = dataclasses.replace(trigger, min_interval_seconds=debounce)
     return dataclasses.replace(
         base,
         buffer=dataclasses.replace(base.buffer, db_path=tmp_path / "messages.db"),
         persona=dataclasses.replace(base.persona, dir=PERSONA_DIR),
         persons_file=persons_path,
+        trigger=trigger,
     )
 
 
@@ -155,6 +173,10 @@ async def build_handler(
     sink: SinkSender | None = None,
     persons_yaml: str | None = None,
     own_account: str = OWN_ACCOUNT,
+    raises: Exception | None = None,
+    delay: float = 0.0,
+    invocation_timeout: float | None = None,
+    debounce: float | None = None,
 ) -> Harness:
     """Assemble a real `Handler` wired to a tmp db + the real persona dir + fakes.
 
@@ -163,7 +185,10 @@ async def build_handler(
     """
     persons_path = tmp_path / "persons.yaml"
     persons_path.write_text(persons_yaml or _DEFAULT_PERSONS_YAML)
-    cfg = _build_config(tmp_path, persons_path=persons_path)
+    cfg = _build_config(
+        tmp_path, persons_path=persons_path,
+        invocation_timeout=invocation_timeout, debounce=debounce,
+    )
 
     await db.init(cfg.buffer.db_path)
     persons = load_persons(persons_path)
@@ -186,7 +211,7 @@ async def build_handler(
     elif isinstance(script, FakeLLM):
         invoke_fn = script
     else:
-        invoke_fn = FakeLLM(script)
+        invoke_fn = FakeLLM(script, delay=delay, raises=raises)
 
     handler = Handler(
         cfg=cfg,

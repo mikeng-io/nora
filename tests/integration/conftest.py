@@ -9,3 +9,13 @@ from tests.integration.harness import build_handler
 async def harness(tmp_path, monkeypatch):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     return await build_handler(tmp_path)
+
+
+@pytest.fixture
+def harness_factory(tmp_path, monkeypatch):
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+
+    async def factory(**kwargs):
+        return await build_handler(tmp_path, **kwargs)
+
+    return factory

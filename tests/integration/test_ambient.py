@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from nora.store import db
-from tests.integration.harness import build_handler, group_event
+from tests.integration.harness import ScriptedTurn, build_handler, group_event
 
 
 async def test_every_message_is_appended_to_the_audit(harness):
@@ -80,8 +80,9 @@ async def test_ingest_does_not_wait_on_a_slow_honcho(harness):
     assert asyncio.get_running_loop().time() - started < 0.2
 
 
-async def test_debounce_window(harness):
+async def test_debounce_window(harness_factory):
     """R-9: a second tag inside the window is dropped before any agent work."""
+    harness = await harness_factory(script=[ScriptedTurn()])
     await harness.handler.on_event(group_event(body="nora.000 one"))
     await harness.drain()
     await harness.handler.on_event(group_event(body="nora.000 two"))
@@ -90,7 +91,8 @@ async def test_debounce_window(harness):
     assert harness.metrics.get("nora_tags_debounced_total") == 1
 
 
-async def test_debounce_is_independent_per_conversation(harness):
+async def test_debounce_is_independent_per_conversation(harness_factory):
+    harness = await harness_factory(script=[ScriptedTurn()])
     await harness.handler.on_event(group_event(body="nora.000 one", conv="g1"))
     await harness.handler.on_event(group_event(body="nora.000 one", conv="g2"))
     await harness.drain()
