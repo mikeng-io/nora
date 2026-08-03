@@ -1,0 +1,57 @@
+signal_cli:
+  base_url: "http://127.0.0.1:18080"
+  account: ""                     # empty = derive from the signal-cli daemon (D5)
+  nora_sender_id: "nora"          # how Nora's own rows are tagged in the audit
+
+honcho:
+  base_url: "http://127.0.0.1:8000"
+  workspace_id: "nora"
+
+llm:
+  base_url: "http://localhost:20128/v1"
+  api_key_env: "OMNIROUTE_API_KEY"     # env var NAME, never the value
+  default:
+    model: "deepseek-v4-flash"
+    max_tokens: 400
+    temperature: 0.7
+  deep:
+    model: "deepseek-v4-pro"
+    max_tokens: 1200
+    temperature: 0.5
+  limits:
+    turns: 4
+    total_tokens: 24000
+
+trigger:
+  text: "nora.000"
+  min_interval_seconds: 5
+  invocation_timeout_seconds: 30
+
+buffer:
+  db_path: "~/workspace/nora/data/messages.db"
+  max_per_conversation: 500
+  context_window: 40
+
+persona:
+  dir: "nora/persona"
+  reload: "mtime"                      # mtime | startup
+  strict: true
+  chinese_script: "traditional"        # traditional | simplified
+  canary: "CHANGE-ME-PER-DEPLOYMENT"   # fixed string; R-6 leak sentinel
+  display_name: "Nora"
+
+persons_file: "persons.yaml"
+
+logging:
+  level: "INFO"
+  path: "~/workspace/nora/data/nora.log"
+  format: "json"
+
+metrics:
+  port: 9100                           # also serves /health
+
+observability:
+  tracing:
+    enabled: true
+    exporter: "file"                   # console | otlp | file
+    endpoint: ""

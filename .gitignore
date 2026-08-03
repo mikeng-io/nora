@@ -27,3 +27,7 @@ venv/
 *.swp
 *.swo
 .DS_Store
+
+# Local deployment config (config.example.yaml is the committed template)
+/config.yaml
+/persons.yaml
