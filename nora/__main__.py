@@ -10,13 +10,15 @@ import argparse
 import asyncio
 import os
 import sys
+import time
 from pathlib import Path
 
 from . import config
 from .agent import factory
 from .config import ConfigError
 from .handler import Handler
-from .obs.logging import setup_logging
+from .obs.health import LLMState, build_health_app, serve
+from .obs.logging import heartbeat, setup_logging
 from .obs.metrics import METRICS
 from .persona.loader import PersonaError, PersonaStore
 from .persons import PersonsError, load_persons
@@ -65,27 +67,55 @@ async def build_app(config_path) -> "App":
     await honcho.ensure_workspace()          # best-effort, never fatal — no try/except
 
     adapter = SignalAdapter(cfg.signal_cli.base_url, account)
+    llm_state = LLMState()
     handler = Handler(cfg=cfg, adapter=adapter, persons=persons, honcho=honcho,
-                      persona_store=persona_store, metrics=METRICS)
+                      persona_store=persona_store, metrics=METRICS, llm_state=llm_state)
 
     return App(cfg=cfg, handler=handler, adapter=adapter, account=account,
-               persona=persona, honcho=honcho)
+               persona=persona, honcho=honcho, llm_state=llm_state)
 
 
 class App:
-    def __init__(self, *, cfg, handler, adapter, account, persona, honcho) -> None:
+    def __init__(self, *, cfg, handler, adapter, account, persona, honcho,
+                 llm_state=None) -> None:
         self.cfg = cfg
         self.handler = handler
         self.adapter = adapter
         self.account = account
         self.persona = persona
         self.honcho = honcho
+        self.llm_state = llm_state or LLMState()
+        self._health_runner = None
+        self._bg_tasks: list[asyncio.Task] = []
 
     async def run(self) -> None:
-        """M6 stub: the metrics/health server lands in Task 38 — no-op here."""
-        await self.adapter.listen(self.handler.on_event)
+        health_app = build_health_app(
+            adapter=self.adapter, db_path=self.cfg.buffer.db_path, honcho=self.honcho,
+            persona_store=self.handler.persona_store, metrics=self.handler.metrics,
+            started_at=time.time(), llm_state=self.llm_state,
+        )
+        self._health_runner = await serve(health_app, self.cfg.metrics.port)
+        self._bg_tasks = [
+            asyncio.create_task(heartbeat(self.handler.metrics)),
+            asyncio.create_task(self._update_last_event_age()),
+        ]
+        try:
+            await self.adapter.listen(self.handler.on_event)
+        finally:
+            for task in self._bg_tasks:
+                task.cancel()
+
+    async def _update_last_event_age(self) -> None:
+        while True:
+            await asyncio.sleep(10.0)
+            health = await self.adapter.health()
+            age = health.get("last_event_age_seconds")
+            if age is not None:
+                self.handler.metrics.gauge("nora_last_event_age_seconds", age)
 
     async def shutdown(self) -> None:
+        if self._health_runner is not None:
+            await self._health_runner.cleanup()
         await factory.close_client()
 
 

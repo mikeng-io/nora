@@ -25,13 +25,14 @@ log = logging.getLogger("nora.handler")
 class Handler:
     def __init__(self, *, cfg, adapter, persons, honcho, persona_store,
                  metrics=METRICS, invoke_fn=None, create_agent_fn=None,
-                 clock=time.monotonic) -> None:
+                 clock=time.monotonic, llm_state=None) -> None:
         self.cfg = cfg
         self.adapter = adapter
         self.persons = persons
         self.honcho = honcho
         self.persona_store = persona_store
         self.metrics = metrics
+        self.llm_state = llm_state
         self._clock = clock
         self._debounce = Debounce(cfg.trigger.min_interval_seconds, clock=clock)
         self._in_flight: set[tuple[str, str]] = set()
@@ -206,6 +207,9 @@ class Handler:
                     log.warning("no_send_call (tag=%s); dropping the model's text", tag_id)
                     self.metrics.inc("nora_silent_failures_total", reason="no_send_call")
                 return
+
+            if self.llm_state is not None:   # a delivered reply implies a successful invocation
+                self.llm_state.last_success_at = time.time()
 
             if ctx.tagger is not None:       # step 4: exactly one exchange feed
                 self._spawn(self._feed_exchange(ctx, tagger_name, deliverer))
