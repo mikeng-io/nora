@@ -55,11 +55,13 @@ def test_sections_are_ordered_by_order_not_filename(persona_dir):
         ["soul", "voice", "conduct", "guardrails", "last"]
 
 
-def test_ties_on_order_break_on_filename(persona_dir):
-    write(persona_dir, "b.md", name="btie", order=10)
-    write(persona_dir, "a.md", name="atie", order=10)
-    names = [s.name for s in _store(persona_dir).get(applies_to="tag").sections[:3]]
-    assert names == ["atie", "btie", "soul"]  # a.md, b.md, soul.md — filename tiebreak
+# test_ties_on_order_break_on_filename (from the plan) is omitted: its premise
+# (files with duplicate `order` values are allowed and tie-broken by filename) is
+# incompatible with _scan()'s strict, unconditional duplicate-order rejection,
+# which is verbatim-specified in the same plan task and has its own passing test
+# (test_duplicate_order_is_a_startup_failure). Order ties cannot occur in any
+# directory that passes validation, so filename tie-breaking is unreachable
+# defensive code. Flagged as an open plan contradiction — see ledger.
 
 
 def test_applies_to_filters_the_assembly(persona_dir):
