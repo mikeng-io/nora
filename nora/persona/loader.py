@@ -77,15 +77,38 @@ def parse_section(path: Path) -> PersonaSection:
 
 @dataclass(frozen=True)
 class Persona:
-    """A filtered, ordered assembly of persona sections for one `applies_to` audience.
-
-    Minimal placeholder for Task 12's tests, which only inspect `.sections`. Task 13
-    replaces `text`/adds `sha256` etc. with the real assembly (headers, canary,
-    display_name/trigger/language_hint substitution, ...) per spec A.4.
+    """A filtered, ordered assembly of persona sections for one `applies_to` audience,
+    per spec A.4.
     """
 
     sections: tuple[PersonaSection, ...]
-    text: str
+    text: str                      # persona block + runtime_context — goes to system_prompt=
+    persona_text: str              # persona block only — hashed, and what LeakGuard matches
+    sha256: str                    # over persona_text (S6, audit fix #3)
+    runtime_context: str
+    loaded_at: float
+
+    def versions(self) -> dict[str, int]:
+        return {s.name: s.version for s in self.sections}
+
+    def blocks(self) -> list[dict]:
+        """SystemContentBlock list for a future prompt-caching cachePoint. Unused in v2."""
+        out = [
+            {"text": f'<section name="{s.name}" version="{s.version}">\n{s.body}\n</section>'}
+            for s in self.sections
+        ]
+        out.append({"text": self.runtime_context})
+        return out
+
+
+def _assemble(sections: tuple[PersonaSection, ...]) -> str:
+    parts = ["<nora_persona>"]
+    for s in sections:
+        parts.append(f'<section name="{s.name}" version="{s.version}">')
+        parts.append(s.body.strip("\n"))
+        parts.append("</section>")
+    parts.append("</nora_persona>")
+    return "\n".join(parts)
 
 
 class PersonaStore:
@@ -134,25 +157,47 @@ class PersonaStore:
         self._sections = tuple(sorted(sections, key=lambda s: (s.order, s.path.name)))
         self._cache.clear()
 
-    def get(self, applies_to: str) -> Persona:
-        """Return the ordered, filtered assembly of sections for one audience.
+    def _maybe_rescan(self) -> None:
+        """Scan once, on first use.
 
-        Minimal Task 12 implementation: scan once (first call), filter `self._sections`
-        (already ordered by `_scan`) to those whose `applies_to` tuple contains the
-        requested value or `"always"`, and concatenate bodies into `text`. Task 13
-        replaces the assembly (headers, canary/display_name/trigger/language_hint
-        substitution, sha256 of the assembled text, mtime-based reload) per spec A.4.
+        Minimal Task 13 stub: this only covers "scan the directory the first time
+        `get()` is called." Task 14 replaces this with real mtime-based hot-reload
+        (re-scan when `_fingerprint_dir()` changes) and last-good-fallback logic
+        (serve `self._last_good` if a re-scan raises `PersonaError`).
         """
         if self._fingerprint is None:
             self._scan()
             self._fingerprint = self._fingerprint_dir()
-        if applies_to in self._cache:
-            return self._cache[applies_to]
-        sections = tuple(
+
+    def _runtime_context(self) -> str:
+        return (
+            "<runtime_context>\n"
+            f"display_name: {self._display_name}\n"
+            f"trigger: {self._trigger}\n"
+            f"language: {self._language_hint}\n"
+            f"canary: {self._canary}\n"
+            "</runtime_context>"
+        )
+
+    def get(self, *, applies_to: str = "tag") -> Persona:
+        self._maybe_rescan()                       # Task 14 supplies real hot-reload
+        cached = self._cache.get(applies_to)
+        if cached is not None:
+            return cached
+        selected = tuple(
             s for s in self._sections
             if applies_to in s.applies_to or "always" in s.applies_to
         )
-        text = "\n\n".join(s.body.strip() for s in sections)
-        persona = Persona(sections=sections, text=text)
+        persona_text = _assemble(selected)
+        runtime = self._runtime_context()
+        persona = Persona(
+            sections=selected,
+            text=f"{persona_text}\n{runtime}",
+            persona_text=persona_text,
+            sha256=hashlib.sha256(persona_text.encode("utf-8")).hexdigest(),
+            runtime_context=runtime,
+            loaded_at=time.time(),
+        )
         self._cache[applies_to] = persona
+        self._last_good[applies_to] = persona
         return persona
