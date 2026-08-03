@@ -57,6 +57,12 @@ def test_secret_never_logged_in_exception_text():
     assert "sk-live-abcdef123456" not in JSONFormatter().format(rec)
 
 
+def test_secret_never_logged_when_passed_as_a_non_string_arg():
+    rec = _record("failed: %s", RuntimeError("auth failed for sk-live-abcdef123456"))
+    SecretFilter(["sk-live-abcdef123456"]).filter(rec)
+    assert "sk-live-abcdef123456" not in JSONFormatter().format(rec)
+
+
 def test_secret_never_logged_in_extras():
     rec = _record("x", raw_json='{"key":"sk-live-abcdef123456"}')
     SecretFilter(["sk-live-abcdef123456"]).filter(rec)

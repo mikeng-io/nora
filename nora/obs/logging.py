@@ -36,10 +36,15 @@ class SecretFilter(logging.Filter):
         self._secrets = [s for s in secrets if s]
 
     def _redact(self, text):
-        if not isinstance(text, str):
+        if isinstance(text, str):
+            for secret in self._secrets:
+                text = text.replace(secret, "***REDACTED***")
             return text
-        for secret in self._secrets:
-            text = text.replace(secret, "***REDACTED***")
+        s = str(text)
+        if any(secret in s for secret in self._secrets):
+            for secret in self._secrets:
+                s = s.replace(secret, "***REDACTED***")
+            return s
         return text
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -56,15 +61,16 @@ class SecretFilter(logging.Filter):
         for key, value in list(record.__dict__.items()):
             if key in ("msg", "args", "exc_info", "exc_text"):
                 continue
-            if isinstance(value, str):
-                setattr(record, key, self._redact(value))
+            setattr(record, key, self._redact(value))
         return True
 
 
 def setup_logging(cfg, *, secrets: list[str]) -> None:
     root = logging.getLogger()
     root.setLevel(cfg.level)
-    root.handlers.clear()
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+        h.close()
     handler = logging.FileHandler(Path(cfg.path).expanduser())
     handler.addFilter(SecretFilter(secrets))
     handler.setFormatter(JSONFormatter())
