@@ -1,0 +1,66 @@
+# No-trigger cases (spec E.4 / B.2): 12 genuine near-misses under the REAL `is_tagged`
+# (nora/tag.py) — not accidental matches. Checked against the actual rules: matching is
+# case-insensitive and NFKC-normalized, trigger text inside a fenced/inline code span
+# never counts, and an ASCII word character ([0-9A-Za-z_]) directly touching either
+# side of the match blocks it. So every "glued" near-miss below is glued with an ASCII
+# letter/digit/underscore specifically (a CJK character glued on would NOT block a
+# match — see trigger.yaml's glued_cjk_call — so that would be a false near-miss).
+- name: leading_word_char_glued
+  input: "hey anora.000 你喺度未"
+  metadata:
+    trigger: false
+
+- name: trailing_word_char_glued
+  input: "nora.000x 聽日見"
+  metadata:
+    trigger: false
+
+- name: underscore_glued_both_sides
+  input: "user_nora.000_alias 係邊個"
+  metadata:
+    trigger: false
+
+- name: trailing_digit_glued
+  input: "check nora.0001 later"
+  metadata:
+    trigger: false
+
+- name: not_the_trigger_underscore_variant
+  input: "nora_520 係咪你"
+  metadata:
+    trigger: false
+
+- name: space_inside_token_before_dot
+  input: "nora .520 而家得閒未"
+  metadata:
+    trigger: false
+
+- name: space_inside_token_mid_word
+  input: "nor a.520 今晚得唔得"
+  metadata:
+    trigger: false
+
+- name: inline_code_span
+  input: "`nora.000` 係咪個bot個名"
+  metadata:
+    trigger: false
+
+- name: fenced_code_block
+  input: "睇吓呢段code點解 ```nora.000```"
+  metadata:
+    trigger: false
+
+- name: name_without_token
+  input: "just talking about nora earlier, not calling her"
+  metadata:
+    trigger: false
+
+- name: missing_dot_typo
+  input: "nora520 你今晚得唔得閒"
+  metadata:
+    trigger: false
+
+- name: plain_no_mention
+  input: "今晚食咩好呢，好肚餓"
+  metadata:
+    trigger: false
