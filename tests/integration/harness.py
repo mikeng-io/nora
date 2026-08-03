@@ -181,7 +181,11 @@ async def build_handler(
     """Assemble a real `Handler` wired to a tmp db + the real persona dir + fakes.
 
     `script` is either a `FakeLLM` instance, a list of `ScriptedTurn`s (wrapped into a
-    `FakeLLM` for you), or `None` — the ambient path (this task) never invokes it.
+    `FakeLLM` for you), or `None` (wrapped into an empty, zero-turn `FakeLLM`). `Handler`
+    always gets a non-`None` `invoke_fn` from this factory, so the real, live-network
+    `factory.*` branch of `Handler._invoke` is unreachable from this test suite by
+    construction — no test here should ever exercise it (that is Task 4's dedicated
+    `@pytest.mark.network` smoke test's job).
     """
     persons_path = tmp_path / "persons.yaml"
     persons_path.write_text(persons_yaml or _DEFAULT_PERSONS_YAML)
@@ -207,7 +211,10 @@ async def build_handler(
     counter = _Counter()
 
     if script is None:
-        invoke_fn = None
+        # Never leave invoke_fn unset: an empty FakeLLM keeps Handler._invoke_fn non-None so
+        # the real factory.*/live-network branch of _invoke is unreachable from this suite by
+        # construction (Task 4's dedicated @pytest.mark.network test covers that branch).
+        invoke_fn = FakeLLM([], delay=delay, raises=raises)
     elif isinstance(script, FakeLLM):
         invoke_fn = script
     else:
