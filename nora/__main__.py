@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from . import config
 from .agent import factory
 from .config import ConfigError
 from .handler import Handler
+from .obs.logging import setup_logging
 from .obs.metrics import METRICS
 from .persona.loader import PersonaError, PersonaStore
 from .persons import PersonsError, load_persons
@@ -33,6 +35,9 @@ async def build_app(config_path) -> "App":
         cfg = config.load(config_path)
     except ConfigError as exc:
         raise StartupError(str(exc)) from exc
+
+    key = os.environ.get(cfg.llm.api_key_env, "")
+    setup_logging(cfg.logging, secrets=[key] if key else [])
 
     try:
         persons = load_persons(cfg.persons_file)
