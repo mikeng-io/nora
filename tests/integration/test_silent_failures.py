@@ -1,0 +1,73 @@
+import pytest
+
+from nora.store import db
+from tests.integration.harness import ScriptedTurn, group_event
+
+FORBIDDEN = ("error", "sorry", "exception", "traceback", "failed", "unavailable",
+             "system", "config", "api key")
+
+
+def _script(text="reply"):
+    return [ScriptedTurn(tool_calls=[("send_reply", {"conversation_id": "g1",
+                                                     "conversation_type": "group",
+                                                     "text": text})], final_text=text)]
+
+
+@pytest.mark.parametrize(
+    "fault,expect_send,reason",
+    [
+        ("llm_error", False, "llm_error"),
+        ("llm_timeout", False, "invocation_timeout"),
+        ("empty_reply", False, "empty_reply"),
+        ("db_append_fails", False, "audit_write_failed"),
+        ("leak_guard_trips", False, "persona_leak"),
+        ("no_send_call", False, "no_send_call"),
+        ("honcho_down", True, None),
+        ("persona_reload_fails", True, None),
+        ("context_read_fails", True, None),
+        ("send_fails", True, "send_failed"),
+    ],
+)
+async def test_silent_failure_matrix(harness_factory, fault, expect_send, reason):
+    """R-5 / spec B.3: the group never sees an error, whatever breaks."""
+    h = await harness_factory(script=_script(), fault=fault)
+    await h.handler.on_event(group_event(body="nora.000 ?"))
+    await h.drain()
+
+    assert bool(h.sink.sent) is expect_send, fault
+    for text in h.sink.texts:
+        low = text.lower()
+        for word in FORBIDDEN:
+            assert word not in low, f"{fault}: leaked {word!r} to the group"
+    if reason:
+        assert h.metrics.get("nora_silent_failures_total", reason=reason) >= 1, fault
+
+
+async def test_no_audit_row_when_nothing_was_delivered(harness_factory):
+    h = await harness_factory(script=_script(), fault="llm_error")
+    await h.handler.on_event(group_event(body="nora.000 ?"))
+    await h.drain()
+    assert [r for r in await db.recent(h.db_path, "g1", 10) if r["is_nora"]] == []
+
+
+async def test_a_reply_still_happens_with_a_thinner_context(harness_factory):
+    h = await harness_factory(script=_script(), fault="context_read_fails")
+    await h.handler.on_event(group_event(body="nora.000 ?"))
+    await h.drain()
+    assert len(h.sink.sent) == 1
+    assert h.metrics.get("nora_errors_total", stage="context") == 1
+
+
+async def test_a_reply_still_happens_with_no_peer_card(harness_factory):
+    h = await harness_factory(script=_script(), fault="honcho_down")
+    await h.handler.on_event(group_event(body="nora.000 ?"))
+    await h.drain()
+    assert len(h.sink.sent) == 1
+
+
+async def test_a_broken_persona_edit_uses_the_last_good_persona(harness_factory):
+    h = await harness_factory(script=_script(), fault="persona_reload_fails")
+    await h.handler.on_event(group_event(body="nora.000 ?"))
+    await h.drain()
+    assert len(h.sink.sent) == 1
+    assert h.persona_store.reload_failures == 1

@@ -40,6 +40,8 @@ class Handler:
         self._create_agent_fn = create_agent_fn
         self._last_prefill = None
         self._last_limits = None
+        self._prefills: list = []
+        self._guards: list = []
 
     def _spawn(self, coro) -> None:
         """Run off the listener's path so ingestion never stalls behind a slow call.
@@ -117,6 +119,7 @@ class Handler:
     async def _invoke(self, persona, tools, pre_fill, guard, tag_message, limits, ctx) -> None:
         self._last_prefill = pre_fill
         self._last_limits = limits
+        self._prefills.append(pre_fill)
         tools_by_name = {t.tool_name: t for t in tools}
         if self._invoke_fn is not None:
             if self._create_agent_fn is not None:
@@ -164,6 +167,7 @@ class Handler:
             )
             guard = ReplyGuard(conversation_id=msg.conversation_id, deliverer=deliverer,
                                metrics=self.metrics)
+            self._guards.append(guard)
             tools = build_tools(
                 db_path=self.cfg.buffer.db_path, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self.persons,
