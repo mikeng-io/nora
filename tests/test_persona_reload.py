@@ -1,5 +1,6 @@
 import pytest
 
+from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from tests.test_persona_loader import write
 
@@ -77,6 +78,18 @@ def test_failed_reload_keeps_last_good(persona_dir, caplog):
     assert "Original voice." in after.text
     assert store.reload_failures == 1
     assert any("persona_reload_failed" in r.message for r in caplog.records)
+
+
+def test_a_failed_reload_increments_the_prometheus_counter(persona_dir):
+    metrics = Metrics()
+    store = PersonaStore(persona_dir, canary="c", reload="mtime", strict=True, metrics=metrics)
+    store.get()
+
+    _touch_newer(persona_dir / "voice.md", "totally broken, no frontmatter")
+    store.get()
+
+    assert store.reload_failures == 1
+    assert metrics.get("nora_persona_reload_failures_total") == 1
 
 
 def test_a_repaired_file_reloads_after_a_failure(persona_dir):

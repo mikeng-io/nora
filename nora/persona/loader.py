@@ -16,6 +16,8 @@ from typing import Any
 
 import yaml
 
+from ..obs.metrics import METRICS
+
 log = logging.getLogger("nora.persona")
 
 _NAME_RE = re.compile(r"^[a-z0-9-]{1,64}$")
@@ -114,7 +116,7 @@ def _assemble(sections: tuple[PersonaSection, ...]) -> str:
 class PersonaStore:
     def __init__(self, dir: Path, *, strict: bool = True, reload: str = "mtime",
                  canary: str = "", display_name: str = "Nora", trigger: str = "",
-                 language_hint: str = "") -> None:
+                 language_hint: str = "", metrics=METRICS) -> None:
         self._dir = Path(dir)
         self._strict = strict
         self._reload = reload
@@ -122,6 +124,7 @@ class PersonaStore:
         self._display_name = display_name
         self._trigger = trigger
         self._language_hint = language_hint
+        self._metrics = metrics
         self._sections: tuple[PersonaSection, ...] = ()
         self._fingerprint: tuple | None = None
         self._cache: dict[str, Persona] = {}
@@ -179,6 +182,7 @@ class PersonaStore:
         if not self._last_good:
             raise exc if isinstance(exc, PersonaError) else PersonaError(str(exc))
         self.reload_failures += 1
+        self._metrics.inc("nora_persona_reload_failures_total")
         # Advance the fingerprint so a broken file is not re-parsed on every tag.
         try:
             self._fingerprint = self._fingerprint_dir()
