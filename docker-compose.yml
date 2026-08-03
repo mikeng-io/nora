@@ -1,5 +1,8 @@
 services:
   nora:
+    # NOTE: build with `docker build --network=host .` — BuildKit's default bridge
+    # can't resolve deb.debian.org on this host (systemd-resolved stub 127.0.0.53),
+    # so `apt-get update` stalls ~30s per repo and the build never finishes.
     build: .
     image: nora:latest
     container_name: nora
