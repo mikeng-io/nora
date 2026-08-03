@@ -1,30 +1,57 @@
+"""Tests for the Honcho read path (peer_card, health) on nora/store/honcho.py, spec §C.5.
+
+Mirrors tests/test_honcho.py's (Task 21) local, zero-dependency server fixture: a
+local aiohttp.test_utils.TestServer scoped to this file, no shared conftest changes
+and no third-party pytest plugin registration.
+"""
+
+from __future__ import annotations
+
 import pytest
 from aiohttp import web
+from aiohttp.test_utils import TestServer
 
 from nora.store.honcho import HonchoClient
 from tests.fakes import FakeHoncho
 
 
-async def _card_server(aiohttp_server, payload, status=200):
-    async def handler(request):
+@pytest.fixture
+async def server_factory():
+    """Yield a factory that spins up a local aiohttp server for one test's handler."""
+    servers: list[TestServer] = []
+
+    async def _make(handler) -> str:
+        app = web.Application()
+        app.router.add_route("*", "/{tail:.*}", handler)
+        server = TestServer(app)
+        await server.start_server()
+        servers.append(server)
+        return str(server.make_url("/")).rstrip("/")
+
+    yield _make
+
+    for server in servers:
+        await server.close()
+
+
+def _payload_handler(payload, status=200):
+    async def handler(request: web.Request) -> web.Response:
         if status != 200:
             return web.Response(status=status)
         return web.json_response(payload)
 
-    app = web.Application()
-    app.router.add_route("*", "/{tail:.*}", handler)
-    return await aiohttp_server(app)
+    return handler
 
 
-async def test_peer_card_returns_a_list_of_facts(aiohttp_server):
-    s = await _card_server(aiohttp_server, {"content": "- likes espresso\n- lives in HK"})
-    card = await HonchoClient(str(s.make_url("")).rstrip("/"), "nora").peer_card("miles")
+async def test_peer_card_returns_a_list_of_facts(server_factory):
+    base_url = await server_factory(_payload_handler({"content": "- likes espresso\n- lives in HK"}))
+    card = await HonchoClient(base_url, "nora").peer_card("miles")
     assert card == ["likes espresso", "lives in HK"]
 
 
-async def test_peer_card_returns_empty_on_a_server_error(aiohttp_server):
-    s = await _card_server(aiohttp_server, {}, status=500)
-    assert await HonchoClient(str(s.make_url("")).rstrip("/"), "nora").peer_card("miles") == []
+async def test_peer_card_returns_empty_on_a_server_error(server_factory):
+    base_url = await server_factory(_payload_handler({}, status=500))
+    assert await HonchoClient(base_url, "nora").peer_card("miles") == []
 
 
 async def test_peer_card_returns_empty_when_honcho_is_down():
@@ -32,31 +59,29 @@ async def test_peer_card_returns_empty_when_honcho_is_down():
     assert await client.peer_card("miles") == []
 
 
-async def test_peer_card_returns_empty_for_an_unparseable_body(aiohttp_server):
-    s = await _card_server(aiohttp_server, {"unexpected": True})
-    assert await HonchoClient(str(s.make_url("")).rstrip("/"), "nora").peer_card("miles") == []
+async def test_peer_card_returns_empty_for_an_unparseable_body(server_factory):
+    base_url = await server_factory(_payload_handler({"unexpected": True}))
+    assert await HonchoClient(base_url, "nora").peer_card("miles") == []
 
 
-async def test_peer_card_uses_a_get_request_to_the_card_endpoint(aiohttp_server):
+async def test_peer_card_uses_a_get_request_to_the_card_endpoint(server_factory):
     captured = {}
 
-    async def handler(request):
+    async def handler(request: web.Request) -> web.Response:
         captured["method"] = request.method
         captured["path"] = request.path
         return web.json_response({"content": "- likes espresso"})
 
-    app = web.Application()
-    app.router.add_route("*", "/{tail:.*}", handler)
-    s = await aiohttp_server(app)
+    base_url = await server_factory(handler)
 
-    await HonchoClient(str(s.make_url("")).rstrip("/"), "nora").peer_card("miles")
+    await HonchoClient(base_url, "nora").peer_card("miles")
 
     assert (captured["method"], captured["path"]) == ("GET", "/v3/workspaces/nora/peers/miles/card")
 
 
-async def test_health_reports_reachability(aiohttp_server):
-    s = await _card_server(aiohttp_server, {"ok": True})
-    health = await HonchoClient(str(s.make_url("")).rstrip("/"), "nora").health()
+async def test_health_reports_reachability(server_factory):
+    base_url = await server_factory(_payload_handler({"ok": True}))
+    health = await HonchoClient(base_url, "nora").health()
     assert health["reachable"] is True
 
 
