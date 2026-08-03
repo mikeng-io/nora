@@ -126,6 +126,7 @@ class PersonaStore:
         self._fingerprint: tuple | None = None
         self._cache: dict[str, Persona] = {}
         self._last_good: dict[str, Persona] = {}
+        self.reload_failures = 0
 
     def _fingerprint_dir(self) -> tuple:
         return tuple(sorted((p.name, p.stat().st_mtime_ns, p.stat().st_size)
@@ -158,16 +159,33 @@ class PersonaStore:
         self._cache.clear()
 
     def _maybe_rescan(self) -> None:
-        """Scan once, on first use.
-
-        Minimal Task 13 stub: this only covers "scan the directory the first time
-        `get()` is called." Task 14 replaces this with real mtime-based hot-reload
-        (re-scan when `_fingerprint_dir()` changes) and last-good-fallback logic
-        (serve `self._last_good` if a re-scan raises `PersonaError`).
-        """
-        if self._fingerprint is None:
+        if self._sections and self._reload == "startup":
+            return
+        try:
+            fingerprint = self._fingerprint_dir()
+        except OSError as exc:                       # directory vanished mid-run
+            self._on_reload_failure(exc)
+            return
+        if fingerprint == self._fingerprint:
+            return
+        try:
             self._scan()
+        except PersonaError as exc:
+            self._on_reload_failure(exc)
+            return
+        self._fingerprint = fingerprint
+
+    def _on_reload_failure(self, exc: Exception) -> None:
+        if not self._last_good:
+            raise exc if isinstance(exc, PersonaError) else PersonaError(str(exc))
+        self.reload_failures += 1
+        # Advance the fingerprint so a broken file is not re-parsed on every tag.
+        try:
             self._fingerprint = self._fingerprint_dir()
+        except OSError:
+            pass
+        self._cache = dict(self._last_good)
+        log.error("persona_reload_failed: %s (keeping the last good persona)", exc)
 
     def _runtime_context(self) -> str:
         return (
@@ -180,7 +198,7 @@ class PersonaStore:
         )
 
     def get(self, *, applies_to: str = "tag") -> Persona:
-        self._maybe_rescan()                       # Task 14 supplies real hot-reload
+        self._maybe_rescan()
         cached = self._cache.get(applies_to)
         if cached is not None:
             return cached
