@@ -111,5 +111,5 @@ class HonchoClient:
         return [line.lstrip("-* ").strip() for line in content.splitlines() if line.strip()]
 
     async def health(self) -> dict:
-        result = await self._get(f"{self._base}/v3/workspaces", self._card_timeout)
+        result = await self._get(f"{self._base}/health", self._card_timeout)
         return {"reachable": result is not None}
