@@ -700,8 +700,14 @@ implementation step, before anything is built on them:
 2. `invoke_async(..., limits={"turns"|"output_tokens"|"total_tokens"})` — documented on the
    agent-loop page; confirm the exact call site (invocation kwarg vs constructor).
 3. `BeforeToolCallEvent.cancel_tool` and `AfterToolCallEvent.retry` semantics unchanged.
-4. `OpenAIModel(model_id=..., client=AsyncOpenAI(...))` — the custom-client path used
-   for OmniRoute (audit fix #6): confirm the parameter is still `client=` at 1.50.2.
+4. `OpenAIModel(client=AsyncOpenAI(...))` — the custom-client path used
+   for OmniRoute (audit fix #6): `client=` is a named `__init__` parameter (verified
+   2026-08-03 at 1.50.2). `model_id` and `params` are passed via `**model_config:
+   Unpack[OpenAIConfig]` (a TypedDict with keys `model_id`, `params`), not as named
+   `__init__` params — the call site `OpenAIModel(model_id=..., params=..., client=...)`
+   works unchanged because `**kwargs` unpacks the TypedDict. Test obligation: assert
+   `client` is in `__init__` signature AND `model_id`/`params` are in `OpenAIConfig`
+   annotations — not that they are named `__init__` params.
 5. `NullConversationManager` — exact import path (`strands...conversation_manager`).
 6. `strands_evals` `Experiment` / `OutputEvaluator` / `TrajectoryEvaluator` — confirm
    the confidence/output contract supports the §E.4 structured-JSON judge protocol
