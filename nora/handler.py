@@ -16,6 +16,7 @@ from .agent.guards import Deliverer, ReplyGuard
 from .agent.tools import build_tools
 from .models import NormalizedMessage, TagContext
 from .obs.metrics import METRICS
+from .obs.tracing import trace_attributes as build_trace_attributes
 from .store import db
 from .tag import Debounce, is_tagged
 
@@ -131,7 +132,7 @@ class Handler:
         model = factory.create_model_provider(self.cfg.llm.default, client)
         agent = factory.create_agent(
             model=model, system_prompt=persona.text, tools=tools, pre_fill=pre_fill,
-            guard=guard, trace_attributes={"tag_id": ctx.tag_id},
+            guard=guard, trace_attributes=build_trace_attributes(ctx, persona),
         )
         await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)
 

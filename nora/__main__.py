@@ -20,6 +20,7 @@ from .handler import Handler
 from .obs.health import LLMState, build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
 from .obs.metrics import METRICS
+from .obs.tracing import setup_tracing
 from .persona.loader import PersonaError, PersonaStore
 from .persons import PersonsError, load_persons
 from .platform.signal.account import AccountError, derive_account
@@ -40,6 +41,7 @@ async def build_app(config_path) -> "App":
 
     key = os.environ.get(cfg.llm.api_key_env, "")
     setup_logging(cfg.logging, secrets=[key] if key else [])
+    setup_tracing(cfg.observability.tracing)
 
     try:
         persons = load_persons(cfg.persons_file)
