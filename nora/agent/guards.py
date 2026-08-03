@@ -8,6 +8,8 @@ import logging
 import re
 import time
 
+from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
+
 from ..models import ConversationTarget, NormalizedMessage
 from ..obs.metrics import METRICS
 from ..persona.loader import Persona
@@ -151,7 +153,7 @@ class Deliverer:
         return ok
 
 
-class ReplyGuard:
+class ReplyGuard(HookProvider):
     """Model-facing veto logic (R-2/R-3/R-4/R-7). Constructed fresh per tag.
 
     `evaluate` is pure and SDK-free so every rule is testable without strands; the
@@ -217,3 +219,29 @@ class ReplyGuard:
                            "finish your turn.",
                 )
         return None
+
+    def register_hooks(self, registry: HookRegistry) -> None:
+        registry.add_callback(BeforeToolCallEvent, self._before_tool)
+        registry.add_callback(AfterToolCallEvent, self._after_tool)
+
+    def _before_tool(self, event) -> None:
+        try:
+            tool_use = getattr(event, "tool_use", None) or {}
+            name = tool_use.get("name", "")
+            tool_input = tool_use.get("input") or {}
+            if not name:
+                return
+            message = self.evaluate(name, tool_input)
+            if message:
+                event.cancel_tool = message
+        except Exception:                    # noqa: BLE001 — a guard bug fails open, logged
+            log.exception("ReplyGuard._before_tool raised; allowing the call")
+
+    def _after_tool(self, event) -> None:
+        try:
+            if getattr(event, "exception", None) is not None:
+                return                       # a failed call does not consume budget
+            name = (getattr(event, "tool_use", None) or {}).get("name", "")
+            self.record(name)
+        except Exception:                    # noqa: BLE001
+            log.exception("ReplyGuard._after_tool raised; ignoring")
