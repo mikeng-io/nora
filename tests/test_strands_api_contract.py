@@ -1,0 +1,114 @@
+"""Spec C.10: six API obligations, verified by introspection against the pinned 1.50.2.
+
+Each assertion fails with a message naming the drifted symbol, because a drift here
+invalidates a design decision — not just a call site. On failure: STOP and report.
+"""
+
+import inspect
+
+import pytest
+
+
+def _params(fn) -> set[str]:
+    return set(inspect.signature(fn).parameters)
+
+
+def test_obligation_1_agent_init_accepts_the_kwargs_factory_uses():
+    from strands import Agent
+
+    params = _params(Agent.__init__)
+    for kwarg in (
+        "model", "system_prompt", "tools", "messages", "hooks",
+        "conversation_manager", "session_manager", "callback_handler",
+        "trace_attributes", "load_tools_from_directory",
+    ):
+        assert kwarg in params, f"DRIFT: Agent.__init__ no longer accepts {kwarg!r}"
+
+
+def test_obligation_2_invoke_async_accepts_limits_and_invocation_state():
+    from strands import Agent
+
+    params = _params(Agent.invoke_async)
+    assert "invocation_state" in params, "DRIFT: invoke_async lost invocation_state"
+    assert "limits" in params, (
+        "DRIFT: invoke_async lost `limits` — check whether it moved to Agent.__init__ "
+        "(R-8 enforcement point changes if so)"
+    )
+
+
+def test_obligation_3_hook_events_expose_cancel_tool_and_retry():
+    from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent
+
+    before = {f.name for f in getattr(BeforeToolCallEvent, "__dataclass_fields__", {}).values()} \
+        or set(dir(BeforeToolCallEvent))
+    assert "cancel_tool" in before, "DRIFT: BeforeToolCallEvent.cancel_tool is gone (R-2/R-3/R-4/R-7)"
+    for attr in ("tool_use", "invocation_state"):
+        assert attr in before, f"DRIFT: BeforeToolCallEvent.{attr} is gone"
+
+    after = {f.name for f in getattr(AfterToolCallEvent, "__dataclass_fields__", {}).values()} \
+        or set(dir(AfterToolCallEvent))
+    for attr in ("result", "exception", "retry"):
+        assert attr in after, f"DRIFT: AfterToolCallEvent.{attr} is gone"
+
+
+def test_obligation_4_openai_model_accepts_a_custom_client():
+    """Call-site drift, not design drift (spec C.10 obligation 4, decided 2026-08-03).
+
+    `client` is a named __init__ param (unchanged). `model_id`/`params` arrive via
+    `**model_config: Unpack[OpenAIConfig]` instead of named params — the runtime
+    behavior factory.py needs (OpenAIModel(model_id=..., params=..., client=...))
+    is intact because **kwargs unpacks the TypedDict.
+    """
+    from strands.models.openai import OpenAIModel
+
+    params = _params(OpenAIModel.__init__)
+    assert "client" in params, (
+        "DRIFT: OpenAIModel no longer takes client= — the OmniRoute AsyncOpenAI "
+        "singleton (audit fix #6) has no injection point"
+    )
+
+    config_keys = set(OpenAIModel.OpenAIConfig.__annotations__)
+    for key in ("model_id", "params"):
+        assert key in config_keys, (
+            f"DRIFT: OpenAIModel.OpenAIConfig no longer declares {key!r} — "
+            "factory.py's OpenAIModel(model_id=..., params=..., client=...) call has no target"
+        )
+
+
+def test_obligation_5_null_conversation_manager_import_path():
+    from strands.agent.conversation_manager import NullConversationManager
+
+    assert NullConversationManager() is not None
+
+
+def test_obligation_6_hook_provider_protocol():
+    from strands.hooks import HookProvider
+
+    assert hasattr(HookProvider, "register_hooks")
+
+
+def test_obligation_6b_strands_evals_surface():
+    """The judge contract (E.4) needs Case/Experiment/OutputEvaluator/TrajectoryEvaluator.
+
+    Import-path note (call-site fix, not a design change): in strands-agents-evals
+    1.0.3, OutputEvaluator and TrajectoryEvaluator are not re-exported at the
+    strands_evals top level (only Case/Experiment/etc. are, per __init__.py's
+    __all__). Both symbols exist unchanged at
+    strands_evals.evaluators.output_evaluator.OutputEvaluator and
+    strands_evals.evaluators.trajectory_evaluator.TrajectoryEvaluator, so per the
+    C.10 stop-rule exception this test imports them from their submodule instead
+    of asserting top-level attribute presence.
+    """
+    strands_evals = pytest.importorskip("strands_evals")
+    from strands_evals.evaluators.output_evaluator import OutputEvaluator
+    from strands_evals.evaluators.trajectory_evaluator import TrajectoryEvaluator
+
+    for name, symbol in (
+        ("Case", getattr(strands_evals, "Case", None)),
+        ("Experiment", getattr(strands_evals, "Experiment", None)),
+        ("OutputEvaluator", OutputEvaluator),
+        ("TrajectoryEvaluator", TrajectoryEvaluator),
+    ):
+        assert symbol is not None, f"DRIFT: strands_evals.{name} is gone"
+    assert hasattr(strands_evals.Experiment, "run_evaluations")
+    assert hasattr(strands_evals.Experiment, "to_file")
