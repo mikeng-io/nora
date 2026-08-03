@@ -11,7 +11,18 @@ from ...models import ConversationTarget
 
 log = logging.getLogger("nora.signal.send")
 
-_PYTEST_GUARD = "PYTEST_CURRENT_TEST" not in os.environ
+
+def __getattr__(name: str):
+    # Task 16 guard (spec E.3): `_PYTEST_GUARD` reads True whenever the caller is
+    # currently running under pytest, so tests can assert the real send path is
+    # inert. Evaluated live via PEP 562 module __getattr__ (not frozen at import
+    # time): PYTEST_CURRENT_TEST is only set during a test's setup/call/teardown,
+    # never during collection, so a plain module-level constant would freeze at
+    # whatever value happened to hold when some test file first imports this
+    # module at collection time — which is order-dependent and wrong.
+    if name == "_PYTEST_GUARD":
+        return "PYTEST_CURRENT_TEST" in os.environ
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class SignalSender:
