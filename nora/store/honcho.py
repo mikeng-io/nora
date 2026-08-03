@@ -48,6 +48,20 @@ class HonchoClient:
             log.warning("honcho POST %s failed: %s", url, e)
             return None
 
+    async def _get(self, url: str, timeout: float) -> dict | None:
+        try:
+            async with (
+                aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
+                session.get(url) as r,
+            ):
+                if r.status >= 400:
+                    log.warning("honcho GET %s -> %s", url, r.status)
+                    return None
+                return await r.json()
+        except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
+            log.warning("honcho GET %s failed: %s", url, e)
+            return None
+
     async def ensure_workspace(self) -> None:
         if self._workspace_ready:
             return
@@ -87,3 +101,15 @@ class HonchoClient:
             self._feed_timeout,
         )
         return result is not None
+
+    async def peer_card(self, peer_id: str) -> list[str]:
+        """Durable recall about a peer. [] on any failure — a missing card is normal."""
+        result = await self._get(self._url(f"/peers/{peer_id}/card"), self._card_timeout)
+        content = (result or {}).get("content")
+        if not isinstance(content, str) or not content.strip():
+            return []
+        return [line.lstrip("-* ").strip() for line in content.splitlines() if line.strip()]
+
+    async def health(self) -> dict:
+        result = await self._get(f"{self._base}/v3/workspaces", self._card_timeout)
+        return {"reachable": result is not None}
