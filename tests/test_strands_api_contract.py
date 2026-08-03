@@ -98,6 +98,23 @@ def test_obligation_6b_strands_evals_surface():
     strands_evals.evaluators.trajectory_evaluator.TrajectoryEvaluator, so per the
     C.10 stop-rule exception this test imports them from their submodule instead
     of asserting top-level attribute presence.
+
+    Judge-contract finding (Task 3 Step 3, recorded here since M7 is many tasks
+    away): OutputEvaluator.evaluate()/evaluate_async() hardcode
+    `structured_output_model=EvaluationOutput`, where EvaluationOutput
+    (strands_evals.types) is `{score: float, test_pass: bool, reason: str | None,
+    label: str | None}`. This does NOT match spec §E.4's judge contract of
+    `{criterion, score, confidence, rationale}` per criterion — there is no
+    `criterion` or `confidence` field, and `test_pass` is a hard bool rather than
+    the confidence-weighted score/confidence pair §E.4 requires. The structured
+    output model is inline in evaluate()/evaluate_async(), not overridable via a
+    class attribute, so subclassing OutputEvaluator cannot swap the schema.
+    RK-9's pre-approved fallback applies: M7's judge evaluator subclasses
+    strands_evals' Evaluator base directly (not OutputEvaluator) and owns its own
+    judge prompt + a custom Pydantic structured_output_model shaped
+    {criterion, score, confidence, rationale}, following the same
+    Agent(...).invoke_async(prompt, structured_output_model=...) pattern
+    OutputEvaluator itself uses internally.
     """
     strands_evals = pytest.importorskip("strands_evals")
     from strands_evals.evaluators.output_evaluator import OutputEvaluator
