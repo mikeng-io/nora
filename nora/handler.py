@@ -146,6 +146,7 @@ class Handler:
         tag_id = uuid.uuid4().hex
         started = time.perf_counter()
         ctx = None
+        llm_elapsed = 0.0
         try:
             ctx = await self._collect_context(msg, tag_id)
             persona = self.persona_store.get(applies_to="tag")
@@ -182,6 +183,7 @@ class Handler:
             tag_message = prefill.build_tag_message(ctx, tagger_name=tagger_name)
             limits = factory.build_limits(self.cfg.llm.default, self.cfg.llm.limits)
 
+            llm_started = time.perf_counter()
             try:
                 await asyncio.wait_for(
                     self._invoke(persona, tools, pre_fill, guard, tag_message, limits, ctx),
@@ -195,6 +197,9 @@ class Handler:
                 log.exception("llm_error (tag=%s); staying silent", tag_id)
                 self.metrics.inc("nora_silent_failures_total", reason="llm_error")
                 return
+            finally:
+                llm_elapsed = time.perf_counter() - llm_started
+                self.metrics.observe("nora_llm_latency_seconds", llm_elapsed)
 
             if not deliverer.delivered:
                 if not deliverer.attempted:
@@ -209,8 +214,9 @@ class Handler:
             self.metrics.inc("nora_silent_failures_total", reason="handler_error")
         finally:
             self._in_flight.discard(key)     # R-10: released on EVERY exit path
-            self.metrics.observe("nora_tag_latency_seconds",
-                                 time.perf_counter() - started)
+            total = time.perf_counter() - started
+            self.metrics.observe("nora_tag_latency_seconds", total)
+            self.metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
 
     async def _feed_ambient(self, peer_id: str, msg: NormalizedMessage) -> None:
         await self.honcho.ensure_peer(peer_id)
