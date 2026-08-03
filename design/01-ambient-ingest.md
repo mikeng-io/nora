@@ -118,13 +118,17 @@ CREATE INDEX idx_messages_is_nora ON messages(is_nora);
 - **Role: audit record + context source for the tagging path.** No semantics live
   here. `raw_json` keeps the full envelope for debugging.
 
-### Honcho feed
+### Honcho feed (ingest model corrected 2026-08-03)
 
-- Every group message from a **mapped** sender is fed to the Honcho peer chat
-  endpoint (`POST /v3/workspaces/{ws}/peers/{peer_id}/chat`) — fire-and-forget.
-- **Unmapped senders are skipped** (audit A2/F3): no Honcho peer, no feed — avoids
-  stranding history on sanitized fallback IDs that would later need a rename
-  migration. SQLite still captures their messages for context.
+**Correction:** the v1 design said "feed to `peers/{id}/chat`" — that was wrong. `chat` is
+a dialectic *query* endpoint, not ingest. The real ingest endpoint is
+`POST /v3/workspaces/{ws}/sessions/{session_id}/messages`.
+
+- Every group message from a **mapped** sender is appended to the sender's Honcho
+  session via `POST /v3/workspaces/{ws}/sessions/{session_id}/messages` — fire-and-forget.
+  Each mapped peer gets one standing session (idempotent get-or-create at first sighting).
+- **Unmapped senders are skipped** (audit A2/F3): no Honcho peer, no session, no feed —
+  avoids stranding history on sanitized fallback IDs. SQLite still captures their messages.
 - The Deriver (`honcho-deriver-1`) digests asynchronously and maintains peer cards.
 - **Best-effort:** if Honcho is down, the ambient path still appends to SQLite and
   replies without durable recall. Ambient ingest never blocks on Honcho.

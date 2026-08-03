@@ -376,8 +376,9 @@ tests/  evals/
 
 Two boundary rules, both testable by a grep-based test:
 
-- **Only `agent/factory.py` imports `strands`** (plus `agent/guards.py` for hook *types*).
-  `test_strands_import_boundary` asserts it.
+- **Only `agent/factory.py`, `agent/tools.py`, and `agent/guards.py` import `strands`**
+  (factory: Agent/OpenAIModel construction; tools: `@tool` decorator requires importing
+  the decorator; guards: hook *types*). `test_strands_import_boundary` asserts it.
 - **Only `persona/loader.py` reads persona files.** `test_persona_read_boundary` asserts it.
 
 ### C.2 `models.py` — data contracts
@@ -468,16 +469,45 @@ user_version`.
 
 ### C.5 `store/honcho.py` — Honcho v3 client
 
+**Ingest model corrected 2026-08-03** (verified against live OpenAPI at
+`http://127.0.0.1:8000/openapi.json`): the v1 design's "feed to `peers/{id}/chat`" was
+**wrong** — `chat` is a dialectic *query* endpoint ("Query a Peer's representation using
+natural language"), not ingest. The corrected model:
+
 ```python
 class HonchoClient:
     async def ensure_workspace(self, workspace_id: str) -> None
     async def ensure_peer(self, peer_id: str) -> None                 # idempotent, mapped ids only
-    async def feed(self, peer_id: str, text: str) -> bool             # POST …/peers/{id}/chat, fire-and-forget
-    async def peer_card(self, peer_id: str) -> list[str]              # [] on any failure
+    async def ensure_session(self, peer_id: str) -> str              # idempotent get-or-create; cache session_id
+    async def append_message(self, peer_id: str, content: str, *, created_at: str | None = None) -> bool
+        # POST /v3/workspaces/{ws}/sessions/{session_id}/messages  (MessageBatchCreate)
+        # THIS IS THE ONLY INGEST PATH. Fire-and-forget; best-effort.
+    async def peer_card(self, peer_id: str) -> list[str]             # GET …/peers/{id}/card → [] on failure
+    async def peer_context(self, peer_id: str) -> dict | None        # GET …/peers/{id}/context (optional, fuller recall)
     async def health(self) -> dict
 ```
 
-Every method is **best-effort**: timeouts (2s feed / 3s card), never raises to callers,
+**Session model:** each mapped peer gets one standing session (get-or-create via
+`POST /v3/workspaces/{ws}/peers/{peer_id}/sessions`, idempotent). The `session_id` is
+cached per peer and reused for all message appends.
+
+**Feed path (ambient, mapped senders only):** each incoming group message →
+`append_message(peer_id, content)` to the peer's session. One append per message; no
+double-feed.
+
+**Post-reply feed (handler, after a delivered reply):** the handler appends Nora's reply
+to the **tagger's** session via the same `append_message` endpoint. Ambient already
+appended the tag message itself; the handler appends Nora's response. Both go to the same
+session, in chronological order — exactly what the Deriver expects. **No double-feed
+issue** (audit #4 resolved): ambient appends incoming messages, handler appends Nora's
+reply, both via one endpoint, once each.
+
+**Recall (read, tagging path):** `peer_card` (`GET /peers/{id}/card`) for durable facts;
+`peer_context` (`GET /peers/{id}/context`) optional for fuller snapshot. The `chat`
+endpoint (`POST /peers/{id}/chat`) is **NOT used** — it is a reasoning endpoint, not a
+read or feed path.
+
+Every method is **best-effort**: timeouts (2s append / 3s card), never raises to callers,
 never blocks the ambient path. Unmapped senders are never fed (D6 amendment / audit A2/F3).
 
 ### C.6 `persons.py` — identity mapping
@@ -647,7 +677,8 @@ a `try/except BaseException` that logs and returns — R-5.
   `nora_silent_failures_total{reason}`, `nora_guard_vetoes_total{rule}`,
   `nora_leak_blocks_total`, `nora_persona_reload_failures_total`,
   `honcho_feed_success` / `honcho_feed_failure`. Histograms:
-  `nora_tag_latency_seconds` (tag → send returned), `nora_llm_latency_seconds`.
+  `nora_tag_latency_seconds` (tag → send returned), `nora_llm_latency_seconds`,
+  `nora_overhead_seconds` (non-LLM budget: context collection + persona assembly + pre-fill + delivery — spec E.5 300ms p95 target).
   Gauge: `nora_last_event_age_seconds`.
 - **`health.py`** — `GET /health` (non-optional). JSON: SSE connected + last-event age,
   SQLite reachable + row count, Honcho reachable, OmniRoute last-success timestamp, error
@@ -712,6 +743,7 @@ llm:
 trigger:
   text: "nora.000"
   min_interval_seconds: 5
+  invocation_timeout_seconds: 30        # R-10 — bounded invocation; lock released on timeout
 
 buffer:
   db_path: "~/workspace/nora/data/messages.db"
@@ -723,6 +755,8 @@ persona:
   reload: "mtime"                      # mtime | startup
   strict: true
   chinese_script: "traditional"        # traditional | simplified  (Q3)
+  canary: ""                            # per-deployment fixed canary token for LeakGuard (R-6); NOT in persona files, NOT random
+  display_name: "Nora"                 # the name the group sees; injected in runtime_context, not hardcoded
 
 persons_file: "persons.yaml"
 
