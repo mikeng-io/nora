@@ -164,4 +164,66 @@ watchdog alerts, or you need to roll back to v1.
 
 ## Deployment
 
-See `deploy/README.md` for install, rollback, and watchdog setup.
+Nora runs as a **Docker container** — `Dockerfile` + `docker-compose.yml` at the repo
+root. This replaced the systemd-unit plan in `deploy/` (kept for reference/rollback
+only — see `deploy/README.md`); the `nora` user, egress restriction, and watchdog
+polling described there now map onto container equivalents below. **signal-cli is never
+containerized** — it keeps running on the host exactly as it does today; Nora only
+talks to it over `127.0.0.1:18080`.
+
+### Build and start
+
+```bash
+cd ~/workspace/nora
+cp config.example.yaml config.yaml        # if you don't already have a real one
+cp persons.example.yaml persons.yaml      # map real Signal numbers → person_id
+
+export OMNIROUTE_API_KEY=<your-key>       # required — compose refuses to start without it
+
+docker compose build
+docker compose up -d
+docker compose ps                         # should show "healthy" after ~20s
+```
+
+The container uses `network_mode: host` — Nora is a purely localhost agent (signal-cli
+`:18080`, Honcho `:8000`, OmniRoute `:20128`), so host networking is simpler and more
+honest than reproducing three port-forwards. `GET http://127.0.0.1:9100/health` and
+`/metrics` are reachable directly on the host, no port mapping needed.
+
+`config.yaml`, `persons.yaml`, and `nora/persona/` are bind-mounted **read-only** into
+the container from the repo — they are never baked into the image. `./data` is mounted
+read-write for `messages.db` and `nora.log`.
+
+### Editing the persona in the container
+
+Same workflow as bare-metal: edit `nora/persona/*.md` on the host and save. Because
+`nora/persona/` is a live bind mount and `persona.reload: mtime` re-stats on every tag,
+the running container picks up the change on the next tag — **no rebuild, no
+restart**.
+
+### Logs and metrics
+
+```bash
+docker compose logs -f nora               # structured JSON logs (also in ./data/nora.log)
+curl -s http://127.0.0.1:9100/health | python3 -m json.tool
+curl -s http://127.0.0.1:9100/metrics
+```
+
+### Watchdog
+
+The SSE-silence watchdog is already implemented as data, not a process to containerize:
+`/health` reports `sse.last_event_age_seconds`, and `nora_last_event_age_seconds` is a
+live gauge in `/metrics`. `deploy/watchdog.sh` (unchanged) still works against the
+containerized instance since `/health` is exposed on the host via `network_mode: host`
+— point cron or a systemd timer at it exactly as before.
+
+### Rollback
+
+```bash
+docker compose down
+git checkout <previous-tag>
+docker compose up -d --build
+```
+
+`data/messages.db` is untouched by any of the above — schema migrations are additive
+and idempotent (`nora/store/db.py`).

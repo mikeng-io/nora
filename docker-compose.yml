@@ -1,0 +1,28 @@
+services:
+  nora:
+    build: .
+    image: nora:latest
+    container_name: nora
+    restart: unless-stopped
+    # Nora only ever talks to localhost services (signal-cli :18080, Honcho :8000,
+    # OmniRoute :20128) and exposes metrics on :9100 — host networking is simpler and
+    # more honest than reproducing three port-forwards for a purely localhost agent.
+    # signal-cli itself is NOT touched: it keeps running on the host, unmodified.
+    network_mode: host
+    environment:
+      # Never hardcoded — must already be exported in the shell that runs `docker
+      # compose up` (see .env.example). Compose fails fast if it's unset.
+      - OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:?set OMNIROUTE_API_KEY in the host environment first}
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+      - ./persons.yaml:/app/persons.yaml:ro
+      # Read-only so edits on the host (persona hot-reload, mtime-based) are visible
+      # inside the container without a rebuild or restart.
+      - ./nora/persona:/app/nora/persona:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9100/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
