@@ -713,9 +713,11 @@ catches a regressed Honcho probe, a config that won't boot, or missing migration
 the invoking shell (`${OMNIROUTE_API_KEY:?…}` — it fails fast by design). So
 `docker compose up -d` from a fresh shell **fails**, including during a rollback, which
 is exactly when nobody wants to go hunting for a key. The value currently exists only in
-the running container's environment. Before Phase 1, create a gitignored `.env` from
-`.env.example` — otherwise the rollback path documented above is not actually executable
-by an operator who did not personally start the container.
+the running container's environment. **CLOSED 2026-08-04:** a gitignored `.env` now exists and its key was verified against
+OmniRoute (`GET /v1/models` → 200, both `deepseek-v4-flash` and `deepseek-v4-pro`
+visible). Verifying rather than merely setting it matters here: `config.py:190` only
+checks the variable is non-empty, so an invalid key would let Nora boot, report healthy,
+and then stay silent on every reply under R-5.
 
 **Another live trap, same root cause:** `docker-compose.yml:22` bind-mounts `./config.yaml`
 into the container, and that file is **tracked in git** (§8.1 above). Any `git checkout`,
