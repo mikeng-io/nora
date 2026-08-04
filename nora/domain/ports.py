@@ -35,8 +35,9 @@ avoid:
 - `AuditStore.recent` returns `TranscriptRow`, not the `dict[str, Any]` row
   blobs the old `nora/store/db.py` returned, and `delivery_status` is
   `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlAuditStore`
-  implements this; the conformance is checked statically (it is inside mypy's
-  strict scope) and behaviourally by `tests/contract/test_audit_store_contract.py`.
+  implements this. Static conformance is checked by mypy (`nora.infra` is
+  inside the strict override); the behavioural half arrives with the shared
+  contract suite in `tests/contract/`, which does not exist yet.
 
 - `AuditStore` still deliberately has **no `prune`**, even though a caller now
   exists. `SqlAuditStore.prune_all` is a retention sweep owned by the runtime,

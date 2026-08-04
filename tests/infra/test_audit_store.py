@@ -86,6 +86,25 @@ async def test_delivery_status_round_trips(store):
     assert row.delivery_status is DeliveryStatus.SENT
 
 
+async def test_recent_breaks_ts_ties_by_id(store):
+    """Signal timestamps are milliseconds and a burst can share one, so the
+    `id` tie-break decides order for rows the clock cannot separate. Every
+    other ordering test uses distinct ts values and would pass with the
+    tie-break removed."""
+    for body in ("first", "second", "third"):
+        await store.append(message=_msg(body=body, ts=100))
+    rows = await store.recent(conversation_id="g1", limit=10)
+    assert [r.body for r in rows] == ["first", "second", "third"]
+    assert [r.id for r in rows] == sorted(r.id for r in rows)
+
+
+async def test_recent_limit_with_tied_ts_takes_the_highest_ids(store):
+    for body in ("a", "b", "c", "d"):
+        await store.append(message=_msg(body=body, ts=100))
+    rows = await store.recent(conversation_id="g1", limit=2)
+    assert [r.body for r in rows] == ["c", "d"]
+
+
 async def test_append_does_not_prune(make_store):
     """The defect this closes: db.append ran an INSERT plus a correlated-subquery
     prune in ONE transaction per message. Under WAL with N adapters that yields
@@ -111,7 +130,8 @@ async def test_aclose_releases_the_connection_pool(make_store):
     engine — verified 2026-08-05: a query after `dispose()` succeeds, opening a
     new connection. So this asserts the pool was actually replaced, which is
     the guarantee, rather than asserting a later call raises, which it does
-    not."""
+    not. This proves dispose() ran, not that pooled connections were actually
+    reclaimed — SQLAlchemy exposes no public signal for the latter."""
     store = make_store()
     await store.append(message=_msg())
     pool_before = store._engine.pool
@@ -123,6 +143,42 @@ async def test_aclose_is_idempotent(make_store):
     store = make_store()
     await store.aclose()
     await store.aclose()
+
+
+async def test_sqlite_busy_increments_the_metric_and_still_raises(tmp_path):
+    """The metric exists because WAL permits one writer and an N-adapter burst
+    produces SQLITE_BUSY. An untested counter is a counter that can silently
+    stop counting — the failure mode this project has shipped twice.
+
+    Provokes a genuine lock: a second engine holds BEGIN EXCLUSIVE while the
+    store attempts an insert with busy_timeout=0.
+    """
+    import sqlalchemy as sa
+    from sqlalchemy.exc import OperationalError
+
+    path = tmp_path / "busy.db"
+    run_migrations(path)
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.names: list[str] = []
+
+        def inc(self, name, **labels):
+            self.names.append(name)
+
+    holder = create_sql_engine(path, busy_timeout_ms=0)
+    conn = await holder.connect()
+    await conn.execute(sa.text("BEGIN EXCLUSIVE"))
+    recorder = _Recorder()
+    store = SqlAuditStore(create_sql_engine(path, busy_timeout_ms=0), metrics=recorder)
+    try:
+        with pytest.raises(OperationalError):
+            await store.append(message=_msg())
+        assert recorder.names == ["nora_store_busy_total"]
+    finally:
+        await conn.close()
+        await holder.dispose()
+        await store.aclose()
 
 
 async def test_an_invalid_conversation_type_is_rejected_by_the_check_constraint(store):
