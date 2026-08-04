@@ -125,15 +125,6 @@ source_modules = [
     "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
 ]
 forbidden_modules = ["nora.config"]
-ignore_imports = [
-    # nora.agent.factory imports LimitsConfig/LLMConfig/LLMTierConfig directly to
-    # build the strands Agent's model/limits from Config. This is the one
-    # documented exception to the contract, not a deletion of it: the pipelines/
-    # agent phase removes it by injecting an already-built model provider into
-    # factory.py instead of passing config classes through it. TODO(pipelines
-    # phase): delete this exception once that injection lands.
-    "nora.agent.factory -> nora.config",
-]
 
 [[tool.importlinter.contracts]]
 name = "the nora package's own __init__ does not read config either"

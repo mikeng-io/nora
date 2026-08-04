@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Literal
@@ -166,10 +167,27 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
     where such messages never wake Nora up.
     """
     cfg = _load_eval_config()
-    client = create_client(cfg.llm)
+    # `nora.agent.factory` takes explicit scalars, not `nora.config` objects
+    # (Phase 3 closed the one documented `ignore_imports` exception for
+    # this) — `evals/` is outside that contract, so it resolves the config
+    # down to scalars here rather than pushing config objects across the
+    # boundary.
+    client = create_client(
+        base_url=cfg.llm.base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
+    )
     try:
-        reply_model = create_model_provider(cfg.llm.tiers.flash, client)
-        judge_model = create_model_provider(cfg.llm.tiers.deep, client)
+        reply_model = create_model_provider(
+            model=cfg.llm.tiers.flash.model,
+            max_tokens=cfg.llm.tiers.flash.max_tokens,
+            temperature=cfg.llm.tiers.flash.temperature,
+            client=client,
+        )
+        judge_model = create_model_provider(
+            model=cfg.llm.tiers.deep.model,
+            max_tokens=cfg.llm.tiers.deep.max_tokens,
+            temperature=cfg.llm.tiers.deep.temperature,
+            client=client,
+        )
         persona = PersonaStore(
             cfg.persona.dir, strict=cfg.persona.strict, reload=cfg.persona.reload,
             canary=cfg.persona.canary, display_name=cfg.persona.display_name,
