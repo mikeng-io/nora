@@ -31,9 +31,9 @@ python -m nora                            # or: python -m nora --config path/to/
 
 Nora creates `data/messages.db` on first run (schema managed by `nora/store/db.py`),
 connects to the signal-cli SSE stream, and starts serving `GET /health` and `GET /metrics`
-on `metrics.port` (default `9100`).
+on `obs.metrics.port` (default `9100`).
 
-To get a reply, send a message containing the trigger text (`trigger.text` in
+To get a reply, send a message containing the trigger text (`engagement.trigger.text` in
 `config.toml`, default `nora.000`) in any Signal group her number is a member of. Everything
 else she reads and stores, but never replies to.
 
@@ -72,23 +72,25 @@ from the config file itself.
 
 Notable knobs:
 
-- `trigger.text` (`nora.000`) — case-insensitive substring match; the only thing that
-  wakes the tagging path.
-- `trigger.min_interval_seconds` (5) — debounce for rapid re-tags in the same conversation.
-- `buffer.max_per_conversation` (500) — rolling window per conversation; older rows are
+- `engagement.trigger.text` (`nora.000`) — case-insensitive substring match; the only thing
+  that wakes the tagging path.
+- `engagement.trigger.min_interval_seconds` (5) — debounce for rapid re-tags in the same
+  conversation.
+- `store.max_per_conversation` (500) — rolling window per conversation; older rows are
   pruned after each insert.
-- `buffer.context_window` (40) — how many recent messages go into the LLM prompt.
+- `store.context_window` (40) — how many recent messages go into the LLM prompt.
 - `persona.dir` (`nora/persona`) — where the persona `.md` files live.
 - `persona.reload` (`mtime`) — `mtime` re-stats persona files on every tag and reparses on
   change; `startup` parses once and never again.
 - `persona.strict` (`true`) — a bad persona file at startup is fatal (fail loud), not
   silently skipped.
-- `metrics.port` (9100) — serves both `/metrics` (Prometheus text) and `/health`.
+- `obs.metrics.port` (9100) — serves both `/metrics` (Prometheus text) and `/health`.
 
 Peer identity mapping lives in a separate file, `identity.toml` (see
 `identity.example.toml`): each `person_id` maps a name to per-platform sender IDs
-(`platforms.signal: "+85212345678"`), and `person_id` doubles as the Honcho peer ID. This
-mapping is manual and startup-only — adding a new person requires a restart.
+(`[persons.<person_id>.platforms] signal = "+85212345678"`), and `person_id` doubles as the
+Honcho peer ID. This mapping is manual and startup-only — adding a new person requires a
+restart.
 
 ## The persona: `nora/persona/`
 
@@ -108,7 +110,7 @@ later without a rewrite.
 
 ### Editing the persona — no restart required
 
-Persona files are hot-reloaded. With `persona.reload: mtime` (the default), every tag
+Persona files are hot-reloaded. With `persona.reload = "mtime"` (the default), every tag
 re-stats the files in `nora/persona/` and reparses only the ones whose mtime changed —
 **no restart needed** to change how Nora sounds or behaves. Edit `voice.md` (or any of the
 four files), save it, and the very next tag picks up the new persona.
@@ -132,10 +134,10 @@ operator playbook when a persona edit misbehaves.
   `nora_leak_blocks_total`, `nora_persona_reload_failures_total`,
   `honcho_feed_success`/`honcho_feed_failure`, and latency histograms
   (`nora_tag_latency_seconds`, `nora_llm_latency_seconds`, `nora_overhead_seconds`).
-- Structured JSON logs (`logging.format: json`) at `logging.path`, one object per line,
-  carrying `tag_id`, `conversation_id`, `sender_id`, `person_id`, `persona_sha256`, `stage`,
-  `latency_ms`, and `trace_id`.
-- OpenTelemetry tracing, enabled by default (`observability.tracing.enabled`), with
+- Structured JSON logs (`obs.logging.format = "json"`) at `obs.logging.path`, one object per
+  line, carrying `tag_id`, `conversation_id`, `sender_id`, `person_id`, `persona_sha256`,
+  `stage`, `latency_ms`, and `trace_id`.
+- OpenTelemetry tracing, enabled by default (`obs.tracing.enabled`), with
   `tag_id` / `conversation_id` / `persona_sha256` as span attributes.
 
 ## Operating notes
@@ -197,7 +199,7 @@ read-write for `messages.db` and `nora.log`.
 ### Editing the persona in the container
 
 Same workflow as bare-metal: edit `nora/persona/*.md` on the host and save. Because
-`nora/persona/` is a live bind mount and `persona.reload: mtime` re-stats on every tag,
+`nora/persona/` is a live bind mount and `persona.reload = "mtime"` re-stats on every tag,
 the running container picks up the change on the next tag — **no rebuild, no
 restart**.
 
