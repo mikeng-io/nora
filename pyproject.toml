@@ -95,7 +95,10 @@ forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus
 [[tool.importlinter.contracts]]
 name = "only app and __main__ read config"
 type = "forbidden"
-source_modules = ["nora.agent", "nora.obs", "nora.persona", "nora.platform", "nora.store"]
+source_modules = [
+    "nora.agent", "nora.obs", "nora.persona", "nora.platform", "nora.store",
+    "nora.domain", "nora.handler", "nora.models", "nora.persons", "nora.tag",
+]
 forbidden_modules = ["nora.config"]
 ignore_imports = [
     # nora.agent.factory imports LimitsConfig/LLMConfig/LLMTierConfig directly to

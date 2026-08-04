@@ -18,6 +18,7 @@ build/
 dist/
 *.egg-info/
 .pytest_cache/
+.import_linter_cache/
 .venv/
 venv/
 
