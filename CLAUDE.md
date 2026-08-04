@@ -37,6 +37,10 @@ correction to its original server-default claim.
 If it reports a phantom contract failure that doesn't reproduce after a clean
 checkout, delete that directory before spending time on it.
 
+The module-size gate (spec §10's 300-line hard cap on production modules,
+below) is `tests/architecture/test_module_size.py`; it runs inside
+`uv run pytest -q` too, no separate command.
+
 ## Never
 
 - **Never `pip install`.** Dependencies are added with `uv add`, never raw pip
@@ -45,6 +49,15 @@ checkout, delete that directory before spending time on it.
   by Nora — see below.
 - **Never reference the archived legacy path** (`~/.hermes/profiles/nora/`) —
   it no longer exists; see below.
+- **Never assert a per-tag object was cleaned up by checking that an
+  attribute was deleted.** `Handler._prefills`/`_guards` (the leak the
+  pipelines phase exists to remove) existed precisely because tests asserted
+  on retained *constructed* objects, not counted live ones — an
+  attribute-absence check would have passed anyway.
+  `tests/architecture/test_no_retained_per_tag_state.py` asserts on
+  `gc`-tracked live `ReplyGuard` counts across two different batch sizes
+  instead, so the same leak shape can't reappear under a new attribute name
+  and still pass.
 - **Never run `alembic revision --autogenerate` and trust the result for
   `idx_messages_conv_ts`.** It is excluded from autogenerate on purpose; a
   revision that touches it must be hand-written.
@@ -70,7 +83,8 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
 ## Conventions (spec §10 — the short version; see the spec for the rest)
 
 - Module size: soft cap 200 lines, hard cap 300. One stage, one module, one
-  public entry point.
+  public entry point. The hard cap is enforced, for production modules under
+  `nora/` only, by `tests/architecture/test_module_size.py`.
 - Test-seam policy: production classes take collaborators through `__init__`
   only — no `*_fn` hooks, no `_for_test` params, no module-level mutable
   singletons.
