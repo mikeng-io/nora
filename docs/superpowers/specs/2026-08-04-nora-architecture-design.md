@@ -703,10 +703,19 @@ catches a regressed Honcho probe, a config that won't boot, or missing migration
 
 | Phase | Rollback |
 |---|---|
-| 1 | `git revert` + restore `config.yaml`. **Only reversible if backed up first** — `.gitignore` and `.dockerignore` both exclude it, so the live bind-mounted file is the only copy. Phase 0 backs it up. |
+| 1 | `git revert`, which restores `config.yaml` too — **it is tracked in git** (corrected 2026-08-04: revision 1 claimed `.gitignore` excluded it; only `.dockerignore` does, and only `persons.yaml` is genuinely untracked). It holds no secret values — `api_key_env` names the variable, never the key. Phase 0 still backs both files up, which costs nothing and covers `persons.yaml`, the one that really is untracked. |
 | 2 | `git revert` + `DROP TABLE alembic_version`. **Do not clear `PRAGMA user_version`** — it is still `1`, so the retired `migrate()` short-circuits and the v1→v2 rebuild cannot re-run. That is precisely what makes phase 2 reversible. Phase 0 copies `data/messages.db`. |
 | 3–7 | `git revert`; phase 4 additionally restores the pinned account if `""` was adopted. |
-| **any** | **Container rollback requires the tagged image.** Only `nora:latest` exists today, so there is nothing to roll back to. Every phase tags `nora:p<n>`, making rollback `docker compose up -d --no-build`. |
+| **any** | **Container rollback requires the tagged image.** Only `nora:latest` existed before Phase 0, so there was nothing to roll back to. Every phase now tags `nora:p<n>`, making rollback `docker compose up -d --no-build`. |
+
+**Operational blocker on every rollback, found during Phase 0 execution:** there is no
+`.env` file, and `docker-compose.yml:18` requires `OMNIROUTE_API_KEY` to be exported in
+the invoking shell (`${OMNIROUTE_API_KEY:?…}` — it fails fast by design). So
+`docker compose up -d` from a fresh shell **fails**, including during a rollback, which
+is exactly when nobody wants to go hunting for a key. The value currently exists only in
+the running container's environment. Before Phase 1, create a gitignored `.env` from
+`.env.example` — otherwise the rollback path documented above is not actually executable
+by an operator who did not personally start the container.
 
 ## 9. Audit findings folded in
 
