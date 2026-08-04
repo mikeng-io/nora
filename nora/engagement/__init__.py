@@ -1,6 +1,9 @@
-"""The tag-response path (spec §4.4): context assembly, admission, and — in
-later tasks — invocation, delivery and feedback for a tag `nora.ingest`
-already decided to engage.
+"""The tag-response path (spec §4.4): admission, context assembly,
+invocation, delivery and feedback for a tag `nora.ingest` already decided to
+engage. `nora.engagement.pipeline.EngagementPipeline` sequences the stages;
+import it from there directly, the way `nora.ingest.pipeline.IngestPipeline`
+is — this package's own `__init__` re-exports only `TranscriptInjection`,
+matching `nora.ingest`'s convention of not re-exporting its pipeline class.
 
 `nora.ingest` decides WHETHER to engage; `nora.engagement` decides HOW —
 assembling the `TagContext` a reply needs and admitting a tag (debounce,

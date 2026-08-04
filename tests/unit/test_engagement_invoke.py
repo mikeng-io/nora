@@ -6,15 +6,21 @@ the strings are pinned by `tests/test_acceptance_rules.py::RULE_TESTS`.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.engagement.stages import invoke
 from nora.obs.metrics import Metrics
 
 
-def _ctx(tag_id: str = "tag-1") -> TagContext:
+@dataclass
+class _Persona:
+    sha256: str = "deadbeef"
+
+
+def _ctx(tag_id: str = "tag-1", conversation_id: str = "g1") -> TagContext:
     msg = NormalizedMessage(
-        platform="signal", conversation_id="g1", conversation_type="group",
+        platform="signal", conversation_id=conversation_id, conversation_type="group",
         sender_id="+852111", sender_name="Miles", timestamp=1, body="nora.000 hi", raw={},
     )
     return TagContext(
@@ -38,12 +44,13 @@ class _FakeRunner:
             raise self.raises
 
 
-async def _run(runner, *, timeout_seconds=5.0, metrics=None, ctx=None):
+async def _run(runner, *, timeout_seconds=5.0, metrics=None, ctx=None, persona=None):
     metrics = metrics or Metrics()
     return await invoke.run(
-        runner=runner, persona="persona", tools=["t1"], pre_fill=[{"role": "user"}],
-        guard="guard", tag_message="<tag_message/>", limits={"turns": 4},
-        ctx=ctx or _ctx(), timeout_seconds=timeout_seconds, metrics=metrics,
+        runner=runner, persona=persona or _Persona(), tools=["t1"],
+        pre_fill=[{"role": "user"}], guard="guard", tag_message="<tag_message/>",
+        limits={"turns": 4}, ctx=ctx or _ctx(), timeout_seconds=timeout_seconds,
+        metrics=metrics,
     ), metrics
 
 
@@ -61,17 +68,34 @@ async def test_a_successful_invocation_returns_ok_and_observes_latency():
 async def test_the_runner_is_called_with_every_argument():
     runner = _FakeRunner()
     ctx = _ctx()
-    await _run(runner, ctx=ctx)
+    persona = _Persona()
+    await _run(runner, ctx=ctx, persona=persona)
 
     assert len(runner.calls) == 1
     call = runner.calls[0]
-    assert call["persona"] == "persona"
+    assert call["persona"] is persona
     assert call["tools"] == ["t1"]
     assert call["pre_fill"] == [{"role": "user"}]
     assert call["guard"] == "guard"
     assert call["tag_message"] == "<tag_message/>"
     assert call["limits"] == {"turns": 4}
     assert call["ctx"] is ctx
+
+
+async def test_trace_attributes_are_computed_from_ctx_and_persona():
+    """Matches `Handler._invoke`'s `build_trace_attributes(ctx, persona)` call
+    (`nora/handler.py:133`) — provenance only, tag_id/conversation_id/
+    persona_sha256, never message content."""
+    runner = _FakeRunner()
+    ctx = _ctx(tag_id="tag-42", conversation_id="g9")
+    persona = _Persona(sha256="cafef00d")
+
+    await _run(runner, ctx=ctx, persona=persona)
+
+    attrs = runner.calls[0]["trace_attributes"]
+    assert attrs == {
+        "tag_id": "tag-42", "conversation_id": "g9", "persona_sha256": "cafef00d",
+    }
 
 
 async def test_a_timeout_returns_not_ok_and_counts_invocation_timeout():

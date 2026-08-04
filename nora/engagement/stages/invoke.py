@@ -19,6 +19,12 @@ client and `OpenAIModel` provider (built once, at process start, never per
 tag) together with `factory.create_agent`/`factory.invoke`; this stage never
 imports `nora.agent.factory` itself.
 
+`trace_attributes` is computed here, from `ctx`/`persona`, via
+`nora.obs.tracing.trace_attributes` — the same call `Handler._invoke` makes
+immediately before `factory.create_agent` (`nora/handler.py:133`) — and
+handed to the runner rather than left for it to recompute.
+
+
 Returns `(ok, elapsed)` rather than just `ok`: `elapsed` is the single
 measurement both recorded as `nora_llm_latency_seconds` here AND reused by
 `nora.engagement.pipeline` for the `nora_overhead_seconds` computation —
@@ -34,6 +40,7 @@ from typing import Any, Protocol
 
 from nora.domain.models import TagContext
 from nora.obs.metrics import METRICS
+from nora.obs.tracing import trace_attributes as build_trace_attributes
 
 log = logging.getLogger("nora.engagement.invoke")
 
@@ -51,6 +58,7 @@ class AgentRunner(Protocol):
         tag_message: str,
         limits: dict,
         ctx: TagContext,
+        trace_attributes: dict,
     ) -> None: ...
 
 
@@ -77,6 +85,7 @@ async def run(
             runner.invoke(
                 persona=persona, tools=tools, pre_fill=pre_fill, guard=guard,
                 tag_message=tag_message, limits=limits, ctx=ctx,
+                trace_attributes=build_trace_attributes(ctx, persona),
             ),
             timeout=timeout_seconds,
         )
