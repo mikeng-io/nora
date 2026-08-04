@@ -1,4 +1,4 @@
-"""The only module that reads persona files (spec A.3–A.5).
+"""The only module that reads persona files (spec A.3-A.5).
 
 Persona is content, not code (S1). Frontmatter uses the Agent Skills shape (S3) so a
 file can be promoted to a real Strands Skill without a rewrite.
@@ -6,6 +6,7 @@ file can be promoted to a real Strands Skill without a rewrite.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import re
@@ -151,7 +152,9 @@ class PersonaStore:
         by_order: dict[int, Path] = {}
         for s in sections:
             if s.name in by_name:
-                raise PersonaError(f"duplicate name {s.name!r}: {by_name[s.name].name}, {s.path.name}")
+                raise PersonaError(
+                    f"duplicate name {s.name!r}: {by_name[s.name].name}, {s.path.name}"
+                )
             if s.order in by_order:
                 raise PersonaError(
                     f"duplicate order {s.order}: {by_order[s.order].name}, {s.path.name}"
@@ -184,10 +187,8 @@ class PersonaStore:
         self.reload_failures += 1
         self._metrics.inc("nora_persona_reload_failures_total")
         # Advance the fingerprint so a broken file is not re-parsed on every tag.
-        try:
+        with contextlib.suppress(OSError):
             self._fingerprint = self._fingerprint_dir()
-        except OSError:
-            pass
         self._cache = dict(self._last_good)
         log.error("persona_reload_failed: %s (keeping the last good persona)", exc)
 

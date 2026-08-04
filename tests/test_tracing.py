@@ -46,7 +46,7 @@ def test_file_exporter_writes_to_a_path(tmp_path):
 
 
 def test_otlp_without_an_endpoint_is_rejected_at_config_load():
-    from nora.config import ConfigError, _validate  # noqa: PLC2701
+    from nora.config import ConfigError
 
     with pytest.raises(ConfigError):
         _validate_tracing_only(exporter="otlp", endpoint="")

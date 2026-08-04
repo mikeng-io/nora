@@ -44,7 +44,9 @@ def _payload_handler(payload, status=200):
 
 
 async def test_peer_card_returns_a_list_of_facts(server_factory):
-    base_url = await server_factory(_payload_handler({"content": "- likes espresso\n- lives in HK"}))
+    base_url = await server_factory(
+        _payload_handler({"content": "- likes espresso\n- lives in HK"})
+    )
     card = await HonchoClient(base_url, "nora").peer_card("miles")
     assert card == ["likes espresso", "lives in HK"]
 

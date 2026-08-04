@@ -93,6 +93,6 @@ def build_health_app(
 async def serve(app: web.Application, port: int) -> web.AppRunner:
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    site = web.TCPSite(runner, "0.0.0.0", port)  # noqa: S104 — health/metrics must be reachable from outside the container
     await site.start()
     return runner

@@ -34,7 +34,12 @@ class HonchoClient:
     def _url(self, path: str) -> str:
         return f"{self._base}/v3/workspaces/{self._ws}{path}"
 
-    async def _post(self, url: str, payload: dict, timeout: float) -> dict | None:
+    async def _post(
+        self,
+        url: str,
+        payload: dict,
+        timeout: float,  # noqa: ASYNC109 -- caller budget; asyncio.timeout is Phase 6
+    ) -> dict | None:
         try:
             async with (
                 aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
@@ -48,7 +53,11 @@ class HonchoClient:
             log.warning("honcho POST %s failed: %s", url, e)
             return None
 
-    async def _get(self, url: str, timeout: float) -> dict | None:
+    async def _get(
+        self,
+        url: str,
+        timeout: float,  # noqa: ASYNC109 -- caller budget; asyncio.timeout is Phase 6
+    ) -> dict | None:
         try:
             async with (
                 aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,

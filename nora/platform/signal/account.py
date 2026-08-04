@@ -25,7 +25,12 @@ def _extract(entry) -> str:
     return ""
 
 
-async def derive_account(base_url: str, *, override: str = "", timeout: float = 5.0) -> str:
+async def derive_account(
+    base_url: str,
+    *,
+    override: str = "",
+    timeout: float = 5.0,  # noqa: ASYNC109 -- caller budget; asyncio.timeout is Phase 6
+) -> str:
     if override:
         log.info("using the configured signal_cli.account override")
         return override
@@ -33,11 +38,10 @@ async def derive_account(base_url: str, *, override: str = "", timeout: float = 
     try:
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=timeout)
-        ) as session:
-            async with session.get(url) as resp:
-                resp.raise_for_status()
-                payload = await resp.json()
-    except Exception as exc:                   # noqa: BLE001
+        ) as session, session.get(url) as resp:
+            resp.raise_for_status()
+            payload = await resp.json()
+    except Exception as exc:
         raise AccountError(f"could not reach the signal-cli daemon at {url}: {exc}") from exc
 
     accounts = [a for a in (_extract(e) for e in (payload or [])) if a]

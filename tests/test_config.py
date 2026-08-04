@@ -41,19 +41,19 @@ def test_loads_the_example_config(cfg_path):
 
 def test_unknown_top_level_key_is_a_startup_failure(cfg_path):
     _edit(cfg_path, lambda d: d.update(tagg={"trigger": "nora.000"}))
-    with pytest.raises(ConfigError, match="unknown config key.*tagg"):
+    with pytest.raises(ConfigError, match=r"unknown config key.*tagg"):
         load(cfg_path)
 
 
 def test_unknown_nested_key_is_a_startup_failure(cfg_path):
     _edit(cfg_path, lambda d: d["trigger"].update(triger="oops"))
-    with pytest.raises(ConfigError, match="unknown config key.*trigger.triger"):
+    with pytest.raises(ConfigError, match=r"unknown config key.*trigger.triger"):
         load(cfg_path)
 
 
 def test_missing_required_key_is_a_startup_failure(cfg_path):
     _edit(cfg_path, lambda d: d["trigger"].pop("text"))
-    with pytest.raises(ConfigError, match="missing config key.*trigger.text"):
+    with pytest.raises(ConfigError, match=r"missing config key.*trigger.text"):
         load(cfg_path)
 
 
@@ -84,13 +84,13 @@ def test_config_never_holds_the_secret_value(cfg_path):
 
 def test_invalid_persona_reload_mode_is_a_startup_failure(cfg_path):
     _edit(cfg_path, lambda d: d["persona"].update(reload="inotify"))
-    with pytest.raises(ConfigError, match="persona.reload"):
+    with pytest.raises(ConfigError, match=r"persona.reload"):
         load(cfg_path)
 
 
 def test_invalid_tracing_exporter_is_a_startup_failure(cfg_path):
     _edit(cfg_path, lambda d: d["observability"]["tracing"].update(exporter="jaeger"))
-    with pytest.raises(ConfigError, match="tracing.exporter"):
+    with pytest.raises(ConfigError, match=r"tracing.exporter"):
         load(cfg_path)
 
 

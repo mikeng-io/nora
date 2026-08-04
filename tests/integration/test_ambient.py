@@ -1,9 +1,7 @@
 import asyncio
 
-import pytest
-
 from nora.store import db
-from tests.integration.harness import ScriptedTurn, build_handler, group_event
+from tests.integration.harness import ScriptedTurn, group_event
 
 
 async def test_every_message_is_appended_to_the_audit(harness):

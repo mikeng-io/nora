@@ -172,7 +172,9 @@ def _build(cls: type, data: Any, base: Path, trail: str) -> Any:
 
 def _validate(cfg: Config) -> None:
     if cfg.persona.reload not in ("mtime", "startup"):
-        raise ConfigError(f"persona.reload must be 'mtime' or 'startup', got {cfg.persona.reload!r}")
+        raise ConfigError(
+            f"persona.reload must be 'mtime' or 'startup', got {cfg.persona.reload!r}"
+        )
     if cfg.persona.chinese_script not in ("traditional", "simplified"):
         raise ConfigError(
             f"persona.chinese_script must be 'traditional' or 'simplified', "

@@ -1,7 +1,7 @@
-import yaml
 from pathlib import Path
 
 import pytest
+import yaml
 
 import evals.run as run
 from evals.run import SUITES, adversarial_gate

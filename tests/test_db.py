@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 
 import pytest
 
@@ -81,7 +82,7 @@ async def test_invalid_delivery_status_is_rejected(dbp):
 
 async def test_conversation_type_is_constrained(dbp):
     bad = NormalizedMessage("signal", "g1", "channel", "+1", "X", 0, "hi", {})
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.IntegrityError):  # the schema's CHECK constraint
         await db.append(dbp, bad)
 
 

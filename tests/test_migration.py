@@ -112,5 +112,7 @@ async def test_a_fresh_db_needs_no_migration(tmp_path):
 
 async def test_appends_work_after_migration(v1_db):
     await db.init(v1_db)
-    await db.append(v1_db, NormalizedMessage("signal", "gA", "group", "+852111", "Miles", 20, "new", {}))
+    await db.append(
+        v1_db, NormalizedMessage("signal", "gA", "group", "+852111", "Miles", 20, "new", {})
+    )
     assert [r["body"] for r in await db.recent(v1_db, "gA", 10)] == ["hello", "hi Miles", "new"]

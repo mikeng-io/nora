@@ -1,4 +1,3 @@
-import textwrap
 
 import pytest
 

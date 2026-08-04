@@ -15,7 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from nora.config import Config, load as load_config
+from nora.config import Config
+from nora.config import load as load_config
 from nora.handler import Handler
 from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
@@ -170,7 +171,7 @@ class Harness:
         """
         self.handler._invoke_fn = script if isinstance(script, FakeLLM) else FakeLLM(script)
 
-    async def simulate_restart(self, *, script=None, **kwargs) -> "Harness":
+    async def simulate_restart(self, *, script=None, **kwargs) -> Harness:
         """Build a brand new Harness (fresh Handler, fresh debounce/in-flight state)
         that reuses the same db_path and the same Honcho double, so SQLite and Honcho
         continuity are real — a "restart" only ever loses in-process state.

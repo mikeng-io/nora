@@ -99,7 +99,8 @@ def test_a_repaired_file_reloads_after_a_failure(persona_dir):
     store.get()
     _touch_newer(
         persona_dir / "voice.md",
-        "---\nname: voice\ndescription: d\norder: 20\napplies_to: [tag]\nversion: 2\n---\nFixed voice.",
+        "---\nname: voice\ndescription: d\norder: 20\napplies_to: [tag]\nversion: 2\n"
+        "---\nFixed voice.",
     )
     assert "Fixed voice." in store.get().text
     assert store.reload_failures == 1

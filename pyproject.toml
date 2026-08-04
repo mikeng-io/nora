@@ -36,6 +36,17 @@ markers = [
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+# TID is deliberately omitted: relative imports inside nora/ are house style.
+select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use assert (S101), bind to all interfaces in fixtures (S104),
+# and reach into private module members to test them (SLF001 is not selected, but
+# S-rules around test doubles are noisy and carry no production risk here).
+"tests/**" = ["S101", "S104", "S311", "S607", "RUF001", "N803", "N818"]
+"evals/**" = ["S101"]
+
 [dependency-groups]
 dev = [
     "alembic>=1.13",

@@ -1,8 +1,6 @@
 import asyncio
 import logging
 
-import pytest
-
 from nora.store import db
 from tests.integration.harness import ScriptedTurn, group_event
 
