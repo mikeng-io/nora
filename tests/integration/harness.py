@@ -16,13 +16,12 @@ from pathlib import Path
 import pytest
 
 from nora.config import Config
-from nora.config import load as load_config
 from nora.handler import Handler
 from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from nora.persons import load_persons
 from nora.store import db
-from tests.builders import override_config
+from tests.builders import load_example_config, override_config
 from tests.fakes import FakeHoncho, SinkSender
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -188,9 +187,7 @@ def _build_config(
     invocation_timeout: float | None = None,
     debounce: float | None = None,
 ) -> Config:
-    cfg_path = tmp_path / "config.yaml"
-    shutil.copy(REPO_ROOT / "config.example.yaml", cfg_path)
-    base = load_config(cfg_path)
+    base = load_example_config(tmp_path)
 
     changes: dict[str, object] = {
         "buffer.db_path": tmp_path / "messages.db",

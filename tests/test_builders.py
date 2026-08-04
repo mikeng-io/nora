@@ -1,17 +1,9 @@
-from pathlib import Path
-
-from tests.builders import override_config
+from tests.builders import load_example_config, override_config
 
 
 def test_override_config_replaces_a_nested_field(tmp_path, monkeypatch):
-    import shutil
-
-    from nora.config import load
-
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg_path = tmp_path / "config.yaml"
-    shutil.copy(Path(__file__).resolve().parents[1] / "config.example.yaml", cfg_path)
-    base = load(cfg_path)
+    base = load_example_config(tmp_path)
 
     out = override_config(base, {
         "buffer.db_path": tmp_path / "messages.db",
