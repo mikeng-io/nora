@@ -249,3 +249,64 @@ async def test_prune_all_keeps_the_window_per_conversation(make_store):
 async def test_prune_all_is_a_no_op_below_the_window(store):
     await store.append(message=_msg())
     assert await store.prune_all() == 0
+
+
+async def test_prune_all_deletes_nothing_at_exactly_the_window(make_store):
+    """Off-by-one guard on a delete path. `> keep` vs `>= keep` in the window
+    filter is a one-character change that silently discards the oldest kept
+    message on every sweep."""
+    store = make_store(max_per_conversation=3)
+    for i in range(3):
+        await store.append(message=_msg(body=f"m{i}", ts=i))
+    assert await store.prune_all() == 0
+    assert len(await store.recent(conversation_id="g1", limit=100)) == 3
+
+
+async def test_prune_all_below_the_window_deletes_nothing(make_store):
+    store = make_store(max_per_conversation=5)
+    for i in range(2):
+        await store.append(message=_msg(body=f"m{i}", ts=i))
+    assert await store.prune_all() == 0
+
+
+async def test_prune_all_breaks_ts_ties_by_id_at_the_cutoff(make_store):
+    """When the retention boundary falls inside a group of rows sharing one
+    `ts`, the `id` tie-break decides who survives. Signal timestamps are
+    milliseconds and a burst shares one, so this boundary is reachable in
+    production, not hypothetical."""
+    store = make_store(max_per_conversation=2)
+    for body in ("a", "b", "c", "d"):
+        await store.append(message=_msg(body=body, ts=100))
+    assert await store.prune_all() == 2
+    assert [r.body for r in await store.recent(conversation_id="g1", limit=100)] == ["c", "d"]
+
+
+async def test_prune_all_returns_the_number_actually_deleted(make_store):
+    """The return value feeds a log line; a count that drifts from reality
+    makes the sweep unauditable."""
+    store = make_store(max_per_conversation=2)
+    for i in range(7):
+        await store.append(message=_msg(body=f"m{i}", ts=i))
+    before = len(await store.recent(conversation_id="g1", limit=1000))
+    deleted = await store.prune_all()
+    after = len(await store.recent(conversation_id="g1", limit=1000))
+    assert deleted == before - after == 5
+
+
+async def test_stats_nora_messages_is_zero_on_an_empty_store(store):
+    """Pins the COALESCE(SUM(is_nora), 0) path — SUM over no rows is NULL, and
+    a dropped coalesce would surface as None rather than 0."""
+    s = await store.stats()
+    assert s["nora_messages"] == 0
+    assert s["conversations"] == 0
+
+
+async def test_set_delivery_status_on_an_unknown_row_is_a_silent_no_op(store):
+    """Decided behaviour, not an accident: it matches the legacy
+    `nora/store/db.py::set_delivery_status`, and `Deliverer` calls this after a
+    send it cannot un-send — raising there would convert a harmless race into a
+    silent failure under R-5."""
+    await store.append(message=_msg())
+    await store.set_delivery_status(row_id=999_999, status=DeliveryStatus.SENT)
+    row = (await store.recent(conversation_id="g1", limit=1))[0]
+    assert row.delivery_status is DeliveryStatus.PENDING

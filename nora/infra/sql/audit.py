@@ -111,6 +111,10 @@ class SqlAuditStore:
         await self._engine.dispose()
 
     async def set_delivery_status(self, *, row_id: int, status: DeliveryStatus) -> None:
+        """An unknown `row_id` is a deliberate silent no-op, matching the
+        legacy `nora/store/db.py::set_delivery_status`: `Deliverer` calls this
+        after a send it cannot un-send, and raising here would convert a
+        harmless race into a failure under R-5."""
         stmt = (
             sa.update(MESSAGES)
             .where(MESSAGES.c.id == row_id)
