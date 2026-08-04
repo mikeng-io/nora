@@ -21,12 +21,12 @@ These must already be running on the host:
 cd ~/workspace/nora
 uv sync                                 # installs strands-agents==1.50.2 and friends
 
-cp config.example.yaml config.yaml      # edit signal-cli account, Honcho workspace, etc.
-cp persons.example.yaml persons.yaml    # map Signal phone numbers to person_id → Honcho peer
+cp config.example.toml config.toml        # edit signal-cli account, Honcho workspace, etc.
+cp identity.example.toml identity.toml    # map Signal phone numbers to person_id → Honcho peer
 
-export OMNIROUTE_API_KEY=<your-key>     # the only secret; never goes in config.yaml
+export OMNIROUTE_API_KEY=<your-key>       # the only secret; never goes in config.toml
 
-python -m nora                          # or: python -m nora --config path/to/config.yaml
+python -m nora                            # or: python -m nora --config path/to/config.toml
 ```
 
 Nora creates `data/messages.db` on first run (schema managed by `nora/store/db.py`),
@@ -34,7 +34,7 @@ connects to the signal-cli SSE stream, and starts serving `GET /health` and `GET
 on `metrics.port` (default `9100`).
 
 To get a reply, send a message containing the trigger text (`trigger.text` in
-`config.yaml`, default `nora.000`) in any Signal group her number is a member of. Everything
+`config.toml`, default `nora.000`) in any Signal group her number is a member of. Everything
 else she reads and stores, but never replies to.
 
 ## Architecture: two layers
@@ -64,7 +64,7 @@ context. See `design/01-ambient-ingest.md`, `design/02-tagging-path.md`, and
 
 ## Configuration
 
-All settings live in `config.yaml` (see `config.example.yaml` for the full annotated
+All settings live in `config.toml` (see `config.example.toml` for the full annotated
 template) — signal-cli account, Honcho workspace, LLM models, buffer sizes, trigger text,
 persona directory, logging, metrics port. The only secret is the LLM API key, read from the
 environment variable named by `llm.api_key_env` (default `OMNIROUTE_API_KEY`) — **never**
@@ -85,8 +85,8 @@ Notable knobs:
   silently skipped.
 - `metrics.port` (9100) — serves both `/metrics` (Prometheus text) and `/health`.
 
-Peer identity mapping lives in a separate file, `persons.yaml` (see
-`persons.example.yaml`): each `person_id` maps a name to per-platform sender IDs
+Peer identity mapping lives in a separate file, `identity.toml` (see
+`identity.example.toml`): each `person_id` maps a name to per-platform sender IDs
 (`platforms.signal: "+85212345678"`), and `person_id` doubles as the Honcho peer ID. This
 mapping is manual and startup-only — adding a new person requires a restart.
 
@@ -175,8 +175,8 @@ talks to it over `127.0.0.1:18080`.
 
 ```bash
 cd ~/workspace/nora
-cp config.example.yaml config.yaml        # if you don't already have a real one
-cp persons.example.yaml persons.yaml      # map real Signal numbers → person_id
+cp config.example.toml config.toml        # if you don't already have a real one
+cp identity.example.toml identity.toml    # map real Signal numbers → person_id
 
 export OMNIROUTE_API_KEY=<your-key>       # required — compose refuses to start without it
 
@@ -190,7 +190,7 @@ The container uses `network_mode: host` — Nora is a purely localhost agent (si
 honest than reproducing three port-forwards. `GET http://127.0.0.1:9100/health` and
 `/metrics` are reachable directly on the host, no port mapping needed.
 
-`config.yaml`, `persons.yaml`, and `nora/persona/` are bind-mounted **read-only** into
+`config.toml`, `identity.toml`, and `nora/persona/` are bind-mounted **read-only** into
 the container from the repo — they are never baked into the image. `./data` is mounted
 read-write for `messages.db` and `nora.log`.
 

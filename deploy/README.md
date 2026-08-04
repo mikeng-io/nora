@@ -1,4 +1,11 @@
-# Nora deployment
+# Nora deployment (bare-metal / systemd)
+
+This document and the systemd unit (`deploy/nora.service`) describe a **bare-metal**
+deployment path. It is **not** what the live instance currently runs — Nora runs as a
+Docker container today (`Dockerfile` + `docker-compose.yml` at the repo root; see the
+"Deployment" section of the root `README.md`). This path is kept for reference and as a
+rollback option if the container approach ever needs to be abandoned; the commands below
+(`systemctl start/stop nora`) only apply if you are actually running Nora this way.
 
 ## Install
 

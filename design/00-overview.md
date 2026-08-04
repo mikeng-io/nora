@@ -55,7 +55,7 @@ Signal group
 │   collect context:                                           │
 │     • recent N messages (SQLite audit)                       │
 │     • tagger's Honcho peer card (durable recall)             │
-│     • peer mapping config (persons.yaml)                     │
+│     • peer mapping config (identity.toml)                    │
 │     • the tag message itself                                 │
 │                                                              │
 │   → Agent(messages=[pre-fill context])                       │
@@ -115,7 +115,7 @@ comes from the two stores — SQLite (transcript) and Honcho (memory) — which 
 ### D5 — Everything identity-related is config, never hardcoded
 
 Trigger text, Signal account, peer mapping, model, endpoints — all read from
-`config.yaml` / environment / signal-cli's own configuration. See
+`config.toml` / environment / signal-cli's own configuration. See
 `04-config-identity.md`.
 
 ### D6 — Peer mapping is manual, one file

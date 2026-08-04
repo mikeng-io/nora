@@ -23,7 +23,7 @@ the peer mapping — is read from configuration at runtime. The only secret
 
 | Source | Holds | Notes |
 |---|---|---|
-| `config.yaml` | trigger, buffer, tag, logging, endpoints, peer mapping | operator-edited, git-tracked |
+| `config.toml` | trigger, buffer, tag, logging, endpoints, peer mapping | operator-edited, git-tracked |
 | environment | `OMNIROUTE_API_KEY` | the only secret |
 | signal-cli daemon config | the Signal account Nora runs as | Nora derives her identity from the daemon, not from a copy in code |
 
@@ -35,7 +35,11 @@ number; she reads it from the daemon's configuration/health at startup, or recei
 it via config when the daemon is multi-account. The point: one source of truth for
 who Nora is on Signal — the daemon's configuration.
 
-## config.yaml (target shape, audit 2nd-pass)
+## config.toml (target shape, audit 2nd-pass)
+
+Note: this record was drafted while the config format was still planned as YAML; the
+shape below is unchanged, but the implemented file is `config.toml` (Phase 1a), not
+`config.yaml` — the fence is left as YAML since it is illustrating shape, not syntax.
 
 ```yaml
 # Nora configuration
@@ -79,12 +83,13 @@ metrics:
   port: 9100                  # Prometheus text format on a separate port
 ```
 
-## Peer Mapping — manual, single YAML file (audit A2, 2026-08-03)
+## Peer Mapping — manual, single relation file (audit A2, 2026-08-03)
 
 **Why manual:** mapping platform sender IDs to human identities is operator
 knowledge — the Deriver can build a peer card, but it cannot decide "this number is
-Miles". So the operator maintains **one YAML relation file** (`persons.yaml`,
-referenced from config). No service, no UI, no schema machinery — it is a simple
+Miles". So the operator maintains **one relation file** (`identity.toml` — named
+`persons.yaml` at the time of this record; see the note under "config.toml" above),
+referenced from config. No service, no UI, no schema machinery — it is a simple
 manual mapping, exactly as it must be.
 
 **Two-level mapping for cross-platform identity:** a stable `person_id` is the
@@ -142,7 +147,7 @@ has no peer card for them.
 
 ## Secrets
 
-- `OMNIROUTE_API_KEY` — environment only. Never in `config.yaml`, never in logs,
+- `OMNIROUTE_API_KEY` — environment only. Never in `config.toml`, never in logs,
   never in the repo. `.env` is gitignored; `.env.example` is the template.
 
 ## Open Questions
