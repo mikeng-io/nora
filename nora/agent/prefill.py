@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from xml.sax.saxutils import escape as _escape
 
-from ..models import TagContext
+from ..domain.models import TagContext
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 

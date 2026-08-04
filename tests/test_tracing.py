@@ -5,7 +5,7 @@ from tests.builders import make_tracing_config
 
 
 def test_trace_attributes_carry_the_provenance_fields(tmp_path):
-    from nora.models import NormalizedMessage, TagContext
+    from nora.domain.models import NormalizedMessage, TagContext
     from nora.persona.loader import PersonaStore
     from tests.test_persona_loader import write
 
@@ -21,7 +21,7 @@ def test_trace_attributes_carry_the_provenance_fields(tmp_path):
 
 
 def test_trace_attributes_never_carry_message_content(tmp_path):
-    from nora.models import NormalizedMessage, TagContext
+    from nora.domain.models import NormalizedMessage, TagContext
     from nora.persona.loader import PersonaStore
     from tests.test_persona_loader import write
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from ...models import NormalizedMessage
+from ...domain.models import NormalizedMessage
 
 log = logging.getLogger("nora.signal.parser")
 

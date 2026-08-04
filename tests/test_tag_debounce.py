@@ -1,4 +1,4 @@
-from nora.models import ConversationTarget
+from nora.domain.models import ConversationTarget
 from nora.tag import Debounce
 
 

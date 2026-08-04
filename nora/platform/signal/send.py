@@ -7,7 +7,7 @@ import os
 
 import aiohttp
 
-from ...models import ConversationTarget
+from ...domain.models import ConversationTarget
 
 log = logging.getLogger("nora.signal.send")
 

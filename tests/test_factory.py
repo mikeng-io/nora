@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-
 import pytest
 
 from nora.agent import factory
@@ -47,32 +45,14 @@ def test_model_provider_carries_the_tier_params():
     assert model.config["model_id"] == "deepseek-v4-flash"
 
 
-@dataclass
-class _Tier:
-    """Duck-typed stand-in for `LLMTierConfig` — `build_limits` is typed
-    structurally (`_TierLike`), not against `nora.config`, so any object
-    with a `max_tokens` attribute satisfies it. See `factory.build_limits`'s
-    docstring for why this one function stays object-shaped rather than
-    scalar: `nora.handler.Handler.handle_tag` calls it unconditionally,
-    positionally, with real `LLMTierConfig`/`LimitsConfig` instances."""
-
-    max_tokens: int
-
-
-@dataclass
-class _Limits:
-    turns: int
-    total_tokens: int
-
-
 def test_build_limits_matches_r8():
-    assert factory.build_limits(_Tier(max_tokens=400), _Limits(turns=4, total_tokens=24000)) == {
+    assert factory.build_limits(max_tokens=400, turns=4, total_tokens=24000) == {
         "turns": 4, "output_tokens": 400, "total_tokens": 24000
     }
 
 
 def test_build_limits_uses_the_active_tier_max_tokens():
-    limits = factory.build_limits(_Tier(max_tokens=1200), _Limits(turns=4, total_tokens=24000))
+    limits = factory.build_limits(max_tokens=1200, turns=4, total_tokens=24000)
     assert limits["output_tokens"] == 1200
 
 

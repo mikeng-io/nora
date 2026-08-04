@@ -146,7 +146,7 @@ async def test_latency_is_recorded(harness_factory):
 
 
 async def test_persona_sha256_is_logged_for_the_tag(harness_factory, caplog):
-    caplog.set_level(logging.INFO, logger="nora.handler")
+    caplog.set_level(logging.INFO, logger="nora.engagement.pipeline")
     h = await harness_factory(script=_reply_script())
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()

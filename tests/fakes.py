@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
+from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.domain.ports import MemoryHealth
-from nora.models import ConversationTarget, NormalizedMessage
 
 
 class FakeHoncho:

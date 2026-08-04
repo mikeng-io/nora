@@ -14,7 +14,6 @@ API key itself — this module no longer reads the environment.
 from __future__ import annotations
 
 import logging
-from typing import Protocol
 
 from openai import AsyncOpenAI
 from strands import Agent
@@ -60,41 +59,24 @@ def create_model_provider(
     )
 
 
-class _TierLike(Protocol):
-    max_tokens: int
+def build_limits(*, max_tokens: int, turns: int, total_tokens: int) -> dict:
+    """R-8: `output_tokens` derives from the active tier; `turns` and
+    `total_tokens` come from the limits object.
 
-
-class _LimitsLike(Protocol):
-    turns: int
-    total_tokens: int
-
-
-def build_limits(tier: _TierLike, limits: _LimitsLike) -> dict:
-    """R-8: output_tokens derives from the active tier; turns and total come
-    from the limits object.
-
-    Deliberately NOT scalar-only like `create_client`/`create_model_provider`
-    above: `nora.handler.Handler.handle_tag` (`nora/handler.py:183-185`)
-    calls this positionally and *unconditionally* — on every tag, not only
-    through the untested live-network branch of `_invoke` that
-    `create_client`/`create_model_provider`/`create_agent`/`invoke` live
-    behind (see `tests/integration/harness.py`'s `build_handler` docstring:
-    every harness-built `Handler` gets a non-`None` `invoke_fn`, so that
-    branch is unreachable from the suite by construction — `build_limits`
-    has no such gate). A scalar signature here would require handler.py to
-    change its call shape too, which Tasks 5-6 are explicitly scoped not to
-    touch (`nora/handler.py` stays wired to real traffic until Task 8's
-    composition-root cutover). `_TierLike`/`_LimitsLike` are structural
-    Protocols, not `nora.config` types — the actual thing this task closes
-    (`pyproject.toml`'s now-deleted `ignore_imports` exception) is the
-    IMPORT, which this module no longer has; `LLMTierConfig`/`LimitsConfig`
-    still satisfy this shape structurally, so `handler.py`'s call is
-    unaffected.
+    Scalarised in Task 8 (Phase 3's composition-root cutover): this used to
+    take `(tier, limits)` object pairs because the now-deleted
+    `Handler.handle_tag` called it positionally on every tag, and Tasks 5-6
+    were scoped not to touch `handler.py`'s call shape while it still carried
+    real traffic. `Handler` is gone and this is now called exactly once, at
+    process startup, by `nora.app.composition.build_dependencies` — so there
+    is no longer a caller forcing an object-shaped signature, and scalars
+    keep this module's inputs framework-free the same way
+    `create_client`/`create_model_provider` already are.
     """
     return {
-        "turns": limits.turns,
-        "output_tokens": tier.max_tokens,
-        "total_tokens": limits.total_tokens,
+        "turns": turns,
+        "output_tokens": max_tokens,
+        "total_tokens": total_tokens,
     }
 
 

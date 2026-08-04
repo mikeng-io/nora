@@ -28,16 +28,34 @@ def cfg(tmp_path, monkeypatch):
     # absolute, so it survives path resolution untouched regardless of where this
     # copy lives — without this override, build_dependencies() below would wire a
     # SqlAuditStore at the real production database.
-    return override_config(load(dst), {"store.db_path": tmp_path / "messages.db"})
+    #
+    # platforms.signal.account overrides the empty "derive from the daemon" default
+    # (config.example.toml) with a fixed value: derive_account() returns an override
+    # immediately, with no network call, so build_dependencies() never needs a real
+    # (or faked) signal-cli daemon reachable at the example config's placeholder URL.
+    #
+    # persona.dir ("nora/persona", config.example.toml) resolves relative to the
+    # copied config file's directory (tmp_path here), which has no such subdirectory
+    # — point it at the real, already-valid persona files instead of copying them.
+    return override_config(load(dst), {
+        "store.db_path": tmp_path / "messages.db",
+        "platforms.signal.account": "+85290000100",
+        "persona.dir": ROOT / "nora" / "persona",
+    })
 
 
-def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
-    deps = build_dependencies(cfg)
+async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
+    deps = await build_dependencies(cfg)
     assert isinstance(deps, Dependencies)
     assert deps.audit is not None
     assert deps.memory is not None
     assert deps.persons is not None
     assert deps.metrics is not None
+    assert deps.policy is not None
+    assert deps.assembler is not None
+    assert deps.ingest is not None
+    assert deps.engagement is not None
+    assert deps.dispatcher is not None
 
 
 def test_build_dependencies_never_wires_the_real_database(cfg, tmp_path):
@@ -48,10 +66,10 @@ def test_build_dependencies_never_wires_the_real_database(cfg, tmp_path):
     assert tmp_path in cfg.store.db_path.parents
 
 
-def test_dependencies_do_not_expose_settings(cfg):
+async def test_dependencies_do_not_expose_settings(cfg):
     """A stage must never be able to reach the whole config through its deps —
     that is how a god object grows back."""
-    deps = build_dependencies(cfg)
+    deps = await build_dependencies(cfg)
     assert not hasattr(deps, "config")
     assert not hasattr(deps, "settings")
 

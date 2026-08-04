@@ -62,13 +62,27 @@ class BackgroundTasks:
         return len(self._tasks)
 
     async def cancel_all(self) -> None:
-        """Best-effort shutdown: cancel every tracked task and wait for it to unwind."""
+        """Best-effort shutdown: cancel every tracked task and wait for it to unwind.
+
+        Discards each task from `_tasks` itself once its `await` returns, rather
+        than relying solely on `_on_done` (registered at `spawn` time) to have
+        already fired: a done-callback added via `add_done_callback` is delivered
+        through `loop.call_soon`, and is not guaranteed to have run by the moment
+        an `await` on that same task returns here — pre-existing gap this method
+        found failing (`tests/unit/test_runtime.py::
+        test_cancel_all_cancels_every_tracked_task`, reproduced against the
+        unmodified Task 7 commit) before this fix, unrelated to Phase 3 Task 8's
+        own scope but tightened alongside it since `App.shutdown` now calls this.
+        `discard`, not `remove`: `_on_done` may still race ahead and already have
+        removed the task, and discarding an already-absent element is a no-op.
+        """
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()
         for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+            self._tasks.discard(task)
 
 
 class _PrunableStore(Protocol):
