@@ -1,12 +1,13 @@
 """Frozen config tree (spec D.1), pydantic loader over config.toml."""
 
 import shutil
+import tomllib
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from nora.config import ConfigError, load
+from nora.config import Config, ConfigError, load
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -124,6 +125,22 @@ def test_config_uses_the_target_shape(toml_path):
     # obs groups the three signals
     assert cfg.obs.metrics.port == 9100
     assert cfg.obs.tracing.exporter == "file"
+    assert cfg.obs.tracing.enabled is True
     assert cfg.obs.logging.level == "INFO"
     # identity_file replaces persons_file
     assert cfg.identity_file.name == "identity.toml"
+    # values dropped from the deleted test_loads_the_example_config, restored here
+    assert cfg.llm.tiers.flash.limits.total_tokens == 24000
+    assert cfg.llm.tiers.deep.max_tokens == 1200
+    assert cfg.llm.tiers.deep.temperature == 0.5
+    assert cfg.persona.strict is True
+    assert cfg.persona.reload == "mtime"
+
+
+def test_constructing_config_without_base_context_is_an_error():
+    """Paths can only be resolved relative to the config file's directory, so
+    constructing a Config without that context must fail loudly rather than
+    silently yielding unresolved relative paths."""
+    data = tomllib.loads((ROOT / "config.example.toml").read_text())
+    with pytest.raises(ValidationError, match="base directory context is required"):
+        Config.model_validate(data)

@@ -99,6 +99,37 @@ def test_by_person_exposes_every_mapped_person(persons):
     assert set(persons.by_person) == {"miles", "ada"}
 
 
+def test_unknown_top_level_key_is_a_startup_failure(tmp_path):
+    """extra="forbid" on _PersonsFile: the old YAML loader silently ignored unrecognised
+    top-level keys; the pydantic model must fail loudly instead."""
+    p = tmp_path / "identity.toml"
+    p.write_text(
+        "unexpected_top_level_key = \"oops\"\n"
+        "\n"
+        "[persons.miles]\n"
+        "name = \"Miles\"\n"
+        "[persons.miles.platforms]\n"
+        "signal = \"+85212345678\"\n"
+    )
+    with pytest.raises(PersonsError, match="unexpected_top_level_key"):
+        load_persons(p)
+
+
+def test_unknown_field_in_a_person_entry_is_a_startup_failure(tmp_path):
+    """extra="forbid" on _PersonEntry: an unrecognised field inside a [persons.*] table
+    must fail startup, not be silently dropped as the old YAML loader did."""
+    p = tmp_path / "identity.toml"
+    p.write_text(
+        "[persons.miles]\n"
+        "name = \"Miles\"\n"
+        "unexpected_field = \"oops\"\n"
+        "[persons.miles.platforms]\n"
+        "signal = \"+85212345678\"\n"
+    )
+    with pytest.raises(PersonsError, match="unexpected_field"):
+        load_persons(p)
+
+
 def test_loads_identity_toml(tmp_path):
     path = tmp_path / "identity.toml"
     path.write_text(
