@@ -54,13 +54,13 @@ Enforced today by four import-linter contracts (`pyproject.toml`
   library). Backstopped by `tests/test_boundaries.py::test_domain_imports_only_the_standard_library`,
   which asserts the same property at the file level (an allow-list, not the
   deny-list contract 1 alone used to be). The middle layer is ordered to match
-  today's real cross-package edges (`agent` → `persona` → `obs` → `store`;
+  today's real cross-package edges (`agent` → `persona` → `obs` → `infra`;
   `platform` is independent of the other four) so the contract enforces
   domain's isolation without also relitigating those packages' existing,
   legitimate imports of each other.
 - **Contract 3 — "only app and `__main__` read config."** `nora.agent`, `nora.obs`,
-  `nora.persona`, `nora.platform`, `nora.store` (plus, as of this task,
-  `nora.domain`, `nora.handler`, `nora.models`, `nora.persons`, `nora.tag`) may not
+  `nora.persona`, `nora.platform` (plus, as of this task,
+  `nora.domain`, `nora.handler`, `nora.models`, `nora.persons`, `nora.tag`, `nora.infra`) may not
   import `nora.config`. One documented exception: `nora.agent.factory` (see §3
   known gaps).
 - **Contract 4 — "the nora package's own `__init__` does not read config either."**
@@ -78,12 +78,12 @@ Enforced today by four import-linter contracts (`pyproject.toml`
 |---|---|---|
 | `domain/` | Framework-free contracts: `models.py` (platform-neutral data), `ports.py` (Protocol seams — `PlatformAdapter`, `AuditStore`, `MemoryStore`, `EngagePolicy`, `ContextAssembler`), `errors.py` (`FailureClass`, `NoraError`, DEC-4). | Standard library only, plus its own sibling `domain.models`. Nothing else in `nora/`. |
 | `config.py` | `Config` — the frozen pydantic tree, `load()`, `ConfigError`. The only reader of `config.toml`. | pydantic, stdlib. Importable only by `app/` and `nora/__main__.py` (contract 2) — plus the one documented exception below. |
-| `app/` | `composition.py` — `Dependencies` (frozen dataclass) and `build_dependencies(cfg) -> Dependencies`, the seam later phases wire the real graph through. **Not yet load-bearing**: `nora/__main__.py` still builds its own graph directly. | `nora.config` (this is the one package allowed to), `nora.obs.metrics`, `nora.persons`, `nora.store.honcho`. |
+| `app/` | `composition.py` — `Dependencies` (frozen dataclass) and `build_dependencies(cfg) -> Dependencies`, the seam later phases wire the real graph through. **Not yet load-bearing**: `nora/__main__.py` still builds its own graph directly. | `nora.config` (this is the one package allowed to), `nora.obs.metrics`, `nora.persons`, `nora.infra.honcho`. |
 | `agent/` | `factory.py` (Strands `Agent`/model/client construction), `guards.py` (`LeakGuard`, `Deliverer`, `ReplyGuard`), `tools.py` (the three native tools), `prefill.py` (R-13 escaping, R-15 header). | The only package allowed to import `strands`. `factory.py` also imports `nora.config` directly — the one documented `ignore_imports` exception in contract 2 (see §3). |
 | `platform/` | `base.py`, `signal/` (`adapter.py`, `listener.py`, `parser.py`, `send.py`, `account.py`) — the one `PlatformAdapter`-shaped implementation, Signal. | `nora.models` (the domain re-export shim), `aiohttp`. Forbidden from importing `nora.config` (contract 2). |
-| `store/` | `db.py` (SQLite audit — module-level functions, `db_path` threaded through each call), `honcho.py` (`HonchoClient`, best-effort), `migrate.py` (legacy `PRAGMA user_version` migration, spec §4.5 marks this for retirement in the persistence phase). | `aiosqlite` / `aiohttp`, `nora.models`, `nora.domain.ports` (`honcho.py` — `MemoryHealth`, the typed return of `HonchoClient.health()`). Forbidden from importing `nora.config`. |
+| `infra/` | `sql/` (`audit.py::SqlAuditStore`, SQLAlchemy Core + Alembic — the audit record), `honcho/` (`client.py::HonchoClient`, best-effort semantic store; a separate package from `sql/` because the two ports' error contracts are opposite — see `infra/__init__.py`'s docstring). | `sqlalchemy`, `alembic`, `aiohttp`, `nora.domain.models`, `nora.domain.ports` (`honcho/client.py` — `MemoryHealth`, the typed return of `HonchoClient.health()`), `nora.obs.metrics`. Forbidden from importing `nora.config`. |
 | `persona/` | `loader.py` — `PersonaStore`, the only module that may read a `.md` persona file (enforced by `test_boundaries.py::test_persona_read_boundary`). | stdlib, YAML, `nora.obs.metrics` (`loader.py:20` — reload-failure counter). Forbidden from importing `nora.config`. |
-| `obs/` | `logging.py` (`setup_logging`), `tracing.py` (`setup_tracing`, OTel), `metrics.py` (`METRICS` singleton, `Metrics`), `health.py` (`build_health_app` — `GET /health`, `GET /metrics`). | `aiohttp`, `opentelemetry`, `nora.store.db` (`health.py:10` — the `/health` endpoint reads audit-store stats directly). Forbidden from importing `nora.config` — but see §3, `logging.py`/`tracing.py` take config-shaped parameters instead. |
+| `obs/` | `logging.py` (`setup_logging`), `tracing.py` (`setup_tracing`, OTel), `metrics.py` (`METRICS` singleton, `Metrics`), `health.py` (`build_health_app` — `GET /health`, `GET /metrics`; takes `store`/`honcho` as injected dependencies, not a module import — the `/health` endpoint calls `store.stats()` and `honcho.health()`). | `aiohttp`, `opentelemetry`. Forbidden from importing `nora.config` — but see §3, `logging.py`/`tracing.py` take config-shaped parameters instead. |
 | `handler.py` | `Handler` — ambient ingest + tag orchestration in one 229-line class (spec's own evidence of POC shape; dissolves into `ingest/`+`engagement/` stages in the pipelines phase). | Everything: `agent`, `obs`, `store`, `tag`, `models`. Takes the whole `Config` object as `cfg` — a known gap, see §3. |
 | `models.py` | Re-export shim for `nora.domain.models` (`ConversationTarget`, `NormalizedMessage`, `PersonRef`, `TagContext`) — see module docstring. Kept so this phase didn't have to rewrite ~20 import sites across `handler.py`, `platform/`, `store/`, `agent/`. **The pipelines phase deletes it**, once those call sites are migrated to import `nora.domain.models` directly. | `nora.domain.models` only. |
 | `persons.py` | `Persons`, `load_persons` — `identity.toml` → reverse index by `(platform, sender_id)`. | pydantic, `nora.models`. |
@@ -99,7 +99,7 @@ their port — is asserted by `tests/contract/test_port_conformance.py`.
 | Port | Concrete implementation today | Known gap |
 |---|---|---|
 | `PlatformAdapter` | `nora/platform/signal/adapter.py::SignalAdapter` | **`SignalAdapter.send` returns a bare `bool`, not the port's `SendResult`.** The port and its rationale (Telegram's 429/`retry_after`, `Deliverer`'s attempt-counting latch — see `domain/ports.py`'s module docstring) are documented; nothing else in the repo records that the implementation hasn't caught up. `SignalAdapter` also has no `resolve_identity()` yet. Two more gaps: `SignalAdapter.health()` returns a plain `dict`, not the port's `AdapterHealth`; and `SignalAdapter.listen()` takes a positional `on_event: Callable[[dict], Awaitable[None]]` callback receiving a raw dict, not the port's keyword-only `on_message: Callable[[NormalizedMessage], Awaitable[None]]`. All four close in the **platforms phase** (spec §8 phase 4). Pinned explicitly by `test_signal_adapter_gap_to_platform_adapter_is_known`. |
-| `MemoryStore` | `nora/store/honcho.py::HonchoClient` | Method names match (`test_honcho_client_satisfies_memory_store_method_names`); `ensure_*` is documented as needing to be idempotent under concurrency (a per-peer lock) but is still check-then-act today — closes in the persistence phase (DEC-11/§6). |
+| `MemoryStore` | `nora/infra/honcho/client.py::HonchoClient` | None: method names match (`test_honcho_client_satisfies_memory_store_method_names`) and `ensure_peer`/`ensure_session` are idempotent under concurrency — each takes a per-peer `asyncio.Lock` (`HonchoClient._peer_lock`), closing the check-then-act window recorded here through the pipelines phase (DEC-11/§6). |
 | `AuditStore` | `nora/store/db.py` — module-level functions, not a class; `db_path` threaded as a de-facto connection handle rather than an injected object. | Not yet an object satisfying the Protocol at all. Closes in the persistence phase, alongside the SQLAlchemy Core + Alembic migration (DEC-7/DEC-11). |
 | `EngagePolicy` | Inline in `nora/handler.py::on_event` (`tag.is_tagged` + `tag.Debounce`), not a class. | No `TriggerTextPolicy` class yet. Closes in the pipelines phase (spec §4.3), which also adds the future `ClassifierPolicy` (D1's A3 amendment). |
 | `ContextAssembler` | Inline in `nora/handler.py::_collect_context`. | No `TranscriptInjection` class yet; `EpisodeContinuation` is accepted-but-not-implemented (DEC-3). Closes in the pipelines phase. |
@@ -126,13 +126,13 @@ collaborators, and `Handler`/`setup_logging`/`setup_tracing` take a
 2. `nora/handler.py::Handler.on_event` — the entry point; calls `self.adapter.parse(raw_event)`.
 3. `nora/platform/signal/adapter.py::SignalAdapter.parse` → `nora/platform/signal/parser.py::parse_event` — builds a `nora/models.py` (→ `nora/domain/models.py`) `NormalizedMessage`, or drops the event (DM, sync message, self-sent, empty body — R-12 first pass).
 4. `nora/handler.py::Handler.on_event` → `nora/store/db.py::append` — SQLite audit write. On failure: log + `nora_errors_total{stage="ambient"}` + drop, never re-raise into the listener.
-5. `nora/persons.py::Persons.resolve` → if mapped, `nora/handler.py::Handler._feed_ambient` spawned as a background task → `nora/store/honcho.py::HonchoClient.ensure_peer` + `.feed`.
+5. `nora/persons.py::Persons.resolve` → if mapped, `nora/handler.py::Handler._feed_ambient` spawned as a background task → `nora/infra/honcho/client.py::HonchoClient.ensure_peer` + `.feed`.
 6. `nora/tag.py::is_tagged` — if the trigger text is not present, `on_event` returns. Ambient-only messages stop here.
 
 ### One tag
 
 7. `nora/tag.py::is_tagged` fires → `nora/tag.py::Debounce.allow` (R-9) → in-flight set check (R-10) → `Handler._spawn(self.handle_tag(msg))`.
-8. `nora/handler.py::Handler._collect_context` — `nora/store/db.py::recent` (transcript) + `nora/store/honcho.py::HonchoClient.peer_card` → a `TagContext` (`nora/domain/models.py`).
+8. `nora/handler.py::Handler._collect_context` — `nora/store/db.py::recent` (transcript) + `nora/infra/honcho/client.py::HonchoClient.peer_card` → a `TagContext` (`nora/domain/models.py`).
 9. `nora/persona/loader.py::PersonaStore.get(applies_to="tag")` — hot-reloaded persona (mtime-checked).
 10. `nora/agent/guards.py::Deliverer` and `nora/agent/guards.py::ReplyGuard` constructed fresh, one per tag.
 11. `nora/agent/tools.py::build_tools` — the three native tools (`read_buffer`, `read_peer_card`, `send_reply`), closures over this tag's dependencies.

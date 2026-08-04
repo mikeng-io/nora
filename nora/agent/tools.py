@@ -68,7 +68,7 @@ def build_tools(
             ref = persons.resolve("signal", sender_id)
             if ref is None:
                 return []
-            return await honcho.peer_card(ref.honcho_peer_id)
+            return await honcho.peer_card(peer_id=ref.honcho_peer_id)
         except Exception:
             log.exception("read_peer_card failed")
             return []

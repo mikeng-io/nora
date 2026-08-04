@@ -18,6 +18,7 @@ from . import config
 from .agent import factory
 from .config import ConfigError
 from .handler import Handler
+from .infra.honcho import HonchoClient
 from .infra.sql import SqlAuditStore, create_sql_engine, run_migrations
 from .obs.health import LLMState, build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
@@ -27,7 +28,6 @@ from .persona.loader import PersonaError, PersonaStore
 from .persons import PersonsError, load_persons
 from .platform.signal.account import AccountError, derive_account
 from .platform.signal.adapter import SignalAdapter
-from .store.honcho import HonchoClient
 
 PRUNE_INTERVAL_SECONDS = 300.0
 

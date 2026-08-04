@@ -15,10 +15,10 @@ from dataclasses import dataclass
 
 from nora.config import Config
 from nora.domain.ports import AuditStore, MemoryStore
+from nora.infra.honcho import HonchoClient
 from nora.infra.sql import SqlAuditStore, create_sql_engine
 from nora.obs.metrics import METRICS, Metrics
 from nora.persons import Persons, load_persons
-from nora.store.honcho import HonchoClient
 
 
 @dataclass(frozen=True)

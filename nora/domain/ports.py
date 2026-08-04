@@ -65,7 +65,7 @@ avoid:
 - `MemoryStore.feed()` stays `bool`, deliberately, even though `SendResult`
   exists precisely because "a bool loses retryability on a network call to a
   flaky service." Honcho is explicitly never load-bearing (see this module's
-  own docstring in `nora/store/honcho.py`): a failed feed is fire-and-forget,
+  own docstring in `nora/infra/honcho/client.py`): a failed feed is fire-and-forget,
   logged and counted, never retried. Giving it a retryable/retry_after shape
   would imply a retry policy that deliberately does not exist. This
   asymmetry with `SendResult` is intentional, not an oversight — recorded

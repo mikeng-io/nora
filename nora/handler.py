@@ -110,7 +110,7 @@ class Handler:
         ref = self.persons.resolve(msg.platform, msg.sender_id)
         card: tuple = ()
         if ref is not None:
-            card = tuple(await self.honcho.peer_card(ref.honcho_peer_id))
+            card = tuple(await self.honcho.peer_card(peer_id=ref.honcho_peer_id))
         return TagContext(
             tag_id=tag_id, message=msg, tagger=ref, transcript=transcript,
             peer_card=card, started_at=time.perf_counter(),
@@ -137,8 +137,8 @@ class Handler:
     async def _feed_exchange(self, ctx, tagger_name: str, deliverer) -> None:
         text = deliverer.last_text or ""
         await self.honcho.feed(
-            ctx.tagger.honcho_peer_id,
-            f"[{tagger_name}]: {ctx.message.body}\n[{self.cfg.persona.display_name}]: {text}",
+            peer_id=ctx.tagger.honcho_peer_id,
+            text=f"[{tagger_name}]: {ctx.message.body}\n[{self.cfg.persona.display_name}]: {text}",
         )
 
     async def handle_tag(self, msg: NormalizedMessage) -> None:
@@ -223,6 +223,6 @@ class Handler:
             self.metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
 
     async def _feed_ambient(self, peer_id: str, msg: NormalizedMessage) -> None:
-        await self.honcho.ensure_peer(peer_id)
-        ok = await self.honcho.feed(peer_id, msg.body)
+        await self.honcho.ensure_peer(peer_id=peer_id)
+        ok = await self.honcho.feed(peer_id=peer_id, text=msg.body)
         self.metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")
