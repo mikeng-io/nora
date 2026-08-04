@@ -77,13 +77,17 @@ be exported by hand — it comes from the gitignored `.env` file in the repo roo
 
 A phase retag only reaches back as far as the images that were built. Going all the way
 back to the pre-Strands-rewrite v1 codebase means checking out the old source and
-rebuilding, not just swapping tags:
+rebuilding, not just swapping tags — this needs network access and takes minutes, not
+seconds:
 
 ```bash
 docker compose stop nora
 git checkout master
 cp data/messages.db.v1.bak data/messages.db      # restore the pre-migration v1 database
-docker compose up -d --build
+docker build --network=host -t nora:latest .     # plain `docker compose build`/`up --build`
+                                                  # stalls: the default BuildKit bridge can't
+                                                  # resolve deb.debian.org on this host
+docker compose up -d --no-build
 ```
 
 `git checkout master` returns the working tree to the v1 codebase. The v2 migration

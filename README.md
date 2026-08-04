@@ -219,11 +219,30 @@ containerized instance since `/health` is exposed on the host via `network_mode:
 
 ### Rollback
 
+Fast path — retag the previous phase's image and restart, no rebuild:
+
 ```bash
-docker compose down
-git checkout <previous-tag>
-docker compose up -d --build
+docker tag nora:p0 nora:latest
+docker compose up -d --no-build
 ```
 
-`data/messages.db` is untouched by any of the above — schema migrations are additive
-and idempotent (`nora/store/db.py`).
+Every phase tags an image (`nora:p0`, `nora:p1a`, …), so there is always a tagged point to
+return to — `docker images nora` lists what's available to retag. This takes seconds and
+needs no network access.
+
+Fallback — rebuild from a source state that has no tagged image (e.g. the pre-rewrite v1
+codebase). This needs network access and **`docker build --network=host`** — the default
+BuildKit bridge can't resolve `deb.debian.org` on this host, so a plain `docker compose
+build`/`up --build` stalls:
+
+```bash
+docker compose stop nora
+git checkout <ref>
+docker build --network=host -t nora:latest .
+docker compose up -d --no-build
+```
+
+Either way, `.env` supplies `OMNIROUTE_API_KEY` to Compose automatically — nothing needs
+exporting by hand. `data/messages.db` is untouched by either path — schema migrations are
+additive and idempotent (`nora/store/db.py`). See `docs/runbook.md` §3 for the full
+incident playbook, including the v1-specific database restore step.
