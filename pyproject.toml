@@ -108,6 +108,7 @@ type = "layers"
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
 layers = [
     "nora.app",
+    "nora.ingest | nora.engagement",
     "nora.agent | nora.platform",
     "nora.persona",
     "nora.obs",
@@ -121,7 +122,7 @@ type = "forbidden"
 source_modules = [
     "nora.agent", "nora.obs", "nora.persona", "nora.platform",
     "nora.domain", "nora.handler", "nora.models", "nora.persons", "nora.tag",
-    "nora.infra", "nora.testing",
+    "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
 ]
 forbidden_modules = ["nora.config"]
 ignore_imports = [
