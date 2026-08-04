@@ -40,6 +40,11 @@ def _context_header(context_window: int) -> str:
 
 
 def _transcript_block(ctx: TagContext, display_name: str) -> str:
+    # ctx.transcript is typed as tuple[TranscriptRow, ...] (the port's target shape),
+    # but nora/store/db.py still returns dicts at runtime — .get() below is correct
+    # today. The persistence phase adapts db.py onto TranscriptRow and closes this
+    # gap; until then, full-scope `mypy nora` (not the gated domain/config/app scope)
+    # reports it here as known and scheduled.
     lines = []
     for row in ctx.transcript:
         who = display_name if row.get("is_nora") else (row.get("sender_name") or "unknown")

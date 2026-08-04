@@ -33,6 +33,35 @@ markers = [
     "network: requires a live external service (OmniRoute, signal-cli, Honcho); excluded by default",
 ]
 
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# NOTE: this expands `strict = true` by hand instead of using the shorthand.
+# mypy 2.3.0 has a confirmed bug where `strict = true` inside a
+# [[tool.mypy.overrides]] section leaks strict mode to EVERY module mypy
+# checks in the run (even ones this override's `module` glob does not
+# match) instead of scoping to the matched modules — verified by a minimal
+# repro. Two of --strict's flags (warn_redundant_casts, warn_unused_ignores)
+# are global-only in mypy and are already set above; the rest are spelled
+# out here so this override only tightens nora.domain/config/app and does
+# not silently tighten nora.obs, nora.store, etc.
+[[tool.mypy.overrides]]
+module = ["nora.domain.*", "nora.config", "nora.app.*"]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -52,6 +81,64 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", 
 #   N803/N818 — test-local argument and exception-class naming, not production surface.
 "tests/**" = ["S101", "S104", "S311", "S607", "RUF001", "N803", "N818"]
 "evals/**" = ["S101"]
+
+[tool.importlinter]
+root_package = "nora"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "domain is framework-free"
+type = "forbidden"
+source_modules = ["nora.domain"]
+forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus_client", "opentelemetry", "yaml", "openai"]
+
+[[tool.importlinter.contracts]]
+name = "layered architecture"
+type = "layers"
+# Middle rows reflect the real import order among today's packages (agent -> persona
+# -> obs -> store; platform is independent of the other four) so the contract does
+# not fight legitimate cross-package imports. The property this contract exists to
+# prove is the last line: nothing above nora.domain may be imported BY nora.domain.
+layers = [
+    "nora.app",
+    "nora.agent | nora.platform",
+    "nora.persona",
+    "nora.obs",
+    "nora.store",
+    "nora.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "only app and __main__ read config"
+type = "forbidden"
+source_modules = [
+    "nora.agent", "nora.obs", "nora.persona", "nora.platform", "nora.store",
+    "nora.domain", "nora.handler", "nora.models", "nora.persons", "nora.tag",
+]
+forbidden_modules = ["nora.config"]
+ignore_imports = [
+    # nora.agent.factory imports LimitsConfig/LLMConfig/LLMTierConfig directly to
+    # build the strands Agent's model/limits from Config. This is the one
+    # documented exception to the contract, not a deletion of it: the pipelines/
+    # agent phase removes it by injecting an already-built model provider into
+    # factory.py instead of passing config classes through it. TODO(pipelines
+    # phase): delete this exception once that injection lands.
+    "nora.agent.factory -> nora.config",
+]
+
+[[tool.importlinter.contracts]]
+name = "the nora package's own __init__ does not read config either"
+type = "forbidden"
+# A "forbidden" contract skips any source/forbidden pair where one module is a
+# subpackage of the other (import-linter's own overlap rule — see forbidden.py's
+# `_modules_overlap`): `nora.config` is *inside* `nora`, so listing the package
+# `nora` as a source module in the contract above is silently a no-op for the
+# `nora.config` target, by import-linter's own design, not a bug in this config.
+# `as_packages = false` treats both sides as single literal modules instead of
+# packages, which sidesteps that overlap rule and actually checks nora/__init__.py.
+source_modules = ["nora"]
+forbidden_modules = ["nora.config"]
+as_packages = false
 
 [dependency-groups]
 dev = [

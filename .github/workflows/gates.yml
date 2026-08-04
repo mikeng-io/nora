@@ -23,5 +23,11 @@ jobs:
       - name: ruff
         run: uv run ruff check nora/ evals/ tests/
 
+      - name: mypy
+        run: uv run mypy nora/domain nora/config.py nora/app
+
+      - name: import-linter
+        run: uv run lint-imports
+
       - name: pytest
         run: uv run pytest -q
