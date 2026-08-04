@@ -38,7 +38,7 @@ parse_event(envelope) → NormalizedMessage
 db.append(...)                    ──▶ SQLite audit (rolling window, per-conversation cap)
    │
    ▼
-peer_id = lookup(sender_id)       ──▶ persons.yaml reverse index
+peer_id = lookup(sender_id)       ──▶ identity.toml reverse index
    │
    ├─ mapped ──▶ honcho.feed(peer_id, text) ──▶ Honcho peer chat → Deriver (async, best-effort)
    │

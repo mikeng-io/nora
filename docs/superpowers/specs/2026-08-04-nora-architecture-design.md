@@ -1,7 +1,7 @@
 ---
 kind: spec
 title: "Nora — Architecture & Bootstrapping"
-description: "Replace the POC structure with a pipeline+ports architecture: one process running N platform adapters, deterministic ambient ingest, stateless engagement, MCP for cold-path tools, and a standard-library infrastructure layer (SQLAlchemy Core/Alembic, pydantic-settings, prometheus-client, structlog, OTLP→Langfuse), with mechanically enforced boundaries."
+description: "Replace the POC structure with a pipeline+ports architecture: one process running N platform adapters, deterministic ambient ingest, stateless engagement, MCP for cold-path tools, and a standard-library infrastructure layer (SQLAlchemy Core/Alembic, pydantic, prometheus-client, structlog, OTLP→Langfuse), with mechanically enforced boundaries."
 tags: [nora, spec, architecture, ports, pipeline, extensibility, mcp, langfuse]
 timestamp: '2026-08-04'
 revision: 2
@@ -233,7 +233,7 @@ Skill (S3).
 
 Two files, different change cadences: identity changes when a human joins; config on deploy.
 
-**No `${VAR}` interpolation.** pydantic-settings does not interpolate inside TOML values,
+**No `${VAR}` interpolation.** pydantic does not interpolate inside TOML values,
 so revision 1's `${GOOGLE_MAPS_API_KEY}` would have required building an interpolation
 engine for a disabled tool. Secrets are referenced by **`*_env` naming** throughout — the
 pattern already proven at `llm.api_key_env`.
@@ -574,7 +574,7 @@ exporter = "file"                     # live value preserved; otlp is a later co
 endpoint = ""
 ```
 
-Preserved behaviours that are easy to lose in a pydantic-settings port:
+Preserved behaviours that are easy to lose in a pydantic port:
 
 - **Base-relative path resolution** — relative paths resolve against the config file's
   directory, with `~` expansion, as `config._resolve_path` does today.
@@ -691,7 +691,7 @@ catches a regressed Honcho probe, a config that won't boot, or missing migration
 | P | Concern |
 |---|---|
 | **0** | **Prep, landed against current code, tests green.** Dev deps into `pyproject.toml` `[dependency-groups]` (ruff, mypy, import-linter, alembic, pytest) + `uv.lock`; delete `requirements-dev.txt`; add CI. **Honcho `GET /health` assertion test** (F4). `nora/domain` import-direction test. Config-construction seams: replace `harness._build_config`'s `dataclasses.replace` chain with a format-agnostic `_config_overrides(**kw)`; move direct `*Config` construction in `test_factory`/`test_logging`/`test_tracing` behind fixtures; make `evals/run.py`'s config load injectable. Back up `config.yaml`, `persons.yaml`, `data/messages.db`. Tag `nora:p0`. |
-| 1 | Foundation: `domain/`, `config/` pydantic-settings, value-for-value `config.toml` + `identity.toml`, composition-root skeleton. Rewrites `test_config.py`, `test_env_template.py`, config half of `test_main.py` (**format tests, not behaviour tests — they cannot be the oracle**). Rewrites `test_boundaries.py` to allowlist by package prefix. Includes `docker-compose.yml`, `Dockerfile`, `.dockerignore`, `.env.example`, README, **runbook rewritten for Docker** (`runbook.md:64` says `systemctl`; Nora runs in a container, and `test_docs.py` passes it because it only greps the word "rollback"). `ARCHITECTURE.md` + `CLAUDE.md` created. |
+| 1 | Foundation: `domain/`, `config/` pydantic, value-for-value `config.toml` + `identity.toml`, composition-root skeleton. Rewrites `test_config.py`, `test_env_template.py`, config half of `test_main.py` (**format tests, not behaviour tests — they cannot be the oracle**). Rewrites `test_boundaries.py` to allowlist by package prefix. Includes `docker-compose.yml`, `Dockerfile`, `.dockerignore`, `.env.example`, README, **runbook rewritten for Docker** (`runbook.md:64` says `systemctl`; Nora runs in a container, and `test_docs.py` passes it because it only greps the word "rollback"). `ARCHITECTURE.md` + `CLAUDE.md` created. |
 | 2 | Persistence. `nullable=True` on `id`; `sqlite_autoincrement=True`; `include_object` excluding `idx_messages_conv_ts`; **schema-parity test**; `alembic.ini` into `COPY` and `infra/sql/migrations/**` into `package-data` (a `versions/` dir has no `__init__.py`, so `packages.find` will not install it — the image would ship without its migrations). Rewrites `test_migration`, `test_db`, `test_health`, `test_tools`, `test_guards_deliverer`, and the harness fault injection (`monkeypatch.setattr(db, "append")` becomes a no-op once `AuditStore` is injected — 10 parametrized R-5 cases). **Risk: high.** |
 | 3 | Pipelines; `Handler` dissolved; **evals composition-root reuse moved here from P7** — otherwise `evals/` and two test files stay broken for four consecutive phases. Update `test_acceptance_rules.RULE_TESTS` deliberately (9 of its 21 named tests live in `tests/integration/`). **Risk: highest.** |
 | 4 | Platforms: registry, `resolve_identity()`, `PlatformIdentity.aliases`, `SendResult`. Optionally adopt `account = ""`. |
@@ -744,7 +744,7 @@ changes smuggled into stage 1 (§7); phase 1 breaking ~110 of 453 tests; phase 6
 all 453 at collection; phase 3 leaving evals broken for four phases.
 
 **Corrected over-claims:** DEC-5's span attributes were already implemented; the Postgres
-portability claim; `${VAR}` interpolation that pydantic-settings does not provide; "DMs
+portability claim; `${VAR}` interpolation that pydantic does not provide; "DMs
 differ by policy config, not code path" (`parser.py:32` drops non-group messages,
 `send.py:34` refuses non-group sends — DMs are adapter code); the Episode implementation
 surface violating the spec's own no-speculation rule; counts (48 test files / 453 tests,

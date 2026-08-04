@@ -35,7 +35,7 @@ TRIGGER (from ambient path: tag.is_tagged(body, trigger) == true)
    tag_id ← generate UUID                    ← correlation ID (01 §Observability)
    ├─ recent N messages for this conversation  ← SQLite audit (db.recent)
    ├─ tagger's Honcho peer card              ← Honcho (durable recall)
-   ├─ peer mapping config                    ← persons.yaml (sender → identity)
+   ├─ peer mapping config                    ← identity.toml (sender → identity)
    └─ the tag message itself                 (conversation_id, sender, name, body)
    │
    ▼

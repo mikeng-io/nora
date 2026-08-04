@@ -19,9 +19,9 @@ async def wiring(tmp_path):
     for i in range(3):
         await db.append(dbp, NormalizedMessage("signal", "g1", "group", "+852111",
                                                "Miles", i, f"m{i}", {}))
-    persons_file = tmp_path / "persons.yaml"
+    persons_file = tmp_path / "identity.toml"
     persons_file.write_text(
-        "persons:\n  miles:\n    name: Miles\n    platforms:\n      signal: \"+852111\"\n"
+        "[persons.miles]\nname = \"Miles\"\n[persons.miles.platforms]\nsignal = \"+852111\"\n"
     )
     pdir = tmp_path / "persona"
     pdir.mkdir()

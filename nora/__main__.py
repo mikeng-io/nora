@@ -40,35 +40,37 @@ async def build_app(config_path) -> App:
         raise StartupError(str(exc)) from exc
 
     key = os.environ.get(cfg.llm.api_key_env, "")
-    setup_logging(cfg.logging, secrets=[key] if key else [])
-    setup_tracing(cfg.observability.tracing)
+    setup_logging(cfg.obs.logging, secrets=[key] if key else [])
+    setup_tracing(cfg.obs.tracing)
 
     try:
-        persons = load_persons(cfg.persons_file)
+        persons = load_persons(cfg.identity_file)
     except PersonsError as exc:
         raise StartupError(f"person mapping error: {exc}") from exc
 
-    await db.init(cfg.buffer.db_path)
+    await db.init(cfg.store.db_path)
 
     try:
-        account = await derive_account(cfg.signal_cli.base_url, override=cfg.signal_cli.account)
+        account = await derive_account(
+            cfg.platforms.signal.base_url, override=cfg.platforms.signal.account
+        )
     except AccountError as exc:
         raise StartupError(f"account error: {exc}") from exc
 
     persona_store = PersonaStore(
         cfg.persona.dir, strict=cfg.persona.strict, reload=cfg.persona.reload,
         canary=cfg.persona.canary, display_name=cfg.persona.display_name,
-        trigger=cfg.trigger.text,
+        trigger=cfg.engagement.trigger.text,
     )
     try:
         persona = persona_store.get(applies_to="tag")
     except PersonaError as exc:
         raise StartupError(f"persona error: {exc}") from exc
 
-    honcho = HonchoClient(cfg.honcho.base_url, cfg.honcho.workspace_id)
+    honcho = HonchoClient(cfg.memory.base_url, cfg.memory.workspace_id)
     await honcho.ensure_workspace()          # best-effort, never fatal — no try/except
 
-    adapter = SignalAdapter(cfg.signal_cli.base_url, account)
+    adapter = SignalAdapter(cfg.platforms.signal.base_url, account)
     llm_state = LLMState()
     handler = Handler(cfg=cfg, adapter=adapter, persons=persons, honcho=honcho,
                       persona_store=persona_store, metrics=METRICS, llm_state=llm_state)
@@ -92,11 +94,11 @@ class App:
 
     async def run(self) -> None:
         health_app = build_health_app(
-            adapter=self.adapter, db_path=self.cfg.buffer.db_path, honcho=self.honcho,
+            adapter=self.adapter, db_path=self.cfg.store.db_path, honcho=self.honcho,
             persona_store=self.handler.persona_store, metrics=self.handler.metrics,
             started_at=time.time(), llm_state=self.llm_state,
         )
-        self._health_runner = await serve(health_app, self.cfg.metrics.port)
+        self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
         self._bg_tasks = [
             asyncio.create_task(heartbeat(self.handler.metrics)),
             asyncio.create_task(self._update_last_event_age()),
@@ -123,7 +125,7 @@ class App:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--config", default="config.toml")
     args = parser.parse_args()
 
     async def _run() -> None:

@@ -27,8 +27,8 @@ import yaml
 
 from tests.integration.harness import ScriptedTurn, build_handler, group_event
 
-# Kept in sync with config.example.yaml's trigger.text — the single real trigger
-# string every case file and the harness itself must agree on.
+# Kept in sync with config.example.toml's engagement.trigger.text — the single real
+# trigger string every case file and the harness itself must agree on.
 TRIGGER_TEXT = "nora.000"
 
 

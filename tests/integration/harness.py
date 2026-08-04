@@ -29,12 +29,11 @@ PERSONA_DIR = REPO_ROOT / "nora" / "persona"
 
 OWN_ACCOUNT = "+85290000100"
 
-_DEFAULT_PERSONS_YAML = (
-    "persons:\n"
-    "  miles:\n"
-    "    name: Miles\n"
-    "    platforms:\n"
-    "      signal: \"+852111\"\n"
+_DEFAULT_IDENTITY_TOML = (
+    "[persons.miles]\n"
+    "name = \"Miles\"\n"
+    "[persons.miles.platforms]\n"
+    "signal = \"+852111\"\n"
 )
 
 
@@ -136,7 +135,7 @@ class Harness:
     persona_store: PersonaStore
     _agents: _Counter
     _tmp_path: Path
-    _persons_yaml: str
+    _identity_toml: str
 
     @property
     def agents_constructed(self) -> int:
@@ -178,7 +177,7 @@ class Harness:
         """
         return await build_handler(
             self._tmp_path, script=script, honcho=self.honcho,
-            persons_yaml=self._persons_yaml, own_account=self.own_account, **kwargs,
+            identity_toml=self._identity_toml, own_account=self.own_account, **kwargs,
         )
 
 
@@ -190,14 +189,14 @@ def _build_config(
     base = load_example_config(tmp_path)
 
     changes: dict[str, object] = {
-        "buffer.db_path": tmp_path / "messages.db",
+        "store.db_path": tmp_path / "messages.db",
         "persona.dir": persona_dir,
-        "persons_file": persons_path,
+        "identity_file": persons_path,
     }
     if invocation_timeout is not None:
-        changes["trigger.invocation_timeout_seconds"] = invocation_timeout
+        changes["llm.tiers.flash.timeout_seconds"] = invocation_timeout
     if debounce is not None:
-        changes["trigger.min_interval_seconds"] = debounce
+        changes["engagement.trigger.min_interval_seconds"] = debounce
     return override_config(base, changes)
 
 
@@ -207,7 +206,7 @@ async def build_handler(
     script=None,
     honcho: FakeHoncho | None = None,
     sink: SinkSender | None = None,
-    persons_yaml: str | None = None,
+    identity_toml: str | None = None,
     own_account: str = OWN_ACCOUNT,
     raises: Exception | None = None,
     delay: float = 0.0,
@@ -230,9 +229,9 @@ async def build_handler(
     B.3/R-5) into an otherwise-normal build; `fault=None` (the default) leaves every other
     caller's behavior byte-for-byte unchanged from Task 31/32.
     """
-    persons_yaml = persons_yaml or _DEFAULT_PERSONS_YAML
-    persons_path = tmp_path / "persons.yaml"
-    persons_path.write_text(persons_yaml)
+    identity_toml = identity_toml or _DEFAULT_IDENTITY_TOML
+    persons_path = tmp_path / "identity.toml"
+    persons_path.write_text(identity_toml)
 
     # Never point config at the real, shared nora/persona/*.md files: persona_reload_fails
     # writes invalid content into a persona file, and that must never touch the repo's
@@ -247,7 +246,7 @@ async def build_handler(
         invocation_timeout=invocation_timeout, debounce=debounce,
     )
 
-    await db.init(cfg.buffer.db_path)
+    await db.init(cfg.store.db_path)
     persons = load_persons(persons_path)
     persona_store = PersonaStore(
         cfg.persona.dir,
@@ -255,7 +254,7 @@ async def build_handler(
         reload=cfg.persona.reload,
         canary=cfg.persona.canary,
         display_name=cfg.persona.display_name,
-        trigger=cfg.trigger.text,
+        trigger=cfg.engagement.trigger.text,
     )
 
     honcho_double = honcho if honcho is not None else FakeHoncho()
@@ -281,7 +280,7 @@ async def build_handler(
                             raises=RuntimeError("omniroute down"))
     elif fault == "llm_timeout":
         invoke_fn = FakeLLM(script if not isinstance(script, FakeLLM) else [], delay=5.0)
-        cfg = override_config(cfg, {"trigger.invocation_timeout_seconds": 0.2})
+        cfg = override_config(cfg, {"llm.tiers.flash.timeout_seconds": 0.2})
     elif fault == "empty_reply":
         # bypass_guard=True: ReplyGuard's own R-4 pre-tool veto would otherwise catch a
         # whitespace-only text before Deliverer ever sees it. This exercises Deliverer's
@@ -335,7 +334,7 @@ async def build_handler(
 
     return Harness(
         handler=handler,
-        db_path=cfg.buffer.db_path,
+        db_path=cfg.store.db_path,
         sink=adapter,
         honcho=honcho_double,
         metrics=metrics,
@@ -343,5 +342,5 @@ async def build_handler(
         persona_store=persona_store,
         _agents=counter,
         _tmp_path=tmp_path,
-        _persons_yaml=persons_yaml,
+        _identity_toml=identity_toml,
     )

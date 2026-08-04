@@ -64,7 +64,7 @@ Decision D4 (00-overview) — stateless, fresh invocation per tag — maps to:
 
 ### read_peer_card
 - Signature: `read_peer_card(sender_id: str) -> list[str]`
-- Resolves `sender_id` → `person_id` via the persons.yaml reverse index, then fetches
+- Resolves `sender_id` → `person_id` via the identity.toml reverse index, then fetches
   the person's Honcho peer card (durable recall). Returns empty list for unmapped
   senders or when Honcho is unavailable.
 - Docstring: "Durable facts about the person who tagged you."

@@ -1,7 +1,7 @@
 # person_id doubles as the Honcho peer id, so it must match ^[a-zA-Z0-9_-]+$.
 # Reload is startup-only in v2 — adding a friend requires a restart (Q4).
-persons:
-  miles:
-    name: Miles
-    platforms:
-      signal: "+85212345678"
+
+[persons.miles]
+name = "Miles"
+[persons.miles.platforms]
+signal = "+85212345678"

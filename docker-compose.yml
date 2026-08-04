@@ -18,8 +18,8 @@ services:
       - OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:?set OMNIROUTE_API_KEY in the host environment first}
     volumes:
       - ./data:/app/data
-      - ./config.yaml:/app/config.yaml:ro
-      - ./persons.yaml:/app/persons.yaml:ro
+      - ./config.toml:/app/config.toml:ro
+      - ./identity.toml:/app/identity.toml:ro
       # Read-only so edits on the host (persona hot-reload, mtime-based) are visible
       # inside the container without a rebuild or restart.
       - ./nora/persona:/app/nora/persona:ro

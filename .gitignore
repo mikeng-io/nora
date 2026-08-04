@@ -28,8 +28,13 @@ venv/
 *.swo
 .DS_Store
 
-# Local deployment config (config.example.yaml is the committed template)
+# Local deployment config (config.example.toml / identity.example.toml are the
+# committed templates; config.toml itself is tracked — it holds no secret values,
+# api_key_env names the variable, never the key). Legacy pre-TOML names are kept
+# ignored too, so a leftover config.yaml or persons.yaml (which held real phone
+# numbers) on an operator's machine can never be committed by accident.
 /config.yaml
+/identity.toml
 /persons.yaml
 
 # Phase rollback backups (backups of gitignored/live state files)

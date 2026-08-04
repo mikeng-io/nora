@@ -58,13 +58,36 @@ frontmatter, missing required key, unparseable YAML) fails to parse.
    or restore your edit). **No restart needed** — the next tag re-stats the directory,
    sees the corrected mtime, and reparses successfully.
 
-## 3. "Rollback to v1"
+## 3. "Rollback"
+
+Nora runs as a **Docker container**, not under systemd — the container is built from
+images tagged per phase (`nora:p0`, `nora:p1a`, …). Rolling back one phase is a
+two-command retag, no rebuild and no git checkout required:
 
 ```bash
-sudo systemctl stop nora
+docker tag nora:p0 nora:latest
+docker compose up -d --no-build
+```
+
+`OMNIROUTE_API_KEY` must be available for the container to start, but nothing needs to
+be exported by hand — it comes from the gitignored `.env` file in the repo root, which
+`docker compose` reads automatically.
+
+### Rolling further back, to the pre-rewrite v1 codebase
+
+A phase retag only reaches back as far as the images that were built. Going all the way
+back to the pre-Strands-rewrite v1 codebase means checking out the old source and
+rebuilding, not just swapping tags — this needs network access and takes minutes, not
+seconds:
+
+```bash
+docker compose stop nora
 git checkout master
 cp data/messages.db.v1.bak data/messages.db      # restore the pre-migration v1 database
-sudo systemctl start nora
+docker build --network=host -t nora:latest .     # plain `docker compose build`/`up --build`
+                                                  # stalls: the default BuildKit bridge can't
+                                                  # resolve deb.debian.org on this host
+docker compose up -d --no-build
 ```
 
 `git checkout master` returns the working tree to the v1 codebase. The v2 migration
@@ -76,7 +99,10 @@ v2-migrated file.
 ## 4. "The watchdog alerted"
 
 `deploy/watchdog.sh` polls `/health` and alerts if the SSE listener has been silent for more
-than 300 seconds (no ingest event in that window).
+than 300 seconds (no ingest event in that window). This same script also ships with the
+bare-metal/systemd deployment path documented in `deploy/README.md`, but the live instance
+runs as a **Docker container**, not under systemd — the commands below are for that
+container.
 
 1. Check signal-cli first — it's the more common cause:
 
@@ -87,17 +113,20 @@ than 300 seconds (no ingest event in that window).
    If that's not a healthy 200, restart or investigate signal-cli itself before touching
    Nora.
 
-2. If signal-cli looks fine, check Nora's own logs via journalctl (she runs under systemd):
+2. If signal-cli looks fine, check Nora's own logs:
 
    ```bash
-   journalctl -u nora -n 200 --no-pager
+   docker logs nora --tail 100 -f
    ```
 
    Look for reconnect-backoff messages, unhandled exceptions in the SSE listen loop, or a
    process restart. SSE reconnects automatically with exponential backoff, so a brief blip
    self-heals; a sustained >300s silence with `sse.connected: false` in `/health` after that
-   means the reconnect loop itself is stuck and the process likely needs a restart
-   (`sudo systemctl restart nora`).
+   means the reconnect loop itself is stuck and the container likely needs a restart:
+
+   ```bash
+   docker compose restart nora
+   ```
 
 ## 5. "Which persona produced this reply?"
 

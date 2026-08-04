@@ -1,12 +1,13 @@
-"""persons.yaml → reverse index (spec C.6, D.2). Startup-only; no hot reload in v2 (Q4)."""
+"""identity.toml → reverse index (spec C.6, D.2). Startup-only; no hot reload in v2 (Q4)."""
 
 from __future__ import annotations
 
 import re
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .models import NormalizedMessage, PersonRef
 
@@ -42,26 +43,59 @@ class Persons:
         return msg.sender_name or sanitize_unmapped(msg.sender_id)
 
 
+class _PersonEntry(BaseModel):
+    """Shape validation only — the coercion of `sender_id` to `str` (needed for TOML's
+    real integer types, e.g. Telegram numeric IDs) stays down in the reverse-index build
+    below, alongside the domain logic it's part of.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str | None = None
+    platforms: dict[str, str | int] = Field(default_factory=dict)
+
+
+class _PersonsFile(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    persons: dict[str, _PersonEntry] = Field(default_factory=dict)
+
+    @field_validator("persons")
+    @classmethod
+    def _check_person_ids(
+        cls, value: dict[str, _PersonEntry]
+    ) -> dict[str, _PersonEntry]:
+        for person_id in value:
+            if not _PERSON_ID_RE.match(person_id):
+                raise ValueError(
+                    f"person_id {person_id!r} must match ^[a-zA-Z0-9_-]+$ "
+                    "(it is used verbatim as the Honcho peer id)"
+                )
+        return value
+
+
 def load_persons(path: Path) -> Persons:
     path = Path(path).expanduser()
     if not path.exists():
         raise PersonsError(f"persons file not found: {path}")
-    data = yaml.safe_load(path.read_text()) or {}
-    raw = data.get("persons") or {}
+    with path.open("rb") as f:
+        try:
+            data = tomllib.load(f)
+        except tomllib.TOMLDecodeError as exc:
+            raise PersonsError(f"invalid TOML in {path}: {exc}") from exc
+    try:
+        parsed = _PersonsFile.model_validate(data)
+    except ValidationError as exc:
+        raise PersonsError(str(exc)) from exc
 
     by_person: dict[str, PersonRef] = {}
     index: dict[tuple[str, str], str] = {}
-    for person_id, entry in raw.items():
-        if not _PERSON_ID_RE.match(str(person_id)):
-            raise PersonsError(
-                f"person_id {person_id!r} must match ^[a-zA-Z0-9_-]+$ "
-                "(it is used verbatim as the Honcho peer id)"
-            )
-        name = (entry or {}).get("name") or person_id
+    for person_id, entry in parsed.persons.items():
+        name = entry.name or person_id
         by_person[person_id] = PersonRef(
             person_id=person_id, name=name, honcho_peer_id=person_id
         )
-        for platform, sender_id in ((entry or {}).get("platforms") or {}).items():
+        for platform, sender_id in entry.platforms.items():
             key = (platform, str(sender_id))
             if key in index:
                 raise PersonsError(

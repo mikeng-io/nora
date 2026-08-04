@@ -19,7 +19,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY nora/ ./nora/
 COPY evals/ ./evals/
-COPY config.example.yaml persons.example.yaml ./
+COPY config.example.toml identity.example.toml ./
 
 RUN uv sync --frozen --no-dev
 
@@ -29,7 +29,7 @@ USER nora
 
 EXPOSE 9100
 
-# Real config.yaml / persons.yaml / persona files are bind-mounted at runtime by
+# Real config.toml / identity.toml / persona files are bind-mounted at runtime by
 # docker-compose.yml — never baked into the image.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:9100/health || exit 1
@@ -37,4 +37,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # --no-sync: the venv is already built; never let the container reach out to PyPI at
 # runtime (also matters if egress is ever locked down for the container's uid later).
 ENTRYPOINT ["uv", "run", "--no-sync", "python", "-m", "nora"]
-CMD ["--config", "config.yaml"]
+CMD ["--config", "config.toml"]
