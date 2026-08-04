@@ -104,9 +104,13 @@ Measured with the target rule set: **34 violations, 18 auto-fixable.** `--select
 
 `TID` is deliberately excluded: it produced 19 of the original 53 violations, all `TID252` on relative imports, which are consistent deliberate house style throughout `nora/`.
 
+`tests/` holds a further **39 violations** not covered by the count above. Most are
+real and get fixed; four rules are legitimately test-only and are added to
+`per-file-ignores` — see Step 2.
+
 **Files:**
 - Modify: `pyproject.toml` (`[tool.ruff.lint]`)
-- Modify: various files under `nora/` and `evals/` (violation fixes, mostly automated)
+- Modify: various files under `nora/`, `evals/` and `tests/` (violation fixes, mostly automated)
 
 **Interfaces:**
 - Produces: `uv run ruff check` passing — a gate every subsequent task and phase runs.
@@ -133,12 +137,23 @@ target-version = "py311"
 select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests legitimately use assert (S101), bind to all interfaces in fixtures (S104),
-# and reach into private module members to test them (SLF001 is not selected, but
-# S-rules around test doubles are noisy and carry no production risk here).
-"tests/**" = ["S101", "S104", "S311"]
+# Test-only allowances:
+#   S101  — tests assert.
+#   S104/S311 — fixtures bind all interfaces and use non-crypto randomness.
+#   S607  — test_acceptance_rules shells out to `uv` by partial path, correctly.
+#   RUF001 — fullwidth CJK punctuation in test_evals_adversarial's prompt-injection
+#            corpus is test DATA. Replacing it with ASCII would change which
+#            adversarial inputs are exercised — a behaviour change to the suite.
+#   N803/N818 — test-local argument and exception-class naming, not production surface.
+"tests/**" = ["S101", "S104", "S311", "S607", "RUF001", "N803", "N818"]
 "evals/**" = ["S101"]
 ```
+
+Everything else in `tests/` is **fixed, not ignored**: F401 (7), E501 (6), RUF043 (5),
+I001 (3), UP037, RUF100, C408, B017. On RUF043 — all five are in `test_config.py`,
+which Phase 1 rewrites, but fix them anyway: an unescaped `.` in a
+`pytest.raises(match=...)` pattern matches any character, so the assertion is weaker
+than it reads. Escape the metacharacters; never weaken the assertion to satisfy the lint.
 
 - [ ] **Step 3: Apply the automated fixes**
 
