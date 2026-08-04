@@ -9,7 +9,7 @@ dependencies = [
     "aiosqlite>=0.20",
     "openai>=1.40",
     "PyYAML>=6.0",
-    "pydantic-settings>=2.4",
+    "pydantic>=2.8",
 ]
 
 [project.optional-dependencies]
