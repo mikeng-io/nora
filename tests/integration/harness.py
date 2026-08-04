@@ -11,6 +11,7 @@ import asyncio
 import dataclasses
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -139,6 +140,7 @@ class Harness:
     _agents: _Counter
     _tmp_path: Path
     _identity_toml: str
+    _register: Callable[[Harness], None] | None = None
 
     async def aclose(self) -> None:
         await self.store.aclose()
@@ -182,12 +184,17 @@ class Harness:
         continuity are real — a "restart" only ever loses in-process state.
 
         Closes this Harness's store engine first, mirroring a real process exit —
-        the new Harness opens its own engine against the same db_path.
+        the new Harness opens its own engine against the same db_path. Passes this
+        Harness's own `_register` callback through, so the replacement is owned by
+        whatever fixture (`harness`/`harness_factory`) built the parent, and a chain
+        of restarts stays fully covered by that fixture's teardown rather than
+        needing a second `aclose()` bolted on somewhere.
         """
         await self.store.aclose()
         return await build_handler(
             self._tmp_path, script=script, honcho=self.honcho,
-            identity_toml=self._identity_toml, own_account=self.own_account, **kwargs,
+            identity_toml=self._identity_toml, own_account=self.own_account,
+            register=self._register, **kwargs,
         )
 
 
@@ -224,9 +231,16 @@ async def build_handler(
     debounce: float | None = None,
     fault: str | None = None,
     monkeypatch: pytest.MonkeyPatch | None = None,
+    register: Callable[[Harness], None] | None = None,
 ) -> Harness:
     """Assemble a real `Handler` wired to a tmp db + a tmp COPY of the real persona dir +
     fakes.
+
+    `register`, if given, is called with the finished `Harness` before it's returned,
+    and is threaded onto the `Harness` itself so `simulate_restart` can call it again
+    for the replacement. The caller (a `harness`/`harness_factory` fixture) passes its
+    own bookkeeping list's `.append` here so every `Harness` reachable from a test —
+    including one built by a chain of restarts — gets torn down at fixture teardown.
 
     `script` is either a `FakeLLM` instance, a list of `ScriptedTurn`s (wrapped into a
     `FakeLLM` for you), or `None` (wrapped into an empty, zero-turn `FakeLLM`). `Handler`
@@ -343,7 +357,7 @@ async def build_handler(
         create_agent_fn=counter.increment,
     )
 
-    return Harness(
+    harness = Harness(
         handler=handler,
         db_path=cfg.store.db_path,
         sink=adapter,
@@ -355,4 +369,8 @@ async def build_handler(
         _agents=counter,
         _tmp_path=tmp_path,
         _identity_toml=identity_toml,
+        _register=register,
     )
+    if register is not None:
+        register(harness)
+    return harness
