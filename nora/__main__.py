@@ -123,7 +123,7 @@ class App:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--config", default="config.toml")
     args = parser.parse_args()
 
     async def _run() -> None:

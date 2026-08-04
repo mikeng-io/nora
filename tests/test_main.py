@@ -1,8 +1,9 @@
 import shutil
+import tomllib
 from pathlib import Path
 
 import pytest
-import yaml
+import tomli_w
 from aiohttp import web
 
 from nora.__main__ import StartupError, build_app
@@ -22,7 +23,8 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
     app.router.add_route("*", "/{tail:.*}", lambda r: web.json_response({"ok": True}))
     daemon = await aiohttp_server(app)
 
-    cfg = yaml.safe_load((ROOT / "config.example.yaml").read_text())
+    with (ROOT / "config.example.toml").open("rb") as f:
+        cfg = tomllib.load(f)
     base = str(daemon.make_url("")).rstrip("/")
     cfg["signal_cli"]["base_url"] = base
     cfg["honcho"]["base_url"] = base
@@ -34,8 +36,9 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
     (tmp_path / "persons.yaml").write_text(
         "persons:\n  miles:\n    name: Miles\n    platforms:\n      signal: \"+852111\"\n"
     )
-    path = tmp_path / "config.yaml"
-    path.write_text(yaml.safe_dump(cfg))
+    path = tmp_path / "config.toml"
+    with path.open("wb") as f:
+        tomli_w.dump(cfg, f)
     return path
 
 
@@ -61,9 +64,9 @@ async def test_a_broken_persona_refuses_to_start(env, tmp_path):
     persona_dir.mkdir()
     shutil.copy(ROOT / "nora" / "persona" / "soul.md", persona_dir / "soul.md")
     (persona_dir / "broken.md").write_text("no frontmatter")
-    cfg = yaml.safe_load(env.read_text())
+    cfg = tomllib.loads(env.read_text())
     cfg["persona"]["dir"] = str(persona_dir)
-    env.write_text(yaml.safe_dump(cfg))
+    env.write_text(tomli_w.dumps(cfg))
     with pytest.raises(StartupError, match="persona"):
         await build_app(env)
 
@@ -78,17 +81,17 @@ async def test_a_duplicate_person_mapping_refuses_to_start(env, tmp_path):
 
 
 async def test_an_undeterminable_account_refuses_to_start(env):
-    cfg = yaml.safe_load(env.read_text())
+    cfg = tomllib.loads(env.read_text())
     cfg["signal_cli"]["base_url"] = "http://127.0.0.1:1"
-    env.write_text(yaml.safe_dump(cfg))
+    env.write_text(tomli_w.dumps(cfg))
     with pytest.raises(StartupError, match="account"):
         await build_app(env)
 
 
 async def test_honcho_being_down_does_not_prevent_startup(env):
-    cfg = yaml.safe_load(env.read_text())
+    cfg = tomllib.loads(env.read_text())
     cfg["honcho"]["base_url"] = "http://127.0.0.1:1"
-    env.write_text(yaml.safe_dump(cfg))
+    env.write_text(tomli_w.dumps(cfg))
     app = await build_app(env)
     try:
         assert app.handler is not None

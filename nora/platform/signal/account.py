@@ -49,7 +49,7 @@ async def derive_account(
         raise AccountError(f"no account registered on the signal-cli daemon at {url}")
     if len(accounts) > 1:
         raise AccountError(
-            f"multiple accounts on the daemon ({accounts}); set signal_cli.account in config.yaml"
+            f"multiple accounts on the daemon ({accounts}); set signal_cli.account in config.toml"
         )
     log.info("derived Signal account from the daemon")
     return accounts[0]

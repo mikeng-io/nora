@@ -110,14 +110,14 @@ def _load_adversarial_cases(paths: tuple[Path, ...]) -> list[dict]:
 
 
 def _load_eval_config(loader=load_nora_config, candidates=None):
-    """`config.yaml` (tracked in git, per-deployment) is preferred; `config.example.yaml`
-    (committed) is the fallback for a local `config.yaml` predating the schema.
+    """`config.toml` (tracked in git, per-deployment) is preferred; `config.example.toml`
+    (committed) is the fallback for a local `config.toml` predating the schema.
 
     `loader` and `candidates` are injectable so phase 1's format change is a
     call-site argument, not an edit to this function.
     """
     if candidates is None:
-        candidates = (REPO_ROOT / "config.yaml", REPO_ROOT / "config.example.yaml")
+        candidates = (REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml")
     last_error: ConfigError | None = None
     for candidate in candidates:
         try:

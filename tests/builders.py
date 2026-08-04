@@ -1,14 +1,14 @@
 """Test-side construction seams for the config tree.
 
-Phase 1 replaces frozen dataclasses with pydantic-settings. Every direct use of
-`dataclasses.replace` or a `nora.config` constructor in the suite is a site that
-would break; concentrating them here means phase 1 edits this file, not ten
-others. Nothing outside this module may construct or copy a config object.
+`nora.config`'s tree is pydantic (frozen `BaseModel`s), not dataclasses. Every
+direct use of `model_copy` or a `nora.config` constructor in the suite is a site
+that would break on a future config change; concentrating them here means that
+change edits this file, not ten others. Nothing outside this module may
+construct or copy a config object.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import shutil
 from pathlib import Path
 from typing import Any
@@ -30,7 +30,7 @@ def _with(obj: Any, path: str, value: Any) -> Any:
     head, _, rest = path.partition(".")
     if rest:
         value = _with(getattr(obj, head), rest, value)
-    return dataclasses.replace(obj, **{head: value})
+    return obj.model_copy(update={head: value})
 
 
 def override_config(base: Any, changes: dict[str, Any]) -> Any:
@@ -38,8 +38,8 @@ def override_config(base: Any, changes: dict[str, Any]) -> Any:
 
         override_config(cfg, {"buffer.db_path": p, "trigger.min_interval_seconds": 0})
 
-    Format-agnostic by contract: when the config tree becomes pydantic, only
-    `_with` changes (to `model_copy(update=...)`), and no caller moves.
+    Format-agnostic by contract: a future config change only touches `_with`,
+    never a caller.
     """
     for path, value in changes.items():
         base = _with(base, path, value)
@@ -77,10 +77,9 @@ def make_tracing_config(**kw: Any) -> TracingConfig:
 def load_example_config(tmp_path: Path) -> Config:
     """Copy the committed example config into `tmp_path` and load it.
 
-    The single place that knows the config file's NAME and FORMAT. Phase 1
-    renames config.example.yaml -> config.example.toml and swaps the loader;
-    only this function moves.
+    The single place that knows the config file's NAME and FORMAT. Only this
+    function names config.example.toml in the test suite.
     """
-    cfg_path = tmp_path / "config.yaml"
-    shutil.copy(REPO_ROOT / "config.example.yaml", cfg_path)
+    cfg_path = tmp_path / "config.toml"
+    shutil.copy(REPO_ROOT / "config.example.toml", cfg_path)
     return _load_config(cfg_path)
