@@ -69,3 +69,18 @@ class Debounce:
             return False
         self._last[key] = now
         return True
+
+    def sweep(self, older_than: float) -> int:
+        """Drop entries last seen more than `older_than` seconds ago (by the
+        injected clock) and return how many were dropped.
+
+        `_last` is otherwise unbounded — every distinct (platform, conversation_id)
+        key it ever sees stays forever, so it grows with platforms x conversations.
+        This is the hook `app/runtime.py` calls on an interval to keep it bounded;
+        `Debounce` itself never calls this.
+        """
+        now = self._clock()
+        stale = [key for key, last in self._last.items() if now - last > older_than]
+        for key in stale:
+            del self._last[key]
+        return len(stale)
