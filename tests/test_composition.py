@@ -7,6 +7,7 @@ import pytest
 
 from nora.app.composition import Dependencies, build_dependencies
 from nora.config import load
+from tests.builders import override_config
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,15 +24,28 @@ def cfg(tmp_path, monkeypatch):
     (tmp_path / "identity.toml").write_text(
         '[persons.miles]\nname = "Miles"\n[persons.miles.platforms]\nsignal = "+852111"\n'
     )
-    return load(dst)
+    # config.example.toml's store.db_path ("~/workspace/nora/data/messages.db") is
+    # absolute, so it survives path resolution untouched regardless of where this
+    # copy lives — without this override, build_dependencies() below would wire a
+    # SqlAuditStore at the real production database.
+    return override_config(load(dst), {"store.db_path": tmp_path / "messages.db"})
 
 
-def test_build_dependencies_returns_the_wired_graph(cfg):
+def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     deps = build_dependencies(cfg)
     assert isinstance(deps, Dependencies)
+    assert deps.audit is not None
     assert deps.memory is not None
     assert deps.persons is not None
     assert deps.metrics is not None
+
+
+def test_build_dependencies_never_wires_the_real_database(cfg, tmp_path):
+    """Regression guard: config.example.toml's store.db_path is absolute, so a
+    fixture that forgets to override it would build a real SqlAuditStore against
+    the production database instead of a throwaway one. tmp_path being a parent
+    of the resolved db_path is what actually proves that didn't happen here."""
+    assert tmp_path in cfg.store.db_path.parents
 
 
 def test_dependencies_do_not_expose_settings(cfg):

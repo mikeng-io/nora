@@ -16,6 +16,7 @@ from pathlib import Path
 
 from nora.config import Config
 from nora.domain.models import DeliveryStatus
+from nora.domain.ports import AuditStore
 from nora.handler import Handler
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
@@ -161,7 +162,9 @@ class Harness:
     metrics: Metrics
     own_account: str
     persona_store: PersonaStore
-    store: SqlAuditStore
+    # Port, not the concrete SqlAuditStore: under db_append_fails/context_read_fails
+    # this is a _StoreProxy subclass instead (see the two subclasses above).
+    store: AuditStore
     _agents: _Counter
     _tmp_path: Path
     _identity_toml: str
