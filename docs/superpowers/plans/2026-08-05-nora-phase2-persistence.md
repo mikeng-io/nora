@@ -1085,6 +1085,7 @@ import asyncio
 import json
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage
 from nora.infra.sql.audit import SqlAuditStore
@@ -1101,12 +1102,29 @@ def _msg(conv="g1", body="hello", ts=1) -> NormalizedMessage:
 
 
 @pytest.fixture
-async def store(tmp_path):
-    path = tmp_path / "messages.db"
-    run_migrations(path)
-    s = SqlAuditStore(create_sql_engine(path))
-    yield s
-    await s.aclose()
+async def make_store(tmp_path):
+    """Factory, not a bare store: the retention window is construction-time
+    policy, so a test that needs a small window builds a store with one rather
+    than reaching into a private attribute."""
+    created = []
+
+    def _make(*, max_per_conversation=500, name="messages.db"):
+        path = tmp_path / name
+        run_migrations(path)
+        s = SqlAuditStore(
+            create_sql_engine(path), max_per_conversation=max_per_conversation
+        )
+        created.append(s)
+        return s
+
+    yield _make
+    for s in created:
+        await s.aclose()
+
+
+@pytest.fixture
+async def store(make_store):
+    return make_store()
 
 
 async def test_append_returns_the_new_row_id(store):
@@ -1149,13 +1167,13 @@ async def test_delivery_status_round_trips(store):
     assert row.delivery_status is DeliveryStatus.SENT
 
 
-async def test_append_does_not_prune(store):
+async def test_append_does_not_prune(make_store):
     """The defect this closes: db.append ran an INSERT plus a correlated-subquery
     prune in ONE transaction per message. Under WAL with N adapters that yields
     SQLITE_BUSY, and the ingest stage's failure behaviour is to drop the
     message — silent audit loss, the one thing SQLite is here to prevent.
     Append is now a bare INSERT; pruning is a periodic sweep."""
-    store._max_per_conversation = 3
+    store = make_store(max_per_conversation=3)
     for i in range(10):
         await store.append(message=_msg(body=f"m{i}", ts=i))
     assert len(await store.recent(conversation_id="g1", limit=1000)) == 10
@@ -1169,11 +1187,15 @@ async def test_concurrent_appends_all_land(store):
 
 
 async def test_an_invalid_conversation_type_is_rejected_by_the_check_constraint(store):
+    """`IntegrityError`, not a bare `Exception`: ruff's B017 rejects a blind
+    `pytest.raises(Exception)` and `tests/**` does not ignore it, so a blind
+    assertion would break the lint gate. It is also the weaker assertion — a
+    typo raising AttributeError would satisfy it."""
     bad = NormalizedMessage(
         platform="signal", conversation_id="g1", conversation_type="channel",
         sender_id="+1", sender_name=None, timestamp=1, body="x", raw={},
     )
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError):
         await store.append(message=bad)
 ```
 
@@ -1223,12 +1245,18 @@ class SqlAuditStore:
         max_per_conversation: int = DEFAULT_MAX_PER_CONVERSATION,
         metrics: Any = None,
     ) -> None:
+        """`metrics` is INJECTED, never imported.
+
+        `nora.infra` sits below `nora.obs` in import-linter's layers contract,
+        so importing `nora.obs.metrics` here — at module level or lazily inside
+        this function, which import-linter detects either way — breaks contract
+        2. Injection is also what the project's test-seam policy requires:
+        collaborators come through `__init__`, never a module-level mutable
+        singleton. The composition root passes `METRICS`; `None` means this
+        store simply does not count, which is correct for unit tests.
+        """
         self._engine = engine
         self._max_per_conversation = max_per_conversation
-        if metrics is None:                       # imported lazily: obs imports nothing here
-            from nora.obs.metrics import METRICS
-
-            metrics = METRICS
         self._metrics = metrics
 
     async def append(
@@ -1287,7 +1315,7 @@ class SqlAuditStore:
         ]
 
     def _note_busy(self, exc: OperationalError) -> None:
-        if "database is locked" in str(exc).lower():
+        if self._metrics is not None and "database is locked" in str(exc).lower():
             self._metrics.inc("nora_store_busy_total")
 ```
 
@@ -1385,8 +1413,8 @@ async def test_stats_on_an_empty_store(store):
     assert s["latest_ts"] == 0
 
 
-async def test_prune_all_keeps_the_window_per_conversation(store):
-    store._max_per_conversation = 3
+async def test_prune_all_keeps_the_window_per_conversation(make_store):
+    store = make_store(max_per_conversation=3)
     for i in range(10):
         await store.append(message=_msg(conv="A", body=f"a{i}", ts=i))
     for i in range(2):
@@ -1399,28 +1427,34 @@ async def test_prune_all_keeps_the_window_per_conversation(store):
 
 
 async def test_prune_all_is_a_no_op_below_the_window(store):
-    store._max_per_conversation = 500
     await store.append(message=_msg())
     assert await store.prune_all() == 0
 
 
-async def test_aclose_disposes_the_engine(tmp_path):
-    from nora.infra.sql.engine import create_sql_engine
-    from nora.infra.sql.migrations_runner import run_migrations
+async def test_aclose_releases_the_connection_pool(make_store):
+    """`aclose` delegates to `AsyncEngine.dispose()`, which releases pooled
+    connections and installs a fresh pool. It deliberately does NOT poison the
+    engine — verified 2026-08-05: a query after `dispose()` succeeds, opening a
+    new connection. So this asserts the pool was actually replaced, which is
+    the guarantee, rather than asserting a later call raises, which it does
+    not."""
+    store = make_store()
+    await store.append(message=_msg())
+    pool_before = store._engine.pool
+    await store.aclose()
+    assert store._engine.pool is not pool_before
 
-    path = tmp_path / "m.db"
-    run_migrations(path)
-    s = SqlAuditStore(create_sql_engine(path))
-    await s.append(message=_msg())
-    await s.aclose()
-    with pytest.raises(Exception):
-        await s.append(message=_msg())
+
+async def test_aclose_is_idempotent(make_store):
+    store = make_store()
+    await store.aclose()
+    await store.aclose()
 ```
 
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `uv run pytest tests/infra/test_audit_store.py -q`
-Expected: 6 failures, all `AttributeError: 'SqlAuditStore' object has no attribute 'set_delivery_status'` / `'stats'` / `'prune_all'` / `'aclose'`.
+Expected: 7 failures, all `AttributeError: 'SqlAuditStore' object has no attribute 'set_delivery_status'` / `'stats'` / `'prune_all'` / `'aclose'`.
 
 - [ ] **Step 3: Implement the four methods**
 
@@ -1497,7 +1531,7 @@ from nora.infra.sql.migrations_runner import head_revision
 - [ ] **Step 4: Run the tests**
 
 Run: `uv run pytest tests/infra/test_audit_store.py -q`
-Expected: 15 passed.
+Expected: 16 passed.
 
 - [ ] **Step 5: Full gate and commit**
 
@@ -1702,8 +1736,12 @@ class FakeAuditStore:
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
     ) -> int:
-        if self.closed:
-            raise RuntimeError("store is closed")
+        # Deliberately does NOT raise when closed. `SqlAuditStore.aclose`
+        # delegates to `AsyncEngine.dispose()`, which releases the pool but
+        # leaves the engine usable — verified 2026-08-05. A fake that raised
+        # here would be stricter than production, which is precisely the
+        # drift the contract suite exists to prevent; `closed` is recorded for
+        # assertions, not enforced.
         if is_nora and self.fail_on_nora:
             raise RuntimeError("disk full")
         row_id = len(self.rows) + 1
@@ -1721,8 +1759,6 @@ class FakeAuditStore:
         return row_id
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
-        if self.closed:
-            raise RuntimeError("store is closed")
         if self.fail_on_recent:
             raise RuntimeError("db down")
         matching = [r for r in self.rows if r["conversation_id"] == conversation_id]
@@ -1960,6 +1996,7 @@ Then the caller in `nora/__main__.py:97` must pass `store=` instead of `db_path=
         self.store = SqlAuditStore(
             create_sql_engine(cfg.store.db_path),
             max_per_conversation=cfg.store.max_per_conversation,
+            metrics=self.metrics,
         )
 ```
 
@@ -2178,6 +2215,7 @@ def build_dependencies(cfg: Config) -> Dependencies:
         audit=SqlAuditStore(
             create_sql_engine(cfg.store.db_path),
             max_per_conversation=cfg.store.max_per_conversation,
+            metrics=METRICS,
         ),
         memory=HonchoClient(cfg.memory.base_url, cfg.memory.workspace_id),
         persons=load_persons(cfg.identity_file),
@@ -2197,6 +2235,7 @@ In `tests/integration/harness.py`: delete `from nora.store import db`; replace `
     store = SqlAuditStore(
         create_sql_engine(cfg.store.db_path),
         max_per_conversation=cfg.store.max_per_conversation,
+        metrics=metrics,
     )
     ...
     elif fault == "db_append_fails":
@@ -2410,6 +2449,12 @@ Change each to `from nora.infra.honcho import HonchoClient` (or the relative equ
 - [ ] **Step 5: Update the import-linter contracts**
 
 In `pyproject.toml`'s `[tool.importlinter]`, replace `nora.store` with `nora.infra` in the layers contract and in the "only app and `__main__` read config" contract's source modules. `nora.store` no longer exists, and a contract naming a non-existent module is a contract that silently checks nothing.
+
+`nora.infra` takes `nora.store`'s **exact position** in the layers list — below
+`nora.obs`, above `nora.domain`. That ordering is load-bearing, not incidental:
+it is why `SqlAuditStore` takes `metrics` through `__init__` instead of
+importing `nora.obs.metrics` (Task 4). Confirmed before the rename that nothing
+under `nora/store/` imports `nora.obs`, so the move introduces no new edge.
 
 - [ ] **Step 6: OBSERVE THE IMPORT CONTRACT FAILING (mandatory)**
 
