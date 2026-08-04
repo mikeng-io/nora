@@ -858,3 +858,44 @@ Production behaviour is unchanged. `nora/` differs from the phase start only by 
 - **Spec coverage:** every element of the spec's Phase 0 row is covered — dev deps + CI (Tasks 1, 6), Honcho `GET /health` test (Task 3), import-direction test (Task 4 rewrites the boundary test and produces `_imported_modules` for Phase 1's `domain/` purity test; the `domain/` contract itself cannot be written before `domain/` exists in Phase 1), config-construction seams (Task 5), backups (Task 7), `nora:p0` tag (Task 7).
 - **Deliberately deferred to Phase 1:** mypy *configuration* (Task 1 installs it; there is no `domain/` or `config/` package to point it at yet) and import-linter *contracts* (same reason). Both binaries are verified to resolve so Phase 1 only writes config.
 - **Type consistency:** `override_config(base, changes: dict)` takes a dict, not `**kwargs`, because dotted paths are not valid Python identifiers. `_imported_modules` is defined once in Task 4 and reused by name in Phase 1.
+
+---
+
+## Phase 0 outcome (2026-08-04)
+
+**Complete.** 17 commits, `2b86088..72cedd5` on `refactor/architecture`. Exit gate green:
+ruff clean · 454 passed / 1 deselected · mypy + lint-imports + alembic resolve ·
+`nora:p0` and `nora:latest` tagged · `/health` 200 with `sqlite.reachable: true` and a
+top-level `sse` key · three backups verified (DB opens as valid SQLite, `rows: 0`,
+`user_version: 1`) · signal-cli untouched.
+
+### Defects in this plan, found during execution
+
+1. `ruff check --version` is invalid CLI syntax — it exits 2 on an *argument* error,
+   nearly indistinguishable from the `Failed to spawn` defect Task 1 exists to fix.
+2. Task 2 scoped the fix to `nora/ evals/` but the gate to `nora/ evals/ tests/`; the 39
+   unmeasured `tests/` violations included 11 that would have ASCII-mangled the
+   adversarial prompt-injection corpus.
+3. The CI workflow was unrunnable as written — `uv sync --frozen --group dev` omits the
+   `evals` extra that five test files need.
+4. Task 5 missed a second `dataclasses.replace` chain (harness `llm_timeout` branch) and
+   omitted the `OMNIROUTE_API_KEY` setenv that `config.load()` requires eagerly.
+5. §8.1's premise that `config.yaml` is gitignored was false — it is tracked.
+
+### Carried into Phase 1
+
+- **Blocking:** no `.env` exists; `docker-compose.yml:18` requires `OMNIROUTE_API_KEY`
+  exported in the invoking shell, so `docker compose up -d` from a fresh shell fails —
+  including during a rollback. Create a gitignored `.env` before Phase 1.
+- **Trap:** `config.yaml` is both git-tracked and bind-mounted, so `git checkout` /
+  `revert` / branch-switch rewrites live production config in place; a `git rm` of it
+  makes Docker recreate the mount path as a directory. See spec §8.1.
+- `tests/builders.py` is the seam. `_imported_modules` in `tests/test_boundaries.py` is
+  reused by the `nora/domain/` purity test.
+
+### Deferred minors (triaged, non-blocking)
+
+`tests/test_honcho_card.py`'s local handler lacks its sibling's type hints · CI
+double-runs on PR branches (`push: ["**"]` + `pull_request`) · `tests/test_main.py` still
+names config files inline (Phase 1 rewrites it anyway) · `evals/run.py`'s new
+empty-`candidates` guard has no direct test.
