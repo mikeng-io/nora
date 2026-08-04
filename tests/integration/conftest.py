@@ -8,14 +8,23 @@ from tests.integration.harness import build_handler
 @pytest.fixture
 async def harness(tmp_path, monkeypatch):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    return await build_handler(tmp_path, monkeypatch=monkeypatch)
+    h = await build_handler(tmp_path, monkeypatch=monkeypatch)
+    yield h
+    await h.aclose()
 
 
 @pytest.fixture
-def harness_factory(tmp_path, monkeypatch):
+async def harness_factory(tmp_path, monkeypatch):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    built: list = []
 
     async def factory(**kwargs):
-        return await build_handler(tmp_path, monkeypatch=monkeypatch, **kwargs)
+        h = await build_handler(tmp_path, monkeypatch=monkeypatch, **kwargs)
+        built.append(h)
+        return h
 
-    return factory
+    yield factory
+    # simulate_restart() closes its *parent* harness's store itself before
+    # building the replacement, so this only needs to close what `built` holds.
+    for h in built:
+        await h.aclose()

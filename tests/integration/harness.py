@@ -17,6 +17,8 @@ import pytest
 
 from nora.config import Config
 from nora.handler import Handler
+from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.engine import create_sql_engine
 from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from nora.persons import load_persons
@@ -133,9 +135,13 @@ class Harness:
     metrics: Metrics
     own_account: str
     persona_store: PersonaStore
+    store: SqlAuditStore
     _agents: _Counter
     _tmp_path: Path
     _identity_toml: str
+
+    async def aclose(self) -> None:
+        await self.store.aclose()
 
     @property
     def agents_constructed(self) -> int:
@@ -174,7 +180,11 @@ class Harness:
         """Build a brand new Harness (fresh Handler, fresh debounce/in-flight state)
         that reuses the same db_path and the same Honcho double, so SQLite and Honcho
         continuity are real — a "restart" only ever loses in-process state.
+
+        Closes this Harness's store engine first, mirroring a real process exit —
+        the new Harness opens its own engine against the same db_path.
         """
+        await self.store.aclose()
         return await build_handler(
             self._tmp_path, script=script, honcho=self.honcho,
             identity_toml=self._identity_toml, own_account=self.own_account, **kwargs,
@@ -247,6 +257,7 @@ async def build_handler(
     )
 
     await db.init(cfg.store.db_path)
+    store = SqlAuditStore(create_sql_engine(cfg.store.db_path))
     persons = load_persons(persons_path)
     persona_store = PersonaStore(
         cfg.persona.dir,
@@ -304,14 +315,13 @@ async def build_handler(
     elif fault == "send_fails":
         adapter._succeed = False   # SinkSender's existing succeed flag, flipped post-construction
     elif fault == "db_append_fails" and monkeypatch is not None:
-        real_append = db.append
+        # Deliverer's audit write goes through `store`, not the `db` module — the
+        # ambient path is the only caller left on `db.append`, and it never carries
+        # is_nora=True, so failing every write on `store` reaches only Deliverer.
+        async def _failing_append(*a, **kw):
+            raise RuntimeError("disk full")
 
-        async def _failing_append(path, msg, *, is_nora=False, **kw):
-            if is_nora:
-                raise RuntimeError("disk full")
-            return await real_append(path, msg, is_nora=is_nora, **kw)
-
-        monkeypatch.setattr(db, "append", _failing_append)
+        monkeypatch.setattr(store, "append", _failing_append)
     elif fault == "context_read_fails" and monkeypatch is not None:
         async def _failing_recent(*a, **kw):
             raise RuntimeError("db down")
@@ -327,6 +337,7 @@ async def build_handler(
         persons=persons,
         honcho=honcho_double,
         persona_store=persona_store,
+        store=store,
         metrics=metrics,
         invoke_fn=invoke_fn,
         create_agent_fn=counter.increment,
@@ -340,6 +351,7 @@ async def build_handler(
         metrics=metrics,
         own_account=getattr(adapter, "_account", own_account),
         persona_store=persona_store,
+        store=store,
         _agents=counter,
         _tmp_path=tmp_path,
         _identity_toml=identity_toml,

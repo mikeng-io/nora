@@ -7,8 +7,6 @@ import time
 
 from aiohttp import web
 
-from ..store import db
-
 
 class LLMState:
     """Tiny mutable holder the handler updates after a successful invocation."""
@@ -26,12 +24,12 @@ def _sum_series(metrics, name: str) -> float:
 
 
 def build_health_app(
-    *, adapter, db_path, honcho, persona_store, metrics, started_at: float,
+    *, adapter, store, honcho, persona_store, metrics, started_at: float,
     llm_state: LLMState,
 ) -> web.Application:
     app = web.Application()
     app["adapter"] = adapter
-    app["db_path"] = db_path
+    app["store"] = store
     app["honcho"] = honcho
     app["persona_store"] = persona_store
     app["metrics"] = metrics
@@ -50,7 +48,7 @@ def build_health_app(
             healthy = False
 
         try:
-            stats = await db.stats(a["db_path"])
+            stats = await a["store"].stats()
             sqlite = {"reachable": True, "rows": stats["messages"]}
         except Exception:                      # noqa: BLE001
             sqlite = {"reachable": False}

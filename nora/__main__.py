@@ -17,6 +17,8 @@ from . import config
 from .agent import factory
 from .config import ConfigError
 from .handler import Handler
+from .infra.sql.audit import SqlAuditStore
+from .infra.sql.engine import create_sql_engine
 from .obs.health import LLMState, build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
 from .obs.metrics import METRICS
@@ -49,6 +51,11 @@ async def build_app(config_path) -> App:
         raise StartupError(f"person mapping error: {exc}") from exc
 
     await db.init(cfg.store.db_path)
+    store = SqlAuditStore(
+        create_sql_engine(cfg.store.db_path),
+        max_per_conversation=cfg.store.max_per_conversation,
+        metrics=METRICS,
+    )
 
     try:
         account = await derive_account(
@@ -73,14 +80,15 @@ async def build_app(config_path) -> App:
     adapter = SignalAdapter(cfg.platforms.signal.base_url, account)
     llm_state = LLMState()
     handler = Handler(cfg=cfg, adapter=adapter, persons=persons, honcho=honcho,
-                      persona_store=persona_store, metrics=METRICS, llm_state=llm_state)
+                      persona_store=persona_store, store=store, metrics=METRICS,
+                      llm_state=llm_state)
 
     return App(cfg=cfg, handler=handler, adapter=adapter, account=account,
-               persona=persona, honcho=honcho, llm_state=llm_state)
+               persona=persona, honcho=honcho, store=store, llm_state=llm_state)
 
 
 class App:
-    def __init__(self, *, cfg, handler, adapter, account, persona, honcho,
+    def __init__(self, *, cfg, handler, adapter, account, persona, honcho, store,
                  llm_state=None) -> None:
         self.cfg = cfg
         self.handler = handler
@@ -88,13 +96,14 @@ class App:
         self.account = account
         self.persona = persona
         self.honcho = honcho
+        self.store = store
         self.llm_state = llm_state or LLMState()
         self._health_runner = None
         self._bg_tasks: list[asyncio.Task] = []
 
     async def run(self) -> None:
         health_app = build_health_app(
-            adapter=self.adapter, db_path=self.cfg.store.db_path, honcho=self.honcho,
+            adapter=self.adapter, store=self.store, honcho=self.honcho,
             persona_store=self.handler.persona_store, metrics=self.handler.metrics,
             started_at=time.time(), llm_state=self.llm_state,
         )
@@ -121,6 +130,7 @@ class App:
         if self._health_runner is not None:
             await self._health_runner.cleanup()
         await factory.close_client()
+        await self.store.aclose()
 
 
 def main() -> int:

@@ -11,14 +11,12 @@ import logging
 
 from strands import tool
 
-from ..store import db
-
 log = logging.getLogger("nora.tools")
 
 
 def build_tools(
     *,
-    db_path,
+    store,
     conversation_id: str,
     conversation_type: str,
     persons,
@@ -41,15 +39,17 @@ def build_tools(
             limit: How many recent messages to fetch (max 200).
         """
         try:
-            rows = await db.recent(db_path, conversation_id, min(int(limit), 200))
+            rows = await store.recent(
+                conversation_id=conversation_id, limit=min(int(limit), 200)
+            )
         except Exception:
             log.exception("read_buffer failed")
             return []
         return [
             {
-                "sender": "Nora" if r["is_nora"] else (r["sender_name"] or "unknown"),
-                "body": r["body"],
-                "ts": r["ts"],
+                "sender": "Nora" if r.is_nora else (r.sender_name or "unknown"),
+                "body": r.body,
+                "ts": r.ts,
             }
             for r in rows
         ]

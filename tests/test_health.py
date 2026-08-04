@@ -1,20 +1,35 @@
 import pytest
 
+from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.health import LLMState, build_health_app
 from nora.obs.metrics import Metrics
-from nora.store import db
+from nora.testing import FakeAuditStore
 from tests.fakes import FakeHoncho, SinkSender
 
 
+class _BrokenStore(FakeAuditStore):
+    async def stats(self):
+        raise RuntimeError("database gone")
+
+
 @pytest.fixture
-async def client(aiohttp_client, tmp_path):
-    dbp = tmp_path / "messages.db"
-    await db.init(dbp)
+async def store(tmp_path):
+    path = tmp_path / "messages.db"
+    run_migrations(path)
+    s = SqlAuditStore(create_sql_engine(path))
+    yield s
+    await s.aclose()
+
+
+@pytest.fixture
+async def client(aiohttp_client, store):
     from nora.persona.loader import PersonaStore
 
     metrics = Metrics()
     app = build_health_app(
-        adapter=SinkSender(), db_path=dbp, honcho=FakeHoncho(),
+        adapter=SinkSender(), store=store, honcho=FakeHoncho(),
         persona_store=PersonaStore(
             __import__("pathlib").Path("nora/persona"), canary="C"),
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
@@ -35,12 +50,12 @@ async def test_health_returns_200_when_everything_is_reachable(client):
     assert (await client.get("/health")).status == 200
 
 
-async def test_health_returns_503_when_sqlite_is_unreachable(aiohttp_client, tmp_path):
+async def test_health_returns_503_when_sqlite_is_unreachable(aiohttp_client):
     from pathlib import Path
 
     from nora.persona.loader import PersonaStore
 
-    app = build_health_app(adapter=SinkSender(), db_path=tmp_path / "nope" / "x.db",
+    app = build_health_app(adapter=SinkSender(), store=_BrokenStore(),
                            honcho=FakeHoncho(), metrics=Metrics(),
                            persona_store=PersonaStore(Path("nora/persona"), canary="C"),
                            started_at=0.0, llm_state=LLMState())
@@ -63,15 +78,14 @@ async def test_health_reports_the_strands_version(client):
     assert body["strands_version"] == "1.50.2"
 
 
-async def test_health_reports_the_last_omniroute_success(aiohttp_client, tmp_path):
+async def test_health_reports_the_last_omniroute_success(aiohttp_client, store):
     from pathlib import Path
 
     from nora.persona.loader import PersonaStore
 
     state = LLMState()
     state.last_success_at = 1700.0
-    await db.init(tmp_path / "m.db")
-    app = build_health_app(adapter=SinkSender(), db_path=tmp_path / "m.db",
+    app = build_health_app(adapter=SinkSender(), store=store,
                            honcho=FakeHoncho(), metrics=Metrics(),
                            persona_store=PersonaStore(Path("nora/persona"), canary="C"),
                            started_at=0.0, llm_state=state)
@@ -92,9 +106,9 @@ async def test_metrics_endpoint_reflects_recorded_counters(client):
     assert "nora_tags_total 1" in await (await client.get("/metrics")).text()
 
 
-async def test_health_never_raises_on_a_broken_dependency(client, monkeypatch):
+async def test_health_never_raises_on_a_broken_dependency(client, store, monkeypatch):
     async def boom(*a, **kw):
         raise RuntimeError("down")
 
-    monkeypatch.setattr(db, "stats", boom)
+    monkeypatch.setattr(store, "stats", boom)
     assert (await client.get("/health")).status == 503

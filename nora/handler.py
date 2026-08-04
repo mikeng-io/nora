@@ -24,7 +24,7 @@ log = logging.getLogger("nora.handler")
 
 
 class Handler:
-    def __init__(self, *, cfg, adapter, persons, honcho, persona_store,
+    def __init__(self, *, cfg, adapter, persons, honcho, persona_store, store,
                  metrics=METRICS, invoke_fn=None, create_agent_fn=None,
                  clock=time.monotonic, llm_state=None) -> None:
         self.cfg = cfg
@@ -32,6 +32,7 @@ class Handler:
         self.persons = persons
         self.honcho = honcho
         self.persona_store = persona_store
+        self.store = store
         self.metrics = metrics
         self.llm_state = llm_state
         self._clock = clock
@@ -162,17 +163,16 @@ class Handler:
 
             target = msg.target()
             deliverer = Deliverer(
-                db_path=self.cfg.store.db_path, adapter=self.adapter, target=target,
+                store=self.store, adapter=self.adapter, target=target,
                 persona=persona, canary=self.cfg.persona.canary, tag_id=tag_id,
                 nora_sender_id=self.cfg.platforms.signal.nora_sender_id,
-                max_per_conversation=self.cfg.store.max_per_conversation,
                 metrics=self.metrics,
             )
             guard = ReplyGuard(conversation_id=msg.conversation_id, deliverer=deliverer,
                                metrics=self.metrics)
             self._guards.append(guard)
             tools = build_tools(
-                db_path=self.cfg.store.db_path, conversation_id=msg.conversation_id,
+                store=self.store, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self.persons,
                 honcho=self.honcho, deliverer=deliverer,
                 context_window=self.cfg.store.context_window,
