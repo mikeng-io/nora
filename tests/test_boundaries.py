@@ -56,16 +56,51 @@ def test_strands_import_boundary():
     assert not offenders, f"strands imported outside the agent boundary: {offenders}"
 
 
-DOMAIN_BANNED = {"aiohttp", "strands", "sqlalchemy", "pydantic",
-                 "prometheus_client", "opentelemetry", "yaml", "openai"}
+def _imported_dotted_modules(path: Path) -> set[str]:
+    """Like `_imported_modules`, but keeps the FULL dotted path for absolute
+    imports instead of truncating to the top-level package name.
+
+    That distinction matters for the allow-list below: truncating
+    `nora.store` to `nora` would make it indistinguishable from a legitimate
+    sibling import of `nora.domain.models`, and silently let `from nora.store
+    import db` through. Still ignores relative imports (level > 0): those are
+    intra-package and can never reach outside `nora.domain`.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            modules.add(node.module)
+    return modules
 
 
-def test_domain_imports_no_framework():
-    """The rule that keeps the rest honest: if a type in domain/ needs a framework
-    to express itself, the port is wrong."""
+def test_domain_imports_only_the_standard_library():
+    """domain/ may import the stdlib and its own siblings — nothing else.
+    A deny-list only catches names someone thought of; this catches everything.
+
+    Supersedes the old deny-list (`DOMAIN_BANNED`): a deny-list of eight
+    hardcoded framework names passes silently on anything not on the list —
+    `import aiosqlite` or `from nora.store import db` both slipped through it
+    with every gate green. An allow-list of "stdlib + own siblings" cannot be
+    bypassed by picking an unlisted name.
+    """
+    import sys
+
+    allowed = set(sys.stdlib_module_names)
     offenders = []
     for path in (PKG / "domain").rglob("*.py"):
-        banned = _imported_modules(path) & DOMAIN_BANNED
-        if banned:
-            offenders.append(f"{path.relative_to(ROOT)}: {sorted(banned)}")
-    assert not offenders, f"domain/ must import no framework: {offenders}"
+        for mod in _imported_dotted_modules(path):
+            top = mod.split(".")[0]
+            if top == "nora":
+                # Only an absolute self-import of nora.domain (or a submodule of
+                # it) is a sibling import; anything else under the nora
+                # namespace — nora.store, nora.config, nora.agent, ... — is
+                # exactly the class of import this test exists to catch.
+                if mod == "nora.domain" or mod.startswith("nora.domain."):
+                    continue
+                offenders.append(f"{path.relative_to(ROOT)}: {mod}")
+            elif top not in allowed:
+                offenders.append(f"{path.relative_to(ROOT)}: {mod}")
+    assert not offenders, f"domain/ may import only the stdlib: {offenders}"

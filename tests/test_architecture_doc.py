@@ -6,10 +6,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_architecture_doc_covers_every_package():
+    """Covers both sub-packages (dirs) and top-level modules (`handler.py`,
+    `tag.py`, `persons.py`, ...) under nora/ — a new top-level module follows the
+    same "must be in the map" rule a new package does, and used to be silently
+    exempt because this test only walked directories."""
     doc = (ROOT / "ARCHITECTURE.md").read_text()
     packages = sorted(p.name for p in (ROOT / "nora").iterdir()
                       if p.is_dir() and not p.name.startswith(("_", ".")))
-    missing = [p for p in packages if f"`{p}/`" not in doc and f"nora/{p}" not in doc]
+    modules = sorted(p.name for p in (ROOT / "nora").glob("*.py")
+                     if not p.name.startswith("_"))
+    missing_packages = [p for p in packages if f"`{p}/`" not in doc and f"nora/{p}" not in doc]
+    missing_modules = [m for m in modules if f"`{m}`" not in doc and f"nora/{m}" not in doc]
+    missing = missing_packages + missing_modules
     assert not missing, f"ARCHITECTURE.md does not mention: {missing}"
 
 

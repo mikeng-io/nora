@@ -93,6 +93,22 @@ source_modules = ["nora.domain"]
 forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus_client", "opentelemetry", "yaml", "openai"]
 
 [[tool.importlinter.contracts]]
+name = "layered architecture"
+type = "layers"
+# Middle rows reflect the real import order among today's packages (agent -> persona
+# -> obs -> store; platform is independent of the other four) so the contract does
+# not fight legitimate cross-package imports. The property this contract exists to
+# prove is the last line: nothing above nora.domain may be imported BY nora.domain.
+layers = [
+    "nora.app",
+    "nora.agent | nora.platform",
+    "nora.persona",
+    "nora.obs",
+    "nora.store",
+    "nora.domain",
+]
+
+[[tool.importlinter.contracts]]
 name = "only app and __main__ read config"
 type = "forbidden"
 source_modules = [
@@ -109,6 +125,20 @@ ignore_imports = [
     # phase): delete this exception once that injection lands.
     "nora.agent.factory -> nora.config",
 ]
+
+[[tool.importlinter.contracts]]
+name = "the nora package's own __init__ does not read config either"
+type = "forbidden"
+# A "forbidden" contract skips any source/forbidden pair where one module is a
+# subpackage of the other (import-linter's own overlap rule — see forbidden.py's
+# `_modules_overlap`): `nora.config` is *inside* `nora`, so listing the package
+# `nora` as a source module in the contract above is silently a no-op for the
+# `nora.config` target, by import-linter's own design, not a bug in this config.
+# `as_packages = false` treats both sides as single literal modules instead of
+# packages, which sidesteps that overlap rule and actually checks nora/__init__.py.
+source_modules = ["nora"]
+forbidden_modules = ["nora.config"]
+as_packages = false
 
 [dependency-groups]
 dev = [

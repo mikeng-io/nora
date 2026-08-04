@@ -60,10 +60,9 @@ def test_only_app_and_main_import_config():
     """Enforced properly by import-linter in the next task; asserted here too so the
     rule has a home in the suite."""
     import ast
-    import pathlib
     offenders = []
-    for p in pathlib.Path("nora").rglob("*.py"):
-        rel = p.relative_to(pathlib.Path("nora"))
+    for p in (ROOT / "nora").rglob("*.py"):
+        rel = p.relative_to(ROOT / "nora")
         if rel.parts[0] in ("app", "config.py") or str(rel) in ("__main__.py", "config.py"):
             continue
         tree = ast.parse(p.read_text())
