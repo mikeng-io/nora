@@ -87,6 +87,27 @@ async def test_health_reports_reachability(server_factory):
     assert health["reachable"] is True
 
 
+async def test_health_probes_the_root_health_endpoint(server_factory):
+    """Regression guard (fix of 2026-08-04): the probe must be GET /health.
+
+    GET /v3/workspaces is POST-only -> 405 -> the container sits in
+    'health: starting' forever. The sibling health tests mount a wildcard route
+    that answers any method on any path, so only this assertion catches it.
+    """
+    captured = {}
+
+    async def handler(request):
+        captured["method"] = request.method
+        captured["path"] = request.path
+        return web.json_response({"ok": True})
+
+    base_url = await server_factory(handler)
+
+    await HonchoClient(base_url, "nora").health()
+
+    assert (captured["method"], captured["path"]) == ("GET", "/health")
+
+
 async def test_health_reports_unreachable_without_raising():
     health = await HonchoClient("http://127.0.0.1:1", "nora", card_timeout=0.3).health()
     assert health["reachable"] is False
