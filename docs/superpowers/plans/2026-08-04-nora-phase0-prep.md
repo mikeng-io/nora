@@ -696,7 +696,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --frozen --group dev --extra evals
 
       - name: ruff
         run: uv run ruff check nora/ evals/ tests/
@@ -718,7 +718,7 @@ Expected: `workflow YAML OK`.
 - [ ] **Step 3: Verify the exact commands CI will run, locally**
 
 ```bash
-uv sync --frozen --group dev && uv run ruff check nora/ evals/ tests/ && uv run pytest -q 2>&1 | tail -3
+uv sync --frozen --group dev --extra evals && uv run ruff check nora/ evals/ tests/ && uv run pytest -q 2>&1 | tail -3
 ```
 
 Expected: ruff clean, 455 passed. If `uv sync --frozen` fails, `uv.lock` is stale — re-run `uv lock` and amend Task 1's commit.
