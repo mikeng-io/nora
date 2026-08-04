@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
 import time
@@ -17,8 +18,7 @@ from . import config
 from .agent import factory
 from .config import ConfigError
 from .handler import Handler
-from .infra.sql.audit import SqlAuditStore
-from .infra.sql.engine import create_sql_engine
+from .infra.sql import SqlAuditStore, create_sql_engine, run_migrations
 from .obs.health import LLMState, build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
 from .obs.metrics import METRICS
@@ -27,12 +27,29 @@ from .persona.loader import PersonaError, PersonaStore
 from .persons import PersonsError, load_persons
 from .platform.signal.account import AccountError, derive_account
 from .platform.signal.adapter import SignalAdapter
-from .store import db
 from .store.honcho import HonchoClient
+
+PRUNE_INTERVAL_SECONDS = 300.0
+
+log = logging.getLogger("nora.__main__")
 
 
 class StartupError(Exception):
     """A fatal startup validation failure — refuse to start, with a readable message."""
+
+
+async def _prune_loop(store, metrics) -> None:
+    """The retention sweep `append` no longer does inline. Owned here until
+    `app/runtime.py` exists (pipelines phase)."""
+    while True:
+        await asyncio.sleep(PRUNE_INTERVAL_SECONDS)
+        try:
+            deleted = await store.prune_all()
+            if deleted:
+                log.info("pruned %d rows past the retention window", deleted)
+        except Exception:
+            log.exception("prune sweep failed")
+            metrics.inc("nora_errors_total", stage="prune")
 
 
 async def build_app(config_path) -> App:
@@ -50,7 +67,7 @@ async def build_app(config_path) -> App:
     except PersonsError as exc:
         raise StartupError(f"person mapping error: {exc}") from exc
 
-    await db.init(cfg.store.db_path)
+    run_migrations(cfg.store.db_path)
     store = SqlAuditStore(
         create_sql_engine(cfg.store.db_path),
         max_per_conversation=cfg.store.max_per_conversation,
@@ -111,6 +128,7 @@ class App:
         self._bg_tasks = [
             asyncio.create_task(heartbeat(self.handler.metrics)),
             asyncio.create_task(self._update_last_event_age()),
+            asyncio.create_task(_prune_loop(self.store, self.handler.metrics)),
         ]
         try:
             await self.adapter.listen(self.handler.on_event)

@@ -17,7 +17,6 @@ from .agent.tools import build_tools
 from .models import NormalizedMessage, TagContext
 from .obs.metrics import METRICS
 from .obs.tracing import trace_attributes as build_trace_attributes
-from .store import db
 from .tag import Debounce, is_tagged
 
 log = logging.getLogger("nora.handler")
@@ -68,10 +67,7 @@ class Handler:
         self.metrics.inc("nora_messages_total", platform=msg.platform)
 
         try:
-            await db.append(
-                self.cfg.store.db_path, msg,
-                max_per_conversation=self.cfg.store.max_per_conversation,
-            )
+            await self.store.append(message=msg)
         except Exception:
             log.exception("db append failed; dropping message")
             self.metrics.inc("nora_errors_total", stage="ambient")
@@ -103,8 +99,9 @@ class Handler:
     async def _collect_context(self, msg: NormalizedMessage, tag_id: str) -> TagContext:
         transcript: tuple = ()
         try:
-            transcript = tuple(await db.recent(
-                self.cfg.store.db_path, msg.conversation_id, self.cfg.store.context_window
+            transcript = tuple(await self.store.recent(
+                conversation_id=msg.conversation_id,
+                limit=self.cfg.store.context_window,
             ))
         except Exception:
             log.exception("context collection failed; continuing with an empty transcript")

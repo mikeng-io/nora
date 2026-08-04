@@ -14,16 +14,15 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-import pytest
-
 from nora.config import Config
+from nora.domain.models import DeliveryStatus
 from nora.handler import Handler
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from nora.persons import load_persons
-from nora.store import db
 from tests.builders import load_example_config, override_config
 from tests.fakes import FakeHoncho, SinkSender
 
@@ -102,6 +101,33 @@ async def _invoke_tool(tool, **kwargs):
     return result
 
 
+class _StoreProxy:
+    """Delegates everything to a real store; subclasses break exactly one method.
+
+    This replaces `monkeypatch.setattr(db, "append", ...)`, which stopped
+    working when the store became an injected object instead of a module.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+class _FailingAppendStore(_StoreProxy):
+    async def append(self, *, message, is_nora=False, delivery_status=DeliveryStatus.PENDING):
+        if is_nora:
+            raise RuntimeError("disk full")
+        return await self._inner.append(
+            message=message, is_nora=is_nora, delivery_status=delivery_status)
+
+
+class _FailingRecentStore(_StoreProxy):
+    async def recent(self, *, conversation_id, limit):
+        raise RuntimeError("db down")
+
+
 class _HarnessAdapter(SinkSender):
     """SinkSender + a configurable own-account, scoped to this integration harness only."""
 
@@ -130,7 +156,6 @@ class _Counter:
 @dataclasses.dataclass
 class Harness:
     handler: Handler
-    db_path: Path
     sink: SinkSender
     honcho: FakeHoncho
     metrics: Metrics
@@ -230,7 +255,6 @@ async def build_handler(
     invocation_timeout: float | None = None,
     debounce: float | None = None,
     fault: str | None = None,
-    monkeypatch: pytest.MonkeyPatch | None = None,
     register: Callable[[Harness], None] | None = None,
 ) -> Harness:
     """Assemble a real `Handler` wired to a tmp db + a tmp COPY of the real persona dir +
@@ -270,7 +294,7 @@ async def build_handler(
         invocation_timeout=invocation_timeout, debounce=debounce,
     )
 
-    await db.init(cfg.store.db_path)
+    run_migrations(cfg.store.db_path)
     store = SqlAuditStore(create_sql_engine(cfg.store.db_path))
     persons = load_persons(persons_path)
     persona_store = PersonaStore(
@@ -328,19 +352,14 @@ async def build_handler(
         honcho_double.fail = True
     elif fault == "send_fails":
         adapter._succeed = False   # SinkSender's existing succeed flag, flipped post-construction
-    elif fault == "db_append_fails" and monkeypatch is not None:
-        # Deliverer's audit write goes through `store`, not the `db` module — the
-        # ambient path is the only caller left on `db.append`, and it never carries
-        # is_nora=True, so failing every write on `store` reaches only Deliverer.
-        async def _failing_append(*a, **kw):
-            raise RuntimeError("disk full")
-
-        monkeypatch.setattr(store, "append", _failing_append)
-    elif fault == "context_read_fails" and monkeypatch is not None:
-        async def _failing_recent(*a, **kw):
-            raise RuntimeError("db down")
-
-        monkeypatch.setattr(db, "recent", _failing_recent)
+    elif fault == "db_append_fails":
+        # Both the ambient path and Deliverer now go through the same injected `store` —
+        # failing every write would break ambient ingest too, not just the tag path this
+        # fault means to exercise. `_FailingAppendStore` fails only is_nora=True appends
+        # (Deliverer's), so ambient writes still succeed.
+        store = _FailingAppendStore(store)
+    elif fault == "context_read_fails":
+        store = _FailingRecentStore(store)
     elif fault == "persona_reload_fails":
         persona_store.get(applies_to="tag")     # warm the last-good cache before corrupting
         (persona_copy_dir / "guardrails.md").write_text("not valid persona content\n")
@@ -359,7 +378,6 @@ async def build_handler(
 
     harness = Harness(
         handler=handler,
-        db_path=cfg.store.db_path,
         sink=adapter,
         honcho=honcho_double,
         metrics=metrics,

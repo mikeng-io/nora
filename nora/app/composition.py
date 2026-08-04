@@ -14,7 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from nora.config import Config
-from nora.domain.ports import MemoryStore
+from nora.domain.ports import AuditStore, MemoryStore
+from nora.infra.sql import SqlAuditStore, create_sql_engine
 from nora.obs.metrics import METRICS, Metrics
 from nora.persons import Persons, load_persons
 from nora.store.honcho import HonchoClient
@@ -32,13 +33,16 @@ class Dependencies:
     Only collaborators that exist today are built: the persistence phase owns
     `AuditStore`, so it is not invented here.
 
-    `memory` is annotated with the `MemoryStore` port, not the concrete
-    `HonchoClient` — this is inside mypy's strict override (`nora.app.*`), so
-    it is a permanent, statically-checked proof that `HonchoClient` conforms
-    to the port, not just a one-time `isinstance` name-check. `persons` and
-    `metrics` stay concrete: neither has a port, deliberately.
+    `audit` is annotated with the `AuditStore` port, not the concrete
+    `SqlAuditStore`, and `memory` is annotated with the `MemoryStore` port,
+    not the concrete `HonchoClient` — both are inside mypy's strict override
+    (`nora.app.*`), so each is a permanent, statically-checked proof that its
+    concrete class conforms to the port, not just a one-time `isinstance`
+    name-check. `persons` and `metrics` stay concrete: neither has a port,
+    deliberately.
     """
 
+    audit: AuditStore
     memory: MemoryStore
     persons: Persons
     metrics: Metrics
@@ -52,6 +56,11 @@ def build_dependencies(cfg: Config) -> Dependencies:
     shape. Everything downstream of here takes a `Dependencies`.
     """
     return Dependencies(
+        audit=SqlAuditStore(
+            create_sql_engine(cfg.store.db_path),
+            max_per_conversation=cfg.store.max_per_conversation,
+            metrics=METRICS,
+        ),
         memory=HonchoClient(cfg.memory.base_url, cfg.memory.workspace_id),
         persons=load_persons(cfg.identity_file),
         metrics=METRICS,

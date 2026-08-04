@@ -100,11 +100,12 @@ async def test_honcho_being_down_does_not_prevent_startup(env):
 
 
 async def test_the_database_is_migrated_at_startup(env):
-    from nora.store import db
+    from nora.infra.sql.migrations_runner import current_revision, head_revision
 
     app = await build_app(env)
     try:
-        assert (await db.stats(app.cfg.store.db_path))["schema_version"] == db.SCHEMA_VERSION
+        assert current_revision(app.cfg.store.db_path) == head_revision()
+        assert (await app.store.stats())["schema_revision"] == head_revision()
     finally:
         await app.shutdown()
 
@@ -115,3 +116,37 @@ async def test_shutdown_closes_the_omniroute_client(env):
     app = await build_app(env)
     await app.shutdown()
     assert factory._CLIENT is None
+
+
+async def test_the_prune_sweep_actually_prunes(tmp_path, monkeypatch):
+    """Proves `_prune_loop` runs and calls `store.prune_all`, not merely that the
+    coroutine exists — `append` stopped pruning inline in Task 4, so this sweep is
+    the only thing left that enforces the retention window in production."""
+    import asyncio
+    import contextlib
+
+    import nora.__main__ as main_module
+    from nora.domain.models import NormalizedMessage
+    from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
+    from nora.obs.metrics import Metrics
+
+    monkeypatch.setattr(main_module, "PRUNE_INTERVAL_SECONDS", 0.01)
+    path = tmp_path / "messages.db"
+    run_migrations(path)
+    store = SqlAuditStore(create_sql_engine(path), max_per_conversation=3)
+    metrics = Metrics()
+    try:
+        for i in range(10):
+            await store.append(message=NormalizedMessage(
+                "signal", "g1", "group", "+1", "A", i, f"m{i}", {}))
+        assert len(await store.recent(conversation_id="g1", limit=1000)) == 10
+
+        task = asyncio.create_task(main_module._prune_loop(store, metrics))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        assert len(await store.recent(conversation_id="g1", limit=1000)) == 3
+    finally:
+        await store.aclose()

@@ -1,6 +1,5 @@
 import pytest
 
-from nora.store import db
 from tests.integration.harness import ScriptedTurn, group_event
 
 FORBIDDEN = ("error", "sorry", "exception", "traceback", "failed", "unavailable",
@@ -47,7 +46,7 @@ async def test_no_audit_row_when_nothing_was_delivered(harness_factory):
     h = await harness_factory(script=_script(), fault="llm_error")
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert [r for r in await db.recent(h.db_path, "g1", 10) if r["is_nora"]] == []
+    assert [r for r in await h.store.recent(conversation_id="g1", limit=10) if r.is_nora] == []
 
 
 async def test_a_reply_still_happens_with_a_thinner_context(harness_factory):

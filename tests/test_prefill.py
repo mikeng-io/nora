@@ -1,4 +1,5 @@
 from nora.agent.prefill import build_prefill, build_tag_message, escape
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.models import NormalizedMessage, PersonRef, TagContext
 
 
@@ -8,8 +9,11 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None) ->
 
 
 def _rows(*bodies):
-    return [{"sender_name": "Miles", "sender_id": "+852111", "body": b, "is_nora": 0, "ts": i}
-            for i, b in enumerate(bodies)]
+    return [
+        TranscriptRow(id=i, sender_id="+852111", sender_name="Miles", ts=i, body=b,
+                      is_nora=False, delivery_status=DeliveryStatus.PENDING, raw_json="{}")
+        for i, b in enumerate(bodies)
+    ]
 
 
 def test_prefill_is_exactly_three_messages():
@@ -82,8 +86,9 @@ def test_peer_card_content_is_escaped():
 
 
 def test_nora_rows_are_attributed_to_her_display_name():
-    rows = [{"sender_name": None, "sender_id": "nora", "body": "earlier reply",
-             "is_nora": 1, "ts": 0}]
+    rows = [TranscriptRow(id=0, sender_id="nora", sender_name=None, ts=0,
+                          body="earlier reply", is_nora=True,
+                          delivery_status=DeliveryStatus.SENT, raw_json=None)]
     text = build_prefill(_ctx(rows), display_name="Nora",
                          context_window=40)[1]["content"][0]["text"]
     assert "[Nora]: earlier reply" in text

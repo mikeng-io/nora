@@ -9,7 +9,7 @@ from tests.integration.harness import build_handler
 async def harness(tmp_path, monkeypatch):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     built: list = []
-    h = await build_handler(tmp_path, monkeypatch=monkeypatch, register=built.append)
+    h = await build_handler(tmp_path, register=built.append)
     yield h
     for built_h in built:
         await built_h.aclose()
@@ -21,8 +21,7 @@ async def harness_factory(tmp_path, monkeypatch):
     built: list = []
 
     async def factory(**kwargs):
-        return await build_handler(tmp_path, monkeypatch=monkeypatch, register=built.append,
-                                   **kwargs)
+        return await build_handler(tmp_path, register=built.append, **kwargs)
 
     yield factory
     # Every Harness reachable from a test lands in `built`: build_handler registers

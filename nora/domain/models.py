@@ -54,11 +54,10 @@ class DeliveryStatus(Enum):
 
 @dataclass(frozen=True)
 class TranscriptRow:
-    """One row as returned by `AuditStore.recent` — the persistence phase's target
-    shape for what `nora/store/db.py::recent` (`nora/store/db.py:98-111`) actually
-    returns today as an untyped `dict[str, Any]`. This is the port's declared
-    shape, not yet what the runtime produces; `nora/store/db.py` is unchanged by
-    this type's introduction, and the persistence phase is what makes it real.
+    """One row as returned by `AuditStore.recent`. Replaces the untyped
+    `dict[str, Any]` rows the retired `nora/store/db.py::recent` used to
+    return; `nora.infra.sql.audit.SqlAuditStore` is what produces this shape
+    at runtime now.
     """
 
     id: int
