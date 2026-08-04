@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
 import time
@@ -17,6 +18,8 @@ from . import config
 from .agent import factory
 from .config import ConfigError
 from .handler import Handler
+from .infra.honcho import HonchoClient
+from .infra.sql import SqlAuditStore, create_sql_engine, run_migrations
 from .obs.health import LLMState, build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
 from .obs.metrics import METRICS
@@ -25,12 +28,28 @@ from .persona.loader import PersonaError, PersonaStore
 from .persons import PersonsError, load_persons
 from .platform.signal.account import AccountError, derive_account
 from .platform.signal.adapter import SignalAdapter
-from .store import db
-from .store.honcho import HonchoClient
+
+PRUNE_INTERVAL_SECONDS = 300.0
+
+log = logging.getLogger("nora.__main__")
 
 
 class StartupError(Exception):
     """A fatal startup validation failure — refuse to start, with a readable message."""
+
+
+async def _prune_loop(store, metrics) -> None:
+    """The retention sweep `append` no longer does inline. Owned here until
+    `app/runtime.py` exists (pipelines phase)."""
+    while True:
+        await asyncio.sleep(PRUNE_INTERVAL_SECONDS)
+        try:
+            deleted = await store.prune_all()
+            if deleted:
+                log.info("pruned %d rows past the retention window", deleted)
+        except Exception:
+            log.exception("prune sweep failed")
+            metrics.inc("nora_errors_total", stage="prune")
 
 
 async def build_app(config_path) -> App:
@@ -48,7 +67,15 @@ async def build_app(config_path) -> App:
     except PersonsError as exc:
         raise StartupError(f"person mapping error: {exc}") from exc
 
-    await db.init(cfg.store.db_path)
+    try:
+        run_migrations(cfg.store.db_path)
+    except Exception as exc:
+        raise StartupError(f"migration error: {exc}") from exc
+    store = SqlAuditStore(
+        create_sql_engine(cfg.store.db_path),
+        max_per_conversation=cfg.store.max_per_conversation,
+        metrics=METRICS,
+    )
 
     try:
         account = await derive_account(
@@ -73,14 +100,15 @@ async def build_app(config_path) -> App:
     adapter = SignalAdapter(cfg.platforms.signal.base_url, account)
     llm_state = LLMState()
     handler = Handler(cfg=cfg, adapter=adapter, persons=persons, honcho=honcho,
-                      persona_store=persona_store, metrics=METRICS, llm_state=llm_state)
+                      persona_store=persona_store, store=store, metrics=METRICS,
+                      llm_state=llm_state)
 
     return App(cfg=cfg, handler=handler, adapter=adapter, account=account,
-               persona=persona, honcho=honcho, llm_state=llm_state)
+               persona=persona, honcho=honcho, store=store, llm_state=llm_state)
 
 
 class App:
-    def __init__(self, *, cfg, handler, adapter, account, persona, honcho,
+    def __init__(self, *, cfg, handler, adapter, account, persona, honcho, store,
                  llm_state=None) -> None:
         self.cfg = cfg
         self.handler = handler
@@ -88,13 +116,14 @@ class App:
         self.account = account
         self.persona = persona
         self.honcho = honcho
+        self.store = store
         self.llm_state = llm_state or LLMState()
         self._health_runner = None
         self._bg_tasks: list[asyncio.Task] = []
 
     async def run(self) -> None:
         health_app = build_health_app(
-            adapter=self.adapter, db_path=self.cfg.store.db_path, honcho=self.honcho,
+            adapter=self.adapter, store=self.store, honcho=self.honcho,
             persona_store=self.handler.persona_store, metrics=self.handler.metrics,
             started_at=time.time(), llm_state=self.llm_state,
         )
@@ -102,6 +131,7 @@ class App:
         self._bg_tasks = [
             asyncio.create_task(heartbeat(self.handler.metrics)),
             asyncio.create_task(self._update_last_event_age()),
+            asyncio.create_task(_prune_loop(self.store, self.handler.metrics)),
         ]
         try:
             await self.adapter.listen(self.handler.on_event)
@@ -121,6 +151,7 @@ class App:
         if self._health_runner is not None:
             await self._health_runner.cleanup()
         await factory.close_client()
+        await self.store.aclose()
 
 
 def main() -> int:

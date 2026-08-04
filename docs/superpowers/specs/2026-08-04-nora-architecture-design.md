@@ -279,14 +279,22 @@ Empirically verified against a byte-identical copy of the production schema:
    reflection returns a plain column and autogenerate compares them as different.
    **Fix: exclude `idx_messages_conv_ts` from autogenerate via an `include_object` hook,
    with a comment explaining why.**
-3. **The gate is blind to everything §6 promises.** Removing the CHECK constraint,
-   dropping `DESC`, or changing the `created_at` server default each produced **no diff
-   at all** under `compare_type=True, compare_server_default=True`.
+3. **The gate is blind to two of the three things §6 promises.** Removing the
+   CHECK constraint or dropping `DESC` each produced **no diff at all** under
+   `compare_type=True, compare_server_default=True` **[proven]**. **Corrected
+   2026-08-05:** revision 2 also claimed server defaults were invisible. They
+   are not — changing or removing `created_at`'s or `is_nora`'s server default
+   each produces a `modify_default` diff, verified against a copy of the
+   production database. The conclusion is unchanged (the parity test is still
+   the real gate, for the CHECK constraint and the index ordering), but the
+   claim was wrong and is not silently absorbed.
 
-Therefore: `alembic check` guards *column presence and type*, nothing more. A dedicated
-**schema-parity test** is the real guarantee — build a fresh DB via `alembic upgrade
-head`, then assert against `sqlite_master.sql` / `PRAGMA index_xinfo`: the CHECK
-constraint present, `AUTOINCREMENT` present, `idx_messages_conv_ts` has `desc=1` on `ts`,
+Therefore: `alembic check` guards *column presence, column type, and server
+defaults* — nothing more; it remains blind to the CHECK constraint and the
+index's `DESC` ordering. A dedicated **schema-parity test** is the real
+guarantee — build a fresh DB via `alembic upgrade head`, then assert against
+`sqlite_master.sql` / `PRAGMA index_xinfo`: the CHECK constraint present,
+`AUTOINCREMENT` present, `idx_messages_conv_ts` has `desc=1` on `ts`,
 `created_at` default is `datetime('now')`.
 
 Also set **`sqlite_autoincrement=True`**: without it SQLAlchemy emits no `AUTOINCREMENT`,
@@ -738,8 +746,10 @@ Four independent audits, 2026-08-04. Items verified by running code are **[prove
 tool (DEC-10); `ToolBinding` before `Routing` making the dinner question unanswerable
 (§4.4); `ToolProvider` in `domain/` violating both §4.1's rule and
 `tests/test_boundaries.py:26`; `alembic check` failing on production while passing in CI
-**[proven]** and being blind to the CHECK constraint, `DESC` ordering, and server defaults
-**[proven]** (DEC-11); `persons_file` dropped with no replacement (§5.1); three behaviour
+**[proven]** and being blind to the CHECK constraint and `DESC` ordering **[proven]**
+(DEC-11 — its own revision 2 additionally claimed blindness to server defaults; that claim
+was itself wrong and was corrected 2026-08-05, see DEC-11); `persons_file` dropped with no
+replacement (§5.1); three behaviour
 changes smuggled into stage 1 (§7); phase 1 breaking ~110 of 453 tests; phase 6 breaking
 all 453 at collection; phase 3 leaving evals broken for four phases.
 

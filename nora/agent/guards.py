@@ -11,10 +11,9 @@ from typing import ClassVar
 
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
 
-from ..models import ConversationTarget, NormalizedMessage
+from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..obs.metrics import METRICS
 from ..persona.loader import Persona
-from ..store import db
 
 log = logging.getLogger("nora.guards")
 
@@ -64,22 +63,20 @@ class Deliverer:
     def __init__(
         self,
         *,
-        db_path,
+        store,
         adapter,
         target: ConversationTarget,
         persona: Persona,
         canary: str,
         tag_id: str,
         nora_sender_id: str,
-        max_per_conversation: int = 500,
         metrics=METRICS,
     ) -> None:
-        self._db_path = db_path
+        self._store = store
         self._adapter = adapter
         self._target = target
         self._tag_id = tag_id
         self._nora_sender_id = nora_sender_id
-        self._max_per_conversation = max_per_conversation
         self._metrics = metrics
         self._leak = LeakGuard(persona, canary)
         self._persona_sha256 = persona.sha256
@@ -130,9 +127,8 @@ class Deliverer:
                  "persona_sha256": self._persona_sha256},
         )
         try:                                                   # record-first
-            row_id = await db.append(
-                self._db_path, row, is_nora=True, delivery_status="pending",
-                max_per_conversation=self._max_per_conversation,
+            row_id = await self._store.append(
+                message=row, is_nora=True, delivery_status=DeliveryStatus.PENDING,
             )
         except Exception:
             log.exception("audit_write_failed (tag=%s); staying silent", self._tag_id)
@@ -146,7 +142,10 @@ class Deliverer:
             ok = False
 
         try:
-            await db.set_delivery_status(self._db_path, row_id, "sent" if ok else "failed")
+            await self._store.set_delivery_status(
+                row_id=row_id,
+                status=DeliveryStatus.SENT if ok else DeliveryStatus.FAILED,
+            )
         except Exception:
             log.exception("delivery_status update failed (tag=%s)", self._tag_id)
 

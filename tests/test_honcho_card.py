@@ -1,4 +1,4 @@
-"""Tests for the Honcho read path (peer_card, health) on nora/store/honcho.py, spec §C.5.
+"""Tests for the Honcho read path (peer_card, health) on nora/infra/honcho/client.py, spec §C.5.
 
 Mirrors tests/test_honcho.py's (Task 21) local, zero-dependency server fixture: a
 local aiohttp.test_utils.TestServer scoped to this file, no shared conftest changes
@@ -11,7 +11,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.store.honcho import HonchoClient
+from nora.infra.honcho import HonchoClient
 from tests.fakes import FakeHoncho
 
 
@@ -47,23 +47,23 @@ async def test_peer_card_returns_a_list_of_facts(server_factory):
     base_url = await server_factory(
         _payload_handler({"content": "- likes espresso\n- lives in HK"})
     )
-    card = await HonchoClient(base_url, "nora").peer_card("miles")
+    card = await HonchoClient(base_url, "nora").peer_card(peer_id="miles")
     assert card == ["likes espresso", "lives in HK"]
 
 
 async def test_peer_card_returns_empty_on_a_server_error(server_factory):
     base_url = await server_factory(_payload_handler({}, status=500))
-    assert await HonchoClient(base_url, "nora").peer_card("miles") == []
+    assert await HonchoClient(base_url, "nora").peer_card(peer_id="miles") == []
 
 
 async def test_peer_card_returns_empty_when_honcho_is_down():
     client = HonchoClient("http://127.0.0.1:1", "nora", card_timeout=0.3)
-    assert await client.peer_card("miles") == []
+    assert await client.peer_card(peer_id="miles") == []
 
 
 async def test_peer_card_returns_empty_for_an_unparseable_body(server_factory):
     base_url = await server_factory(_payload_handler({"unexpected": True}))
-    assert await HonchoClient(base_url, "nora").peer_card("miles") == []
+    assert await HonchoClient(base_url, "nora").peer_card(peer_id="miles") == []
 
 
 async def test_peer_card_uses_a_get_request_to_the_card_endpoint(server_factory):
@@ -76,7 +76,7 @@ async def test_peer_card_uses_a_get_request_to_the_card_endpoint(server_factory)
 
     base_url = await server_factory(handler)
 
-    await HonchoClient(base_url, "nora").peer_card("miles")
+    await HonchoClient(base_url, "nora").peer_card(peer_id="miles")
 
     assert (captured["method"], captured["path"]) == ("GET", "/v3/workspaces/nora/peers/miles/card")
 

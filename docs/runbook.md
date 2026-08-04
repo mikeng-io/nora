@@ -91,10 +91,31 @@ docker compose up -d --no-build
 ```
 
 `git checkout master` returns the working tree to the v1 codebase. The v2 migration
-(`nora.store.db.init`) is additive, so `messages.db` after v2 has run may contain
-columns/rows the v1 binary doesn't expect — restore `messages.db.v1.bak` (the backup taken
-before the v1→v2 schema migration, per Task 44 Step 1) rather than pointing v1 at a
-v2-migrated file.
+(the schema Alembic now manages, previously the retired `nora.store.db.init`) is additive,
+so `messages.db` after v2 has run may contain columns/rows the v1 binary doesn't expect —
+restore `messages.db.v1.bak` (the backup taken before the v1→v2 schema migration, per
+Task 44 Step 1) rather than pointing v1 at a v2-migrated file.
+
+### Rolling back the persistence phase (Alembic)
+
+The persistence phase replaced the additive `nora/store/db.py` migration with versioned
+Alembic revisions. Rolling back *this* phase specifically — not all the way to v1 — is:
+
+```bash
+docker compose stop nora
+git revert <persistence-phase-merge-commit>
+docker build --network=host -t nora:latest .
+docker compose up -d --no-build
+sqlite3 data/messages.db "DROP TABLE alembic_version"
+```
+
+Do **not** clear `PRAGMA user_version` — it is still `1` from the pre-Alembic era, and
+leaving it untouched is what makes this rollback safe: if the reverted (pre-Alembic)
+binary's old migration path ever runs again, it reads `user_version == 1`, sees the schema
+it expects, and short-circuits instead of trying to re-migrate a database Alembic already
+brought to head. Dropping `alembic_version` is enough on its own to undo the phase, because
+it was the only new object this phase added — see
+`tests/test_migration.py::test_the_alembic_version_table_is_the_only_new_object`.
 
 ## 4. "The watchdog alerted"
 

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from nora.store import db
+from nora.domain.models import DeliveryStatus
 from tests.integration.harness import ScriptedTurn, group_event
 
 
@@ -17,9 +17,9 @@ async def test_happy_tag_produces_one_reply_one_row_one_feed(harness_factory, tm
     await h.drain()
 
     assert h.sink.texts == ["今晚七點半得"]
-    nora_rows = [r for r in await db.recent(h.db_path, "g1", 10) if r["is_nora"]]
+    nora_rows = [r for r in await h.store.recent(conversation_id="g1", limit=10) if r.is_nora]
     assert len(nora_rows) == 1
-    assert nora_rows[0]["delivery_status"] == "sent"
+    assert nora_rows[0].delivery_status is DeliveryStatus.SENT
     exchange = [f for f in h.honcho.fed if "[Nora]" in f[1]]
     assert len(exchange) == 1
     assert exchange[0][0] == "miles"
@@ -43,7 +43,7 @@ async def test_model_never_calls_send_reply_means_strict_silence(harness_factory
     await h.drain()
     assert h.sink.sent == []
     assert h.metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
-    assert [r for r in await db.recent(h.db_path, "g1", 10) if r["is_nora"]] == []
+    assert [r for r in await h.store.recent(conversation_id="g1", limit=10) if r.is_nora] == []
 
 
 async def test_second_send_reply_is_cancelled(harness_factory):

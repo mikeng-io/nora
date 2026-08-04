@@ -2,10 +2,12 @@ import pytest
 
 from nora.agent.guards import Deliverer
 from nora.agent.tools import build_tools
+from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.migrations_runner import run_migrations
 from nora.models import ConversationTarget, NormalizedMessage
 from nora.persona.loader import PersonaStore
 from nora.persons import load_persons
-from nora.store import db
 from tests.fakes import FakeHoncho, SinkSender
 from tests.test_persona_loader import write
 
@@ -15,10 +17,11 @@ TARGET = ConversationTarget("signal", "g1", "group")
 @pytest.fixture
 async def wiring(tmp_path):
     dbp = tmp_path / "messages.db"
-    await db.init(dbp)
+    run_migrations(dbp)
+    store = SqlAuditStore(create_sql_engine(dbp))
     for i in range(3):
-        await db.append(dbp, NormalizedMessage("signal", "g1", "group", "+852111",
-                                               "Miles", i, f"m{i}", {}))
+        await store.append(message=NormalizedMessage("signal", "g1", "group", "+852111",
+                                                      "Miles", i, f"m{i}", {}))
     persons_file = tmp_path / "identity.toml"
     persons_file.write_text(
         "[persons.miles]\nname = \"Miles\"\n[persons.miles.platforms]\nsignal = \"+852111\"\n"
@@ -29,13 +32,16 @@ async def wiring(tmp_path):
     persona = PersonaStore(pdir, canary="C").get()
     sink = SinkSender()
     honcho = FakeHoncho(cards={"miles": ["likes espresso"]})
-    deliverer = Deliverer(db_path=dbp, adapter=sink, target=TARGET, persona=persona,
+    deliverer = Deliverer(store=store, adapter=sink, target=TARGET, persona=persona,
                           canary="C", tag_id="t1", nora_sender_id="nora")
-    tools = build_tools(db_path=dbp, conversation_id="g1", conversation_type="group",
+    tools = build_tools(store=store, conversation_id="g1", conversation_type="group",
                         persons=load_persons(persons_file), honcho=honcho,
                         deliverer=deliverer, context_window=40)
-    return {"tools": {t.tool_name: t for t in tools}, "sink": sink,
-            "honcho": honcho, "deliverer": deliverer, "dbp": dbp}
+    try:
+        yield {"tools": {t.tool_name: t for t in tools}, "sink": sink,
+               "honcho": honcho, "deliverer": deliverer, "store": store}
+    finally:
+        await store.aclose()
 
 
 def test_exactly_three_tools_are_built(wiring):
@@ -60,6 +66,27 @@ async def test_read_buffer_returns_rows_oldest_first(wiring):
 async def test_read_buffer_returns_only_model_relevant_fields(wiring):
     rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
     assert set(rows[0]) == {"sender", "body", "ts"}    # no raw_json, no ids
+
+
+async def test_read_buffer_clamps_a_hostile_limit_before_it_reaches_the_store(wiring, monkeypatch):
+    """`limit` is a model-supplied argument. SQLite renders `LIMIT -1` as
+    unbounded rather than zero, so an unclamped negative limit would dump the
+    entire conversation into context; `limit=0` is equally meaningless. This
+    asserts what `read_buffer` actually sends downstream — independent of
+    whatever the store itself does with a non-positive limit — so it fails if
+    the tool-level clamp regresses even though the store has its own guard."""
+    seen: list[int] = []
+    real_recent = wiring["store"].recent
+
+    async def spy(*, conversation_id, limit):
+        seen.append(limit)
+        return await real_recent(conversation_id=conversation_id, limit=limit)
+
+    monkeypatch.setattr(wiring["store"], "recent", spy)
+    for hostile in (-1, 0):
+        rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=hostile)
+        assert len(rows) <= 1
+    assert seen == [1, 1]
 
 
 async def test_read_peer_card_resolves_the_sender_to_a_person(wiring):
@@ -94,7 +121,7 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
     async def boom(*a, **kw):
         raise RuntimeError("db down")
 
-    monkeypatch.setattr(db, "recent", boom)
+    monkeypatch.setattr(wiring["store"], "recent", boom)
     assert await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40) == []
 
 

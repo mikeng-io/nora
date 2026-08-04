@@ -144,5 +144,8 @@ Metrics.declare(
 Metrics.declare("nora_llm_latency_seconds", "histogram", "Model invocation latency.")
 Metrics.declare("nora_overhead_seconds", "histogram", "Tag latency excluding the model call.")
 Metrics.declare("nora_last_event_age_seconds", "gauge", "Seconds since the last ingest event.")
+Metrics.declare(
+    "nora_store_busy_total", "counter", "SQLITE_BUSY responses from the audit store."
+)
 
 METRICS = Metrics()

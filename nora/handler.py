@@ -17,14 +17,13 @@ from .agent.tools import build_tools
 from .models import NormalizedMessage, TagContext
 from .obs.metrics import METRICS
 from .obs.tracing import trace_attributes as build_trace_attributes
-from .store import db
 from .tag import Debounce, is_tagged
 
 log = logging.getLogger("nora.handler")
 
 
 class Handler:
-    def __init__(self, *, cfg, adapter, persons, honcho, persona_store,
+    def __init__(self, *, cfg, adapter, persons, honcho, persona_store, store,
                  metrics=METRICS, invoke_fn=None, create_agent_fn=None,
                  clock=time.monotonic, llm_state=None) -> None:
         self.cfg = cfg
@@ -32,6 +31,7 @@ class Handler:
         self.persons = persons
         self.honcho = honcho
         self.persona_store = persona_store
+        self.store = store
         self.metrics = metrics
         self.llm_state = llm_state
         self._clock = clock
@@ -67,10 +67,7 @@ class Handler:
         self.metrics.inc("nora_messages_total", platform=msg.platform)
 
         try:
-            await db.append(
-                self.cfg.store.db_path, msg,
-                max_per_conversation=self.cfg.store.max_per_conversation,
-            )
+            await self.store.append(message=msg)
         except Exception:
             log.exception("db append failed; dropping message")
             self.metrics.inc("nora_errors_total", stage="ambient")
@@ -102,8 +99,9 @@ class Handler:
     async def _collect_context(self, msg: NormalizedMessage, tag_id: str) -> TagContext:
         transcript: tuple = ()
         try:
-            transcript = tuple(await db.recent(
-                self.cfg.store.db_path, msg.conversation_id, self.cfg.store.context_window
+            transcript = tuple(await self.store.recent(
+                conversation_id=msg.conversation_id,
+                limit=self.cfg.store.context_window,
             ))
         except Exception:
             log.exception("context collection failed; continuing with an empty transcript")
@@ -112,7 +110,7 @@ class Handler:
         ref = self.persons.resolve(msg.platform, msg.sender_id)
         card: tuple = ()
         if ref is not None:
-            card = tuple(await self.honcho.peer_card(ref.honcho_peer_id))
+            card = tuple(await self.honcho.peer_card(peer_id=ref.honcho_peer_id))
         return TagContext(
             tag_id=tag_id, message=msg, tagger=ref, transcript=transcript,
             peer_card=card, started_at=time.perf_counter(),
@@ -139,8 +137,8 @@ class Handler:
     async def _feed_exchange(self, ctx, tagger_name: str, deliverer) -> None:
         text = deliverer.last_text or ""
         await self.honcho.feed(
-            ctx.tagger.honcho_peer_id,
-            f"[{tagger_name}]: {ctx.message.body}\n[{self.cfg.persona.display_name}]: {text}",
+            peer_id=ctx.tagger.honcho_peer_id,
+            text=f"[{tagger_name}]: {ctx.message.body}\n[{self.cfg.persona.display_name}]: {text}",
         )
 
     async def handle_tag(self, msg: NormalizedMessage) -> None:
@@ -162,17 +160,16 @@ class Handler:
 
             target = msg.target()
             deliverer = Deliverer(
-                db_path=self.cfg.store.db_path, adapter=self.adapter, target=target,
+                store=self.store, adapter=self.adapter, target=target,
                 persona=persona, canary=self.cfg.persona.canary, tag_id=tag_id,
                 nora_sender_id=self.cfg.platforms.signal.nora_sender_id,
-                max_per_conversation=self.cfg.store.max_per_conversation,
                 metrics=self.metrics,
             )
             guard = ReplyGuard(conversation_id=msg.conversation_id, deliverer=deliverer,
                                metrics=self.metrics)
             self._guards.append(guard)
             tools = build_tools(
-                db_path=self.cfg.store.db_path, conversation_id=msg.conversation_id,
+                store=self.store, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self.persons,
                 honcho=self.honcho, deliverer=deliverer,
                 context_window=self.cfg.store.context_window,
@@ -226,6 +223,6 @@ class Handler:
             self.metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
 
     async def _feed_ambient(self, peer_id: str, msg: NormalizedMessage) -> None:
-        await self.honcho.ensure_peer(peer_id)
-        ok = await self.honcho.feed(peer_id, msg.body)
+        await self.honcho.ensure_peer(peer_id=peer_id)
+        ok = await self.honcho.feed(peer_id=peer_id, text=msg.body)
         self.metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")

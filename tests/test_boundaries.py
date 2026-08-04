@@ -82,9 +82,9 @@ def test_domain_imports_only_the_standard_library():
 
     Supersedes the old deny-list (`DOMAIN_BANNED`): a deny-list of eight
     hardcoded framework names passes silently on anything not on the list —
-    `import aiosqlite` or `from nora.store import db` both slipped through it
-    with every gate green. An allow-list of "stdlib + own siblings" cannot be
-    bypassed by picking an unlisted name.
+    `import aiosqlite` or `from nora.infra.sql import SqlAuditStore` both
+    slipped through it with every gate green. An allow-list of "stdlib + own
+    siblings" cannot be bypassed by picking an unlisted name.
     """
     import sys
 

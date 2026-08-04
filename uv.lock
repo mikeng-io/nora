@@ -1543,9 +1543,11 @@ source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "aiosqlite" },
+    { name = "alembic" },
     { name = "openai" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "sqlalchemy" },
     { name = "strands-agents" },
 ]
 
@@ -1556,7 +1558,6 @@ evals = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "alembic" },
     { name = "import-linter" },
     { name = "mypy" },
     { name = "pytest" },
@@ -1571,9 +1572,11 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9" },
     { name = "aiosqlite", specifier = ">=0.20" },
+    { name = "alembic", specifier = ">=1.13" },
     { name = "openai", specifier = ">=1.40" },
     { name = "pydantic", specifier = ">=2.8" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "strands-agents", specifier = "==1.50.2" },
     { name = "strands-agents-evals", marker = "extra == 'evals'", specifier = "==1.0.3" },
 ]
@@ -1581,7 +1584,6 @@ provides-extras = ["evals"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "alembic", specifier = ">=1.13" },
     { name = "import-linter", specifier = ">=2.0" },
     { name = "mypy", specifier = ">=1.11" },
     { name = "pytest", specifier = ">=8.0" },

@@ -8,8 +8,8 @@ divergence is tracked, not forgotten.
 import inspect
 
 from nora.domain.ports import MemoryStore
+from nora.infra.honcho import HonchoClient
 from nora.platform.signal.adapter import SignalAdapter
-from nora.store.honcho import HonchoClient
 
 
 def test_honcho_client_satisfies_memory_store_method_names():

@@ -32,29 +32,37 @@ avoid:
   gateway events and Telegram's update batches are not. Parsers stay
   per-adapter, tested directly against their own transport shape.
 
-- `AuditStore` deliberately has **no `prune`**. `db.prune` is dead code
-  today — nothing calls it, and the real prune is inline in `append` — so it
-  is not carried forward onto the port.
+- `AuditStore.recent` returns `TranscriptRow`, not the `dict[str, Any]` row
+  blobs the old `nora/store/db.py` returned, and `delivery_status` is
+  `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlAuditStore`
+  implements this. Static conformance is checked by mypy (`nora.infra` is
+  inside the strict override); the behavioural half is
+  `tests/contract/test_audit_store_contract.py`, one suite parametrized over
+  `SqlAuditStore` and `nora.testing.FakeAuditStore` so the fake cannot drift
+  from production unnoticed.
 
-- `AuditStore.recent`/`.stats` return `TranscriptRow`/typed values, not the
-  `dict[str, Any]` row blobs `nora/store/db.py` (`db.py:98-111`) returns
-  today. This is the port's target shape, not a claim about the current
-  implementation — the persistence phase adapts `db.py` onto it. Likewise
-  `delivery_status` is `DeliveryStatus`, not the bare string `db.py` still
-  uses (`db.py::_VALID_STATUS`).
+- `AuditStore` still deliberately has **no `prune`**, even though a caller now
+  exists. `SqlAuditStore.prune_all` is a retention sweep owned by the runtime,
+  not something any stage programs against through the port. Putting it on the
+  port would oblige every future implementation — including fakes — to
+  implement a retention policy they do not have.
 
 - `AuditStore.append` has **no `max_per_conversation` parameter**. Retention
   window size is a policy decided at the store's construction, not a value
   every caller re-specifies per call — `Protocol` methods don't inherit
   defaults, so a per-call default is already duplicated wherever it is
-  threaded today (`nora/store/db.py:68`).
+  threaded today (`nora/infra/sql/audit.py:35`, `SqlAuditStore.__init__`'s
+  `max_per_conversation` parameter).
 
 - `MemoryStore.ensure_*` is declared **idempotent under concurrency**.
-  Today's `HonchoClient.ensure_session` is check-then-act, and person-centric
-  identity means the same peer id can be hit from two platforms at the same
-  moment. The lock that makes this true lands in a later phase; the
-  invariant is declared here so that phase has something to implement
-  against rather than discover.
+  `HonchoClient.ensure_peer`/`ensure_session` are check-then-act over
+  per-peer state, and person-centric identity means the same peer id can be
+  hit from two platforms at the same moment. The lock that makes this true
+  landed here, in this phase — a per-peer `asyncio.Lock`
+  (`HonchoClient._peer_lock` in `nora/infra/honcho/client.py`), not in a
+  later one; the invariant is
+  declared here so a static conformance check (mypy on `nora.infra`) has
+  something to hold the implementation to.
 
 - `MemoryStore.health()` returns `MemoryHealth`, mirroring
   `PlatformAdapter.health() -> AdapterHealth`, instead of the bare
@@ -63,7 +71,7 @@ avoid:
 - `MemoryStore.feed()` stays `bool`, deliberately, even though `SendResult`
   exists precisely because "a bool loses retryability on a network call to a
   flaky service." Honcho is explicitly never load-bearing (see this module's
-  own docstring in `nora/store/honcho.py`): a failed feed is fire-and-forget,
+  own docstring in `nora/infra/honcho/client.py`): a failed feed is fire-and-forget,
   logged and counted, never retried. Giving it a retryable/retry_after shape
   would imply a retry policy that deliberately does not exist. This
   asymmetry with `SendResult` is intentional, not an oversight — recorded

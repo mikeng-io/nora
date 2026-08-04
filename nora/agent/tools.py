@@ -11,14 +11,12 @@ import logging
 
 from strands import tool
 
-from ..store import db
-
 log = logging.getLogger("nora.tools")
 
 
 def build_tools(
     *,
-    db_path,
+    store,
     conversation_id: str,
     conversation_type: str,
     persons,
@@ -41,15 +39,21 @@ def build_tools(
             limit: How many recent messages to fetch (max 200).
         """
         try:
-            rows = await db.recent(db_path, conversation_id, min(int(limit), 200))
+            # Clamp both ends: `limit` is a model-supplied argument, and a
+            # non-positive value must never reach the store. SQLite renders
+            # `LIMIT -1` as unbounded, so an unclamped negative limit would
+            # dump the entire conversation into context.
+            rows = await store.recent(
+                conversation_id=conversation_id, limit=max(1, min(int(limit), 200))
+            )
         except Exception:
             log.exception("read_buffer failed")
             return []
         return [
             {
-                "sender": "Nora" if r["is_nora"] else (r["sender_name"] or "unknown"),
-                "body": r["body"],
-                "ts": r["ts"],
+                "sender": "Nora" if r.is_nora else (r.sender_name or "unknown"),
+                "body": r.body,
+                "ts": r.ts,
             }
             for r in rows
         ]
@@ -68,7 +72,7 @@ def build_tools(
             ref = persons.resolve("signal", sender_id)
             if ref is None:
                 return []
-            return await honcho.peer_card(ref.honcho_peer_id)
+            return await honcho.peer_card(peer_id=ref.honcho_peer_id)
         except Exception:
             log.exception("read_peer_card failed")
             return []

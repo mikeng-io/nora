@@ -10,6 +10,8 @@ dependencies = [
     "openai>=1.40",
     "PyYAML>=6.0",
     "pydantic>=2.8",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
@@ -23,7 +25,12 @@ build-backend = "setuptools.build_meta"
 include = ["nora*"]
 
 [tool.setuptools.package-data]
-nora = ["persona/*.md", "py.typed"]
+nora = [
+    "persona/*.md",
+    "py.typed",
+    "infra/sql/migrations/*",
+    "infra/sql/migrations/versions/*",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -46,10 +53,10 @@ warn_unused_ignores = true
 # match) instead of scoping to the matched modules — verified by a minimal
 # repro. Two of --strict's flags (warn_redundant_casts, warn_unused_ignores)
 # are global-only in mypy and are already set above; the rest are spelled
-# out here so this override only tightens nora.domain/config/app and does
-# not silently tighten nora.obs, nora.store, etc.
+# out here so this override only tightens nora.domain/config/app/infra and does
+# not silently tighten nora.obs, nora.agent, etc.
 [[tool.mypy.overrides]]
-module = ["nora.domain.*", "nora.config", "nora.app.*"]
+module = ["nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*"]
 disallow_any_generics = true
 disallow_subclassing_any = true
 disallow_untyped_calls = true
@@ -96,7 +103,7 @@ forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus
 name = "layered architecture"
 type = "layers"
 # Middle rows reflect the real import order among today's packages (agent -> persona
-# -> obs -> store; platform is independent of the other four) so the contract does
+# -> obs -> infra; platform is independent of the other four) so the contract does
 # not fight legitimate cross-package imports. The property this contract exists to
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
 layers = [
@@ -104,7 +111,7 @@ layers = [
     "nora.agent | nora.platform",
     "nora.persona",
     "nora.obs",
-    "nora.store",
+    "nora.infra | nora.testing",
     "nora.domain",
 ]
 
@@ -112,8 +119,9 @@ layers = [
 name = "only app and __main__ read config"
 type = "forbidden"
 source_modules = [
-    "nora.agent", "nora.obs", "nora.persona", "nora.platform", "nora.store",
+    "nora.agent", "nora.obs", "nora.persona", "nora.platform",
     "nora.domain", "nora.handler", "nora.models", "nora.persons", "nora.tag",
+    "nora.infra", "nora.testing",
 ]
 forbidden_modules = ["nora.config"]
 ignore_imports = [
@@ -142,7 +150,6 @@ as_packages = false
 
 [dependency-groups]
 dev = [
-    "alembic>=1.13",
     "import-linter>=2.0",
     "mypy>=1.11",
     "pytest>=8.0",

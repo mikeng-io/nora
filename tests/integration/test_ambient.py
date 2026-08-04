@@ -1,6 +1,5 @@
 import asyncio
 
-from nora.store import db
 from tests.integration.harness import ScriptedTurn, group_event
 
 
@@ -8,7 +7,7 @@ async def test_every_message_is_appended_to_the_audit(harness):
     for i in range(10):
         await harness.handler.on_event(group_event(body=f"m{i}"))
     await harness.drain()
-    assert len(await db.recent(harness.db_path, "g1", 100)) == 10
+    assert len(await harness.store.recent(conversation_id="g1", limit=100)) == 10
 
 
 async def test_ambient_never_constructs_agent(harness):
@@ -31,7 +30,7 @@ async def test_unmapped_senders_are_never_fed(harness):
     await harness.drain()
     assert harness.honcho.fed == []
     assert harness.honcho.peers == []
-    assert len(await db.recent(harness.db_path, "g1", 10)) == 1     # still audited
+    assert len(await harness.store.recent(conversation_id="g1", limit=10)) == 1  # still audited
 
 
 async def test_a_dm_event_is_dropped_entirely(harness):
@@ -39,7 +38,7 @@ async def test_a_dm_event_is_dropped_entirely(harness):
     event["params"]["envelope"]["dataMessage"]["groupInfo"] = None
     await harness.handler.on_event(event)
     await harness.drain()
-    assert await db.recent(harness.db_path, "g1", 10) == []
+    assert await harness.store.recent(conversation_id="g1", limit=10) == []
 
 
 async def test_self_tag_ignored(harness):
@@ -54,7 +53,7 @@ async def test_a_db_failure_drops_the_message_not_the_listener(harness, monkeypa
     async def boom(*a, **kw):
         raise RuntimeError("disk full")
 
-    monkeypatch.setattr(db, "append", boom)
+    monkeypatch.setattr(harness.store, "append", boom)
     await harness.handler.on_event(group_event(body="hi"))     # must not raise
     await harness.drain()
     assert harness.metrics.get("nora_errors_total", stage="ambient") == 1
@@ -64,7 +63,7 @@ async def test_a_honcho_failure_does_not_block_ingest(harness):
     harness.honcho.fail = True
     await harness.handler.on_event(group_event(body="hi"))
     await harness.drain()
-    assert len(await db.recent(harness.db_path, "g1", 10)) == 1
+    assert len(await harness.store.recent(conversation_id="g1", limit=10)) == 1
 
 
 async def test_ingest_does_not_wait_on_a_slow_honcho(harness):

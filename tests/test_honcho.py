@@ -1,4 +1,4 @@
-"""Tests for the best-effort Honcho v3 write path (nora/store/honcho.py, spec §C.5).
+"""Tests for the best-effort Honcho v3 write path (nora/infra/honcho/client.py, spec §C.5).
 
 Every scenario below is offline: a local aiohttp.test_utils.TestServer stands in for
 Honcho, so no live network is required (and none of these carry the `network` marker).
@@ -13,7 +13,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.store.honcho import HonchoClient
+from nora.infra.honcho import HonchoClient
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ async def test_feed_creates_a_session_then_posts_the_message_batch(server_factor
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    assert await client.feed("miles", "hello") is True
+    assert await client.feed(peer_id="miles", text="hello") is True
     assert calls == [
         ("POST", "/v3/workspaces/nora/peers/miles/sessions"),
         ("POST", "/v3/workspaces/nora/sessions/sess-1/messages"),
@@ -68,7 +68,7 @@ async def test_feed_sends_the_correct_message_batch_body(server_factory):
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    assert await client.feed("miles", "hello") is True
+    assert await client.feed(peer_id="miles", text="hello") is True
     assert bodies["messages"] == {"messages": [{"content": "hello", "peer_id": "miles"}]}
 
 
@@ -84,8 +84,8 @@ async def test_feed_reuses_the_cached_session_for_the_same_peer(server_factory):
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    assert await client.feed("miles", "a") is True
-    assert await client.feed("miles", "b") is True
+    assert await client.feed(peer_id="miles", text="a") is True
+    assert await client.feed(peer_id="miles", text="b") is True
 
     session_calls = [c for c in calls if c[1].endswith("/sessions")]
     message_calls = [c for c in calls if c[1].endswith("/messages")]
@@ -103,8 +103,8 @@ async def test_ensure_peer_is_idempotent(server_factory):
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    await client.ensure_peer("miles")
-    await client.ensure_peer("miles")
+    await client.ensure_peer(peer_id="miles")
+    await client.ensure_peer(peer_id="miles")
 
     # Careful not to over-match /peers/miles/sessions — filter for paths ending exactly
     # in "/peers".
@@ -131,7 +131,7 @@ async def test_ensure_workspace_is_called_once(server_factory):
 
 async def test_feed_returns_false_when_honcho_is_down():
     client = HonchoClient("http://127.0.0.1:1", "nora", feed_timeout=0.3)
-    assert await client.feed("miles", "hello") is False
+    assert await client.feed(peer_id="miles", text="hello") is False
 
 
 async def test_feed_never_raises_on_a_server_error(server_factory):
@@ -141,7 +141,7 @@ async def test_feed_never_raises_on_a_server_error(server_factory):
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    assert await client.feed("miles", "hello") is False
+    assert await client.feed(peer_id="miles", text="hello") is False
 
 
 async def test_feed_times_out_without_blocking_the_caller(server_factory):
@@ -153,7 +153,7 @@ async def test_feed_times_out_without_blocking_the_caller(server_factory):
     client = HonchoClient(base_url, "nora", feed_timeout=0.3)
 
     start = time.monotonic()
-    result = await client.feed("miles", "hello")
+    result = await client.feed(peer_id="miles", text="hello")
     elapsed = time.monotonic() - start
 
     assert result is False
@@ -162,4 +162,33 @@ async def test_feed_times_out_without_blocking_the_caller(server_factory):
 
 async def test_ensure_peer_never_raises_when_honcho_is_down():
     client = HonchoClient("http://127.0.0.1:1", "nora", feed_timeout=0.2)
-    await client.ensure_peer("miles")  # must not raise
+    await client.ensure_peer(peer_id="miles")  # must not raise
+
+
+async def test_ensure_peer_is_idempotent_under_concurrency(monkeypatch):
+    """Two concurrent misses must create ONE peer, not two. Person-centric
+    identity means Miles's Signal and Telegram messages hit the same peer id at
+    the same moment, and a split peer splits his card."""
+    client = HonchoClient("http://127.0.0.1:8000", "nora")
+    creates = []
+
+    async def _fake_create(peer_id):
+        await asyncio.sleep(0.01)      # widen the check-then-act window
+        creates.append(peer_id)
+
+    async def _fake_exists(peer_id):
+        return peer_id in creates
+
+    monkeypatch.setattr(client, "_peer_exists", _fake_exists)
+    monkeypatch.setattr(client, "_create_peer", _fake_create)
+
+    await asyncio.gather(*(client.ensure_peer(peer_id="miles") for _ in range(5)))
+    assert creates == ["miles"]
+
+
+async def test_different_peers_are_not_serialised_behind_one_lock(monkeypatch):
+    """A single global lock would make this correct but slow; the lock is
+    per-peer, so two different peers proceed concurrently."""
+    client = HonchoClient("http://127.0.0.1:8000", "nora")
+    assert client._peer_lock("a") is not client._peer_lock("b")
+    assert client._peer_lock("a") is client._peer_lock("a")

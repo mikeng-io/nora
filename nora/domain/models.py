@@ -41,10 +41,11 @@ class PersonRef:
 class DeliveryStatus(Enum):
     """A transcript row's send state. Mirrors `nora.domain.errors.FailureClass`'s
     reasoning: this was stringly-typed over `"pending"`/`"sent"`/`"failed"`
-    (`nora/store/db.py::_VALID_STATUS`) in the same phase that typed the adjacent
-    failure taxonomy as an enum. Port-only for now — `db.py` keeps its own string
-    tuple and raises `ValueError` on an invalid one until the persistence phase
-    adapts it onto this type.
+    (the retired `nora/store/db.py::_VALID_STATUS`) in the same phase that typed
+    the adjacent failure taxonomy as an enum. `nora/infra/sql/audit.py::SqlAuditStore`
+    is the persistence phase's adapter onto this type: it stores `.value` and
+    round-trips through `DeliveryStatus(...)`, which raises `ValueError` on an
+    unrecognized string on the way back out.
     """
 
     PENDING = "pending"
@@ -54,11 +55,10 @@ class DeliveryStatus(Enum):
 
 @dataclass(frozen=True)
 class TranscriptRow:
-    """One row as returned by `AuditStore.recent` — the persistence phase's target
-    shape for what `nora/store/db.py::recent` (`nora/store/db.py:98-111`) actually
-    returns today as an untyped `dict[str, Any]`. This is the port's declared
-    shape, not yet what the runtime produces; `nora/store/db.py` is unchanged by
-    this type's introduction, and the persistence phase is what makes it real.
+    """One row as returned by `AuditStore.recent`. Replaces the untyped
+    `dict[str, Any]` rows the retired `nora/store/db.py::recent` used to
+    return; `nora.infra.sql.audit.SqlAuditStore` is what produces this shape
+    at runtime now.
     """
 
     id: int
