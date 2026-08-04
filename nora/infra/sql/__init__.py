@@ -4,6 +4,7 @@ Public surface: `METADATA`, `MESSAGES`, `create_sql_engine`, `SqlAuditStore`,
 `run_migrations`. Import from this package root, never from a submodule.
 """
 
+from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import async_url_for, create_sql_engine
 from nora.infra.sql.migrations_runner import (
     current_revision,
@@ -16,6 +17,7 @@ from nora.infra.sql.schema import MESSAGES, METADATA
 __all__ = [
     "MESSAGES",
     "METADATA",
+    "SqlAuditStore",
     "async_url_for",
     "create_sql_engine",
     "current_revision",

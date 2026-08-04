@@ -32,16 +32,17 @@ avoid:
   gateway events and Telegram's update batches are not. Parsers stay
   per-adapter, tested directly against their own transport shape.
 
-- `AuditStore` deliberately has **no `prune`**. `db.prune` is dead code
-  today — nothing calls it, and the real prune is inline in `append` — so it
-  is not carried forward onto the port.
+- `AuditStore.recent` returns `TranscriptRow`, not the `dict[str, Any]` row
+  blobs the old `nora/store/db.py` returned, and `delivery_status` is
+  `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlAuditStore`
+  implements this; the conformance is checked statically (it is inside mypy's
+  strict scope) and behaviourally by `tests/contract/test_audit_store_contract.py`.
 
-- `AuditStore.recent`/`.stats` return `TranscriptRow`/typed values, not the
-  `dict[str, Any]` row blobs `nora/store/db.py` (`db.py:98-111`) returns
-  today. This is the port's target shape, not a claim about the current
-  implementation — the persistence phase adapts `db.py` onto it. Likewise
-  `delivery_status` is `DeliveryStatus`, not the bare string `db.py` still
-  uses (`db.py::_VALID_STATUS`).
+- `AuditStore` still deliberately has **no `prune`**, even though a caller now
+  exists. `SqlAuditStore.prune_all` is a retention sweep owned by the runtime,
+  not something any stage programs against through the port. Putting it on the
+  port would oblige every future implementation — including fakes — to
+  implement a retention policy they do not have.
 
 - `AuditStore.append` has **no `max_per_conversation` parameter**. Retention
   window size is a policy decided at the store's construction, not a value

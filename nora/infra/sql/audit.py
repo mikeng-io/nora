@@ -1,0 +1,114 @@
+"""`AuditStore` over SQLAlchemy Core. Role: audit record + the tagging path's
+context source. No semantics live here.
+
+`append` is a bare INSERT. It used to run the INSERT and a correlated-subquery
+prune in one transaction on every message — O(rows-per-conversation) per write.
+WAL permits exactly one writer, so under an N-listener burst that produced
+SQLITE_BUSY, and the ingest path's documented failure behaviour is to drop the
+message. Pruning is now a periodic sweep (`prune_all`), so a retention chore
+can never cost an audit row.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import sqlalchemy as sa
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
+from nora.infra.sql.schema import MESSAGES
+
+DEFAULT_MAX_PER_CONVERSATION = 500
+
+
+class SqlAuditStore:
+    """Satisfies `nora.domain.ports.AuditStore`."""
+
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        *,
+        max_per_conversation: int = DEFAULT_MAX_PER_CONVERSATION,
+        metrics: Any = None,
+    ) -> None:
+        """`metrics` is INJECTED, never imported.
+
+        `nora.infra` sits below `nora.obs` in import-linter's layers contract,
+        so importing `nora.obs.metrics` here — at module level or lazily inside
+        this function, which import-linter detects either way — breaks contract
+        2. Injection is also what the project's test-seam policy requires:
+        collaborators come through `__init__`, never a module-level mutable
+        singleton. The composition root passes `METRICS`; `None` means this
+        store simply does not count, which is correct for unit tests.
+        """
+        self._engine = engine
+        self._max_per_conversation = max_per_conversation
+        self._metrics = metrics
+
+    async def append(
+        self,
+        *,
+        message: NormalizedMessage,
+        is_nora: bool = False,
+        delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
+    ) -> int:
+        stmt = sa.insert(MESSAGES).values(
+            platform=message.platform,
+            conversation_id=message.conversation_id,
+            conversation_type=message.conversation_type,
+            sender_id=message.sender_id,
+            sender_name=message.sender_name,
+            ts=message.timestamp,
+            body=message.body,
+            is_nora=int(is_nora),
+            delivery_status=delivery_status.value,
+            raw_json=json.dumps(message.raw),
+        )
+        try:
+            async with self._engine.begin() as conn:
+                result = await conn.execute(stmt)
+        except OperationalError as exc:
+            self._note_busy(exc)
+            raise
+        # `lastrowid`, not `inserted_primary_key[0]`: the latter is typed
+        # `Any | None` and fails strict mypy with "not indexable". `lastrowid`
+        # is a plain `int` and is what the legacy `db.append` used too.
+        return int(result.lastrowid)
+
+    async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
+        """Newest `limit` rows for one conversation, returned oldest-first."""
+        stmt = (
+            sa.select(
+                MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
+                MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
+                MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
+            )
+            .where(MESSAGES.c.conversation_id == conversation_id)
+            .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [
+            TranscriptRow(
+                id=r.id,
+                sender_id=r.sender_id,
+                sender_name=r.sender_name,
+                ts=r.ts,
+                body=r.body,
+                is_nora=bool(r.is_nora),
+                delivery_status=DeliveryStatus(r.delivery_status),
+                raw_json=r.raw_json,
+            )
+            for r in reversed(rows)
+        ]
+
+    async def aclose(self) -> None:
+        await self._engine.dispose()
+
+    def _note_busy(self, exc: OperationalError) -> None:
+        if self._metrics is not None and "database is locked" in str(exc).lower():
+            self._metrics.inc("nora_store_busy_total")
