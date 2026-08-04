@@ -43,12 +43,6 @@ async def close_client() -> None:
         _CLIENT = None
 
 
-def close_client_sync() -> None:
-    """Test helper: drop the singleton without awaiting."""
-    global _CLIENT
-    _CLIENT = None
-
-
 def create_model_provider(
     *, model: str, max_tokens: int, temperature: float, client: AsyncOpenAI
 ) -> OpenAIModel:

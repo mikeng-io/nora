@@ -39,7 +39,6 @@ import time
 from typing import Any, Protocol
 
 from nora.domain.models import TagContext
-from nora.obs.metrics import METRICS
 from nora.obs.tracing import trace_attributes as build_trace_attributes
 
 log = logging.getLogger("nora.engagement.invoke")
@@ -73,7 +72,7 @@ async def run(
     limits: dict,
     ctx: TagContext,
     timeout_seconds: float,
-    metrics: Any = METRICS,
+    metrics: Any,
 ) -> tuple[bool, float]:
     """Return `(ok, elapsed)`. `ok` is False on a timeout or any other
     exception, in which case the model was never allowed to reply — the

@@ -1,11 +1,15 @@
 """Lifetime concerns `Handler` and `App` used to own directly (Phase 3, Task 7).
 
-`nora/handler.py` and `nora/__main__.py` still run all real traffic — this module
-is not wired into them yet, that is Task 8's cut. It exists standalone so it can
-be exercised on its own, and takes **dependencies, not config**: the composition
-root passes a store, metrics, adapters and intervals, never `Config` itself
-(`nora.app` is one of only two packages allowed to read it — see
-`nora/app/composition.py` — and `runtime.py` deliberately isn't one of them).
+This module owns background-task lifetime: the strong-reference task set every
+fire-and-forget spawn is tracked in, the retention prune sweep, the `Debounce`
+TTL sweep, and per-adapter restart-with-backoff supervision. `nora/handler.py`
+is deleted; `nora/__main__.py:103-120` wires all four units through
+`nora.app.composition.build_dependencies`, which is what actually constructs
+them for production traffic. It takes **dependencies, not config**: the
+composition root passes a store, metrics, adapters and intervals, never
+`Config` itself (`nora.app` is one of only two packages allowed to read it —
+see `nora/app/composition.py` — and `runtime.py` deliberately isn't one of
+them).
 
 Four responsibilities, four independent units below, none of which know about
 each other:

@@ -11,10 +11,10 @@ TEMPERATURE = 0.7
 
 
 @pytest.fixture(autouse=True)
-def _reset_client():
-    factory.close_client_sync()
+async def _reset_client():
+    await factory.close_client()
     yield
-    factory.close_client_sync()
+    await factory.close_client()
 
 
 def _client() -> object:
@@ -32,8 +32,8 @@ def test_create_client_uses_the_given_base_url():
     assert client.base_url.host in ("localhost", "127.0.0.1")
 
 
-def test_create_client_refuses_to_start_without_an_api_key():
-    factory.close_client_sync()
+async def test_create_client_refuses_to_start_without_an_api_key():
+    await factory.close_client()
     with pytest.raises(RuntimeError, match="api_key"):
         factory.create_client(base_url=BASE_URL, api_key="")
 

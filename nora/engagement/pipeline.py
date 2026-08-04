@@ -34,15 +34,14 @@ module's test suite for the probe that proves both.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 from nora.agent.prefill import build_prefill, build_tag_message
 from nora.agent.tools import build_tools
 from nora.domain.ports import AuditStore, EngagementRequest, MemoryStore
-from nora.obs.metrics import METRICS
 from nora.persons import Persons
 from nora.tag import Debounce
 
@@ -70,7 +69,8 @@ class EngagementPipeline:
         context_window: int,
         timeout_seconds: float,
         limits: dict,
-        metrics: Any = METRICS,
+        metrics: Any,
+        spawn: Callable[[Coroutine[Any, Any, None]], Any],
         llm_state: Any = None,
     ) -> None:
         self._adapter = adapter
@@ -88,23 +88,9 @@ class EngagementPipeline:
         self._timeout_seconds = timeout_seconds
         self._limits = limits
         self._metrics = metrics
+        self._spawn = spawn
         self._llm_state = llm_state
         self._in_flight: set[tuple[str, str]] = set()
-        self._bg: set[asyncio.Task] = set()
-
-    def _spawn(self, coro: Any) -> None:
-        """Fire-and-forget, off the tag's own critical path — mirrors
-        `Handler._spawn`. The set holds a strong reference: asyncio keeps
-        only weak ones, so a bare `create_task` can be garbage-collected
-        mid-flight."""
-        task = asyncio.create_task(coro)
-        self._bg.add(task)
-        task.add_done_callback(self._done)
-
-    def _done(self, task: asyncio.Task) -> None:
-        self._bg.discard(task)
-        if not task.cancelled() and task.exception() is not None:
-            log.error("background task failed: %s", task.exception())
 
     async def run(self, request: EngagementRequest) -> None:
         """Admit, then (if admitted) run the tag. See module docstring for

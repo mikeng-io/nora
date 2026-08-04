@@ -25,7 +25,6 @@ from typing import Any
 
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.domain.models import ConversationTarget
-from nora.obs.metrics import METRICS
 from nora.persona.loader import Persona
 
 log = logging.getLogger("nora.engagement.deliver")
@@ -51,7 +50,7 @@ def build(
     tag_id: str,
     nora_sender_id: str,
     conversation_id: str,
-    metrics: Any = METRICS,
+    metrics: Any,
 ) -> DeliveryHandle:
     deliverer = Deliverer(
         store=store, adapter=adapter, target=target, persona=persona, canary=canary,
@@ -65,8 +64,8 @@ def check_outcome(
     *,
     deliverer: Deliverer,
     tag_id: str,
+    metrics: Any,
     llm_state: Any = None,
-    metrics: Any = METRICS,
 ) -> bool:
     """Return True iff a reply was actually delivered.
 

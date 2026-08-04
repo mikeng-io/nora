@@ -175,7 +175,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         debounce=debounce, canary=cfg.persona.canary, display_name=cfg.persona.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
-        limits=limits, metrics=metrics, llm_state=llm_state,
+        limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 

@@ -24,6 +24,7 @@ import asyncio
 import gc
 
 from nora.agent.guards import ReplyGuard
+from nora.app.runtime import BackgroundTasks
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import EngageDecision, EngagementRequest, MemoryHealth
 from nora.engagement.context import TranscriptInjection
@@ -91,22 +92,24 @@ class _ReplyingRunner:
             guard.record("send_reply")
 
 
-def _build_pipeline() -> EngagementPipeline:
+def _build_pipeline() -> tuple[EngagementPipeline, BackgroundTasks]:
     audit = FakeAuditStore()
     memory = _FakeMemory()
     metrics = Metrics()
+    background = BackgroundTasks()
     persons = Persons(by_person={}, index={})
     assembler = TranscriptInjection(
         audit=audit, memory=memory, persons=persons, context_window=10, metrics=metrics,
     )
-    return EngagementPipeline(
+    pipeline = EngagementPipeline(
         adapter=_FakeAdapter(), audit=audit, memory=memory, persons=persons,
         persona_store=_FakePersonaStore(), context_assembler=assembler,
         runner=_ReplyingRunner(), debounce=Debounce(0.0), canary="CANARY-XYZ",
         display_name="Nora", nora_sender_id="+8520000", context_window=10,
         timeout_seconds=5.0, limits={"turns": 4, "output_tokens": 400, "total_tokens": 24000},
-        metrics=metrics,
+        metrics=metrics, spawn=background.spawn,
     )
+    return pipeline, background
 
 
 def _msg(conversation_id: str) -> NormalizedMessage:
@@ -116,7 +119,9 @@ def _msg(conversation_id: str) -> NormalizedMessage:
     )
 
 
-async def _run_n_tags(pipeline: EngagementPipeline, n: int, prefix: str) -> None:
+async def _run_n_tags(
+    pipeline: EngagementPipeline, background: BackgroundTasks, n: int, prefix: str
+) -> None:
     for i in range(n):
         conversation_id = f"{prefix}{i}"
         request = EngagementRequest(
@@ -125,8 +130,8 @@ async def _run_n_tags(pipeline: EngagementPipeline, n: int, prefix: str) -> None
             tag_id=f"{prefix}-{i}",
         )
         await pipeline.run(request)
-        while pipeline._bg:
-            await asyncio.gather(*list(pipeline._bg), return_exceptions=True)
+        while len(background):
+            await asyncio.gather(*list(background._tasks), return_exceptions=True)
             await asyncio.sleep(0)
 
 
@@ -136,13 +141,13 @@ def _live_reply_guard_count() -> int:
 
 
 async def test_reply_guard_count_does_not_grow_with_tags_processed():
-    pipeline = _build_pipeline()
+    pipeline, background = _build_pipeline()
     baseline = _live_reply_guard_count()
 
-    await _run_n_tags(pipeline, 5, "a")
+    await _run_n_tags(pipeline, background, 5, "a")
     after_small_batch = _live_reply_guard_count()
 
-    await _run_n_tags(pipeline, 50, "b")
+    await _run_n_tags(pipeline, background, 50, "b")
     after_large_batch = _live_reply_guard_count()
 
     assert after_small_batch == baseline, "a ReplyGuard survived the first batch"

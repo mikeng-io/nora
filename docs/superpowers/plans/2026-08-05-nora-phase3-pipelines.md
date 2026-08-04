@@ -99,7 +99,7 @@ Paid for already; do not rediscover.
 | `nora/ingest/stages/memory_feed.py` | Mapped senders only; off-path; never blocks ingest. |
 | `nora/ingest/stages/gate.py` | Runs the `EngagePolicy`; a policy error becomes `EngageDecision(engage=False, reason="policy_error")`. |
 | `nora/engagement/__init__.py` | Package docstring + public surface. |
-| `nora/engagement/pipeline.py` | `EngagementPipeline` — admission → context → persona → routing → tools → invoke → deliver → feedback. |
+| `nora/engagement/pipeline.py` | `EngagementPipeline` — admission → context → persona → tools → invoke → deliver → feedback. (Not `routing`: a `routing` stage was planned here but deliberately deferred — `EngageDecision.tier` is set by `policy.py:35` and read nowhere yet; see spec §7/§11's "real `Routing`" deferral, also noted at this document's line 596.) |
 | `nora/engagement/context.py` | `TranscriptInjection` — the `ContextAssembler` port implementation. |
 | `nora/engagement/stages/{admission,persona,tools,invoke,deliver,feedback}.py` | One stage each. |
 | `nora/app/runtime.py` | `BackgroundTasks`, the prune sweep, the `Debounce` TTL sweep, adapter supervision. |

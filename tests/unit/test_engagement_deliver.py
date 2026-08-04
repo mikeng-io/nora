@@ -43,7 +43,7 @@ def test_build_wires_the_guard_to_the_same_deliverer():
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, persona=_persona(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1",
+        conversation_id="g1", metrics=Metrics(),
     )
 
     assert isinstance(handle.deliverer, Deliverer)
@@ -109,14 +109,16 @@ async def test_check_outcome_returns_true_and_sets_llm_state_on_a_delivered_repl
 
 
 async def test_check_outcome_tolerates_no_llm_state():
+    metrics = Metrics()
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         persona=_persona(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1",
+        conversation_id="g1", metrics=metrics,
     )
     await handle.deliverer.deliver("hello")
 
-    assert deliver.check_outcome(deliverer=handle.deliverer, tag_id="tag-1") is True
+    result = deliver.check_outcome(deliverer=handle.deliverer, tag_id="tag-1", metrics=metrics)
+    assert result is True
 
 
 async def test_a_delivered_reply_is_recorded_in_the_audit_store():
@@ -124,6 +126,7 @@ async def test_a_delivered_reply_is_recorded_in_the_audit_store():
     handle = deliver.build(
         store=store, adapter=_FakeAdapter(succeed=True), target=TARGET, persona=_persona(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
+        metrics=Metrics(),
     )
 
     await handle.deliverer.deliver("hello")

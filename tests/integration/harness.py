@@ -165,9 +165,13 @@ class Harness:
         return [c["guard"] for c in self._calls]
 
     async def drain(self) -> None:
-        """Await every background task spawned so far — both the shared
-        `BackgroundTasks` (ambient memory-feed, and each spawned tag) and
-        `EngagementPipeline`'s own internal set (the post-reply exchange feed) —
+        """Await every background task spawned so far — ambient memory-feeds,
+        spawned tags, AND `EngagementPipeline`'s post-reply exchange feed all
+        land in the same shared `BackgroundTasks` now (Important 2's fix:
+        `EngagementPipeline` takes an injected `spawn` instead of rolling its
+        own private task set, so `nora.app.offline.build_offline_pipeline`
+        wires both pipelines' spawns to the one `background.spawn` — see
+        `nora/engagement/pipeline.py`'s `spawn` constructor parameter) —
         including ones spawned by tasks that are themselves still in flight.
 
         Deliberately loops with `asyncio.sleep(0)` after each `gather`, not just
@@ -177,8 +181,8 @@ class Harness:
         even for a callback registered on an already-done future. `sleep(0)`
         unconditionally yields once per iteration, which lets that discard land.
         """
-        while self._background._tasks or self._engagement._bg:
-            pending = [*self._background._tasks, *self._engagement._bg]
+        while self._background._tasks:
+            pending = list(self._background._tasks)
             await asyncio.gather(*pending, return_exceptions=True)
             await asyncio.sleep(0)
 

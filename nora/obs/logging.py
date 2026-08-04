@@ -66,10 +66,14 @@ class SecretFilter(logging.Filter):
 
 
 def setup_logging(*, level: str, path: Path | str, format: str, secrets: list[str]) -> None:
-    # `format` mirrors LoggingConfig.format (spec C.9's config shape) but, like the
-    # code this replaced, only one on-disk format exists today (JSONFormatter) — the
-    # field is accepted for parity with the config and future use, not read yet.
-    del format
+    # `format` mirrors LoggingConfig.format (spec C.9's config shape). Only one
+    # on-disk format exists today (JSONFormatter), so there is nothing to switch
+    # on yet — but an accepted-and-silently-ignored parameter is exactly the shape
+    # that invites a bug report ("I set format = 'text' and nothing changed"), so
+    # this honours it as a validated precondition instead: an operator who sets
+    # anything but "json" gets a loud, immediate error rather than a silent no-op.
+    if format != "json":
+        raise ValueError(f"unsupported obs.logging.format: {format!r} (only 'json' exists)")
     root = logging.getLogger()
     root.setLevel(level)
     for h in root.handlers[:]:

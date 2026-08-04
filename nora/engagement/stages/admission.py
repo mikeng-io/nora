@@ -7,8 +7,8 @@ released in another is exactly the shape that grows leaks: THIS module
 ACQUIRES — `run()` adds `key` to `in_flight` on admission, and only on
 admission. It is the PIPELINE's `finally` that RELEASES (discards `key` from
 the same `in_flight` set on every exit path) — see `nora.engagement.
-pipeline`'s docstring, a later task, for the other half of this contract.
-Nothing in this module ever discards from `in_flight`.
+pipeline`'s docstring for the other half of this contract. Nothing in this
+module ever discards from `in_flight`.
 """
 
 from __future__ import annotations

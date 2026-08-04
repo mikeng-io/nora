@@ -94,11 +94,14 @@ def load_cases(path: Path | str) -> list[Case]:
     return [Case.from_dict(item) for item in raw]
 
 
-async def _drain(background, engagement) -> None:
-    """Await every background task spawned so far — both the shared
-    `BackgroundTasks` (ambient memory-feed, and each spawned tag) and
-    `EngagementPipeline`'s own internal set (the post-reply exchange feed) —
-    including ones spawned by tasks that are themselves still in flight.
+async def _drain(background) -> None:
+    """Await every background task spawned so far — ambient memory-feeds,
+    spawned tags, AND `EngagementPipeline`'s post-reply exchange feed all land
+    in the same shared `BackgroundTasks` now (`EngagementPipeline` takes an
+    injected `spawn` instead of rolling its own private task set;
+    `nora.app.offline.build_offline_pipeline` wires both pipelines' spawns to
+    this one `background.spawn`) — including ones spawned by tasks that are
+    themselves still in flight.
 
     Mirrors `tests/integration/harness.py::Harness.drain` exactly (same
     `asyncio.sleep(0)`-after-`gather` shape, for the same reason: a task's own
@@ -108,8 +111,8 @@ async def _drain(background, engagement) -> None:
     outstanding tasks rather than letting them finish, which would lose the
     post-reply Honcho feed `Trajectory.honcho_feeds` depends on.
     """
-    while background._tasks or engagement._bg:
-        pending = [*background._tasks, *engagement._bg]
+    while background._tasks:
+        pending = list(background._tasks)
         await asyncio.gather(*pending, return_exceptions=True)
         await asyncio.sleep(0)
 
@@ -155,13 +158,13 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
         adapter = FakeAdapter()
         runner = FakeAgentRunner(turns)
         try:
-            dispatcher, engagement, background = build_offline_pipeline(
+            dispatcher, _engagement, background = build_offline_pipeline(
                 cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
                 persona_store=persona_store, runner=runner,
             )
             body = _build_body(case)
             await dispatcher.on_event(group_event(body=body))
-            await _drain(background, engagement)
+            await _drain(background)
         finally:
             await audit.aclose()
 

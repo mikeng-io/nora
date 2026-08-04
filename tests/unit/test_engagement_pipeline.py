@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 
+from nora.app.runtime import BackgroundTasks
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef
 from nora.domain.ports import EngageDecision, EngagementRequest, MemoryHealth
 from nora.engagement.context import TranscriptInjection
@@ -186,10 +187,12 @@ def _build_pipeline(
     timeout_seconds: float = 5.0,
     debounce_seconds: float = 0.0,
     clock=None,
+    background=None,
 ):
     audit = audit if audit is not None else FakeAuditStore()
     memory = memory if memory is not None else _FakeMemory()
     metrics = metrics if metrics is not None else Metrics()
+    background = background if background is not None else BackgroundTasks()
     context_assembler = context_assembler or TranscriptInjection(
         audit=audit, memory=memory, persons=PERSONS, context_window=10, metrics=metrics,
     )
@@ -209,16 +212,18 @@ def _build_pipeline(
         timeout_seconds=timeout_seconds,
         limits=LIMITS,
         metrics=metrics,
+        spawn=background.spawn,
         llm_state=llm_state,
     )
-    return pipeline, metrics, audit, memory
+    return pipeline, metrics, audit, memory, background
 
 
-async def _drain(pipeline: EngagementPipeline) -> None:
-    """Wait for every background task `_spawn` has launched.
+async def _drain(background: BackgroundTasks) -> None:
+    """Wait for every background task the pipeline's injected `spawn` (i.e.
+    `background.spawn`, see Important 2's fix) has launched.
 
-    Deliberately `asyncio.sleep(0)`, not `asyncio.gather(*pipeline._bg)`: a
-    task's own coroutine can finish (and be reported `done()`) before its
+    Deliberately `asyncio.sleep(0)`, not `asyncio.gather(*background._tasks)`:
+    a task's own coroutine can finish (and be reported `done()`) before its
     `add_done_callback` discard runs — done-callbacks are always delivered
     via `call_soon`, one loop tick later, even for a callback registered on
     an ALREADY-done future. `gather()` on already-done futures resolves
@@ -226,8 +231,8 @@ async def _drain(pipeline: EngagementPipeline) -> None:
     gather(*bg)` can spin forever never letting that pending callback fire.
     `sleep(0)` unconditionally yields once per iteration, which does.
     """
-    while pipeline._bg:
-        await asyncio.gather(*list(pipeline._bg), return_exceptions=True)
+    while len(background):
+        await asyncio.gather(*list(background._tasks), return_exceptions=True)
         await asyncio.sleep(0)
 
 
@@ -239,10 +244,12 @@ async def _drain(pipeline: EngagementPipeline) -> None:
 async def test_a_successful_tag_delivers_releases_the_lock_and_feeds_the_exchange():
     adapter = _FakeAdapter()
     llm_state = _LLMState()
-    pipeline, metrics, _audit, memory = _build_pipeline(adapter=adapter, llm_state=llm_state)
+    pipeline, metrics, _audit, memory, background = _build_pipeline(
+        adapter=adapter, llm_state=llm_state,
+    )
 
     await pipeline.run(_request())
-    await _drain(pipeline)
+    await _drain(background)
 
     assert adapter.texts == ["今晚七點半得"]
     assert pipeline._in_flight == set()
@@ -253,15 +260,60 @@ async def test_a_successful_tag_delivers_releases_the_lock_and_feeds_the_exchang
 
 
 async def test_an_unmapped_sender_delivers_with_no_honcho_feed():
-    pipeline, _metrics, _audit, memory = _build_pipeline(
+    pipeline, _metrics, _audit, memory, background = _build_pipeline(
         runner=ScriptedRunner(_reply_turns()),
     )
 
     await pipeline.run(_request(_msg(sender_id="+852999999")))
-    await _drain(pipeline)
+    await _drain(background)
 
     assert memory.fed == []
     assert pipeline._in_flight == set()
+
+
+# ---------------------------------------------------------------------------
+# Important 2: the feedback feed is spawned through the INJECTED tracker, not
+# a private set the pipeline rolls itself — see nora/engagement/pipeline.py's
+# `spawn` constructor parameter and nora/app/composition.py:172/offline.py:79,
+# which both pass `background.spawn`. Without that wiring, `App.run`'s
+# `finally: await deps.background.cancel_all()` (nora/__main__.py:124) would
+# neither see nor cancel a still-running feedback feed on shutdown.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_feedback_feed_is_spawned_through_the_injected_tracker():
+    class _SlowMemory(_FakeMemory):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+
+        async def feed(self, *, peer_id: str, text: str) -> bool:
+            self.started.set()
+            await asyncio.sleep(10)   # never completes within the test
+            self.fed.append((peer_id, text))
+            return True
+
+    memory = _SlowMemory()
+    background = BackgroundTasks()
+    pipeline, _metrics, _audit, _memory, _background = _build_pipeline(
+        memory=memory, background=background,
+    )
+
+    await pipeline.run(_request())
+    # Bounded, not a bare `await memory.started.wait()`: if the feed is never
+    # actually spawned (the discrimination probe this test is written against
+    # — see nora/engagement/pipeline.py's history), `.started` never fires and
+    # an unbounded wait would hang the suite instead of failing it.
+    await asyncio.wait_for(memory.started.wait(), timeout=2.0)
+
+    # The feedback feed is still in flight — it must be tracked by the
+    # injected `background`, the one `deps.background.cancel_all()` reaches.
+    assert len(background) == 1
+
+    await background.cancel_all()
+
+    assert len(background) == 0
+    assert memory.fed == [], "cancel_all() must reach the spawned feed and stop it mid-await"
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +323,7 @@ async def test_an_unmapped_sender_delivers_with_no_honcho_feed():
 
 async def test_a_timeout_releases_the_lock_and_counts_invocation_timeout():
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory = _build_pipeline(
+    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
         adapter=adapter, runner=ScriptedRunner(_reply_turns(), delay=5.0),
         timeout_seconds=0.05,
     )
@@ -287,7 +339,7 @@ async def test_a_timeout_releases_the_lock_and_counts_invocation_timeout():
 
 async def test_an_llm_error_releases_the_lock_and_counts_llm_error():
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory = _build_pipeline(
+    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
         adapter=adapter, runner=ScriptedRunner(raises=RuntimeError("omniroute down")),
     )
 
@@ -303,7 +355,7 @@ async def test_an_llm_error_releases_the_lock_and_counts_llm_error():
 async def test_a_base_exception_only_fault_is_absorbed_silently():
     """R-5: even a fault that is not an `Exception` (a bare `BaseException`
     subclass) must never propagate out of `run` or leave the lock held."""
-    pipeline, metrics, _audit, _memory = _build_pipeline(
+    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
         context_assembler=_FaultingContextAssembler(),
     )
 
@@ -317,13 +369,13 @@ async def test_a_base_exception_only_fault_is_absorbed_silently():
 
 async def test_no_send_call_is_counted_when_the_model_never_calls_send_reply():
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, memory = _build_pipeline(
+    pipeline, metrics, _audit, memory, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
     )
 
     await pipeline.run(_request())
-    await _drain(pipeline)
+    await _drain(background)
 
     assert adapter.sent == []
     assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
@@ -333,21 +385,21 @@ async def test_no_send_call_is_counted_when_the_model_never_calls_send_reply():
 
 async def test_latency_and_overhead_are_observed_on_every_path():
     metrics = Metrics()
-    ok_pipeline, _, _, _ = _build_pipeline(metrics=metrics)
+    ok_pipeline, _, _, _, ok_background = _build_pipeline(metrics=metrics)
     await ok_pipeline.run(_request(tag_id="t1"))
-    await _drain(ok_pipeline)
+    await _drain(ok_background)
 
-    timeout_pipeline, _, _, _ = _build_pipeline(
+    timeout_pipeline, _, _, _, _bg2 = _build_pipeline(
         metrics=metrics, runner=ScriptedRunner(_reply_turns(), delay=5.0), timeout_seconds=0.05,
     )
     await timeout_pipeline.run(_request(tag_id="t2"))
 
-    error_pipeline, _, _, _ = _build_pipeline(
+    error_pipeline, _, _, _, _bg3 = _build_pipeline(
         metrics=metrics, runner=ScriptedRunner(raises=RuntimeError("boom")),
     )
     await error_pipeline.run(_request(tag_id="t3"))
 
-    fault_pipeline, _, _, _ = _build_pipeline(
+    fault_pipeline, _, _, _, _bg4 = _build_pipeline(
         metrics=metrics, context_assembler=_FaultingContextAssembler(),
     )
     await fault_pipeline.run(_request(tag_id="t4"))
@@ -365,7 +417,7 @@ async def test_latency_and_overhead_are_observed_on_every_path():
 async def test_a_concurrent_tag_for_the_same_conversation_is_dropped_not_queued():
     adapter = _FakeAdapter()
     metrics = Metrics()
-    pipeline, _, _, _ = _build_pipeline(
+    pipeline, _, _, _, background = _build_pipeline(
         adapter=adapter, metrics=metrics,
         runner=ScriptedRunner(_reply_turns(), delay=0.2),
     )
@@ -381,7 +433,7 @@ async def test_a_concurrent_tag_for_the_same_conversation_is_dropped_not_queued(
     assert pipeline._in_flight == {("signal", "g1")}   # the FIRST tag's lock, untouched
 
     await first
-    await _drain(pipeline)
+    await _drain(background)
 
     assert pipeline._in_flight == set()
     assert adapter.texts == ["今晚七點半得"]   # exactly one reply — the first tag's
@@ -389,10 +441,10 @@ async def test_a_concurrent_tag_for_the_same_conversation_is_dropped_not_queued(
 
 async def test_a_debounced_tag_is_never_admitted_and_never_releases_a_lock():
     metrics = Metrics()
-    pipeline, _, _, _ = _build_pipeline(metrics=metrics, debounce_seconds=30)
+    pipeline, _, _, _, background = _build_pipeline(metrics=metrics, debounce_seconds=30)
 
     await pipeline.run(_request(tag_id="first"))
-    await _drain(pipeline)
+    await _drain(background)
     assert pipeline._in_flight == set()
 
     await pipeline.run(_request(tag_id="second"))   # same conversation, inside the window
@@ -402,7 +454,9 @@ async def test_a_debounced_tag_is_never_admitted_and_never_releases_a_lock():
 
 
 async def test_a_self_tag_is_refused_and_admission_never_runs_the_pipeline():
-    pipeline, metrics, _audit, _memory = _build_pipeline(adapter=_FakeAdapter(account="+852111"))
+    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
+        adapter=_FakeAdapter(account="+852111"),
+    )
 
     await pipeline.run(_request(_msg(sender_id="+852111")))
 

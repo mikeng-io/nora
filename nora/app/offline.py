@@ -82,7 +82,7 @@ def build_offline_pipeline(
         debounce=debounce, canary=cfg.persona.canary, display_name=cfg.persona.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
-        limits=limits, metrics=metrics, llm_state=None,
+        limits=limits, metrics=metrics, spawn=background.spawn, llm_state=None,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
     return dispatcher, engagement, background

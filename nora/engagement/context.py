@@ -24,7 +24,6 @@ from typing import Any
 
 from nora.domain.models import TagContext, TranscriptRow
 from nora.domain.ports import AuditStore, EngagementRequest, MemoryStore
-from nora.obs.metrics import METRICS
 from nora.persons import Persons
 
 log = logging.getLogger("nora.engagement.context")
@@ -40,7 +39,7 @@ class TranscriptInjection:
         memory: MemoryStore,
         persons: Persons,
         context_window: int,
-        metrics: Any = METRICS,
+        metrics: Any,
     ) -> None:
         self._audit = audit
         self._memory = memory

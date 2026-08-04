@@ -69,7 +69,7 @@ async def test_a_transcript_read_failure_yields_an_empty_transcript_not_an_error
     store = FakeAuditStore()
     store.fail_on_recent = True
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10,
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
     )
 
     ctx = await assembler.assemble(request=_request())
@@ -95,7 +95,7 @@ async def test_an_unmapped_tagger_yields_no_peer_card_and_no_honcho_call():
     assembler = TranscriptInjection(
         audit=FakeAuditStore(), memory=memory,
         persons=Persons(by_person={}, index={}),   # nobody mapped
-        context_window=10,
+        context_window=10, metrics=Metrics(),
     )
 
     ctx = await assembler.assemble(request=_request(_msg(sender_id="+85299999999")))
@@ -113,7 +113,7 @@ async def test_the_transcript_is_oldest_first_and_window_bounded():
             sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
         ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=3,
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=3, metrics=Metrics(),
     )
 
     ctx = await assembler.assemble(request=_request())
@@ -124,5 +124,6 @@ async def test_the_transcript_is_oldest_first_and_window_bounded():
 def test_it_satisfies_the_context_assembler_port():
     assembler: ContextAssembler = TranscriptInjection(
         audit=FakeAuditStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=Metrics(),
     )
     assert isinstance(assembler, ContextAssembler)
