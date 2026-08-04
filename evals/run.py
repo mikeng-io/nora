@@ -110,7 +110,7 @@ def _load_adversarial_cases(paths: tuple[Path, ...]) -> list[dict]:
 
 
 def _load_eval_config(loader=load_nora_config, candidates=None):
-    """`config.yaml` (gitignored, per-deployment) is preferred; `config.example.yaml`
+    """`config.yaml` (tracked in git, per-deployment) is preferred; `config.example.yaml`
     (committed) is the fallback for a local `config.yaml` predating the schema.
 
     `loader` and `candidates` are injectable so phase 1's format change is a
@@ -124,6 +124,8 @@ def _load_eval_config(loader=load_nora_config, candidates=None):
             return loader(candidate)
         except ConfigError as exc:
             last_error = exc
+    if last_error is None:
+        raise ValueError("no config candidates provided")
     raise last_error
 
 

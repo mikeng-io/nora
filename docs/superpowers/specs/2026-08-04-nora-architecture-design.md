@@ -717,6 +717,17 @@ the running container's environment. Before Phase 1, create a gitignored `.env` 
 `.env.example` — otherwise the rollback path documented above is not actually executable
 by an operator who did not personally start the container.
 
+**Another live trap, same root cause:** `docker-compose.yml:22` bind-mounts `./config.yaml`
+into the container, and that file is **tracked in git** (§8.1 above). Any `git checkout`,
+`git revert`, or branch switch performed on the host during Phase 1 rewrites *live
+production config in place*, with no container restart to signal it happened. Separately,
+a Phase 1 commit that `git rm`s `config.yaml` (e.g. once the TOML rename lands) will leave
+nothing at that path on the host — and Docker's bind mount then recreates the mount point
+as an empty *directory* on the next `up`, not a file, which the container fails to read as
+config. `config.yaml.pre-toml` (§8's Phase 0 backup) covers recovering the data; it does
+not cover this failure mode, since the directory-vs-file mismatch has to be cleaned up by
+hand before the backup can be restored.
+
 ## 9. Audit findings folded in
 
 Four independent audits, 2026-08-04. Items verified by running code are **[proven]**.

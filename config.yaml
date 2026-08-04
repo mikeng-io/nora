@@ -1,7 +1,8 @@
-# Nora configuration (local, real deployment — gitignored, kept out of the image;
-# mounted read-only into the container by docker-compose.yml). Paths are relative to
-# this file's own directory so the same config works unmodified on the host or in the
-# container (WORKDIR /app mirrors this repo's layout).
+# Nora configuration (local, real deployment — tracked in git, per-deployment; kept
+# out of the image by .dockerignore, mounted read-only into the container by
+# docker-compose.yml instead). Paths are relative to this file's own directory so the
+# same config works unmodified on the host or in the container (WORKDIR /app mirrors
+# this repo's layout).
 signal_cli:
   base_url: "http://127.0.0.1:18080"
   account: "+85290000100"         # Nora's Signal number (the linked account)
