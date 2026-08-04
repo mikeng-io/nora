@@ -14,5 +14,5 @@ docs/
 design/
 .env
 .env.*
-config.yaml
-persons.yaml
+config.toml
+identity.toml
