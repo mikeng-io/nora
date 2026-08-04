@@ -111,7 +111,7 @@ layers = [
     "nora.agent | nora.platform",
     "nora.persona",
     "nora.obs",
-    "nora.infra",
+    "nora.infra | nora.testing",
     "nora.domain",
 ]
 
@@ -121,7 +121,7 @@ type = "forbidden"
 source_modules = [
     "nora.agent", "nora.obs", "nora.persona", "nora.platform",
     "nora.domain", "nora.handler", "nora.models", "nora.persons", "nora.tag",
-    "nora.infra",
+    "nora.infra", "nora.testing",
 ]
 forbidden_modules = ["nora.config"]
 ignore_imports = [
