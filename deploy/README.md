@@ -21,9 +21,11 @@ If a deploy misbehaves, roll back to the previous version:
     cd /home/nora/workspace/nora && git checkout <previous-tag>
     sudo systemctl start nora
 
-The audit database (`data/messages.db`) is never touched by a rollback — schema
-migrations are additive and idempotent (see `nora/store/db.py`), so an older binary
-reading a newer `messages.db` only ignores columns it doesn't recognize.
+The audit database (`data/messages.db`) is never touched by a rollback — but schema
+changes are versioned Alembic revisions (`nora/infra/sql/migrations_runner.py`), not
+additive `CREATE TABLE IF NOT EXISTS` statements, so an older binary reading a
+newer `messages.db` is not guaranteed to work; see `docs/runbook.md` §3 for the
+persistence-phase rollback procedure (`git revert` + `DROP TABLE alembic_version`).
 
 ## Watchdog
 

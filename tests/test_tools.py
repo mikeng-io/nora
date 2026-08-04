@@ -68,6 +68,27 @@ async def test_read_buffer_returns_only_model_relevant_fields(wiring):
     assert set(rows[0]) == {"sender", "body", "ts"}    # no raw_json, no ids
 
 
+async def test_read_buffer_clamps_a_hostile_limit_before_it_reaches_the_store(wiring, monkeypatch):
+    """`limit` is a model-supplied argument. SQLite renders `LIMIT -1` as
+    unbounded rather than zero, so an unclamped negative limit would dump the
+    entire conversation into context; `limit=0` is equally meaningless. This
+    asserts what `read_buffer` actually sends downstream — independent of
+    whatever the store itself does with a non-positive limit — so it fails if
+    the tool-level clamp regresses even though the store has its own guard."""
+    seen: list[int] = []
+    real_recent = wiring["store"].recent
+
+    async def spy(*, conversation_id, limit):
+        seen.append(limit)
+        return await real_recent(conversation_id=conversation_id, limit=limit)
+
+    monkeypatch.setattr(wiring["store"], "recent", spy)
+    for hostile in (-1, 0):
+        rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=hostile)
+        assert len(rows) <= 1
+    assert seen == [1, 1]
+
+
 async def test_read_peer_card_resolves_the_sender_to_a_person(wiring):
     assert await _call(wiring["tools"]["read_peer_card"], sender_id="+852111") == \
         ["likes espresso"]

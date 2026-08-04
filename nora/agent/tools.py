@@ -39,8 +39,12 @@ def build_tools(
             limit: How many recent messages to fetch (max 200).
         """
         try:
+            # Clamp both ends: `limit` is a model-supplied argument, and a
+            # non-positive value must never reach the store. SQLite renders
+            # `LIMIT -1` as unbounded, so an unclamped negative limit would
+            # dump the entire conversation into context.
             rows = await store.recent(
-                conversation_id=conversation_id, limit=min(int(limit), 200)
+                conversation_id=conversation_id, limit=max(1, min(int(limit), 200))
             )
         except Exception:
             log.exception("read_buffer failed")

@@ -67,7 +67,10 @@ async def build_app(config_path) -> App:
     except PersonsError as exc:
         raise StartupError(f"person mapping error: {exc}") from exc
 
-    run_migrations(cfg.store.db_path)
+    try:
+        run_migrations(cfg.store.db_path)
+    except Exception as exc:
+        raise StartupError(f"migration error: {exc}") from exc
     store = SqlAuditStore(
         create_sql_engine(cfg.store.db_path),
         max_per_conversation=cfg.store.max_per_conversation,

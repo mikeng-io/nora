@@ -67,6 +67,21 @@ async def test_recent_on_an_unknown_conversation_is_empty(store):
     assert await store.recent(conversation_id="nope", limit=10) == []
 
 
+async def test_recent_with_a_zero_limit_is_empty(store):
+    await store.append(message=_msg())
+    assert await store.recent(conversation_id="g1", limit=0) == []
+
+
+async def test_recent_with_a_negative_limit_is_empty(store):
+    """The regression this guards: SQLAlchemy renders `.limit(-1)` as
+    `LIMIT -1`, which SQLite treats as unbounded rather than zero, so a
+    naive `SqlAuditStore.recent(limit=-1)` would return every row in the
+    conversation instead of none. `FakeAuditStore` already returned `[]`
+    here; `SqlAuditStore` must short-circuit rather than issue that query."""
+    await store.append(message=_msg())
+    assert await store.recent(conversation_id="g1", limit=-1) == []
+
+
 async def test_appended_rows_default_to_pending(store):
     await store.append(message=_msg())
     assert (await store.recent(conversation_id="g1", limit=1))[0].delivery_status \

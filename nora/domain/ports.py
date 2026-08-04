@@ -51,14 +51,17 @@ avoid:
   window size is a policy decided at the store's construction, not a value
   every caller re-specifies per call — `Protocol` methods don't inherit
   defaults, so a per-call default is already duplicated wherever it is
-  threaded today (`nora/store/db.py:68`).
+  threaded today (`nora/infra/sql/audit.py:35`, `SqlAuditStore.__init__`'s
+  `max_per_conversation` parameter).
 
 - `MemoryStore.ensure_*` is declared **idempotent under concurrency**.
-  Today's `HonchoClient.ensure_session` is check-then-act, and person-centric
-  identity means the same peer id can be hit from two platforms at the same
-  moment. The lock that makes this true lands in a later phase; the
-  invariant is declared here so that phase has something to implement
-  against rather than discover.
+  `HonchoClient.ensure_peer`/`ensure_session` are check-then-act over
+  per-peer state, and person-centric identity means the same peer id can be
+  hit from two platforms at the same moment. The lock that makes this true
+  landed here, in this phase — a per-peer `asyncio.Lock`
+  (`nora/infra/honcho/client.py:41`), not in a later one; the invariant is
+  declared here so a static conformance check (mypy on `nora.infra`) has
+  something to hold the implementation to.
 
 - `MemoryStore.health()` returns `MemoryHealth`, mirroring
   `PlatformAdapter.health() -> AdapterHealth`, instead of the bare

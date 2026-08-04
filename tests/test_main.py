@@ -99,6 +99,20 @@ async def test_honcho_being_down_does_not_prevent_startup(env):
         await app.shutdown()
 
 
+async def test_a_broken_migration_refuses_to_start(env, tmp_path):
+    """`run_migrations` used to be the only fatal startup step not wrapped in
+    `StartupError` handling: an Alembic failure exited with a raw traceback
+    instead of `startup failed: ...`. A directory where SQLite expects a
+    file is a reliable way to make `command.upgrade` fail."""
+    broken = tmp_path / "messages.db"
+    broken.mkdir()
+    cfg = tomllib.loads(env.read_text())
+    cfg["store"]["db_path"] = str(broken)
+    env.write_text(tomli_w.dumps(cfg))
+    with pytest.raises(StartupError, match="migration"):
+        await build_app(env)
+
+
 async def test_the_database_is_migrated_at_startup(env):
     from nora.infra.sql.migrations_runner import current_revision, head_revision
 

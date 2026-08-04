@@ -29,7 +29,8 @@ export OMNIROUTE_API_KEY=<your-key>       # the only secret; never goes in confi
 python -m nora                            # or: python -m nora --config path/to/config.toml
 ```
 
-Nora creates `data/messages.db` on first run (schema managed by `nora/store/db.py`),
+Nora creates `data/messages.db` on first run (schema managed by
+`nora/infra/sql/schema.py` and applied via Alembic — see `nora/infra/sql/migrations_runner.py`),
 connects to the signal-cli SSE stream, and starts serving `GET /health` and `GET /metrics`
 on `obs.metrics.port` (default `9100`).
 
@@ -245,6 +246,7 @@ docker compose up -d --no-build
 ```
 
 Either way, `.env` supplies `OMNIROUTE_API_KEY` to Compose automatically — nothing needs
-exporting by hand. `data/messages.db` is untouched by either path — schema migrations are
-additive and idempotent (`nora/store/db.py`). See `docs/runbook.md` §3 for the full
-incident playbook, including the v1-specific database restore step.
+exporting by hand. `data/messages.db` is untouched by either path — schema changes are
+versioned Alembic revisions applied by `run_migrations` at startup, not additive
+`CREATE TABLE IF NOT EXISTS` statements. See `docs/runbook.md` §3 for the full incident
+playbook, including the persistence-phase rollback step.

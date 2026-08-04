@@ -41,10 +41,11 @@ class PersonRef:
 class DeliveryStatus(Enum):
     """A transcript row's send state. Mirrors `nora.domain.errors.FailureClass`'s
     reasoning: this was stringly-typed over `"pending"`/`"sent"`/`"failed"`
-    (`nora/store/db.py::_VALID_STATUS`) in the same phase that typed the adjacent
-    failure taxonomy as an enum. Port-only for now — `db.py` keeps its own string
-    tuple and raises `ValueError` on an invalid one until the persistence phase
-    adapts it onto this type.
+    (the retired `nora/store/db.py::_VALID_STATUS`) in the same phase that typed
+    the adjacent failure taxonomy as an enum. `nora/infra/sql/audit.py::SqlAuditStore`
+    is the persistence phase's adapter onto this type: it stores `.value` and
+    round-trips through `DeliveryStatus(...)`, which raises `ValueError` on an
+    unrecognized string on the way back out.
     """
 
     PENDING = "pending"

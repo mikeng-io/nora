@@ -80,7 +80,16 @@ class SqlAuditStore:
         return int(result.lastrowid)
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
-        """Newest `limit` rows for one conversation, returned oldest-first."""
+        """Newest `limit` rows for one conversation, returned oldest-first.
+
+        A non-positive `limit` short-circuits to `[]` rather than reaching
+        SQL: SQLAlchemy renders `.limit(-1)` as `LIMIT -1`, which SQLite
+        treats as unbounded, not zero. `FakeAuditStore.recent` already
+        returns `[]` for `limit <= 0`; this keeps both implementations
+        agreeing (see `tests/contract/test_audit_store_contract.py`).
+        """
+        if limit <= 0:
+            return []
         stmt = (
             sa.select(
                 MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
@@ -124,9 +133,26 @@ class SqlAuditStore:
             await conn.execute(stmt)
 
     async def stats(self) -> dict[str, Any]:
-        """`schema_revision` replaces the retired `schema_version`: Alembic
-        subsumes `PRAGMA user_version`, and the revision id is the honest
-        answer to "what shape is this database?"."""
+        """`schema_revision` replaces the retired `schema_version`.
+
+        It is `head_revision()` — the code's own migration head, from the
+        `versions/` directory this process ships with — not
+        `current_revision()`, a read of the `alembic_version` row in the
+        connected database. That means it can never disagree with the code
+        it is running inside of, which also means it cannot detect the one
+        failure mode a schema-shape check exists for: this process pointed
+        at a database `run_migrations` has not (yet, or ever) brought to
+        that head. Reporting the code's belief rather than the database's
+        actual state was a deliberate choice, not an oversight — the
+        alternative, `current_revision()`, opens a new synchronous
+        connection per call (it is not async-native, unlike everything
+        else `SqlAuditStore` does), and `stats()` is on `/health`'s hot
+        path. `GET /health` today only reads `stats()["messages"]`, not
+        this field, so the distinction has no live consequence yet — but a
+        future caller of `schema_revision` should read it as "what this
+        process expects," not "what this database's `alembic_version`
+        row actually says."
+        """
         stmt = sa.select(
             sa.func.count(),
             sa.func.count(sa.distinct(MESSAGES.c.conversation_id)),

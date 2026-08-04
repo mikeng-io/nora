@@ -38,6 +38,11 @@ class HonchoClient:
         # still proceed concurrently. Shared between ensure_peer and ensure_session:
         # both are check-then-act over per-peer state, and person-centric identity
         # means the same peer id can be hit from two platforms at the same moment.
+        # `_peer_locks`, `_known_peers`, and `_sessions` are all unbounded for the
+        # lifetime of this client — deliberately not fixed here, since a private
+        # group chat bounds them by human count, not message volume. A future TTL
+        # sweep across all three is the forward pointer if that stops being true
+        # (e.g. a multi-tenant deployment with peer churn).
         self._peer_locks: dict[str, asyncio.Lock] = {}
 
     def _peer_lock(self, peer_id: str) -> asyncio.Lock:

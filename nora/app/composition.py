@@ -30,9 +30,6 @@ class Dependencies:
     229-line `Handler` god object grew. Add a named collaborator here instead
     of widening this type's reach.
 
-    Only collaborators that exist today are built: the persistence phase owns
-    `AuditStore`, so it is not invented here.
-
     `audit` is annotated with the `AuditStore` port, not the concrete
     `SqlAuditStore`, and `memory` is annotated with the `MemoryStore` port,
     not the concrete `HonchoClient` — both are inside mypy's strict override

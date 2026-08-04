@@ -53,8 +53,8 @@ warn_unused_ignores = true
 # match) instead of scoping to the matched modules — verified by a minimal
 # repro. Two of --strict's flags (warn_redundant_casts, warn_unused_ignores)
 # are global-only in mypy and are already set above; the rest are spelled
-# out here so this override only tightens nora.domain/config/app and does
-# not silently tighten nora.obs, nora.store, etc.
+# out here so this override only tightens nora.domain/config/app/infra and does
+# not silently tighten nora.obs, nora.agent, etc.
 [[tool.mypy.overrides]]
 module = ["nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*"]
 disallow_any_generics = true
