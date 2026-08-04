@@ -24,7 +24,7 @@ class NormalizedMessage:
     sender_name: str | None        # platform-provided display name
     timestamp: int                 # ms epoch, platform-provided
     body: str                      # text + attachment placeholders
-    raw: dict                      # full envelope, persisted as raw_json
+    raw: dict[str, Any]            # full envelope, persisted as raw_json
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(self.platform, self.conversation_id, self.conversation_type)

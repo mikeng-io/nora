@@ -54,3 +54,18 @@ def test_strands_import_boundary():
         if package not in STRANDS_ALLOWED_PACKAGES:
             offenders.append(str(path.relative_to(ROOT)))
     assert not offenders, f"strands imported outside the agent boundary: {offenders}"
+
+
+DOMAIN_BANNED = {"aiohttp", "strands", "sqlalchemy", "pydantic",
+                 "prometheus_client", "opentelemetry", "yaml", "openai"}
+
+
+def test_domain_imports_no_framework():
+    """The rule that keeps the rest honest: if a type in domain/ needs a framework
+    to express itself, the port is wrong."""
+    offenders = []
+    for path in (PKG / "domain").rglob("*.py"):
+        banned = _imported_modules(path) & DOMAIN_BANNED
+        if banned:
+            offenders.append(f"{path.relative_to(ROOT)}: {sorted(banned)}")
+    assert not offenders, f"domain/ must import no framework: {offenders}"
