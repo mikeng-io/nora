@@ -41,3 +41,4 @@ venv/
 # Phase rollback backups (backups of gitignored/live state files)
 *.pre-toml
 data/*.pre-alembic
+.serena/
