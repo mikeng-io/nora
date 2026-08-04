@@ -38,7 +38,7 @@
 - [ ] **Step 1: Confirm the gate is currently broken**
 
 ```bash
-uv run ruff check --version; echo "exit=$?"
+uv run ruff --version; echo "exit=$?"
 grep -c ruff uv.lock
 ```
 
@@ -65,7 +65,7 @@ git rm requirements-dev.txt
 - [ ] **Step 4: Verify every gate binary now resolves**
 
 ```bash
-uv run ruff check --version
+uv run ruff --version
 uv run mypy --version
 uv run lint-imports --help > /dev/null && echo "lint-imports OK"
 uv run alembic --version
