@@ -367,7 +367,12 @@ Expected: `test_conv_ts_index_orders_ts_descending` FAILS **and** `test_indexes_
 
 **Probe C — remove `sqlite_autoincrement`.** Delete `sqlite_autoincrement=True,`.
 Run: `uv run pytest tests/infra/test_schema_parity.py -q`
-Expected: `test_autoincrement_is_present` FAILS **and** `test_id_is_nullable_exactly_as_production_is` FAILS (SQLAlchemy emits `NOT NULL` without it). Restore.
+Expected: `test_autoincrement_is_present` FAILS. **Corrected during execution:** an
+earlier draft of this step also predicted `test_id_is_nullable_exactly_as_production_is`
+would fail. It does not — `nullable=True` is honoured independently of
+`sqlite_autoincrement`, so the emitted DDL becomes `id INTEGER, PRIMARY KEY (id)` with no
+`NOT NULL`. One failing test is the correct expectation here. (Removing `nullable=True`
+itself is what fires that test, plus `test_columns_match_production_exactly`.) Restore.
 
 Record the three observed failure outputs in the task's ledger entry.
 
@@ -379,6 +384,25 @@ Add `nora.infra.*` to the strict override's `module` list in `pyproject.toml`:
 [[tool.mypy.overrides]]
 module = ["nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*"]
 ```
+
+**Also make `nora/infra/__init__.py`'s stated boundary real** — it claims "May NOT import:
+`nora.config` (contract 3)", and a docstring asserting an unenforced boundary is the exact
+defect class this project has shipped twice. In `[tool.importlinter]`, add `"nora.infra"`
+to the **"only app and __main__ read config"** contract's `source_modules`, and add it to
+the **"layered architecture"** contract sharing `nora.store`'s row:
+
+```toml
+    "nora.obs",
+    "nora.store | nora.infra",
+    "nora.domain",
+```
+
+The layer position is load-bearing: it puts `nora.infra` below `nora.obs`, which is what
+forces Task 4's `SqlAuditStore` to take `metrics` by injection rather than importing
+`nora.obs.metrics`. Making it real now means Task 4 hits a gate instead of relying on
+memory. Observe both failing before committing: append `from nora.config import Config` to
+`schema.py` → contract 3 BROKEN; append `from nora.obs.metrics import METRICS` →
+the layers contract BROKEN. Restore after each.
 
 Run all four:
 
@@ -2448,9 +2472,13 @@ Change each to `from nora.infra.honcho import HonchoClient` (or the relative equ
 
 - [ ] **Step 5: Update the import-linter contracts**
 
-In `pyproject.toml`'s `[tool.importlinter]`, replace `nora.store` with `nora.infra` in the layers contract and in the "only app and `__main__` read config" contract's source modules. `nora.store` no longer exists, and a contract naming a non-existent module is a contract that silently checks nothing.
+`nora.infra` was already added to both contracts in Task 1. What remains here is to
+**remove `nora.store`** from the layers contract (its row becomes just `"nora.infra"`) and
+from the "only app and `__main__` read config" contract's `source_modules`. `nora.store` no
+longer exists, and a contract naming a non-existent module is a contract that silently
+checks nothing.
 
-`nora.infra` takes `nora.store`'s **exact position** in the layers list — below
+`nora.infra` keeps `nora.store`'s **exact position** in the layers list — below
 `nora.obs`, above `nora.domain`. That ordering is load-bearing, not incidental:
 it is why `SqlAuditStore` takes `metrics` through `__init__` instead of
 importing `nora.obs.metrics` (Task 4). Confirmed before the rename that nothing
