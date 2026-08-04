@@ -77,7 +77,11 @@ def make_llm_config(**kw: Any) -> LLMConfig:
 
 
 def make_logging_config(**kw: Any) -> LoggingConfig:
-    return LoggingConfig(**{"level": "INFO", "path": "nora.log", "format": "json", **kw})
+    # LoggingConfig resolves `path` against a base-directory context (nora/config.py);
+    # constructing it with no context is a startup-safety error by design (FIX 3), so
+    # this builder — like `load_example_config` below — must supply one.
+    data = {"level": "INFO", "path": "nora.log", "format": "json", **kw}
+    return LoggingConfig.model_validate(data, context={"base": REPO_ROOT})
 
 
 def make_tracing_config(**kw: Any) -> TracingConfig:

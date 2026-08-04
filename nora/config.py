@@ -32,7 +32,7 @@ def _resolve_context_field(instance: BaseModel, field: str, info: ValidationInfo
     """
     base = (info.context or {}).get("base") if info.context is not None else None
     if base is None:
-        return
+        raise ValueError("base directory context is required to resolve paths")
     value = getattr(instance, field)
     object.__setattr__(instance, field, _resolve_path(value, base))
 
@@ -43,6 +43,10 @@ class SignalPlatformConfig(BaseModel):
     base_url: str
     account: str
     nora_sender_id: str
+    # NOT YET HONOURED: nothing reads this field today — `__main__.py` constructs
+    # SignalAdapter unconditionally regardless of its value. Enable/disable wiring is
+    # Phase 4's adapter-registry work (see the architecture design doc under
+    # docs/superpowers/specs, "Platforms: registry, resolve_identity()").
     enabled: bool
 
 

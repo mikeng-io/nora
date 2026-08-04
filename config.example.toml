@@ -4,7 +4,8 @@ identity_file = "identity.toml"
 base_url = "http://127.0.0.1:18080"
 account = ""                     # empty = derive from the signal-cli daemon (D5)
 nora_sender_id = "nora"          # how Nora's own rows are tagged in the audit
-enabled = true
+enabled = true                   # NOT YET HONOURED — SignalAdapter starts regardless;
+                                  # wiring lands with the Phase 4 adapter registry
 
 [memory]
 base_url = "http://127.0.0.1:8000"
