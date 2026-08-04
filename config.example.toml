@@ -1,4 +1,4 @@
-identity_file = "persons.yaml"
+identity_file = "identity.toml"
 
 [platforms.signal]
 base_url = "http://127.0.0.1:18080"

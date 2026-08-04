@@ -126,4 +126,4 @@ def test_config_uses_the_target_shape(toml_path):
     assert cfg.obs.tracing.exporter == "file"
     assert cfg.obs.logging.level == "INFO"
     # identity_file replaces persons_file
-    assert cfg.identity_file.name in ("persons.yaml", "identity.toml")
+    assert cfg.identity_file.name == "identity.toml"

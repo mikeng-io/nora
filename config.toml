@@ -4,7 +4,7 @@
 # same config works unmodified on the host or in the container (WORKDIR /app mirrors
 # this repo's layout).
 
-identity_file = "persons.yaml"
+identity_file = "identity.toml"
 
 [platforms.signal]
 base_url = "http://127.0.0.1:18080"

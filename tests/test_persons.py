@@ -3,23 +3,23 @@ import pytest
 from nora.models import NormalizedMessage
 from nora.persons import PersonsError, load_persons, sanitize_unmapped
 
-YAML = """
-persons:
-  miles:
-    name: Miles
-    platforms:
-      signal: "+85212345678"
-  ada:
-    name: Ada
-    platforms:
-      signal: "+85287654321"
+TOML = """
+[persons.miles]
+name = "Miles"
+[persons.miles.platforms]
+signal = "+85212345678"
+
+[persons.ada]
+name = "Ada"
+[persons.ada.platforms]
+signal = "+85287654321"
 """
 
 
 @pytest.fixture
 def persons(tmp_path):
-    p = tmp_path / "persons.yaml"
-    p.write_text(YAML)
+    p = tmp_path / "identity.toml"
+    p.write_text(TOML)
     return load_persons(p)
 
 
@@ -63,20 +63,28 @@ def test_sanitize_unmapped_handles_short_ids():
 
 
 def test_duplicate_sender_id_across_persons_is_a_startup_failure(tmp_path):
-    p = tmp_path / "persons.yaml"
+    p = tmp_path / "identity.toml"
     p.write_text(
-        "persons:\n"
-        "  miles:\n    name: Miles\n    platforms:\n      signal: \"+852111\"\n"
-        "  clone:\n   name: Clone\n   platforms:\n      signal: \"+852111\"\n"
+        "[persons.miles]\n"
+        "name = \"Miles\"\n"
+        "[persons.miles.platforms]\n"
+        "signal = \"+852111\"\n"
+        "[persons.clone]\n"
+        "name = \"Clone\"\n"
+        "[persons.clone.platforms]\n"
+        "signal = \"+852111\"\n"
     )
     with pytest.raises(PersonsError, match="duplicate"):
         load_persons(p)
 
 
 def test_person_id_must_satisfy_the_honcho_peer_id_charset(tmp_path):
-    p = tmp_path / "persons.yaml"
+    p = tmp_path / "identity.toml"
     p.write_text(
-        "persons:\n  'miles smith':\n    name: Miles\n    platforms:\n      signal: \"+1\"\n"
+        "[persons.\"miles smith\"]\n"
+        "name = \"Miles\"\n"
+        "[persons.\"miles smith\".platforms]\n"
+        "signal = \"+1\"\n"
     )
     with pytest.raises(PersonsError, match="person_id"):
         load_persons(p)
@@ -84,8 +92,26 @@ def test_person_id_must_satisfy_the_honcho_peer_id_charset(tmp_path):
 
 def test_missing_file_is_a_startup_failure(tmp_path):
     with pytest.raises(PersonsError, match="not found"):
-        load_persons(tmp_path / "nope.yaml")
+        load_persons(tmp_path / "nope.toml")
 
 
 def test_by_person_exposes_every_mapped_person(persons):
     assert set(persons.by_person) == {"miles", "ada"}
+
+
+def test_loads_identity_toml(tmp_path):
+    path = tmp_path / "identity.toml"
+    path.write_text(
+        '[persons.miles]\n'
+        'name = "Miles"\n'
+        '[persons.miles.platforms]\n'
+        'signal = "+85212345678"\n'
+        'telegram = 123456789\n'          # TOML integers must stringify
+    )
+    persons = load_persons(path)
+    ref = persons.resolve("signal", "+85212345678")
+    assert ref is not None
+    assert ref.name == "Miles"
+    assert ref.person_id == "miles"
+    assert ref.honcho_peer_id == "miles"
+    assert persons.resolve("telegram", "123456789") is not None

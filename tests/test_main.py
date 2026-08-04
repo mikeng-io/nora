@@ -31,10 +31,10 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
     cfg["store"]["db_path"] = str(tmp_path / "messages.db")
     cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
     cfg["persona"]["dir"] = str(ROOT / "nora" / "persona")
-    cfg["identity_file"] = str(tmp_path / "persons.yaml")
+    cfg["identity_file"] = str(tmp_path / "identity.toml")
     cfg["obs"]["metrics"]["port"] = 0
-    (tmp_path / "persons.yaml").write_text(
-        "persons:\n  miles:\n    name: Miles\n    platforms:\n      signal: \"+852111\"\n"
+    (tmp_path / "identity.toml").write_text(
+        "[persons.miles]\nname = \"Miles\"\n[persons.miles.platforms]\nsignal = \"+852111\"\n"
     )
     path = tmp_path / "config.toml"
     with path.open("wb") as f:
@@ -72,9 +72,9 @@ async def test_a_broken_persona_refuses_to_start(env, tmp_path):
 
 
 async def test_a_duplicate_person_mapping_refuses_to_start(env, tmp_path):
-    (tmp_path / "persons.yaml").write_text(
-        "persons:\n  a:\n    name: A\n    platforms:\n      signal: \"+1\"\n"
-        "  b:\n    name: B\n    platforms:\n      signal: \"+1\"\n"
+    (tmp_path / "identity.toml").write_text(
+        "[persons.a]\nname = \"A\"\n[persons.a.platforms]\nsignal = \"+1\"\n"
+        "[persons.b]\nname = \"B\"\n[persons.b.platforms]\nsignal = \"+1\"\n"
     )
     with pytest.raises(StartupError, match="duplicate"):
         await build_app(env)
