@@ -22,6 +22,13 @@ command, but a from-import snapshots the object, so a test that swaps the
 module attribute to simulate drift would silently compare against the original
 metadata and report no drift — a gate that passes for the wrong reason.
 Verified 2026-08-05: with the module-attribute form, the swap is picked up.
+
+`-x db=` is wired deliberately (see `_url()`): `alembic.ini`'s static url used
+to point at `data/messages.db` while `-x db=` was accepted but ignored, so a
+command intended for a scratch copy silently ran against production. Alembic
+creates `alembic_version` as a side effect before most commands report
+anything, so it mutates before it complains — verified the hard way,
+2026-08-05.
 """
 
 from __future__ import annotations
@@ -43,6 +50,24 @@ def include_object(
     return not (type_ == "index" and name == "idx_messages_conv_ts")
 
 
+def _url() -> str:
+    """CLI override: `alembic -x db=/path/to/copy.db`.
+
+    Wired deliberately. `alembic.ini`'s static url used to point at
+    `data/messages.db`, and `-x` was accepted-but-ignored, so a command
+    intended for a scratch copy silently ran against production — Alembic
+    creates `alembic_version` as a side effect before most commands report
+    anything, so it mutates before it complains.
+    """
+    override = context.get_x_argument(as_dictionary=True).get("db")
+    if override:
+        return f"sqlite:///{override}"
+    url = config.get_main_option("sqlalchemy.url")
+    if url is None:
+        raise RuntimeError("alembic Config has no sqlalchemy.url")
+    return url
+
+
 def _configure(**kw: Any) -> None:
     context.configure(
         target_metadata=schema.METADATA,
@@ -55,17 +80,15 @@ def _configure(**kw: Any) -> None:
 
 
 def run_migrations_offline() -> None:
-    _configure(url=config.get_main_option("sqlalchemy.url"), literal_binds=True)
+    _configure(url=_url(), literal_binds=True)
     with context.begin_transaction():
         context.run_migrations()
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    section = config.get_section(config.config_ini_section, {})
+    section["sqlalchemy.url"] = _url()
+    connectable = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
         _configure(connection=connection)
         with context.begin_transaction():
