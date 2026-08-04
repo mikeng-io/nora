@@ -19,6 +19,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
+from nora.infra.sql.migrations_runner import head_revision
 from nora.infra.sql.schema import MESSAGES
 
 DEFAULT_MAX_PER_CONVERSATION = 500
@@ -108,6 +109,58 @@ class SqlAuditStore:
 
     async def aclose(self) -> None:
         await self._engine.dispose()
+
+    async def set_delivery_status(self, *, row_id: int, status: DeliveryStatus) -> None:
+        stmt = (
+            sa.update(MESSAGES)
+            .where(MESSAGES.c.id == row_id)
+            .values(delivery_status=status.value)
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+
+    async def stats(self) -> dict[str, Any]:
+        """`schema_revision` replaces the retired `schema_version`: Alembic
+        subsumes `PRAGMA user_version`, and the revision id is the honest
+        answer to "what shape is this database?"."""
+        stmt = sa.select(
+            sa.func.count(),
+            sa.func.count(sa.distinct(MESSAGES.c.conversation_id)),
+            sa.func.coalesce(sa.func.sum(MESSAGES.c.is_nora), 0),
+            sa.func.coalesce(sa.func.max(MESSAGES.c.ts), 0),
+        ).select_from(MESSAGES)
+        async with self._engine.connect() as conn:
+            total, conversations, nora, latest = (await conn.execute(stmt)).one()
+        return {
+            "messages": int(total),
+            "conversations": int(conversations),
+            "nora_messages": int(nora),
+            "latest_ts": int(latest),
+            "schema_revision": head_revision(),
+        }
+
+    async def prune_all(self) -> int:
+        """Trim every conversation to the retention window. Called periodically
+        by the runtime, never on the write path — see this module's docstring."""
+        keep = self._max_per_conversation
+        ranked = sa.select(
+            MESSAGES.c.id,
+            sa.func.row_number()
+            .over(
+                partition_by=MESSAGES.c.conversation_id,
+                order_by=[MESSAGES.c.ts.desc(), MESSAGES.c.id.desc()],
+            )
+            .label("rank"),
+        ).subquery()
+        doomed = sa.select(ranked.c.id).where(ranked.c.rank > keep)
+        stmt = sa.delete(MESSAGES).where(MESSAGES.c.id.in_(doomed))
+        try:
+            async with self._engine.begin() as conn:
+                result = await conn.execute(stmt)
+        except OperationalError as exc:
+            self._note_busy(exc)
+            raise
+        return int(result.rowcount or 0)
 
     def _note_busy(self, exc: OperationalError) -> None:
         if self._metrics is not None and "database is locked" in str(exc).lower():

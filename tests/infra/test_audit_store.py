@@ -192,3 +192,60 @@ async def test_an_invalid_conversation_type_is_rejected_by_the_check_constraint(
     )
     with pytest.raises(IntegrityError):
         await store.append(message=bad)
+
+
+async def test_set_delivery_status_updates_the_row(store):
+    row_id = await store.append(message=_msg(), is_nora=True)
+    await store.set_delivery_status(row_id=row_id, status=DeliveryStatus.SENT)
+    assert (await store.recent(conversation_id="g1", limit=1))[0].delivery_status \
+        is DeliveryStatus.SENT
+    await store.set_delivery_status(row_id=row_id, status=DeliveryStatus.FAILED)
+    assert (await store.recent(conversation_id="g1", limit=1))[0].delivery_status \
+        is DeliveryStatus.FAILED
+
+
+async def test_stats_counts_and_reports_the_schema_revision(store):
+    from nora.infra.sql.migrations_runner import head_revision
+
+    await store.append(message=_msg())
+    await store.append(message=_msg(body="r"), is_nora=True)
+    s = await store.stats()
+    assert s["messages"] == 2
+    assert s["conversations"] == 1
+    assert s["nora_messages"] == 1
+    assert s["latest_ts"] == 1
+    assert s["schema_revision"] == head_revision()
+
+
+async def test_stats_on_an_empty_store(store):
+    s = await store.stats()
+    assert s["messages"] == 0
+    assert s["latest_ts"] == 0
+
+
+async def test_stats_counts_distinct_conversations_and_the_max_ts(store):
+    await store.append(message=_msg(conv="a", ts=5))
+    await store.append(message=_msg(conv="b", ts=99))
+    await store.append(message=_msg(conv="b", ts=7))
+    s = await store.stats()
+    assert s["conversations"] == 2
+    assert s["latest_ts"] == 99
+    assert s["messages"] == 3
+
+
+async def test_prune_all_keeps_the_window_per_conversation(make_store):
+    store = make_store(max_per_conversation=3)
+    for i in range(10):
+        await store.append(message=_msg(conv="A", body=f"a{i}", ts=i))
+    for i in range(2):
+        await store.append(message=_msg(conv="B", body=f"b{i}", ts=i))
+    deleted = await store.prune_all()
+    assert deleted == 7
+    kept = await store.recent(conversation_id="A", limit=1000)
+    assert [r.body for r in kept] == ["a7", "a8", "a9"]
+    assert len(await store.recent(conversation_id="B", limit=1000)) == 2
+
+
+async def test_prune_all_is_a_no_op_below_the_window(store):
+    await store.append(message=_msg())
+    assert await store.prune_all() == 0
