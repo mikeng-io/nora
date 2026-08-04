@@ -404,7 +404,12 @@ print('db:', cfg.buffer.db_path)
 "
 ```
 
-Expected exactly: `account: +85290000100`, `trigger: nora.000 | timeout: 30`, `exporter: file`, and an absolute `db` path ending `data/messages.db`. **Any deviation is a value-for-value violation — stop and fix.**
+Expected: account `+85290000100`, trigger `nora.000`, timeout **numerically** `== 30`,
+exporter `file`, absolute `db` path ending `data/messages.db`. **Assert numerically, not
+on the printed string** — `invocation_timeout_seconds` is declared `float`, so pydantic
+renders it `30.0` where the old dataclass loader let an `int` leak through. Same value,
+the type the annotation always promised. Any *numeric* deviation is a value-for-value
+violation — stop and fix.
 
 - [ ] **Step 6: Commit**
 
