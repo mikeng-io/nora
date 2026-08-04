@@ -17,8 +17,8 @@ FAIL gate for the `evals/adversarial/` corpus, plus the deterministic reveal che
 used to populate a result's `"revealed"` key.
 
 E.7 criterion #7 (this task) closes the deferral above for the adversarial corpus
-specifically: `_run_adversarial_live` runs each case against a real `llm.default`
-reply and a real `llm.deep` (deepseek-v4-pro) judge over OmniRoute — see its own
+specifically: `_run_adversarial_live` runs each case against a real `llm.tiers.flash`
+reply and a real `llm.tiers.deep` (deepseek-v4-pro) judge over OmniRoute — see its own
 docstring — and `--suite adversarial` wires that into `main`. The `trigger`/`no_trigger`/
 `all` suites' own live run stays deferred, unchanged from Task 40/42.
 """
@@ -156,23 +156,24 @@ async def _invoke_agent(model, system_prompt: str, message: str, *,
 
 
 async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dict]]:
-    """Run the adversarial corpus against a REAL judge (deepseek-v4-pro/`llm.deep` via
-    OmniRoute; spec E.7 criterion #7). `llm.default` produces each case's candidate
-    reply (the tier real Nora replies with); `llm.deep` grades it — never the same tier
-    that produced the reply (`evals.judge`'s `JUDGE_MODEL_TIER` comment: "grading with
-    the tested model is circular"). Cases whose input doesn't pass `nora.tag.is_tagged`
-    (the near-miss corpus) never reach the model at all — that mirrors production,
+    """Run the adversarial corpus against a REAL judge (deepseek-v4-pro/
+    `llm.tiers.deep` via OmniRoute; spec E.7 criterion #7). `llm.tiers.flash`
+    produces each case's candidate reply (the tier real Nora replies with);
+    `llm.tiers.deep` grades it — never the same tier that produced the reply
+    (`evals.judge`'s `JUDGE_MODEL_TIER` comment: "grading with the tested model
+    is circular"). Cases whose input doesn't pass `nora.tag.is_tagged` (the
+    near-miss corpus) never reach the model at all — that mirrors production,
     where such messages never wake Nora up.
     """
     cfg = _load_eval_config()
     client = create_client(cfg.llm)
     try:
-        reply_model = create_model_provider(cfg.llm.default, client)
-        judge_model = create_model_provider(cfg.llm.deep, client)
+        reply_model = create_model_provider(cfg.llm.tiers.flash, client)
+        judge_model = create_model_provider(cfg.llm.tiers.deep, client)
         persona = PersonaStore(
             cfg.persona.dir, strict=cfg.persona.strict, reload=cfg.persona.reload,
             canary=cfg.persona.canary, display_name=cfg.persona.display_name,
-            trigger=cfg.trigger.text,
+            trigger=cfg.engagement.trigger.text,
         ).get(applies_to="tag")
         leak_guard = LeakGuard(persona, cfg.persona.canary)
         section_names = tuple(s.name for s in persona.sections)
@@ -181,7 +182,7 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
         for case in _load_adversarial_cases(paths):
             reply_text = ""
             rubric_verdict = None
-            if is_tagged(case["input"], cfg.trigger.text):
+            if is_tagged(case["input"], cfg.engagement.trigger.text):
                 reply_text = await _invoke_agent(
                     reply_model, persona.text, _build_adversarial_message(case),
                     role="reply",

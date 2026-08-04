@@ -1,6 +1,6 @@
 """Frozen config tree (spec D.1), pydantic-backed. `load()` is the only reader of config.toml.
 
-Strictness is deliberate: a typo in `trigger.text` would silently disable Nora, so
+Strictness is deliberate: a typo in `engagement.trigger.text` would silently disable Nora, so
 `extra="forbid"` is on every model here — unknown or missing keys are a startup
 failure, not a default.
 """
@@ -37,27 +37,30 @@ def _resolve_context_field(instance: BaseModel, field: str, info: ValidationInfo
     object.__setattr__(instance, field, _resolve_path(value, base))
 
 
-class SignalCliConfig(BaseModel):
+class SignalPlatformConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     base_url: str
     account: str
     nora_sender_id: str
+    enabled: bool
 
 
-class HonchoConfig(BaseModel):
+class PlatformsConfig(BaseModel):
+    """A model, not a free-form dict: `extra="forbid"` must keep rejecting an
+    unknown platform name. A later phase widens this into a registry.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    signal: SignalPlatformConfig
+
+
+class MemoryConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     base_url: str
     workspace_id: str
-
-
-class LLMTierConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    model: str
-    max_tokens: int
-    temperature: float
 
 
 class LimitsConfig(BaseModel):
@@ -67,14 +70,29 @@ class LimitsConfig(BaseModel):
     total_tokens: int
 
 
+class LLMTierConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model: str
+    max_tokens: int
+    temperature: float
+    timeout_seconds: float
+    limits: LimitsConfig
+
+
+class LLMTiersConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    flash: LLMTierConfig
+    deep: LLMTierConfig
+
+
 class LLMConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     base_url: str
     api_key_env: str
-    default: LLMTierConfig
-    deep: LLMTierConfig
-    limits: LimitsConfig
+    tiers: LLMTiersConfig
 
 
 class TriggerConfig(BaseModel):
@@ -82,10 +100,16 @@ class TriggerConfig(BaseModel):
 
     text: str
     min_interval_seconds: float
-    invocation_timeout_seconds: float
 
 
-class BufferConfig(BaseModel):
+class EngagementConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    policy: Literal["trigger_text"]
+    trigger: TriggerConfig
+
+
+class StoreConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     db_path: Path
@@ -93,7 +117,7 @@ class BufferConfig(BaseModel):
     context_window: int
 
     @model_validator(mode="after")
-    def _resolve_paths(self, info: ValidationInfo) -> BufferConfig:
+    def _resolve_paths(self, info: ValidationInfo) -> StoreConfig:
         _resolve_context_field(self, "db_path", info)
         return self
 
@@ -144,34 +168,34 @@ class TracingConfig(BaseModel):
     def _check_otlp_endpoint(self) -> TracingConfig:
         if self.exporter == "otlp" and not self.endpoint:
             raise ValueError(
-                "observability.tracing.endpoint is required when exporter is 'otlp'"
+                "obs.tracing.endpoint is required when exporter is 'otlp'"
             )
         return self
 
 
-class ObservabilityConfig(BaseModel):
+class ObsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    logging: LoggingConfig
+    metrics: MetricsConfig
     tracing: TracingConfig
 
 
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    signal_cli: SignalCliConfig
-    honcho: HonchoConfig
+    platforms: PlatformsConfig
     llm: LLMConfig
-    trigger: TriggerConfig
-    buffer: BufferConfig
+    memory: MemoryConfig
+    store: StoreConfig
+    engagement: EngagementConfig
     persona: PersonaConfig
-    persons_file: Path
-    logging: LoggingConfig
-    metrics: MetricsConfig
-    observability: ObservabilityConfig
+    identity_file: Path
+    obs: ObsConfig
 
     @model_validator(mode="after")
     def _resolve_paths(self, info: ValidationInfo) -> Config:
-        _resolve_context_field(self, "persons_file", info)
+        _resolve_context_field(self, "identity_file", info)
         return self
 
 

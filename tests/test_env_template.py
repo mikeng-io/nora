@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_config_example_exists_and_parses():
     data = tomllib.loads((ROOT / "config.example.toml").read_text())
     assert set(data) == {
-        "signal_cli", "honcho", "llm", "trigger", "buffer",
-        "persona", "persons_file", "logging", "metrics", "observability",
+        "platforms", "llm", "memory", "store", "engagement",
+        "persona", "identity_file", "obs",
     }
 
 

@@ -18,6 +18,7 @@ from nora.config import (
     LimitsConfig,
     LLMConfig,
     LLMTierConfig,
+    LLMTiersConfig,
     LoggingConfig,
     TracingConfig,
 )
@@ -36,7 +37,7 @@ def _with(obj: Any, path: str, value: Any) -> Any:
 def override_config(base: Any, changes: dict[str, Any]) -> Any:
     """Return a copy of `base` with dotted-path fields replaced.
 
-        override_config(cfg, {"buffer.db_path": p, "trigger.min_interval_seconds": 0})
+        override_config(cfg, {"store.db_path": p, "engagement.trigger.min_interval_seconds": 0})
 
     Format-agnostic by contract: a future config change only touches `_with`,
     never a caller.
@@ -46,22 +47,31 @@ def override_config(base: Any, changes: dict[str, Any]) -> Any:
     return base
 
 
-def make_llm_tier(**kw: Any) -> LLMTierConfig:
-    return LLMTierConfig(**{"model": "deepseek-v4-flash", "max_tokens": 400,
-                            "temperature": 0.7, **kw})
-
-
 def make_limits(**kw: Any) -> LimitsConfig:
     return LimitsConfig(**{"turns": 4, "total_tokens": 24000, **kw})
+
+
+def make_llm_tier(**kw: Any) -> LLMTierConfig:
+    return LLMTierConfig(**{
+        "model": "deepseek-v4-flash", "max_tokens": 400, "temperature": 0.7,
+        "timeout_seconds": 30, "limits": make_limits(),
+        **kw,
+    })
+
+
+def make_llm_tiers(**kw: Any) -> LLMTiersConfig:
+    defaults: dict[str, Any] = {
+        "flash": make_llm_tier(),
+        "deep": make_llm_tier(model="deepseek-v4-pro", max_tokens=1200, temperature=0.5),
+    }
+    return LLMTiersConfig(**{**defaults, **kw})
 
 
 def make_llm_config(**kw: Any) -> LLMConfig:
     defaults: dict[str, Any] = {
         "base_url": "http://localhost:20128/v1",
         "api_key_env": "OMNIROUTE_API_KEY",
-        "default": make_llm_tier(),
-        "deep": make_llm_tier(model="deepseek-v4-pro", max_tokens=1200, temperature=0.5),
-        "limits": make_limits(),
+        "tiers": make_llm_tiers(),
     }
     return LLMConfig(**{**defaults, **kw})
 
@@ -77,8 +87,12 @@ def make_tracing_config(**kw: Any) -> TracingConfig:
 def load_example_config(tmp_path: Path) -> Config:
     """Copy the committed example config into `tmp_path` and load it.
 
-    The single place that knows the config file's NAME and FORMAT. Only this
-    function names config.example.toml in the test suite.
+    The single place that knows the config file's NAME and FORMAT for the
+    integration harness — `tests/test_config.py`, `tests/test_main.py`, and
+    `tests/test_env_template.py` also name config.example.toml directly, each
+    for its own narrower purpose (schema tests, startup tests, template
+    contract tests); this is the one the integration harness (and anything
+    built on top of it) goes through.
     """
     cfg_path = tmp_path / "config.toml"
     shutil.copy(REPO_ROOT / "config.example.toml", cfg_path)

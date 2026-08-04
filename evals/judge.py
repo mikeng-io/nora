@@ -95,8 +95,8 @@ def evaluate_raw(raw: str) -> Literal["PASS", "FAIL", "REVIEW"]:
 
 # --- Design guidance (not pinned by tests/test_evals_rubric.py) ------------------
 
-#: llm.deep's model id (config.example.toml) — the default judge model, so grading
-#: never uses the same tier that produced the reply being graded.
+#: llm.tiers.deep's model id (config.example.toml) — the default judge model, so
+#: grading never uses the same tier that produced the reply being graded.
 _DEFAULT_JUDGE_MODEL_ID = "deepseek-v4-pro"
 
 # Context tools that gather information before a reply — anything else is either

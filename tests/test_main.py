@@ -26,13 +26,13 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
     with (ROOT / "config.example.toml").open("rb") as f:
         cfg = tomllib.load(f)
     base = str(daemon.make_url("")).rstrip("/")
-    cfg["signal_cli"]["base_url"] = base
-    cfg["honcho"]["base_url"] = base
-    cfg["buffer"]["db_path"] = str(tmp_path / "messages.db")
-    cfg["logging"]["path"] = str(tmp_path / "nora.log")
+    cfg["platforms"]["signal"]["base_url"] = base
+    cfg["memory"]["base_url"] = base
+    cfg["store"]["db_path"] = str(tmp_path / "messages.db")
+    cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
     cfg["persona"]["dir"] = str(ROOT / "nora" / "persona")
-    cfg["persons_file"] = str(tmp_path / "persons.yaml")
-    cfg["metrics"]["port"] = 0
+    cfg["identity_file"] = str(tmp_path / "persons.yaml")
+    cfg["obs"]["metrics"]["port"] = 0
     (tmp_path / "persons.yaml").write_text(
         "persons:\n  miles:\n    name: Miles\n    platforms:\n      signal: \"+852111\"\n"
     )
@@ -82,7 +82,7 @@ async def test_a_duplicate_person_mapping_refuses_to_start(env, tmp_path):
 
 async def test_an_undeterminable_account_refuses_to_start(env):
     cfg = tomllib.loads(env.read_text())
-    cfg["signal_cli"]["base_url"] = "http://127.0.0.1:1"
+    cfg["platforms"]["signal"]["base_url"] = "http://127.0.0.1:1"
     env.write_text(tomli_w.dumps(cfg))
     with pytest.raises(StartupError, match="account"):
         await build_app(env)
@@ -90,7 +90,7 @@ async def test_an_undeterminable_account_refuses_to_start(env):
 
 async def test_honcho_being_down_does_not_prevent_startup(env):
     cfg = tomllib.loads(env.read_text())
-    cfg["honcho"]["base_url"] = "http://127.0.0.1:1"
+    cfg["memory"]["base_url"] = "http://127.0.0.1:1"
     env.write_text(tomli_w.dumps(cfg))
     app = await build_app(env)
     try:
@@ -104,7 +104,7 @@ async def test_the_database_is_migrated_at_startup(env):
 
     app = await build_app(env)
     try:
-        assert (await db.stats(app.cfg.buffer.db_path))["schema_version"] == db.SCHEMA_VERSION
+        assert (await db.stats(app.cfg.store.db_path))["schema_version"] == db.SCHEMA_VERSION
     finally:
         await app.shutdown()
 

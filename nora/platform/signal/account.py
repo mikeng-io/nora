@@ -32,7 +32,7 @@ async def derive_account(
     timeout: float = 5.0,  # noqa: ASYNC109 -- caller budget; asyncio.timeout is Phase 6
 ) -> str:
     if override:
-        log.info("using the configured signal_cli.account override")
+        log.info("using the configured platforms.signal.account override")
         return override
     url = f"{base_url.rstrip('/')}/api/v1/accounts"
     try:
@@ -49,7 +49,8 @@ async def derive_account(
         raise AccountError(f"no account registered on the signal-cli daemon at {url}")
     if len(accounts) > 1:
         raise AccountError(
-            f"multiple accounts on the daemon ({accounts}); set signal_cli.account in config.toml"
+            f"multiple accounts on the daemon ({accounts}); "
+            "set platforms.signal.account in config.toml"
         )
     log.info("derived Signal account from the daemon")
     return accounts[0]

@@ -35,7 +35,7 @@ class Handler:
         self.metrics = metrics
         self.llm_state = llm_state
         self._clock = clock
-        self._debounce = Debounce(cfg.trigger.min_interval_seconds, clock=clock)
+        self._debounce = Debounce(cfg.engagement.trigger.min_interval_seconds, clock=clock)
         self._in_flight: set[tuple[str, str]] = set()
         self._bg: set[asyncio.Task] = set()
         self._invoke_fn = invoke_fn
@@ -68,8 +68,8 @@ class Handler:
 
         try:
             await db.append(
-                self.cfg.buffer.db_path, msg,
-                max_per_conversation=self.cfg.buffer.max_per_conversation,
+                self.cfg.store.db_path, msg,
+                max_per_conversation=self.cfg.store.max_per_conversation,
             )
         except Exception:
             log.exception("db append failed; dropping message")
@@ -80,7 +80,7 @@ class Handler:
         if ref is not None:                    # unmapped senders are never fed (D6 amendment)
             self._spawn(self._feed_ambient(ref.honcho_peer_id, msg))
 
-        if not is_tagged(msg.body, self.cfg.trigger.text):
+        if not is_tagged(msg.body, self.cfg.engagement.trigger.text):
             return
         if msg.sender_id == self.adapter._account:      # R-12 re-check at the handler
             log.info("ignoring a trigger from our own account")
@@ -103,7 +103,7 @@ class Handler:
         transcript: tuple = ()
         try:
             transcript = tuple(await db.recent(
-                self.cfg.buffer.db_path, msg.conversation_id, self.cfg.buffer.context_window
+                self.cfg.store.db_path, msg.conversation_id, self.cfg.store.context_window
             ))
         except Exception:
             log.exception("context collection failed; continuing with an empty transcript")
@@ -129,7 +129,7 @@ class Handler:
             await self._invoke_fn(tools_by_name, guard, tag_message)
             return
         client = factory.create_client(self.cfg.llm)
-        model = factory.create_model_provider(self.cfg.llm.default, client)
+        model = factory.create_model_provider(self.cfg.llm.tiers.flash, client)
         agent = factory.create_agent(
             model=model, system_prompt=persona.text, tools=tools, pre_fill=pre_fill,
             guard=guard, trace_attributes=build_trace_attributes(ctx, persona),
@@ -162,34 +162,36 @@ class Handler:
 
             target = msg.target()
             deliverer = Deliverer(
-                db_path=self.cfg.buffer.db_path, adapter=self.adapter, target=target,
+                db_path=self.cfg.store.db_path, adapter=self.adapter, target=target,
                 persona=persona, canary=self.cfg.persona.canary, tag_id=tag_id,
-                nora_sender_id=self.cfg.signal_cli.nora_sender_id,
-                max_per_conversation=self.cfg.buffer.max_per_conversation,
+                nora_sender_id=self.cfg.platforms.signal.nora_sender_id,
+                max_per_conversation=self.cfg.store.max_per_conversation,
                 metrics=self.metrics,
             )
             guard = ReplyGuard(conversation_id=msg.conversation_id, deliverer=deliverer,
                                metrics=self.metrics)
             self._guards.append(guard)
             tools = build_tools(
-                db_path=self.cfg.buffer.db_path, conversation_id=msg.conversation_id,
+                db_path=self.cfg.store.db_path, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self.persons,
                 honcho=self.honcho, deliverer=deliverer,
-                context_window=self.cfg.buffer.context_window,
+                context_window=self.cfg.store.context_window,
             )
             tagger_name = self.persons.display_name(msg)
             pre_fill = prefill.build_prefill(
                 ctx, display_name=self.cfg.persona.display_name,
-                context_window=self.cfg.buffer.context_window,
+                context_window=self.cfg.store.context_window,
             )
             tag_message = prefill.build_tag_message(ctx, tagger_name=tagger_name)
-            limits = factory.build_limits(self.cfg.llm.default, self.cfg.llm.limits)
+            limits = factory.build_limits(
+                self.cfg.llm.tiers.flash, self.cfg.llm.tiers.flash.limits
+            )
 
             llm_started = time.perf_counter()
             try:
                 await asyncio.wait_for(
                     self._invoke(persona, tools, pre_fill, guard, tag_message, limits, ctx),
-                    timeout=self.cfg.trigger.invocation_timeout_seconds,
+                    timeout=self.cfg.llm.tiers.flash.timeout_seconds,
                 )
             except TimeoutError:
                 log.error("invocation_timeout (tag=%s)", tag_id)

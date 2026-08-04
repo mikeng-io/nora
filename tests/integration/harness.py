@@ -190,14 +190,14 @@ def _build_config(
     base = load_example_config(tmp_path)
 
     changes: dict[str, object] = {
-        "buffer.db_path": tmp_path / "messages.db",
+        "store.db_path": tmp_path / "messages.db",
         "persona.dir": persona_dir,
-        "persons_file": persons_path,
+        "identity_file": persons_path,
     }
     if invocation_timeout is not None:
-        changes["trigger.invocation_timeout_seconds"] = invocation_timeout
+        changes["llm.tiers.flash.timeout_seconds"] = invocation_timeout
     if debounce is not None:
-        changes["trigger.min_interval_seconds"] = debounce
+        changes["engagement.trigger.min_interval_seconds"] = debounce
     return override_config(base, changes)
 
 
@@ -247,7 +247,7 @@ async def build_handler(
         invocation_timeout=invocation_timeout, debounce=debounce,
     )
 
-    await db.init(cfg.buffer.db_path)
+    await db.init(cfg.store.db_path)
     persons = load_persons(persons_path)
     persona_store = PersonaStore(
         cfg.persona.dir,
@@ -255,7 +255,7 @@ async def build_handler(
         reload=cfg.persona.reload,
         canary=cfg.persona.canary,
         display_name=cfg.persona.display_name,
-        trigger=cfg.trigger.text,
+        trigger=cfg.engagement.trigger.text,
     )
 
     honcho_double = honcho if honcho is not None else FakeHoncho()
@@ -281,7 +281,7 @@ async def build_handler(
                             raises=RuntimeError("omniroute down"))
     elif fault == "llm_timeout":
         invoke_fn = FakeLLM(script if not isinstance(script, FakeLLM) else [], delay=5.0)
-        cfg = override_config(cfg, {"trigger.invocation_timeout_seconds": 0.2})
+        cfg = override_config(cfg, {"llm.tiers.flash.timeout_seconds": 0.2})
     elif fault == "empty_reply":
         # bypass_guard=True: ReplyGuard's own R-4 pre-tool veto would otherwise catch a
         # whitespace-only text before Deliverer ever sees it. This exercises Deliverer's
@@ -335,7 +335,7 @@ async def build_handler(
 
     return Harness(
         handler=handler,
-        db_path=cfg.buffer.db_path,
+        db_path=cfg.store.db_path,
         sink=adapter,
         honcho=honcho_double,
         metrics=metrics,
