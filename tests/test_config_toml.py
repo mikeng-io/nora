@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from nora.config import load as load_yaml
 from nora.config_toml import ConfigError, load
@@ -122,5 +123,16 @@ def test_otlp_exporter_without_an_endpoint_is_a_startup_failure(toml_path):
 
 def test_config_is_immutable(toml_path):
     cfg = load(toml_path)
-    with pytest.raises(Exception):  # noqa: B017 - pydantic ValidationError on frozen models
+    with pytest.raises(ValidationError):
         cfg.persons_file = Path("/other")
+
+
+def test_missing_config_file_is_a_config_error(tmp_path):
+    with pytest.raises(ConfigError):
+        load(tmp_path / "does-not-exist.toml")
+
+
+def test_malformed_toml_is_a_config_error(toml_path):
+    toml_path.write_text("[trigger\ntext = 'unclosed table header'\n")
+    with pytest.raises(ConfigError):
+        load(toml_path)
