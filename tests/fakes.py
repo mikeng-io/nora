@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
+from nora.domain.ports import MemoryHealth
 from nora.models import ConversationTarget, NormalizedMessage
 
 
@@ -34,8 +35,11 @@ class FakeHoncho:
             return []
         return list(self.cards.get(peer_id, []))
 
-    async def health(self) -> dict:
-        return {"reachable": not self.fail}
+    async def health(self) -> MemoryHealth:
+        return MemoryHealth(reachable=not self.fail)
+
+    async def aclose(self) -> None:
+        return None
 
 
 class SinkSender:

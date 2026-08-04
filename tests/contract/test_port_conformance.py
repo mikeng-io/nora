@@ -11,7 +11,7 @@ from nora.store.honcho import HonchoClient
 
 
 def test_honcho_client_satisfies_memory_store_method_names():
-    for method in ("ensure_workspace", "ensure_peer", "feed", "peer_card", "health"):
+    for method in ("ensure_workspace", "ensure_peer", "feed", "peer_card", "health", "aclose"):
         assert callable(getattr(HonchoClient, method, None)), f"HonchoClient lacks {method}"
 
 
@@ -36,5 +36,6 @@ def test_runtime_checkable_protocols_only_check_method_names():
         async def feed(self, **kw): ...
         async def peer_card(self, **kw): ...
         async def health(self): ...
+        async def aclose(self): ...
 
     assert isinstance(Fake(), MemoryStore)

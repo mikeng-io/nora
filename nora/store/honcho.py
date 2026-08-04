@@ -11,6 +11,8 @@ import logging
 
 import aiohttp
 
+from nora.domain.ports import MemoryHealth
+
 log = logging.getLogger("nora.honcho")
 
 
@@ -119,6 +121,14 @@ class HonchoClient:
             return []
         return [line.lstrip("-* ").strip() for line in content.splitlines() if line.strip()]
 
-    async def health(self) -> dict:
+    async def health(self) -> MemoryHealth:
         result = await self._get(f"{self._base}/health", self._card_timeout)
-        return {"reachable": result is not None}
+        return MemoryHealth(reachable=result is not None)
+
+    async def aclose(self) -> None:
+        """No-op today: every request opens and closes its own `aiohttp.ClientSession`
+        (see `_post`/`_get`), so there is no persistent session to release. Declared
+        now so `MemoryStore.aclose()` has a real implementation to check against —
+        the persistence phase is expected to move to a session held for the
+        client's lifetime, at which point this stops being a no-op."""
+        return None

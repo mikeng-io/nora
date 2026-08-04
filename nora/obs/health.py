@@ -57,10 +57,11 @@ def build_health_app(
             healthy = False
 
         try:
-            honcho_health = await a["honcho"].health()
+            reachable = (await a["honcho"].health()).reachable
         except Exception:                      # noqa: BLE001
-            honcho_health = {"reachable": False}
-        if not honcho_health.get("reachable", False):
+            reachable = False
+        honcho_health = {"reachable": reachable}
+        if not reachable:
             healthy = False
 
         try:

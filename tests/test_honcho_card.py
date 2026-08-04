@@ -84,7 +84,7 @@ async def test_peer_card_uses_a_get_request_to_the_card_endpoint(server_factory)
 async def test_health_reports_reachability(server_factory):
     base_url = await server_factory(_payload_handler({"ok": True}))
     health = await HonchoClient(base_url, "nora").health()
-    assert health["reachable"] is True
+    assert health.reachable is True
 
 
 async def test_health_probes_the_root_health_endpoint(server_factory):
@@ -110,7 +110,7 @@ async def test_health_probes_the_root_health_endpoint(server_factory):
 
 async def test_health_reports_unreachable_without_raising():
     health = await HonchoClient("http://127.0.0.1:1", "nora", card_timeout=0.3).health()
-    assert health["reachable"] is False
+    assert health.reachable is False
 
 
 async def test_fake_honcho_records_feeds():

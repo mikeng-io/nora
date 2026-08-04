@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from nora.config import Config
+from nora.domain.ports import MemoryStore
 from nora.obs.metrics import METRICS, Metrics
 from nora.persons import Persons, load_persons
 from nora.store.honcho import HonchoClient
@@ -30,9 +31,15 @@ class Dependencies:
 
     Only collaborators that exist today are built: the persistence phase owns
     `AuditStore`, so it is not invented here.
+
+    `memory` is annotated with the `MemoryStore` port, not the concrete
+    `HonchoClient` — this is inside mypy's strict override (`nora.app.*`), so
+    it is a permanent, statically-checked proof that `HonchoClient` conforms
+    to the port, not just a one-time `isinstance` name-check. `persons` and
+    `metrics` stay concrete: neither has a port, deliberately.
     """
 
-    memory: HonchoClient
+    memory: MemoryStore
     persons: Persons
     metrics: Metrics
 

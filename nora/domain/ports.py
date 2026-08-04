@@ -36,12 +36,38 @@ avoid:
   today — nothing calls it, and the real prune is inline in `append` — so it
   is not carried forward onto the port.
 
+- `AuditStore.recent`/`.stats` return `TranscriptRow`/typed values, not the
+  `dict[str, Any]` row blobs `nora/store/db.py` (`db.py:98-111`) returns
+  today. This is the port's target shape, not a claim about the current
+  implementation — the persistence phase adapts `db.py` onto it. Likewise
+  `delivery_status` is `DeliveryStatus`, not the bare string `db.py` still
+  uses (`db.py::_VALID_STATUS`).
+
+- `AuditStore.append` has **no `max_per_conversation` parameter**. Retention
+  window size is a policy decided at the store's construction, not a value
+  every caller re-specifies per call — `Protocol` methods don't inherit
+  defaults, so a per-call default is already duplicated wherever it is
+  threaded today (`nora/store/db.py:68`).
+
 - `MemoryStore.ensure_*` is declared **idempotent under concurrency**.
   Today's `HonchoClient.ensure_session` is check-then-act, and person-centric
   identity means the same peer id can be hit from two platforms at the same
   moment. The lock that makes this true lands in a later phase; the
   invariant is declared here so that phase has something to implement
   against rather than discover.
+
+- `MemoryStore.health()` returns `MemoryHealth`, mirroring
+  `PlatformAdapter.health() -> AdapterHealth`, instead of the bare
+  `dict[str, Any]` it used to share with nothing else on this port.
+
+- `MemoryStore.feed()` stays `bool`, deliberately, even though `SendResult`
+  exists precisely because "a bool loses retryability on a network call to a
+  flaky service." Honcho is explicitly never load-bearing (see this module's
+  own docstring in `nora/store/honcho.py`): a failed feed is fire-and-forget,
+  logged and counted, never retried. Giving it a retryable/retry_after shape
+  would imply a retry policy that deliberately does not exist. This
+  asymmetry with `SendResult` is intentional, not an oversight — recorded
+  here so it isn't cargo-culted into a `FeedResult` later.
 
 - `EngagePolicy.should_engage` is `async` even though today's trigger-text
   policy is synchronous, because the classifier that replaces it is I/O, and
@@ -60,7 +86,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
-from nora.domain.models import ConversationTarget, NormalizedMessage, TagContext
+from nora.domain.models import (
+    ConversationTarget,
+    DeliveryStatus,
+    NormalizedMessage,
+    TagContext,
+    TranscriptRow,
+)
 
 
 class ModelTier(Enum):
@@ -95,6 +127,15 @@ class AdapterHealth:
     platform: str
     connected: bool
     last_event_age_seconds: float | None = None
+
+
+@dataclass(frozen=True)
+class MemoryHealth:
+    """Mirrors `AdapterHealth` — typed, not a bare dict. `MemoryStore.health()`
+    used to be the one health check left dict-shaped while `PlatformAdapter.health()`
+    was already typed; see module docstring's `MemoryStore` note."""
+
+    reachable: bool
 
 
 @dataclass(frozen=True)
@@ -137,29 +178,30 @@ class PlatformAdapter(Protocol):
 
 @runtime_checkable
 class AuditStore(Protocol):
-    """No `prune` — see module docstring."""
+    """No `prune`, no per-call `max_per_conversation` — see module docstring."""
 
     async def append(
         self,
         *,
         message: NormalizedMessage,
         is_nora: bool = False,
-        delivery_status: str = "pending",
-        max_per_conversation: int = 500,
+        delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
     ) -> int: ...
 
-    async def recent(self, *, conversation_id: str, limit: int) -> list[dict[str, Any]]: ...
+    async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
 
-    async def set_delivery_status(self, *, row_id: int, status: str) -> None: ...
+    async def set_delivery_status(self, *, row_id: int, status: DeliveryStatus) -> None: ...
 
     async def stats(self) -> dict[str, Any]: ...
+
+    async def aclose(self) -> None: ...
 
 
 @runtime_checkable
 class MemoryStore(Protocol):
     """`ensure_*` methods are idempotent under concurrency — see module docstring."""
 
-    async def ensure_workspace(self) -> bool: ...
+    async def ensure_workspace(self) -> None: ...
 
     async def ensure_peer(self, *, peer_id: str) -> None: ...
 
@@ -167,7 +209,9 @@ class MemoryStore(Protocol):
 
     async def peer_card(self, *, peer_id: str) -> list[str]: ...
 
-    async def health(self) -> dict[str, Any]: ...
+    async def health(self) -> MemoryHealth: ...
+
+    async def aclose(self) -> None: ...
 
 
 @runtime_checkable

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 
@@ -37,6 +38,39 @@ class PersonRef:
     honcho_peer_id: str            # == person_id, by construction (spec D.2)
 
 
+class DeliveryStatus(Enum):
+    """A transcript row's send state. Mirrors `nora.domain.errors.FailureClass`'s
+    reasoning: this was stringly-typed over `"pending"`/`"sent"`/`"failed"`
+    (`nora/store/db.py::_VALID_STATUS`) in the same phase that typed the adjacent
+    failure taxonomy as an enum. Port-only for now — `db.py` keeps its own string
+    tuple and raises `ValueError` on an invalid one until the persistence phase
+    adapts it onto this type.
+    """
+
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class TranscriptRow:
+    """One row as returned by `AuditStore.recent` — the persistence phase's target
+    shape for what `nora/store/db.py::recent` (`nora/store/db.py:98-111`) actually
+    returns today as an untyped `dict[str, Any]`. This is the port's declared
+    shape, not yet what the runtime produces; `nora/store/db.py` is unchanged by
+    this type's introduction, and the persistence phase is what makes it real.
+    """
+
+    id: int
+    sender_id: str
+    sender_name: str | None
+    ts: int
+    body: str | None
+    is_nora: bool
+    delivery_status: DeliveryStatus
+    raw_json: str | None
+
+
 @dataclass(frozen=True)
 class TagContext:
     """Everything the tagging path assembles before the model is constructed."""
@@ -44,6 +78,6 @@ class TagContext:
     tag_id: str                    # uuid4 hex — the correlation id
     message: NormalizedMessage
     tagger: PersonRef | None       # None = unmapped sender
-    transcript: tuple[dict[str, Any], ...]   # oldest-first rows from db.recent
+    transcript: tuple[TranscriptRow, ...]   # oldest-first rows from db.recent
     peer_card: tuple[str, ...]
     started_at: float              # perf_counter, for the latency histogram
