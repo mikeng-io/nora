@@ -5,6 +5,8 @@ yet conform, the gap is asserted explicitly with the phase that closes it — so
 divergence is tracked, not forgotten.
 """
 
+import inspect
+
 from nora.domain.ports import MemoryStore
 from nora.platform.signal.adapter import SignalAdapter
 from nora.store.honcho import HonchoClient
@@ -22,6 +24,33 @@ def test_signal_adapter_gap_to_platform_adapter_is_known():
     assert hasattr(SignalAdapter, "listen") and hasattr(SignalAdapter, "send")
     assert not hasattr(SignalAdapter, "resolve_identity"), (
         "SignalAdapter grew resolve_identity — update this test and the ports phase note"
+    )
+
+
+def test_signal_adapter_health_gap_to_adapter_health_is_known():
+    """SignalAdapter.health() does NOT yet satisfy PlatformAdapter, and that is
+    expected: it returns a plain dict where the port declares -> AdapterHealth.
+    Pinning the gap keeps it visible instead of letting it drift."""
+    return_annotation = inspect.signature(SignalAdapter.health).return_annotation
+    assert return_annotation == "dict", (
+        "SignalAdapter.health() no longer returns a bare dict — update this test and "
+        "ARCHITECTURE.md's PlatformAdapter known-gap row"
+    )
+
+
+def test_signal_adapter_listen_gap_to_on_message_is_known():
+    """SignalAdapter.listen() does NOT yet satisfy PlatformAdapter, and that is
+    expected: it takes a positional on_event callback receiving a raw dict, where
+    the port declares a keyword-only on_message: Callable[[NormalizedMessage],
+    Awaitable[None]]. Pinning the gap keeps it visible instead of letting it drift."""
+    params = inspect.signature(SignalAdapter.listen).parameters
+    assert "on_event" in params and "on_message" not in params, (
+        "SignalAdapter.listen() gained on_message — update this test and ARCHITECTURE.md's "
+        "PlatformAdapter known-gap row"
+    )
+    assert params["on_event"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD, (
+        "SignalAdapter.listen()'s callback became keyword-only — update this test and "
+        "ARCHITECTURE.md's PlatformAdapter known-gap row"
     )
 
 
