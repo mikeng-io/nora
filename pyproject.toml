@@ -25,7 +25,12 @@ build-backend = "setuptools.build_meta"
 include = ["nora*"]
 
 [tool.setuptools.package-data]
-nora = ["persona/*.md", "py.typed"]
+nora = [
+    "persona/*.md",
+    "py.typed",
+    "infra/sql/migrations/*",
+    "infra/sql/migrations/versions/*",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

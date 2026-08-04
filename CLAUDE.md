@@ -19,16 +19,19 @@ Guidance for Claude Code (and any other agent) working in this repo.
 Run before claiming anything is done, and before every commit:
 
 ```bash
-uv run pytest -q                                       # tests green
-uv run ruff check nora/ evals/ tests/                   # lint clean
-uv run mypy nora/domain nora/config.py nora/app          # types clean (strict, scoped)
-uv run lint-imports                                     # import boundaries clean
+uv run pytest -q                                        # tests green
+uv run ruff check nora/ evals/ tests/                    # lint clean
+uv run mypy nora/domain nora/config.py nora/app nora/infra   # types clean (strict, scoped)
+uv run lint-imports                                      # import boundaries clean
 ```
 
-A schema-parity gate (`uv run alembic check` against a copy of the production
-DB — see DEC-11 in the decision index for why a plain `alembic check` is not
-enough on its own) lands with the persistence phase; add it to this list once
-it exists.
+The schema gate is `tests/infra/test_schema_parity.py`, not `alembic check`.
+`alembic check` guards column presence, column type and server defaults; it is
+provably blind to the CHECK constraint and to the `ts DESC` index ordering, and
+`idx_messages_conv_ts` is excluded from autogenerate because the expression
+index otherwise reports drift on every run. Both run in `uv run pytest -q`.
+See DEC-11 in the decision index for the full story, including a 2026-08-05
+correction to its original server-default claim.
 
 `uv run lint-imports` uses a local cache (`.import_linter_cache/`, gitignored).
 If it reports a phantom contract failure that doesn't reproduce after a clean
@@ -42,6 +45,9 @@ checkout, delete that directory before spending time on it.
   by Nora — see below.
 - **Never reference the archived legacy path** (`~/.hermes/profiles/nora/`) —
   it no longer exists; see below.
+- **Never run `alembic revision --autogenerate` and trust the result for
+  `idx_messages_conv_ts`.** It is excluded from autogenerate on purpose; a
+  revision that touches it must be hand-written.
 
 ## The five operational constraints (spec §2, verbatim)
 

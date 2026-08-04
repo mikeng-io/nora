@@ -1,6 +1,7 @@
 from pathlib import Path
 
-DEPLOY = Path(__file__).resolve().parents[1] / "deploy"
+ROOT = Path(__file__).resolve().parents[1]
+DEPLOY = ROOT / "deploy"
 
 
 def _unit() -> str:
@@ -61,3 +62,24 @@ def test_the_deploy_readme_documents_the_rollback():
     text = (DEPLOY / "README.md").read_text()
     assert "rollback" in text.lower()
     assert "messages.db" in text
+
+
+def test_migrations_are_declared_as_package_data():
+    """A versions/ directory has no __init__.py, so packages.find will not
+    install it. Without this declaration the image ships without its
+    migrations and Nora cannot create her own database."""
+    text = (ROOT / "pyproject.toml").read_text()
+    assert "infra/sql/migrations/*" in text
+    assert "infra/sql/migrations/versions/*" in text
+
+
+def test_the_baseline_revision_is_on_disk_where_alembic_looks():
+    from nora.infra.sql.migrations_runner import head_revision
+
+    versions = ROOT / "nora" / "infra" / "sql" / "migrations" / "versions"
+    assert list(versions.glob("*.py")), "no revision files"
+    assert head_revision() == "0001_baseline"
+
+
+def test_the_dockerfile_copies_alembic_ini():
+    assert "alembic.ini" in (ROOT / "Dockerfile").read_text()

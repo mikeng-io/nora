@@ -19,7 +19,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY nora/ ./nora/
 COPY evals/ ./evals/
-COPY config.example.toml identity.example.toml ./
+COPY config.example.toml identity.example.toml alembic.ini ./
 
 RUN uv sync --frozen --no-dev
 
