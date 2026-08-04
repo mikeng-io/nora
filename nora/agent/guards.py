@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
 
@@ -226,7 +226,7 @@ class ReplyGuard(HookProvider):
                 )
         return None
 
-    def register_hooks(self, registry: HookRegistry) -> None:
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         registry.add_callback(BeforeToolCallEvent, self._before_tool)
         registry.add_callback(AfterToolCallEvent, self._after_tool)
 

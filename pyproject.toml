@@ -69,6 +69,16 @@ no_implicit_reexport = true
 strict_equality = true
 extra_checks = true
 
+# The gRPC OTLP exporter is a genuinely missing optional dependency, not a
+# suppression of real errors: Phase 6 replaces it with the HTTP/protobuf OTLP
+# exporter because Langfuse's `/api/public/otel` endpoint is HTTP, not gRPC,
+# so installing the gRPC package now would be the wrong dependency to add.
+# Scoped to this exact module path only — nora.obs and every other module
+# stay under full checking.
+[[tool.mypy.overrides]]
+module = "opentelemetry.exporter.otlp.*"
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -150,4 +160,5 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "tomli-w>=1.0",
+    "types-pyyaml>=6.0.12.20260724",
 ]

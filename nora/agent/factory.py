@@ -93,7 +93,15 @@ def create_agent(
         model=model,
         system_prompt=system_prompt,
         tools=tools,
-        messages=list(pre_fill),
+        # pre_fill/messages are plain dicts by design end-to-end (build_prefill in
+        # nora.agent.prefill through nora.engagement's stages/pipeline, none of which
+        # import strands — see this module's own docstring and
+        # tests/test_boundaries.py::test_strands_import_boundary). Strands' `Agent`
+        # wants `list[Message]` (a TypedDict); retyping this one call site to match
+        # would force list[Message] up through that whole framework-free chain, which
+        # is out of scope for this fix. The dicts already have the right shape at
+        # runtime; only the static type is being asserted here.
+        messages=list(pre_fill),  # type: ignore[arg-type]
         hooks=[guard],
         conversation_manager=NullConversationManager(),
         session_manager=None,
@@ -105,5 +113,12 @@ def create_agent(
 
 async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limits: dict):
     return await agent.invoke_async(
-        tag_message, invocation_state=invocation_state, limits=limits
+        tag_message,
+        invocation_state=invocation_state,
+        # limits is a plain dict end-to-end for the same reason pre_fill is above:
+        # nora.app.composition/nora.engagement build and thread it as `dict` without
+        # importing strands. Strands' `Limits` is a TypedDict with the same three
+        # keys build_limits() always fills (turns/output_tokens/total_tokens); the
+        # value is shape-correct at runtime, only the static type differs.
+        limits=limits,  # type: ignore[arg-type]
     )
