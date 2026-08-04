@@ -36,8 +36,10 @@ avoid:
   blobs the old `nora/store/db.py` returned, and `delivery_status` is
   `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlAuditStore`
   implements this. Static conformance is checked by mypy (`nora.infra` is
-  inside the strict override); the behavioural half arrives with the shared
-  contract suite in `tests/contract/`, which does not exist yet.
+  inside the strict override); the behavioural half is
+  `tests/contract/test_audit_store_contract.py`, one suite parametrized over
+  `SqlAuditStore` and `nora.testing.FakeAuditStore` so the fake cannot drift
+  from production unnoticed.
 
 - `AuditStore` still deliberately has **no `prune`**, even though a caller now
   exists. `SqlAuditStore.prune_all` is a retention sweep owned by the runtime,
