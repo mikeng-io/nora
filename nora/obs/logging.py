@@ -65,13 +65,17 @@ class SecretFilter(logging.Filter):
         return True
 
 
-def setup_logging(cfg, *, secrets: list[str]) -> None:
+def setup_logging(*, level: str, path: Path | str, format: str, secrets: list[str]) -> None:
+    # `format` mirrors LoggingConfig.format (spec C.9's config shape) but, like the
+    # code this replaced, only one on-disk format exists today (JSONFormatter) — the
+    # field is accepted for parity with the config and future use, not read yet.
+    del format
     root = logging.getLogger()
-    root.setLevel(cfg.level)
+    root.setLevel(level)
     for h in root.handlers[:]:
         root.removeHandler(h)
         h.close()
-    handler = logging.FileHandler(Path(cfg.path).expanduser())
+    handler = logging.FileHandler(Path(path).expanduser())
     handler.addFilter(SecretFilter(secrets))
     handler.setFormatter(JSONFormatter())
     root.addHandler(handler)

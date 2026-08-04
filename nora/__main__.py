@@ -43,8 +43,17 @@ async def build_app(config_path: Path) -> App:
         raise StartupError(str(exc)) from exc
 
     key = os.environ.get(cfg.llm.api_key_env, "")
-    setup_logging(cfg.obs.logging, secrets=[key] if key else [])
-    setup_tracing(cfg.obs.tracing)
+    setup_logging(
+        level=cfg.obs.logging.level,
+        path=cfg.obs.logging.path,
+        format=cfg.obs.logging.format,
+        secrets=[key] if key else [],
+    )
+    setup_tracing(
+        enabled=cfg.obs.tracing.enabled,
+        exporter=cfg.obs.tracing.exporter,
+        endpoint=cfg.obs.tracing.endpoint,
+    )
 
     deps = await build_dependencies(cfg)
     return App(cfg=cfg, deps=deps)

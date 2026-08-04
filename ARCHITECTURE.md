@@ -106,19 +106,18 @@ their port — is asserted by `tests/contract/test_port_conformance.py`.
 | `EngagePolicy` | Inline in `nora/handler.py::on_event` (`tag.is_tagged` + `tag.Debounce`), not a class. | No `TriggerTextPolicy` class yet. Closes in the pipelines phase (spec §4.3), which also adds the future `ClassifierPolicy` (D1's A3 amendment). |
 | `ContextAssembler` | Inline in `nora/handler.py::_collect_context`. | No `TranscriptInjection` class yet; `EpisodeContinuation` is accepted-but-not-implemented (DEC-3). Closes in the pipelines phase. |
 
-**Config-import offenders** (contract 3's target, currently a documented gap —
-`tests/test_composition.py::test_only_app_and_main_import_config` is `xfail(strict=True)`
-pinning exactly this list):
-
-- `nora/agent/factory.py` — literal `from ..config import LimitsConfig, LLMConfig, LLMTierConfig`. The one `ignore_imports` exception in import-linter's contract 3.
-- `nora/handler.py` — `Handler.__init__` takes the *whole* `Config` object as `cfg` and reaches deep into it.
-- `nora/obs/logging.py` — `setup_logging(cfg, ...)` takes a duck-typed `LoggingConfig`-shaped `cfg`.
-- `nora/obs/tracing.py` — `setup_tracing(cfg, ...)` takes a duck-typed `TracingConfig`-shaped `cfg`.
-- `nora/obs/health.py` is **not** an offender — `build_health_app(...)` already takes individually-extracted fields (`store`, `adapter`, `honcho`, `persona_store`, `metrics`, `started_at`, `llm_state`), not a `cfg`.
-
-All four offenders close in the **pipelines phase**: `factory.py` moves onto typed
-collaborators, and `Handler`/`setup_logging`/`setup_tracing` take a
-`Dependencies`-shaped or narrowly-typed parameter instead of `cfg`.
+**Config-import offenders**: closed. `tests/test_composition.py::test_only_app_and_main_import_config`
+is a real, positive (non-`xfail`) assertion — every module under `nora/` except
+`nora/app/**` and `nora/__main__.py` must not import `nora.config`, with no
+allowlist — and import-linter's contract 3 has no `ignore_imports` entries. The
+former offenders: `nora/agent/factory.py` (moved onto typed collaborators,
+pipelines phase) and `nora/handler.py` (deleted; the composition root now
+builds the full graph) closed earlier in phase 3; `nora/obs/logging.py::setup_logging`
+and `nora/obs/tracing.py::setup_tracing` (both took a duck-typed `cfg`
+sub-config) closed by taking explicit scalar parameters instead. `nora/obs/health.py`
+was never an offender — `build_health_app(...)` already took individually-extracted
+fields (`store`, `adapter`, `honcho`, `persona_store`, `metrics`, `started_at`,
+`llm_state`), not a `cfg`.
 
 ## 4. File-by-file walk
 

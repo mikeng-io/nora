@@ -1,6 +1,7 @@
 """The composition root is the ONE place that reads config. Everything else
 receives dependencies. This test pins that property."""
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -74,31 +75,46 @@ async def test_dependencies_do_not_expose_settings(cfg):
     assert not hasattr(deps, "settings")
 
 
-@pytest.mark.xfail(
-    reason=(
-        "true finding, not a bug in the test: nora/agent/factory.py still does "
-        "`from ..config import LimitsConfig, LLMConfig, LLMTierConfig`. Separately "
-        "(not caught by this AST-import check, but the same disease): "
-        "nora/handler.py's Handler.__init__ takes the *whole* `cfg: Config` object "
-        "and reaches deep into it (engagement, persona, store, platforms, llm), "
-        "and nora/obs/logging.py/setup_logging + nora/obs/tracing.py/setup_tracing "
-        "take duck-typed `cfg` sub-configs. Closing all of these — moving factory.py "
-        "onto typed collaborators and giving Handler a Dependencies instead of a "
-        "Config — is the pipelines phase's work item; see task-4-report.md."
-    ),
-    strict=True,
-)
+def _resolved_module_name(rel: Path) -> str:
+    """The dotted module name `nora/<rel>` would have at import time, e.g.
+    `infra/sql/migrations_runner.py` -> `nora.infra.sql.migrations_runner`."""
+    parts = rel.with_suffix("").parts
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(("nora", *parts))
+
+
+def _resolve_import_from(module_name: str, node: ast.ImportFrom) -> str:
+    """Resolve an `ast.ImportFrom` node's target to a fully-qualified dotted name,
+    following Python's own relative-import rule so `from ..config import X` inside
+    a deeply nested module resolves to the package it actually names — not to
+    whatever text happens to follow the dots."""
+    if node.level == 0:
+        return node.module or ""
+    # node.level dots: 1 means "this module's own package"; each extra dot climbs
+    # one more level. A non-package module's own package is its dotted name minus
+    # its last component.
+    package_parts = module_name.split(".")[:-1]
+    base_parts = package_parts[: len(package_parts) - (node.level - 1)]
+    if node.module:
+        base_parts = [*base_parts, node.module]
+    return ".".join(base_parts)
+
+
 def test_only_app_and_main_import_config():
-    """Enforced properly by import-linter in the next task; asserted here too so the
-    rule has a home in the suite."""
-    import ast
+    """Enforced properly by import-linter too (contract 3); asserted here as an
+    AST-level check so the rule also has a home in the suite, with no allowlist."""
     offenders = []
     for p in (ROOT / "nora").rglob("*.py"):
         rel = p.relative_to(ROOT / "nora")
-        if rel.parts[0] in ("app", "config.py") or str(rel) in ("__main__.py", "config.py"):
+        if rel.parts[0] == "app" or str(rel) in ("__main__.py", "config.py"):
             continue
+        module_name = _resolved_module_name(rel)
         tree = ast.parse(p.read_text())
         for n in ast.walk(tree):
-            if isinstance(n, ast.ImportFrom) and n.module and "config" in (n.module or ""):
+            if not isinstance(n, ast.ImportFrom):
+                continue
+            resolved = _resolve_import_from(module_name, n)
+            if resolved == "nora.config" or resolved.startswith("nora.config."):
                 offenders.append(str(rel))
     assert not offenders, f"config imported outside app/ and __main__: {offenders}"

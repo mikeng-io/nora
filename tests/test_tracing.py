@@ -35,9 +35,10 @@ def test_trace_attributes_never_carry_message_content(tmp_path):
 
 
 def test_tracing_disabled_is_a_no_op():
-    setup_tracing(make_tracing_config())
+    cfg = make_tracing_config()
+    setup_tracing(enabled=cfg.enabled, exporter=cfg.exporter, endpoint=cfg.endpoint)
 
 
 def test_file_exporter_writes_to_a_path(tmp_path):
-    setup_tracing(make_tracing_config(enabled=True,
-                                      endpoint=str(tmp_path / "traces.jsonl")))
+    cfg = make_tracing_config(enabled=True, endpoint=str(tmp_path / "traces.jsonl"))
+    setup_tracing(enabled=cfg.enabled, exporter=cfg.exporter, endpoint=cfg.endpoint)
