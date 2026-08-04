@@ -14,28 +14,30 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExport
 log = logging.getLogger("nora.tracing")
 
 
-def setup_tracing(cfg, *, service_name: str = "nora") -> None:
-    if not cfg.enabled:
+def setup_tracing(
+    *, enabled: bool, exporter: str, endpoint: str, service_name: str = "nora"
+) -> None:
+    if not enabled:
         return
     try:
-        exporter = _build_exporter(cfg)
+        span_exporter = _build_exporter(exporter, endpoint)
         provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
-        provider.add_span_processor(BatchSpanProcessor(exporter))
+        provider.add_span_processor(BatchSpanProcessor(span_exporter))
         trace.set_tracer_provider(provider)
     except Exception:
         log.warning("tracing setup failed; continuing without tracing", exc_info=True)
 
 
-def _build_exporter(cfg):
-    if cfg.exporter == "console":
+def _build_exporter(exporter: str, endpoint: str):
+    if exporter == "console":
         return ConsoleSpanExporter()
-    if cfg.exporter == "file":
-        return ConsoleSpanExporter(out=open(cfg.endpoint, "a", encoding="utf-8"))
-    if cfg.exporter == "otlp":
+    if exporter == "file":
+        return ConsoleSpanExporter(out=open(endpoint, "a", encoding="utf-8"))
+    if exporter == "otlp":
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-        return OTLPSpanExporter(endpoint=cfg.endpoint)
-    raise ValueError(f"unknown tracing exporter: {cfg.exporter!r}")
+        return OTLPSpanExporter(endpoint=endpoint)
+    raise ValueError(f"unknown tracing exporter: {exporter!r}")
 
 
 def trace_attributes(ctx, persona) -> dict:

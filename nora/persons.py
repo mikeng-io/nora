@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from .models import NormalizedMessage, PersonRef
+from .domain.models import NormalizedMessage, PersonRef
 
 # Honcho requires ^[a-zA-Z0-9_-]+$ for peer ids, and honcho_peer_id == person_id.
 _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")

@@ -147,5 +147,10 @@ Metrics.declare("nora_last_event_age_seconds", "gauge", "Seconds since the last 
 Metrics.declare(
     "nora_store_busy_total", "counter", "SQLITE_BUSY responses from the audit store."
 )
+Metrics.declare(
+    "nora_adapter_restarts_total",
+    "counter",
+    "Adapter listen() loop restarts after a failure, by platform.",
+)
 
 METRICS = Metrics()

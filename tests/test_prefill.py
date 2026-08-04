@@ -1,6 +1,11 @@
 from nora.agent.prefill import build_prefill, build_tag_message, escape
-from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.models import NormalizedMessage, PersonRef, TagContext
+from nora.domain.models import (
+    DeliveryStatus,
+    NormalizedMessage,
+    PersonRef,
+    TagContext,
+    TranscriptRow,
+)
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None) -> TagContext:

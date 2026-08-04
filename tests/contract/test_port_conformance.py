@@ -10,11 +10,24 @@ import inspect
 from nora.domain.ports import MemoryStore
 from nora.infra.honcho import HonchoClient
 from nora.platform.signal.adapter import SignalAdapter
+from nora.testing import FakeMemoryStore
 
 
 def test_honcho_client_satisfies_memory_store_method_names():
     for method in ("ensure_workspace", "ensure_peer", "feed", "peer_card", "health", "aclose"):
         assert callable(getattr(HonchoClient, method, None)), f"HonchoClient lacks {method}"
+
+
+def test_fake_memory_store_satisfies_memory_store():
+    """`FakeMemoryStore` (`nora/testing/fakes.py`) is `MemoryStore`'s second
+    implementation — `tests/integration/harness.py` and `evals/harness.py` both
+    build their pipeline against it instead of the real, networked `HonchoClient`.
+    `isinstance` against a `runtime_checkable` `Protocol` checks method names
+    only (see `test_runtime_checkable_protocols_only_check_method_names` below);
+    unlike `HonchoClient`, `FakeMemoryStore` is also keyword-only exactly like the
+    port, so it does not carry `tests/fakes.py::FakeHoncho`'s older
+    positional-argument drift."""
+    assert isinstance(FakeMemoryStore(), MemoryStore)
 
 
 def test_signal_adapter_gap_to_platform_adapter_is_known():

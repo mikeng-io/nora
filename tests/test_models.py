@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from nora.models import ConversationTarget, NormalizedMessage, PersonRef, TagContext
+from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, TagContext
 
 
 def _msg(**over) -> NormalizedMessage:

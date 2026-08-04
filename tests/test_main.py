@@ -45,7 +45,7 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
 async def test_build_app_wires_everything(env):
     app = await build_app(env)
     try:
-        assert app.handler is not None
+        assert app.deps.dispatcher is not None
         assert app.adapter.platform == "signal"
         assert app.account == "+85290000100"
         assert app.persona.sha256
@@ -94,7 +94,7 @@ async def test_honcho_being_down_does_not_prevent_startup(env):
     env.write_text(tomli_w.dumps(cfg))
     app = await build_app(env)
     try:
-        assert app.handler is not None
+        assert app.deps.dispatcher is not None
     finally:
         await app.shutdown()
 
@@ -133,13 +133,17 @@ async def test_shutdown_closes_the_omniroute_client(env):
 
 
 async def test_the_prune_sweep_actually_prunes(tmp_path, monkeypatch):
-    """Proves `_prune_loop` runs and calls `store.prune_all`, not merely that the
-    coroutine exists — `append` stopped pruning inline in Task 4, so this sweep is
-    the only thing left that enforces the retention window in production."""
+    """Proves `runtime.prune_loop` — the sweep `App.run` wires in via
+    `nora.app.runtime` (moved there from `__main__._prune_loop` in Task 7,
+    wired into `App.run` in Task 8) — runs and calls `store.prune_all`, not
+    merely that the coroutine exists. `append` stopped pruning inline in
+    Task 4, so this sweep is the only thing left that enforces the retention
+    window in production."""
     import asyncio
     import contextlib
 
     import nora.__main__ as main_module
+    from nora.app.runtime import prune_loop
     from nora.domain.models import NormalizedMessage
     from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
     from nora.obs.metrics import Metrics
@@ -155,7 +159,9 @@ async def test_the_prune_sweep_actually_prunes(tmp_path, monkeypatch):
                 "signal", "g1", "group", "+1", "A", i, f"m{i}", {}))
         assert len(await store.recent(conversation_id="g1", limit=1000)) == 10
 
-        task = asyncio.create_task(main_module._prune_loop(store, metrics))
+        task = asyncio.create_task(
+            prune_loop(store, metrics, interval_seconds=main_module.PRUNE_INTERVAL_SECONDS)
+        )
         await asyncio.sleep(0.1)
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

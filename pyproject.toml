@@ -69,6 +69,16 @@ no_implicit_reexport = true
 strict_equality = true
 extra_checks = true
 
+# The gRPC OTLP exporter is a genuinely missing optional dependency, not a
+# suppression of real errors: Phase 6 replaces it with the HTTP/protobuf OTLP
+# exporter because Langfuse's `/api/public/otel` endpoint is HTTP, not gRPC,
+# so installing the gRPC package now would be the wrong dependency to add.
+# Scoped to this exact module path only — nora.obs and every other module
+# stay under full checking.
+[[tool.mypy.overrides]]
+module = "opentelemetry.exporter.otlp.*"
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -90,7 +100,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", 
 "evals/**" = ["S101"]
 
 [tool.importlinter]
-root_package = "nora"
+root_packages = ["nora", "evals"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -108,6 +118,7 @@ type = "layers"
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
 layers = [
     "nora.app",
+    "nora.ingest | nora.engagement",
     "nora.agent | nora.platform",
     "nora.persona",
     "nora.obs",
@@ -120,19 +131,10 @@ name = "only app and __main__ read config"
 type = "forbidden"
 source_modules = [
     "nora.agent", "nora.obs", "nora.persona", "nora.platform",
-    "nora.domain", "nora.handler", "nora.models", "nora.persons", "nora.tag",
-    "nora.infra", "nora.testing",
+    "nora.domain", "nora.persons", "nora.tag",
+    "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
 ]
 forbidden_modules = ["nora.config"]
-ignore_imports = [
-    # nora.agent.factory imports LimitsConfig/LLMConfig/LLMTierConfig directly to
-    # build the strands Agent's model/limits from Config. This is the one
-    # documented exception to the contract, not a deletion of it: the pipelines/
-    # agent phase removes it by injecting an already-built model provider into
-    # factory.py instead of passing config classes through it. TODO(pipelines
-    # phase): delete this exception once that injection lands.
-    "nora.agent.factory -> nora.config",
-]
 
 [[tool.importlinter.contracts]]
 name = "the nora package's own __init__ does not read config either"
@@ -148,6 +150,31 @@ source_modules = ["nora"]
 forbidden_modules = ["nora.config"]
 as_packages = false
 
+[[tool.importlinter.contracts]]
+name = "evals may only reach nora.app and nora.testing"
+type = "forbidden"
+# Positive framing ("evals may import nora.app and nora.testing — nothing else",
+# spec §4.1) expressed as its complement, the same shape contract 3 already uses:
+# every other nora subpackage evals could reach, plus tests/ itself (Task 10 — evals
+# stopped importing tests/, this is what keeps it stopped). A new nora subpackage
+# added later needs a line here too; `tests/test_boundaries.py`'s AST-based sibling
+# check is the allowlist-style backstop that does not need updating for that case.
+#
+# allow_indirect_imports = "True" is load-bearing, not cosmetic: `nora.app` (the
+# composition root) legitimately imports nora.agent/nora.persona/nora.tag/etc.
+# internally, so evals *transitively* reaches every package below without it —
+# ForbiddenContract's default checks the whole import chain, which would flag
+# `evals -> nora.app.eval_support -> nora.persona.loader` even though evals never
+# writes that import itself. This contract is only about evals' own import
+# statements; nora.app's freedom to import whatever it needs is contract 2's concern.
+source_modules = ["evals"]
+forbidden_modules = [
+    "nora.agent", "nora.config", "nora.domain", "nora.engagement",
+    "nora.infra", "nora.ingest", "nora.obs", "nora.persona", "nora.persons",
+    "nora.platform", "nora.tag", "tests",
+]
+allow_indirect_imports = "True"
+
 [dependency-groups]
 dev = [
     "import-linter>=2.0",
@@ -158,4 +185,5 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "tomli-w>=1.0",
+    "types-pyyaml>=6.0.12.20260724",
 ]

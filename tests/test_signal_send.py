@@ -2,7 +2,7 @@
 import pytest
 from aiohttp import web
 
-from nora.models import ConversationTarget
+from nora.domain.models import ConversationTarget
 from nora.platform.signal.send import SignalSender
 
 TARGET = ConversationTarget("signal", "Z3JvdXA=", "group")

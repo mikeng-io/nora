@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 
-from nora.agent.guards import ReplyGuard
+from nora.app.eval_support import REPLY_GUARD_BUDGETS
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class ToolBudget:
     def evaluate(self, t) -> Result:
         counts = Counter(t.tool_calls)
         for name, count in counts.items():
-            budget = ReplyGuard.BUDGETS.get(name)
+            budget = REPLY_GUARD_BUDGETS.get(name)
             if budget is not None and count > budget:
                 return Result(False, f"{name} called {count} time(s), budget is {budget}")
         return Result(True)

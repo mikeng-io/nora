@@ -2,64 +2,68 @@ import pytest
 
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
-from tests.builders import make_limits, make_llm_config, make_llm_tier
 
-TIER = make_llm_tier()
-LIMITS = make_limits()
+BASE_URL = "http://localhost:20128/v1"
+API_KEY = "test-key"
+MODEL = "deepseek-v4-flash"
+MAX_TOKENS = 400
+TEMPERATURE = 0.7
 
 
 @pytest.fixture(autouse=True)
-def _fake_key(monkeypatch):
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    factory.close_client_sync()
+async def _reset_client():
+    await factory.close_client()
     yield
-    factory.close_client_sync()
+    await factory.close_client()
 
 
-def _llm_cfg():
-    return make_llm_config()
+def _client() -> object:
+    return factory.create_client(base_url=BASE_URL, api_key=API_KEY)
 
 
 def test_create_client_is_a_process_wide_singleton():
-    a = factory.create_client(_llm_cfg())
-    b = factory.create_client(_llm_cfg())
+    a = factory.create_client(base_url=BASE_URL, api_key=API_KEY)
+    b = factory.create_client(base_url=BASE_URL, api_key=API_KEY)
     assert a is b
 
 
-def test_create_client_reads_the_key_from_the_environment(monkeypatch):
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "secret-value")
-    client = factory.create_client(_llm_cfg())
+def test_create_client_uses_the_given_base_url():
+    client = factory.create_client(base_url=BASE_URL, api_key=API_KEY)
     assert client.base_url.host in ("localhost", "127.0.0.1")
 
 
-def test_create_client_refuses_to_start_without_the_key(monkeypatch):
-    monkeypatch.delenv("OMNIROUTE_API_KEY", raising=False)
-    factory.close_client_sync()
-    with pytest.raises(RuntimeError, match="OMNIROUTE_API_KEY"):
-        factory.create_client(_llm_cfg())
+async def test_create_client_refuses_to_start_without_an_api_key():
+    await factory.close_client()
+    with pytest.raises(RuntimeError, match="api_key"):
+        factory.create_client(base_url=BASE_URL, api_key="")
 
 
 def test_model_provider_carries_the_tier_params():
-    model = factory.create_model_provider(TIER, factory.create_client(_llm_cfg()))
+    model = factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
+    )
     assert model.config["model_id"] == "deepseek-v4-flash"
 
 
 def test_build_limits_matches_r8():
-    assert factory.build_limits(TIER, LIMITS) == {
+    assert factory.build_limits(max_tokens=400, turns=4, total_tokens=24000) == {
         "turns": 4, "output_tokens": 400, "total_tokens": 24000
     }
 
 
 def test_build_limits_uses_the_active_tier_max_tokens():
-    deep = make_llm_tier(model="deepseek-v4-pro", max_tokens=1200, temperature=0.5)
-    assert factory.build_limits(deep, LIMITS)["output_tokens"] == 1200
+    limits = factory.build_limits(max_tokens=1200, turns=4, total_tokens=24000)
+    assert limits["output_tokens"] == 1200
 
 
 def test_create_agent_is_stateless_by_construction():
     from strands.agent.conversation_manager import NullConversationManager
 
+    model = factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
+    )
     agent = factory.create_agent(
-        model=factory.create_model_provider(TIER, factory.create_client(_llm_cfg())),
+        model=model,
         system_prompt="<nora_persona/>",
         tools=[],
         pre_fill=[{"role": "user", "content": [{"text": "ctx"}]}],
@@ -71,9 +75,11 @@ def test_create_agent_is_stateless_by_construction():
 
 
 def test_create_agent_installs_the_prefill_as_conversation_history():
+    model = factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
+    )
     agent = factory.create_agent(
-        model=factory.create_model_provider(TIER, factory.create_client(_llm_cfg())),
-        system_prompt="p", tools=[],
+        model=model, system_prompt="p", tools=[],
         pre_fill=[{"role": "user", "content": [{"text": "ctx"}]},
                   {"role": "assistant", "content": [{"text": "ok"}]}],
         guard=ReplyGuard(conversation_id="g1"), trace_attributes={},
@@ -84,9 +90,11 @@ def test_create_agent_installs_the_prefill_as_conversation_history():
 def test_create_agent_suppresses_the_default_callback_handler():
     from strands.handlers.callback_handler import null_callback_handler
 
+    model = factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
+    )
     agent = factory.create_agent(
-        model=factory.create_model_provider(TIER, factory.create_client(_llm_cfg())),
-        system_prompt="p", tools=[], pre_fill=[],
+        model=model, system_prompt="p", tools=[], pre_fill=[],
         guard=ReplyGuard(conversation_id="g1"), trace_attributes={},
     )
     # Agent.__init__ normalizes an explicit `callback_handler=None` into
@@ -99,7 +107,9 @@ def test_create_agent_suppresses_the_default_callback_handler():
 
 def test_two_agents_share_no_state():
     """D4: fresh agent per tag; continuity is SQLite + Honcho, never agent memory."""
-    model = factory.create_model_provider(TIER, factory.create_client(_llm_cfg()))
+    model = factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
+    )
     a = factory.create_agent(model=model, system_prompt="p", tools=[],
                              pre_fill=[{"role": "user", "content": [{"text": "a"}]}],
                              guard=ReplyGuard(conversation_id="g1"), trace_attributes={})

@@ -1,31 +1,58 @@
-"""Eval harness: drives the real `Handler` (real guards, real db) against a scripted
-turn sequence and reports what happened as a `Trajectory`, for the deterministic
-evaluators in `evals.evaluators` to grade.
+"""Eval harness: drives a real pipeline graph (real guards, fake db/memory/adapter)
+against a scripted turn sequence and reports what happened as a `Trajectory`, for
+the deterministic evaluators in `evals.evaluators` to grade.
 
 Design note (this file's `run_case`/`Case` are design guidance, not pinned by
 `tests/test_evals_gate.py` — that test only exercises `Trajectory` + the evaluators):
-rather than reimplementing Handler wiring, this reuses the already-reviewed
-integration-test machinery in `tests.integration.harness` (`build_handler`, `FakeLLM`,
-`ScriptedTurn`, `group_event`). That machinery deliberately makes the real,
-live-network branch of `Handler._invoke` unreachable by construction (see
-`build_handler`'s docstring) — it always wraps whatever `script` you pass into a
-`FakeLLM`. So today, `run_case` only supports the offline/scripted path: `script=None`
-degrades to a zero-turn `FakeLLM` (a harmless silent run), it does NOT reach out to a
-real model. Wiring an actual live-model code path (for the M7 stage's
-`--suite all` network-requiring verification command) is out of scope for this task
-and is left for later work.
+`run_case` builds its own pipeline graph from `nora.app.offline.build_offline_pipeline`
+plus `nora.testing`'s fakes, rather than reusing `tests/integration/harness.py` —
+`evals/` may import `nora.app` and `nora.testing` and nothing else from `nora/`, and
+may not import `tests/` at all (`tests/test_boundaries.py`). That machinery
+deliberately makes the real, live-network branch of invocation unreachable by
+construction: `run_case` always wraps whatever `script` you pass into a
+`FakeAgentRunner`. So today, `run_case` only supports the offline/scripted path:
+`script=None` degrades to a zero-turn `FakeAgentRunner` (a harmless silent run), it
+does NOT reach out to a real model. Wiring an actual live-model code path (for the
+M7 stage's `--suite all` network-requiring verification command) is out of scope for
+this task and is left for later work.
+
+`FakeAuditStore`/`FakeMemoryStore` replace `run_case`'s earlier real (tmp) SQLite
+audit store: nothing here is pytest-gated (see the module note above), and the
+evaluators only ever read the returned `Trajectory` — not persisted rows — so an
+in-memory double is equivalent for this harness's purpose and drops the tmp-dir/
+migration machinery `tests/integration/harness.py` needs for its own, broader,
+fault-injection-capable test suite.
 """
 
 from __future__ import annotations
 
-import shutil
+import asyncio
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
-from tests.integration.harness import ScriptedTurn, build_handler, group_event
+from nora.app.eval_support import PersonaStore, load_eval_config, load_persons
+from nora.app.offline import build_offline_pipeline
+from nora.testing import (
+    FakeAdapter,
+    FakeAgentRunner,
+    FakeAuditStore,
+    FakeMemoryStore,
+    ScriptedTurn,
+    group_event,
+)
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PERSONA_DIR = REPO_ROOT / "nora" / "persona"
+
+# The one sender `group_event`'s default produces, mapped so the post-reply Honcho
+# feed (which requires a resolved `ctx.tagger`, `nora/engagement/stages/feedback.py`)
+# actually fires — matches `tests/integration/harness.py`'s own default identity.
+_IDENTITY_TOML = (
+    '[persons.miles]\nname = "Miles"\n[persons.miles.platforms]\nsignal = "+852111"\n'
+)
 
 # Kept in sync with config.example.toml's engagement.trigger.text — the single real
 # trigger string every case file and the harness itself must agree on.
@@ -67,6 +94,29 @@ def load_cases(path: Path | str) -> list[Case]:
     return [Case.from_dict(item) for item in raw]
 
 
+async def _drain(background) -> None:
+    """Await every background task spawned so far — ambient memory-feeds,
+    spawned tags, AND `EngagementPipeline`'s post-reply exchange feed all land
+    in the same shared `BackgroundTasks` now (`EngagementPipeline` takes an
+    injected `spawn` instead of rolling its own private task set;
+    `nora.app.offline.build_offline_pipeline` wires both pipelines' spawns to
+    this one `background.spawn`) — including ones spawned by tasks that are
+    themselves still in flight.
+
+    Mirrors `tests/integration/harness.py::Harness.drain` exactly (same
+    `asyncio.sleep(0)`-after-`gather` shape, for the same reason: a task's own
+    coroutine can be reported `done()` before its `add_done_callback` discard
+    runs, since done-callbacks are delivered via `call_soon` one loop tick
+    later). Deliberately NOT `BackgroundTasks.cancel_all()` — that cancels
+    outstanding tasks rather than letting them finish, which would lose the
+    post-reply Honcho feed `Trajectory.honcho_feeds` depends on.
+    """
+    while background._tasks:
+        pending = list(background._tasks)
+        await asyncio.gather(*pending, return_exceptions=True)
+        await asyncio.sleep(0)
+
+
 def _build_body(case: Case) -> str:
     """Prefix `case.input` with the trigger text for trigger cases (unless the author
     already embedded it plausibly in the message), pass no-trigger cases through as-is.
@@ -79,8 +129,8 @@ def _build_body(case: Case) -> str:
 
 
 async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> Trajectory:
-    """Run one eval `Case` through a real `Handler` in an isolated tmp directory and
-    return the resulting `Trajectory`.
+    """Run one eval `Case` through a real pipeline graph and return the resulting
+    `Trajectory`.
 
     `script` is the scripted model turn sequence (offline mode — see module docstring).
     The tool names it *attempts* become `Trajectory.tool_calls`: in scripted mode we
@@ -91,15 +141,35 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
     turns = script or []
     tool_calls = [name for turn in turns for name, _ in turn.tool_calls]
 
-    tmp_dir = Path(tempfile.mkdtemp(prefix="nora-eval-"))
-    try:
-        h = await build_handler(tmp_dir, script=turns, debounce=0)
-        body = _build_body(case)
-        await h.handler.on_event(group_event(body=body))
-        await h.drain()
+    cfg = load_eval_config((REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml"))
+    persona_store = PersonaStore(
+        PERSONA_DIR, strict=cfg.persona.strict, reload=cfg.persona.reload,
+        canary=cfg.persona.canary, display_name=cfg.persona.display_name,
+        trigger=cfg.engagement.trigger.text,
+    )
 
-        feeds = len([f for f in h.honcho.fed if "[Nora]" in f[1]])
-        sent = list(h.sink.texts)
+    with tempfile.TemporaryDirectory(prefix="nora-eval-") as tmp:
+        identity_path = Path(tmp) / "identity.toml"
+        identity_path.write_text(_IDENTITY_TOML)
+        persons = load_persons(identity_path)
+
+        audit = FakeAuditStore()
+        memory = FakeMemoryStore()
+        adapter = FakeAdapter()
+        runner = FakeAgentRunner(turns)
+        try:
+            dispatcher, _engagement, background = build_offline_pipeline(
+                cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
+                persona_store=persona_store, runner=runner,
+            )
+            body = _build_body(case)
+            await dispatcher.on_event(group_event(body=body))
+            await _drain(background)
+        finally:
+            await audit.aclose()
+
+        feeds = len([f for f in memory.fed if "[Nora]" in f[1]])
+        sent = list(adapter.texts)
         return Trajectory(
             tool_calls=tool_calls,
             sent=sent,
@@ -107,5 +177,3 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
             honcho_feeds=feeds,
             prefill_sufficient=case.prefill_sufficient,
         )
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)

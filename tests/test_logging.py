@@ -79,7 +79,8 @@ def test_setup_logging_writes_to_the_configured_path(tmp_path):
     from tests.builders import make_logging_config
 
     path = tmp_path / "nora.log"
-    setup_logging(make_logging_config(path=path), secrets=["sk-live-x"])
+    cfg = make_logging_config(path=path)
+    setup_logging(level=cfg.level, path=cfg.path, format=cfg.format, secrets=["sk-live-x"])
     logging.getLogger("nora.test").info("hello %s", "sk-live-x")
     logging.shutdown()
     text = path.read_text()

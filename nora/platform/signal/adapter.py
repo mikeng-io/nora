@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Awaitable, Callable
 
-from ...models import ConversationTarget, NormalizedMessage
+from ...domain.models import ConversationTarget, NormalizedMessage
 from .listener import SignalListener
 from .parser import parse_event
 from .send import SignalSender

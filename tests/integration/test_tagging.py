@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from nora.domain.models import DeliveryStatus
-from tests.integration.harness import ScriptedTurn, group_event
+from nora.testing import ScriptedTurn, group_event
 
 
 def _reply_script(text="今晚七點半得", conv="g1"):
@@ -146,7 +146,7 @@ async def test_latency_is_recorded(harness_factory):
 
 
 async def test_persona_sha256_is_logged_for_the_tag(harness_factory, caplog):
-    caplog.set_level(logging.INFO, logger="nora.handler")
+    caplog.set_level(logging.INFO, logger="nora.engagement.pipeline")
     h = await harness_factory(script=_reply_script())
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()

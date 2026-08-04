@@ -1,4 +1,4 @@
-from nora.models import ConversationTarget
+from nora.domain.models import ConversationTarget
 from nora.tag import Debounce
 
 
@@ -69,3 +69,38 @@ def test_a_platform_conversation_tuple_works_as_a_key():
     d = Debounce(5, clock=FakeClock())
     assert d.allow(("signal", "gA")) is True
     assert d.allow(("signal", "gA")) is False
+
+
+def test_sweep_drops_entries_older_than_the_ttl():
+    clock = FakeClock()
+    d = Debounce(5, clock=clock)
+    d.allow(A)
+    clock.advance(100)
+    dropped = d.sweep(10)
+    assert dropped == 1
+    assert len(d._last) == 0
+
+
+def test_sweep_keeps_entries_within_the_ttl():
+    clock = FakeClock()
+    d = Debounce(5, clock=clock)
+    d.allow(A)
+    clock.advance(1)
+    dropped = d.sweep(10)
+    assert dropped == 0
+    assert len(d._last) == 1
+
+
+def test_sweep_only_drops_the_stale_key_not_the_fresh_one():
+    clock = FakeClock()
+    d = Debounce(5, clock=clock)
+    d.allow(A)
+    clock.advance(100)
+    d.allow(B)
+    dropped = d.sweep(10)
+    assert dropped == 1
+    assert list(d._last) == [B]
+
+
+def test_sweep_returns_zero_on_an_empty_debounce():
+    assert Debounce(5, clock=FakeClock()).sweep(10) == 0

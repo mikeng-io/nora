@@ -1,6 +1,6 @@
 import statistics
 
-from tests.integration.harness import ScriptedTurn, group_event
+from nora.testing import ScriptedTurn, group_event
 
 FAKE_LLM_DELAY = 0.8      # E.5: a fixed 800ms model delay isolates our overhead
 

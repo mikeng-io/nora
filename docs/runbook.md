@@ -163,3 +163,23 @@ The same value is also reported live in `GET /health` (`persona_sha256` field) a
 OpenTelemetry span attribute, so you can confirm whether the *current* running persona
 matches the one that produced a given historical reply, or whether it has since been
 hot-reloaded to something else.
+
+## Note: logger/message names changed in the pipelines refactor (2026-08-05)
+
+`nora/handler.py` is deleted; its logging moved with it. If you have log-based alerting
+or saved `grep`/dashboard queries built against the pre-refactor names, they will
+silently stop matching — update them:
+
+- **Logger name**: `nora.handler` → per-stage loggers instead of one monolith, e.g.
+  `nora.ingest.audit`, `nora.ingest.gate`, `nora.engagement.pipeline`,
+  `nora.engagement.admission`, `nora.engagement.context`, `nora.engagement.deliver`,
+  `nora.engagement.invoke`, `nora.app.runtime`. `grep '"logger": "nora.handler"'` now
+  matches nothing; grep `"logger": "nora\.` (the JSON log line's `logger` field) instead
+  of a single fixed name.
+- **Message text**: the ambient audit-write failure log line changed from
+  `"db append failed"` to `"audit append failed"` (`nora/ingest/stages/audit.py:24`).
+  Update any saved query matching the old string.
+
+Metrics are unaffected by this — `nora_errors_total{stage="ambient"}` and every other
+series kept both their names and their label values; this note is about log-text
+alerting specifically.

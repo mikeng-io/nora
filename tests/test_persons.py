@@ -1,6 +1,6 @@
 import pytest
 
-from nora.models import NormalizedMessage
+from nora.domain.models import NormalizedMessage
 from nora.persons import PersonsError, load_persons, sanitize_unmapped
 
 TOML = """
