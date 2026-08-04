@@ -790,3 +790,45 @@ git log --oneline                                 # 6 task commits, one concern 
 - **Deliberately deferred to Phase 1b:** `nora/domain/` models and ports, the composition root, mypy/import-linter configuration, `ARCHITECTURE.md`, `CLAUDE.md`, and the decision index. Those need `domain/` to exist and are a separate reviewable concern.
 - **Deliberate deviation from spec §5.1:** `store.db_path` stays a path here rather than becoming a SQLAlchemy `url`. Phase 2 owns the persistence swap; converting to a URL now would mean converting it back to a path for the still-aiosqlite code, which is churn with a chance of error and no benefit.
 - **Type consistency:** `cfg.llm.tiers.flash.timeout_seconds` replaces `cfg.trigger.invocation_timeout_seconds` (one consumer, `handler.py:192`); `cfg.identity_file` replaces `cfg.persons_file`; `cfg.platforms.signal.*` replaces `cfg.signal_cli.*`. All three names are used consistently from Task 3 onward.
+
+---
+
+## Phase 1a outcome (2026-08-04)
+
+**Complete.** 15 commits. Exit gate green: 460 passed / 1 deselected · ruff clean ·
+`config.toml` + `identity.toml` exist, `config.yaml` + `persons.yaml` gone ·
+`nora:p1a` and `nora:latest` tagged (`nora:p0` intact) ·
+`/health` 200 with `sse.account == +85290000100` read from `config.toml` **inside the
+container** — the end-to-end proof that no value moved.
+
+### Deviations from the plan, and why
+
+- **`pydantic`, not `pydantic-settings`.** The spec and this plan both named
+  pydantic-settings, but nothing imports it — no env-var settings source is used, and the
+  one secret is referenced by variable *name* via `llm.api_key_env`. The final review
+  caught that the declared dependency was unused while the actually-imported one
+  (`pydantic`) was undeclared and present only transitively. Declaration now matches
+  reality; the spec is corrected.
+- **`store.db_path` stays a path**, not a SQLAlchemy URL. Phase 2 owns the persistence
+  swap; converting now would mean converting back for the still-aiosqlite code.
+- **Both `llm.tiers` ship**, not just `flash`. The spec suggested keeping `deep` in the
+  example file only, but `evals/judge.py` and `evals/run.py` consume it.
+
+### Behaviour changes (deliberate, both reviewed)
+
+- `invocation_timeout_seconds` and `min_interval_seconds` now return `float` (`30.0`,
+  `5.0`) where the old loader returned `int`. The old dataclass annotation was *already*
+  `float` — dataclasses just don't coerce, so an int had been leaking through a
+  float-declared field. Verified unobservable: the only consumers are
+  `asyncio.wait_for(timeout=...)` and `tag.py:61`, which already called `float()`.
+- `extra="forbid"` now applies to `identity.toml`, so an unrecognised key there is a
+  startup failure where the old YAML loader silently ignored it. Consistent with the
+  project-wide convention; pinned by tests as of the final fix wave.
+
+### Carried into Phase 1b / 2
+
+- `nora/config.py`'s path validator now **raises** when built without base context. That
+  hardening immediately exposed one real direct-construction site (`tests/builders.py`).
+  Phase 2 must pass `context={"base": ...}` at any new construction site.
+- `platforms.signal.enabled` is required but **not yet honoured** — documented as such in
+  both TOML files and on the model. The adapter registry phase consumes it.
