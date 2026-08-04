@@ -40,17 +40,37 @@ trigger detection. See `design/00-overview.md` D1 and `design/09-decision-index.
 
 ## 2. Packages — what lives here, what it may import
 
-Enforced today by two import-linter contracts (`pyproject.toml`
+Enforced today by four import-linter contracts (`pyproject.toml`
 `[tool.importlinter]`) plus `tests/test_boundaries.py`:
 
 - **Contract 1 — "domain is framework-free."** `nora.domain` may not import
   `aiohttp`, `strands`, `sqlalchemy`, `pydantic`, `prometheus_client`,
-  `opentelemetry`, `yaml`, or `openai`.
-- **Contract 2 — "only app and `__main__` read config."** `nora.agent`, `nora.obs`,
+  `opentelemetry`, `yaml`, or `openai`. A deny-list: it catches a hardcoded
+  set of third-party names, nothing else — see the next bullet for what closes
+  the gap that leaves.
+- **Contract 2 — "layered architecture."** A `layers` contract with `nora.domain`
+  as the bottom layer: `nora.domain` may import nothing else in `nora`, full
+  stop — not a list of banned names, an allow-list of one (the standard
+  library). Backstopped by `tests/test_boundaries.py::test_domain_imports_only_the_standard_library`,
+  which asserts the same property at the file level (an allow-list, not the
+  deny-list contract 1 alone used to be). The middle layer is ordered to match
+  today's real cross-package edges (`agent` → `persona` → `obs` → `store`;
+  `platform` is independent of the other four) so the contract enforces
+  domain's isolation without also relitigating those packages' existing,
+  legitimate imports of each other.
+- **Contract 3 — "only app and `__main__` read config."** `nora.agent`, `nora.obs`,
   `nora.persona`, `nora.platform`, `nora.store` (plus, as of this task,
   `nora.domain`, `nora.handler`, `nora.models`, `nora.persons`, `nora.tag`) may not
   import `nora.config`. One documented exception: `nora.agent.factory` (see §3
   known gaps).
+- **Contract 4 — "the nora package's own `__init__` does not read config either."**
+  Same rule as contract 3, applied to `nora/__init__.py` itself, as a separate
+  `forbidden` contract with `as_packages = false`. It has to be separate: listing
+  the root package `nora` as a source module in contract 3 would be a silent
+  no-op there, because import-linter's `forbidden` contract skips any
+  source/forbidden pair where one module is a subpackage of the other — and
+  `nora.config` is a subpackage of `nora`. `as_packages = false` compares both
+  sides as single literal modules instead, which is what actually catches it.
 - `tests/test_boundaries.py::test_strands_import_boundary` — only `nora/agent/**`
   may import `strands`.
 
@@ -61,9 +81,9 @@ Enforced today by two import-linter contracts (`pyproject.toml`
 | `app/` | `composition.py` — `Dependencies` (frozen dataclass) and `build_dependencies(cfg) -> Dependencies`, the seam later phases wire the real graph through. **Not yet load-bearing**: `nora/__main__.py` still builds its own graph directly. | `nora.config` (this is the one package allowed to), `nora.obs.metrics`, `nora.persons`, `nora.store.honcho`. |
 | `agent/` | `factory.py` (Strands `Agent`/model/client construction), `guards.py` (`LeakGuard`, `Deliverer`, `ReplyGuard`), `tools.py` (the three native tools), `prefill.py` (R-13 escaping, R-15 header). | The only package allowed to import `strands`. `factory.py` also imports `nora.config` directly — the one documented `ignore_imports` exception in contract 2 (see §3). |
 | `platform/` | `base.py`, `signal/` (`adapter.py`, `listener.py`, `parser.py`, `send.py`, `account.py`) — the one `PlatformAdapter`-shaped implementation, Signal. | `nora.models` (the domain re-export shim), `aiohttp`. Forbidden from importing `nora.config` (contract 2). |
-| `store/` | `db.py` (SQLite audit — module-level functions, `db_path` threaded through each call), `honcho.py` (`HonchoClient`, best-effort), `migrate.py` (legacy `PRAGMA user_version` migration, spec §4.5 marks this for retirement in the persistence phase). | `aiosqlite` / `aiohttp`, `nora.models`. Forbidden from importing `nora.config`. |
-| `persona/` | `loader.py` — `PersonaStore`, the only module that may read a `.md` persona file (enforced by `test_boundaries.py::test_persona_read_boundary`). | stdlib, YAML. Forbidden from importing `nora.config`. |
-| `obs/` | `logging.py` (`setup_logging`), `tracing.py` (`setup_tracing`, OTel), `metrics.py` (`METRICS` singleton, `Metrics`), `health.py` (`build_health_app` — `GET /health`, `GET /metrics`). | `aiohttp`, `opentelemetry`. Forbidden from importing `nora.config` — but see §3, `logging.py`/`tracing.py` take config-shaped parameters instead. |
+| `store/` | `db.py` (SQLite audit — module-level functions, `db_path` threaded through each call), `honcho.py` (`HonchoClient`, best-effort), `migrate.py` (legacy `PRAGMA user_version` migration, spec §4.5 marks this for retirement in the persistence phase). | `aiosqlite` / `aiohttp`, `nora.models`, `nora.domain.ports` (`honcho.py` — `MemoryHealth`, the typed return of `HonchoClient.health()`). Forbidden from importing `nora.config`. |
+| `persona/` | `loader.py` — `PersonaStore`, the only module that may read a `.md` persona file (enforced by `test_boundaries.py::test_persona_read_boundary`). | stdlib, YAML, `nora.obs.metrics` (`loader.py:20` — reload-failure counter). Forbidden from importing `nora.config`. |
+| `obs/` | `logging.py` (`setup_logging`), `tracing.py` (`setup_tracing`, OTel), `metrics.py` (`METRICS` singleton, `Metrics`), `health.py` (`build_health_app` — `GET /health`, `GET /metrics`). | `aiohttp`, `opentelemetry`, `nora.store.db` (`health.py:10` — the `/health` endpoint reads audit-store stats directly). Forbidden from importing `nora.config` — but see §3, `logging.py`/`tracing.py` take config-shaped parameters instead. |
 | `handler.py` | `Handler` — ambient ingest + tag orchestration in one 229-line class (spec's own evidence of POC shape; dissolves into `ingest/`+`engagement/` stages in the pipelines phase). | Everything: `agent`, `obs`, `store`, `tag`, `models`. Takes the whole `Config` object as `cfg` — a known gap, see §3. |
 | `models.py` | Re-export shim for `nora.domain.models` (`ConversationTarget`, `NormalizedMessage`, `PersonRef`, `TagContext`) — see module docstring. Kept so this phase didn't have to rewrite ~20 import sites across `handler.py`, `platform/`, `store/`, `agent/`. **The pipelines phase deletes it**, once those call sites are migrated to import `nora.domain.models` directly. | `nora.domain.models` only. |
 | `persons.py` | `Persons`, `load_persons` — `identity.toml` → reverse index by `(platform, sender_id)`. | pydantic, `nora.models`. |
