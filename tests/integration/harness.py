@@ -15,12 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from nora.config import Config, load as load_config
+from nora.config import Config
 from nora.handler import Handler
 from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from nora.persons import load_persons
 from nora.store import db
+from tests.builders import load_example_config, override_config
 from tests.fakes import FakeHoncho, SinkSender
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -170,7 +171,7 @@ class Harness:
         """
         self.handler._invoke_fn = script if isinstance(script, FakeLLM) else FakeLLM(script)
 
-    async def simulate_restart(self, *, script=None, **kwargs) -> "Harness":
+    async def simulate_restart(self, *, script=None, **kwargs) -> Harness:
         """Build a brand new Harness (fresh Handler, fresh debounce/in-flight state)
         that reuses the same db_path and the same Honcho double, so SQLite and Honcho
         continuity are real — a "restart" only ever loses in-process state.
@@ -186,21 +187,18 @@ def _build_config(
     invocation_timeout: float | None = None,
     debounce: float | None = None,
 ) -> Config:
-    cfg_path = tmp_path / "config.yaml"
-    shutil.copy(REPO_ROOT / "config.example.yaml", cfg_path)
-    base = load_config(cfg_path)
-    trigger = base.trigger
+    base = load_example_config(tmp_path)
+
+    changes: dict[str, object] = {
+        "buffer.db_path": tmp_path / "messages.db",
+        "persona.dir": persona_dir,
+        "persons_file": persons_path,
+    }
     if invocation_timeout is not None:
-        trigger = dataclasses.replace(trigger, invocation_timeout_seconds=invocation_timeout)
+        changes["trigger.invocation_timeout_seconds"] = invocation_timeout
     if debounce is not None:
-        trigger = dataclasses.replace(trigger, min_interval_seconds=debounce)
-    return dataclasses.replace(
-        base,
-        buffer=dataclasses.replace(base.buffer, db_path=tmp_path / "messages.db"),
-        persona=dataclasses.replace(base.persona, dir=persona_dir),
-        persons_file=persons_path,
-        trigger=trigger,
-    )
+        changes["trigger.min_interval_seconds"] = debounce
+    return override_config(base, changes)
 
 
 async def build_handler(
@@ -283,9 +281,7 @@ async def build_handler(
                             raises=RuntimeError("omniroute down"))
     elif fault == "llm_timeout":
         invoke_fn = FakeLLM(script if not isinstance(script, FakeLLM) else [], delay=5.0)
-        cfg = dataclasses.replace(
-            cfg, trigger=dataclasses.replace(cfg.trigger, invocation_timeout_seconds=0.2)
-        )
+        cfg = override_config(cfg, {"trigger.invocation_timeout_seconds": 0.2})
     elif fault == "empty_reply":
         # bypass_guard=True: ReplyGuard's own R-4 pre-tool veto would otherwise catch a
         # whitespace-only text before Deliverer ever sees it. This exercises Deliverer's

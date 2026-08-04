@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from typing import ClassVar
 
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
 
@@ -133,20 +134,20 @@ class Deliverer:
                 self._db_path, row, is_nora=True, delivery_status="pending",
                 max_per_conversation=self._max_per_conversation,
             )
-        except Exception:                                      # noqa: BLE001 — R-5
+        except Exception:
             log.exception("audit_write_failed (tag=%s); staying silent", self._tag_id)
             self._metrics.inc("nora_silent_failures_total", reason="audit_write_failed")
             return False
 
         try:
             ok = await self._adapter.send(self._target, text)
-        except Exception:                                      # noqa: BLE001 — R-5
+        except Exception:
             log.exception("send raised (tag=%s)", self._tag_id)
             ok = False
 
         try:
             await db.set_delivery_status(self._db_path, row_id, "sent" if ok else "failed")
-        except Exception:                                      # noqa: BLE001
+        except Exception:
             log.exception("delivery_status update failed (tag=%s)", self._tag_id)
 
         if ok:
@@ -166,7 +167,7 @@ class ReplyGuard(HookProvider):
     hook adapter in _before_tool is a thin translation layer (RK-2).
     """
 
-    BUDGETS = {"read_buffer": 2, "read_peer_card": 1, "send_reply": 1}
+    BUDGETS: ClassVar[dict[str, int]] = {"read_buffer": 2, "read_peer_card": 1, "send_reply": 1}
 
     def __init__(self, *, conversation_id: str, deliverer=None, metrics=METRICS) -> None:
         self._conversation_id = conversation_id
@@ -240,7 +241,7 @@ class ReplyGuard(HookProvider):
             message = self.evaluate(name, tool_input)
             if message:
                 event.cancel_tool = message
-        except Exception:                    # noqa: BLE001 — a guard bug fails open, logged
+        except Exception:
             log.exception("ReplyGuard._before_tool raised; allowing the call")
 
     def _after_tool(self, event) -> None:
@@ -249,5 +250,5 @@ class ReplyGuard(HookProvider):
                 return                       # a failed call does not consume budget
             name = (getattr(event, "tool_use", None) or {}).get("name", "")
             self.record(name)
-        except Exception:                    # noqa: BLE001
+        except Exception:
             log.exception("ReplyGuard._after_tool raised; ignoring")

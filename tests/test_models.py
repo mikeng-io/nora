@@ -6,16 +6,16 @@ from nora.models import ConversationTarget, NormalizedMessage, PersonRef, TagCon
 
 
 def _msg(**over) -> NormalizedMessage:
-    base = dict(
-        platform="signal",
-        conversation_id="Z3JvdXA=",
-        conversation_type="group",
-        sender_id="+85212345678",
-        sender_name="Miles",
-        timestamp=1_700_000_000_000,
-        body="hello",
-        raw={"method": "receive"},
-    )
+    base = {
+        "platform": "signal",
+        "conversation_id": "Z3JvdXA=",
+        "conversation_type": "group",
+        "sender_id": "+85212345678",
+        "sender_name": "Miles",
+        "timestamp": 1_700_000_000_000,
+        "body": "hello",
+        "raw": {"method": "receive"},
+    }
     return NormalizedMessage(**{**base, **over})
 
 

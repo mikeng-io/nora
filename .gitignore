@@ -31,3 +31,7 @@ venv/
 # Local deployment config (config.example.yaml is the committed template)
 /config.yaml
 /persons.yaml
+
+# Phase rollback backups (backups of gitignored/live state files)
+*.pre-toml
+data/*.pre-alembic

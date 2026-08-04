@@ -33,7 +33,7 @@ class StartupError(Exception):
     """A fatal startup validation failure — refuse to start, with a readable message."""
 
 
-async def build_app(config_path) -> "App":
+async def build_app(config_path) -> App:
     try:
         cfg = config.load(config_path)
     except ConfigError as exc:

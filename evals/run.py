@@ -33,8 +33,13 @@ from typing import Literal
 
 import yaml
 
-from evals.evaluators import (ExactlyOnceSendReply, HonchoFedOncePerReply, NoRedundantRead,
-                              NoSendWithoutTrigger, ToolBudget)
+from evals.evaluators import (
+    ExactlyOnceSendReply,
+    HonchoFedOncePerReply,
+    NoRedundantRead,
+    NoSendWithoutTrigger,
+    ToolBudget,
+)
 from evals.harness import Case, load_cases, run_case
 from evals.judge import _build_judge_prompt, evaluate_raw
 from nora.agent.factory import create_client, create_model_provider
@@ -104,17 +109,23 @@ def _load_adversarial_cases(paths: tuple[Path, ...]) -> list[dict]:
     return cases
 
 
-def _load_eval_config():
-    """`config.yaml` (gitignored, per-deployment) is preferred; `config.example.yaml`
-    (committed, always in the v2 shape `nora.config.Config` expects) is the fallback
-    for a local `config.yaml` that predates the current schema.
+def _load_eval_config(loader=load_nora_config, candidates=None):
+    """`config.yaml` (tracked in git, per-deployment) is preferred; `config.example.yaml`
+    (committed) is the fallback for a local `config.yaml` predating the schema.
+
+    `loader` and `candidates` are injectable so phase 1's format change is a
+    call-site argument, not an edit to this function.
     """
+    if candidates is None:
+        candidates = (REPO_ROOT / "config.yaml", REPO_ROOT / "config.example.yaml")
     last_error: ConfigError | None = None
-    for candidate in (REPO_ROOT / "config.yaml", REPO_ROOT / "config.example.yaml"):
+    for candidate in candidates:
         try:
-            return load_nora_config(candidate)
+            return loader(candidate)
         except ConfigError as exc:
             last_error = exc
+    if last_error is None:
+        raise ValueError("no config candidates provided")
     raise last_error
 
 

@@ -1,9 +1,7 @@
 import json
 
-import pytest
-
-from nora.config import TracingConfig
 from nora.obs.tracing import setup_tracing, trace_attributes
+from tests.builders import make_tracing_config
 
 
 def test_trace_attributes_carry_the_provenance_fields(tmp_path):
@@ -37,24 +35,9 @@ def test_trace_attributes_never_carry_message_content(tmp_path):
 
 
 def test_tracing_disabled_is_a_no_op():
-    setup_tracing(TracingConfig(enabled=False, exporter="file", endpoint=""))
+    setup_tracing(make_tracing_config())
 
 
 def test_file_exporter_writes_to_a_path(tmp_path):
-    setup_tracing(TracingConfig(enabled=True, exporter="file",
-                                endpoint=str(tmp_path / "traces.jsonl")))
-
-
-def test_otlp_without_an_endpoint_is_rejected_at_config_load():
-    from nora.config import ConfigError, _validate  # noqa: PLC2701
-
-    with pytest.raises(ConfigError):
-        _validate_tracing_only(exporter="otlp", endpoint="")
-
-
-def _validate_tracing_only(**kw):
-    """Config-level guard already covered in test_config; asserted here for locality."""
-    from nora.config import ConfigError
-
-    if kw["exporter"] == "otlp" and not kw["endpoint"]:
-        raise ConfigError("observability.tracing.endpoint is required when exporter is 'otlp'")
+    setup_tracing(make_tracing_config(enabled=True,
+                                      endpoint=str(tmp_path / "traces.jsonl")))

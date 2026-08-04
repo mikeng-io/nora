@@ -2,10 +2,10 @@ import pytest
 
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
-from nora.config import LimitsConfig, LLMConfig, LLMTierConfig
+from tests.builders import make_limits, make_llm_config, make_llm_tier
 
-TIER = LLMTierConfig(model="deepseek-v4-flash", max_tokens=400, temperature=0.7)
-LIMITS = LimitsConfig(turns=4, total_tokens=24000)
+TIER = make_llm_tier()
+LIMITS = make_limits()
 
 
 @pytest.fixture(autouse=True)
@@ -16,9 +16,8 @@ def _fake_key(monkeypatch):
     factory.close_client_sync()
 
 
-def _llm_cfg() -> LLMConfig:
-    return LLMConfig(base_url="http://localhost:20128/v1", api_key_env="OMNIROUTE_API_KEY",
-                     default=TIER, deep=TIER, limits=LIMITS)
+def _llm_cfg():
+    return make_llm_config()
 
 
 def test_create_client_is_a_process_wide_singleton():
@@ -52,7 +51,7 @@ def test_build_limits_matches_r8():
 
 
 def test_build_limits_uses_the_active_tier_max_tokens():
-    deep = LLMTierConfig(model="deepseek-v4-pro", max_tokens=1200, temperature=0.5)
+    deep = make_llm_tier(model="deepseek-v4-pro", max_tokens=1200, temperature=0.5)
     assert factory.build_limits(deep, LIMITS)["output_tokens"] == 1200
 
 

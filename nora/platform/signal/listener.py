@@ -36,7 +36,8 @@ class SignalListener:
 
     def _next_backoff(self, attempt: int) -> float:
         """Full jitter: uniform(0, min(cap, base * 2**attempt)) — avoids thundering herd."""
-        return random.uniform(0.0, min(self._max_backoff, 1.0 * (2**attempt)))
+        # Reconnect jitter, not a cryptographic use of randomness.
+        return random.uniform(0.0, min(self._max_backoff, 1.0 * (2**attempt)))  # noqa: S311
 
     async def listen(self, on_event: Callable[[dict], Awaitable[None]]) -> None:
         attempt = 0
@@ -57,25 +58,27 @@ class SignalListener:
 
     async def _stream(self, on_event: Callable[[dict], Awaitable[None]]) -> None:
         timeout = aiohttp.ClientTimeout(total=None, sock_read=None)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(self._url, headers={"Accept": "text/event-stream"}) as resp:
-                resp.raise_for_status()
-                self.connected = True
-                log.info("SSE connected to %s", self._url)
-                async for raw in resp.content:
-                    line = raw.decode("utf-8", "replace").strip()
-                    if not line.startswith("data:"):
-                        continue
-                    payload = line[5:].strip()
-                    if not payload:
-                        continue
-                    try:
-                        event = json.loads(payload)
-                    except json.JSONDecodeError:
-                        log.warning("skipping unparseable SSE line")
-                        continue
-                    self.last_event_at = self._clock()
-                    try:
-                        await on_event(event)
-                    except Exception:           # noqa: BLE001 — a handler bug never kills ingest
-                        log.exception("event handler raised; continuing")
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(self._url, headers={"Accept": "text/event-stream"}) as resp,
+        ):
+            resp.raise_for_status()
+            self.connected = True
+            log.info("SSE connected to %s", self._url)
+            async for raw in resp.content:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if not payload:
+                    continue
+                try:
+                    event = json.loads(payload)
+                except json.JSONDecodeError:
+                    log.warning("skipping unparseable SSE line")
+                    continue
+                self.last_event_at = self._clock()
+                try:
+                    await on_event(event)
+                except Exception:
+                    log.exception("event handler raised; continuing")

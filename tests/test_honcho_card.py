@@ -44,7 +44,9 @@ def _payload_handler(payload, status=200):
 
 
 async def test_peer_card_returns_a_list_of_facts(server_factory):
-    base_url = await server_factory(_payload_handler({"content": "- likes espresso\n- lives in HK"}))
+    base_url = await server_factory(
+        _payload_handler({"content": "- likes espresso\n- lives in HK"})
+    )
     card = await HonchoClient(base_url, "nora").peer_card("miles")
     assert card == ["likes espresso", "lives in HK"]
 
@@ -83,6 +85,27 @@ async def test_health_reports_reachability(server_factory):
     base_url = await server_factory(_payload_handler({"ok": True}))
     health = await HonchoClient(base_url, "nora").health()
     assert health["reachable"] is True
+
+
+async def test_health_probes_the_root_health_endpoint(server_factory):
+    """Regression guard (fix of 2026-08-04): the probe must be GET /health.
+
+    GET /v3/workspaces is POST-only -> 405 -> the container sits in
+    'health: starting' forever. The sibling health tests mount a wildcard route
+    that answers any method on any path, so only this assertion catches it.
+    """
+    captured = {}
+
+    async def handler(request):
+        captured["method"] = request.method
+        captured["path"] = request.path
+        return web.json_response({"ok": True})
+
+    base_url = await server_factory(handler)
+
+    await HonchoClient(base_url, "nora").health()
+
+    assert (captured["method"], captured["path"]) == ("GET", "/health")
 
 
 async def test_health_reports_unreachable_without_raising():

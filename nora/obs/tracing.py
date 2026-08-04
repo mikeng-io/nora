@@ -22,7 +22,7 @@ def setup_tracing(cfg, *, service_name: str = "nora") -> None:
         provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
-    except Exception:                      # noqa: BLE001 — tracing is never load-bearing
+    except Exception:
         log.warning("tracing setup failed; continuing without tracing", exc_info=True)
 
 

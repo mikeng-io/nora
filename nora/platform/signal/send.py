@@ -42,13 +42,15 @@ class SignalSender:
             "id": request_id or "nora",
         }
         try:
-            async with aiohttp.ClientSession(timeout=self._timeout) as session:
-                async with session.post(f"{self._base_url}/api/v1/rpc", json=payload) as resp:
-                    if resp.status != 200:
-                        log.error("send failed: HTTP %s (conversation=%s, id=%s)",
-                                  resp.status, target.conversation_id, request_id)
-                        return False
-                    body = await resp.json()
+            async with (
+                aiohttp.ClientSession(timeout=self._timeout) as session,
+                session.post(f"{self._base_url}/api/v1/rpc", json=payload) as resp,
+            ):
+                if resp.status != 200:
+                    log.error("send failed: HTTP %s (conversation=%s, id=%s)",
+                              resp.status, target.conversation_id, request_id)
+                    return False
+                body = await resp.json()
         except Exception as exc:               # noqa: BLE001 — a send failure is never fatal
             log.error("send failed: %s (conversation=%s, id=%s)",
                       type(exc).__name__, target.conversation_id, request_id)

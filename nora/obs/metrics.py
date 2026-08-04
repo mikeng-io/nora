@@ -121,16 +121,26 @@ class Metrics:
 Metrics.declare("nora_messages_total", "counter", "Ambient messages ingested, by platform.")
 Metrics.declare("nora_tags_total", "counter", "Tags detected and accepted for handling.")
 Metrics.declare("nora_tags_debounced_total", "counter", "Tags dropped by the debounce window.")
-Metrics.declare("nora_tags_dropped_total", "counter", "Tags dropped for a reason other than debounce.")
+Metrics.declare(
+    "nora_tags_dropped_total", "counter", "Tags dropped for a reason other than debounce."
+)
 Metrics.declare("nora_replies_total", "counter", "Delivery attempts, by outcome status.")
 Metrics.declare("nora_errors_total", "counter", "Internal errors, by processing stage.")
-Metrics.declare("nora_silent_failures_total", "counter", "Failures kept silent from the group, by reason.")
+Metrics.declare(
+    "nora_silent_failures_total", "counter", "Failures kept silent from the group, by reason."
+)
 Metrics.declare("nora_guard_vetoes_total", "counter", "ReplyGuard vetoes, by rule.")
-Metrics.declare("nora_leak_blocks_total", "counter", "Replies blocked by the persona/canary leak guard.")
+Metrics.declare(
+    "nora_leak_blocks_total", "counter", "Replies blocked by the persona/canary leak guard."
+)
 Metrics.declare("nora_persona_reload_failures_total", "counter", "Persona hot-reload failures.")
 Metrics.declare("honcho_feed_success", "counter", "Successful Honcho feed calls.")
 Metrics.declare("honcho_feed_failure", "counter", "Failed Honcho feed calls.")
-Metrics.declare("nora_tag_latency_seconds", "histogram", "End-to-end tag latency, including the model call.")
+Metrics.declare(
+    "nora_tag_latency_seconds",
+    "histogram",
+    "End-to-end tag latency, including the model call.",
+)
 Metrics.declare("nora_llm_latency_seconds", "histogram", "Model invocation latency.")
 Metrics.declare("nora_overhead_seconds", "histogram", "Tag latency excluding the model call.")
 Metrics.declare("nora_last_event_age_seconds", "gauge", "Seconds since the last ingest event.")

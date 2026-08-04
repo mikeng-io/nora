@@ -75,7 +75,9 @@ def test_duplicate_sender_id_across_persons_is_a_startup_failure(tmp_path):
 
 def test_person_id_must_satisfy_the_honcho_peer_id_charset(tmp_path):
     p = tmp_path / "persons.yaml"
-    p.write_text("persons:\n  'miles smith':\n    name: Miles\n    platforms:\n      signal: \"+1\"\n")
+    p.write_text(
+        "persons:\n  'miles smith':\n    name: Miles\n    platforms:\n      signal: \"+1\"\n"
+    )
     with pytest.raises(PersonsError, match="person_id"):
         load_persons(p)
 

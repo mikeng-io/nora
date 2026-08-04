@@ -42,7 +42,7 @@ def build_tools(
         """
         try:
             rows = await db.recent(db_path, conversation_id, min(int(limit), 200))
-        except Exception:                     # noqa: BLE001 — a tool never raises into the loop
+        except Exception:
             log.exception("read_buffer failed")
             return []
         return [
@@ -69,7 +69,7 @@ def build_tools(
             if ref is None:
                 return []
             return await honcho.peer_card(ref.honcho_peer_id)
-        except Exception:                     # noqa: BLE001
+        except Exception:
             log.exception("read_peer_card failed")
             return []
 

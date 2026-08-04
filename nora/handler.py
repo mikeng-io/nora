@@ -71,7 +71,7 @@ class Handler:
                 self.cfg.buffer.db_path, msg,
                 max_per_conversation=self.cfg.buffer.max_per_conversation,
             )
-        except Exception:                      # noqa: BLE001 — never kill the listener
+        except Exception:
             log.exception("db append failed; dropping message")
             self.metrics.inc("nora_errors_total", stage="ambient")
             return
@@ -105,7 +105,7 @@ class Handler:
             transcript = tuple(await db.recent(
                 self.cfg.buffer.db_path, msg.conversation_id, self.cfg.buffer.context_window
             ))
-        except Exception:                    # noqa: BLE001 — thinner context beats silence
+        except Exception:
             log.exception("context collection failed; continuing with an empty transcript")
             self.metrics.inc("nora_errors_total", stage="context")
 
@@ -195,7 +195,7 @@ class Handler:
                 log.error("invocation_timeout (tag=%s)", tag_id)
                 self.metrics.inc("nora_silent_failures_total", reason="invocation_timeout")
                 return
-            except Exception:                # noqa: BLE001 — R-5: never speak on failure
+            except Exception:
                 log.exception("llm_error (tag=%s); staying silent", tag_id)
                 self.metrics.inc("nora_silent_failures_total", reason="llm_error")
                 return
@@ -214,7 +214,7 @@ class Handler:
 
             if ctx.tagger is not None:       # step 4: exactly one exchange feed
                 self._spawn(self._feed_exchange(ctx, tagger_name, deliverer))
-        except BaseException:                # noqa: BLE001 — R-5, absolute
+        except BaseException:
             log.exception("handle_tag failed (tag=%s); staying silent", tag_id)
             self.metrics.inc("nora_silent_failures_total", reason="handler_error")
         finally:

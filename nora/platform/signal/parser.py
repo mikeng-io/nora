@@ -54,6 +54,6 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
             body=" ".join(parts),
             raw=event,
         )
-    except Exception:                          # noqa: BLE001 — one bad event never kills the stream
+    except Exception:
         log.exception("unparseable envelope, skipping")
         return None

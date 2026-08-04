@@ -41,7 +41,9 @@ def test_obligation_3_hook_events_expose_cancel_tool_and_retry():
 
     before = {f.name for f in getattr(BeforeToolCallEvent, "__dataclass_fields__", {}).values()} \
         or set(dir(BeforeToolCallEvent))
-    assert "cancel_tool" in before, "DRIFT: BeforeToolCallEvent.cancel_tool is gone (R-2/R-3/R-4/R-7)"
+    assert "cancel_tool" in before, (
+        "DRIFT: BeforeToolCallEvent.cancel_tool is gone (R-2/R-3/R-4/R-7)"
+    )
     for attr in ("tool_use", "invocation_state"):
         assert attr in before, f"DRIFT: BeforeToolCallEvent.{attr} is gone"
 

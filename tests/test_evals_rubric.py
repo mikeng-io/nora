@@ -78,4 +78,5 @@ def test_an_unparseable_judge_response_is_a_review_not_a_pass():
 def test_the_judge_model_is_the_deep_tier():
     from evals.judge import JUDGE_MODEL_TIER
 
-    assert JUDGE_MODEL_TIER == "deep"    # deepseek-v4-pro; grading with the tested model is circular
+    # deepseek-v4-pro; grading with the tested model is circular
+    assert JUDGE_MODEL_TIER == "deep"
