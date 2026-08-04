@@ -43,12 +43,14 @@ from evals.evaluators import (
 )
 from evals.harness import Case, load_cases, run_case
 from evals.judge import _build_judge_prompt, evaluate_raw
-from nora.agent.factory import create_client, create_model_provider
-from nora.agent.guards import LeakGuard
-from nora.config import ConfigError
-from nora.config import load as load_nora_config
-from nora.persona.loader import PersonaStore
-from nora.tag import is_tagged
+from nora.app.eval_support import (
+    LeakGuard,
+    PersonaStore,
+    create_client,
+    create_model_provider,
+    is_tagged,
+    load_eval_config,
+)
 
 CASES_DIR = Path(__file__).resolve().parent / "cases"
 ADVERSARIAL_DIR = Path("evals") / "adversarial"
@@ -110,24 +112,14 @@ def _load_adversarial_cases(paths: tuple[Path, ...]) -> list[dict]:
     return cases
 
 
-def _load_eval_config(loader=load_nora_config, candidates=None):
+def _load_eval_config():
     """`config.toml` (tracked in git, per-deployment) is preferred; `config.example.toml`
-    (committed) is the fallback for a local `config.toml` predating the schema.
-
-    `loader` and `candidates` are injectable so phase 1's format change is a
-    call-site argument, not an edit to this function.
+    (committed) is the fallback for a local `config.toml` predating the schema. The
+    try-in-order loop itself lives in `nora.app.eval_support.load_eval_config` — this
+    just supplies the candidate paths, which are an `evals/`-specific concern.
     """
-    if candidates is None:
-        candidates = (REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml")
-    last_error: ConfigError | None = None
-    for candidate in candidates:
-        try:
-            return loader(candidate)
-        except ConfigError as exc:
-            last_error = exc
-    if last_error is None:
-        raise ValueError("no config candidates provided")
-    raise last_error
+    candidates = (REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml")
+    return load_eval_config(candidates)
 
 
 def _build_adversarial_message(case: dict) -> str:
@@ -167,11 +159,13 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
     where such messages never wake Nora up.
     """
     cfg = _load_eval_config()
-    # `nora.agent.factory` takes explicit scalars, not `nora.config` objects
-    # (Phase 3 closed the one documented `ignore_imports` exception for
-    # this) — `evals/` is outside that contract, so it resolves the config
-    # down to scalars here rather than pushing config objects across the
-    # boundary.
+    # `nora.agent.factory` takes explicit scalars, not `nora.config` objects (Phase 3
+    # closed the one documented `ignore_imports` exception for this), so this resolves
+    # the config down to scalars here rather than pushing the config object itself into
+    # `create_client`/`create_model_provider`. `create_client`/`create_model_provider`
+    # themselves are re-exported through `nora.app.eval_support` — Task 10's boundary
+    # (`evals/` may import `nora.app` and `nora.testing`, nothing else from `nora/`) —
+    # not imported from `nora.agent.factory` directly.
     client = create_client(
         base_url=cfg.llm.base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
     )

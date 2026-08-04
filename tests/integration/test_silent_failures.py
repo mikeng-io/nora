@@ -1,6 +1,6 @@
 import pytest
 
-from tests.integration.harness import ScriptedTurn, group_event
+from nora.testing import ScriptedTurn, group_event
 
 FORBIDDEN = ("error", "sorry", "exception", "traceback", "failed", "unavailable",
              "system", "config", "api key")

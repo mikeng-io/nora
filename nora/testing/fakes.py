@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
+from nora.domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage, TranscriptRow
+from nora.domain.ports import MemoryHealth
 
 
 class FakeAuditStore:
@@ -85,3 +86,109 @@ class FakeAuditStore:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class FakeMemoryStore:
+    """In-memory `MemoryStore`, keyword-only to match the port and
+    `nora.infra.honcho.client.HonchoClient` exactly (unlike `tests/fakes.py`'s
+    older `FakeHoncho`, which predates this file and takes `peer_id`/`text`
+    positionally — a drift mypy never catches because `nora.testing` sits
+    outside its strict scope). `fail=True` simulates the service being down,
+    the same "log and return a benign value" contract `HonchoClient` documents.
+    """
+
+    def __init__(self, *, cards: dict[str, list[str]] | None = None, fail: bool = False) -> None:
+        self.fed: list[tuple[str, str]] = []
+        self.peers: list[str] = []
+        self.cards = cards or {}
+        self.fail = fail
+
+    async def ensure_workspace(self) -> None:
+        return None
+
+    async def ensure_peer(self, *, peer_id: str) -> None:
+        if not self.fail:
+            self.peers.append(peer_id)
+
+    async def feed(self, *, peer_id: str, text: str) -> bool:
+        if self.fail:
+            return False
+        self.fed.append((peer_id, text))
+        return True
+
+    async def peer_card(self, *, peer_id: str) -> list[str]:
+        if self.fail:
+            return []
+        return list(self.cards.get(peer_id, []))
+
+    async def health(self) -> MemoryHealth:
+        return MemoryHealth(reachable=not self.fail)
+
+    async def aclose(self) -> None:
+        return None
+
+
+class FakeAdapter:
+    """Records sends instead of performing them; parses signal-cli-shaped envelopes
+    inline (spec E.3) rather than importing `nora.platform.signal.parser` — `nora.testing`
+    sits below `nora.platform` in the layers contract (`nora.agent | nora.platform` may
+    import `nora.testing`, not the other way around), so this reimplements just the
+    group-message subset of `parse_event` it needs.
+
+    `PlatformAdapter` is a documented, currently-unconformed-by-anything port
+    (`tests/contract/test_port_conformance.py::test_signal_adapter_gap_to_platform_adapter_is_known`
+    pins `SignalAdapter` itself not conforming yet, deferred to the platforms phase) —
+    this fake mirrors `SignalAdapter`'s actual current shape (bare `bool`/`dict`
+    returns, positional `send`), not the port, so it does not newly trigger the
+    "second port implementation needs a contract suite" rule either.
+
+    `_account` (not `own_account`) deliberately matches `SignalAdapter._account`'s
+    name: `nora.engagement.stages.admission`'s R-12 self-tag check reads
+    `adapter._account` directly (its own `_AccountHolder` narrow `Protocol`), so
+    any adapter double must carry that exact attribute name to be admitted through
+    the pipeline at all.
+    """
+
+    platform = "signal"
+
+    def __init__(self, *, succeed: bool = True, account: str = "") -> None:
+        self.sent: list[tuple[ConversationTarget, str]] = []
+        self._succeed = succeed
+        self._account = account
+
+    async def listen(self, on_event) -> None:
+        return None
+
+    async def parse(self, raw_event: dict) -> NormalizedMessage | None:
+        if (raw_event or {}).get("method") != "receive":
+            return None
+        env = ((raw_event.get("params") or {}).get("envelope")) or {}
+        data = env.get("dataMessage")
+        if not isinstance(data, dict):
+            return None
+        group_id = (data.get("groupInfo") or {}).get("groupId")
+        if not group_id:
+            return None
+        source = env.get("source") or ""
+        if self._account and source == self._account:
+            return None
+        text = (data.get("message") or "").strip()
+        if not text:
+            return None
+        return NormalizedMessage(
+            platform="signal", conversation_id=group_id, conversation_type="group",
+            sender_id=source, sender_name=env.get("sourceName") or None,
+            timestamp=int(env.get("timestamp") or data.get("timestamp") or 0),
+            body=text, raw=raw_event,
+        )
+
+    async def send(self, target: ConversationTarget, text: str) -> bool:
+        self.sent.append((target, text))
+        return self._succeed
+
+    async def health(self) -> dict:
+        return {"connected": True, "last_event_age_seconds": 0.0}
+
+    @property
+    def texts(self) -> list[str]:
+        return [text for _, text in self.sent]

@@ -76,6 +76,48 @@ def _imported_dotted_modules(path: Path) -> set[str]:
     return modules
 
 
+EVALS_DIR = ROOT / "evals"
+EVALS_ALLOWED_NORA_PACKAGES = {"app", "testing"}
+
+
+def _evals_files():
+    return [p for p in EVALS_DIR.rglob("*.py") if "__pycache__" not in p.parts]
+
+
+def test_evals_only_imports_nora_app_and_nora_testing():
+    """`evals/` may import `nora.app` and `nora.testing` and nothing else from
+    `nora/` (spec §4.1: "evals/ may import nora.app and nora.testing — nothing
+    else"). `pyproject.toml`'s "evals may only reach nora.app and nora.testing"
+    import-linter contract enforces the same rule but only over evals' own
+    DIRECT imports (`allow_indirect_imports = "True"` — otherwise `nora.app`
+    itself legitimately importing `nora.agent`/`nora.persona`/etc. internally
+    would falsely flag evals for transitively reaching them). This allowlist
+    check is the one of the two that also survives a brand new nora subpackage
+    being added later, with no edit needed here."""
+    offenders = []
+    for path in _evals_files():
+        for mod in _imported_dotted_modules(path):
+            if mod != "nora" and not mod.startswith("nora."):
+                continue
+            package = mod.split(".", 2)[1] if mod.count(".") >= 1 else None
+            if package not in EVALS_ALLOWED_NORA_PACKAGES:
+                offenders.append(f"{path.relative_to(ROOT)}: {mod}")
+    assert not offenders, f"evals/ may import only nora.app and nora.testing: {offenders}"
+
+
+def test_evals_never_imports_tests():
+    """`evals/` may not import `tests/` at all — Task 10 closed
+    `evals/harness.py`'s `from tests.integration.harness import ScriptedTurn,
+    build_handler, group_event`, the coupling that used to leave `evals/`
+    dependent on the test package (spec §8); this pins it stays closed."""
+    offenders = []
+    for path in _evals_files():
+        for mod in _imported_dotted_modules(path):
+            if mod == "tests" or mod.startswith("tests."):
+                offenders.append(f"{path.relative_to(ROOT)}: {mod}")
+    assert not offenders, f"evals/ must not import tests/: {offenders}"
+
+
 def test_domain_imports_only_the_standard_library():
     """domain/ may import the stdlib and its own siblings — nothing else.
     A deny-list only catches names someone thought of; this catches everything.

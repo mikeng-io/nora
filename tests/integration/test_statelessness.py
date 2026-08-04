@@ -1,4 +1,4 @@
-from tests.integration.harness import ScriptedTurn, group_event
+from nora.testing import ScriptedTurn, group_event
 
 
 def _script(text):

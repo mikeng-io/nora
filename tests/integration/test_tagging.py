@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from nora.domain.models import DeliveryStatus
-from tests.integration.harness import ScriptedTurn, group_event
+from nora.testing import ScriptedTurn, group_event
 
 
 def _reply_script(text="今晚七點半得", conv="g1"):

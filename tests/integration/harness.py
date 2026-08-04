@@ -7,6 +7,14 @@ persona files, with only the model and the outbound sender faked. This is Task 8
 cutover from the deleted `Handler`: the wiring below is the harness-side mirror of
 `nora.app.composition.build_dependencies`, using `nora.testing`/local fakes wherever
 `build_dependencies` would use a real collaborator.
+
+`ScriptedTurn`, `FakeAgentRunner`, and `group_event` moved to `nora.testing` in Task
+10 (Phase 3): `evals/harness.py` needed the same scripted-model double and event
+builder without importing `tests/`, so there is one definition, imported here and
+there. The ingest+engagement+dispatcher wiring tail itself moved to
+`nora.app.offline.build_offline_pipeline` for the same reason — `evals/` may import
+`nora.app` and `nora.testing` only, so that function is what it calls instead of
+duplicating this module's pipeline assembly.
 """
 
 from __future__ import annotations
@@ -18,23 +26,20 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-from nora.agent import factory
 from nora.app.dispatch import Dispatcher
+from nora.app.offline import build_offline_pipeline
 from nora.app.runtime import BackgroundTasks
 from nora.config import Config
 from nora.domain.models import DeliveryStatus
 from nora.domain.ports import AuditStore
-from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.ingest.pipeline import IngestPipeline
-from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from nora.persons import load_persons
-from nora.tag import Debounce
+from nora.testing import FakeAgentRunner, ScriptedTurn
 from tests.builders import load_example_config, override_config
 from tests.fakes import FakeHoncho, SinkSender
 
@@ -49,81 +54,6 @@ _DEFAULT_IDENTITY_TOML = (
     "[persons.miles.platforms]\n"
     "signal = \"+852111\"\n"
 )
-
-
-def group_event(*, body: str, sender: str = "+852111", conv: str = "g1",
-                name: str = "Miles", ts: int = 1) -> dict:
-    return {"method": "receive", "params": {"envelope": {
-        "source": sender, "sourceName": name, "timestamp": ts,
-        "dataMessage": {"message": body, "groupInfo": {"groupId": conv}, "timestamp": ts}}}}
-
-
-@dataclasses.dataclass
-class ScriptedTurn:
-    """One model turn: tool calls to perform, then the final text.
-
-    `bypass_guard` is an escape hatch for tests that specifically exercise a lower
-    layer's own defenses (e.g. Deliverer's own empty-text/leak checks) independent of
-    ReplyGuard's pre-tool veto — everywhere else it stays False and behavior is
-    unchanged.
-    """
-    tool_calls: list[tuple[str, dict]] = dataclasses.field(default_factory=list)
-    final_text: str = ""
-    bypass_guard: bool = False
-
-
-class FakeAgentRunner:
-    """Replays a scripted turn sequence against the real tools and the real guards.
-
-    Satisfies `nora.engagement.stages.invoke.AgentRunner` — the injected-collaborator
-    seam spec §10's test-seam policy requires (never an `_invoke_fn` hook on a
-    production class, which is what the deleted `Handler` did). Stands in for
-    `nora.app.agent_runner.LiveAgentRunner`: what M5 must prove is *our*
-    orchestration, not Strands' agent loop (M0's contract test covers that).
-
-    `on_call`, if given, is invoked with this call's kwargs before anything else —
-    the hook `Harness` uses to keep a cumulative call log that survives `set_script`
-    swapping the active runner mid-test (statelessness scenario 9). This is
-    TEST-side bookkeeping only, unbounded for exactly as long as one test's harness
-    lives — nothing production retains it, which is the property Task 8 exists to
-    restore after `Handler._prefills`/`_guards`.
-    """
-
-    def __init__(self, turns: list[ScriptedTurn] | None = None, *, delay: float = 0.0,
-                 raises: Exception | None = None,
-                 on_call: Callable[[dict], None] | None = None) -> None:
-        self.turns = turns or []
-        self.delay = delay
-        self.raises = raises
-        self._on_call = on_call
-        self.invocations = 0
-
-    async def invoke(self, **kwargs) -> None:
-        self.invocations += 1
-        if self._on_call is not None:
-            self._on_call(kwargs)
-        if self.delay:
-            await asyncio.sleep(self.delay)
-        if self.raises:
-            raise self.raises
-        tools_by_name = {t.tool_name: t for t in kwargs["tools"]}
-        guard = kwargs["guard"]
-        for turn in self.turns:
-            for name, args in turn.tool_calls:
-                if not turn.bypass_guard:
-                    veto = guard.evaluate(name, args)
-                    if veto:
-                        continue                   # the model sees the correction and moves on
-                await _invoke_tool(tools_by_name[name], **args)
-                guard.record(name)
-
-
-async def _invoke_tool(tool, **kwargs):
-    """Call a Strands @tool-decorated function the way a scripted turn exercises it."""
-    result = tool(**kwargs)
-    if asyncio.iscoroutine(result):
-        result = await result
-    return result
 
 
 class _StoreProxy:
@@ -431,30 +361,10 @@ async def build_handler(
         persona_store.get(applies_to="tag")     # warm the last-good cache before corrupting
         (persona_copy_dir / "guardrails.md").write_text("not valid persona content\n")
 
-    background = BackgroundTasks()
-    debounce_obj = Debounce(cfg.engagement.trigger.min_interval_seconds)
-    policy = TriggerTextPolicy(cfg.engagement.trigger.text)
-    assembler = TranscriptInjection(
-        audit=store, memory=honcho_double, persons=persons,
-        context_window=cfg.store.context_window, metrics=metrics,
+    dispatcher, engagement, background = build_offline_pipeline(
+        cfg, adapter=adapter, audit=store, memory=honcho_double, persons=persons,
+        persona_store=persona_store, runner=runner, metrics=metrics,
     )
-    ingest = IngestPipeline(
-        adapter=adapter, audit=store, memory=honcho_double, persons=persons,
-        policy=policy, metrics=metrics, spawn=background.spawn,
-    )
-    tier = cfg.llm.tiers.flash
-    limits = factory.build_limits(
-        max_tokens=tier.max_tokens, turns=tier.limits.turns, total_tokens=tier.limits.total_tokens,
-    )
-    engagement = EngagementPipeline(
-        adapter=adapter, audit=store, memory=honcho_double, persons=persons,
-        persona_store=persona_store, context_assembler=assembler, runner=runner,
-        debounce=debounce_obj, canary=cfg.persona.canary, display_name=cfg.persona.display_name,
-        nora_sender_id=cfg.platforms.signal.nora_sender_id,
-        context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
-        limits=limits, metrics=metrics, llm_state=None,
-    )
-    dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement)
 
     harness = Harness(
