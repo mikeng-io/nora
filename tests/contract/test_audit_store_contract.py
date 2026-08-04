@@ -85,11 +85,29 @@ async def test_set_delivery_status_is_visible_in_recent(store):
         is DeliveryStatus.SENT
 
 
+async def test_set_delivery_status_updates_only_the_matching_row(store):
+    first = await store.append(message=_msg(body="first"))
+    await store.append(message=_msg(body="second", ts=2))
+    await store.set_delivery_status(row_id=first, status=DeliveryStatus.SENT)
+    by_body = {r.body: r for r in await store.recent(conversation_id="g1", limit=10)}
+    assert by_body["first"].delivery_status is DeliveryStatus.SENT
+    assert by_body["second"].delivery_status is DeliveryStatus.PENDING
+
+
+async def test_row_ids_are_positive_and_start_at_one(store):
+    """SQLite AUTOINCREMENT starts at 1. A 0-based fake would make the first
+    id falsy, so any `if row_id:` would behave differently against the fake
+    than against production — the drift this suite exists to prevent."""
+    assert await store.append(message=_msg()) == 1
+    assert await store.append(message=_msg(ts=2)) == 2
+
+
 async def test_stats_reports_totals(store):
-    await store.append(message=_msg())
+    await store.append(message=_msg(conv="g1"))
+    await store.append(message=_msg(conv="g1", body="second"))
     await store.append(message=_msg(conv="g2"), is_nora=True)
     s = await store.stats()
-    assert s["messages"] == 2
+    assert s["messages"] == 3
     assert s["conversations"] == 2
     assert s["nora_messages"] == 1
 
@@ -104,6 +122,10 @@ async def test_recent_rows_are_transcript_rows_not_dicts(store):
 
 
 def test_both_implementations_satisfy_the_port():
-    """Static conformance is checked by mypy on nora.infra; this is the runtime
-    half, and it covers the fake, which mypy's scope does not include."""
+    """`AuditStore` is `@runtime_checkable`, so this `isinstance` check verifies
+    method **names only** — not signatures, not keyword-only-ness, not return
+    types. Static conformance (the part that actually checks shape) is mypy's
+    job on `nora.infra`. This is nonetheless the only mechanical check that
+    `FakeAuditStore` has every port method at all, since `nora.testing` sits
+    outside mypy's gate scope."""
     assert isinstance(FakeAuditStore(), AuditStore)
