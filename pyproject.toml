@@ -10,6 +10,8 @@ dependencies = [
     "openai>=1.40",
     "PyYAML>=6.0",
     "pydantic>=2.8",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
@@ -49,7 +51,7 @@ warn_unused_ignores = true
 # out here so this override only tightens nora.domain/config/app and does
 # not silently tighten nora.obs, nora.store, etc.
 [[tool.mypy.overrides]]
-module = ["nora.domain.*", "nora.config", "nora.app.*"]
+module = ["nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*"]
 disallow_any_generics = true
 disallow_subclassing_any = true
 disallow_untyped_calls = true
@@ -142,7 +144,6 @@ as_packages = false
 
 [dependency-groups]
 dev = [
-    "alembic>=1.13",
     "import-linter>=2.0",
     "mypy>=1.11",
     "pytest>=8.0",
