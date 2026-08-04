@@ -965,11 +965,15 @@ async def test_wal_is_enabled(tmp_path):
         await engine.dispose()
 
 
-async def test_busy_timeout_is_set(tmp_path):
-    engine = create_sql_engine(tmp_path / "m.db", busy_timeout_ms=5000)
+async def test_busy_timeout_is_set_to_the_configured_value(tmp_path):
+    """Deliberately NOT 5000. Python's `sqlite3.connect()` defaults to
+    `timeout=5.0`, i.e. `PRAGMA busy_timeout=5000` — identical to this engine's
+    default, so asserting 5000 would pass even if the connect hook never ran.
+    Verified 2026-08-05. A non-default value is what makes this able to fail."""
+    engine = create_sql_engine(tmp_path / "m.db", busy_timeout_ms=1234)
     try:
         async with engine.connect() as conn:
-            assert await conn.scalar(sa.text("PRAGMA busy_timeout")) == 5000
+            assert await conn.scalar(sa.text("PRAGMA busy_timeout")) == 1234
     finally:
         await engine.dispose()
 
@@ -985,13 +989,20 @@ async def test_foreign_keys_are_on(tmp_path):
 
 async def test_pragmas_apply_to_every_pooled_connection(tmp_path):
     """The regression this guards: setting PRAGMAs once at construction rather
-    than on the connect event. Two sequential checkouts must both see them."""
-    engine = create_sql_engine(tmp_path / "m.db")
+    than on the connect event.
+
+    Asserts only the two genuinely per-connection PRAGMAs. `journal_mode` is
+    deliberately excluded: WAL is recorded in the database FILE HEADER and
+    persists across connections, so a second connection reports `wal` whether
+    or not the hook ran — including under the very one-shot implementation this
+    test exists to reject. `foreign_keys` is 0 on every fresh connection, which
+    is what makes it discriminating. Verified 2026-08-05."""
+    engine = create_sql_engine(tmp_path / "m.db", busy_timeout_ms=1234)
     try:
-        for _ in range(2):
+        for _ in range(3):
             async with engine.connect() as conn:
                 assert await conn.scalar(sa.text("PRAGMA foreign_keys")) == 1
-                assert await conn.scalar(sa.text("PRAGMA busy_timeout")) == 5000
+                assert await conn.scalar(sa.text("PRAGMA busy_timeout")) == 1234
     finally:
         await engine.dispose()
 
@@ -1070,7 +1081,15 @@ Expected: 6 passed.
 
 Comment out the three `cursor.execute("PRAGMA ...")` lines in `_set_pragmas`.
 Run: `uv run pytest tests/infra/test_engine.py -q`
-Expected: `test_wal_is_enabled`, `test_busy_timeout_is_set`, `test_foreign_keys_are_on` and `test_pragmas_apply_to_every_pooled_connection` all FAIL. Restore.
+Expected: `test_wal_is_enabled`, `test_busy_timeout_is_set_to_the_configured_value`,
+`test_foreign_keys_are_on` and `test_pragmas_apply_to_every_pooled_connection` all FAIL. Restore.
+
+**Second, sharper probe — the one the naive tests could not catch.** Remove the
+`@event.listens_for(...)` decorator and instead execute the three PRAGMAs once against a
+single connection just before `create_sql_engine` returns, i.e. a one-shot.
+Run: `uv run pytest tests/infra/test_engine.py -q`
+Expected: `test_pragmas_apply_to_every_pooled_connection` FAILS (along with the two other
+per-connection tests), while the URL and parent-directory tests still pass. Restore.
 
 - [ ] **Step 6: Export and commit**
 
