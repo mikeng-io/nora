@@ -1123,7 +1123,11 @@ failing with the hook body removed."
 
 **Interfaces:**
 - Consumes: `create_sql_engine` (Task 3), `MESSAGES` (Task 1), `run_migrations` (Task 2), and from `nora.domain.models`: `NormalizedMessage`, `TranscriptRow`, `DeliveryStatus`.
-- Produces: `SqlAuditStore(engine: AsyncEngine, *, max_per_conversation: int = 500, metrics: Metrics = METRICS)`, with `async append(*, message, is_nora=False, delivery_status=DeliveryStatus.PENDING) -> int` and `async recent(*, conversation_id: str, limit: int) -> list[TranscriptRow]`.
+- Produces: `SqlAuditStore(engine: AsyncEngine, *, max_per_conversation: int = 500, metrics: Any = None)`, with `async append(*, message, is_nora=False, delivery_status=DeliveryStatus.PENDING) -> int`, `async recent(*, conversation_id: str, limit: int) -> list[TranscriptRow]`, and `async aclose() -> None`.
+
+**`aclose` lands here, not in Task 5**, because this task's own `make_store` fixture
+disposes each store in teardown — a fixture cannot clean up a method that does not exist
+yet. Its two tests come with it; Task 5 no longer carries them.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1237,6 +1241,26 @@ async def test_concurrent_appends_all_land(store):
     assert len(await store.recent(conversation_id="g1", limit=1000)) == 50
 
 
+async def test_aclose_releases_the_connection_pool(make_store):
+    """`aclose` delegates to `AsyncEngine.dispose()`, which releases pooled
+    connections and installs a fresh pool. It deliberately does NOT poison the
+    engine — verified 2026-08-05: a query after `dispose()` succeeds, opening a
+    new connection. So this asserts the pool was actually replaced, which is
+    the guarantee, rather than asserting a later call raises, which it does
+    not."""
+    store = make_store()
+    await store.append(message=_msg())
+    pool_before = store._engine.pool
+    await store.aclose()
+    assert store._engine.pool is not pool_before
+
+
+async def test_aclose_is_idempotent(make_store):
+    store = make_store()
+    await store.aclose()
+    await store.aclose()
+
+
 async def test_an_invalid_conversation_type_is_rejected_by_the_check_constraint(store):
     """`IntegrityError`, not a bare `Exception`: ruff's B017 rejects a blind
     `pytest.raises(Exception)` and `tests/**` does not ignore it, so a blind
@@ -1335,7 +1359,10 @@ class SqlAuditStore:
         except OperationalError as exc:
             self._note_busy(exc)
             raise
-        return int(result.inserted_primary_key[0])
+        # `lastrowid`, not `inserted_primary_key[0]`: the latter is typed
+        # `Any | None` and fails strict mypy with "not indexable". `lastrowid`
+        # is a plain `int` and is what the legacy `db.append` used too.
+        return int(result.lastrowid)
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
         """Newest `limit` rows for one conversation, returned oldest-first."""
@@ -1365,6 +1392,9 @@ class SqlAuditStore:
             for r in reversed(rows)
         ]
 
+    async def aclose(self) -> None:
+        await self._engine.dispose()
+
     def _note_busy(self, exc: OperationalError) -> None:
         if self._metrics is not None and "database is locked" in str(exc).lower():
             self._metrics.inc("nora_store_busy_total")
@@ -1385,7 +1415,7 @@ Add `nora_store_busy_total` to `nora/obs/metrics.py`'s declarations, next to the
 - [ ] **Step 5: Run the tests**
 
 Run: `uv run pytest tests/infra/test_audit_store.py -q`
-Expected: 9 passed.
+Expected: 11 passed.
 
 - [ ] **Step 6: Update the ports docstring**
 
@@ -1428,7 +1458,7 @@ failed append — silent audit loss. Pruning becomes a periodic sweep."
 - Test: `tests/infra/test_audit_store.py`
 
 **Interfaces:**
-- Produces: `async set_delivery_status(*, row_id: int, status: DeliveryStatus) -> None`, `async stats() -> dict[str, Any]`, `async prune_all() -> int`, `async aclose() -> None`. `stats()` keys are `messages`, `conversations`, `nora_messages`, `latest_ts`, `schema_revision`.
+- Produces: `async set_delivery_status(*, row_id: int, status: DeliveryStatus) -> None`, `async stats() -> dict[str, Any]`, `async prune_all() -> int`. (`aclose` moved to Task 4 — its fixture needs it.) `stats()` keys are `messages`, `conversations`, `nora_messages`, `latest_ts`, `schema_revision`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1481,31 +1511,12 @@ async def test_prune_all_is_a_no_op_below_the_window(store):
     await store.append(message=_msg())
     assert await store.prune_all() == 0
 
-
-async def test_aclose_releases_the_connection_pool(make_store):
-    """`aclose` delegates to `AsyncEngine.dispose()`, which releases pooled
-    connections and installs a fresh pool. It deliberately does NOT poison the
-    engine — verified 2026-08-05: a query after `dispose()` succeeds, opening a
-    new connection. So this asserts the pool was actually replaced, which is
-    the guarantee, rather than asserting a later call raises, which it does
-    not."""
-    store = make_store()
-    await store.append(message=_msg())
-    pool_before = store._engine.pool
-    await store.aclose()
-    assert store._engine.pool is not pool_before
-
-
-async def test_aclose_is_idempotent(make_store):
-    store = make_store()
-    await store.aclose()
-    await store.aclose()
 ```
 
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `uv run pytest tests/infra/test_audit_store.py -q`
-Expected: 7 failures, all `AttributeError: 'SqlAuditStore' object has no attribute 'set_delivery_status'` / `'stats'` / `'prune_all'` / `'aclose'`.
+Expected: 5 failures, all `AttributeError: 'SqlAuditStore' object has no attribute 'set_delivery_status'` / `'stats'` / `'prune_all'`.
 
 - [ ] **Step 3: Implement the four methods**
 
@@ -1569,8 +1580,6 @@ Add to `SqlAuditStore` in `nora/infra/sql/audit.py`:
             raise
         return int(result.rowcount or 0)
 
-    async def aclose(self) -> None:
-        await self._engine.dispose()
 ```
 
 Add the import at the top of the module:
