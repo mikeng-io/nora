@@ -59,7 +59,8 @@ avoid:
   per-peer state, and person-centric identity means the same peer id can be
   hit from two platforms at the same moment. The lock that makes this true
   landed here, in this phase — a per-peer `asyncio.Lock`
-  (`nora/infra/honcho/client.py:41`), not in a later one; the invariant is
+  (`HonchoClient._peer_lock` in `nora/infra/honcho/client.py`), not in a
+  later one; the invariant is
   declared here so a static conformance check (mypy on `nora.infra`) has
   something to hold the implementation to.
 
