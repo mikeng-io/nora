@@ -222,6 +222,6 @@ class LangfuseEvalSink:
                     return None
                 data = await r.json()
                 return data if isinstance(data, dict) else None
-        except Exception:  # never load-bearing, see class docstring
-            log.warning("langfuse eval sink POST %s failed", url, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 -- never load-bearing, see class docstring
+            log.warning("langfuse eval sink POST %s failed: %s", url, exc)
             return None
