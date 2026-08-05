@@ -10,7 +10,7 @@ RULE_TESTS = {
     "R-1": "test_ambient_never_constructs_agent",
     "R-2": "test_second_send_reply_is_cancelled",
     "R-2b": "test_deliverer_latch_is_single_shot",
-    "R-3": "test_send_to_other_group_is_cancelled",
+    "R-3": "test_send_to_other_group_cannot_escape_the_tagged_conversation",
     "R-4": "test_empty_reply_not_sent",
     "R-5": "test_silent_failure_matrix",
     "R-6": "test_leak_guard_blocks_canary",

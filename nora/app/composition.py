@@ -40,7 +40,7 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
 from nora.ingest.pipeline import IngestPipeline
-from nora.ingest.policy import TriggerTextPolicy
+from nora.ingest.policy import CompositePolicy, MentionPolicy, TriggerTextPolicy
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona, PersonaError, PersonaStore
@@ -190,7 +190,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     background = BackgroundTasks()
     debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
 
-    policy = TriggerTextPolicy(cfg.engagement.trigger.text)
+    # First match wins, deterministic text first. The mention policy uses the
+    # same alias set R-12 uses to refuse self-tags — an @-mention arrives as
+    # U+FFFC in the body plus a `mentions` array, so a substring trigger can
+    # never see it, and tagging her the obvious way used to produce ingest,
+    # attribution and silence.
+    policy = CompositePolicy((
+        TriggerTextPolicy(cfg.engagement.trigger.text),
+        MentionPolicy(registry.identity_for("signal").aliases),
+    ))
     assembler = TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
         context_window=cfg.store.context_window, metrics=metrics,

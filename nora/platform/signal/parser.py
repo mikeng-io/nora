@@ -19,6 +19,27 @@ def _attachment_placeholder(att: dict) -> str:
     return f"[attachment: {att.get('filename') or att.get('id') or 'file'}]"
 
 
+def _mentioned_ids(data: dict) -> frozenset[str]:
+    """Every id form Signal gives for each @-mention in this message.
+
+    A Signal mention is not text. The body carries U+FFFC (OBJECT REPLACEMENT
+    CHARACTER) where the name appears, and `dataMessage.mentions` carries
+    `{name, number, uuid, start, length}` alongside it — so an @-mention is
+    structurally invisible to a substring trigger match. Both the number and
+    the uuid are kept, because which one is present depends on the same
+    sealed-sender rules that govern `sourceUuid`.
+    """
+    out: set[str] = set()
+    for m in data.get("mentions") or []:
+        if not isinstance(m, dict):
+            continue
+        for key in ("uuid", "number", "name"):
+            value = m.get(key)
+            if isinstance(value, str) and value:
+                out.add(value)
+    return frozenset(out)
+
+
 def _body_parts(data: dict) -> list[str]:
     """The renderable pieces of one dataMessage, in reading order.
 
@@ -134,6 +155,7 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
             timestamp=int(env.get("timestamp") or data.get("timestamp") or 0),
             body=" ".join(parts),
             raw=event,
+            mentions=_mentioned_ids(data),
         )
     except Exception:
         log.exception("unparseable envelope, skipping")

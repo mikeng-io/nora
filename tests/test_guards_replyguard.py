@@ -29,11 +29,23 @@ def test_second_send_reply_is_cancelled():
     assert m.get("nora_guard_vetoes_total", rule="R-2") == 1
 
 
-def test_send_to_other_group_is_cancelled():
+def test_send_to_another_conversation_cannot_escape_scope_and_is_counted():
+    """R-3 holds BY CONSTRUCTION, not by veto.
+
+    `send_reply` ignores this argument entirely — it calls
+    `deliverer.deliver(text)`, and `Deliverer` holds its target bound from
+    construction — so a foreign `conversation_id` cannot address another
+    conversation no matter what the model writes. Vetoing on it protected
+    nothing and made a model that cannot echo a base64 group id verbatim
+    structurally unable to reply: on the first real tag, three send_reply calls
+    were cancelled this way and the turn ended `no_send_call`.
+
+    The probe is still a model reaching outside its scope, so it is counted.
+    """
     m = Metrics()
-    msg = _guard(m).evaluate("send_reply", _send(conversation_id="g2"))
-    assert msg is not None and "this conversation" in msg
-    assert m.get("nora_guard_vetoes_total", rule="R-3") == 1
+    assert _guard(m).evaluate("send_reply", _send(conversation_id="g2")) is None
+    assert m.get("nora_tool_scope_violations_total", tool="send_reply") == 1
+    assert m.get("nora_guard_vetoes_total", rule="R-3") == 0
 
 
 def test_empty_reply_is_cancelled_before_the_tool_runs():
@@ -73,11 +85,15 @@ def test_an_unknown_tool_is_cancelled():
     assert _guard().evaluate("rm_rf", {}) is not None
 
 
-def test_read_buffer_to_another_conversation_is_cancelled():
+def test_read_buffer_to_another_conversation_is_counted_not_cancelled():
+    """Same construction argument as send_reply: `read_buffer` reads the
+    closure's bound conversation and ignores this value (Phase 8 Task 1, which
+    closed a real cross-group READ leak). The row it returns is scoped whatever
+    the model asks for, so the probe is counted rather than vetoed."""
     m = Metrics()
-    msg = _guard(m).evaluate("read_buffer", {"conversation_id": "g2"})
-    assert msg is not None
-    assert m.get("nora_guard_vetoes_total", rule="R-3") == 1
+    assert _guard(m).evaluate("read_buffer", {"conversation_id": "g2"}) is None
+    assert m.get("nora_tool_scope_violations_total", tool="read_buffer") == 1
+    assert m.get("nora_guard_vetoes_total", rule="R-3") == 0
 
 
 def test_counters_are_per_guard_instance():
@@ -88,8 +104,12 @@ def test_counters_are_per_guard_instance():
     assert b.evaluate("send_reply", _send()) is None
 
 
-def test_a_missing_conversation_id_is_cancelled():
-    assert _guard().evaluate("send_reply", {"text": "hi"}) is not None
+def test_a_missing_conversation_id_no_longer_blocks_the_reply():
+    """It used to be a hard veto. The bound target makes it irrelevant, and a
+    model that simply omits the field would otherwise never be able to speak."""
+    m = Metrics()
+    assert _guard(m).evaluate("send_reply", {"text": "hi"}) is None
+    assert m.get("nora_tool_scope_violations_total", tool="send_reply") == 1
 
 
 def test_evaluate_does_not_mutate_counts():

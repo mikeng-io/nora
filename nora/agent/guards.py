@@ -221,17 +221,22 @@ class ReplyGuard(HookProvider):
                        f"Use {_list_tool_names(self._budgets)}.",
             )
 
+        # R-3 — scope, now held BY CONSTRUCTION rather than by veto. Both
+        # tools ignore this argument: `read_buffer` reads the closure value
+        # (Task 1's cross-group leak fix) and `send_reply` calls
+        # `deliverer.deliver(text)`, whose `Deliverer` holds its target bound
+        # from construction. The argument is INERT, so vetoing on it protected
+        # nothing while making a weak model unable to speak at all — on the
+        # first real tag the model echoed a wrong group id three times, R-3
+        # cancelled each, and the turn ended `no_send_call`. A mismatch is
+        # still a model reaching outside its scope, so it is counted.
         target = (tool_input or {}).get("conversation_id")
-        if tool_name in ("send_reply", "read_buffer"):
-            if not target:
-                return self._veto("R-3", "conversation_id is required and must be the "
-                                         "conversation you were tagged in.")
-            if target != self._conversation_id:
-                log.error("cross_conversation_send_blocked: %s != %s",
-                          target, self._conversation_id)
-                return self._veto(
-                    "R-3", "You may only act on this conversation — the one that tagged you.",
-                )
+        if tool_name in ("send_reply", "read_buffer") and target != self._conversation_id:
+            log.warning(
+                "tool scope mismatch on %s: model supplied %r, using the bound %r",
+                tool_name, target, self._conversation_id,
+            )
+            self._metrics.inc("nora_tool_scope_violations_total", tool=tool_name)
 
         if self.counts[tool_name] >= self._budgets[tool_name]:
             if tool_name == "send_reply":

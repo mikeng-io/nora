@@ -51,3 +51,61 @@ def test_code_span_stripping_leaves_surrounding_text_taggable():
 def test_unclosed_fence_swallows_the_rest():
     """An unterminated fence is treated as code to the end — a conservative miss."""
     assert is_tagged("```\nnora.000", TRIGGER) is False
+
+
+# ── @-mentions (the trigger an operator reaches for first) ──────────────────
+
+
+def _mention_msg(mentions, body="￼ who are u"):
+    from nora.domain.models import NormalizedMessage
+    return NormalizedMessage(
+        "signal", "g1", "group", "+8521", "Miles", 1, body, {},
+        mentions=frozenset(mentions),
+    )
+
+
+NORA_ACI = "a1000000-0000-4000-8000-000000000000"
+
+
+async def test_an_at_mention_of_nora_engages():
+    """The real envelope from the live group. Signal puts U+FFFC in the body
+    and the mentioned ids in a parallel array, so `is_tagged` cannot see it —
+    tagging her the obvious way produced ingest, attribution, and silence."""
+    from nora.ingest.policy import MentionPolicy
+    policy = MentionPolicy(frozenset({"+85290000100", NORA_ACI}))
+    d = await policy.should_engage(message=_mention_msg({NORA_ACI}))
+    assert d.engage is True
+    assert d.reason == "mention"
+
+
+async def test_a_mention_of_somebody_else_does_not_engage():
+    from nora.ingest.policy import MentionPolicy
+    policy = MentionPolicy(frozenset({NORA_ACI}))
+    d = await policy.should_engage(message=_mention_msg({"someone-else-uuid"}))
+    assert d.engage is False
+
+
+async def test_no_mentions_at_all_does_not_engage():
+    from nora.ingest.policy import MentionPolicy
+    policy = MentionPolicy(frozenset({NORA_ACI}))
+    assert (await policy.should_engage(message=_mention_msg(set(), "hello"))).engage is False
+
+
+async def test_an_empty_self_id_set_never_engages():
+    """Degraded identity must not make her answer everything. Before DEC-19
+    the alias set was `{primary}` on every start, so this is the state the
+    codebase actually shipped in for months."""
+    from nora.ingest.policy import MentionPolicy
+    policy = MentionPolicy(frozenset())
+    assert (await policy.should_engage(message=_mention_msg({NORA_ACI}))).engage is False
+
+
+async def test_trigger_text_still_wins_first_in_the_composite():
+    from nora.ingest.policy import CompositePolicy, MentionPolicy, TriggerTextPolicy
+    p = CompositePolicy((TriggerTextPolicy("nora.000"), MentionPolicy(frozenset({NORA_ACI}))))
+    text = await p.should_engage(message=_mention_msg(set(), "nora.000 hi"))
+    assert text.engage is True and text.reason == "trigger_text"
+    men = await p.should_engage(message=_mention_msg({NORA_ACI}))
+    assert men.engage is True and men.reason == "mention"
+    neither = await p.should_engage(message=_mention_msg(set(), "just chatting"))
+    assert neither.engage is False

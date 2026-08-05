@@ -26,6 +26,12 @@ class NormalizedMessage:
     timestamp: int                 # ms epoch, platform-provided
     body: str                      # text + attachment placeholders
     raw: dict[str, Any]            # full envelope, persisted as raw_json
+    # Ids the sender @-mentioned, in whatever forms the platform supplied.
+    # Structural, NOT text: Signal replaces a mention in `body` with U+FFFC
+    # (OBJECT REPLACEMENT CHARACTER) and carries who was mentioned in a
+    # parallel array, so a mention is invisible to any substring match.
+    # Defaulted so every existing positional construction stays valid.
+    mentions: frozenset[str] = frozenset()
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(self.platform, self.conversation_id, self.conversation_type)

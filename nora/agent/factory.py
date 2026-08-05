@@ -41,10 +41,32 @@ def create_client(*, base_url: str, api_key: str) -> AsyncOpenAI:
 def create_model_provider(
     *, model: str, max_tokens: int, temperature: float, client: AsyncOpenAI
 ) -> OpenAIModel:
+    """`tool_choice="required"` is load-bearing, not a tuning knob.
+
+    `send_reply` is a tool, and it is the ONLY way Nora can speak (A9, R-2).
+    `deepseek-v4-flash` — the configured tier — does not emit `tool_calls` on
+    its own: given an explicit tool definition AND a system prompt demanding
+    one, it answers in plain text with `finish_reason="stop"`, verified
+    directly against the gateway. `tool_choice="auto"` changes nothing;
+    `"required"` produces the call every time.
+
+    Without it every tag ran the model, got prose, and dropped it as
+    `no_send_call` — Nora reacted 👀 then ⚠️ and never spoke. The failure was
+    honest and counted, which is how it was found on the first real tag, but
+    it made her structurally mute.
+
+    This constrains the model to call SOME tool, not `send_reply` specifically,
+    so `read_buffer`/`read_peer_card` remain reachable and R-7's default-deny
+    is untouched.
+    """
     return OpenAIModel(
         model_id=model,
         client=client,
-        params={"max_tokens": max_tokens, "temperature": temperature},
+        params={
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "tool_choice": "required",
+        },
     )
 
 

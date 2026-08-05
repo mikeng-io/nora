@@ -60,15 +60,37 @@ async def test_second_send_reply_is_cancelled(harness_factory):
     assert h.metrics.get("nora_guard_vetoes_total", rule="R-2") == 1
 
 
-async def test_send_to_other_group_is_cancelled(harness_factory):
-    """R-3 end-to-end."""
+async def test_send_to_other_group_cannot_escape_the_tagged_conversation(harness_factory):
+    """R-3 end-to-end, asserting the invariant rather than the mechanism.
+
+    The rule is "a reply may only reach the conversation that produced the
+    tag". This used to be enforced by VETOING a mismatched `conversation_id`
+    argument; it is now enforced by the argument being inert — `send_reply`
+    calls `deliverer.deliver(text)` and `Deliverer` holds its target bound from
+    construction. That is strictly stronger: the old check could be satisfied
+    by a model echoing the right string, whereas nothing the model writes can
+    change where the message goes.
+
+    It also had to change. Vetoing meant a model that cannot reproduce a base64
+    group id verbatim could never reply at all — on the first real tag,
+    `deepseek-v4-flash` supplied a wrong id three times and the turn died
+    `no_send_call`.
+
+    So: the model asks for `gEVIL`, and the reply goes to the tagged
+    conversation anyway, with the probe counted.
+    """
     h = await harness_factory(script=[ScriptedTurn(
         tool_calls=[("send_reply", {"conversation_id": "gEVIL", "conversation_type": "group",
                                     "text": "leak"})], final_text="")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert h.sink.sent == []
-    assert h.metrics.get("nora_guard_vetoes_total", rule="R-3") == 1
+
+    assert len(h.sink.sent) == 1, "the reply must still be delivered"
+    target = h.sink.sent[0][0]
+    assert getattr(target, "conversation_id", target) != "gEVIL", (
+        "a model-supplied conversation must never become the send target"
+    )
+    assert h.metrics.get("nora_tool_scope_violations_total", tool="send_reply") == 1
 
 
 async def test_llm_error_stays_silent(harness_factory):

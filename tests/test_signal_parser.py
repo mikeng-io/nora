@@ -270,3 +270,36 @@ def test_an_edit_in_the_jsonrpc_framing_also_parses():
     e = {"method": "receive", "params": {"envelope": {
         "source": "+85212345678", "timestamp": 1800, "editMessage": inner}}}
     assert parse_event(e, OWN).body == "corrected"
+
+
+# ── @-mentions ──────────────────────────────────────────────────────────────
+# Captured from the live group: Signal replaces the mentioned name in `body`
+# with U+FFFC (OBJECT REPLACEMENT CHARACTER) and carries who was mentioned in
+# a parallel array. A mention is therefore structurally invisible to any
+# substring trigger match, which is why tagging Nora the obvious way produced
+# ingest, attribution and total silence.
+
+
+def test_mentions_are_extracted_in_every_id_form():
+    e = sse_envelope()
+    e["envelope"]["dataMessage"]["message"] = "￼ who are u"
+    e["envelope"]["dataMessage"]["mentions"] = [{
+        "name": "+85290000100", "number": "+85290000100",
+        "uuid": "a1000000-0000-4000-8000-000000000000", "start": 0, "length": 1,
+    }]
+    msg = parse_event(e, OWN)
+    assert msg is not None
+    assert "a1000000-0000-4000-8000-000000000000" in msg.mentions, (
+        "the ACI is the id Signal actually sends under sealed sender"
+    )
+    assert "+85290000100" in msg.mentions
+
+
+def test_a_message_with_no_mentions_has_an_empty_set():
+    assert parse_event(sse_envelope(), OWN).mentions == frozenset()
+
+
+def test_a_malformed_mentions_entry_is_skipped_not_fatal():
+    e = sse_envelope()
+    e["envelope"]["dataMessage"]["mentions"] = ["not-a-dict", {"uuid": "u1"}, {}]
+    assert parse_event(e, OWN).mentions == frozenset({"u1"})
