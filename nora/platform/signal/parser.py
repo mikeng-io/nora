@@ -19,6 +19,31 @@ def _attachment_placeholder(att: dict) -> str:
     return f"[attachment: {att.get('filename') or att.get('id') or 'file'}]"
 
 
+def _body_parts(data: dict) -> list[str]:
+    """The renderable pieces of one dataMessage, in reading order.
+
+    A sticker becomes `[sticker]` for the same reason an image becomes
+    `[image]`: a sticker IS an image, and dropping it made a sticker-only
+    message vanish entirely — the sender saw Nora ignore something they had
+    clearly sent. Its payload carries only `packId`/`stickerId` (per
+    signal-cli's sticker schema), no name or emoji, so the bare placeholder is
+    genuinely all there is to render.
+
+    A REACTION stays dropped, and that is a different judgement rather than an
+    oversight: a reaction is metadata attached to somebody else's message, not
+    a message. Rendering a bare `👍` as its own transcript line would add a
+    turn that never happened, detached from what it was reacting to.
+    """
+    parts = []
+    text = (data.get("message") or "").strip()
+    if text:
+        parts.append(text)
+    parts += [_attachment_placeholder(a) for a in (data.get("attachments") or [])]
+    if not parts and isinstance(data.get("sticker"), dict):
+        parts.append("[sticker]")
+    return parts
+
+
 def _extract_envelope(event: dict) -> dict | None:
     """Return the envelope from either of signal-cli's two framings, or None.
 
@@ -90,13 +115,9 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
         if own_account and source == own_account:
             return None                       # R-12: Nora never ingests her own sends
 
-        parts = []
-        text = (data.get("message") or "").strip()
-        if text:
-            parts.append(text)
-        parts += [_attachment_placeholder(a) for a in (data.get("attachments") or [])]
+        parts = _body_parts(data)
         if not parts:
-            return None                       # reaction / sticker / empty — no usable body
+            return None                       # reaction / empty — no usable body
 
         return NormalizedMessage(
             platform="signal",

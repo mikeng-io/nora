@@ -97,8 +97,15 @@ def test_drops_a_reaction_only_payload():
     assert parse_event(envelope(message=None, reaction={"emoji": "👍"}), OWN) is None
 
 
-def test_drops_a_sticker_only_payload():
-    assert parse_event(envelope(message=None, sticker={"packId": "x"}), OWN) is None
+def test_a_sticker_only_payload_renders_a_placeholder():
+    """Was dropped, which made a sticker-only message vanish entirely — the
+    sender watched Nora ignore something they had clearly sent. A sticker is
+    an image, and images already render `[image]`."""
+    msg = parse_event(
+        envelope(message=None, sticker={"packId": "x", "stickerId": 3}), OWN
+    )
+    assert msg is not None
+    assert msg.body == "[sticker]"
 
 
 def test_image_attachment_becomes_a_placeholder():

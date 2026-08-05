@@ -28,8 +28,36 @@ is correct. To tell "quiet" from "broken":
    stream dropped, the DB is unreachable, Honcho is down, or the LLM hasn't answered
    recently.
 
-If both the silent-failure rate is low and `/health` is `200`, she's just quiet — nobody
-has tagged her.
+3. Check whether she is **refusing on purpose**. Deny-by-default means a correct,
+   healthy Nora can be completely silent because `policy.toml` does not list the room or
+   the person. Both refusals are counted, so this is one command:
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep -E 'nora_denied_(conversations|senders)_total'
+   ```
+
+   - `nora_denied_conversations_total` rising → the conversation is not in `policy.toml`.
+     Nothing from it is recorded either (the room gate runs before the audit write), so
+     the audit DB will show no trace of it at all. Run `nora groups` to see the group's
+     name beside the id you need to add.
+   - `nora_denied_senders_total` rising → the room is allowed but the sender is not in
+     that entry's `persons` list. The message **is** audited, so it is visible in
+     `messages`; it just was not answered.
+
+4. Check whether she is answering but **remembering nothing**:
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep nora_unmapped_senders_total
+   ```
+
+   A rising count means senders are resolving to no person in `identity.toml`. This one
+   is deceptive: Nora still replies and still addresses them by their Signal profile
+   name, so she looks completely normal while writing nothing to Honcho. If you have
+   edited `identity.toml`, **restart her** — mapping is startup-only, so an edit alone
+   changes nothing.
+
+If the silent-failure rate is low, `/health` is `200`, and neither denial counter is
+moving, she's just quiet — nobody has tagged her.
 
 ## 2. "A persona edit broke her"
 
@@ -272,11 +300,30 @@ One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
   docker-compose.yml        both services: nora + signal-cli
   deploy/signal-cli/        Dockerfile + fetch.sh (16K; the 115MB tarball is
                             fetched on demand, never committed)
+  config.toml               deploy cadence: ports, models, timeouts
+  identity.toml             WHO PEOPLE ARE. gitignored. One
+                            [[persons.<id>.<platform>]] block per ACCOUNT — a
+                            person may hold several on one platform, and they
+                            all resolve to one person_id (= their Honcho peer).
+  policy.toml               WHO MAY TALK TO HER, AND WHERE. gitignored, deny by
+                            default. She REFUSES TO START if it is missing or
+                            allows nothing — running mute would be
+                            indistinguishable from working (R-5).
   data/                     Nora's own state — messages.db, nora.log
                             (bind-mounted into the nora container as /app/data)
   state/signal-cli/         SIGNAL ACCOUNT: identity keys, sessions, group and
                             contact caches. 1.4MB. gitignored.
 ```
+
+**Three config files, three lifetimes, on purpose.** `config.toml` changes when the
+deployment changes; `identity.toml` when a human joins; `policy.toml` when TRUST
+changes. Keeping them apart is what stops an allowlist from being buried among port
+numbers where nobody reviews it. Both `identity.toml` and `policy.toml` are
+gitignored and bind-mounted read-only into the container.
+
+**Editing either one requires a restart.** Mapping and policy are both loaded once at
+startup (Q4). An edit alone changes nothing, and nothing warns you — this is the single
+most likely way to lose an hour. `nora_unmapped_senders_total` is the tell.
 
 **`data/` vs `state/` is deliberate.** Nora's container mounts `./data`; it does
 NOT mount `./state`. She has no business reading Signal identity keys, so they
