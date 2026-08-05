@@ -169,14 +169,47 @@ transcript plus persona does not have room for two scraped pages. It also
 makes the outbound boundary internal, which §2.2 says is the strongest
 mitigation available.
 
-**Recommendation: Perplexity first, behind a port, with SearXNG + Firecrawl as
-the intended swap.** The reasoning is not that Perplexity is better — for this
-operator's posture it is probably worse on the axis that matters most. It is
-that the boundaries in §2 are where the design is most likely to be *wrong*,
-and the cheapest way to find out is the provider that requires least to stand
-up. Learn the boundary on the easy provider; move to the self-hosted one
-carrying that knowledge, and with the token-budget question answered by
-observation rather than estimate.
+### Recommendation — corrected 2026-08-06
+
+**SearXNG + Firecrawl. They are already running on this host.**
+
+This reverses the original recommendation in this document, which was
+Perplexity-first. That argument rested entirely on "the cheapest way to learn
+the boundary is the provider that takes least to stand up" — and it was
+written without checking. Both services are up and were verified working the
+same day:
+
+    SearXNG    127.0.0.1:8080   /search?q=…&format=json → 27 results (brave)
+    Firecrawl  127.0.0.1:3002   POST /v1/scrape → clean markdown
+
+`format=json` is enabled on SearXNG (it is off by default, so this was a
+deliberate prior configuration), and Firecrawl runs with playwright, redis,
+rabbitmq and postgres alongside it. There is no setup cost left to avoid.
+
+With that gone, self-hosted wins on every remaining axis:
+
+- **§2.2 becomes internal.** The query never leaves the host, so the outbound
+  egress boundary — the one R-18 does not currently cover — stops being an
+  exposure to a third party and becomes an in-house concern. That was always
+  the strongest argument and it was being traded away for setup convenience
+  that turned out not to exist.
+- **No per-call cost**, so the budget guard in §1 stops being about money and
+  is purely about latency.
+- **It matches every other dependency here** — Honcho, signal-cli and
+  OmniRoute are all local.
+
+**The real cost moves to the turn budget, and that is now the thing to
+measure.** Nora synthesises: SearXNG returns links, Firecrawl returns page
+markdown, and that markdown lands in a turn already carrying persona,
+transcript and tool schemas against `max_tokens = 4000`. Two scraped pages
+will not fit. So the open question is no longer "which provider" but **"how
+much retrieved text can a turn afford"** — which is an empirical question with
+a local, free, already-running way to answer it.
+
+The port still stands, and still gains no second implementation without a
+shared contract suite. Perplexity remains a valid fallback if synthesis proves
+too expensive in tokens — but it should be adopted on that evidence, not on
+the setup-cost argument this section originally made.
 
 The port makes that swap a composition-root change. Per the conventions, it
 does not gain a second implementation — including a test fake — without a
