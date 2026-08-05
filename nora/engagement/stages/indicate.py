@@ -11,10 +11,10 @@ Three states, and a person who tagged her can tell them apart at a glance:
 
     👀  I have this and I am working on it     (begin)
     ✅  done — the reply is the one below      (resolve, delivered)
-    🤷  done — nothing is coming               (resolve, not delivered)
+    ⚪  done — nothing is coming               (resolve, not delivered)
 
 
-WHY 🤷 AND NOT ✅ ON FAILURE
+WHY ⚪ AND NOT ✅ ON FAILURE
 ---------------------------
 The feature request asked for ✅ "whether it succeeds or fails". That is the
 one resolution this module deliberately does not implement, because a ✅ on a
@@ -35,10 +35,10 @@ re-finding, in user-facing form:
   the same observation, so the tagger cannot even tell whether Nora heard
   them.
 
-🤷 is the honest resolution, and it does not violate R-5. R-5 forbids error
+⚪ is the honest resolution, and it does not violate R-5. R-5 forbids error
 *text* reaching the group — a stack trace, an exception message, an "I broke"
 apology, anything that discloses what failed or invites a debugging
-conversation in a group chat. 🤷 discloses none of that. It carries exactly
+conversation in a group chat. ⚪ discloses none of that. It carries exactly
 one bit, and that bit is *already public*: the reply is missing, and the group
 can see it is missing. All the reaction does is remove the ambiguity about
 whether more is still coming. It says nothing about WHY — a model timeout, a
@@ -50,7 +50,17 @@ conversation is theirs again.
 
 Chosen over ❌ and ⚠️ on the same reasoning: those two read as an incident
 report and invite exactly the "what's wrong with the bot?" thread R-5 exists
-to prevent. 🤷 reads as what a person does when they have nothing to add.
+to prevent. ⚪ reads as an empty outcome and nothing more.
+
+WHY A CIRCLE AND NOT A PERSON
+-----------------------------
+This was 🤷 first. A person emoji carries skin tone, gender and human affect —
+a shrug is somebody being dismissive, which is a lot of tone to attach to "the
+model timed out". ⚪ is monochrome and has no valence at all: it cannot be read
+as blame, apology, or sarcasm by anyone in the group, and it renders
+identically on every client and platform. It is also visually unmistakable
+against 👀 and ✅ at a glance, which matters more than expressiveness for a
+marker whose whole job is to be unambiguous.
 
 
 WHY THE REACTION IS SPAWNED, NEVER AWAITED
@@ -127,7 +137,7 @@ log = logging.getLogger("nora.engagement.indicate")
 
 ACK = "\N{EYES}"                       # 👀 — accepted, working
 DONE = "\N{WHITE HEAVY CHECK MARK}"    # ✅ — replied
-GAVE_UP = "\N{SHRUG}"                  # 🤷 — finished with nothing to say
+GAVE_UP = "\N{MEDIUM WHITE CIRCLE}"    # ⚪ — finished with nothing to say
 
 
 @dataclass
@@ -250,7 +260,7 @@ def resolve(
     delivered: bool,
     spawn: Callable[[Coroutine[Any, Any, None]], Any],
 ) -> None:
-    """Replace the 👀 with ✅ (a reply went out) or 🤷 (none did).
+    """Replace the 👀 with ✅ (a reply went out) or ⚪ (none did).
 
     Called from the pipeline's `finally`, so it runs on every exit path a tag
     has — timeout, model error, guard veto, a model that never called

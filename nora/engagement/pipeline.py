@@ -130,7 +130,7 @@ class EngagementPipeline:
         # through `spawn`, so the round-trip to the platform is never in front
         # of the model call — see `nora.engagement.stages.indicate`'s docstring
         # for that, for why a reaction cannot touch R-2/R-3, and for why a
-        # failed turn resolves to 🤷 rather than a ✅ that would claim a reply
+        # failed turn resolves to ⚪ rather than a ✅ that would claim a reply
         # nobody is going to receive. Constructed OUTSIDE the `try` so the
         # `finally` below can never reference it unbound; `begin` only spawns,
         # and cannot raise past its own guard.
