@@ -11,8 +11,10 @@ here too.
 
 Every fake that is a second implementation of one of `nora/domain/ports.py`'s
 ports is bound by a contract suite in `tests/contract/` that it and the
-production implementation both pass — `FakeAuditStore` (`AuditStore`) and
-`FakeMemoryStore` (`MemoryStore`). Adding such a fake without one is a
+production implementation both pass — `FakeAuditStore` (`AuditStore`),
+`FakeMemoryStore` (`MemoryStore`) and `FakeRosterSource` (`RosterSource`,
+bound to `nora.platform.signal.roster.SignalRoster` by
+`tests/contract/test_roster_source_contract.py`). Adding such a fake without one is a
 project rule violation, not a shortcut. `FakeAdapter` is exempt *as a whole*: it keeps
 `.parse()` public and `.listen()` a no-op rather than mirroring
 `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop (nothing
@@ -28,7 +30,12 @@ AgentRunner`, a stage-level `Protocol`, not one of `nora/domain/ports.py`'s
 ports — also exempt; see their docstrings.
 """
 
-from nora.testing.fakes import FakeAdapter, FakeAuditStore, FakeMemoryStore
+from nora.testing.fakes import (
+    FakeAdapter,
+    FakeAuditStore,
+    FakeMemoryStore,
+    FakeRosterSource,
+)
 from nora.testing.scripted_agent import FakeAgentRunner, ScriptedTurn, group_event
 
 __all__ = [
@@ -36,6 +43,7 @@ __all__ = [
     "FakeAgentRunner",
     "FakeAuditStore",
     "FakeMemoryStore",
+    "FakeRosterSource",
     "ScriptedTurn",
     "group_event",
 ]

@@ -23,7 +23,7 @@ from typing import Any
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.config import Config
-from nora.domain.ports import AuditStore, MemoryStore
+from nora.domain.ports import AuditStore, MemoryStore, RosterSource
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.ingest.pipeline import IngestPipeline
@@ -48,6 +48,7 @@ def build_offline_pipeline(
     persona_store: PersonaStore,
     runner: Any,
     metrics: Metrics | None = None,
+    roster_source: RosterSource | None = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -87,6 +88,12 @@ def build_offline_pipeline(
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=None,
+        # Defaults to None: an offline harness has no signal-cli to ask, and
+        # `nora.agent.room.Room` reports an absent source as UNAVAILABLE rather
+        # than as an empty room — so the three room-scoped tools degrade
+        # honestly here instead of claiming the group is empty. A harness that
+        # wants to exercise them passes a `RosterSource`.
+        roster_source=roster_source,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
     return dispatcher, engagement, background

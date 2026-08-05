@@ -9,13 +9,41 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any, cast
 
 import aiohttp
 
-from nora.domain.ports import MemoryHealth
+from nora.domain.ports import MemoryHealth, Recollection
 
 log = logging.getLogger("nora.honcho")
+
+# `[2026-08-05 17:18:04] miles_novak is named Miles` — Honcho stamps each conclusion
+# with when it drew it. The timestamp is provenance for a human reading the
+# store, not something to read out in a group chat, and leaving it in front of
+# every line invites the model to quote it back as if it were a fact about the
+# conversation.
+_STAMP = re.compile(r"^\[[^\]]*\]\s*")
+
+
+def _conclusions(representation: Any) -> tuple[str, ...]:
+    """One prose blob → one conclusion per line, headings and bullets removed.
+
+    Markdown `## Explicit Observations` / `## Deductions` headings are dropped
+    rather than carried: they are the store's own filing structure, and a tool
+    that returned them would be handing the model section titles to repeat.
+    Non-string input (a shape change upstream) yields `()` — the caller still
+    knows the request itself succeeded, which is the distinction that matters.
+    """
+    if not isinstance(representation, str):
+        return ()
+    lines = []
+    for raw in representation.splitlines():
+        line = _STAMP.sub("", raw.strip().lstrip("-*").strip()).strip()
+        if not line or line.startswith("#"):
+            continue
+        lines.append(line)
+    return tuple(lines)
 
 
 class HonchoClient:
@@ -26,11 +54,18 @@ class HonchoClient:
         *,
         feed_timeout: float = 2.0,
         card_timeout: float = 3.0,
+        representation_timeout: float = 3.0,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._ws = workspace_id
         self._feed_timeout = feed_timeout
         self._card_timeout = card_timeout
+        # Measured at 0.19 to 0.26 s against the live instance on 2026-08-06, so
+        # 3 s is ~12x headroom rather than a guess. It is a ceiling on a call
+        # that happens INSIDE a live turn (the `recall` tool), which is why it
+        # is bounded at all: the tag already costs a model round trip per tool
+        # call, and a hung memory service must not add to that.
+        self._representation_timeout = representation_timeout
         self._workspace_ready = False
         self._known_peers: set[str] = set()
         self._sessions: dict[str, str] = {}
@@ -187,6 +222,53 @@ class HonchoClient:
         if not isinstance(card, list):
             return []
         return [str(line).lstrip("-* ").strip() for line in card if str(line).strip()]
+
+    async def representation(
+        self, *, peer_id: str, search_query: str, max_conclusions: int = 5
+    ) -> Recollection:
+        """What Honcho concludes about one peer, curated to one question.
+
+        `POST /v3/workspaces/{ws}/peers/{peer_id}/representation` with a
+        `search_query`, verified against the live instance on 2026-08-06:
+        answers 200 in ~0.2 s with `{"representation": "<markdown>"}`.
+
+        THREE THINGS ARE DELIBERATE, and each one is a live-verified fact
+        rather than a reading of the docs:
+
+        * **Not `peer_card`.** `GET /peers/{id}/card` returns `{"peer_card":
+          null}` even for peers that demonstrably have conclusions — a dead
+          endpoint that has been answering "I know nothing" all along. This
+          endpoint returns the same peer's conclusions as prose.
+        * **No `target`.** The theory-of-mind form (`what does A think of B`)
+          404s unless the target peer itself exists, and Nora is not a peer.
+        * **An unknown peer is 200 with an EMPTY STRING, never 404.** So the
+          transport cannot tell "no such peer" from "nothing known", and the
+          only recoverable bit is whether the request succeeded at all. That
+          is what `Recollection.reachable` carries, and why this does not
+          return `list[str]` like `peer_card` does. `_post` answers `None` for
+          both a >=400 and a transport failure, which is exactly the set of
+          "could not ask" outcomes.
+
+        `session_id` is deliberately omitted: sessions here are per-peer
+        (`ensure_session` builds `nora-<peer_id>`), so scoping to one would
+        return a subset of what the unscoped call already returns for that
+        same peer.
+        """
+        result = await self._post(
+            self._url(f"/peers/{peer_id}/representation"),
+            {
+                "search_query": search_query,
+                "max_conclusions": max_conclusions,
+                "search_top_k": max_conclusions,
+            },
+            self._representation_timeout,
+        )
+        if result is None:
+            return Recollection(reachable=False)
+        return Recollection(
+            reachable=True,
+            conclusions=_conclusions(result.get("representation")),
+        )
 
     async def health(self) -> MemoryHealth:
         result = await self._get(f"{self._base}/health", self._card_timeout)

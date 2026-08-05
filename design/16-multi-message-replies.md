@@ -92,10 +92,53 @@ messages, never where they go.
 ## 4. What moves with it
 
 - **`ReplyGuard` stops being a canceller and becomes a counter.** It cancels
-  at the cap instead of at the first reply, and it flips `tool_choice` from
-  `required` to `auto` after the first send. Both concerns are the guard's,
-  which keeps the sequence in one place rather than split between the guard
-  and the runner.
+  at the cap instead of at the first reply.
+
+- **The `tool_choice` flip CANNOT live in the guard — corrected 2026-08-06.**
+  An earlier draft of this section said the guard would flip `required` →
+  `auto` after the first send, "which keeps the sequence in one place". That is
+  not implementable, and the naive version reintroduces the failure this
+  document exists to prevent. Two verified blockers:
+
+  1. **`BeforeModelCallEvent` cannot write it.** `_can_write` is
+     `return name == "cancel"` (verified in the installed SDK). The hook can
+     cancel the loop and nothing else — it cannot reach the model or its
+     params. The only route is `agent.model.update_config(params=…)`.
+
+  2. **There is one `OpenAIModel` per process, shared by every concurrent
+     tag.** `nora/app/composition.py:230` constructs it once and hands it to
+     `LiveAgentRunner`; `factory.create_model_provider` sets
+     `params={"tool_choice": "required", …}` on that one object.
+     `EngagementPipeline._in_flight` keys on `(platform, conversation_id)`, so
+     two conversations run concurrently. Flipping `tool_choice` to `auto` for
+     tag A therefore flips it for tag B's **first** call — and §2.1 A/D
+     measured that a first call under `auto` sends nothing 5/6 to 6/6. **The
+     fix for R-5's failure shape would reintroduce R-5's failure shape,
+     non-deterministically, only under concurrent load, and therefore almost
+     never in testing.**
+
+  **Resolution: construct the `OpenAIModel` per tag**, over the process-wide
+  `AsyncOpenAI` client. That keeps audit T2's "one client per process" — the
+  guarantee that actually matters, since it is what pools connections — while
+  making `tool_choice` per-tag mutable state. This is not a new pattern here:
+  `factory.build_retry_policy`'s own docstring already argues it for
+  `ModelRetryStrategy` ("one shared instance would let one tag's retry counter
+  decide another tag's backoff"). The identical reasoning applies and this
+  document originally missed it.
+
+  It also buys something independently useful: `reasoning_effort` becomes
+  per-tag, which is the escape hatch `config.toml` already flags as needed if
+  the pinned route changes behaviour.
+
+- **`Deliverer` is where R-2 actually lives, not `ReplyGuard`.** Its
+  `_attempted` latch counts ATTEMPTS, not successes (`nora/agent/guards.py`),
+  and it is R-2b's own registered rule. A change list that names only
+  `ReplyGuard` would leave the real single-shot mechanism in place and the
+  feature silently dead. `Deliverer._last_text` and
+  `nora/engagement/stages/feedback.py`'s `text = deliverer.last_text or ""`
+  are the same problem in the memory path: one string is fed to Honcho, so a
+  four-message reply would feed the LAST message and silently drop the first
+  three.
 - **R-6's canary and R-18 run per message.** Each message is an independent
   egress event. A guard that ran once per turn would inspect the first
   message and wave the rest through.

@@ -1,4 +1,4 @@
-"""The four model-facing tools (spec C.7). Thin wrappers over injected dependencies.
+"""The model-facing tools (spec C.7). Thin wrappers over injected dependencies.
 
 Docstrings are the LLM-facing schema — they are written for a model, not a developer.
 Strands derives BOTH halves of what the model sees from the callable itself
@@ -13,11 +13,22 @@ one reply per wrong guess.
 feed_honcho is deliberately NOT a tool: the handler owns the single post-reply feed
 (audit fix #5).
 
-`metrics`, `conversation_type` and `context_window` are injected but unread by today's
-four tools — `metrics` since DEC-24 moved the scope counter to `ReplyGuard`, which is
-now the single place a model-supplied conversation is observed. They stay on the
+`conversation_type` and `context_window` are injected but unread. They stay on the
 builder because `ToolRegistry` passes the same set to every tool it will ever
-register, not because anything here uses them.
+register, not because anything here uses them. `metrics` WAS in that list — DEC-24
+moved the scope counter to `ReplyGuard` — and is read again by the three room-scoped
+tools, where the counter cannot live anywhere else: Honcho answers 200-with-an-empty-
+string for a peer it has never heard of, so "asked and nothing known" and "could not
+ask" are indistinguishable at the transport and only the call site knows which it
+got. That exact ambiguity is what hid a dead `peer_card` endpoint for the whole life
+of the deployment.
+
+`room` and `question` are what the three room-scoped tools close over so the model
+never has to supply them: `room` is this conversation's membership (see
+`nora.agent.room` — scope is enforced where the answer is assembled, never at
+egress), and `question` is the tagging message, which `recall` uses as its search
+query. Both are values Nora already holds, so under DEC-24 neither may appear in a
+schema.
 
 `build_tool_specs` builds each tool as a plain, undecorated `ToolSpec`
 (`nora.agent.ports`) closed over this tag's dependencies — no `strands` import
@@ -36,7 +47,10 @@ import logging
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 
+from ..domain.ports import Recollection
+from .egress import scan_egress
 from .ports import ToolSpec, adapt
+from .room import Room, RoomView
 
 log = logging.getLogger("nora.tools")
 
@@ -53,7 +67,71 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
     "read_buffer": 2,
     "read_peer_card": 1,
     "send_reply": 1,
+    # The three room-scoped tools. Every budget here is chosen against ONE
+    # currency: a tool call is a model round trip (~4 s on this gateway), and
+    # `llm.limits.turns = 8` is the real global ceiling — these numbers only
+    # decide how a turn is allowed to spend it.
+    #
+    # 1: the membership of a group does not change inside one turn, and `Room`
+    # caches the daemon read for the tag, so a second call is guaranteed to
+    # return the identical answer four seconds later. Anything above 1 buys
+    # nothing and can only crowd out `send_reply`.
+    "group_members": 1,
+    # 2: one message routinely names two people (「阿豹同峰哥去咗邊」). The call
+    # itself is a dict lookup over the cached roster — free — so the budget is
+    # sized by round trips, not by work, and two lookups plus a reply still
+    # leaves half the turn budget. A third name is rare enough to be worth
+    # answering from what she has.
+    "lookup_person": 2,
+    # 2: same shape, but each call is also an HTTP request (~0.2 s measured).
+    # Two covers the question this exists for — "what do I remember about
+    # them" for the person who asked plus one person they asked about — and
+    # caps how much durable memory one turn can pull into context, which is
+    # the disclosure axis R-18 cannot help with (design/11 §1.5).
+    "recall": 2,
 }
+
+
+def _asked_about(name: str) -> dict:
+    """Echo the model's own word back, unless the word is an identifier.
+
+    Echoing helps: a turn that called `lookup_person` twice needs to know which
+    answer belongs to which name. But `name` is MODEL-SUPPLIED, so a model that
+    passes a phone number — because it invented one, or lifted one from
+    somewhere — would get it handed straight back inside a tool result, and
+    R-18 fails closed on the whole reply. That found a real hole in the first
+    draft of these tools: the room-scoped tools were safe by construction on
+    everything they LOOKED UP and unsafe on the one field they parroted.
+    """
+    return {} if scan_egress(name) else {"asked_about": name}
+
+
+def _miss(name: str, view: RoomView) -> dict:
+    """The answer when a name resolves to nobody in this room.
+
+    **`not_found` says nothing about whether that person exists.** A person in
+    `identity.toml` who is not in this conversation and a person who was never
+    written down at all produce this identical payload, on purpose: returning
+    "they exist but are not here" would disclose membership — and the existence
+    of people in other rooms — through a behaviour difference, which is the
+    same leak as printing the roster, just spelled slowly. See design/12 §3.
+
+    A DEGRADED view (the platform roster was unreadable, so the scope narrowed
+    to the tagger) cannot say `not_found` honestly at all: almost every name
+    would miss, and «nobody here is called that» would be a confident lie about
+    a room Nora could not see. A miss in that state is `unavailable`.
+    """
+    if view.degraded:
+        return {
+            "status": "unavailable", **_asked_about(name),
+            "note": "I can't check who is in this group right now, so I can't tell "
+                    "you who that is. Say so rather than guessing.",
+        }
+    return {
+        "status": "not_found", **_asked_about(name),
+        "note": "Nobody in this conversation goes by that. Say you're not sure who "
+                "they mean — do not guess, and do not answer as if you knew them.",
+    }
 
 
 def build_tool_specs(
@@ -65,6 +143,8 @@ def build_tool_specs(
     honcho,
     deliverer,
     metrics,
+    room: Room,
+    question: str = "",
     context_window: int = 40,
 ) -> tuple[ToolSpec, ...]:
     # The tag's conversation, captured once. It is the ONLY thing that decides
@@ -147,6 +227,182 @@ def build_tool_specs(
             log.exception("read_peer_card failed")
             return []
 
+    # ---- the three room-scoped tools -------------------------------------
+    #
+    # All three share `room`, and that sharing IS the scope guarantee. Each one
+    # resolves inside `RoomView.people` — a set built from this conversation's
+    # own membership list — so a person who is in `identity.toml` but not in
+    # this room is not found-and-rejected, they are absent from the index the
+    # lookup runs against. See `nora.agent.room` for why resolve-within-scope
+    # and resolve-then-filter are not the same thing, and design/12 §3 for the
+    # leak that settled it.
+    #
+    # None of the three takes a conversation argument (DEC-24) and none of them
+    # accepts or returns a platform id: they speak NAMES on both sides, so
+    # nothing they hand the model is something R-18 would have to block on the
+    # way out — and nothing they accept could address a person Nora has not
+    # already placed in this room.
+
+    async def group_members() -> dict:
+        """Who is in this conversation right now.
+
+        Call this when somebody asks who is here, who is in the group, how many
+        people are in it, or whether a particular person is around. Do NOT
+        guess from the transcript: people who have not spoken recently are
+        still here, and people mentioned in a message may not be.
+
+        Returns their names. It only ever describes THIS conversation, and it
+        cannot tell you about anyone outside it.
+        """
+        view = await room.members()
+        if not view.available:
+            metrics.inc("nora_room_lookups_total", tool="group_members", status="unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't check who is in this group right now. Say so — "
+                        "do not guess from the conversation.",
+            }
+        metrics.inc("nora_room_lookups_total", tool="group_members", status="ok")
+        return {
+            "status": "ok",
+            "members": [p.name for p in view.people],
+            # A count, never the ids: the only thing Nora holds for these
+            # accounts is a phone number or an ACI, and those are what R-18
+            # exists to keep off the wire.
+            "members_i_have_no_name_for": view.unnamed,
+        }
+
+    async def lookup_person(name: str) -> dict:
+        """Work out who a name or nickname in this conversation refers to.
+
+        Call this when a message uses a name you do not recognise — a nickname,
+        a Chinese name, a handle — and knowing who it is changes your answer.
+        It only knows people in THIS conversation; if it does not find them,
+        say you do not know who that is rather than inventing somebody.
+
+        Do not call it for a name you were already told (the person who tagged
+        you is named for you), and do not call it for someone who is obviously
+        not in the chat — a singer, a company, a friend of a friend.
+
+        Args:
+            name: The name or nickname exactly as it appeared in the message.
+        """
+        view = await room.scope()
+        if not view.available:
+            metrics.inc("nora_room_lookups_total", tool="lookup_person", status="unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't check who is in this group right now, so I can't "
+                        "tell you who that is. Say so rather than guessing.",
+            }
+        matches = view.find(name)
+        if not matches:
+            miss = _miss(name, view)
+            metrics.inc("nora_room_lookups_total", tool="lookup_person", status=miss["status"])
+            return miss
+        if len(matches) > 1:
+            metrics.inc("nora_room_lookups_total", tool="lookup_person", status="ambiguous")
+            return {
+                "status": "ambiguous", **_asked_about(name),
+                "could_be": [p.name for p in matches],
+                "note": "More than one person here goes by that. Ask which one.",
+            }
+        person = matches[0]
+        metrics.inc("nora_room_lookups_total", tool="lookup_person", status="ok")
+        return {
+            "status": "ok", **_asked_about(name), "name": person.name,
+            "also_called": list(person.aliases),
+            "note": "This person is in this conversation.",
+        }
+
+    async def recall(person: str) -> dict:
+        """What you durably remember about someone in this conversation.
+
+        Call this when your answer depends on knowing somebody — what they do,
+        what they like, something they told you before — and you were not
+        already given it. What comes back is selected against the message you
+        were just tagged in, so ask about the person, not about the topic.
+
+        Name the person the way the message did; a nickname is fine. It only
+        knows people in THIS conversation.
+
+        Three different answers, and they mean different things: `ok` is what
+        you remember, `nothing_known` means you genuinely remember nothing
+        about them yet — which is not the same as them being a stranger — and
+        `unavailable` means you could not check at all. Never present the last
+        one as "I don't know them".
+
+        Args:
+            person: The name or nickname of the person, as the message said it.
+        """
+        view = await room.scope()
+        if not view.available:
+            metrics.inc("nora_room_lookups_total", tool="recall", status="unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't work out who that is right now. Say you can't "
+                        "check — do not say you don't know them.",
+            }
+        matches = view.find(person)
+        if not matches:
+            miss = _miss(person, view)
+            metrics.inc("nora_room_lookups_total", tool="recall", status=miss["status"])
+            return miss
+        if len(matches) > 1:
+            metrics.inc("nora_room_lookups_total", tool="recall", status="ambiguous")
+            return {
+                "status": "ambiguous", **_asked_about(person),
+                "could_be": [p.name for p in matches],
+                "note": "More than one person here goes by that. Ask which one.",
+            }
+        ref = matches[0]
+        try:
+            memory = await honcho.representation(
+                peer_id=ref.honcho_peer_id,
+                # The QUESTION is Nora's to supply, not the model's (DEC-24):
+                # she has the tagging message, so asking for it would be one
+                # more value to invent per call. Truncated because it is a
+                # search query, not a prompt.
+                search_query=(question or ref.name)[:500],
+                max_conclusions=5,
+            )
+        except Exception:
+            # `MemoryStore` is documented never to be load-bearing, so this is
+            # the belt for those braces — and it must land on `unavailable`,
+            # never on an empty answer.
+            log.exception("recall failed for %s", ref.person_id)
+            memory = Recollection(reachable=False)
+        if not memory.reachable:
+            metrics.inc("nora_recall_total", status="unavailable")
+            metrics.inc("nora_room_lookups_total", tool="recall", status="unavailable")
+            return {
+                "status": "unavailable", "person": ref.name,
+                "note": "My memory is not answering. Say you can't check right "
+                        "now — do not say you don't remember them.",
+            }
+        # Anything R-18 would refuse to let out is dropped HERE rather than at
+        # egress, and that is not belt-and-braces: `scan_egress` fails closed
+        # on the WHOLE reply, so one conclusion carrying somebody's number
+        # would cost the entire message. Honcho conclusions are distilled from
+        # what people actually said, so they can and do carry exactly that.
+        kept = tuple(c for c in memory.conclusions if scan_egress(c) is None)
+        withheld = len(memory.conclusions) - len(kept)
+        if not kept:
+            metrics.inc("nora_recall_total", status="empty")
+            metrics.inc("nora_room_lookups_total", tool="recall", status="ok")
+            return {
+                "status": "nothing_known", "person": ref.name, "withheld": withheld,
+                "note": "I checked and I remember nothing about them yet. That is "
+                        "not the same as not knowing who they are.",
+            }
+        metrics.inc("nora_recall_total", status="ok")
+        metrics.inc("nora_room_lookups_total", tool="recall", status="ok")
+        return {
+            "status": "ok", "person": ref.name, "recall": list(kept),
+            "withheld": withheld,
+            "partial_view": view.degraded,
+        }
+
     async def now() -> str:
         """The current date and time, in Hong Kong time.
 
@@ -186,6 +442,18 @@ def build_tool_specs(
             budget=NATIVE_TOOL_BUDGETS["read_peer_card"],
         ),
         ToolSpec(
+            name="group_members", description="", schema={}, call=group_members,
+            budget=NATIVE_TOOL_BUDGETS["group_members"],
+        ),
+        ToolSpec(
+            name="lookup_person", description="", schema={}, call=lookup_person,
+            budget=NATIVE_TOOL_BUDGETS["lookup_person"],
+        ),
+        ToolSpec(
+            name="recall", description="", schema={}, call=recall,
+            budget=NATIVE_TOOL_BUDGETS["recall"],
+        ),
+        ToolSpec(
             name="send_reply", description="", schema={}, call=send_reply,
             budget=NATIVE_TOOL_BUDGETS["send_reply"],
         ),
@@ -201,6 +469,8 @@ def build_tools(
     honcho,
     deliverer,
     metrics,
+    room: Room,
+    question: str = "",
     context_window: int = 40,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
@@ -210,6 +480,6 @@ def build_tools(
     specs = build_tool_specs(
         store=store, conversation_id=conversation_id, conversation_type=conversation_type,
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
-        context_window=context_window,
+        room=room, question=question, context_window=context_window,
     )
     return [adapt(spec) for spec in specs]

@@ -34,6 +34,7 @@ from nora.domain.ports import (
     EngagePolicy,
     MemoryStore,
     PlatformAdapter,
+    RosterSource,
 )
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
@@ -52,6 +53,7 @@ from nora.persona.loader import Persona, PersonaError, PersonaStore
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
+from nora.platform.signal.roster import SignalRoster
 from nora.policy import PolicyError, load_policy
 from nora.tag import Debounce
 
@@ -241,6 +243,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
 
     tool_registry = ToolRegistry()
+    # The room-scoped tools' one platform dependency. Built here rather than
+    # taken off the adapter because membership is a read-only DIRECTORY query
+    # (`nora.platform.signal.directory`'s two-method allowlist), not part of the
+    # send/receive/react lifecycle — see `nora.domain.ports.RosterSource`.
+    roster_source: RosterSource = SignalRoster(
+        base_url=cfg.platforms.signal.base_url, account=cfg.platforms.signal.account,
+    )
     engagement = EngagementPipeline(
         adapter=adapter, audit=audit, memory=memory, persons=persons,
         persona_store=persona_store, context_assembler=assembler, runner=runner,
@@ -250,6 +259,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
         reactions=cfg.engagement.reactions.enabled,
+        roster_source=roster_source,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 

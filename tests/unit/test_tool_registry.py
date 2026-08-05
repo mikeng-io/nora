@@ -6,6 +6,7 @@ from __future__ import annotations
 from nora.agent import factory
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.registry import ToolRegistry
+from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
@@ -39,22 +40,35 @@ def _deliverer() -> Deliverer:
     )
 
 
+def _room() -> Room:
+    return Room(
+        platform="signal", conversation_id="g1", roster_source=None,
+        persons=_FakePersons(),
+    )
+
+
 def _built_tools(registry: ToolRegistry) -> list:
     return registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
-        metrics=Metrics(),
+        metrics=Metrics(), room=_room(),
     )
 
 
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
-    assert {t.tool_name for t in tools} == {"now", "read_buffer", "read_peer_card", "send_reply"}
+    assert {t.tool_name for t in tools} == {
+        "now", "read_buffer", "read_peer_card", "send_reply",
+        "group_members", "lookup_person", "recall",
+    }
 
 
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
         "now": 2, "read_buffer": 2, "read_peer_card": 1, "send_reply": 1,
+        # Sized against model round trips, not against work — see
+        # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
+        "group_members": 1, "lookup_person": 2, "recall": 2,
     }
 
 
@@ -70,7 +84,7 @@ def test_specs_carry_the_same_budgets_as_budgets():
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
-        metrics=Metrics(),
+        metrics=Metrics(), room=_room(),
     )
     assert {s.name: s.budget for s in specs} == dict(registry.budgets())
 

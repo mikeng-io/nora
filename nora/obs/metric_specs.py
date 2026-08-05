@@ -159,6 +159,36 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "for, by platform and reason.",
         ("platform", "reason"),
     ),
+    # The three room-scoped tools (`group_members`, `lookup_person`, `recall`),
+    # by how they ANSWERED. `status` is the whole point: `unavailable` means
+    # Nora could not read the group's membership at all, and it must never be
+    # summed together with `not_found` — one says "I could not look", the other
+    # says "I looked and nobody here is called that", and a tool that cannot
+    # tell an operator which of those it did is the `peer_card` failure again.
+    # `not_found` is deliberately identical for a person who is in
+    # `identity.toml` but not in this room and for one who does not exist
+    # anywhere: distinguishing them in the answer would disclose membership by
+    # behaviour (design/12 §3). Alert on a sustained `unavailable` — that is
+    # signal-cli, not the model.
+    _CounterSpec(
+        "nora_room_lookups_total",
+        "Room-scoped tool calls, by tool and how the tool answered "
+        "(ok / not_found / ambiguous / unavailable).",
+        ("tool", "status"),
+    ),
+    # Honcho's `representation` endpoint specifically, and it exists because
+    # that endpoint cannot be trusted to fail loudly: an unknown peer answers
+    # **200 with an empty string**, not 404, so "asked and nothing known"
+    # (`empty`) and "could not ask" (`unavailable`) are indistinguishable at
+    # the HTTP layer and only the call site knows which it got. `peer_card`
+    # returned `[]` for both for the entire life of the deployment and nobody
+    # could see it. Alert on `ok == 0` while the series is being written at all.
+    _CounterSpec(
+        "nora_recall_total",
+        "Durable-recall lookups against Honcho, by outcome "
+        "(ok / empty / unavailable).",
+        ("status",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

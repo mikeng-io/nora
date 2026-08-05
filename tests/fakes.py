@@ -5,16 +5,33 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from nora.domain.models import ConversationTarget, NormalizedMessage
-from nora.domain.ports import AdapterHealth, MemoryHealth, PlatformIdentity, SendResult
+from nora.domain.ports import (
+    AdapterHealth,
+    MemoryHealth,
+    PlatformIdentity,
+    Recollection,
+    SendResult,
+)
 
 
 class FakeHoncho:
     """Offline Honcho double. `fail=True` simulates the service being down."""
 
-    def __init__(self, *, cards: dict[str, list[str]] | None = None, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        cards: dict[str, list[str]] | None = None,
+        conclusions: dict[str, list[str]] | None = None,
+        fail: bool = False,
+    ) -> None:
         self.fed: list[tuple[str, str]] = []
         self.peers: list[str] = []
         self.cards = cards or {}
+        # Kept apart from `cards`: `peer_card` and `representation` are
+        # different live endpoints with different failure shapes, and one dict
+        # serving both would make them look interchangeable.
+        self.conclusions = conclusions or {}
+        self.queries: list[tuple[str, str]] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
@@ -34,6 +51,21 @@ class FakeHoncho:
         if self.fail:
             return []
         return list(self.cards.get(peer_id, []))
+
+    async def representation(
+        self, *, peer_id: str, search_query: str, max_conclusions: int = 5
+    ) -> Recollection:
+        """Mirrors `HonchoClient.representation` including its unknown-peer
+        shape: the live instance answers 200 with an EMPTY STRING rather than
+        404, so an unknown peer is reachable-but-empty here, and only
+        `fail=True` is unreachable."""
+        self.queries.append((peer_id, search_query))
+        if self.fail:
+            return Recollection(reachable=False)
+        return Recollection(
+            reachable=True,
+            conclusions=tuple(self.conclusions.get(peer_id, ()))[:max_conclusions],
+        )
 
     async def health(self) -> MemoryHealth:
         return MemoryHealth(reachable=not self.fail)
