@@ -133,7 +133,7 @@ def test_config_uses_the_target_shape(toml_path):
     # tiers replace default/deep, and carry their own timeout
     assert cfg.llm.model == "nora"
     assert cfg.llm.timeout_seconds == 30
-    assert cfg.llm.limits.turns == 4
+    assert cfg.llm.limits.turns == 8
     # engagement owns the trigger; policy is declared even though only one exists
     assert cfg.engagement.policy == "trigger_text"
     assert cfg.engagement.trigger.text == "nora.000"

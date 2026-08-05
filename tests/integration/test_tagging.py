@@ -133,7 +133,7 @@ async def test_limits_passed_through(harness_factory):
     h = await harness_factory(script=_reply_script())
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert h.last_limits == {"turns": 4, "output_tokens": 400, "total_tokens": 24000}
+    assert h.last_limits == {"turns": 8, "output_tokens": 400, "total_tokens": 24000}
 
 
 async def test_unmapped_sender_tags_produces_a_reply_with_no_honcho_side_effects(

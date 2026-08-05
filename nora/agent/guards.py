@@ -227,8 +227,9 @@ class ReplyGuard(HookProvider):
         if self.counts[tool_name] >= self._budgets[tool_name]:
             if tool_name == "send_reply":
                 return self._veto(
-                    "R-2", "You already sent your reply. Do not call send_reply again — "
-                           "finish your turn.",
+                    "R-2", "You already sent your reply. Do not call send_reply "
+                           "again. If you still need something, use one of the "
+                           "other tools; otherwise finish your turn.",
                 )
             return self._veto(
                 "R-7", f"You already called {tool_name} "
@@ -243,8 +244,9 @@ class ReplyGuard(HookProvider):
                                          "Send real text or end your turn.")
             if self._deliverer is not None and self._deliverer.attempted:
                 return self._veto(
-                    "R-2", "You already sent your reply. Do not call send_reply again — "
-                           "finish your turn.",
+                    "R-2", "You already sent your reply. Do not call send_reply "
+                           "again. If you still need something, use one of the "
+                           "other tools; otherwise finish your turn.",
                 )
         return None
 

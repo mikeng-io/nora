@@ -83,11 +83,21 @@ class LLMConfig(BaseModel):
     max_tokens: int
     temperature: float
     timeout_seconds: float
-    # "none" | "low" | "medium" | "high". A tag is one short reply from context
-    # she already holds — nothing to reason THROUGH. Measured on
-    # deepseek-v4-flash, same prompt, tool call produced every time:
-    # "none" 4.7s, "low" 9.5s, unset 16.1s.
-    reasoning_effort: str = "none"
+    # "none" | "low" | "medium" | "high". NOT "auto" — the provider 400s on it.
+    #
+    # "low", not "none", and this is a CORRECTNESS setting rather than a
+    # latency one. `tool_choice="required"` forces a tool call every turn, and
+    # measured against the live gateway with a `now` tool and `send_reply`
+    # available:
+    #
+    #   「而家幾點」   none → now          low → now          (both right)
+    #   「你係邊個」   none → now  WRONG   low → send_reply   (only low right)
+    #
+    # With "none" she reaches for a tool reflexively because she is forced to
+    # call one and has no reasoning budget to choose. It cost ~2s and answered
+    # "who are you" by asking the clock. "low" adds roughly 2s and picks
+    # correctly, which is also the prerequisite for chaining tools at all.
+    reasoning_effort: str = "low"
     limits: LimitsConfig
 
 
