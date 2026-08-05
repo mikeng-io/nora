@@ -9,33 +9,36 @@ admission. It is the PIPELINE's `finally` that RELEASES (discards `key` from
 the same `in_flight` set on every exit path) — see `nora.engagement.
 pipeline`'s docstring for the other half of this contract. Nothing in this
 module ever discards from `in_flight`.
+
+R-12 checks membership in `identity.aliases`, not equality against a single
+id — see `nora.domain.ports`'s module docstring for why: signal-cli emits
+`source` or `sourceNumber` and sometimes a UUID for the same account, and
+Telegram has both a numeric id and a username, so equality against one form
+would silently stop recognizing Nora's own messages the moment a second
+platform (or a second id form on this one) is wired in. The caller
+(`nora.engagement.pipeline.EngagementPipeline.run`) resolves the identity via
+`adapter.resolve_identity()` — memoized after the adapter's first call, and
+already forced to succeed once at startup by
+`nora.platform.registry.AdapterRegistry.from_config`'s fail-fast — and passes
+it in here already resolved, so this stage does no I/O of its own.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol
+from typing import Any
 
 from nora.domain.models import NormalizedMessage
+from nora.domain.ports import PlatformIdentity
 from nora.tag import Debounce
 
 log = logging.getLogger("nora.engagement.admission")
 
 
-class _AccountHolder(Protocol):
-    """The narrow slice of the platform adapter R-12 needs: just `_account`,
-    the private attribute `Handler.on_event` checked directly today. Phase 4
-    replaces this with `resolve_identity()` per DEC-9 — not fixed here, that
-    is a different phase's scope and its own risk.
-    """
-
-    _account: str
-
-
 async def run(
     *,
     message: NormalizedMessage,
-    adapter: _AccountHolder,
+    identity: PlatformIdentity,
     debounce: Debounce,
     in_flight: set[tuple[str, str]],
     metrics: Any,
@@ -45,7 +48,7 @@ async def run(
     A True return means `key` has already been added to `in_flight` — the
     caller (the pipeline) owns releasing it; see the module docstring.
     """
-    if message.sender_id == adapter._account:              # R-12
+    if message.sender_id in identity.aliases:               # R-12
         log.info("ignoring a trigger from our own account")
         return False
 

@@ -19,7 +19,13 @@ import dataclasses
 
 from nora.app.runtime import BackgroundTasks
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef
-from nora.domain.ports import EngageDecision, EngagementRequest, MemoryHealth, SendResult
+from nora.domain.ports import (
+    EngageDecision,
+    EngagementRequest,
+    MemoryHealth,
+    PlatformIdentity,
+    SendResult,
+)
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.obs.metrics import Metrics
@@ -42,10 +48,15 @@ class _FakeClock:
 
 
 class _FakeAdapter:
+    platform = "signal"
+
     def __init__(self, *, account: str = "+852000", succeed: bool = True) -> None:
         self._account = account
         self.sent: list[tuple[ConversationTarget, str]] = []
         self._succeed = succeed
+
+    async def resolve_identity(self) -> PlatformIdentity:
+        return PlatformIdentity(platform=self.platform, primary=self._account)
 
     async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
         self.sent.append((target, text))

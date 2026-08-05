@@ -35,7 +35,7 @@ from nora.obs.health import LLMState
 from nora.obs.metrics import METRICS, Metrics
 from nora.persona.loader import Persona, PersonaError, PersonaStore
 from nora.persons import Persons, PersonsError, load_persons
-from nora.platform.signal.account import AccountError, derive_account
+from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
 from nora.tag import Debounce
 
@@ -66,11 +66,15 @@ class Dependencies:
     their concrete classes — all four live inside mypy's strict override
     (`nora.app.*`), so each is a permanent, statically-checked proof that its
     concrete class conforms to the port, not just a one-time `isinstance`
-    name-check. `persons`, `metrics`, `adapter`, `persona`, `persona_store`,
-    `debounce`, `background`, `llm_state`, `ingest`, `engagement`,
-    `dispatcher` stay concrete: none has a port today (per
-    `tests/contract/test_port_conformance.py`, `PlatformAdapter`'s target
-    shape does not even agree with `SignalAdapter`'s yet — phase 4).
+    name-check. `adapter` stays concrete (`SignalAdapter`, not
+    `PlatformAdapter`) even though the platforms phase closed every gap
+    between them (`tests/contract/test_port_conformance.py`) — `nora.app`
+    still only ever builds one concrete adapter type, so there is nothing yet
+    for the port annotation to buy here; `nora.platform.registry.
+    AdapterRegistry` is where a second adapter type would actually need the
+    port. `persons`, `metrics`, `persona`, `persona_store`, `debounce`,
+    `background`, `llm_state`, `ingest`, `engagement`, `dispatcher` stay
+    concrete too: none has a port at all.
     """
 
     audit: AuditStore
@@ -115,11 +119,18 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
 
     try:
-        account = await derive_account(
-            cfg.platforms.signal.base_url, override=cfg.platforms.signal.account
-        )
-    except AccountError as exc:
-        raise StartupError(f"account error: {exc}") from exc
+        registry = await AdapterRegistry.from_config(cfg.platforms)
+    except AdapterRegistryError as exc:
+        raise StartupError(str(exc)) from exc
+    if "signal" not in registry:
+        # Only one platform exists today, and the rest of this function (the
+        # engagement pipeline, delivery) has no code path that runs without an
+        # adapter — a disabled Signal with nothing else enabled is not a valid
+        # startup state yet, even though AdapterRegistry itself tolerates zero
+        # enabled platforms.
+        raise StartupError("no platform adapter is enabled (platforms.signal.enabled = false)")
+    adapter = registry.get("signal")
+    account = registry.identity_for("signal").primary
 
     persona_store = PersonaStore(
         cfg.persona.dir, strict=cfg.persona.strict, reload=cfg.persona.reload,
@@ -134,7 +145,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     memory = HonchoClient(cfg.memory.base_url, cfg.memory.workspace_id)
     await memory.ensure_workspace()          # best-effort, never fatal — no try/except
 
-    adapter = SignalAdapter(cfg.platforms.signal.base_url, account)
     llm_state = LLMState()
     background = BackgroundTasks()
     debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
