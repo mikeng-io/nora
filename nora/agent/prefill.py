@@ -68,8 +68,22 @@ def build_prefill(ctx: TagContext, *, display_name: str, context_window: int) ->
 
 
 def build_tag_message(ctx: TagContext, *, tagger_name: str) -> str:
+    """The tagging message, attributed.
+
+    `also_known_as` carries the other names the GROUP uses for this person —
+    阿Miles, 米高, a handle — so Nora understands a reference to them in the
+    transcript instead of treating it as a stranger. It is an attribute of the
+    person the platform already authenticated, never a way of deciding WHO
+    sent something: sender identity comes from the platform id alone
+    (design/10 §1.3), because a name is spoofable and these are not checked
+    against anything.
+    """
+    aka = ""
+    tagger = ctx.tagger
+    if tagger is not None and tagger.aliases:
+        aka = f' also_known_as="{_escape_attr(", ".join(tagger.aliases))}"'
     return (
-        f'<tag_message from="{_escape_attr(tagger_name)}">\n'
+        f'<tag_message from="{_escape_attr(tagger_name)}"{aka}>\n'
         f"{escape(ctx.message.body)}\n"
         "</tag_message>"
     )

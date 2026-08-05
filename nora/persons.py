@@ -74,9 +74,16 @@ def load_persons(path: Path) -> Persons:
     by_person: dict[str, PersonRef] = {}
     index: dict[tuple[str, str], str] = {}
     for person_id, entry in parsed.persons.items():
-        name = entry.name or person_id
+        # `name` is what Nora calls them out loud. Fall back through the
+        # structured parts before the person_id, so a file that gives only
+        # first/last still addresses them like a person rather than a key.
+        name = entry.name or " ".join(
+            p for p in (entry.first_name, entry.last_name) if p
+        ) or person_id
         by_person[person_id] = PersonRef(
-            person_id=person_id, name=name, honcho_peer_id=person_id
+            person_id=person_id, name=name, honcho_peer_id=person_id,
+            first_name=entry.first_name or "", last_name=entry.last_name or "",
+            aliases=tuple(entry.aliases),
         )
         # Every kind of every account (design/10 §3.2) flattens into one
         # index, which is what makes all of a person's accounts land on a

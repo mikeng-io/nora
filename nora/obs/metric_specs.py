@@ -66,6 +66,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_leak_blocks_total", "Replies blocked by the persona/canary leak guard.",
     ),
+    _CounterSpec(
+        "nora_egress_blocks_total",
+        "Replies blocked for carrying somebody's identifiers, by kind.",
+        ("kind",),
+    ),
     _CounterSpec("nora_persona_reload_failures_total", "Persona hot-reload failures."),
     _CounterSpec("nora_store_busy_total", "SQLITE_BUSY responses from the audit store."),
     # An unmapped sender is an EXPECTED outcome (D6), so it is not an error —

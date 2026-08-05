@@ -42,6 +42,15 @@ class PersonRef:
     person_id: str
     name: str
     honcho_peer_id: str            # == person_id, by construction (spec D.2)
+    first_name: str = ""
+    last_name: str = ""
+    # Other names the GROUP calls this person — 阿Miles, 米高, a handle. Shown to
+    # Nora so she understands who a message is about; NEVER used to resolve who
+    # a message is FROM. That distinction is the whole safety story: a sender is
+    # authenticated by platform id only (design/10 §1.3), because a display name
+    # is spoofable, whereas these are operator-authored and so trustworthy for
+    # comprehension.
+    aliases: tuple[str, ...] = ()
 
 
 class DeliveryStatus(Enum):

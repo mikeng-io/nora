@@ -154,3 +154,47 @@ async def test_metrics_count_a_delivered_reply(store, persona):
     m = Metrics()
     await _deliverer(store, persona, SinkSender(), m).deliver("hi")
     assert m.get("nora_replies_total", status="sent") == 1
+
+
+# ── R-18: PII egress ────────────────────────────────────────────────────────
+
+
+async def _deliver_text(text, store, persona):
+    """Drive a real Deliverer and report whether the text reached the adapter."""
+    m = Metrics()
+    sink = SinkSender()
+    d = _deliverer(store, persona, sink, m)
+    ok = await d.deliver(text)
+    return ok, sink, m
+
+
+async def test_a_reply_carrying_someones_phone_number_is_refused(store, persona):
+    """The operator's own framing: "if someone asks you what my phone number
+    is, it will probably leak out easily". `guardrails.md` forbids relaying it,
+    but that is a request to a model. This is the part that does not depend on
+    the model complying — and Nora legitimately holds the material, since the
+    transcript she reasons over carries real sender ids."""
+    ok, sink, m = await _deliver_text("佢個號碼係 +85290000101 呀", store, persona)
+    assert ok is False
+    assert sink.sent == [], "a phone number must never reach the group"
+    assert m.get("nora_egress_blocks_total", kind="phone") == 1
+
+
+async def test_a_reply_carrying_an_aci_is_refused(store, persona):
+    ok, sink, m = await _deliver_text("uuid: a1000000-0000-4000-8000-000000000000", store, persona)
+    assert ok is False and sink.sent == []
+    assert m.get("nora_egress_blocks_total", kind="uuid") == 1
+
+
+async def test_a_key_shaped_string_is_refused(store, persona):
+    ok, sink, m = await _deliver_text("here you go: sk-abcdefghijklmnop1234567", store, persona)
+    assert ok is False and sink.sent == []
+    assert m.get("nora_egress_blocks_total", kind="keylike") == 1
+
+
+async def test_ordinary_cantonese_with_a_bare_number_still_sends(store, persona):
+    """Fails closed, but not at random: prices, dates and counts are ordinary
+    chat. Only the canonical `+` form a sender id carries is refused."""
+    ok, sink, _ = await _deliver_text("價錢係 12345678 蚊，貴到痴線 😏", store, persona)
+    assert ok is True
+    assert len(sink.sent) == 1

@@ -79,6 +79,13 @@ class _PersonEntry(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    # Names the group uses for this person. Comprehension only — see
+    # `PersonRef.aliases`. They are deliberately NOT added to the reverse
+    # index: making a hand-written nickname resolve a sender would hand
+    # identity to anyone who can set a profile name.
+    aliases: list[str] = Field(default_factory=list)
     # One dict per ACCOUNT (the baseline case, not an edge case); the keys
     # inside are that account's id KINDS plus the never-matched `label`.
     #
