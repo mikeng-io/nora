@@ -80,9 +80,26 @@ def test_invalid_tracing_exporter_is_a_startup_failure(toml_path):
 
 def test_otlp_exporter_without_an_endpoint_is_a_startup_failure(toml_path):
     toml_path.write_text(toml_path.read_text().replace(
-        'exporter = "file"', 'exporter = "otlp"'))
+        'exporter = "file"', 'exporter = "otlp_http"'))
     with pytest.raises(ConfigError, match="endpoint"):
         load(toml_path)
+
+
+def test_headers_env_names_the_env_var_not_the_value(toml_path):
+    """DEC-8: `*_env` fields hold an environment variable NAME, never the
+    secret value, and there is no `${VAR}` interpolation."""
+    cfg = load(toml_path)
+    assert cfg.obs.tracing.headers_env == ""
+
+
+def test_headers_env_defaults_to_empty_when_absent_from_the_toml():
+    """`config.example.toml` already declares `headers_env`, but any
+    pre-existing `config.toml` predating this field must still load —
+    `TracingConfig`'s `extra=\"forbid\"` only forbids UNKNOWN keys, an absent
+    optional one is fine."""
+    from tests.builders import make_tracing_config
+
+    assert make_tracing_config().headers_env == ""
 
 
 def test_config_is_immutable(toml_path):

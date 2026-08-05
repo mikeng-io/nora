@@ -165,14 +165,21 @@ class TracingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool
-    exporter: Literal["console", "otlp", "file"]
+    exporter: Literal["console", "otlp_http", "file"]
     endpoint: str
+    # Names an environment variable holding the OTLP auth header value, in the
+    # same `key1=value1,key2=value2` shape OTel's own `OTEL_EXPORTER_OTLP_HEADERS`
+    # uses (`nora.obs.tracing._resolve_headers` parses it). `*_env` naming, never
+    # the value inlined, and no `${VAR}` interpolation (DEC-8). Empty = no auth
+    # header sent — valid for `console`/`file`, and for an `otlp_http` endpoint
+    # that doesn't require one.
+    headers_env: str = ""
 
     @model_validator(mode="after")
     def _check_otlp_endpoint(self) -> TracingConfig:
-        if self.exporter == "otlp" and not self.endpoint:
+        if self.exporter == "otlp_http" and not self.endpoint:
             raise ValueError(
-                "obs.tracing.endpoint is required when exporter is 'otlp'"
+                "obs.tracing.endpoint is required when exporter is 'otlp_http'"
             )
         return self
 

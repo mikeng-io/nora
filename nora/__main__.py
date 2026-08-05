@@ -53,6 +53,7 @@ async def build_app(config_path: Path) -> App:
         enabled=cfg.obs.tracing.enabled,
         exporter=cfg.obs.tracing.exporter,
         endpoint=cfg.obs.tracing.endpoint,
+        headers_env=cfg.obs.tracing.headers_env,
     )
 
     deps = await build_dependencies(cfg)
