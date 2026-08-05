@@ -122,7 +122,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
@@ -142,11 +141,6 @@ from nora.domain.models import (
 # marker, which mypy's `no_implicit_reexport` requires before another module may
 # import the name through here. `__all__` would satisfy mypy too, but would also
 # narrow `from nora.domain.ports import *` to that one name.
-
-
-class ModelTier(Enum):
-    FLASH = "flash"
-    DEEP = "deep"
 
 
 @dataclass(frozen=True)
@@ -190,7 +184,6 @@ class EngageDecision:
 
     engage: bool
     reason: str
-    tier: ModelTier | None = None
     rationale: str | None = None
     confidence: float | None = None
     threshold: float | None = None

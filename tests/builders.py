@@ -17,8 +17,6 @@ from nora.config import (
     Config,
     LimitsConfig,
     LLMConfig,
-    LLMTierConfig,
-    LLMTiersConfig,
     LoggingConfig,
     TracingConfig,
 )
@@ -51,27 +49,12 @@ def make_limits(**kw: Any) -> LimitsConfig:
     return LimitsConfig(**{"turns": 4, "total_tokens": 24000, **kw})
 
 
-def make_llm_tier(**kw: Any) -> LLMTierConfig:
-    return LLMTierConfig(**{
-        "model": "deepseek-v4-flash", "max_tokens": 400, "temperature": 0.7,
-        "timeout_seconds": 30, "limits": make_limits(),
-        **kw,
-    })
-
-
-def make_llm_tiers(**kw: Any) -> LLMTiersConfig:
-    defaults: dict[str, Any] = {
-        "flash": make_llm_tier(),
-        "deep": make_llm_tier(model="deepseek-v4-pro", max_tokens=1200, temperature=0.5),
-    }
-    return LLMTiersConfig(**{**defaults, **kw})
-
-
 def make_llm_config(**kw: Any) -> LLMConfig:
     defaults: dict[str, Any] = {
         "base_url": "http://localhost:20128/v1",
         "api_key_env": "OMNIROUTE_API_KEY",
-        "tiers": make_llm_tiers(),
+        "model": "nora", "max_tokens": 400, "temperature": 0.7,
+        "timeout_seconds": 30, "limits": make_limits(),
     }
     return LLMConfig(**{**defaults, **kw})
 

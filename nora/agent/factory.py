@@ -39,7 +39,8 @@ def create_client(*, base_url: str, api_key: str) -> AsyncOpenAI:
 
 
 def create_model_provider(
-    *, model: str, max_tokens: int, temperature: float, client: AsyncOpenAI
+    *, model: str, max_tokens: int, temperature: float, client: AsyncOpenAI,
+    reasoning_effort: str = "none",
 ) -> OpenAIModel:
     """`tool_choice="required"` is load-bearing, not a tuning knob.
 
@@ -66,19 +67,10 @@ def create_model_provider(
             "max_tokens": max_tokens,
             "temperature": temperature,
             "tool_choice": "required",
-            # `reasoning_effort="none"` is a LATENCY decision, measured not
-            # assumed. deepseek-v4-flash is a reasoning model, and thinking was
-            # essentially all of the wait: 16.1s baseline, 9.5s on "low", 4.7s
-            # on "none" — same prompt, same tool call produced every time. The
-            # operator noticed the reply felt slow and asked whether thinking
-            # was on; it was.
-            #
-            # Nora's turn is one short chat reply from context already in front
-            # of her. There is nothing to reason THROUGH, and 12 extra seconds
-            # in a group chat is the difference between a friend answering and
-            # a bot lagging. Raise this if a tier ever does real multi-step
-            # work — it is per-tier, not global.
-            "reasoning_effort": "none",
+            # Comes from the tier (config.toml), not from here — a runtime
+            # value belongs in config, not in code (DEC-8). See
+            # `LLMTierConfig.reasoning_effort` for the measurements.
+            "reasoning_effort": reasoning_effort,
         },
     )
 

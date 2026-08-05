@@ -6,7 +6,6 @@ from nora.domain import ports
 from nora.domain.ports import (
     AdapterHealth,
     EngageDecision,
-    ModelTier,
     PlatformIdentity,
     SendResult,
 )
@@ -52,9 +51,9 @@ def test_send_result_can_express_a_retryable_failure():
 def test_engage_decision_carries_the_rationale_and_threshold():
     """design/02 requires the classifier's reason to reach the prefill, and a bare
     confidence is uninterpretable without the threshold it was compared against."""
-    d = EngageDecision(engage=True, reason="trigger_text", tier=ModelTier.FLASH)
+    d = EngageDecision(engage=True, reason="trigger_text")
     assert d.engage and d.rationale is None and d.confidence is None
-    c = EngageDecision(engage=True, reason="classifier", tier=ModelTier.DEEP,
+    c = EngageDecision(engage=True, reason="classifier",
                        rationale="asked a factual question about dinner",
                        confidence=0.82, threshold=0.7, allow_episode=True)
     assert c.confidence > c.threshold and c.allow_episode

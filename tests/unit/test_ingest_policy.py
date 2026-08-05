@@ -8,7 +8,7 @@ failure-behaviour row precisely because this policy cannot raise. The future
 from __future__ import annotations
 
 from nora.domain.models import NormalizedMessage
-from nora.domain.ports import EngageDecision, EngagePolicy, ModelTier
+from nora.domain.ports import EngageDecision, EngagePolicy
 from nora.ingest.policy import TriggerTextPolicy
 
 
@@ -23,7 +23,6 @@ async def test_a_genuine_trigger_engages():
     policy = TriggerTextPolicy("nora.000")
     decision = await policy.should_engage(message=_msg("hey nora.000 what's up"))
     assert decision.engage is True
-    assert decision.tier is ModelTier.FLASH
 
 
 async def test_an_untagged_message_does_not_engage():

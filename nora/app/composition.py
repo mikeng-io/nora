@@ -216,12 +216,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
     )
 
-    tier = cfg.llm.tiers.flash
+    tier = cfg.llm
     api_key = os.environ.get(cfg.llm.api_key_env, "")  # presence already checked by config.load
     client = factory.create_client(base_url=cfg.llm.base_url, api_key=api_key)
     model = factory.create_model_provider(
         model=tier.model, max_tokens=tier.max_tokens, temperature=tier.temperature,
-        client=client,
+        client=client, reasoning_effort=tier.reasoning_effort,
     )
     runner = LiveAgentRunner(model=model)
     limits = factory.build_limits(

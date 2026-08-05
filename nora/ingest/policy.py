@@ -16,7 +16,7 @@ strictly worse than today.
 from __future__ import annotations
 
 from nora.domain.models import NormalizedMessage
-from nora.domain.ports import EngageDecision, EngagePolicy, ModelTier
+from nora.domain.ports import EngageDecision, EngagePolicy
 from nora.tag import is_tagged
 
 
@@ -32,7 +32,7 @@ class TriggerTextPolicy:
         # `test_trigger_matrix`. Reimplementing them here would create a second
         # implementation free to drift from the one the rule is tested against.
         if is_tagged(message.body, self._trigger_text):
-            return EngageDecision(engage=True, reason="trigger_text", tier=ModelTier.FLASH)
+            return EngageDecision(engage=True, reason="trigger_text")
         return EngageDecision(engage=False, reason="no_trigger")
 
 
@@ -61,7 +61,7 @@ class MentionPolicy:
 
     async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:
         if self._self_ids and (message.mentions & self._self_ids):
-            return EngageDecision(engage=True, reason="mention", tier=ModelTier.FLASH)
+            return EngageDecision(engage=True, reason="mention")
         return EngageDecision(engage=False, reason="no_trigger")
 
 

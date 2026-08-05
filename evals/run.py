@@ -17,8 +17,8 @@ FAIL gate for the `evals/adversarial/` corpus, plus the deterministic reveal che
 used to populate a result's `"revealed"` key.
 
 E.7 criterion #7 (this task) closes the deferral above for the adversarial corpus
-specifically: `_run_adversarial_live` runs each case against a real `llm.tiers.flash`
-reply and a real `llm.tiers.deep` (deepseek-v4-pro) judge over OmniRoute — see its own
+specifically: `_run_adversarial_live` runs each case against a real the configured model
+reply and a real a separate judge model (deepseek-v4-pro) judge over OmniRoute — see its own
 docstring — and `--suite adversarial` wires that into `main`. The `trigger`/`no_trigger`/
 `all` suites' own live run stays deferred, unchanged from Task 40/42.
 
@@ -56,7 +56,7 @@ from evals.evaluators import (
     ToolBudget,
 )
 from evals.harness import Case, load_cases, run_case
-from evals.judge import _build_judge_prompt, evaluate_raw
+from evals.judge import _DEFAULT_JUDGE_MODEL_ID, _build_judge_prompt, evaluate_raw
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
     Config,
@@ -190,9 +190,9 @@ async def _invoke_agent(model, system_prompt: str, message: str, *,
 
 async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dict]]:
     """Run the adversarial corpus against a REAL judge (deepseek-v4-pro/
-    `llm.tiers.deep` via OmniRoute; spec E.7 criterion #7). `llm.tiers.flash`
+    a separate judge model via OmniRoute; spec E.7 criterion #7). the configured model
     produces each case's candidate reply (the tier real Nora replies with);
-    `llm.tiers.deep` grades it — never the same tier that produced the reply
+    a separate judge model grades it — never the same tier that produced the reply
     (`evals.judge`'s `JUDGE_MODEL_TIER` comment: "grading with the tested model
     is circular"). Cases whose input doesn't pass `nora.tag.is_tagged` (the
     near-miss corpus) never reach the model at all — that mirrors production,
@@ -211,15 +211,15 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
     )
     try:
         reply_model = create_model_provider(
-            model=cfg.llm.tiers.flash.model,
-            max_tokens=cfg.llm.tiers.flash.max_tokens,
-            temperature=cfg.llm.tiers.flash.temperature,
+            model=cfg.llm.model,
+            max_tokens=cfg.llm.max_tokens,
+            temperature=cfg.llm.temperature,
             client=client,
         )
         judge_model = create_model_provider(
-            model=cfg.llm.tiers.deep.model,
-            max_tokens=cfg.llm.tiers.deep.max_tokens,
-            temperature=cfg.llm.tiers.deep.temperature,
+            model=_DEFAULT_JUDGE_MODEL_ID,
+            max_tokens=cfg.llm.max_tokens,
+            temperature=cfg.llm.temperature,
             client=client,
         )
         persona = PersonaStore(

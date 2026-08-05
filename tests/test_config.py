@@ -131,10 +131,9 @@ def test_config_uses_the_target_shape(toml_path):
     assert cfg.store.max_per_conversation == 500
     assert cfg.store.context_window == 40
     # tiers replace default/deep, and carry their own timeout
-    assert cfg.llm.tiers.flash.model == "deepseek-v4-flash"
-    assert cfg.llm.tiers.deep.model == "deepseek-v4-pro"
-    assert cfg.llm.tiers.flash.timeout_seconds == 30
-    assert cfg.llm.tiers.flash.limits.turns == 4
+    assert cfg.llm.model == "nora"
+    assert cfg.llm.timeout_seconds == 30
+    assert cfg.llm.limits.turns == 4
     # engagement owns the trigger; policy is declared even though only one exists
     assert cfg.engagement.policy == "trigger_text"
     assert cfg.engagement.trigger.text == "nora.000"
@@ -147,9 +146,7 @@ def test_config_uses_the_target_shape(toml_path):
     # identity_file replaces persons_file
     assert cfg.identity_file.name == "identity.toml"
     # values dropped from the deleted test_loads_the_example_config, restored here
-    assert cfg.llm.tiers.flash.limits.total_tokens == 24000
-    assert cfg.llm.tiers.deep.max_tokens == 1200
-    assert cfg.llm.tiers.deep.temperature == 0.5
+    assert cfg.llm.limits.total_tokens == 24000
     assert cfg.persona.strict is True
     assert cfg.persona.reload == "mtime"
 

@@ -54,8 +54,21 @@ _UUID = re.compile(
 # Conventional secret prefixes. Cheap to check and unambiguous when they hit.
 _KEYLIKE = re.compile(r"\b(?:sk|pk|api|ghp|gho|xox[abps])[-_][A-Za-z0-9_-]{16,}\b")
 
+# What she runs on is nobody's business. `guardrails.md` already forbids
+# disclosing it, but that is a request to a model — and unlike the credential,
+# this one IS reachable: the gateway echoes the upstream name back in every
+# response, so it exists inside the process. `config.toml` names the gateway
+# ALIAS rather than the model for the same reason; this is the backstop for
+# the paths that alias cannot cover.
+_MODELNAME = re.compile(
+    r"\b(?:deepseek|gpt|claude|gemini|gemma|llama|qwen|"
+    r"mistral|mixtral|grok|sonnet|opus|haiku|chatgpt|openai|anthropic)\b",
+    re.IGNORECASE,
+)
+
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("phone", _E164),
+    ("model", _MODELNAME),
     ("uuid", _UUID),
     ("keylike", _KEYLIKE),
 )

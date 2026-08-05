@@ -74,7 +74,7 @@ def build_offline_pipeline(
         policy=policy, allowlist=permissive_policy(), metrics=metrics, spawn=_spawn,
     )
 
-    tier = cfg.llm.tiers.flash
+    tier = cfg.llm
     limits = factory.build_limits(
         max_tokens=tier.max_tokens, turns=tier.limits.turns, total_tokens=tier.limits.total_tokens,
     )

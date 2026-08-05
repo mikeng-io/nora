@@ -16,7 +16,7 @@ from __future__ import annotations
 import dataclasses
 
 from nora.domain.models import NormalizedMessage, PersonRef
-from nora.domain.ports import MemoryHealth, ModelTier
+from nora.domain.ports import MemoryHealth
 from nora.ingest.pipeline import IngestPipeline, IngestResult
 from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
@@ -137,7 +137,6 @@ async def test_a_mapped_trigger_message_engages_and_feeds_memory_off_path():
 
     assert result.message == msg
     assert result.decision.engage is True
-    assert result.decision.tier is ModelTier.FLASH
     assert len(store.rows) == 1
     assert len(spawned) == 1
     assert memory.calls == []      # off-path: not run until the spawned coroutine is

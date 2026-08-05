@@ -74,29 +74,21 @@ class LimitsConfig(BaseModel):
     total_tokens: int
 
 
-class LLMTierConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    model: str
-    max_tokens: int
-    temperature: float
-    timeout_seconds: float
-    limits: LimitsConfig
-
-
-class LLMTiersConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    flash: LLMTierConfig
-    deep: LLMTierConfig
-
-
 class LLMConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     base_url: str
     api_key_env: str
-    tiers: LLMTiersConfig
+    model: str
+    max_tokens: int
+    temperature: float
+    timeout_seconds: float
+    # "none" | "low" | "medium" | "high". A tag is one short reply from context
+    # she already holds — nothing to reason THROUGH. Measured on
+    # deepseek-v4-flash, same prompt, tool call produced every time:
+    # "none" 4.7s, "low" 9.5s, unset 16.1s.
+    reasoning_effort: str = "none"
+    limits: LimitsConfig
 
 
 class TriggerConfig(BaseModel):

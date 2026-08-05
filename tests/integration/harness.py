@@ -263,7 +263,7 @@ def _build_config(
         "policy_file": policy_path,
     }
     if invocation_timeout is not None:
-        changes["llm.tiers.flash.timeout_seconds"] = invocation_timeout
+        changes["llm.timeout_seconds"] = invocation_timeout
     if debounce is not None:
         changes["engagement.trigger.min_interval_seconds"] = debounce
     return override_config(base, changes)
@@ -378,7 +378,7 @@ async def build_handler(
             script if not isinstance(script, FakeAgentRunner) else [],
             delay=5.0, on_call=calls.append,
         )
-        cfg = override_config(cfg, {"llm.tiers.flash.timeout_seconds": 0.2})
+        cfg = override_config(cfg, {"llm.timeout_seconds": 0.2})
     elif fault == "empty_reply":
         # bypass_guard=True: ReplyGuard's own R-4 pre-tool veto would otherwise catch a
         # whitespace-only text before Deliverer ever sees it. This exercises Deliverer's
