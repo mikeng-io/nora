@@ -184,55 +184,34 @@ Metrics are unaffected by this — `nora_errors_total{stage="ambient"}` and ever
 series kept both their names and their label values; this note is about log-text
 alerting specifically.
 
-## 6. "Turn on Langfuse tracing"
+## 6. Langfuse tracing
 
-**Status as of 2026-08-05: the capability is built and unit-tested; the switch is
-deliberately OFF.** `config.toml` has `exporter = "file"`. Nothing is sent to Langfuse.
+**Status as of 2026-08-05: ENABLED and verified end-to-end.** `config.toml` has
+`exporter = "otlp_http"` pointed at `http://127.0.0.1:3100/api/public/otel/v1/traces`,
+with `headers_env = "LANGFUSE_OTLP_HEADERS"`. The credential lives in the gitignored
+`.env` and is passed to the container by `docker-compose.yml`.
 
-**Why it was left off.** Enabling it needs a Langfuse API key pair, and none exists on
-this host — `.env` carries only `OMNIROUTE_API_KEY`. `POST /api/public/otel/v1/traces`
-returns **401** without credentials, and an exporter that 401s drops spans quietly. Under
-R-5 Nora is silent when she is broken, so a misconfigured exporter looks exactly like a
-working one that has nothing to report. A placeholder credential would have been worse
-than no credential, for the same reason `.env` deliberately leaves `OMNIROUTE_API_KEY`
-empty rather than filling it with `your-key-here` (see the comment in that file).
+**How it was verified** (do the same after any change here — do not assume):
+1. `POST /api/public/otel/v1/traces` with the auth header → **200** (it is **401** without).
+2. A span emitted through Nora's own `setup_tracing()` appeared in Langfuse as
+   `nora-phase6-smoke`. Traces are listable via
+   `GET /api/public/traces?limit=5` with the same Basic header.
 
-**What is already proven:**
-- `opentelemetry-exporter-otlp-proto-http` is installed, and `_build_exporter("otlp_http", …)`
-  returns `opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter` — the
-  HTTP/protobuf variant. The gRPC exporter Langfuse cannot talk to is gone.
-- `TracingConfig` has `headers_env`, naming an env var rather than holding a secret (DEC-8;
-  there is no `${VAR}` interpolation anywhere in this config system).
-- `test_otlp_http_setup_does_not_crash_on_an_unreachable_endpoint` pins that tracing is
-  never load-bearing — a dead collector must not take Nora down.
-- Langfuse itself is up: `GET http://localhost:3100/api/public/health` → 200.
+**Design points worth not breaking:**
+- The exporter is **HTTP/protobuf**, not gRPC. Langfuse does not speak the gRPC OTLP
+  protocol, and the gRPC exporter package is not installed.
+- `headers_env` names an environment **variable**, never the value (DEC-8). There is no
+  `${VAR}` interpolation in this config system.
+- Compose passes `LANGFUSE_OTLP_HEADERS` with `:-` (optional), not `:?` (required),
+  because **tracing is never load-bearing**: an unset credential must degrade to
+  no-auth, not refuse to boot. `test_otlp_http_setup_does_not_crash_on_an_unreachable_endpoint`
+  pins the same property for a dead collector.
+- `trace_attributes` emits **provenance only, never message content** — there is a
+  dedicated test. `persona_sha256` on every span is DEC-5's trace-to-prompt linkage.
 
-**To enable, in this order:**
+**If traces stop appearing:** check the container log first. A 401 or a connection
+refusal is logged there and nowhere else, precisely because tracing failures are
+non-fatal — so the symptom is silence, not an error.
 
-1. In Langfuse (`http://localhost:3100`), create or open a project and issue an API key
-   pair — a public key and a secret key.
-2. Build the header value. Langfuse's OTLP endpoint takes HTTP Basic auth, and
-   `OTEL_EXPORTER_OTLP_HEADERS` wants comma-separated `key=value` pairs, **URL-encoded**:
-   ```bash
-   printf '%s' "$LF_PUBLIC:$LF_SECRET" | base64 -w0
-   # then, in .env (gitignored — never commit a real value):
-   # LANGFUSE_OTLP_HEADERS=Authorization=Basic%20<that base64 string>
-   ```
-   Note `%20`, not a literal space — the value is URL-encoded.
-3. In `config.toml`:
-   ```toml
-   [obs.tracing]
-   enabled     = true
-   exporter    = "otlp_http"
-   endpoint    = "http://127.0.0.1:3100/api/public/otel/v1/traces"
-   headers_env = "LANGFUSE_OTLP_HEADERS"
-   ```
-   `TracingConfig` is `extra="forbid"`, so a typo here is a hard startup failure, not a
-   silent misconfiguration. That is intentional.
-4. Restart: `docker compose up -d`.
-5. **Verify a span actually lands** — do not assume. Tag Nora once, then look for the trace
-   in Langfuse. If nothing appears, check the container log for exporter errors; a 401 or a
-   connection refusal will be logged there and nowhere else, because tracing failures are
-   deliberately non-fatal.
-
-**Rollback:** set `exporter = "file"` and restart. No data migration, no schema change.
+**Rollback:** set `exporter = "file"` in `config.toml` and restart. No data migration,
+no schema change.

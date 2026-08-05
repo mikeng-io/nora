@@ -16,6 +16,11 @@ services:
       # Never hardcoded — must already be exported in the shell that runs `docker
       # compose up` (see .env.example). Compose fails fast if it's unset.
       - OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:?set OMNIROUTE_API_KEY in the host environment first}
+      # Langfuse OTLP auth. Optional by design: tracing is never load-bearing, so an
+      # unset value must degrade to no-auth rather than refuse to boot — hence `:-`
+      # and not `:?`. config.toml's obs.tracing.headers_env names this variable; the
+      # value never appears in config (DEC-8).
+      - LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}
     volumes:
       - ./data:/app/data
       - ./config.toml:/app/config.toml:ro
