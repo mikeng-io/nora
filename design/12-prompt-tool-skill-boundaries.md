@@ -127,8 +127,15 @@ cannot be made to pay skill cost.
 
 1. Tools before skills. A skill bundles instructions for using tools; with
    three tools and no domain there is nothing to bundle.
-2. `lookup_person` and `group_members` over signal-cli's JSON-RPC, then
-   `recall` over Honcho's `representation` — the three that make her useful.
+2. ~~`lookup_person` and `group_members` over signal-cli's JSON-RPC, then
+   `recall` over Honcho's `representation`~~ — **built, 2026-08-06 (DEC-27).**
+   `group_members()` takes no argument at all; `lookup_person(name)` and
+   `recall(person)` take one name each and resolve it INSIDE this
+   conversation's membership (`nora.agent.room.Room`), never against
+   `Persons.index`. §3's rule became R-21 (a person in `identity.toml` but not
+   in this room is indistinguishable from one who does not exist) and R-22
+   (a tool that could not answer says so in its return value, and "nothing
+   known" is never the same value as "could not ask").
 3. Skills arrive with Phase 10's domains, packaging MCP tools plus the
    instructions for combining them.
 4. Steering, when the guard layer is worth moving.

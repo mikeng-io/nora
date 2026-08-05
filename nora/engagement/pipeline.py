@@ -41,7 +41,8 @@ from typing import Any
 
 from nora.agent.prefill import build_prefill, build_tag_message
 from nora.agent.registry import ToolRegistry
-from nora.domain.ports import AuditStore, EngagementRequest, MemoryStore
+from nora.agent.room import Room
+from nora.domain.ports import AuditStore, EngagementRequest, MemoryStore, RosterSource
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
 from nora.tag import Debounce
@@ -74,6 +75,7 @@ class EngagementPipeline:
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], Any],
         llm_state: Any = None,
+        roster_source: RosterSource | None = None,
     ) -> None:
         self._adapter = adapter
         self._audit = audit
@@ -93,6 +95,13 @@ class EngagementPipeline:
         self._metrics = metrics
         self._spawn = spawn
         self._llm_state = llm_state
+        # Optional, and `None` is a real production-shaped state, not a test
+        # affordance: `nora.app.offline` (the integration and eval harnesses)
+        # has no daemon to ask. `nora.agent.room.Room` reports an absent source
+        # as UNAVAILABLE rather than as an empty room, so a harness — or a
+        # wiring mistake — degrades honestly instead of answering "nobody is
+        # here" (R-5).
+        self._roster_source = roster_source
         self._in_flight: set[tuple[str, str]] = set()
 
     async def run(self, request: EngagementRequest) -> None:
@@ -114,9 +123,14 @@ class EngagementPipeline:
         )
         if not admitted:
             return
-        await self._run_admitted(request)
+        # `identity` is threaded on rather than re-resolved: the room-scoped
+        # tools need Nora's own id forms to leave herself out of the group's
+        # member list, and `PlatformIdentity.aliases` is the same flattened set
+        # R-12 tests membership in (design/10 §5) — the one set that survives
+        # a member arriving as a phone number here and an ACI there.
+        await self._run_admitted(request, identity)
 
-    async def _run_admitted(self, request: EngagementRequest) -> None:
+    async def _run_admitted(self, request: EngagementRequest, identity: Any) -> None:
         msg = request.message
         key = (msg.platform, msg.conversation_id)
         started = time.perf_counter()
@@ -155,24 +169,37 @@ class EngagementPipeline:
                 nora_sender_id=self._nora_sender_id, conversation_id=msg.conversation_id,
                 budgets=self._tool_registry.budgets(), metrics=self._metrics,
             )
+            # One `Room` per tag, constructed here and closed over by the three
+            # room-scoped tools. Nothing reads the platform roster unless one
+            # of those tools is actually called — the daemon round trip is
+            # inside `Room`, lazily, and cached for the tag — so this stays off
+            # both the ingest path and the front of the model call.
+            room = Room(
+                platform=msg.platform, conversation_id=msg.conversation_id,
+                roster_source=self._roster_source, persons=self._persons,
+                tagger=ctx.tagger, self_ids=frozenset(getattr(identity, "aliases", ())),
+            )
             tools = self._tool_registry.build(
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer,
+                room=room, question=msg.body,
                 context_window=self._context_window, metrics=self._metrics,
             )
             tagger_name = self._persons.display_name(msg)
+            # STILL NO ROSTER IN THE PROMPT, and now there is a tool instead.
+            # `identity.toml` is Nora's address book across EVERY room; handing
+            # all of it to one room discloses the existence and names of people
+            # who are not in it — asked who was in the group she listed five
+            # people who have never been members, a real leak rather than a
+            # wrong answer. `group_members` answers that question from the
+            # PLATFORM's membership list for this conversation, so the scope is
+            # the room itself rather than the address book, and it costs a tool
+            # call only when somebody actually asks. The tagger's own aliases
+            # still reach the model via `build_tag_message`, scoped by
+            # construction.
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name, context_window=self._context_window,
-                # NO ROSTER. `identity.toml` is Nora's address book across
-                # EVERY room; handing all of it to one room discloses the
-                # existence and names of people who are not in it. Asked who
-                # was in the group, she listed five people who have never been
-                # members — a real leak, not a wrong answer. Scoping needs
-                # policy.toml's per-conversation `persons`, which lives on the
-                # ingest pipeline, so it is a wiring change and not a one-liner.
-                # The tagger's own aliases still reach the model via
-                # `build_tag_message`, which is scoped by construction.
             )
             tag_message = build_tag_message(
                 ctx, tagger_name=tagger_name, display_name=self._display_name,

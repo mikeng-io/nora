@@ -35,6 +35,7 @@ from nora.domain.ports import (
     MemoryHealth,
     PlatformIdentity,
     ReactionResult,
+    Recollection,
     SendResult,
 )
 from nora.engagement.context import TranscriptInjection
@@ -44,7 +45,7 @@ from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona
 from nora.persons import Persons
 from nora.tag import Debounce
-from nora.testing import FakeAuditStore
+from nora.testing import FakeAuditStore, FakeRosterSource
 from nora.testing.scripted_agent import _invoke_tool
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
@@ -103,6 +104,24 @@ class _FakeMemory:
 
     async def aclose(self) -> None:
         return None
+
+
+class _RecordingMemory(_FakeMemory):
+    """`_FakeMemory` plus the one endpoint the `recall` tool speaks to.
+
+    Unknown peers are reachable-with-nothing, exactly as the live Honcho is
+    (200 and an empty string, never a 404) — a fake that 404'd instead would
+    make «no such peer» and «could not ask» look like the same event, which is
+    the ambiguity this whole feature is built to keep apart.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.queries: list[tuple[str, str]] = []
+
+    async def representation(self, *, peer_id, search_query, max_conclusions=5):
+        self.queries.append((peer_id, search_query))
+        return Recollection(reachable=True, conclusions=("Miles is from Ridgeline",))
 
 
 class _FakePersonaStore:
@@ -205,6 +224,7 @@ def _build_pipeline(
     debounce_seconds: float = 0.0,
     clock=None,
     background=None,
+    roster_source=None,
 ):
     audit = audit if audit is not None else FakeAuditStore()
     memory = memory if memory is not None else _FakeMemory()
@@ -232,6 +252,7 @@ def _build_pipeline(
         metrics=metrics,
         spawn=background.spawn,
         llm_state=llm_state,
+        roster_source=roster_source,
     )
     return pipeline, metrics, audit, memory, background
 
@@ -727,3 +748,82 @@ async def test_a_timed_out_turn_resolves_to_a_caution_too():
     assert adapter.sent == []
     assert adapter.emojis == [indicate.ACK, indicate.GAVE_UP]
     assert metrics.get("nora_silent_failures_total", reason="invocation_timeout") == 1
+
+
+# ---------------------------------------------------------------------------
+# The room-scoped tools, wired end to end
+# ---------------------------------------------------------------------------
+
+
+class _RoomRunner:
+    """Calls one room-scoped tool against the REAL tools the pipeline built,
+    then replies — so this asserts the whole chain (pipeline -> ToolRegistry ->
+    tools -> Room -> RosterSource), not a hand-built `Room`."""
+
+    def __init__(self, tool: str, **args) -> None:
+        self._tool = tool
+        self._args = args
+        self.result = None
+
+    async def invoke(self, **kwargs) -> None:
+        tools = {t.tool_name: t for t in kwargs["tools"]}
+        self.result = await _invoke_tool(tools[self._tool], **self._args)
+        await _invoke_tool(tools["send_reply"], text="ok")
+
+
+async def test_the_room_scoped_tools_are_bound_to_the_tagged_conversation():
+    """`group_members` takes no argument, so the ONLY thing that can decide
+    which group it answers about is what the pipeline closed over."""
+    runner = _RoomRunner("group_members")
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=runner,
+        roster_source=FakeRosterSource(groups={
+            "g1": (frozenset({"+852111"}), frozenset({"+852000"})),
+            "g2": (frozenset({"+852999"}),),
+        }),
+    )
+    await pipeline.run(_request(_msg(conversation_id="g1")))
+    await _drain(background)
+    assert runner.result["status"] == "ok"
+    assert runner.result["members"] == ["Miles"]
+
+
+async def test_nora_is_not_reported_as_a_member_of_her_own_group():
+    """Her account is in `listGroups`' member list and maps to nobody in
+    identity.toml, so without the identity threaded through the pipeline she
+    would be counted as one member with no name — a stranger, who is her."""
+    runner = _RoomRunner("group_members")
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=runner,
+        adapter=_FakeAdapter(account="+852000"),
+        roster_source=FakeRosterSource(groups={
+            "g1": (frozenset({"+852111"}), frozenset({"+852000"})),
+        }),
+    )
+    await pipeline.run(_request(_msg(conversation_id="g1")))
+    await _drain(background)
+    assert runner.result["members_i_have_no_name_for"] == 0
+
+
+async def test_a_pipeline_with_no_roster_source_degrades_instead_of_emptying_the_room():
+    """`nora.app.offline` wires none — there is no daemon in a harness. The
+    answer must be «I could not look», never «nobody is here» (R-5)."""
+    runner = _RoomRunner("group_members")
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(runner=runner)
+    await pipeline.run(_request())
+    await _drain(background)
+    assert runner.result["status"] == "unavailable"
+
+
+async def test_recall_asks_about_the_tagging_message_without_being_told_it():
+    """DEC-24 end to end: `recall(person)` has one parameter, and the QUESTION
+    reaches Honcho anyway because the pipeline closed over the tag body."""
+    runner = _RoomRunner("recall", person="Miles")
+    memory = _RecordingMemory()
+    pipeline, _metrics, _audit, _memory2, background = _build_pipeline(
+        runner=runner, memory=memory,
+        roster_source=FakeRosterSource(groups={"g1": (frozenset({"+852111"}),)}),
+    )
+    await pipeline.run(_request(_msg()))
+    await _drain(background)
+    assert memory.queries == [("miles", "nora.000 幾點食飯")]

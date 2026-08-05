@@ -1,6 +1,7 @@
 import pytest
 
 from nora.agent.guards import Deliverer
+from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.domain.models import ConversationTarget, NormalizedMessage, Quote
 from nora.infra.sql.audit import SqlAuditStore
@@ -42,9 +43,16 @@ async def wiring(tmp_path):
     deliverer = Deliverer(store=store, adapter=sink, target=TARGET, persona=persona,
                           canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics())
     metrics = Metrics()
+    persons = load_persons(persons_file)
+    # No roster source: this fixture is about the tools that do not need one.
+    # `Room` reports that as UNAVAILABLE, never as an empty room —
+    # tests/test_room_tools.py is where the three room-scoped tools are
+    # exercised against a real roster.
+    room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=persons)
     tools = build_tools(store=store, conversation_id="g1", conversation_type="group",
-                        persons=load_persons(persons_file), honcho=honcho,
-                        deliverer=deliverer, metrics=metrics, context_window=40)
+                        persons=persons, honcho=honcho,
+                        deliverer=deliverer, metrics=metrics, room=room,
+                        question="who is here", context_window=40)
     try:
         yield {"tools": {t.tool_name: t for t in tools}, "sink": sink,
                "honcho": honcho, "deliverer": deliverer, "store": store, "metrics": metrics}
@@ -53,7 +61,10 @@ async def wiring(tmp_path):
 
 
 def test_every_declared_tool_is_built(wiring):
-    assert set(wiring["tools"]) == {"now", "read_buffer", "read_peer_card", "send_reply"}
+    assert set(wiring["tools"]) == {
+        "now", "read_buffer", "read_peer_card", "send_reply",
+        "group_members", "lookup_person", "recall",
+    }
 
 
 def test_feed_honcho_is_not_a_tool(wiring):
@@ -223,6 +234,9 @@ async def test_send_reply_delegates_to_the_deliverer(wiring):
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):
     await _call(wiring["tools"]["read_buffer"], limit=40)
     await _call(wiring["tools"]["read_peer_card"], sender_id="+852111")
+    await _call(wiring["tools"]["group_members"])
+    await _call(wiring["tools"]["lookup_person"], name="Miles")
+    await _call(wiring["tools"]["recall"], person="Miles")
     assert wiring["sink"].sent == []
 
 

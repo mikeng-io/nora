@@ -17,6 +17,8 @@ from nora.domain.ports import (
     MemoryHealth,
     PlatformIdentity,
     ReactionResult,
+    Recollection,
+    Roster,
     SendResult,
 )
 
@@ -155,10 +157,25 @@ class FakeMemoryStore:
     the same "log and return a benign value" contract `HonchoClient` documents.
     """
 
-    def __init__(self, *, cards: dict[str, list[str]] | None = None, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        cards: dict[str, list[str]] | None = None,
+        conclusions: dict[str, list[str]] | None = None,
+        fail: bool = False,
+    ) -> None:
         self.fed: list[tuple[str, str]] = []
         self.peers: list[str] = []
         self.cards = cards or {}
+        # Separate from `cards` on purpose. `peer_card` and `representation`
+        # are different endpoints with different failure shapes on the live
+        # instance — `GET /peers/{id}/card` answers `{"peer_card": null}` even
+        # for peers that demonstrably have conclusions — and a fake that
+        # served one dict for both would make them look interchangeable, which
+        # is exactly the "fake answers every request the same way" trap that
+        # hid three separate no-ops in this codebase.
+        self.conclusions = conclusions or {}
+        self.queries: list[tuple[str, str]] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
@@ -179,11 +196,66 @@ class FakeMemoryStore:
             return []
         return list(self.cards.get(peer_id, []))
 
+    async def representation(
+        self, *, peer_id: str, search_query: str, max_conclusions: int = 5
+    ) -> Recollection:
+        """Mirrors `HonchoClient.representation`, INCLUDING the shape it
+        returns for a peer it has never heard of.
+
+        The live instance answers **200 with an empty string** for an unknown
+        peer rather than 404, so an unknown peer here is
+        `Recollection(reachable=True, conclusions=())` — reachable, knowing
+        nothing — and only `fail=True` produces `reachable=False`. A fake that
+        collapsed those two into one value would let every test asserting the
+        distinction pass against a client that had lost it, which is precisely
+        how `peer_card` shipped dead.
+        """
+        self.queries.append((peer_id, search_query))
+        if self.fail:
+            return Recollection(reachable=False)
+        return Recollection(
+            reachable=True,
+            conclusions=tuple(self.conclusions.get(peer_id, ()))[:max_conclusions],
+        )
+
     async def health(self) -> MemoryHealth:
         return MemoryHealth(reachable=not self.fail)
 
     async def aclose(self) -> None:
         return None
+
+
+class FakeRosterSource:
+    """In-memory `nora.domain.ports.RosterSource`.
+
+    Bound to `nora.platform.signal.roster.SignalRoster` by
+    `tests/contract/test_roster_source_contract.py` — a port never gains a
+    second implementation, test fakes included, without a suite both pass.
+
+    `available=False` is reachable two ways here because it is reachable two
+    ways in production: the daemon is unreadable (`fail=True`), or the daemon
+    answered but does not list this conversation (an unknown id — stale group
+    state on a linked device, which this deployment has actually hit). Neither
+    is an empty roster, and the contract suite pins that both stores agree.
+    """
+
+    platform = "signal"
+
+    def __init__(
+        self,
+        *,
+        groups: dict[str, tuple[frozenset[str], ...]] | None = None,
+        fail: bool = False,
+    ) -> None:
+        self.groups = groups or {}
+        self.fail = fail
+        self.calls: list[str] = []
+
+    async def roster(self, *, conversation_id: str) -> Roster:
+        self.calls.append(conversation_id)
+        if self.fail or conversation_id not in self.groups:
+            return Roster(available=False)
+        return Roster(available=True, members=tuple(self.groups[conversation_id]))
 
 
 class FakeAdapter:

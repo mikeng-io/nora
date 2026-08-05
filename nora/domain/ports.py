@@ -100,6 +100,16 @@ avoid:
   declared here so a static conformance check (mypy on `nora.infra`) has
   something to hold the implementation to.
 
+- `MemoryStore.representation()` returns `Recollection`, NOT `list[str]` like
+  its older sibling `peer_card`. The two differ in exactly the bit that
+  matters: `peer_card` answers `[]` both when Honcho is down and when it knows
+  nothing, which is how a dead endpoint returned `[]` on every call for the
+  life of the deployment unnoticed. `representation`'s own transport makes
+  that worse — an unknown peer answers 200 with an empty string, not 404 — so
+  the reachability bit cannot be recovered by the caller and is carried
+  instead. `peer_card` is left alone: changing its return type is a separate
+  migration, and `Recollection` is what new call sites are held to.
+
 - `MemoryStore.health()` returns `MemoryHealth`, mirroring
   `PlatformAdapter.health() -> AdapterHealth`, instead of the bare
   `dict[str, Any]` it used to share with nothing else on this port.
@@ -207,6 +217,68 @@ class EngagementRequest:
     tag_id: str
 
 
+@dataclass(frozen=True)
+class Roster:
+    """Who a platform says is currently in one conversation.
+
+    `available` is a SEPARATE axis from emptiness, and that separation is the
+    whole reason this is not a bare list. `RosterSource.roster` never raises —
+    a wedged signal-cli must not take a tag down — so without this flag an
+    unreachable daemon and an empty room produce the same value, and every
+    room-scoped tool would answer "there is nobody here" when the truth is
+    "I could not look". That ambiguity is exactly what hid the dead
+    `peer_card` endpoint for the life of the deployment.
+
+    `members` is one frozenset of id forms PER member, mirroring
+    `nora.platform.signal.directory.SignalGroup.members`: which ids belong to
+    the same account is the point of reading it (under sealed sender the same
+    account reaches Nora as a phone number on one message and an ACI on
+    another), and a flat set would destroy that pairing.
+    """
+
+    available: bool
+    members: tuple[frozenset[str], ...] = ()
+
+
+@dataclass(frozen=True)
+class Recollection:
+    """What durable memory returned about ONE person, for ONE question.
+
+    Same two-axis shape as `Roster`, for the same reason and with a sharper
+    precedent: `MemoryStore.peer_card` returns `[]` both when Honcho is down
+    and when it knows nothing, and that is precisely why a broken endpoint
+    could return `[]` on every call for the whole life of the deployment
+    without anybody noticing. Honcho's `representation` endpoint makes it
+    worse, not better — an unknown peer answers **200 with an empty string**
+    rather than 404, so "no such peer" and "nothing known" are already
+    indistinguishable at the HTTP layer. `reachable` is the one bit that
+    cannot be recovered afterwards, so it is carried rather than inferred.
+    """
+
+    reachable: bool
+    conclusions: tuple[str, ...] = ()
+
+
+@runtime_checkable
+class RosterSource(Protocol):
+    """Current membership of a conversation, read from the platform.
+
+    Separate from `PlatformAdapter` on purpose. Membership is a DIRECTORY read
+    (`nora.platform.signal.directory`'s read-only JSON-RPC allowlist), not part
+    of the send/receive/react lifecycle every adapter must implement, and
+    putting it on `PlatformAdapter` would oblige every future adapter — and
+    every fake — to implement a roster it may have no endpoint for.
+
+    `roster()` takes no `platform`: an implementation is bound to one, exactly
+    as `PlatformAdapter` is. **It must never raise** — the caller is a tool
+    inside a live turn, and the honest degradation is `Roster(available=False)`.
+    """
+
+    platform: str
+
+    async def roster(self, *, conversation_id: str) -> Roster: ...
+
+
 @runtime_checkable
 class PlatformAdapter(Protocol):
     """No `parse()` — see module docstring.
@@ -282,6 +354,10 @@ class MemoryStore(Protocol):
     async def feed(self, *, peer_id: str, text: str) -> bool: ...
 
     async def peer_card(self, *, peer_id: str) -> list[str]: ...
+
+    async def representation(
+        self, *, peer_id: str, search_query: str, max_conclusions: int = 5
+    ) -> Recollection: ...
 
     async def health(self) -> MemoryHealth: ...
 

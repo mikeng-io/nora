@@ -7,11 +7,11 @@ plugin makes for its own injected XML.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from datetime import datetime
 from xml.sax.saxutils import escape as _escape
 
-from ..domain.models import PersonRef, TagContext, TranscriptRow
+from ..domain.models import TagContext, TranscriptRow
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
@@ -82,6 +82,14 @@ def _context_header(context_window: int, now: datetime | None = None) -> str:
         "- read_buffer — messages older than the window above.\n"
         "- read_peer_card — only if the recall block is empty and who they are "
         "actually matters to the answer.\n"
+        "- group_members — who is in this conversation. Use it instead of "
+        "guessing from the transcript; people who have not spoken are still "
+        "here.\n"
+        "- lookup_person — who a name or nickname in a message refers to. Only "
+        "knows people in this conversation.\n"
+        "- recall — what you durably remember about one of them. It tells you "
+        "apart «I remember nothing yet» from «I could not check»; never report "
+        "the second as the first.\n"
         "- send_reply — this is the only way anything you write reaches the "
         "group. Call it once, at the end. If you never call it, nothing is "
         "sent and the group hears nothing.\n"
@@ -165,42 +173,31 @@ def _peer_card_block(ctx: TagContext) -> str:
     return f'<peer_card person="{who}">\n{facts}\n</peer_card>\n'
 
 
-def _roster_block(people: Sequence[PersonRef]) -> str:
-    """Who the group is, and what they get called.
-
-    Without this only the TAGGER's names reach the model, so a message
-    mentioning 「阿豹」 or 「峰哥」 reads as a stranger even though the operator
-    has written down exactly who that is. Nora needs the whole roster to follow
-    an ordinary conversation, not just the person addressing her.
-
-    Names and nicknames only — never a phone number, never an ACI. Those are
-    what R-18 (`nora.agent.egress`) refuses to let out, and putting them in the
-    prompt would be handing the model the very thing that guard exists to keep
-    off the wire.
-    """
-    if not people:
-        return ""
-    lines = []
-    for p in sorted(people, key=lambda x: x.person_id):
-        aka = f" — also called {', '.join(p.aliases)}" if p.aliases else ""
-        lines.append(f"- {escape(p.name)}{escape(aka)}")
-    return (
-        "<roster>\n"
-        "The people in this conversation, and the other names they go by.\n"
-        + "\n".join(lines)
-        + "\n</roster>\n"
-    )
-
-
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
-    roster: Sequence[PersonRef] = (), now: datetime | None = None,
+    now: datetime | None = None,
 ) -> list[dict]:
+    """The three prefill messages. **There is deliberately no roster block.**
+
+    One existed, took a `Sequence[PersonRef]`, and was removed after the leak
+    design/12 §3 records: it was fed the whole of `identity.toml`, which is
+    Nora's address book across every room, so asked who was in the group she
+    listed five people who had never been members. R-18 saw nothing to block —
+    the block carried only names — which is the point: by the time text exists
+    the disclosure is already authorised, so scope has to be enforced where the
+    answer is assembled.
+
+    The parameter went with it rather than being left defaulted to `()`. A dead
+    seam accepting an unscoped roster is a loaded gun: it would have passed
+    every test in this file while doing nothing, until somebody wired it back
+    up. `group_members` (`nora.agent.tools`) answers the same question from
+    THIS conversation's own membership list, and only when it is asked.
+    """
     return [
         _message("user", _context_header(context_window, now)),
         _message(
             "user",
-            _roster_block(roster) + _peer_card_block(ctx)
+            _peer_card_block(ctx)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),
