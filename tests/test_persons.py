@@ -6,13 +6,13 @@ from nora.persons import PersonsError, load_persons, sanitize_unmapped
 TOML = """
 [persons.miles]
 name = "Miles"
-[persons.miles.signal]
+[[persons.miles.signal]]
 phone = "+85212345678"
 uuid = "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
 
 [persons.ada]
 name = "Ada"
-[persons.ada.signal]
+[[persons.ada.signal]]
 phone = "+85287654321"
 """
 
@@ -76,11 +76,11 @@ def test_duplicate_sender_id_across_persons_is_a_startup_failure(tmp_path):
     p.write_text(
         "[persons.miles]\n"
         "name = \"Miles\"\n"
-        "[persons.miles.signal]\n"
+        "[[persons.miles.signal]]\n"
         "phone = \"+852111\"\n"
         "[persons.clone]\n"
         "name = \"Clone\"\n"
-        "[persons.clone.signal]\n"
+        "[[persons.clone.signal]]\n"
         "phone = \"+852111\"\n"
     )
     with pytest.raises(PersonsError, match="duplicate"):
@@ -95,7 +95,7 @@ def test_the_same_id_twice_under_the_same_person_is_not_a_duplicate_failure(tmp_
     p.write_text(
         "[persons.miles]\n"
         "name = \"Miles\"\n"
-        "[persons.miles.signal]\n"
+        "[[persons.miles.signal]]\n"
         "phone = \"+852111\"\n"
         "username = \"+852111\"\n"
     )
@@ -133,7 +133,7 @@ def test_unknown_top_level_key_is_a_startup_failure(tmp_path):
         "\n"
         "[persons.miles]\n"
         "name = \"Miles\"\n"
-        "[persons.miles.signal]\n"
+        "[[persons.miles.signal]]\n"
         "phone = \"+85212345678\"\n"
     )
     with pytest.raises(PersonsError, match="unexpected_top_level_key"):
@@ -148,7 +148,7 @@ def test_unknown_field_in_a_person_entry_is_a_startup_failure(tmp_path):
         "[persons.miles]\n"
         "name = \"Miles\"\n"
         "unexpected_field = \"oops\"\n"
-        "[persons.miles.signal]\n"
+        "[[persons.miles.signal]]\n"
         "phone = \"+85212345678\"\n"
     )
     with pytest.raises(PersonsError, match="unexpected_field"):
@@ -160,9 +160,9 @@ def test_loads_identity_toml(tmp_path):
     path.write_text(
         '[persons.miles]\n'
         'name = "Miles"\n'
-        '[persons.miles.signal]\n'
+        '[[persons.miles.signal]]\n'
         'phone = "+85212345678"\n'
-        '[persons.miles.telegram]\n'
+        '[[persons.miles.telegram]]\n'
         'user_id = 123456789\n'          # TOML integers must stringify
     )
     persons = load_persons(path)
@@ -196,7 +196,7 @@ def test_display_name_as_an_id_kind_is_a_startup_failure(tmp_path):
     p.write_text(
         "[persons.miles]\n"
         "name = \"Miles\"\n"
-        "[persons.miles.signal]\n"
+        "[[persons.miles.signal]]\n"
         "display_name = \"Miles\"\n"
     )
     with pytest.raises(PersonsError, match="display_name"):
@@ -208,7 +208,7 @@ def test_an_unknown_id_kind_for_a_platform_is_a_startup_failure(tmp_path):
     p.write_text(
         "[persons.miles]\n"
         "name = \"Miles\"\n"
-        "[persons.miles.signal]\n"
+        "[[persons.miles.signal]]\n"
         "user_id = \"123\"\n"          # that's telegram's kind, not signal's
     )
     with pytest.raises(PersonsError, match="not a valid id kind"):
@@ -222,19 +222,19 @@ def test_every_platform_in_the_preview_toml_is_accepted(tmp_path):
         "[persons.miles]\n"
         "name = \"Miles\"\n"
         "\n"
-        "[persons.miles.signal]\n"
+        "[[persons.miles.signal]]\n"
         "phone    = \"+85212345678\"\n"
         "uuid     = \"8185b8fa-359a-4c0a-c6ed-24814dc655bb\"\n"
         "username = \"miles.42\"\n"
         "\n"
-        "[persons.miles.telegram]\n"
+        "[[persons.miles.telegram]]\n"
         "user_id  = \"123456789\"\n"
         "username = \"mikeng\"\n"
         "\n"
-        "[persons.miles.discord]\n"
+        "[[persons.miles.discord]]\n"
         "user_id = \"100000000000000003\"\n"
         "\n"
-        "[persons.miles.whatsapp]\n"
+        "[[persons.miles.whatsapp]]\n"
         "phone = \"+85212345678\"\n"
     )
     persons = load_persons(p)
@@ -245,3 +245,128 @@ def test_every_platform_in_the_preview_toml_is_accepted(tmp_path):
     assert persons.resolve("telegram", "pinegrove") is not None
     assert persons.resolve("discord", "100000000000000003") is not None
     assert persons.resolve("whatsapp", "+85212345678") is not None
+
+
+# ── many accounts per platform (design/10 §3, the multi-account baseline) ────
+# A person holding several accounts on ONE platform is the ordinary case, not
+# an edge case: a dual-SIM personal/work pair, a second Discord, a burner
+# Telegram. This is a different axis from many ID FORMS of one account (phone /
+# uuid / username), which the tests above already cover — the original schema
+# conflated the two and had nowhere to put the second account.
+
+
+def _write(tmp_path, body: str):
+    p = tmp_path / "identity.toml"
+    p.write_text(body)
+    return p
+
+
+TWO_ACCOUNTS = """
+[persons.miles]
+name = "Miles"
+
+[[persons.miles.signal]]
+label = "personal"
+phone = "+85290000101"
+uuid = "a1000001-0000-4000-8000-000000000001"
+
+[[persons.miles.signal]]
+label = "business"
+phone = "+85290000103"
+uuid = "a1000002-0000-4000-8000-000000000002"
+"""
+
+
+def test_two_accounts_on_one_platform_resolve_to_the_same_person(tmp_path):
+    """A2: one human is one Honcho peer. Both registrations must land on the
+    same person_id, or his memory splits across two peer cards."""
+    persons = load_persons(_write(tmp_path, TWO_ACCOUNTS))
+    ids = [
+        "+85290000101", "a1000001-0000-4000-8000-000000000001",
+        "+85290000103", "a1000002-0000-4000-8000-000000000002",
+    ]
+    resolved = [persons.resolve("signal", i) for i in ids]
+    assert all(r is not None for r in resolved), "every listed id must resolve"
+    assert {r.person_id for r in resolved} == {"miles"}
+    assert {r.honcho_peer_id for r in resolved} == {"miles"}
+
+
+def test_a_label_is_never_matchable(tmp_path):
+    """`label` is operator-authored free text. If it reached the reverse index
+    a spoofable string would become a resolvable identity (design/10 §1.3)."""
+    persons = load_persons(_write(tmp_path, TWO_ACCOUNTS))
+    assert persons.resolve("signal", "personal") is None
+    assert persons.resolve("signal", "business") is None
+    assert ("signal", "personal") not in persons.index
+
+
+def test_the_retired_single_table_form_names_its_replacement(tmp_path):
+    """pydantic's own "Input should be a valid list" names neither the new
+    shape nor why it changed; §7.3 set the precedent that this file's breaks
+    get a readable error."""
+    body = '[persons.miles]\nname = "Miles"\n[persons.miles.signal]\nphone = "+852111"\n'
+    with pytest.raises(PersonsError, match=r"array of tables"):
+        load_persons(_write(tmp_path, body))
+
+
+def test_the_same_id_in_two_account_blocks_is_a_startup_failure(tmp_path):
+    """The copy-paste-and-forget-to-edit mistake, which is otherwise SILENT:
+    both blocks map to this person so the cross-person check never fires, and
+    the id that was never pasted resolves to nobody. Under sealed sender that
+    unpasted ACI is often the only id Nora ever sees."""
+    body = (
+        '[persons.miles]\nname = "Miles"\n'
+        '[[persons.miles.signal]]\nlabel = "personal"\n'
+        'phone = "+85290000101"\nuuid = "a1000001-0000-4000-8000-000000000001"\n'
+        '[[persons.miles.signal]]\nlabel = "business"\n'
+        'phone = "+85290000103"\nuuid = "a1000001-0000-4000-8000-000000000001"\n'
+    )
+    with pytest.raises(PersonsError, match=r"two different account blocks"):
+        load_persons(_write(tmp_path, body))
+
+
+def test_a_list_at_the_leaf_is_refused(tmp_path):
+    """Multiplicity lives at the TABLE level, never at the leaf. If the leaf
+    type were widened to accept a list, `str(["+1","+2"])` would reach the
+    reverse index as a key no sender can ever present — a permanently mute
+    Nora with no error, invisible under R-5."""
+    body = '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = ["+1", "+2"]\n'
+    with pytest.raises(PersonsError):
+        load_persons(_write(tmp_path, body))
+
+
+def test_two_accounts_must_each_be_labelled(tmp_path):
+    """A second, independent tripwire on the copy-paste failure above: it
+    forces the operator to look at the block he just duplicated."""
+    body = (
+        '[persons.miles]\nname = "Miles"\n'
+        '[[persons.miles.signal]]\nphone = "+1"\n'
+        '[[persons.miles.signal]]\nphone = "+2"\n'
+    )
+    with pytest.raises(PersonsError, match=r"needs a `label"):
+        load_persons(_write(tmp_path, body))
+
+
+def test_two_accounts_may_not_share_a_label(tmp_path):
+    body = (
+        '[persons.miles]\nname = "Miles"\n'
+        '[[persons.miles.signal]]\nlabel = "mine"\nphone = "+1"\n'
+        '[[persons.miles.signal]]\nlabel = "mine"\nphone = "+2"\n'
+    )
+    with pytest.raises(PersonsError, match=r"duplicate label"):
+        load_persons(_write(tmp_path, body))
+
+
+def test_an_account_with_no_matchable_id_is_refused(tmp_path):
+    """A block holding only a label contributes nothing to the index — it
+    would sit in the file looking like a mapping while resolving no one."""
+    body = '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nlabel = "empty"\n'
+    with pytest.raises(PersonsError, match=r"no matchable id"):
+        load_persons(_write(tmp_path, body))
+
+
+def test_a_single_account_still_needs_no_label(tmp_path):
+    """The cost of the change for a one-account person is two brackets."""
+    body = '[persons.ada]\nname = "Ada"\n[[persons.ada.signal]]\nuuid = "b68741f9"\n'
+    persons = load_persons(_write(tmp_path, body))
+    assert persons.resolve("signal", "b68741f9").person_id == "ada"

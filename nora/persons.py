@@ -1,8 +1,19 @@
 """identity.toml → reverse index (spec C.6, D.2; design/10 §3, §7.3).
 
-Startup-only; no hot reload in v2 (Q4). One person may hold many ids per
-platform (design/10-preview-identity.toml) — a hidden Signal phone number
-still resolves as long as the operator has pasted in the ACI Nora saw.
+Startup-only; no hot reload in v2 (Q4).
+
+Two independent axes, which design/10 §3 originally conflated:
+
+  * many ACCOUNTS per platform — a dual-SIM personal/work pair, a second
+    Discord. One `[[persons.<id>.<platform>]]` block each. This is the
+    baseline case, not an edge case.
+  * many ID FORMS per account — phone / uuid / username all naming the same
+    registration. Keys inside one block.
+
+Both flatten into one reverse index, so every id a person presents resolves to
+the same `person_id` and therefore to one Honcho peer card (A2). A hidden
+Signal phone number still resolves as long as the operator pasted in the ACI
+Nora saw.
 """
 
 from __future__ import annotations
@@ -11,10 +22,18 @@ import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-from .domain.identity import DISPLAY_NAME_KIND, id_kinds
+from .domain.identity import ACCOUNT_LABEL_KEY, DISPLAY_NAME_KIND, id_kinds
 from .domain.models import NormalizedMessage, PersonRef
 
 # Honcho requires ^[a-zA-Z0-9_-]+$ for peer ids, and honcho_peer_id == person_id.
@@ -26,18 +45,19 @@ _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _PLATFORM_FIELDS: tuple[str, ...] = ("signal", "telegram", "discord", "whatsapp")
 
 
-def _check_id_kinds(
-    platform: str, value: dict[str, str | int] | None
-) -> dict[str, str | int] | None:
-    """Shared body for each platform's `field_validator` below — kept as a
-    plain function (rather than one validator bound to all four fields) so
-    it never needs pydantic's `ValidationInfo.field_name`, which is typed
-    `str | None` and would need an `assert` (ruff S101) to narrow back to the
-    `str` `nora.domain.identity.id_kinds` expects."""
-    if value is None:
-        return value
+def _check_account(platform: str, account: dict[str, str | int]) -> None:
+    """Validate one account table's keys against `platform`'s vocabulary.
+
+    Called from `_PersonEntry`'s single `model_validator`, which walks
+    `_PLATFORM_FIELDS` — so the platform name comes from the loop variable and
+    this never needs pydantic's `ValidationInfo.field_name` (typed
+    `str | None`, which would need an `assert` and trip ruff S101).
+    """
     allowed = id_kinds(platform)
-    for kind in value:
+    matchable = 0
+    for kind in account:
+        if kind == ACCOUNT_LABEL_KEY:
+            continue                      # human-only, never matched (§1.3)
         if kind == DISPLAY_NAME_KIND:
             raise ValueError(
                 f"{platform}.{DISPLAY_NAME_KIND} is never matchable "
@@ -50,7 +70,16 @@ def _check_id_kinds(
                 f"{platform}.{kind!r} is not a valid id kind (design/10 "
                 f"§3.1); expected one of {sorted(allowed)}"
             )
-    return value
+        matchable += 1
+    if not matchable:
+        # An account table holding only a `label` contributes nothing to the
+        # reverse index, so it would sit in the file looking like a mapping
+        # while resolving no one — silent, and invisible under R-5.
+        raise ValueError(
+            f"the {platform} account {account.get(ACCOUNT_LABEL_KEY, '')!r} "
+            f"lists no matchable id — give it at least one of "
+            f"{sorted(allowed)}, or remove the block"
+        )
 
 
 class PersonsError(Exception):
@@ -91,10 +120,18 @@ class _PersonEntry(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str | None = None
-    signal: dict[str, str | int] | None = None
-    telegram: dict[str, str | int] | None = None
-    discord: dict[str, str | int] | None = None
-    whatsapp: dict[str, str | int] | None = None
+    # One dict per ACCOUNT (the baseline case, not an edge case); the keys
+    # inside are that account's id KINDS plus the never-matched `label`.
+    #
+    # The leaf type stays `str | int` ON PURPOSE: it is what makes pydantic
+    # reject `phone = ["+852…", "+852…"]` at startup instead of letting
+    # `str(list)` reach the reverse index and build a key no sender can ever
+    # present — a mute Nora with no error, invisible under R-5. Multiplicity
+    # lives at the table level, never at the leaf.
+    signal: list[dict[str, str | int]] | None = None
+    telegram: list[dict[str, str | int]] | None = None
+    discord: list[dict[str, str | int]] | None = None
+    whatsapp: list[dict[str, str | int]] | None = None
     # Accepted here ONLY so the retired `[persons.<id>.platforms]` shorthand
     # gets a specific, readable error naming its replacement (design/10 §7.3
     # — a hard break, deliberately: identity.toml is gitignored and
@@ -116,33 +153,66 @@ class _PersonEntry(BaseModel):
             )
         return None
 
-    @field_validator("signal")
+    @model_validator(mode="before")
     @classmethod
-    def _check_signal_kinds(
-        cls, value: dict[str, str | int] | None
-    ) -> dict[str, str | int] | None:
-        return _check_id_kinds("signal", value)
+    def _reject_single_table_form(cls, data: Any) -> Any:
+        """Hard break on the pre-multi-account `[persons.<id>.signal]` form.
 
-    @field_validator("telegram")
-    @classmethod
-    def _check_telegram_kinds(
-        cls, value: dict[str, str | int] | None
-    ) -> dict[str, str | int] | None:
-        return _check_id_kinds("telegram", value)
+        pydantic's own "Input should be a valid list" names neither the new
+        shape nor why it changed. `_reject_old_shorthand` set the precedent
+        (§7.3) that this file's breaks get a bespoke error; same reasoning —
+        identity.toml is gitignored and single-operator, so supporting two
+        shapes forever buys nothing.
+        """
+        if not isinstance(data, dict):
+            return data
+        for platform in _PLATFORM_FIELDS:
+            if isinstance(data.get(platform), dict):
+                raise ValueError(
+                    f"`[persons.<id>.{platform}]` is now an array of tables, "
+                    f"one per ACCOUNT — write `[[persons.<id>.{platform}]]` "
+                    "(double brackets). A person may hold several accounts on "
+                    "one platform (a dual-SIM personal/work pair, a second "
+                    "Discord), and they all resolve to the same person_id and "
+                    "share one Honcho peer card (A2). List that account's id "
+                    "forms inside the block; see "
+                    "design/10-preview-identity.toml."
+                )
+        return data
 
-    @field_validator("discord")
-    @classmethod
-    def _check_discord_kinds(
-        cls, value: dict[str, str | int] | None
-    ) -> dict[str, str | int] | None:
-        return _check_id_kinds("discord", value)
+    @model_validator(mode="after")
+    def _check_accounts(self) -> _PersonEntry:
+        """Validate every account on every platform (design/10 §3.1).
 
-    @field_validator("whatsapp")
-    @classmethod
-    def _check_whatsapp_kinds(
-        cls, value: dict[str, str | int] | None
-    ) -> dict[str, str | int] | None:
-        return _check_id_kinds("whatsapp", value)
+        One validator walking `_PLATFORM_FIELDS` replaces the four
+        near-identical `field_validator`s this class used to carry, so a fifth
+        platform costs one field instead of three edits.
+        """
+        for platform in _PLATFORM_FIELDS:
+            accounts = getattr(self, platform) or ()
+            for account in accounts:
+                _check_account(platform, account)
+            if len(accounts) < 2:
+                continue
+            # A second, independent tripwire on the silent copy-paste failure
+            # in `load_persons`: it makes the operator look at the block he
+            # just duplicated.
+            labels = [str(a.get(ACCOUNT_LABEL_KEY, "")).strip() for a in accounts]
+            if not all(labels):
+                raise ValueError(
+                    f"{platform} has {len(accounts)} accounts, so each needs a "
+                    f'`{ACCOUNT_LABEL_KEY} = "…"` naming it (e.g. "personal", '
+                    '"business"). It is never matched on — it is what '
+                    "`nora persons pending` prints back to you."
+                )
+            if len(set(labels)) != len(labels):
+                raise ValueError(
+                    f"{platform} accounts have duplicate "
+                    f"{ACCOUNT_LABEL_KEY}s {sorted(labels)} — give each one a "
+                    "distinct name, or you cannot tell them apart in "
+                    "`nora persons pending`"
+                )
+        return self
 
 
 class _PersonsFile(BaseModel):
@@ -185,19 +255,43 @@ def load_persons(path: Path) -> Persons:
         by_person[person_id] = PersonRef(
             person_id=person_id, name=name, honcho_peer_id=person_id
         )
-        # Every kind, on every platform (design/10 §3.2): any listed id
-        # resolves to the person, so all of them go into the same reverse
-        # index regardless of which kind produced the value.
+        # Every kind of every account (design/10 §3.2) flattens into one
+        # index, which is what makes all of a person's accounts land on a
+        # single `honcho_peer_id` (A2).
         for platform in _PLATFORM_FIELDS:
-            ids = getattr(entry, platform) or {}
-            for id_value in ids.values():
-                key = (platform, str(id_value))
-                existing = index.get(key)
-                if existing is not None and existing != person_id:
-                    raise PersonsError(
-                        f"duplicate ({platform}, {id_value}) mapped to both "
-                        f"{existing!r} and {person_id!r} — an ambiguous identity "
-                        "would silently misattribute Honcho memory"
-                    )
-                index[key] = person_id
+            # (platform, value) → the index of the account block that claimed
+            # it, so the two duplicate cases can be told apart below.
+            claimed_by: dict[tuple[str, str], int] = {}
+            for account_no, account in enumerate(getattr(entry, platform) or ()):
+                for kind, id_value in account.items():
+                    if kind == ACCOUNT_LABEL_KEY:
+                        continue          # human-only, never matched (§1.3)
+                    key = (platform, str(id_value))
+
+                    # Same id in two of ONE person's blocks: the
+                    # copy-paste-and-forget-to-edit mistake. Silent, because
+                    # both blocks map to this person so the cross-person check
+                    # never fires, while the id that was never pasted resolves
+                    # to nobody — and under sealed sender that is often the
+                    # only id Nora sees. Tolerated WITHIN one block, where the
+                    # same literal under two kinds is harmless.
+                    previous = claimed_by.get(key)
+                    if previous is not None and previous != account_no:
+                        raise PersonsError(
+                            f"{person_id!r} lists ({platform}, {id_value}) in "
+                            f"two different account blocks (#{previous + 1} and "
+                            f"#{account_no + 1}) — did you copy the block and "
+                            "forget to edit this id? The account whose real id "
+                            "is missing would silently resolve to nobody."
+                        )
+                    claimed_by[key] = account_no
+
+                    existing = index.get(key)
+                    if existing is not None and existing != person_id:
+                        raise PersonsError(
+                            f"duplicate ({platform}, {id_value}) mapped to both "
+                            f"{existing!r} and {person_id!r} — an ambiguous identity "
+                            "would silently misattribute Honcho memory"
+                        )
+                    index[key] = person_id
     return Persons(by_person=by_person, index=index)

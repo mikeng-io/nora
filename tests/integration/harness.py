@@ -52,7 +52,7 @@ OWN_ACCOUNT = "+85290000100"
 _DEFAULT_IDENTITY_TOML = (
     "[persons.miles]\n"
     "name = \"Miles\"\n"
-    "[persons.miles.signal]\n"
+    "[[persons.miles.signal]]\n"
     "phone = \"+852111\"\n"
 )
 

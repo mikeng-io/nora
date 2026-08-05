@@ -23,6 +23,14 @@ from types import MappingProxyType
 # ignored key.
 DISPLAY_NAME_KIND = "display_name"
 
+# A per-account human label ("personal", "business"). Reserved by NAME, and
+# excluded from the reverse index by name rather than incidentally: it is
+# operator-authored free text, so letting it fall through into the matchable
+# id set would make a spoofable string a resolvable identity. Same rule as
+# `DISPLAY_NAME_KIND` above and as `policy.toml`'s conversation `label`
+# (design/10 §1.3, §4.2) — shown to the operator, never matched on.
+ACCOUNT_LABEL_KEY = "label"
+
 # The fixed per-platform id-kind vocabulary (design/10 §3.1). A kind outside
 # a platform's set here is a typo, and a typo must be a startup error, not a
 # silently-ignored key — `nora.persons` enforces exactly that against these

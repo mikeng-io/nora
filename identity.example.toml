@@ -1,13 +1,25 @@
 # person_id doubles as the Honcho peer id, so it must match ^[a-zA-Z0-9_-]+$.
 # Reload is startup-only in v2 — adding a friend requires a restart (Q4).
 #
-# One typed table per platform, keyed by id KIND (design/10 §3, §3.1). List
-# whichever id forms you actually have for that person — Nora matches on any
-# of them. See design/10-preview-identity.toml for the fully worked example,
-# including why `display_name` is never accepted here.
+# One [[persons.<id>.<platform>]] block per ACCOUNT (design/10 §3, §3.1). A
+# person may hold several accounts on one platform — a dual-SIM personal/work
+# pair, a second Discord, a burner Telegram — and they are all the same human,
+# so they resolve to the same person_id and share one Honcho peer card (A2).
+#
+# Inside a block, list whichever id KINDS you actually have for that account;
+# Nora matches on any of them. See design/10-preview-identity.toml for the
+# fully worked example, including why `display_name` is never accepted here.
 
 [persons.miles]
 name = "Miles"
 
-[persons.miles.signal]
+[[persons.miles.signal]]
 phone = "+85212345678"
+
+# A second account for the SAME person. Once a platform holds two or more, each
+# needs a distinct `label`: it is never matched on, it is what
+# `nora persons pending` prints back so you can tell them apart.
+#
+# [[persons.miles.signal]]
+# label = "business"
+# phone = "+85287654321"

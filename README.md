@@ -88,10 +88,12 @@ Notable knobs:
 - `obs.metrics.port` (9100) — serves both `/metrics` (Prometheus text) and `/health`.
 
 Peer identity mapping lives in a separate file, `identity.toml` (see
-`identity.example.toml`): each `person_id` maps a name to per-platform sender IDs
-(`[persons.<person_id>.platforms] signal = "+85212345678"`), and `person_id` doubles as the
-Honcho peer ID. This mapping is manual and startup-only — adding a new person requires a
-restart.
+`identity.example.toml`): one `[[persons.<person_id>.<platform>]]` block per **account**,
+listing whichever id kinds you have for it (`phone`, `uuid`, `username`). A person may hold
+several accounts on one platform — a dual-SIM personal/work pair, a second Discord — and
+they all resolve to the same `person_id`, which doubles as the Honcho peer ID, so one human
+stays one peer (A2). This mapping is manual and startup-only — adding a new person or
+account requires a restart.
 
 ## The persona: `nora/persona/`
 

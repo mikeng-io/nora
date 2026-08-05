@@ -23,7 +23,7 @@ def cfg(tmp_path, monkeypatch):
     # the config file's own directory (nora/config.py's path-resolution context);
     # build_dependencies() calls load_persons() against it, so it must exist.
     (tmp_path / "identity.toml").write_text(
-        '[persons.miles]\nname = "Miles"\n[persons.miles.signal]\nphone = "+852111"\n'
+        '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "+852111"\n'
     )
     # config.example.toml's store.db_path ("~/workspace/nora/data/messages.db") is
     # absolute, so it survives path resolution untouched regardless of where this
