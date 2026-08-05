@@ -66,6 +66,19 @@ def create_model_provider(
             "max_tokens": max_tokens,
             "temperature": temperature,
             "tool_choice": "required",
+            # `reasoning_effort="none"` is a LATENCY decision, measured not
+            # assumed. deepseek-v4-flash is a reasoning model, and thinking was
+            # essentially all of the wait: 16.1s baseline, 9.5s on "low", 4.7s
+            # on "none" — same prompt, same tool call produced every time. The
+            # operator noticed the reply felt slow and asked whether thinking
+            # was on; it was.
+            #
+            # Nora's turn is one short chat reply from context already in front
+            # of her. There is nothing to reason THROUGH, and 12 extra seconds
+            # in a group chat is the difference between a friend answering and
+            # a bot lagging. Raise this if a tier ever does real multi-step
+            # work — it is per-tier, not global.
+            "reasoning_effort": "none",
         },
     )
 

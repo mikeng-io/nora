@@ -164,7 +164,15 @@ class EngagementPipeline:
             tagger_name = self._persons.display_name(msg)
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name, context_window=self._context_window,
-                roster=tuple(self._persons.by_person.values()),
+                # NO ROSTER. `identity.toml` is Nora's address book across
+                # EVERY room; handing all of it to one room discloses the
+                # existence and names of people who are not in it. Asked who
+                # was in the group, she listed five people who have never been
+                # members — a real leak, not a wrong answer. Scoping needs
+                # policy.toml's per-conversation `persons`, which lives on the
+                # ingest pipeline, so it is a wiring change and not a one-liner.
+                # The tagger's own aliases still reach the model via
+                # `build_tag_message`, which is scoped by construction.
             )
             tag_message = build_tag_message(ctx, tagger_name=tagger_name)
 
