@@ -3,11 +3,19 @@
 This is what makes the ports real rather than aspirational. Where a class does NOT
 yet conform, the gap is asserted explicitly with the phase that closes it — so the
 divergence is tracked, not forgotten.
+
+No known-gap pin remains here for `PlatformAdapter`: the platforms phase closed all
+five gaps between it and `SignalAdapter` (four behavioural — `resolve_identity()`,
+`send()`, `health()`, `listen()` — plus a fifth found while closing those four: the
+port declared `name: str` where every concrete type said `platform`).
+`test_signal_adapter_satisfies_platform_adapter` below is the phase's real
+acceptance test — the point of the whole phase was making this `isinstance` call
+return `True`.
 """
 
 import inspect
 
-from nora.domain.ports import MemoryStore
+from nora.domain.ports import MemoryStore, PlatformAdapter
 from nora.infra.honcho import HonchoClient
 from nora.platform.signal.adapter import SignalAdapter
 from nora.testing import FakeMemoryStore
@@ -59,9 +67,9 @@ def test_signal_adapter_health_satisfies_the_port_shape():
 
 def test_signal_adapter_listen_satisfies_the_port_shape():
     """Replaces `test_signal_adapter_listen_gap_to_on_message_is_known`, which pinned
-    `listen()` taking a positional `on_event` dict callback — the platforms phase's
-    fourth and final gap close. `listen()` now takes a keyword-only `on_message`
-    callback over `NormalizedMessage`; parsing moved inside the adapter
+    `listen()` taking a positional `on_event` dict callback — the fourth of the
+    platforms phase's five gaps closing. `listen()` now takes a keyword-only
+    `on_message` callback over `NormalizedMessage`; parsing moved inside the adapter
     (`nora.platform.signal.parser.parse_event`, called from `SignalAdapter.listen`
     itself), off `IngestPipeline` entirely (Trap B). `SignalAdapter.parse` came off
     the public surface as part of the same change — the port deliberately has no
@@ -70,6 +78,18 @@ def test_signal_adapter_listen_satisfies_the_port_shape():
     assert "on_message" in params
     assert params["on_message"].kind is inspect.Parameter.KEYWORD_ONLY
     assert not hasattr(SignalAdapter, "parse")
+
+
+def test_signal_adapter_satisfies_platform_adapter():
+    """The fifth gap, found while closing the other four (see this module's
+    docstring): the port declared `name: str`, `SignalAdapter` has `platform`.
+    `isinstance(adapter, PlatformAdapter)` was `False` even after
+    `resolve_identity()`/`send()`/`health()`/`listen()` all matched — this is
+    the assertion that was actually `False` until the port's attribute was
+    renamed to `platform`. This IS the phase's headline goal: `SignalAdapter`
+    genuinely satisfies `PlatformAdapter`, not just method-by-method in
+    isolation."""
+    assert isinstance(SignalAdapter("http://x", "+1"), PlatformAdapter)
 
 
 def test_runtime_checkable_protocols_only_check_method_names():

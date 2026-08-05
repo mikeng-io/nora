@@ -169,9 +169,18 @@ class EngagementRequest:
 
 @runtime_checkable
 class PlatformAdapter(Protocol):
-    """No `parse()` — see module docstring."""
+    """No `parse()` — see module docstring.
 
-    name: str
+    `platform: str`, not `name: str` — the platforms phase's fifth and final
+    conformance gap (found while closing the other four; see
+    `tests/contract/test_port_conformance.py`). Every other type on this port
+    already says `platform` (`PlatformIdentity.platform`, `AdapterHealth.
+    platform`), and so does the `platform=` metrics label everywhere else in
+    the codebase — `name` was the outlier here, not `SignalAdapter`, so the
+    port is what changed.
+    """
+
+    platform: str
 
     async def resolve_identity(self) -> PlatformIdentity: ...
 

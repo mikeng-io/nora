@@ -78,11 +78,15 @@ class AdapterRegistry:
 
     `adapters` is typed `dict[str, SignalAdapter]`, not
     `dict[str, nora.domain.ports.PlatformAdapter]`: only `SignalAdapter`
-    exists to put in it today, and typing it against the port right now would
-    hide a real, already-known static-conformance gap (the port declares
-    `name: str`; `SignalAdapter` has `platform` — see
-    `tests/contract/test_port_conformance.py`) behind a container type mypy
-    cannot see through. Widens to the port the same day that gap closes.
+    exists to put in it today, so there is nothing yet for the port
+    annotation to buy here — the same reasoning
+    `nora.app.composition.Dependencies.adapter` uses for staying concrete.
+    `SignalAdapter` does now genuinely satisfy `PlatformAdapter` in full
+    (`tests/contract/test_port_conformance.py::
+    test_signal_adapter_satisfies_platform_adapter`, with a static proof at
+    `nora.app.composition.build_dependencies`'s `_adapter_satisfies_platform_adapter`
+    assignment) — this widens to the port the day a second platform exists to
+    put alongside it.
     """
 
     adapters: dict[str, SignalAdapter] = field(default_factory=dict)

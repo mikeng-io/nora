@@ -135,24 +135,24 @@ class FakeAdapter:
     import `nora.testing`, not the other way around), so this reimplements just the
     group-message subset of `parse_event` it needs.
 
-    `PlatformAdapter` is a documented, still-not-fully-conformed-to port. The platforms
-    phase closed the `resolve_identity()`, `send()` and `health()` gaps
-    (`tests/contract/test_port_conformance.py` no longer pins any of the three
-    absent), so this fake mirrors all three the same way `SignalAdapter` does
-    (`resolve_identity()`, a `SendResult`-returning `send()`, an
-    `AdapterHealth`-returning `health()`). `listen()`/`parse()` still mirror
-    `SignalAdapter`'s pre-phase shape (positional `on_event`, a `dict`-shaped
-    `parse()`) — that gap
-    (`tests/contract/test_port_conformance.py::test_signal_adapter_listen_gap_to_on_message_is_known`)
-    is still open and closes in a later phase, so this fake staying on the old
-    shape for those two does not newly trigger the "second port implementation
-    needs a contract suite" rule either.
+    `SignalAdapter` now satisfies `nora.domain.ports.PlatformAdapter` in full — the
+    platforms phase closed every gap, including `isinstance(SignalAdapter(...),
+    PlatformAdapter)` (`tests/contract/test_port_conformance.py`). This fake keeps
+    `resolve_identity()`/`send()`/`health()` in the port's shape, but `.listen()` stays
+    a no-op and `.parse()` stays public and dict-in rather than mirroring
+    `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop: nothing here
+    drives this fake through a real SSE loop — `evals/harness.py` and
+    `tests/integration/harness.py`'s `_HandlerView` both call `.parse()` directly, the
+    same parse-then-dispatch shape `SignalAdapter.listen` uses internally, to turn one
+    raw `group_event(...)` into a `NormalizedMessage` without a socket. Keeping `.parse()`
+    public here does not reintroduce the "second port implementation needs a contract
+    suite" rule either: `parse()` is not on the port at all (`nora.domain.ports`'s
+    module docstring).
 
-    `_account` (not `own_account`) deliberately matches `SignalAdapter._account`'s
-    name: `nora.engagement.stages.admission`'s R-12 self-tag check reads
-    `adapter._account` directly (its own `_AccountHolder` narrow `Protocol`), so
-    any adapter double must carry that exact attribute name to be admitted through
-    the pipeline at all.
+    `_account` is retained (not `own_account`) for parsing and for
+    `resolve_identity()`'s `primary` — `nora.engagement.stages.admission`'s R-12 no
+    longer reads it directly (it takes a resolved `PlatformIdentity` now), but
+    `resolve_identity()` still needs *some* account value to publish.
     """
 
     platform = "signal"

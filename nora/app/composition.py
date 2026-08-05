@@ -24,7 +24,13 @@ from typing import Any
 
 from nora.agent import factory
 from nora.config import Config
-from nora.domain.ports import AuditStore, ContextAssembler, EngagePolicy, MemoryStore
+from nora.domain.ports import (
+    AuditStore,
+    ContextAssembler,
+    EngagePolicy,
+    MemoryStore,
+    PlatformAdapter,
+)
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.infra.honcho import HonchoClient
@@ -130,6 +136,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # enabled platforms.
         raise StartupError("no platform adapter is enabled (platforms.signal.enabled = false)")
     adapter = registry.get("signal")
+    # Static conformance proof (DEC-12): `isinstance` against a `runtime_checkable`
+    # `Protocol` only checks method/attribute NAMES, not signatures
+    # (tests/contract/test_port_conformance.py::
+    # test_runtime_checkable_protocols_only_check_method_names` demonstrates the
+    # false-confidence trap directly) — this assignment is what mypy actually
+    # checks SHAPES against, inside its strict `nora.app` override. If
+    # `SignalAdapter` ever drifted from `PlatformAdapter`'s real signatures, this
+    # line — not the isinstance test — is what would catch it.
+    _adapter_satisfies_platform_adapter: PlatformAdapter = adapter
     account = registry.identity_for("signal").primary
 
     persona_store = PersonaStore(
