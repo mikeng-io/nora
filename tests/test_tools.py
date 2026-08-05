@@ -31,7 +31,7 @@ async def wiring(tmp_path):
                                                       "Alice", i, f"secret{i}", {}))
     persons_file = tmp_path / "identity.toml"
     persons_file.write_text(
-        "[persons.miles]\nname = \"Miles\"\n[persons.miles.platforms]\nsignal = \"+852111\"\n"
+        "[persons.miles]\nname = \"Miles\"\n[persons.miles.signal]\nphone = \"+852111\"\n"
     )
     pdir = tmp_path / "persona"
     pdir.mkdir()

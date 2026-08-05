@@ -32,7 +32,12 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
         if not group_id:
             return None                       # DM — out of scope in v2
 
-        source = env.get("source") or env.get("sourceNumber") or ""
+        # `sourceUuid` matters: a hidden Signal phone number means `source`
+        # and `sourceNumber` are both empty, and the ACI (`sourceUuid`) is the
+        # only id Nora ever sees for that sender — never falling back to it
+        # meant such a sender could never resolve to a person at all
+        # (design/10 §1.1, §1.2).
+        source = env.get("source") or env.get("sourceNumber") or env.get("sourceUuid") or ""
         if own_account and source == own_account:
             return None                       # R-12: Nora never ingests her own sends
 

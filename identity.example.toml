@@ -1,7 +1,13 @@
 # person_id doubles as the Honcho peer id, so it must match ^[a-zA-Z0-9_-]+$.
 # Reload is startup-only in v2 — adding a friend requires a restart (Q4).
+#
+# One typed table per platform, keyed by id KIND (design/10 §3, §3.1). List
+# whichever id forms you actually have for that person — Nora matches on any
+# of them. See design/10-preview-identity.toml for the fully worked example,
+# including why `display_name` is never accepted here.
 
 [persons.miles]
 name = "Miles"
-[persons.miles.platforms]
-signal = "+85212345678"
+
+[persons.miles.signal]
+phone = "+85212345678"

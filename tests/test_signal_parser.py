@@ -66,6 +66,33 @@ def test_drops_our_own_message_by_source_number():
     assert parse_event(e, OWN) is None
 
 
+def test_drops_our_own_message_by_source_uuid():
+    e = envelope()
+    e["params"]["envelope"].pop("source")
+    e["params"]["envelope"]["sourceUuid"] = OWN
+    assert parse_event(e, OWN) is None
+
+
+def test_a_number_hidden_sender_resolves_via_source_uuid():
+    """design/10 §1.1/§1.2 PROBE: with the phone number hidden, signal-cli
+    sends neither `source` nor `sourceNumber` — only `sourceUuid`. Before this
+    fix, `parser.py` never read that field and such a sender's `sender_id`
+    came back empty, so no identity.toml mapping could ever match them."""
+    e = envelope()
+    e["params"]["envelope"].pop("source")
+    e["params"]["envelope"]["sourceUuid"] = "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
+    msg = parse_event(e, OWN)
+    assert msg is not None
+    assert msg.sender_id == "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
+
+
+def test_source_is_preferred_over_source_uuid_when_both_are_present():
+    e = envelope()
+    e["params"]["envelope"]["sourceUuid"] = "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
+    msg = parse_event(e, OWN)
+    assert msg.sender_id == "+85212345678"
+
+
 def test_drops_a_reaction_only_payload():
     assert parse_event(envelope(message=None, reaction={"emoji": "👍"}), OWN) is None
 

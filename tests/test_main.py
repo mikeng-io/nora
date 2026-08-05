@@ -34,7 +34,7 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
     cfg["identity_file"] = str(tmp_path / "identity.toml")
     cfg["obs"]["metrics"]["port"] = 0
     (tmp_path / "identity.toml").write_text(
-        "[persons.miles]\nname = \"Miles\"\n[persons.miles.platforms]\nsignal = \"+852111\"\n"
+        "[persons.miles]\nname = \"Miles\"\n[persons.miles.signal]\nphone = \"+852111\"\n"
     )
     path = tmp_path / "config.toml"
     with path.open("wb") as f:
@@ -73,8 +73,8 @@ async def test_a_broken_persona_refuses_to_start(env, tmp_path):
 
 async def test_a_duplicate_person_mapping_refuses_to_start(env, tmp_path):
     (tmp_path / "identity.toml").write_text(
-        "[persons.a]\nname = \"A\"\n[persons.a.platforms]\nsignal = \"+1\"\n"
-        "[persons.b]\nname = \"B\"\n[persons.b.platforms]\nsignal = \"+1\"\n"
+        "[persons.a]\nname = \"A\"\n[persons.a.signal]\nphone = \"+1\"\n"
+        "[persons.b]\nname = \"B\"\n[persons.b.signal]\nphone = \"+1\"\n"
     )
     with pytest.raises(StartupError, match="duplicate"):
         await build_app(env)
