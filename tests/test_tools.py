@@ -52,8 +52,8 @@ async def wiring(tmp_path):
         await store.aclose()
 
 
-def test_exactly_three_tools_are_built(wiring):
-    assert set(wiring["tools"]) == {"read_buffer", "read_peer_card", "send_reply"}
+def test_every_declared_tool_is_built(wiring):
+    assert set(wiring["tools"]) == {"now", "read_buffer", "read_peer_card", "send_reply"}
 
 
 def test_feed_honcho_is_not_a_tool(wiring):

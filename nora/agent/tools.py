@@ -19,12 +19,22 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
 
 from .ports import ToolSpec, adapt
 
 log = logging.getLogger("nora.tools")
 
+# Fixed offset rather than a tz database lookup: Hong Kong has observed no DST
+# since 1979, and this keeps `nora.agent` free of a system-tzdata dependency
+# that differs between the container and a developer machine.
+_HKT = timezone(timedelta(hours=8), "HKT")
+
 NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
+    # Cheap, local, and the answer changes every second, so there is no reason
+    # to ration it — but a budget is still required: R-7 default-denies any
+    # tool absent from this mapping, which is what stops a model inventing one.
+    "now": 2,
     "read_buffer": 2,
     "read_peer_card": 1,
     "send_reply": 1,
@@ -124,6 +134,19 @@ def build_tool_specs(
             log.exception("read_peer_card failed")
             return []
 
+    async def now() -> str:
+        """The current date and time, in Hong Kong time.
+
+        Call this before answering anything that depends on when it is — how
+        long until something, whether a place is still open, what "tonight" or
+        "yesterday" refers to, or how long ago a message was sent.
+
+        Returns: the weekday, date, time and timezone.
+        """
+        moment = datetime.now(_HKT)
+        log.info("now -> %s", moment.isoformat(timespec="seconds"))
+        return moment.strftime("%A %-d %B %Y, %H:%M (%Z)")
+
     async def send_reply(conversation_id: str, conversation_type: str, text: str) -> bool:
         """Send your reply to the group. Call this exactly once, at the end of your turn.
 
@@ -138,6 +161,10 @@ def build_tool_specs(
         return await deliverer.deliver(text, source="tool")
 
     return (
+        ToolSpec(
+            name="now", description="", schema={}, call=now,
+            budget=NATIVE_TOOL_BUDGETS["now"],
+        ),
         ToolSpec(
             name="read_buffer", description="", schema={}, call=read_buffer,
             budget=NATIVE_TOOL_BUDGETS["read_buffer"],

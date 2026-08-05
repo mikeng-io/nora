@@ -6,6 +6,7 @@ from __future__ import annotations
 from nora.agent import factory
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.registry import ToolRegistry
+from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona
@@ -46,14 +47,14 @@ def _built_tools(registry: ToolRegistry) -> list:
     )
 
 
-def test_the_registry_exposes_exactly_three_tools():
+def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
-    assert {t.tool_name for t in tools} == {"read_buffer", "read_peer_card", "send_reply"}
+    assert {t.tool_name for t in tools} == {"now", "read_buffer", "read_peer_card", "send_reply"}
 
 
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
-        "read_buffer": 2, "read_peer_card": 1, "send_reply": 1,
+        "now": 2, "read_buffer": 2, "read_peer_card": 1, "send_reply": 1,
     }
 
 
@@ -86,4 +87,4 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
                         metrics=Metrics()),
         trace_attributes={},
     )
-    assert len(agent.tool_names) == 3
+    assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS)
