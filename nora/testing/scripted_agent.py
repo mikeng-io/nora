@@ -42,9 +42,33 @@ class ScriptedTurn:
     bypass_guard: bool = False
 
 
+def _accepted_arguments(tool, kwargs: dict) -> dict:
+    """The subset of a model's arguments that would actually reach the tool body.
+
+    Production never passes a model's raw arguments to the function. Strands
+    validates `tool_use["input"]` through a pydantic model built from the
+    callable's signature (`DecoratedFunctionTool.stream` →
+    `FunctionToolMetadata.validate_input`), and pydantic ignores properties the
+    model does not declare — so an argument that is not in `inputSchema` is
+    silently dropped, and the call succeeds without it.
+
+    A scripted turn that called `tool(**kwargs)` directly would instead raise
+    `TypeError`, which is not a failure mode production has. That difference
+    matters here specifically: DEC-24 deleted the conversation parameters, and
+    the behaviour that has to stay reproducible is a model supplying one ANYWAY
+    — counted by `ReplyGuard`, dropped before the body. A fake that exploded on
+    it could not express the case at all.
+    """
+    schema = (tool.tool_spec.get("inputSchema") or {}).get("json") or {}
+    if "properties" not in schema:
+        return kwargs
+    declared = set(schema["properties"])
+    return {k: v for k, v in kwargs.items() if k in declared}
+
+
 async def _invoke_tool(tool, **kwargs):
     """Call a Strands @tool-decorated function the way a scripted turn exercises it."""
-    result = tool(**kwargs)
+    result = tool(**_accepted_arguments(tool, kwargs))
     if asyncio.iscoroutine(result):
         result = await result
     return result

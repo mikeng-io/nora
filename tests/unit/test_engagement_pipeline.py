@@ -10,6 +10,14 @@ A `ScriptedRunner` stands in for the real `AgentRunner` (Task 8's
 composition-root collaborator), replaying scripted tool calls against the
 REAL tools/guards, the same shape `tests/integration/harness.py`'s `FakeLLM`
 uses for `Handler`.
+
+`_invoke_tool` is imported from `nora.testing.scripted_agent` rather than
+re-written here. This module used to keep its own copy that called
+`tool(**kwargs)` directly, which raises `TypeError` on any argument the tool
+does not declare — a failure mode production does not have, because Strands
+drops out-of-schema arguments during pydantic validation
+(`nora.testing.scripted_agent._accepted_arguments`). DEC-24 is what made the
+difference between the copy and the real thing observable.
 """
 
 from __future__ import annotations
@@ -37,6 +45,7 @@ from nora.persona.loader import Persona
 from nora.persons import Persons
 from nora.tag import Debounce
 from nora.testing import FakeAuditStore
+from nora.testing.scripted_agent import _invoke_tool
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 PERSONS = Persons(by_person={"miles": MILES}, index={("signal", "+852111"): "miles"})
@@ -151,11 +160,6 @@ class ScriptedRunner:
                 guard.record(name)
 
 
-async def _invoke_tool(tool, **kwargs):
-    result = tool(**kwargs)
-    if asyncio.iscoroutine(result):
-        result = await result
-    return result
 
 
 class _CriticalFault(BaseException):
@@ -184,10 +188,8 @@ def _request(msg: NormalizedMessage | None = None, tag_id: str = "tag-1") -> Eng
     )
 
 
-def _reply_turns(text: str = "今晚七點半得", conv: str = "g1") -> list[ScriptedTurn]:
-    return [ScriptedTurn(tool_calls=[("send_reply", {
-        "conversation_id": conv, "conversation_type": "group", "text": text,
-    })], final_text=text)]
+def _reply_turns(text: str = "今晚七點半得") -> list[ScriptedTurn]:
+    return [ScriptedTurn(tool_calls=[("send_reply", {"text": text})], final_text=text)]
 
 
 def _build_pipeline(
@@ -588,10 +590,8 @@ async def test_reactions_do_not_consume_the_reply_budget_so_r2_still_allows_one_
     pipeline, metrics, _audit, _memory, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(tool_calls=[
-            ("send_reply", {"conversation_id": "g1", "conversation_type": "group",
-                            "text": "first"}),
-            ("send_reply", {"conversation_id": "g1", "conversation_type": "group",
-                            "text": "second"}),
+            ("send_reply", {"text": "first"}),
+            ("send_reply", {"text": "second"}),
         ])]),
     )
 
@@ -612,8 +612,7 @@ async def test_the_model_cannot_emit_a_reaction_itself():
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(tool_calls=[
             ("react", {"conversation_id": "g1", "emoji": "\N{PILE OF POO}"}),
-            ("send_reply", {"conversation_id": "g1", "conversation_type": "group",
-                            "text": "hi"}),
+            ("send_reply", {"text": "hi"}),
         ])]),
     )
 

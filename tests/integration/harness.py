@@ -383,8 +383,7 @@ async def build_handler(
         # bypass_guard=True: ReplyGuard's own R-4 pre-tool veto would otherwise catch a
         # whitespace-only text before Deliverer ever sees it. This exercises Deliverer's
         # own (defense-in-depth) empty-text refusal directly.
-        runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("send_reply", {
-            "conversation_id": "g1", "conversation_type": "group", "text": "   "})],
+        runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("send_reply", {"text": "   "})],
             final_text="   ", bypass_guard=True)], on_call=calls.append)
     elif fault == "no_send_call":
         runner = FakeAgentRunner([ScriptedTurn(final_text="silent")], on_call=calls.append)
@@ -394,8 +393,7 @@ async def build_handler(
         # matching, so we do too, to be sure the span really lands inside its haystack.
         raw_body = (PERSONA_DIR / "guardrails.md").read_text().split("---", 2)[-1]
         leak_span = re.sub(r"\s+", " ", raw_body).strip()[:60]
-        runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("send_reply", {
-            "conversation_id": "g1", "conversation_type": "group", "text": leak_span})],
+        runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("send_reply", {"text": leak_span})],
             final_text=leak_span)], on_call=calls.append)
     elif fault == "honcho_down":
         honcho_double.fail = True

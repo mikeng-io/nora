@@ -5,10 +5,8 @@ from nora.domain.models import DeliveryStatus
 from nora.testing import ScriptedTurn, group_event
 
 
-def _reply_script(text="今晚七點半得", conv="g1"):
-    return [ScriptedTurn(tool_calls=[("send_reply", {"conversation_id": conv,
-                                                     "conversation_type": "group",
-                                                     "text": text})], final_text=text)]
+def _reply_script(text="今晚七點半得"):
+    return [ScriptedTurn(tool_calls=[("send_reply", {"text": text})], final_text=text)]
 
 
 async def test_happy_tag_produces_one_reply_one_row_one_feed(harness_factory, tmp_path):
@@ -49,10 +47,8 @@ async def test_model_never_calls_send_reply_means_strict_silence(harness_factory
 async def test_second_send_reply_is_cancelled(harness_factory):
     """R-2 end-to-end: one send, one veto."""
     h = await harness_factory(script=[ScriptedTurn(
-        tool_calls=[("send_reply", {"conversation_id": "g1", "conversation_type": "group",
-                                    "text": "first"}),
-                    ("send_reply", {"conversation_id": "g1", "conversation_type": "group",
-                                    "text": "second"})],
+        tool_calls=[("send_reply", {"text": "first"}),
+                    ("send_reply", {"text": "second"})],
         final_text="first")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
@@ -64,24 +60,28 @@ async def test_send_to_other_group_cannot_escape_the_tagged_conversation(harness
     """R-3 end-to-end, asserting the invariant rather than the mechanism.
 
     The rule is "a reply may only reach the conversation that produced the
-    tag". This used to be enforced by VETOING a mismatched `conversation_id`
-    argument; it is now enforced by the argument being inert — `send_reply`
-    calls `deliverer.deliver(text)` and `Deliverer` holds its target bound from
-    construction. That is strictly stronger: the old check could be satisfied
-    by a model echoing the right string, whereas nothing the model writes can
-    change where the message goes.
+    tag". It used to be enforced by VETOING a mismatched `conversation_id`
+    argument; DEC-21 made it hold by construction instead (`send_reply` calls
+    `deliverer.deliver(text)` and `Deliverer` holds its target bound from
+    construction), and DEC-24 then deleted the argument from the schema
+    entirely. That is strictly stronger at each step: the original check could
+    be satisfied by a model echoing the right string, and now there is no
+    string to echo.
 
     It also had to change. Vetoing meant a model that cannot reproduce a base64
     group id verbatim could never reply at all — on the first real tag,
     `deepseek-v4-flash` supplied a wrong id three times and the turn died
     `no_send_call`.
 
-    So: the model asks for `gEVIL`, and the reply goes to the tagged
-    conversation anyway, with the probe counted.
+    So the probe is now a model emitting an OUT-OF-SCHEMA `conversation_id`,
+    which is the only form the attempt can still take. Strands drops it during
+    validation, the reply goes to the tagged conversation anyway, and the
+    attempt is counted — the observation DEC-24 deliberately keeps alive so
+    `nora_tool_scope_violations_total` is not a counter pinned at zero.
     """
     h = await harness_factory(script=[ScriptedTurn(
-        tool_calls=[("send_reply", {"conversation_id": "gEVIL", "conversation_type": "group",
-                                    "text": "leak"})], final_text="")])
+        tool_calls=[("send_reply", {"conversation_id": "gEVIL", "text": "leak"})],
+        final_text="")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
 
@@ -89,6 +89,9 @@ async def test_send_to_other_group_cannot_escape_the_tagged_conversation(harness
     target = h.sink.sent[0][0]
     assert getattr(target, "conversation_id", target) != "gEVIL", (
         "a model-supplied conversation must never become the send target"
+    )
+    assert h.sink.texts == ["leak"], (
+        "the out-of-schema argument must be dropped, not turned into a TypeError"
     )
     assert h.metrics.get("nora_tool_scope_violations_total", tool="send_reply") == 1
 

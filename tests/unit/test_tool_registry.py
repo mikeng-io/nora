@@ -86,5 +86,6 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         guard=ReplyGuard(conversation_id="g1", budgets=ToolRegistry().budgets(),
                         metrics=Metrics()),
         trace_attributes={},
+        retry=factory.build_retry_policy(timeout_seconds=30.0),
     )
     assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS)

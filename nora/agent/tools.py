@@ -1,8 +1,23 @@
-"""The three model-facing tools (spec C.7). Thin wrappers over injected dependencies.
+"""The four model-facing tools (spec C.7). Thin wrappers over injected dependencies.
 
 Docstrings are the LLM-facing schema — they are written for a model, not a developer.
+Strands derives BOTH halves of what the model sees from the callable itself
+(`strands.tools.decorator.FunctionToolMetadata.extract_metadata`): the text above the
+`Args:` block becomes the tool `description`, and each annotated parameter becomes one
+`inputSchema` property carrying its `Args:` line as that property's description. So a
+parameter that exists here is a value the model is REQUIRED to invent on every call —
+which is why none of them describe a conversation any more (DEC-24): both scoped tools
+resolve their conversation from the closure, so asking for it bought nothing and cost
+one reply per wrong guess.
+
 feed_honcho is deliberately NOT a tool: the handler owns the single post-reply feed
 (audit fix #5).
+
+`metrics`, `conversation_type` and `context_window` are injected but unread by today's
+four tools — `metrics` since DEC-24 moved the scope counter to `ReplyGuard`, which is
+now the single place a model-supplied conversation is observed. They stay on the
+builder because `ToolRegistry` passes the same set to every tool it will ever
+register, not because anything here uses them.
 
 `build_tool_specs` builds each tool as a plain, undecorated `ToolSpec`
 (`nora.agent.ports`) closed over this tag's dependencies — no `strands` import
@@ -52,39 +67,22 @@ def build_tool_specs(
     metrics,
     context_window: int = 40,
 ) -> tuple[ToolSpec, ...]:
-    # Captured under a name distinct from read_buffer's own `conversation_id`
-    # parameter on purpose. That parameter is model-supplied and SHADOWS this
-    # one inside read_buffer's body — reading the bare name there is exactly
-    # the cross-group read leak Task 1 closes. Every reference to "this tag's
-    # conversation" inside read_buffer must go through `bound_conversation_id`.
+    # The tag's conversation, captured once. It is the ONLY thing that decides
+    # which rows `read_buffer` returns — see DEC-24 for why the model is no
+    # longer asked for it. Task 1's cross-group read leak was this value being
+    # shadowed by a same-named model-supplied parameter; deleting the parameter
+    # removes the shadow along with the shape of that bug.
     bound_conversation_id = conversation_id
 
-    async def read_buffer(
-        conversation_id: str, conversation_type: str = "group", limit: int = 40
-    ) -> list[dict]:
+    async def read_buffer(limit: int = 40) -> list[dict]:
         """Read older messages from this conversation.
 
         You already have the most recent messages in front of you. Only call this if you
         need to look further back than what you were shown. Returns messages oldest-first.
 
         Args:
-            conversation_id: The conversation you were tagged in.
-            conversation_type: Always "group".
             limit: How many recent messages to fetch (max 200).
         """
-        if conversation_id != bound_conversation_id:
-            # The model asked for a conversation this tag was never bound to.
-            # R-3 only guards the *send* target — nothing guarded the *read*
-            # source before this, so a model asking (accidentally or as a
-            # probe) for another group's id must never be silently honoured
-            # NOR silently corrected. Log it and count it; still serve the
-            # conversation these tools were actually built for.
-            log.warning(
-                "read_buffer: model requested conversation_id=%r but tools are bound "
-                "to %r; ignoring the request and staying bound",
-                conversation_id, bound_conversation_id,
-            )
-            metrics.inc("nora_tool_scope_violations_total", tool="read_buffer")
         try:
             # Clamp both ends: `limit` is a model-supplied argument, and a
             # non-positive value must never reach the store. SQLite renders
@@ -162,15 +160,14 @@ def build_tool_specs(
         log.info("now -> %s", moment.isoformat(timespec="seconds"))
         return moment.strftime("%A %-d %B %Y, %H:%M (%Z)")
 
-    async def send_reply(conversation_id: str, conversation_type: str, text: str) -> bool:
+    async def send_reply(text: str) -> bool:
         """Send your reply to the group. Call this exactly once, at the end of your turn.
 
         This is the only way anything you write reaches the group. If you do not call it,
-        nothing is sent. Reply in the conversation you were tagged in and nowhere else.
+        nothing is sent. It always goes to the conversation you were tagged in — you do
+        not choose where, and there is nothing to name.
 
         Args:
-            conversation_id: The conversation you were tagged in.
-            conversation_type: Always "group".
             text: Your reply, in your own voice.
         """
         return await deliverer.deliver(text, source="tool")

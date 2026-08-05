@@ -7,9 +7,7 @@ FORBIDDEN = ("error", "sorry", "exception", "traceback", "failed", "unavailable"
 
 
 def _script(text="reply"):
-    return [ScriptedTurn(tool_calls=[("send_reply", {"conversation_id": "g1",
-                                                     "conversation_type": "group",
-                                                     "text": text})], final_text=text)]
+    return [ScriptedTurn(tool_calls=[("send_reply", {"text": text})], final_text=text)]
 
 
 @pytest.mark.parametrize(

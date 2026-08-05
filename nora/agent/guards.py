@@ -208,19 +208,39 @@ class ReplyGuard(HookProvider):
                        f"Use {_list_tool_names(self._budgets)}.",
             )
 
-        # R-3 — scope, now held BY CONSTRUCTION rather than by veto. Both
-        # tools ignore this argument: `read_buffer` reads the closure value
-        # (Task 1's cross-group leak fix) and `send_reply` calls
-        # `deliverer.deliver(text)`, whose `Deliverer` holds its target bound
-        # from construction. The argument is INERT, so vetoing on it protected
-        # nothing while making a weak model unable to speak at all — on the
-        # first real tag the model echoed a wrong group id three times, R-3
-        # cancelled each, and the turn ended `no_send_call`. A mismatch is
-        # still a model reaching outside its scope, so it is counted.
+        # R-3 — scope, held BY CONSTRUCTION rather than by veto (DEC-21) and,
+        # since DEC-24, not even expressible: no tool declares a conversation
+        # parameter, so `read_buffer` reads the closure value (Task 1's
+        # cross-group leak fix) and `send_reply` calls `deliverer.deliver(text)`
+        # against a target its `Deliverer` bound at construction. Vetoing on a
+        # value that changes nothing protected nothing while making a weak model
+        # unable to speak at all — on the first real tag the model echoed a wrong
+        # group id three times, R-3 cancelled each, and the turn ended
+        # `no_send_call`.
+        #
+        # This is deliberately NOT dead code, and that distinction is load-bearing
+        # (R-17: a counter that can never increment is indistinguishable from a
+        # deleted one). The hook fires on the RAW tool_use the model emitted,
+        # before Strands validates it — and validation is a pydantic model built
+        # from the callable's signature, which IGNORES properties it does not
+        # declare (`FunctionToolMetadata.validate_input`, verified against
+        # 1.50.2). So a model that keeps naming a conversation still reaches
+        # here, its argument is still counted, and it is still dropped before the
+        # tool body runs. That is the one observation DEC-24 must not lose: "the
+        # model is trying to address a conversation" is exactly the behaviour
+        # that killed the first real tag, and after DEC-24 the group id is not in
+        # the prompt for it to echo, so a value appearing here is invented.
+        #
+        # The check is `is not None`, not `!=`: absence is now the NORMAL case
+        # for every well-formed call, so comparing a missing key against the
+        # bound id would peg this counter at one-per-tool-call and make it
+        # useless in the other direction. Applied to every tool, not just the
+        # two scoped ones, because the argument is out-of-schema everywhere now.
         target = (tool_input or {}).get("conversation_id")
-        if tool_name in ("send_reply", "read_buffer") and target != self._conversation_id:
+        if target is not None and target != self._conversation_id:
             log.warning(
-                "tool scope mismatch on %s: model supplied %r, using the bound %r",
+                "tool scope mismatch on %s: model supplied conversation_id=%r (not a "
+                "parameter of any tool); the bound %r is used regardless",
                 tool_name, target, self._conversation_id,
             )
             self._metrics.inc("nora_tool_scope_violations_total", tool=tool_name)
