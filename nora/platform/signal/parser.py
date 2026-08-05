@@ -40,6 +40,25 @@ def _mentioned_ids(data: dict) -> frozenset[str]:
     return frozenset(out)
 
 
+def _quoted(data: dict) -> tuple[str, str] | None:
+    """`(author, text)` of the message this one replies to, if any.
+
+    Signal carries a reply as `dataMessage.quote` — the quoted author and the
+    quoted text — and NOT in the body. Dropping it left Nora reading replies as
+    non-sequiturs: Grant says "where for dinner", Miles replies "your place",
+    and without the quote she has no way to know whose place, or that the two
+    messages are connected at all.
+    """
+    q = data.get("quote")
+    if not isinstance(q, dict):
+        return None
+    author = q.get("authorName") or q.get("author") or q.get("authorNumber") or ""
+    text = (q.get("text") or "").strip()
+    if not text:
+        return None
+    return (str(author), text)
+
+
 def _body_parts(data: dict) -> list[str]:
     """The renderable pieces of one dataMessage, in reading order.
 
@@ -156,6 +175,7 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
             body=" ".join(parts),
             raw=event,
             mentions=_mentioned_ids(data),
+            quote=_quoted(data),
         )
     except Exception:
         log.exception("unparseable envelope, skipping")

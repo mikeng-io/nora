@@ -32,6 +32,10 @@ class NormalizedMessage:
     # parallel array, so a mention is invisible to any substring match.
     # Defaulted so every existing positional construction stays valid.
     mentions: frozenset[str] = frozenset()
+    # `(author, text)` of the message this one replies to. Signal carries a
+    # reply structurally, not in the body, so without this a reply reads as a
+    # non-sequitur — "your place" with no way to know whose.
+    quote: tuple[str, str] | None = None
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(self.platform, self.conversation_id, self.conversation_type)

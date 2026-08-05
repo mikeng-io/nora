@@ -164,6 +164,7 @@ class EngagementPipeline:
             tagger_name = self._persons.display_name(msg)
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name, context_window=self._context_window,
+                roster=tuple(self._persons.by_person.values()),
             )
             tag_message = build_tag_message(ctx, tagger_name=tagger_name)
 

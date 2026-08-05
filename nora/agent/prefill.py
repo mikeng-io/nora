@@ -7,9 +7,10 @@ plugin makes for its own injected XML.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from xml.sax.saxutils import escape as _escape
 
-from ..domain.models import TagContext
+from ..domain.models import PersonRef, TagContext
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
@@ -59,10 +60,44 @@ def _peer_card_block(ctx: TagContext) -> str:
     return f'<peer_card person="{who}">\n{facts}\n</peer_card>\n'
 
 
-def build_prefill(ctx: TagContext, *, display_name: str, context_window: int) -> list[dict]:
+def _roster_block(people: Sequence[PersonRef]) -> str:
+    """Who the group is, and what they get called.
+
+    Without this only the TAGGER's names reach the model, so a message
+    mentioning 「阿豹」 or 「峰哥」 reads as a stranger even though the operator
+    has written down exactly who that is. Nora needs the whole roster to follow
+    an ordinary conversation, not just the person addressing her.
+
+    Names and nicknames only — never a phone number, never an ACI. Those are
+    what R-18 (`nora.agent.egress`) refuses to let out, and putting them in the
+    prompt would be handing the model the very thing that guard exists to keep
+    off the wire.
+    """
+    if not people:
+        return ""
+    lines = []
+    for p in sorted(people, key=lambda x: x.person_id):
+        aka = f" — also called {', '.join(p.aliases)}" if p.aliases else ""
+        lines.append(f"- {escape(p.name)}{escape(aka)}")
+    return (
+        "<roster>\n"
+        "The people in this conversation, and the other names they go by.\n"
+        + "\n".join(lines)
+        + "\n</roster>\n"
+    )
+
+
+def build_prefill(
+    ctx: TagContext, *, display_name: str, context_window: int,
+    roster: Sequence[PersonRef] = (),
+) -> list[dict]:
     return [
         _message("user", _context_header(context_window)),
-        _message("user", _peer_card_block(ctx) + _transcript_block(ctx, display_name)),
+        _message(
+            "user",
+            _roster_block(roster) + _peer_card_block(ctx)
+            + _transcript_block(ctx, display_name),
+        ),
         _message("assistant", _CLOSING_LINE),
     ]
 
@@ -82,8 +117,15 @@ def build_tag_message(ctx: TagContext, *, tagger_name: str) -> str:
     tagger = ctx.tagger
     if tagger is not None and tagger.aliases:
         aka = f' also_known_as="{_escape_attr(", ".join(tagger.aliases))}"'
+    quoted = ""
+    if ctx.message.quote:
+        author, text = ctx.message.quote
+        quoted = (
+            f'<replying_to author="{_escape_attr(author)}">\n'
+            f"{escape(text)}\n</replying_to>\n"
+        )
     return (
         f'<tag_message from="{_escape_attr(tagger_name)}"{aka}>\n'
-        f"{escape(ctx.message.body)}\n"
+        f"{quoted}{escape(ctx.message.body)}\n"
         "</tag_message>"
     )

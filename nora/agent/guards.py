@@ -9,7 +9,13 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
+from strands.hooks import (
+    AfterToolCallEvent,
+    BeforeModelCallEvent,
+    BeforeToolCallEvent,
+    HookProvider,
+    HookRegistry,
+)
 
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..domain.ports import SendResult
@@ -245,6 +251,26 @@ class ReplyGuard(HookProvider):
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         registry.add_callback(BeforeToolCallEvent, self._before_tool)
         registry.add_callback(AfterToolCallEvent, self._after_tool)
+        registry.add_callback(BeforeModelCallEvent, self._before_model)
+
+    def _before_model(self, event: BeforeModelCallEvent) -> None:
+        """End the turn as soon as the reply is out.
+
+        `tool_choice="required"` (see `nora.agent.factory`) is the only reason
+        this model calls `send_reply` at all — but it applies to EVERY turn, so
+        once the reply has gone the model is still forced to call something and
+        the loop cannot terminate. It ran until the invocation timeout killed
+        it, which cost ~25s per tag AND resolved the indicator wrongly: the
+        timeout path exits before `delivered` is set, so a turn that had
+        actually succeeded showed the group ⚠️. One cause, two symptoms, both
+        observed live.
+
+        Cancelling here is the narrow fix. R-2 already refuses a second send,
+        so nothing after the first delivery can change what the group sees —
+        the remaining turns were pure cost.
+        """
+        if self._deliverer is not None and self._deliverer.delivered:
+            event.cancel = "Reply already sent — the turn is finished."
 
     def _before_tool(self, event) -> None:
         try:
