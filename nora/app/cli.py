@@ -148,7 +148,7 @@ async def cmd_groups(args: argparse.Namespace) -> int:
             "`nora groups` has to ask the daemon which groups exist — there is "
             "nowhere else that knows. Check it with:\n"
             "    docker compose ps signal-cli\n"
-            f"    curl -s {signal.base_url.rstrip('/')}/health"
+            f"    curl -sI {signal.base_url.rstrip('/')}/api/v1/check"
         ) from exc
 
     for line in report.render_groups(

@@ -21,13 +21,21 @@ These must already be running on the host:
 cd ~/workspace/nora
 uv sync                                 # installs strands-agents==1.50.2 and friends
 
-cp config.example.toml config.toml        # edit signal-cli account, Honcho workspace, etc.
-cp identity.example.toml identity.toml    # map Signal phone numbers to person_id → Honcho peer
+cp config.example.toml config.toml        # signal-cli account, Honcho workspace, etc.
+cp identity.example.toml identity.toml    # WHO people are → person_id → Honcho peer
+cp policy.example.toml policy.toml        # WHO may talk to her, and WHERE
 
 export OMNIROUTE_API_KEY=<your-key>       # the only secret; never goes in config.toml
 
 python -m nora                            # or: python -m nora --config path/to/config.toml
 ```
+
+`policy.toml` is not optional: it is deny-by-default and Nora **refuses to start**
+without it, or with an allowlist that permits nothing. That is deliberate — under
+R-5 she is silent when broken, so a silently-denied Nora would be
+indistinguishable from a working one in a quiet group. Edit the copied file so it
+names a real conversation; `uv run nora groups` prints every group's id beside its
+name once signal-cli is running.
 
 Nora creates `data/messages.db` on first run (schema managed by
 `nora/infra/sql/schema.py` and applied via Alembic — see `nora/infra/sql/migrations_runner.py`),
@@ -172,9 +180,12 @@ watchdog alerts, or you need to roll back to v1.
 Nora runs as a **Docker container** — `Dockerfile` + `docker-compose.yml` at the repo
 root. This replaced the systemd-unit plan in `deploy/` (kept for reference/rollback
 only — see `deploy/README.md`); the `nora` user, egress restriction, and watchdog
-polling described there now map onto container equivalents below. **signal-cli is never
-containerized** — it keeps running on the host exactly as it does today; Nora only
-talks to it over `127.0.0.1:18080`.
+polling described there now map onto container equivalents below. **signal-cli runs in this
+same compose project** (`docker-compose.yml`, built from `deploy/signal-cli/`), on
+host networking, and Nora talks to it over `127.0.0.1:18080`. It used to run as a
+bare JVM on the host; it was containerised in this phase, and `--receive-mode` is
+load-bearing — without it the daemon answers every RPC correctly and never opens
+its websocket to Signal.
 
 ### Build and start
 

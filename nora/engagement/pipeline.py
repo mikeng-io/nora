@@ -186,6 +186,7 @@ class EngagementPipeline:
                 self._spawn(feedback.run(
                     memory=self._memory, ctx=ctx, tagger_name=tagger_name,
                     display_name=self._display_name, deliverer=handle.deliverer,
+                    metrics=self._metrics,
                 ))
         except BaseException:
             log.exception("tag pipeline failed (tag=%s); staying silent", request.tag_id)

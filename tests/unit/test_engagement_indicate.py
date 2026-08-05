@@ -96,7 +96,7 @@ async def test_a_delivered_reply_resolves_to_a_check_mark():
     assert metrics.get("nora_reactions_total", phase="done", status="sent") == 1.0
 
 
-async def test_a_turn_that_produced_no_reply_resolves_to_a_shrug_never_a_check_mark():
+async def test_a_turn_that_produced_no_reply_resolves_to_a_caution_never_a_check_mark():
     """The design decision, pinned. A ✅ after a failure claims a reply that
     does not exist; the group would wait for a message that is not coming. ⚠️
     is honest about the same outcome and still discloses nothing about WHY —

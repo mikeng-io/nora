@@ -625,7 +625,7 @@ async def test_the_model_cannot_emit_a_reaction_itself():
     assert adapter.texts == ["hi"]
 
 
-async def test_a_turn_that_never_replied_resolves_to_a_shrug_and_says_nothing():
+async def test_a_turn_that_never_replied_resolves_to_a_caution_and_says_nothing():
     """The failure-resolution decision at pipeline level: the model never calls
     `send_reply`, so nothing is delivered — the 👀 must not be left stranded
     (indistinguishable from "still thinking") and must not become a ✅
@@ -708,7 +708,7 @@ async def test_a_slow_reaction_is_not_counted_as_tag_overhead():
     assert overhead[0] < 0.2
 
 
-async def test_a_timed_out_turn_resolves_to_a_shrug_too():
+async def test_a_timed_out_turn_resolves_to_a_caution_too():
     """The `if not ok: return` exit after `invoke.run` is a THIRD distinct path
     out of a tag, separate from the crash path and the no_send_call path, and it
     never reaches `check_outcome` at all. It must still terminate the indicator.

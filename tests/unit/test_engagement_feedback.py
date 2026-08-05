@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from nora.domain.models import NormalizedMessage, PersonRef, TagContext
 from nora.engagement.stages import feedback
+from nora.obs.metrics import Metrics
 
 
 class _FakeDeliverer:
@@ -38,7 +39,7 @@ async def test_the_exchange_is_fed_with_both_sides_of_the_conversation():
 
     await feedback.run(
         memory=memory, ctx=ctx, tagger_name="Miles", display_name="Nora",
-        deliverer=_FakeDeliverer("今晚七點半得"),
+        deliverer=_FakeDeliverer("今晚七點半得"), metrics=Metrics(),
     )
 
     assert memory.fed == [("miles", "[Miles]: 幾點食飯\n[Nora]: 今晚七點半得")]
@@ -50,7 +51,7 @@ async def test_an_unmapped_tagger_yields_no_feed_at_all():
 
     await feedback.run(
         memory=memory, ctx=ctx, tagger_name="Stranger", display_name="Nora",
-        deliverer=_FakeDeliverer("reply"),
+        deliverer=_FakeDeliverer("reply"), metrics=Metrics(),
     )
 
     assert memory.fed == []
@@ -62,7 +63,30 @@ async def test_a_none_last_text_feeds_an_empty_reply_rather_than_raising():
 
     await feedback.run(
         memory=memory, ctx=ctx, tagger_name="Miles", display_name="Nora",
-        deliverer=_FakeDeliverer(None),
+        deliverer=_FakeDeliverer(None), metrics=Metrics(),
     )
 
     assert memory.fed == [("miles", "[Miles]: 幾點食飯\n[Nora]: ")]
+
+
+async def test_a_failed_exchange_feed_is_counted():
+    """The last Honcho write that left no trace. It matters because the exact
+    failure it would hide has already happened once: `ensure_session` POSTed to
+    a list endpoint, so `feed` returned False without an HTTP call and memory
+    received nothing for the deployment's whole life. Uncounted here, the
+    ambient counters would go red while the tagging path stayed invisible."""
+    class _Down:
+        async def ensure_peer(self, *, peer_id): ...
+        async def feed(self, *, peer_id, text): return False
+        async def peer_card(self, *, peer_id): return []
+        async def health(self): ...
+        async def aclose(self): ...
+
+    metrics = Metrics()
+    ctx = _ctx(PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles"))
+    await feedback.run(
+        memory=_Down(), ctx=ctx, tagger_name="Miles", display_name="Nora",
+        deliverer=_FakeDeliverer("reply"), metrics=metrics,
+    )
+    assert metrics.get("honcho_feed_failure") == 1
+    assert metrics.get("honcho_feed_success") == 0

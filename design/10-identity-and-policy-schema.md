@@ -4,7 +4,7 @@ title: "Nora — Identity and Policy Schema"
 description: "A platform-neutral schema for who people are (identity.toml) and what is allowed (policy.toml), designed against the real identifier shapes of Signal, Telegram, Discord and WhatsApp."
 tags: [nora, design, identity, policy, allowlist, multi-platform]
 timestamp: '2026-08-05'
-status: proposal
+status: implemented
 edges:
   - {dst: 04-config-identity.md, rel: amends, provenance: asserted}
   - {dst: 09-decision-index.md, rel: extends, provenance: asserted}
@@ -12,9 +12,13 @@ edges:
 
 # Identity and Policy Schema
 
-**Status: proposal.** Nothing here is built. It exists so the schema is settled
-before a second platform lands, because the schema is the thing that decides
-whether platform four is an edit or a rebuild.
+**Status: implemented (Phase 8, 2026-08-05).** Written as a proposal so the
+schema would be settled before a second platform landed; it was then built
+essentially as specified, with one correction recorded in §1 and §7.4 — many
+ACCOUNTS per platform, not one account with many id forms. Read §1–§4 as
+current, and treat any remaining future tense as historical. The schema is what
+decides whether platform four is an edit or a rebuild, which is why it was
+settled first.
 
 ## 1. The problem, stated precisely
 
@@ -111,7 +115,7 @@ id silently stops matching — Nora goes quiet, which under R-5 is invisible.
 reason a person must. This is not Telegram-specific pedantry: it is the same
 shape as the person problem.
 
-## 3. Proposed `identity.toml`
+## 3. `identity.toml`
 
 Hand-editable (D6), one section per person, ids typed by **kind** so matching
 can reason about them.
