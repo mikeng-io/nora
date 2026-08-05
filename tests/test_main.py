@@ -32,9 +32,14 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
     cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
     cfg["persona"]["dir"] = str(ROOT / "nora" / "persona")
     cfg["identity_file"] = str(tmp_path / "identity.toml")
+    cfg["policy_file"] = str(tmp_path / "policy.toml")
     cfg["obs"]["metrics"]["port"] = 0
     (tmp_path / "identity.toml").write_text(
         "[persons.miles]\nname = \"Miles\"\n[[persons.miles.signal]]\nphone = \"+852111\"\n"
+    )
+    (tmp_path / "policy.toml").write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        'id = "Z3JvdXA="\npersons = "*"\n'
     )
     path = tmp_path / "config.toml"
     with path.open("wb") as f:

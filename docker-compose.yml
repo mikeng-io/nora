@@ -93,6 +93,9 @@ services:
       - ./data:/app/data
       - ./config.toml:/app/config.toml:ro
       - ./identity.toml:/app/identity.toml:ro
+      # Deny-by-default: without this Nora refuses to start rather than
+      # running mute, which under R-5 would look identical to working.
+      - ./policy.toml:/app/policy.toml:ro
       # Read-only so edits on the host (persona hot-reload, mtime-based) are visible
       # inside the container without a rebuild or restart.
       - ./nora/persona:/app/nora/persona:ro

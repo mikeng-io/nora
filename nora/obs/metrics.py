@@ -90,6 +90,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Ambient messages whose sender resolved to no person.",
         ("platform",),
     ),
+    # Deny-by-default has to be visible. "She stopped answering in that group"
+    # must be answerable without a debugger: a denied ROOM is refused before
+    # the audit write (nothing is recorded), a denied SENDER is refused only
+    # at the point of answering (the message IS recorded, which is what
+    # `nora persons pending` reads).
+    _CounterSpec(
+        "nora_denied_conversations_total",
+        "Ambient messages from a conversation absent from policy.toml.",
+        ("platform",),
+    ),
+    _CounterSpec(
+        "nora_denied_senders_total",
+        "Tags from a sender not allowed in that conversation.",
+        ("platform",),
+    ),
     _CounterSpec(
         "nora_adapter_restarts_total",
         "Adapter listen() loop restarts after a failure, by platform.",

@@ -31,6 +31,7 @@ from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from nora.persons import Persons
+from nora.policy import permissive_policy
 from nora.tag import Debounce
 
 from .dispatch import Dispatcher
@@ -70,7 +71,7 @@ def build_offline_pipeline(
 
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
-        policy=policy, metrics=metrics, spawn=_spawn,
+        policy=policy, allowlist=permissive_policy(), metrics=metrics, spawn=_spawn,
     )
 
     tier = cfg.llm.tiers.flash

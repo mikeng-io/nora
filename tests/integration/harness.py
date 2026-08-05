@@ -250,7 +250,7 @@ class Harness:
 
 
 def _build_config(
-    tmp_path: Path, *, persons_path: Path, persona_dir: Path,
+    tmp_path: Path, *, persons_path: Path, policy_path: Path, persona_dir: Path,
     invocation_timeout: float | None = None,
     debounce: float | None = None,
 ) -> Config:
@@ -260,6 +260,7 @@ def _build_config(
         "store.db_path": tmp_path / "messages.db",
         "persona.dir": persona_dir,
         "identity_file": persons_path,
+        "policy_file": policy_path,
     }
     if invocation_timeout is not None:
         changes["llm.tiers.flash.timeout_seconds"] = invocation_timeout
@@ -315,8 +316,23 @@ async def build_handler(
     persona_copy_dir = tmp_path / "persona"
     shutil.copytree(PERSONA_DIR, persona_copy_dir, dirs_exist_ok=True)
 
+    # The integration harness drives synthetic conversation ids, so its policy
+    # admits any room; the room gate has its own unit tests. `persons = "*"`
+    # still refuses an UNMAPPED sender, which is the behaviour these tests care
+    # about preserving.
+    policy_path = tmp_path / "policy.toml"
+    policy_path.write_text(
+        'default = "deny"\n'
+        + "".join(
+            f'[[conversations]]\nplatform = "signal"\nid = "{cid}"\n'
+            'persons = "*"\n'
+            for cid in ("g1", "g2", "a", "A", "b", "B")
+        )
+    )
+
     cfg = _build_config(
-        tmp_path, persons_path=persons_path, persona_dir=persona_copy_dir,
+        tmp_path, persons_path=persons_path, policy_path=policy_path,
+        persona_dir=persona_copy_dir,
         invocation_timeout=invocation_timeout, debounce=debounce,
     )
 

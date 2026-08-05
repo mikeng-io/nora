@@ -25,6 +25,12 @@ def cfg(tmp_path, monkeypatch):
     (tmp_path / "identity.toml").write_text(
         '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "+852111"\n'
     )
+    # policy.toml resolves the same way. `persons = "*"` keeps these wiring
+    # tests about the dependency graph rather than the allowlist.
+    (tmp_path / "policy.toml").write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        'id = "g1"\npersons = "*"\n'
+    )
     # config.example.toml's store.db_path ("~/workspace/nora/data/messages.db") is
     # absolute, so it survives path resolution untouched regardless of where this
     # copy lives — without this override, build_dependencies() below would wire a

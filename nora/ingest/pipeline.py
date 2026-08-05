@@ -1,4 +1,4 @@
-"""`IngestPipeline` — runs the four ambient stages in order (spec §4.3).
+"""`IngestPipeline` — runs the ambient stages in order (spec §4.3).
 
 A readable table of contents, not a decision-maker: every branch belongs to
 the stage that owns it (`nora.ingest.stages.*`). This module only sequences
@@ -14,9 +14,11 @@ before this pipeline ever sees it. `PlatformAdapter` deliberately has no
 the place that could do this parsing generically even if it wanted to. See
 Trap B in `docs/superpowers/plans/2026-08-05-nora-phase4-platforms.md`.
 
-`message=None` in the returned `IngestResult` now means only that the audit
-write failed (the audit stage drops rather than re-raises) — the only
-remaining way `run` returns with nothing to show for its input. A message
+`message=None` in the returned `IngestResult` means either that the
+conversation is not allowlisted (the scope stage refuses BEFORE the audit, so
+a denied room is never recorded — see that module for why the room and the
+sender are enforced in different places) or that the audit write failed (the
+audit stage drops rather than re-raises). A message
 that made it past that is always paired with a `decision`, even for an
 unmapped sender (D6) or a policy error (the gate stage degrades closed rather
 than propagating).
@@ -24,6 +26,7 @@ than propagating).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
@@ -31,11 +34,15 @@ from typing import Any
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import AuditStore, EngageDecision, EngagePolicy, MemoryStore
 from nora.persons import Persons
+from nora.policy import Policy
 
 from .stages import audit as audit_stage
 from .stages import gate as gate_stage
 from .stages import identity as identity_stage
 from .stages import memory_feed as memory_feed_stage
+from .stages import scope as scope_stage
+
+log = logging.getLogger("nora.ingest.pipeline")
 
 
 @dataclass(frozen=True)
@@ -52,6 +59,7 @@ class IngestPipeline:
         memory: MemoryStore,
         persons: Persons,
         policy: EngagePolicy,
+        allowlist: Policy,
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], None],
     ) -> None:
@@ -59,6 +67,7 @@ class IngestPipeline:
         self._memory = memory
         self._persons = persons
         self._policy = policy
+        self._allowlist = allowlist
         self._metrics = metrics
         self._spawn = spawn
 
@@ -69,6 +78,13 @@ class IngestPipeline:
         parse stage used to do right after a successful `adapter.parse()`."""
         m = self._metrics
         m.inc("nora_messages_total", platform=message.platform)
+
+        # The ROOM gate, before anything is written: a conversation the
+        # operator has not allowlisted is not recorded at all.
+        if not await scope_stage.run(
+            message=message, policy=self._allowlist, metrics=m
+        ):
+            return IngestResult(message=None, decision=None)
 
         # Identity first, so the resolved person_id lands in the audit INSERT
         # instead of a second write. `Persons.resolve` is two dict lookups on a
@@ -87,4 +103,22 @@ class IngestPipeline:
         )
 
         decision = await gate_stage.run(message=message, policy=self._policy, metrics=m)
+
+        # The SENDER gate. Only consulted once something would actually be
+        # answered, so an unrecognised sender in an allowed room is still
+        # audited — which is exactly what `nora persons pending` reads.
+        if decision.engage and not self._allowlist.is_allowed(
+            platform=message.platform,
+            conversation_id=message.conversation_id,
+            person_id=person.person_id if person else None,
+        ):
+            m.inc("nora_denied_senders_total", platform=message.platform)
+            log.warning(
+                "tagged by a sender who is not allowed in this conversation "
+                "(platform=%s person=%s) — recorded, not answered",
+                message.platform,
+                person.person_id if person else "<unmapped>",
+            )
+            decision = EngageDecision(engage=False, reason="sender_not_allowed")
+
         return IngestResult(message=message, decision=decision)

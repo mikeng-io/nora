@@ -62,12 +62,17 @@ def test_a_listed_person_in_an_unlisted_room_is_refused(policy):
     assert _allowed(policy, "some-other-group", "miles") is False
 
 
-def test_an_unmapped_sender_is_refused_even_under_the_wildcard(policy):
-    """`persons = "*"` means "anyone in this chat that Nora can NAME". She
-    cannot tell that someone she cannot identify is in the room, and the
-    alternative grants a stranger the same access as a named friend."""
-    assert _allowed(policy, "-1001234567890", None, platform="telegram") is False
+def test_the_wildcard_admits_an_unmapped_sender(policy):
+    """The room is the trust boundary. D6 already settled that an unmapped
+    sender is answered but never remembered; refusing them here would reverse
+    that and leave `"*"` admitting only people who are already mapped, which
+    is what an explicit list is for."""
+    assert _allowed(policy, "-1001234567890", None, platform="telegram") is True
     assert _allowed(policy, "-1001234567890", "anyone", platform="telegram") is True
+
+
+def test_an_explicit_list_still_excludes_an_unmapped_sender(policy):
+    assert _allowed(policy, GROUP, None) is False
 
 
 def test_the_wildcard_still_respects_the_room_allowlist(policy):

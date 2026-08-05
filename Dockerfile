@@ -29,7 +29,7 @@ USER nora
 
 EXPOSE 9100
 
-# Real config.toml / identity.toml / persona files are bind-mounted at runtime by
+# Real config.toml / identity.toml / policy.toml / persona files are bind-mounted at runtime by
 # docker-compose.yml — never baked into the image.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:9100/health || exit 1

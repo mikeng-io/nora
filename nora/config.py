@@ -229,12 +229,14 @@ class Config(BaseModel):
     engagement: EngagementConfig
     persona: PersonaConfig
     identity_file: Path
+    policy_file: Path
     obs: ObsConfig
     evals: EvalsConfig
 
     @model_validator(mode="after")
     def _resolve_paths(self, info: ValidationInfo) -> Config:
         _resolve_context_field(self, "identity_file", info)
+        _resolve_context_field(self, "policy_file", info)
         return self
 
 

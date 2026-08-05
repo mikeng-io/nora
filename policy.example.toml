@@ -52,11 +52,12 @@ also_ids = ["-987654321"]    # Telegram CHANGES chat.id when a group becomes a
                              # this the allowlist silently stops matching and
                              # Nora goes quiet — invisible under R-5.
 label    = "Work"
-persons  = "*"               # anyone in this chat that Nora can NAME. An
-                             # unmapped sender is still refused: she cannot
-                             # tell that someone she cannot identify is in the
-                             # room, and the alternative would grant a stranger
-                             # the same access as a named friend.
+persons  = "*"               # anyone in this chat, including someone Nora
+                             # cannot name. The room is the trust boundary you
+                             # drew. An unmapped sender is still never fed to
+                             # Honcho (D6) — they are answered, not remembered.
+                             # An explicit list excludes them instead, since
+                             # an unmapped sender matches no person_id.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # NOT SUPPORTED, deliberately:

@@ -57,18 +57,48 @@ class Policy:
         """§4.3's grant predicate, in full.
 
         Both gates must pass: the ROOM must be listed, and the SENDER must be
-        listed within it. An unmapped sender (`person_id is None`) is refused
-        even in an allowlisted room with `persons = "*"` — the wildcard means
-        "anyone in this chat", and Nora cannot tell that someone she cannot
-        identify is in it. That is deliberate: the alternative grants a
-        stranger the same access as a named friend.
+        allowed within it.
+
+        `persons = "*"` admits an UNMAPPED sender too. The room is the trust
+        boundary the operator drew, and D6 already settled that an unmapped
+        sender is answered but never remembered (no `person_id`, so nothing is
+        fed to Honcho). Refusing them here would both reverse that and make
+        `"*"` almost pointless — it would then admit only people who are
+        already mapped, which is what an explicit list is for.
+
+        An explicit list still excludes them: `None` is not in `persons`, so
+        an unrecognised sender in a `persons = ["miles"]` room is refused.
         """
         convo = self.conversation(platform, conversation_id)
         if convo is None:
             return False                      # room not listed → deny (§4.1)
         if convo.persons is None:
-            return person_id is not None      # "*" — anyone Nora can name
+            return True                       # "*" — anyone in this room
         return person_id in convo.persons
+
+
+def permissive_policy() -> Policy:
+    """A Policy that allows every conversation and every sender.
+
+    OFFLINE AND EVAL HARNESSES ONLY. `nora.app.offline` builds pipelines for
+    `tests/integration` and `evals/`, which drive synthetic conversation ids
+    that no real `policy.toml` would list; without this every harness message
+    would be refused by the room gate and every test would exercise nothing.
+
+    Production must never reach this — deny-by-default is the entire point of
+    the file — and `tests/test_boundaries.py` asserts `nora/app/composition.py`
+    does not reference it.
+    """
+    return _PermissivePolicy(conversations=())
+
+
+@dataclass(frozen=True)
+class _PermissivePolicy(Policy):
+    def conversation(self, platform: str, conversation_id: str) -> Conversation:
+        return Conversation(platform=platform, ids=frozenset({conversation_id}), persons=None)
+
+    def is_allowed(self, *, platform: str, conversation_id: str, person_id: str | None) -> bool:
+        return True
 
 
 class _ConversationEntry(BaseModel):
