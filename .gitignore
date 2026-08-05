@@ -42,3 +42,8 @@ venv/
 *.pre-toml
 data/*.pre-alembic
 .serena/
+
+# signal-cli release tarball — fetched+verified by deploy/signal-cli/fetch.sh
+deploy/signal-cli/*.tar.gz
+# .asc is COMMITTED deliberately: the Dockerfile verifies the tarball against
+# it at build time, so it is part of the build inputs, not a fetched artifact.

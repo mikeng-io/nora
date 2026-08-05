@@ -1,4 +1,62 @@
 services:
+  # signal-cli — Nora's Signal transport. Merged into this compose project on
+  # 2026-08-05 after confirming Nora is its ONLY consumer (the sole holder of
+  # :18080 was `python3 -m nora` itself; hermes-agent runs profiles attest /
+  # bento / default and has no nora profile). CLAUDE.md's operational
+  # constraint 3 called this daemon "neutral and shared" — that was true once
+  # and is not any more.
+  #
+  # It ran as a bare JVM on the host for 61 days with nothing supervising it.
+  signal-cli:
+    build:
+      context: ./deploy/signal-cli
+      # network: host is REQUIRED, not a preference — BuildKit's default bridge
+      # cannot resolve deb.debian.org on this host (systemd-resolved stub
+      # 127.0.0.53), so `apt-get update` fails with exit 100. This is standing
+      # operational constraint 1, expressed so `docker compose build` obeys it
+      # without anyone remembering to pass --network=host.
+      network: host
+      # Run deploy/signal-cli/fetch.sh first: it downloads the release tarball
+      # and its .asc. Upstream ships no official image, so the Dockerfile
+      # re-verifies the signature at build time.
+    image: signal-cli:0.14.7
+    container_name: signal-cli
+    restart: unless-stopped
+    # Host networking so it binds 127.0.0.1:18080 directly. That matters: the
+    # HTTP interface has NO authentication, and binding 0.0.0.0 behind a port
+    # map makes signal-cli DISABLE its Host-header check. Loopback keeps it.
+    network_mode: host
+    volumes:
+      # Identity keys, group state, contacts. Losing this loses the device
+      # registration itself — not just message history.
+      - /home/norty/.local/share/signal-cli:/data/signal-cli
+    environment:
+      - XDG_DATA_HOME=/data
+    # --receive-mode=on-start is load-bearing, not decoration. Without it the
+    # HTTP server comes up and every RPC works while signal-cli never opens its
+    # websocket to Signal — so not one message is delivered. The host daemon
+    # ran that way for two months, and under R-5 it looked like a quiet group.
+    command: ["--account", "+85290000100", "daemon", "--http", "127.0.0.1:18080", "--receive-mode", "on-start"]
+    healthcheck:
+      # Probes the RUNNING daemon over JSON-RPC. The previous check was
+      # `signal-cli --version`, which forks a fresh JVM, prints a string and
+      # exits WITHOUT touching the daemon — it would have reported healthy
+      # throughout the 61-day outage. This at least proves the process is
+      # serving.
+      #
+      # It still CANNOT prove the websocket to Signal is alive; no RPC exposes
+      # that. The real detector for that lives one layer up: Nora's /health
+      # publishes sse.last_event_age_seconds and deploy/watchdog.sh alerts on
+      # it. Do not mistake this check for websocket liveness.
+      test: ["CMD-SHELL", "curl -fsS -m 5 -X POST http://127.0.0.1:18080/api/v1/rpc -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":\"hc\",\"method\":\"version\",\"params\":{}}' | grep -q '\"version\"' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
   nora:
     # NOTE: build with `docker build --network=host .` — BuildKit's default bridge
     # can't resolve deb.debian.org on this host (systemd-resolved stub 127.0.0.53),
@@ -12,6 +70,12 @@ services:
     # more honest than reproducing three port-forwards for a purely localhost agent.
     # signal-cli itself is NOT touched: it keeps running on the host, unmodified.
     network_mode: host
+    depends_on:
+      signal-cli:
+        # service_started only waits for the process to exist. Nora's first
+        # act is to attach an SSE listener, so she must wait for the daemon
+        # to be SERVING, not merely spawned.
+        condition: service_healthy
     environment:
       # Never hardcoded — must already be exported in the shell that runs `docker
       # compose up` (see .env.example). Compose fails fast if it's unset.
