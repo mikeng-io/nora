@@ -1,6 +1,7 @@
 
 import pytest
 
+from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaError, PersonaStore, parse_section
 
 FM = """\
@@ -37,7 +38,7 @@ def persona_dir(tmp_path):
 
 def _store(d, **kw) -> PersonaStore:
     return PersonaStore(d, canary="CANARY-XYZ", display_name="Nora",
-                        trigger="nora.000", language_hint="hk", **kw)
+                        trigger="nora.000", language_hint="hk", metrics=Metrics(), **kw)
 
 
 def test_parse_section_reads_frontmatter_and_body(persona_dir):
@@ -127,7 +128,7 @@ def test_an_empty_persona_directory_is_a_startup_failure(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
     with pytest.raises(PersonaError, match="no persona files"):
-        PersonaStore(empty, canary="c").get(applies_to="tag")
+        PersonaStore(empty, canary="c", metrics=Metrics()).get(applies_to="tag")
 
 
 def test_non_markdown_files_are_ignored(persona_dir):

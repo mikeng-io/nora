@@ -17,7 +17,7 @@ from typing import Any
 
 import yaml
 
-from ..obs.metrics import METRICS
+from ..obs.metrics import Metrics
 
 log = logging.getLogger("nora.persona")
 
@@ -117,7 +117,7 @@ def _assemble(sections: tuple[PersonaSection, ...]) -> str:
 class PersonaStore:
     def __init__(self, dir: Path, *, strict: bool = True, reload: str = "mtime",
                  canary: str = "", display_name: str = "Nora", trigger: str = "",
-                 language_hint: str = "", metrics=METRICS) -> None:
+                 language_hint: str = "", metrics: Metrics) -> None:
         self._dir = Path(dir)
         self._strict = strict
         self._reload = reload

@@ -25,7 +25,7 @@ def _touch_newer(path, text):
 
 
 def test_mtime_reload_picks_up_an_edit_without_a_restart(persona_dir):
-    store = PersonaStore(persona_dir, canary="c", reload="mtime")
+    store = PersonaStore(persona_dir, canary="c", reload="mtime", metrics=Metrics())
     before = store.get()
     assert "Original voice." in before.text
 
@@ -39,26 +39,26 @@ def test_mtime_reload_picks_up_an_edit_without_a_restart(persona_dir):
 
 
 def test_mtime_reload_does_nothing_when_nothing_changed(persona_dir):
-    store = PersonaStore(persona_dir, canary="c", reload="mtime")
+    store = PersonaStore(persona_dir, canary="c", reload="mtime", metrics=Metrics())
     assert store.get() is store.get()
 
 
 def test_a_new_file_is_picked_up(persona_dir):
-    store = PersonaStore(persona_dir, canary="c", reload="mtime")
+    store = PersonaStore(persona_dir, canary="c", reload="mtime", metrics=Metrics())
     store.get()
     write(persona_dir, "conduct.md", name="conduct", order=30, body="New conduct.")
     assert "New conduct." in store.get().text
 
 
 def test_a_deleted_file_is_picked_up(persona_dir):
-    store = PersonaStore(persona_dir, canary="c", reload="mtime")
+    store = PersonaStore(persona_dir, canary="c", reload="mtime", metrics=Metrics())
     store.get()
     (persona_dir / "voice.md").unlink()
     assert "Original voice." not in store.get().text
 
 
 def test_startup_mode_ignores_later_edits(persona_dir):
-    store = PersonaStore(persona_dir, canary="c", reload="startup")
+    store = PersonaStore(persona_dir, canary="c", reload="startup", metrics=Metrics())
     store.get()
     _touch_newer(
         persona_dir / "voice.md",
@@ -68,7 +68,9 @@ def test_startup_mode_ignores_later_edits(persona_dir):
 
 
 def test_failed_reload_keeps_last_good(persona_dir, caplog):
-    store = PersonaStore(persona_dir, canary="c", reload="mtime", strict=True)
+    store = PersonaStore(
+        persona_dir, canary="c", reload="mtime", strict=True, metrics=Metrics(),
+    )
     good = store.get()
 
     _touch_newer(persona_dir / "voice.md", "totally broken, no frontmatter")
@@ -93,7 +95,7 @@ def test_a_failed_reload_increments_the_prometheus_counter(persona_dir):
 
 
 def test_a_repaired_file_reloads_after_a_failure(persona_dir):
-    store = PersonaStore(persona_dir, canary="c", reload="mtime")
+    store = PersonaStore(persona_dir, canary="c", reload="mtime", metrics=Metrics())
     store.get()
     _touch_newer(persona_dir / "voice.md", "broken")
     store.get()
@@ -113,4 +115,4 @@ def test_the_first_load_still_raises_because_there_is_no_last_good(tmp_path):
     d.mkdir()
     (d / "soul.md").write_text("broken")
     with pytest.raises(PersonaError):
-        PersonaStore(d, canary="c").get()
+        PersonaStore(d, canary="c", metrics=Metrics()).get()

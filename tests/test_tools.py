@@ -6,6 +6,7 @@ from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from nora.persons import load_persons
 from tests.fakes import FakeHoncho, SinkSender
@@ -29,11 +30,11 @@ async def wiring(tmp_path):
     pdir = tmp_path / "persona"
     pdir.mkdir()
     write(pdir, "soul.md", name="soul", order=10, body="You are Nora.")
-    persona = PersonaStore(pdir, canary="C").get()
+    persona = PersonaStore(pdir, canary="C", metrics=Metrics()).get()
     sink = SinkSender()
     honcho = FakeHoncho(cards={"miles": ["likes espresso"]})
     deliverer = Deliverer(store=store, adapter=sink, target=TARGET, persona=persona,
-                          canary="C", tag_id="t1", nora_sender_id="nora")
+                          canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics())
     tools = build_tools(store=store, conversation_id="g1", conversation_type="group",
                         persons=load_persons(persons_file), honcho=honcho,
                         deliverer=deliverer, context_window=40)

@@ -1,6 +1,7 @@
 import pytest
 
 from nora.agent.guards import LeakGuard
+from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from tests.test_persona_loader import write
 
@@ -17,7 +18,7 @@ def persona(tmp_path):
     write(d, "soul.md", name="soul", order=10, body="You are Nora, in a private group.")
     write(d, "guardrails.md", name="guardrails", order=40, body=BODY)
     return PersonaStore(d, canary="CANARY-7f3a", display_name="Nora",
-                        trigger="nora.000").get()
+                        trigger="nora.000", metrics=Metrics()).get()
 
 
 @pytest.fixture

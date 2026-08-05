@@ -19,7 +19,6 @@ import time
 from pathlib import Path
 
 from . import config
-from .agent import factory
 from .app import runtime
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .config import ConfigError
@@ -137,7 +136,7 @@ class App:
     async def shutdown(self) -> None:
         if self._health_runner is not None:
             await self._health_runner.cleanup()
-        await factory.close_client()
+        await self.deps.client.close()
         await self.deps.audit.aclose()
 
 

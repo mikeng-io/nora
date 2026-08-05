@@ -140,9 +140,11 @@ def _series_matches(series_labels: tuple[tuple[str, str], ...], query: dict[str,
 class Metrics:
     """Records through prometheus-client collectors held on its own registry.
 
-    Construct one per test (or accept the shared production instance,
-    `METRICS`, below) rather than resetting a shared one — there is nothing
-    to reset.
+    Construct one per test, and exactly one for the whole process in
+    production (`nora.app.composition.build_dependencies` builds it and
+    threads it through `Dependencies`) — never a module-level singleton
+    (DEC-13); there is nothing to reset, so a fresh instance per scope is
+    strictly simpler than resetting a shared one.
     """
 
     def __init__(self, registry: CollectorRegistry | None = None) -> None:
@@ -233,14 +235,3 @@ class Metrics:
 
     def render(self) -> str:
         return generate_latest(self._registry).decode("utf-8")
-
-
-# The shared production instance — every call site already receives `metrics`
-# through injection (Phase 3 made it required in `nora.engagement`; ingest
-# always had it), but `nora.persona.loader` and `nora.agent.guards` still
-# default an unpassed `metrics=` kwarg to this, and `nora.app.composition`
-# assigns it into `Dependencies` for the real object graph. Task 4 (DEC-13)
-# replaces this with an explicit lifecycle object threaded through
-# `Dependencies`; until then this is the one module-level mutable object left
-# in this file, tracked by that decision, not a new one.
-METRICS = Metrics()

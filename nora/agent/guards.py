@@ -14,7 +14,7 @@ from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider,
 
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..domain.ports import SendResult
-from ..obs.metrics import METRICS
+from ..obs.metrics import Metrics
 from ..persona.loader import Persona
 
 log = logging.getLogger("nora.guards")
@@ -72,7 +72,7 @@ class Deliverer:
         canary: str,
         tag_id: str,
         nora_sender_id: str,
-        metrics=METRICS,
+        metrics: Metrics,
     ) -> None:
         self._store = store
         self._adapter = adapter
@@ -197,7 +197,7 @@ class ReplyGuard(HookProvider):
 
     def __init__(
         self, *, conversation_id: str, budgets: Mapping[str, int], deliverer=None,
-        metrics=METRICS,
+        metrics: Metrics,
     ) -> None:
         self._conversation_id = conversation_id
         self._budgets = dict(budgets)

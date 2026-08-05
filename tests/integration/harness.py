@@ -308,6 +308,7 @@ async def build_handler(
     run_migrations(cfg.store.db_path)
     store = SqlAuditStore(create_sql_engine(cfg.store.db_path))
     persons = load_persons(persons_path)
+    metrics = Metrics()
     persona_store = PersonaStore(
         cfg.persona.dir,
         strict=cfg.persona.strict,
@@ -315,11 +316,11 @@ async def build_handler(
         canary=cfg.persona.canary,
         display_name=cfg.persona.display_name,
         trigger=cfg.engagement.trigger.text,
+        metrics=metrics,
     )
 
     honcho_double = honcho if honcho is not None else FakeHoncho()
     adapter = sink if sink is not None else _HarnessAdapter(account=own_account)
-    metrics = Metrics()
     calls: list = []
 
     if script is None:
