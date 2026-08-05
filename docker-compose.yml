@@ -61,10 +61,18 @@ services:
       options: {max-size: "10m", max-file: "3"}
 
   nora:
-    # NOTE: build with `docker build --network=host .` — BuildKit's default bridge
-    # can't resolve deb.debian.org on this host (systemd-resolved stub 127.0.0.53),
-    # so `apt-get update` stalls ~30s per repo and the build never finishes.
-    build: .
+    build:
+      context: .
+      # network: host is REQUIRED, not a preference — BuildKit's default bridge
+      # can't resolve deb.debian.org on this host (systemd-resolved stub
+      # 127.0.0.53), so `apt-get update` stalls ~30s per repo and the build
+      # never finishes. Operational constraint 1, expressed here so
+      # `docker compose build` obeys it without anyone remembering a flag —
+      # this used to be a NOTE telling you to run `docker build --network=host`
+      # by hand, which is a constraint stored in a comment rather than in the
+      # build. `docker compose build` does not accept --network, so the comment
+      # form had no way to be right.
+      network: host
     image: nora:latest
     container_name: nora
     restart: unless-stopped
