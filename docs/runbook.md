@@ -314,7 +314,50 @@ working correctly — it is faithfully recording a real failing verdict.
   by design — which is why the sink now logs the response body, not just the status.
 
 
-## 8. "Where does everything live?" (read this first, months later)
+## 8. "Who is this, and which group is that?" — the control plane
+
+Two read-only commands. Neither writes a file, neither writes to the daemon,
+and both work with the Nora container **stopped** — the 3am path is docker, an
+editor and these. Neither needs `OMNIROUTE_API_KEY`; listing group ids has
+nothing to do with the LLM.
+
+```bash
+nora groups                     # every group, its id, and whether policy allows it
+nora persons pending            # senders Nora could not map, with paste-ready stanzas
+```
+
+**`nora groups`** answers "I cannot tell which group id is which". It prints
+each group's name beside the base64 `conversation_id` you need for
+`policy.toml`, marks it ALLOWED or DENIED, and emits a paste-ready
+`[[conversations]]` block for the denied ones.
+
+**`nora persons pending`** answers "who is this ACI?". It lists every sender in
+the audit DB that maps to no person, correlated into **accounts** rather than
+raw ids — under sealed sender the same account arrives as a phone number on one
+message and an ACI on another, and filing those as two pending entries would
+walk you straight into the duplicate-block startup error. Correlation uses the
+group rosters as well as `listContacts`, which matters more than it sounds: on
+this deployment only **3 of 83** contacts carry both a number and a uuid, while
+every group member does.
+
+**Adopting somebody is just editing the file.** Paste the stanza into
+`identity.toml` and restart. Lazy adoption (DEC-16) then backfills everything
+they said *before* you mapped them into their Honcho peer — Nora never writes
+`identity.toml` herself (D6).
+
+```bash
+$ nora groups
+ALLOWED  Ridgeline
+         id = Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34=
+         member=yes  members=3
+         policy: labelled "Ridgeline", persons = ['miles']
+```
+
+If the daemon is unreachable, `groups` exits 1 with the two commands to run;
+`pending` still works but loses display names and says so — with no roster to
+correlate against, one person's ids may appear as several entries.
+
+## 9. "Where does everything live?" (read this first, months later)
 
 One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
 
