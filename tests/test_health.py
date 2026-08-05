@@ -50,6 +50,14 @@ async def test_health_returns_200_when_everything_is_reachable(client):
     assert (await client.get("/health")).status == 200
 
 
+async def test_health_sse_key_set_is_pinned(client):
+    """`deploy/watchdog.sh` parses `body['sse']['last_event_age_seconds']`, and
+    `/health` is additive-only — this is the only test enforcing that `sse` never
+    loses a key a consumer already depends on (Trap A, the platforms phase)."""
+    body = await (await client.get("/health")).json()
+    assert set(body["sse"]) >= {"connected", "last_event_age_seconds", "account", "platform"}
+
+
 async def test_health_returns_503_when_sqlite_is_unreachable(aiohttp_client):
     from pathlib import Path
 

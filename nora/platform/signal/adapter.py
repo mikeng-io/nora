@@ -6,7 +6,7 @@ import time
 from collections.abc import Awaitable, Callable
 
 from ...domain.models import ConversationTarget, NormalizedMessage
-from ...domain.ports import PlatformIdentity, SendResult
+from ...domain.ports import AdapterHealth, PlatformIdentity, SendResult
 from .account import derive_aliases
 from .listener import SignalListener
 from .parser import parse_event
@@ -47,10 +47,10 @@ class SignalAdapter:
     async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
         return await self._sender.send(target, text)
 
-    async def health(self) -> dict:
+    async def health(self) -> AdapterHealth:
         last = self._listener.last_event_at
-        return {
-            "connected": self._listener.connected,
-            "last_event_age_seconds": None if last is None else time.monotonic() - last,
-            "account": self._account,
-        }
+        return AdapterHealth(
+            platform=self.platform,
+            connected=self._listener.connected,
+            last_event_age_seconds=None if last is None else time.monotonic() - last,
+        )

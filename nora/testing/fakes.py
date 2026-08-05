@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from nora.domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage, TranscriptRow
-from nora.domain.ports import MemoryHealth, PlatformIdentity, SendResult
+from nora.domain.ports import AdapterHealth, MemoryHealth, PlatformIdentity, SendResult
 
 
 class FakeAuditStore:
@@ -136,15 +136,17 @@ class FakeAdapter:
     group-message subset of `parse_event` it needs.
 
     `PlatformAdapter` is a documented, still-not-fully-conformed-to port. The platforms
-    phase closed the `resolve_identity()` and `send()` gaps
-    (`tests/contract/test_port_conformance.py` no longer pins either absent), so
-    this fake grows a `resolve_identity()` and a `SendResult`-returning `send()`
-    the same way `SignalAdapter` does. `health()`/`listen()`/`parse()` still
-    mirror `SignalAdapter`'s pre-phase shape (a bare `dict`, positional `listen`) —
-    those gaps close in later tasks of the same phase, tracked by their own tests
-    in `tests/contract/test_port_conformance.py` — so this fake staying on the old
-    shape for those does not newly trigger the "second port implementation needs a
-    contract suite" rule either.
+    phase closed the `resolve_identity()`, `send()` and `health()` gaps
+    (`tests/contract/test_port_conformance.py` no longer pins any of the three
+    absent), so this fake mirrors all three the same way `SignalAdapter` does
+    (`resolve_identity()`, a `SendResult`-returning `send()`, an
+    `AdapterHealth`-returning `health()`). `listen()`/`parse()` still mirror
+    `SignalAdapter`'s pre-phase shape (positional `on_event`, a `dict`-shaped
+    `parse()`) — that gap
+    (`tests/contract/test_port_conformance.py::test_signal_adapter_listen_gap_to_on_message_is_known`)
+    is still open and closes in a later phase, so this fake staying on the old
+    shape for those two does not newly trigger the "second port implementation
+    needs a contract suite" rule either.
 
     `_account` (not `own_account`) deliberately matches `SignalAdapter._account`'s
     name: `nora.engagement.stages.admission`'s R-12 self-tag check reads
@@ -193,8 +195,8 @@ class FakeAdapter:
         self.sent.append((target, text))
         return SendResult(ok=self._succeed)
 
-    async def health(self) -> dict:
-        return {"connected": True, "last_event_age_seconds": 0.0}
+    async def health(self) -> AdapterHealth:
+        return AdapterHealth(platform=self.platform, connected=True, last_event_age_seconds=0.0)
 
     @property
     def texts(self) -> list[str]:

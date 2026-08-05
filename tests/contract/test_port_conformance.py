@@ -50,15 +50,11 @@ def test_signal_adapter_send_satisfies_the_port_shape():
     assert inspect.signature(SignalAdapter.send).return_annotation == "SendResult"
 
 
-def test_signal_adapter_health_gap_to_adapter_health_is_known():
-    """SignalAdapter.health() does NOT yet satisfy PlatformAdapter, and that is
-    expected: it returns a plain dict where the port declares -> AdapterHealth.
-    Pinning the gap keeps it visible instead of letting it drift."""
-    return_annotation = inspect.signature(SignalAdapter.health).return_annotation
-    assert return_annotation == "dict", (
-        "SignalAdapter.health() no longer returns a bare dict — update this test and "
-        "ARCHITECTURE.md's PlatformAdapter known-gap row"
-    )
+def test_signal_adapter_health_satisfies_the_port_shape():
+    """Replaces `test_signal_adapter_health_gap_to_adapter_health_is_known`, which
+    pinned `health()` returning a bare `dict` — the platforms phase's third gap
+    close, `AdapterHealth` in its place."""
+    assert inspect.signature(SignalAdapter.health).return_annotation == "AdapterHealth"
 
 
 def test_signal_adapter_listen_gap_to_on_message_is_known():

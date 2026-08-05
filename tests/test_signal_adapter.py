@@ -33,8 +33,9 @@ async def test_parse_filters_our_own_account():
 async def test_health_reports_connection_state():
     adapter = SignalAdapter("http://x", "+1")
     health = await adapter.health()
-    assert set(health) >= {"connected", "last_event_age_seconds", "account"}
-    assert health["account"].endswith("1")
+    assert health.platform == "signal"
+    assert health.connected is False
+    assert health.last_event_age_seconds is None
 
 
 async def test_send_delegates_to_the_sender():
