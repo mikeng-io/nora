@@ -2,8 +2,10 @@ import pytest
 
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
+from nora.agent.registry import ToolRegistry
 
 BASE_URL = "http://localhost:20128/v1"
+BUDGETS = ToolRegistry().budgets()
 API_KEY = "test-key"
 MODEL = "deepseek-v4-flash"
 MAX_TOKENS = 400
@@ -67,7 +69,7 @@ def test_create_agent_is_stateless_by_construction():
         system_prompt="<nora_persona/>",
         tools=[],
         pre_fill=[{"role": "user", "content": [{"text": "ctx"}]}],
-        guard=ReplyGuard(conversation_id="g1"),
+        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS),
         trace_attributes={"tag_id": "t1"},
     )
     assert isinstance(agent.conversation_manager, NullConversationManager)
@@ -82,7 +84,7 @@ def test_create_agent_installs_the_prefill_as_conversation_history():
         model=model, system_prompt="p", tools=[],
         pre_fill=[{"role": "user", "content": [{"text": "ctx"}]},
                   {"role": "assistant", "content": [{"text": "ok"}]}],
-        guard=ReplyGuard(conversation_id="g1"), trace_attributes={},
+        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS), trace_attributes={},
     )
     assert len(agent.messages) == 2
 
@@ -95,7 +97,7 @@ def test_create_agent_suppresses_the_default_callback_handler():
     )
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=[], pre_fill=[],
-        guard=ReplyGuard(conversation_id="g1"), trace_attributes={},
+        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS), trace_attributes={},
     )
     # Agent.__init__ normalizes an explicit `callback_handler=None` into
     # null_callback_handler (a no-op) rather than storing literal None — see
@@ -110,10 +112,14 @@ def test_two_agents_share_no_state():
     model = factory.create_model_provider(
         model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
     )
-    a = factory.create_agent(model=model, system_prompt="p", tools=[],
-                             pre_fill=[{"role": "user", "content": [{"text": "a"}]}],
-                             guard=ReplyGuard(conversation_id="g1"), trace_attributes={})
-    b = factory.create_agent(model=model, system_prompt="p", tools=[], pre_fill=[],
-                             guard=ReplyGuard(conversation_id="g1"), trace_attributes={})
+    a = factory.create_agent(
+        model=model, system_prompt="p", tools=[],
+        pre_fill=[{"role": "user", "content": [{"text": "a"}]}],
+        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS), trace_attributes={},
+    )
+    b = factory.create_agent(
+        model=model, system_prompt="p", tools=[], pre_fill=[],
+        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS), trace_attributes={},
+    )
     assert a.messages is not b.messages
     assert len(b.messages) == 0

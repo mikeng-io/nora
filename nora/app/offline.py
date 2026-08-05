@@ -21,6 +21,7 @@ from collections.abc import Coroutine
 from typing import Any
 
 from nora.agent import factory
+from nora.agent.registry import ToolRegistry
 from nora.config import Config
 from nora.domain.ports import AuditStore, MemoryStore
 from nora.engagement.context import TranscriptInjection
@@ -76,9 +77,11 @@ def build_offline_pipeline(
     limits = factory.build_limits(
         max_tokens=tier.max_tokens, turns=tier.limits.turns, total_tokens=tier.limits.total_tokens,
     )
+    tool_registry = ToolRegistry()
     engagement = EngagementPipeline(
         adapter=adapter, audit=audit, memory=memory, persons=persons,
         persona_store=persona_store, context_assembler=assembler, runner=runner,
+        tool_registry=tool_registry,
         debounce=debounce, canary=cfg.persona.canary, display_name=cfg.persona.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,

@@ -3,18 +3,35 @@
 Docstrings are the LLM-facing schema — they are written for a model, not a developer.
 feed_honcho is deliberately NOT a tool: the handler owns the single post-reply feed
 (audit fix #5).
+
+`build_tool_specs` builds each tool as a plain, undecorated `ToolSpec`
+(`nora.agent.ports`) closed over this tag's dependencies — no `strands` import
+here at all. `build_tools` is the thin, Strands-flavoured wrapper over it
+(`nora.agent.ports.adapt` per spec), kept so every existing caller (the engagement
+pipeline, `tests/test_tools.py`) that wants ready-to-use Strands tool objects
+still can, without knowing `ToolSpec` exists. `NATIVE_TOOL_BUDGETS` is the single
+source both draw budgets from — `nora.agent.registry.ToolRegistry.budgets()`
+reads the very same mapping, so the number `ReplyGuard` enforces and the number
+each tool is declared to cost can never drift apart (DEC-10).
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
-from strands import tool
+from .ports import ToolSpec, adapt
 
 log = logging.getLogger("nora.tools")
 
+NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
+    "read_buffer": 2,
+    "read_peer_card": 1,
+    "send_reply": 1,
+}
 
-def build_tools(
+
+def build_tool_specs(
     *,
     store,
     conversation_id: str,
@@ -23,8 +40,7 @@ def build_tools(
     honcho,
     deliverer,
     context_window: int = 40,
-) -> list:
-    @tool
+) -> tuple[ToolSpec, ...]:
     async def read_buffer(
         conversation_id: str, conversation_type: str = "group", limit: int = 40
     ) -> list[dict]:
@@ -58,7 +74,6 @@ def build_tools(
             for r in rows
         ]
 
-    @tool
     async def read_peer_card(sender_id: str) -> list[str]:
         """Look up what you durably recall about a person.
 
@@ -77,7 +92,6 @@ def build_tools(
             log.exception("read_peer_card failed")
             return []
 
-    @tool
     async def send_reply(conversation_id: str, conversation_type: str, text: str) -> bool:
         """Send your reply to the group. Call this exactly once, at the end of your turn.
 
@@ -91,4 +105,38 @@ def build_tools(
         """
         return await deliverer.deliver(text, source="tool")
 
-    return [read_buffer, read_peer_card, send_reply]
+    return (
+        ToolSpec(
+            name="read_buffer", description="", schema={}, call=read_buffer,
+            budget=NATIVE_TOOL_BUDGETS["read_buffer"],
+        ),
+        ToolSpec(
+            name="read_peer_card", description="", schema={}, call=read_peer_card,
+            budget=NATIVE_TOOL_BUDGETS["read_peer_card"],
+        ),
+        ToolSpec(
+            name="send_reply", description="", schema={}, call=send_reply,
+            budget=NATIVE_TOOL_BUDGETS["send_reply"],
+        ),
+    )
+
+
+def build_tools(
+    *,
+    store,
+    conversation_id: str,
+    conversation_type: str,
+    persons,
+    honcho,
+    deliverer,
+    context_window: int = 40,
+) -> list:
+    """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
+    the docstrings above become the tool's model-facing description/schema
+    (empty `description`/`schema` on every `ToolSpec` here means "derive from
+    the callable", see `nora.agent.ports.adapt`)."""
+    specs = build_tool_specs(
+        store=store, conversation_id=conversation_id, conversation_type=conversation_type,
+        persons=persons, honcho=honcho, deliverer=deliverer, context_window=context_window,
+    )
+    return [adapt(spec) for spec in specs]

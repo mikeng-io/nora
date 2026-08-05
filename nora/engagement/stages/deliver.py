@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -50,13 +51,16 @@ def build(
     tag_id: str,
     nora_sender_id: str,
     conversation_id: str,
+    budgets: Mapping[str, int],
     metrics: Any,
 ) -> DeliveryHandle:
     deliverer = Deliverer(
         store=store, adapter=adapter, target=target, persona=persona, canary=canary,
         tag_id=tag_id, nora_sender_id=nora_sender_id, metrics=metrics,
     )
-    guard = ReplyGuard(conversation_id=conversation_id, deliverer=deliverer, metrics=metrics)
+    guard = ReplyGuard(
+        conversation_id=conversation_id, budgets=budgets, deliverer=deliverer, metrics=metrics,
+    )
     return DeliveryHandle(deliverer=deliverer, guard=guard)
 
 

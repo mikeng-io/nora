@@ -17,14 +17,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from nora.agent.factory import create_client, create_model_provider
-from nora.agent.guards import LeakGuard, ReplyGuard
+from nora.agent.guards import LeakGuard
+from nora.agent.registry import ToolRegistry
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.persona.loader import Persona, PersonaStore
 from nora.persons import Persons, load_persons
 from nora.tag import is_tagged
 
-REPLY_GUARD_BUDGETS = ReplyGuard.BUDGETS
+REPLY_GUARD_BUDGETS = ToolRegistry().budgets()
 
 __all__ = [
     "REPLY_GUARD_BUDGETS",

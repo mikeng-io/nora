@@ -1,7 +1,10 @@
 import types
 
 from nora.agent.guards import ReplyGuard
+from nora.agent.registry import ToolRegistry
 from nora.obs.metrics import Metrics
+
+BUDGETS = ToolRegistry().budgets()
 
 
 class FakeBeforeEvent:
@@ -18,7 +21,7 @@ class FakeAfterEvent:
 
 
 def _guard(metrics=None):
-    return ReplyGuard(conversation_id="g1", metrics=metrics or Metrics())
+    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, metrics=metrics or Metrics())
 
 
 def test_before_tool_allows_a_valid_call():

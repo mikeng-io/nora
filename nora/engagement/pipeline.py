@@ -3,8 +3,8 @@ invoke → deliver → feedback for a tag `nora.ingest` already decided to
 engage (spec §4.4). A readable table of contents, not a decision-maker:
 every branch belongs to the stage that owns it (`nora.engagement.stages.*`)
 or, for persona/tools, to the collaborator it delegates straight to
-(`PersonaStore.get`, `nora.agent.tools.build_tools`) — neither is complex
-enough to earn its own stage module.
+(`PersonaStore.get`, `nora.agent.registry.ToolRegistry.build`) — neither is
+complex enough to earn its own stage module.
 
 **R-10 lock ownership is split across two modules on purpose** — documented
 on both halves so a reader landing on either one sees the whole contract.
@@ -40,7 +40,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from nora.agent.prefill import build_prefill, build_tag_message
-from nora.agent.tools import build_tools
+from nora.agent.registry import ToolRegistry
 from nora.domain.ports import AuditStore, EngagementRequest, MemoryStore
 from nora.persons import Persons
 from nora.tag import Debounce
@@ -62,6 +62,7 @@ class EngagementPipeline:
         persona_store: Any,
         context_assembler: Any,
         runner: AgentRunner,
+        tool_registry: ToolRegistry,
         debounce: Debounce,
         canary: str,
         display_name: str,
@@ -80,6 +81,7 @@ class EngagementPipeline:
         self._persona_store = persona_store
         self._context = context_assembler
         self._runner = runner
+        self._tool_registry = tool_registry
         self._debounce = debounce
         self._canary = canary
         self._display_name = display_name
@@ -133,9 +135,9 @@ class EngagementPipeline:
                 store=self._audit, adapter=self._adapter, target=msg.target(),
                 persona=persona, canary=self._canary, tag_id=request.tag_id,
                 nora_sender_id=self._nora_sender_id, conversation_id=msg.conversation_id,
-                metrics=self._metrics,
+                budgets=self._tool_registry.budgets(), metrics=self._metrics,
             )
-            tools = build_tools(
+            tools = self._tool_registry.build(
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer,
