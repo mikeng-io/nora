@@ -13,6 +13,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "prometheus-client>=0.26.0",
+    "structlog>=26.1.0",
 ]
 
 [project.optional-dependencies]
