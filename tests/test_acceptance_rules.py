@@ -1,4 +1,4 @@
-"""E.7 criterion 5: every rule R-1…R-16 has a passing named test."""
+"""E.7 criterion 5: every rule R-1…R-17 has a passing named test."""
 
 import subprocess
 from pathlib import Path
@@ -28,6 +28,7 @@ RULE_TESTS = {
     "R-13b": "test_forged_closing_tag_is_escaped",
     "R-15": "test_no_redundant_read_fails_when_prefill_was_sufficient",
     "R-16": "test_secret_never_logged_in_the_message",
+    "R-17": "test_degraded_identity_enrichment_is_counted_and_r12_still_holds",
 }
 
 

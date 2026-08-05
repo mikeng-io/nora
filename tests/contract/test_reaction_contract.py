@@ -22,6 +22,7 @@ from aiohttp import web
 
 from nora.domain.models import ConversationTarget
 from nora.domain.ports import PlatformAdapter, ReactionResult
+from nora.obs.metrics import Metrics
 from nora.platform.signal.adapter import SignalAdapter
 from nora.testing import FakeAdapter
 
@@ -41,7 +42,7 @@ async def _signal_adapter(aiohttp_server, *, status: int = 200):
     server = await aiohttp_server(app)
     # A placeholder account against a local aiohttp test server — nothing in
     # this suite can reach the real daemon or the real group.
-    return SignalAdapter(str(server.make_url("")).rstrip("/"), "+15550000000")
+    return SignalAdapter(str(server.make_url("")).rstrip("/"), "+15550000000", metrics=Metrics())
 
 
 @pytest.fixture(params=["signal", "fake"])
@@ -73,7 +74,9 @@ def test_react_matches_the_port_signature(impl):
 
 @pytest.mark.parametrize("impl", [SignalAdapter, FakeAdapter])
 def test_both_implementations_are_platform_adapters(impl):
-    instance = impl("http://x", "+1") if impl is SignalAdapter else impl()
+    instance = (
+        impl("http://x", "+1", metrics=Metrics()) if impl is SignalAdapter else impl()
+    )
     assert isinstance(instance, PlatformAdapter)
 
 

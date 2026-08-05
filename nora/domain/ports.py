@@ -4,7 +4,8 @@ keep living where they live until the phase that migrates them.
 
 Standard library only, same rule as the rest of `nora/domain`: if a port needs
 aiohttp, strands, sqlalchemy, pydantic or prometheus_client to express itself,
-the port is wrong. `nora.domain.models` is the one allowed sibling import.
+the port is wrong. `nora.domain.models` and `nora.domain.identity` are the only
+allowed sibling imports.
 
 Each shape below encodes a decision that cost something to reach. Simplifying
 it back to the "obvious" version silently reintroduces the bug it was built to
@@ -14,7 +15,10 @@ avoid:
   `sourceNumber` and sometimes a UUID, and Telegram has both a numeric id and
   a username. R-12 (ignore Nora's own messages) must test *membership* in
   `aliases`, not equality against a single id, or self-recognition silently
-  breaks the moment a second platform is wired in.
+  breaks the moment a second platform is wired in. The type now lives in
+  `nora.domain.identity` (re-exported below) and carries typed `identifiers`
+  alongside the flat `aliases` — see its own docstring, and R-17 for why a
+  degraded derivation of it must be counted rather than merely logged.
 
 - `SendResult` replaces a bare `bool` because Telegram answers rate limiting
   with a 429 and a `retry_after` value, and `Deliverer`'s latch counts
@@ -117,10 +121,11 @@ change at every call site; keyword-only buys free extensibility forever.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
+from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -130,23 +135,18 @@ from nora.domain.models import (
     UnattributedRow,
 )
 
+# `PlatformIdentity` is re-exported, not declared here — it moved next to
+# `Identifier` in `nora.domain.identity` when it grew a typed `identifiers`
+# field (design/10 §5), which also bought this module back some of its 300-line
+# cap. The `X as X` above is not a typo: it is PEP 484's explicit re-export
+# marker, which mypy's `no_implicit_reexport` requires before another module may
+# import the name through here. `__all__` would satisfy mypy too, but would also
+# narrow `from nora.domain.ports import *` to that one name.
+
 
 class ModelTier(Enum):
     FLASH = "flash"
     DEEP = "deep"
-
-
-@dataclass(frozen=True)
-class PlatformIdentity:
-    """Nora's own identity on a platform, as a set of aliases rather than a
-    single id — see module docstring."""
-
-    platform: str
-    primary: str
-    aliases: frozenset[str] = field(default_factory=frozenset)
-
-    def __post_init__(self) -> None:  # primary is always an alias of itself
-        object.__setattr__(self, "aliases", frozenset(self.aliases) | {self.primary})
 
 
 @dataclass(frozen=True)

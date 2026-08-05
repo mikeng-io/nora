@@ -12,7 +12,7 @@ reasoning.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
 
@@ -94,6 +94,53 @@ class Identifier:
                 f"{self.kind!r} is not a valid id kind for platform "
                 f"{self.platform!r}; expected one of {sorted(allowed)}"
             )
+
+
+@dataclass(frozen=True)
+class PlatformIdentity:
+    """Nora's own identity on a platform — the same one-account-many-id-forms
+    shape `nora.persons` already builds for everybody else (design/10 §5).
+
+    Lives HERE, next to `Identifier`, rather than in `nora.domain.ports` where
+    it was originally declared: once it carries typed identifiers it is part of
+    the identity model, not a port-only vocabulary type, and ports.py was two
+    lines from the 300-line hard cap. `nora.domain.ports` re-exports it, so
+    `from nora.domain.ports import PlatformIdentity` keeps working everywhere.
+
+    `identifiers` is the typed set — `(platform, kind, value)` triples, kind
+    drawn from `id_kinds(platform)`. `aliases` is that same set FLATTENED to
+    bare values, plus `primary`, and it is what R-12
+    (`nora.engagement.stages.admission`) tests membership in. Two fields for
+    one fact, deliberately, and this is the "one concept, one matching rule"
+    design/10 §5 asks for: `nora.persons.load_persons` flattens every kind of
+    every account into `index[(platform, value)] -> person_id` for exactly the
+    same reason — a sender arrives as ONE opaque string and Nora does not get
+    to know which kind it is. Nora's own identity is that same flattening with
+    a single account, so the matching rule on both sides is "is this bare
+    value in the flattened set", never "does this value match the phone field".
+
+    Derivation is one-way and total: `aliases` is recomputed from
+    `identifiers | {primary}` at construction, so no caller can hand in an
+    `aliases` set that disagrees with `identifiers`. A caller may still pass
+    `aliases` alone (a platform with no typed vocabulary yet, or a test), which
+    is why it is a union rather than an overwrite.
+    """
+
+    platform: str
+    primary: str
+    aliases: frozenset[str] = field(default_factory=frozenset)
+    identifiers: frozenset[Identifier] = field(default_factory=frozenset)
+
+    def __post_init__(self) -> None:
+        typed = frozenset(self.identifiers)
+        object.__setattr__(self, "identifiers", typed)
+        # primary is always an alias of itself, and every typed identifier's
+        # bare value is matchable — see the class docstring.
+        object.__setattr__(
+            self,
+            "aliases",
+            frozenset(self.aliases) | {i.value for i in typed} | {self.primary},
+        )
 
 
 class Membership(Enum):

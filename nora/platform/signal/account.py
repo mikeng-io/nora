@@ -2,6 +2,18 @@
 
 Failure is a startup failure: without the account, own-message filtering (R-12) is
 unsound and Nora could trigger herself.
+
+**On this daemon there is no discovery path — `platforms.signal.account` in
+config.toml is load-bearing.** `/api/v1/accounts` returns 404 on signal-cli
+0.14.7 and always has; `--http` serves exactly three endpoints (`/api/v1/rpc`,
+`/api/v1/events`, `/api/v1/check`) per `signal-cli-jsonrpc(5)`. The JSON-RPC
+`listAccounts` method that would answer "which accounts exist" is
+multi-account-mode only and returns `-32601 Method not implemented` here,
+because the daemon is pinned to one account with `-a`. A single-account daemon
+has no RPC that reveals which account it is pinned to, so the GET below is kept
+only for a hypothetical daemon that does serve it, and the override is the real
+path. See `nora.platform.signal.self_id` for the full endpoint survey — that
+module is the one that got a working replacement.
 """
 
 from __future__ import annotations
@@ -42,7 +54,12 @@ async def derive_account(
             resp.raise_for_status()
             payload = await resp.json()
     except Exception as exc:
-        raise AccountError(f"could not reach the signal-cli daemon at {url}: {exc}") from exc
+        raise AccountError(
+            f"could not read {url}: {exc}. signal-cli 0.14.7 does not serve this "
+            "endpoint at all (only /api/v1/rpc, /api/v1/events, /api/v1/check) and "
+            "its listAccounts RPC is multi-account-mode only — set "
+            "platforms.signal.account in config.toml"
+        ) from exc
 
     accounts = [a for a in (_extract(e) for e in (payload or [])) if a]
     if not accounts:
@@ -56,42 +73,6 @@ async def derive_account(
     return accounts[0]
 
 
-async def derive_aliases(
-    base_url: str,
-    primary: str,
-    *,
-    timeout: float = 5.0,  # noqa: ASYNC109 -- caller budget; asyncio.timeout is Phase 6
-) -> frozenset[str]:
-    """Every id form the daemon reports for `primary` — signal-cli sometimes pairs
-    a phone number with a UUID for the same account. See `nora.domain.ports`'s
-    module docstring for why `PlatformIdentity.aliases` exists: R-12 must test
-    membership, not equality, or self-recognition breaks the moment a second
-    platform is wired in.
-
-    Reads the same `/api/v1/accounts` endpoint `derive_account` uses; never writes
-    to the daemon. Unlike `derive_account`, an unreachable daemon (or one that
-    reports nothing beyond the bare number) is not a startup failure here —
-    `primary` is already known by the time this runs, so this is best-effort
-    enrichment, not a precondition, and always degrades to `{primary}`.
-    """
-    url = f"{base_url.rstrip('/')}/api/v1/accounts"
-    try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=timeout)
-        ) as session, session.get(url) as resp:
-            resp.raise_for_status()
-            payload = await resp.json()
-    except Exception as exc:            # noqa: BLE001 -- best-effort enrichment, never fatal
-        log.warning("could not derive alias id forms from the daemon: %s", exc)
-        return frozenset({primary})
-
-    for entry in payload or []:
-        if not isinstance(entry, dict):
-            continue
-        number = entry.get("number") or entry.get("account") or ""
-        if number != primary:
-            continue
-        forms = {v for v in (entry.get("number"), entry.get("account"), entry.get("uuid")) if v}
-        forms.add(primary)
-        return frozenset(forms)
-    return frozenset({primary})
+# `derive_aliases` lived here and read `/api/v1/accounts` too. It is gone:
+# alias derivation now speaks JSON-RPC and returns typed identifiers —
+# `nora.platform.signal.self_id.derive_identifiers` (R-17, design/10 §5).
