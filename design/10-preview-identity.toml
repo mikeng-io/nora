@@ -1,0 +1,63 @@
+# PREVIEW — proposed shape for identity.toml (design/10-identity-and-policy-schema.md).
+# Not loaded by anything. The live file is identity.example.toml.
+#
+# WHO PEOPLE ARE. One section per person; policy.toml refers to these by
+# person_id and never by a raw platform id.
+#
+# person_id doubles as the Honcho peer id, so it must match ^[a-zA-Z0-9_-]+$.
+# One human = one peer across every platform (A2) — that is what makes
+# Discord-Miles and Signal-Miles the same person to Nora's memory.
+#
+# Reload is startup-only (Q4): adding a friend requires a restart.
+
+# ─────────────────────────────────────────────────────────────────────────────
+[persons.miles]
+name = "Miles"
+
+# Every id form Nora might see for this person on Signal. Nora matches on ANY
+# of them, so you list whichever ones you actually have.
+#
+# `uuid` is Signal's ACI. You can never look it up yourself — Signal does not
+# show it anywhere. Nora sees it in the envelope and `nora persons pending`
+# prints it next to the display name you DO recognise, so you paste it here.
+# It is the only id that keeps working when a phone number is hidden.
+[persons.miles.signal]
+phone    = "+85212345678"
+uuid     = "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
+username = "miles.42"
+
+# Telegram: user_id is stable but you cannot look it up without the person
+# interacting with the bot first; username is easy to read but they can change
+# it. List both — matching succeeds on either.
+[persons.miles.telegram]
+user_id  = "123456789"
+username = "pinegrove"
+
+# Discord is the one platform where the stable id is also the one you can get
+# yourself: Developer Mode -> right-click -> Copy ID.
+[persons.miles.discord]
+user_id = "100000000000000003"
+
+# WhatsApp has no usernames. `lid` is the newer privacy identifier; include it
+# once Nora has seen it, so the mapping survives a number being hidden.
+[persons.miles.whatsapp]
+phone = "+85212345678"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Someone who only exists on one platform is perfectly normal — list what you
+# have and nothing else.
+[persons.ada]
+name = "Ada"
+
+[persons.ada.signal]
+uuid = "b68741f9-5c61-4589-2e9a-dca8fc90d011"   # number hidden; uuid is all we get
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NOT SUPPORTED, deliberately:
+#
+#   display_name = "Miles"
+#
+# Display names (Signal profile names, WhatsApp push names, Telegram first/last
+# names) are user-controlled and trivially spoofable. Nora shows them to you and
+# renders them in transcripts, but never matches a person on one. Putting one
+# here is a startup error, not a silently-ignored key.
