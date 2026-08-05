@@ -146,7 +146,7 @@ class EngagementPipeline:
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer,
-                context_window=self._context_window,
+                context_window=self._context_window, metrics=self._metrics,
             )
             tagger_name = self._persons.display_name(msg)
             pre_fill = build_prefill(

@@ -23,6 +23,12 @@ async def wiring(tmp_path):
     for i in range(3):
         await store.append(message=NormalizedMessage("signal", "g1", "group", "+852111",
                                                       "Miles", i, f"m{i}", {}))
+    # A second, unrelated conversation with its own rows — the cross-group
+    # leak probe (Task 1) needs a real second group to prove read_buffer
+    # cannot be steered into it by a model-supplied conversation_id.
+    for i in range(3):
+        await store.append(message=NormalizedMessage("signal", "g2", "group", "+852222",
+                                                      "Alice", i, f"secret{i}", {}))
     persons_file = tmp_path / "identity.toml"
     persons_file.write_text(
         "[persons.miles]\nname = \"Miles\"\n[persons.miles.platforms]\nsignal = \"+852111\"\n"
@@ -35,12 +41,13 @@ async def wiring(tmp_path):
     honcho = FakeHoncho(cards={"miles": ["likes espresso"]})
     deliverer = Deliverer(store=store, adapter=sink, target=TARGET, persona=persona,
                           canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics())
+    metrics = Metrics()
     tools = build_tools(store=store, conversation_id="g1", conversation_type="group",
                         persons=load_persons(persons_file), honcho=honcho,
-                        deliverer=deliverer, context_window=40)
+                        deliverer=deliverer, metrics=metrics, context_window=40)
     try:
         yield {"tools": {t.tool_name: t for t in tools}, "sink": sink,
-               "honcho": honcho, "deliverer": deliverer, "store": store}
+               "honcho": honcho, "deliverer": deliverer, "store": store, "metrics": metrics}
     finally:
         await store.aclose()
 
@@ -62,6 +69,32 @@ def test_every_tool_has_a_model_facing_docstring(wiring):
 async def test_read_buffer_returns_rows_oldest_first(wiring):
     rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
     assert [r["body"] for r in rows] == ["m0", "m1", "m2"]
+
+
+async def test_read_buffer_ignores_a_model_supplied_conversation_id_and_stays_bound(wiring):
+    """Task 1 PROBE: tools are bound to "g1"; the model asks for "g2", an id
+    it never saw and has no business reading. Before the fix, `read_buffer`'s
+    own `conversation_id` parameter shadowed the closure's bound value and
+    was passed straight to the store — this is the reproduction of exactly
+    that scenario. It must come back with g1's rows, never g2's secrets."""
+    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g2", limit=40)
+    bodies = [r["body"] for r in rows]
+    assert bodies == ["m0", "m1", "m2"]
+    assert not any(b.startswith("secret") for b in bodies)
+
+
+async def test_read_buffer_counts_a_conversation_id_mismatch(wiring):
+    await _call(wiring["tools"]["read_buffer"], conversation_id="g2", limit=40)
+    assert wiring["metrics"].get(
+        "nora_tool_scope_violations_total", tool="read_buffer"
+    ) == 1.0
+
+
+async def test_read_buffer_does_not_count_a_matching_conversation_id(wiring):
+    await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    assert wiring["metrics"].get(
+        "nora_tool_scope_violations_total", tool="read_buffer"
+    ) == 0.0
 
 
 async def test_read_buffer_returns_only_model_relevant_fields(wiring):

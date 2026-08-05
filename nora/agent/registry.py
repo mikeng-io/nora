@@ -46,13 +46,15 @@ class ToolRegistry:
         persons: Any,
         honcho: Any,
         deliverer: Any,
+        metrics: Any,
         context_window: int = 40,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-            persons=persons, honcho=honcho, deliverer=deliverer, context_window=context_window,
+            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            context_window=context_window,
         )
 
     def build(
@@ -64,6 +66,7 @@ class ToolRegistry:
         persons: Any,
         honcho: Any,
         deliverer: Any,
+        metrics: Any,
         context_window: int = 40,
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
@@ -71,6 +74,7 @@ class ToolRegistry:
         the old direct `nora.agent.tools.build_tools` import."""
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-            persons=persons, honcho=honcho, deliverer=deliverer, context_window=context_window,
+            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            context_window=context_window,
         )
         return [adapt(spec) for spec in specs]

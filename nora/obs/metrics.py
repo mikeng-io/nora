@@ -83,6 +83,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Adapter listen() loop restarts after a failure, by platform.",
         ("platform",),
     ),
+    _CounterSpec(
+        "nora_tool_scope_violations_total",
+        "A model-supplied tool argument disagreed with the scope the tool was "
+        "bound to (e.g. read_buffer asked for a conversation_id other than the "
+        "tagged one) and was ignored rather than honoured, by tool.",
+        ("tool",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
