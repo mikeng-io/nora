@@ -34,6 +34,58 @@ are now settled, and each is reversible:
 
 ---
 
+## DIRECTION CORRECTION (operator, 2026-08-06)
+
+> "We should focus on adopting existing tools and skills instead of rebuilding
+> the wheel."
+
+**Capabilities become TOOLS over interfaces that already exist**, not bespoke
+machinery. signal-cli's JSON-RPC already answers "who is in this group"
+(`listGroups`), "who is this uuid" (`listContacts`), "is this number
+registered" (`getUserStatus`). Wrapping those read-only is less code than a
+cached roster with its own refresh loop and staleness semantics, and it cannot
+go stale by construction.
+
+**Collapsed by this correction:** B1's `RosterStore` + background refresh +
+`PlatformAdapter.rosters()` + R-19 prompt-scope rule → a `group_members` tool.
+B2's prefill-injected recall and the deletion of `read_peer_card` → keep and
+scope the tool.
+
+**Why tools beat prefill, in the operator's own example.** "How do I get there
+within an hour" needs location, then the time, then routing. A clock injected
+into the header answers one question shape; an NTP tool composes into route
+planning, scheduling, "is it too late to call him". Reusable beats pre-injected
+when the question cannot be enumerated in advance.
+
+### The constraint that follows: cost proportional to the question
+
+「你係邊個」 must stay ONE turn (~5s). 「點去到十點前」 may take 30-60s, because a
+person would also go and look it up. What must never happen is a trivial
+question paying multi-tool cost.
+
+This is already enforced structurally rather than by prompt: `send_reply` is
+itself a tool, so a simple answer resolves in one turn, and `ReplyGuard`'s
+`BeforeModelCallEvent` hook cancels the loop the moment the reply lands
+(DEC-21). Tools are reached for when the question needs them.
+
+**`llm.limits.turns = 4` becomes the binding constraint** and must rise. The
+route example costs `now` + location + directions + `send_reply` = exactly 4,
+with zero headroom for a retry or an exploratory step. 6-8 is the right size.
+Latency is model round trips (~4.7s each), not tool time.
+
+## The tool surface
+
+| tool | over | reusable for |
+|---|---|---|
+| `now` | NTP / system clock | scheduling, "how long ago", ETAs |
+| `lookup_person` | `identity.toml` + `listContacts` | who is 阿豹, name ↔ uuid, reverse |
+| `group_members` | `listGroups` | who is in this room |
+| `read_buffer`, `read_peer_card` | existing | already there |
+| *(Phase 10)* `directions`, `search` | Maps MCP, Perplexity | the route example |
+
+R-7 default-deny and per-tool budgets (DEC-10) remain the guard rails: a tool
+absent from `NATIVE_TOOL_BUDGETS` is vetoed before it runs.
+
 ## A. WHAT WE NEED TO FIX
 
 ### A1 — She has no clock, and the transcript is timeless *(highest value, smallest change)*
