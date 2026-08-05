@@ -146,3 +146,39 @@ def test_prefill_is_deterministic_for_the_same_context():
     ctx = _ctx(_rows("a", "b"), peer_card=("x",), tagger=PersonRef("miles", "Miles", "miles"))
     assert build_prefill(ctx, display_name="Nora", context_window=40) == \
            build_prefill(ctx, display_name="Nora", context_window=40)
+
+
+# ── grounding in time (A1) ──────────────────────────────────────────────────
+
+
+def _at(s: str):
+    from datetime import datetime
+    return datetime.fromisoformat(s).astimezone()
+
+
+def test_the_header_states_the_current_time():
+    """She had no clock anywhere — not here, not in the persona — so 今晚, 琴日
+    and 而家 were ungrounded and "what time is it" was unanswerable."""
+    from nora.agent.prefill import _context_header
+    header = _context_header(40, _at("2026-08-06T01:26:00"))
+    assert "Thursday 6 August 2026, 01:26" in header
+
+
+def test_transcript_lines_carry_their_age():
+    """`TranscriptRow.ts` was carried all along and never rendered, so every
+    message looked equally recent — a five-day-old line was indistinguishable
+    from a five-minute-old one."""
+    from nora.agent.prefill import _age
+    now = _at("2026-08-06T12:00:00")
+    ms = lambda iso: int(_at(iso).timestamp() * 1000)  # noqa: E731
+    assert _age(ms("2026-08-06T11:59:30"), now) == "just now"
+    assert _age(ms("2026-08-06T11:30:00"), now) == "30m ago"
+    assert _age(ms("2026-08-06T06:00:00"), now) == "6h ago"
+    assert _age(ms("2026-08-03T12:00:00"), now) == "3d ago"
+
+
+def test_a_future_timestamp_does_not_go_negative():
+    """Clock skew between the sender's device and this host is ordinary."""
+    from nora.agent.prefill import _age
+    now = _at("2026-08-06T12:00:00")
+    assert _age(int(_at("2026-08-06T12:05:00").timestamp() * 1000), now) == "just now"
