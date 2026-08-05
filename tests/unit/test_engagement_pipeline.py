@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 
+from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef
 from nora.domain.ports import (
@@ -215,6 +216,7 @@ def _build_pipeline(
         persona_store=_FakePersonaStore(),
         context_assembler=context_assembler,
         runner=runner or ScriptedRunner(_reply_turns()),
+        tool_registry=ToolRegistry(),
         debounce=Debounce(debounce_seconds, clock=clock or _FakeClock()),
         canary="CANARY-XYZ",
         display_name="Nora",

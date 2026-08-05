@@ -1,9 +1,12 @@
 from nora.agent.guards import ReplyGuard
+from nora.agent.registry import ToolRegistry
 from nora.obs.metrics import Metrics
+
+BUDGETS = ToolRegistry().budgets()
 
 
 def _guard(metrics=None) -> ReplyGuard:
-    return ReplyGuard(conversation_id="g1", metrics=metrics or Metrics())
+    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, metrics=metrics or Metrics())
 
 
 def _send(conversation_id="g1", text="hi") -> dict:

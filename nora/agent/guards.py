@@ -7,7 +7,8 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any, ClassVar
+from collections.abc import Mapping
+from typing import Any
 
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
 
@@ -160,20 +161,40 @@ class Deliverer:
         return result.ok
 
 
+def _list_tool_names(names: Any) -> str:
+    """`"read_buffer, read_peer_card or send_reply"` — sorted so the R-7
+    unknown-tool message is deterministic and, incidentally, matches the
+    natural reading order of today's three native tools."""
+    ordered = sorted(names)
+    if len(ordered) <= 1:
+        return ", ".join(ordered)
+    return ", ".join(ordered[:-1]) + " or " + ordered[-1]
+
+
 class ReplyGuard(HookProvider):
     """Model-facing veto logic (R-2/R-3/R-4/R-7). Constructed fresh per tag.
 
     `evaluate` is pure and SDK-free so every rule is testable without strands; the
     hook adapter in _before_tool is a thin translation layer (RK-2).
+
+    `budgets` is DEC-10: the per-tool call-count ceiling R-7 enforces used to be
+    a hardcoded `BUDGETS` class attribute, which meant any tool not in that
+    literal table (a fourth native tool, `end_episode`) was vetoed before it
+    ever ran. It is now injected — `nora.agent.registry.ToolRegistry.budgets()`
+    via `nora.engagement.stages.deliver.build` — so the number a tool costs
+    lives with the tool, not with the guard. R-7's OTHER half, unknown-tool
+    default-deny, is unchanged: a tool absent from `budgets` is still vetoed.
     """
 
-    BUDGETS: ClassVar[dict[str, int]] = {"read_buffer": 2, "read_peer_card": 1, "send_reply": 1}
-
-    def __init__(self, *, conversation_id: str, deliverer=None, metrics=METRICS) -> None:
+    def __init__(
+        self, *, conversation_id: str, budgets: Mapping[str, int], deliverer=None,
+        metrics=METRICS,
+    ) -> None:
         self._conversation_id = conversation_id
+        self._budgets = dict(budgets)
         self._deliverer = deliverer
         self._metrics = metrics
-        self.counts: dict[str, int] = dict.fromkeys(self.BUDGETS, 0)
+        self.counts: dict[str, int] = dict.fromkeys(self._budgets, 0)
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
@@ -185,10 +206,10 @@ class ReplyGuard(HookProvider):
             self.counts[tool_name] += 1
 
     def evaluate(self, tool_name: str, tool_input: dict) -> str | None:
-        if tool_name not in self.BUDGETS:
+        if tool_name not in self._budgets:
             return self._veto(
-                "R-7", f"The tool {tool_name!r} does not exist. Use read_buffer, "
-                       "read_peer_card or send_reply.",
+                "R-7", f"The tool {tool_name!r} does not exist. "
+                       f"Use {_list_tool_names(self._budgets)}.",
             )
 
         target = (tool_input or {}).get("conversation_id")
@@ -203,7 +224,7 @@ class ReplyGuard(HookProvider):
                     "R-3", "You may only act on this conversation — the one that tagged you.",
                 )
 
-        if self.counts[tool_name] >= self.BUDGETS[tool_name]:
+        if self.counts[tool_name] >= self._budgets[tool_name]:
             if tool_name == "send_reply":
                 return self._veto(
                     "R-2", "You already sent your reply. Do not call send_reply again — "

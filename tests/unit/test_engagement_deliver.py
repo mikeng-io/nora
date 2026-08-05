@@ -8,6 +8,7 @@ from __future__ import annotations
 import time
 
 from nora.agent.guards import Deliverer, ReplyGuard
+from nora.agent.registry import ToolRegistry
 from nora.domain.models import ConversationTarget, DeliveryStatus
 from nora.domain.ports import SendResult
 from nora.engagement.stages import deliver
@@ -16,6 +17,7 @@ from nora.persona.loader import Persona
 from nora.testing import FakeAuditStore
 
 TARGET = ConversationTarget(platform="signal", conversation_id="g1", conversation_type="group")
+BUDGETS = ToolRegistry().budgets()
 
 
 def _persona(text: str = "be helpful") -> Persona:
@@ -44,7 +46,7 @@ def test_build_wires_the_guard_to_the_same_deliverer():
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, persona=_persona(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1", metrics=Metrics(),
+        conversation_id="g1", budgets=BUDGETS, metrics=Metrics(),
     )
 
     assert isinstance(handle.deliverer, Deliverer)
@@ -57,7 +59,7 @@ async def test_check_outcome_counts_no_send_call_when_the_model_never_attempted(
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, persona=_persona(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
-        metrics=metrics,
+        budgets=BUDGETS, metrics=metrics,
     )
 
     delivered = deliver.check_outcome(
@@ -76,7 +78,7 @@ async def test_check_outcome_does_not_double_count_when_the_model_attempted_but_
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(succeed=False), target=TARGET,
         persona=_persona(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1", metrics=metrics,
+        conversation_id="g1", budgets=BUDGETS, metrics=metrics,
     )
     await handle.deliverer.deliver("hello")
 
@@ -95,7 +97,7 @@ async def test_check_outcome_returns_true_and_sets_llm_state_on_a_delivered_repl
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         persona=_persona(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1", metrics=metrics,
+        conversation_id="g1", budgets=BUDGETS, metrics=metrics,
     )
     await handle.deliverer.deliver("hello")
     before = time.time()
@@ -114,7 +116,7 @@ async def test_check_outcome_tolerates_no_llm_state():
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         persona=_persona(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1", metrics=metrics,
+        conversation_id="g1", budgets=BUDGETS, metrics=metrics,
     )
     await handle.deliverer.deliver("hello")
 
@@ -127,7 +129,7 @@ async def test_a_delivered_reply_is_recorded_in_the_audit_store():
     handle = deliver.build(
         store=store, adapter=_FakeAdapter(succeed=True), target=TARGET, persona=_persona(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
-        metrics=Metrics(),
+        budgets=BUDGETS, metrics=Metrics(),
     )
 
     await handle.deliverer.deliver("hello")

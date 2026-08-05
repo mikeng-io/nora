@@ -88,7 +88,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     tools = _built_tools(ToolRegistry())
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
-        guard=ReplyGuard(conversation_id="g1"),
+        guard=ReplyGuard(conversation_id="g1", budgets=ToolRegistry().budgets()),
         trace_attributes={},
     )
     assert len(agent.tool_names) == 3
