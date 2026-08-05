@@ -74,6 +74,11 @@ class SqlAuditStore:
             is_nora=int(is_nora),
             delivery_status=delivery_status.value,
             raw_json=json.dumps(message.raw),
+            # Same INSERT, no extra parameter: the parser already extracted it
+            # onto the message, exactly as DEC-15 did for `person_id` and for
+            # the same reason — see this module's docstring on WAL's single
+            # writer and this path's drop-on-contention behaviour.
+            quoted_ts=message.quote.quoted_ts if message.quote else None,
         )
         try:
             async with self._engine.begin() as conn:
@@ -102,6 +107,7 @@ class SqlAuditStore:
                 MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
                 MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
                 MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
+                MESSAGES.c.quoted_ts,
             )
             .where(MESSAGES.c.conversation_id == conversation_id)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
@@ -119,6 +125,7 @@ class SqlAuditStore:
                 is_nora=bool(r.is_nora),
                 delivery_status=DeliveryStatus(r.delivery_status),
                 raw_json=r.raw_json,
+                quoted_ts=r.quoted_ts,
             )
             for r in reversed(rows)
         ]
@@ -126,16 +133,37 @@ class SqlAuditStore:
     async def aclose(self) -> None:
         await self._engine.dispose()
 
-    async def set_delivery_status(self, *, row_id: int, status: DeliveryStatus) -> None:
-        """An unknown `row_id` is a deliberate silent no-op, matching the
-        legacy `nora/store/db.py::set_delivery_status`: `Deliverer` calls this
-        after a send it cannot un-send, and raising here would convert a
-        harmless race into a failure under R-5."""
-        stmt = (
-            sa.update(MESSAGES)
-            .where(MESSAGES.c.id == row_id)
-            .values(delivery_status=status.value)
-        )
+    async def set_delivery_outcome(
+        self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
+    ) -> None:
+        """Close out one recorded send: its status, and the PLATFORM's own
+        timestamp for it.
+
+        `ts` is here — rather than on a write of its own — because there is no
+        second write to be had. `Deliverer` records the row before it sends
+        (A9), stamping `int(time.time() * 1000)` from the local clock; Signal
+        then assigns its OWN sent-timestamp, and that is what a later reply's
+        `dataMessage.quote.id` points at. Measured 8 ms apart on live data:
+        close enough to look right, never equal, so a join by `ts` silently
+        resolved every sender in the room except Nora herself — and a reply to
+        Nora is the most common reply in a group where Nora is tagged. Riding
+        the post-send update that already existed keeps this module's opening
+        promise intact: WAL permits exactly one writer, and the reply path does
+        not grow another statement to contend for it.
+
+        `ts=None` leaves the timestamp alone. A platform that answered without
+        one is a thinner transcript; a row stamped 0 or NULL is a corrupt one,
+        and `recent` orders on that column.
+
+        An unknown `row_id` is a deliberate silent no-op, matching the legacy
+        `nora/store/db.py::set_delivery_status`: `Deliverer` calls this after a
+        send it cannot un-send, and raising here would convert a harmless race
+        into a failure under R-5.
+        """
+        values: dict[str, Any] = {"delivery_status": status.value}
+        if ts is not None:
+            values["ts"] = ts
+        stmt = sa.update(MESSAGES).where(MESSAGES.c.id == row_id).values(**values)
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
 
@@ -187,7 +215,7 @@ class SqlAuditStore:
         hold that one writer for the length of the batch; a row at a time,
         interleaved with the caller's awaited Honcho feed, never does.
 
-        An unknown `row_id` is a silent no-op, matching `set_delivery_status` —
+        An unknown `row_id` is a silent no-op, matching `set_delivery_outcome` —
         the row may have been pruned out from under the backfill between the
         scan and this call, which is harmless, not a failure.
         """

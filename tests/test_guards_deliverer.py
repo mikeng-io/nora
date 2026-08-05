@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from nora.agent.guards import Deliverer
@@ -132,7 +134,7 @@ async def test_deliver_never_raises(store, persona, monkeypatch):
 async def test_no_error_text_ever_reaches_send(store, persona, monkeypatch):
     """R-5: the only string that may reach adapter.send is model reply text."""
     sink = SinkSender()
-    monkeypatch.setattr(store, "set_delivery_status", _raise)
+    monkeypatch.setattr(store, "set_delivery_outcome", _raise)
     await _deliverer(store, persona, sink).deliver("a normal reply")
     for text in sink.texts:
         assert "error" not in text.lower()
@@ -154,6 +156,47 @@ async def test_metrics_count_a_delivered_reply(store, persona):
     m = Metrics()
     await _deliverer(store, persona, SinkSender(), m).deliver("hi")
     assert m.get("nora_replies_total", status="sent") == 1
+
+
+# ── Bug B: Nora's row must be joinable by a reply's quote (design/11 §2.3) ───
+
+
+async def test_noras_row_carries_the_platform_timestamp_so_a_reply_can_join_it(
+    store, persona,
+):
+    """The row is stamped locally at record-first time, then CORRECTED on the
+    post-send update that already existed. Without the correction a reply TO
+    Nora — the most common reply in a group where Nora is tagged — points at a
+    `quote.id` that is milliseconds away from any row Nora stored (8 ms, on the
+    one live example), so an exact join resolves everyone except her.
+    """
+    platform_ts = 1785950108291
+    sink = SinkSender(timestamp=platform_ts)
+    assert await _deliverer(store, persona, sink).deliver("早晨") is True
+    row = (await store.recent(conversation_id="g1", limit=1))[0]
+    assert row.ts == platform_ts, "the row still carries the local time.time() stamp"
+    assert row.delivery_status.value == "sent"
+
+
+async def test_a_send_with_no_platform_timestamp_leaves_the_local_stamp(store, persona):
+    """A daemon that answers without a timestamp must not blank the row's `ts` —
+    an unjoinable row is a thinner transcript, a `ts` of 0 or NULL is a corrupt
+    one, and `recent` orders on it."""
+    before = int(time.time() * 1000)
+    assert await _deliverer(store, persona, SinkSender()).deliver("早晨") is True
+    row = (await store.recent(conversation_id="g1", limit=1))[0]
+    assert before <= row.ts <= int(time.time() * 1000) + 1
+
+
+async def test_a_failed_send_does_not_move_the_rows_timestamp(store, persona):
+    """`SendResult.timestamp` is only meaningful when the platform accepted the
+    message. A failed send carries no platform stamp at all."""
+    before = int(time.time() * 1000)
+    sink = SinkSender(succeed=False)
+    assert await _deliverer(store, persona, sink).deliver("早晨") is False
+    row = (await store.recent(conversation_id="g1", limit=1))[0]
+    assert before <= row.ts <= int(time.time() * 1000) + 1
+    assert row.delivery_status.value == "failed"
 
 
 # ── R-18: PII egress ────────────────────────────────────────────────────────

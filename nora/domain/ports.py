@@ -75,8 +75,13 @@ avoid:
   "which audited messages are still attributed to nobody?" — followed by a
   decision that same caller makes. A `MemoryStore`-backed or Postgres-backed
   `AuditStore` would have to answer that question too, so it belongs on the
-  port. `set_person_id` mirrors `set_delivery_status` exactly: one row, by id,
+  port. `set_person_id` mirrors `set_delivery_outcome` exactly: one row, by id,
   unknown id is a silent no-op.
+
+- `set_delivery_outcome` is the old `set_delivery_status` plus an optional
+  `ts`, and NOT a second write — `nora.infra.sql.audit` documents why the
+  platform's timestamp must land on this already-existing update. `ts=None`
+  leaves the row's timestamp alone.
 
 - `AuditStore.append` has **no `max_per_conversation` parameter**. Retention
   window size is a policy decided at the store's construction, not a value
@@ -145,11 +150,16 @@ from nora.domain.models import (
 
 @dataclass(frozen=True)
 class SendResult:
-    """Outcome of a send attempt. See module docstring for why this is not `bool`."""
+    """Outcome of a send attempt. See module docstring for why this is not `bool`.
+
+    `timestamp` is the PLATFORM's own sent-timestamp, and it is what a later
+    reply's quote points at. `None` = the platform supplied none.
+    """
 
     ok: bool
     retryable: bool = False
     retry_after: float | None = None
+    timestamp: int | None = None
 
 
 @dataclass(frozen=True)
@@ -248,7 +258,9 @@ class AuditStore(Protocol):
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
 
-    async def set_delivery_status(self, *, row_id: int, status: DeliveryStatus) -> None: ...
+    async def set_delivery_outcome(
+        self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
+    ) -> None: ...
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
 

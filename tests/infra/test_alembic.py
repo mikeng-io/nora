@@ -108,6 +108,70 @@ def test_alembic_check_detects_a_missing_column(tmp_path, monkeypatch):
         command.check(alembic_config(path))
 
 
+def _index_xinfo(path: Path, index: str) -> list[tuple]:
+    with sqlite3.connect(path) as conn:
+        return conn.execute(f"PRAGMA index_xinfo({index})").fetchall()
+
+
+def _columns(path: Path) -> list[str]:
+    with sqlite3.connect(path) as conn:
+        return [r[1] for r in conn.execute("PRAGMA table_info(messages)")]
+
+
+def test_0003_adds_quoted_ts_without_disturbing_the_ts_desc_index(tmp_path):
+    """The table-rebuild trap, asserted rather than trusted.
+
+    A SQLite table rebuild recreates the indexes from *reflection*, and
+    `schema.py` documents that reflection is exactly what cannot see
+    `idx_messages_conv_ts`'s `ts DESC`. A rebuild therefore silently downgrades
+    the one index that matters to ASC — `alembic check` reports nothing, and
+    `recent`'s `ORDER BY ts DESC` goes from an index scan to a sort.
+
+    This asserts the index SHAPE either side of the migration rather than the
+    form of the call, which is what makes it catch a rebuild however it is
+    reached. Probed 2026-08-06: swapping `op.add_column` for
+    `op.batch_alter_table(..., recreate="always")` turns `ts`'s xinfo `desc`
+    flag from 1 to 0 and this goes red. (A *bare* `batch_alter_table` does not:
+    `recreate="auto"` skips the copy for a plain ADD COLUMN — see 0003's
+    docstring, which corrects 0002's blanket phrasing.)
+    """
+    path = tmp_path / "upgrade.db"
+    command.upgrade(alembic_config(path), "0002_person_id")
+    before = _index_xinfo(path, "idx_messages_conv_ts")
+    named = {r[2]: r for r in before if r[2] is not None}
+    assert named["ts"][3] == 1, "precondition: ts is already DESC at 0002"
+    assert "quoted_ts" not in _columns(path)
+
+    command.upgrade(alembic_config(path), "head")
+
+    assert _index_xinfo(path, "idx_messages_conv_ts") == before
+    assert _columns(path)[-1] == "quoted_ts", "ADD COLUMN appends; it must be last"
+
+
+def test_0003_on_a_copy_of_the_production_database_preserves_ts_desc(tmp_path):
+    """Against a COPY of the live file, never the live file — and via SQLite's
+    WAL-aware backup API rather than `shutil.copy`, for the reason
+    `test_a_copy_of_the_production_database_passes_alembic_check` documents."""
+    if not PROD_DB.exists():
+        pytest.skip("no production database on this host")
+    copy = tmp_path / "prod-copy.db"
+    with sqlite3.connect(PROD_DB) as src, sqlite3.connect(copy) as dst:
+        src.backup(dst)
+    before = _index_xinfo(copy, "idx_messages_conv_ts")
+    command.upgrade(alembic_config(copy), "head")
+    assert _index_xinfo(copy, "idx_messages_conv_ts") == before
+    assert _columns(copy)[-1] == "quoted_ts"
+
+
+def test_0003_downgrade_also_leaves_the_index_alone(tmp_path):
+    path = tmp_path / "roundtrip.db"
+    run_migrations(path)
+    before = _index_xinfo(path, "idx_messages_conv_ts")
+    command.downgrade(alembic_config(path), "0002_person_id")
+    assert "quoted_ts" not in _columns(path)
+    assert _index_xinfo(path, "idx_messages_conv_ts") == before
+
+
 def test_alembic_ini_does_not_point_at_the_production_database():
     """A bare `uv run alembic ...` must not be able to touch data/messages.db:
     Alembic creates alembic_version before most commands report anything, so it

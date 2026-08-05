@@ -194,12 +194,12 @@ async def test_an_invalid_conversation_type_is_rejected_by_the_check_constraint(
         await store.append(message=bad)
 
 
-async def test_set_delivery_status_updates_the_row(store):
+async def test_set_delivery_outcome_updates_the_row(store):
     row_id = await store.append(message=_msg(), is_nora=True)
-    await store.set_delivery_status(row_id=row_id, status=DeliveryStatus.SENT)
+    await store.set_delivery_outcome(row_id=row_id, status=DeliveryStatus.SENT)
     assert (await store.recent(conversation_id="g1", limit=1))[0].delivery_status \
         is DeliveryStatus.SENT
-    await store.set_delivery_status(row_id=row_id, status=DeliveryStatus.FAILED)
+    await store.set_delivery_outcome(row_id=row_id, status=DeliveryStatus.FAILED)
     assert (await store.recent(conversation_id="g1", limit=1))[0].delivery_status \
         is DeliveryStatus.FAILED
 
@@ -301,12 +301,12 @@ async def test_stats_nora_messages_is_zero_on_an_empty_store(store):
     assert s["conversations"] == 0
 
 
-async def test_set_delivery_status_on_an_unknown_row_is_a_silent_no_op(store):
+async def test_set_delivery_outcome_on_an_unknown_row_is_a_silent_no_op(store):
     """Decided behaviour, not an accident: it matches the legacy
     `nora/store/db.py::set_delivery_status`, and `Deliverer` calls this after a
     send it cannot un-send — raising there would convert a harmless race into a
     silent failure under R-5."""
     await store.append(message=_msg())
-    await store.set_delivery_status(row_id=999_999, status=DeliveryStatus.SENT)
+    await store.set_delivery_outcome(row_id=999_999, status=DeliveryStatus.SENT, ts=1)
     row = (await store.recent(conversation_id="g1", limit=1))[0]
     assert row.delivery_status is DeliveryStatus.PENDING

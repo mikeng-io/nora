@@ -30,6 +30,7 @@ RULE_TESTS = {
     "R-16": "test_secret_never_logged_in_the_message",
     "R-18": "test_a_reply_carrying_someones_phone_number_is_refused",
     "R-17": "test_degraded_identity_enrichment_is_counted_and_r12_still_holds",
+    "R-20": "test_a_forged_quote_cannot_put_words_in_someone_elses_mouth",
 }
 
 

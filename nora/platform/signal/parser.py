@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from ...domain.models import NormalizedMessage
+from ...domain.models import NormalizedMessage, Quote
 
 log = logging.getLogger("nora.signal.parser")
 
@@ -40,27 +40,34 @@ def _mentioned_ids(data: dict) -> frozenset[str]:
     return frozenset(out)
 
 
-def _quoted(data: dict) -> tuple[str, str, str] | None:
-    """`(author, text)` of the message this one replies to, if any.
+def _quoted(data: dict) -> Quote | None:
+    """The message this one replies to, if any — as a pointer.
 
-    Signal carries a reply as `dataMessage.quote` — the quoted author and the
-    quoted text — and NOT in the body. Dropping it left Nora reading replies as
-    non-sequiturs: Grant says "where for dinner", Miles replies "your place",
-    and without the quote she has no way to know whose place, or that the two
-    messages are connected at all.
+    Signal carries a reply as `dataMessage.quote` and NOT in the body. Dropping
+    it left Nora reading replies as non-sequiturs: Grant says "where for
+    dinner", Miles replies "your place", and without the quote she has no way to
+    know whose place, or that the two messages are connected at all.
+
+    `quote.id` is the parent's platform sent-timestamp and is REQUIRED by
+    signal-cli's own `quote.schema.json`. A quote without one carries no
+    pointer at a parent, so there is nothing threading could ever resolve — it
+    is dropped rather than stored as a half-quote.
+
+    There is no `authorName` on the wire (see `Quote`); attribution is derived
+    from the resolved parent row, never from this payload.
     """
     q = data.get("quote")
     if not isinstance(q, dict):
         return None
-    # The ID is what identity is decided on; the NAME is only ever rendered.
-    # Same split as the sender itself — a display name is spoofable, so it can
-    # be shown but never matched (design/10 §1.3).
-    author_id = q.get("author") or q.get("authorUuid") or q.get("authorNumber") or ""
-    author_name = q.get("authorName") or ""
-    text = (q.get("text") or "").strip()
-    if not text:
+    try:
+        quoted_ts = int(q["id"])
+    except (KeyError, TypeError, ValueError):
         return None
-    return (str(author_id), str(author_name), text)
+    # The ID is what identity is decided on — same split as the sender itself,
+    # because a display name is spoofable (design/10 §1.3).
+    author_id = q.get("author") or q.get("authorUuid") or q.get("authorNumber") or ""
+    text = (q.get("text") or "").strip()
+    return Quote(author_id=str(author_id), text=text, quoted_ts=quoted_ts)
 
 
 def _body_parts(data: dict) -> list[str]:

@@ -137,9 +137,10 @@ class Deliverer:
             result = SendResult(ok=False)
 
         try:
-            await self._store.set_delivery_status(
+            await self._store.set_delivery_outcome(
                 row_id=row_id,
                 status=DeliveryStatus.SENT if result.ok else DeliveryStatus.FAILED,
+                ts=result.timestamp,          # the platform's stamp, not ours
             )
         except Exception:
             log.exception("delivery_status update failed (tag=%s)", self._tag_id)

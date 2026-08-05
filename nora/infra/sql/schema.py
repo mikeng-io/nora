@@ -53,12 +53,24 @@ MESSAGES = sa.Table(
     # this path drops the message on contention. Unindexed on purpose:
     # cardinality is a handful of people.
     #
-    # LAST on purpose, and this position is load-bearing. `ALTER TABLE ADD
-    # COLUMN` appends to the end, so production has it last; declaring it
-    # mid-table made a fresh database order its columns differently, which
-    # shifted `ts`'s column index and `test_indexes_match_production_exactly`
-    # caught it via `PRAGMA index_xinfo`. Any future column goes here too.
+    # LAST-BUT-ONE now; the append rule below is what decides the order.
+    # `ALTER TABLE ADD COLUMN` appends to the end, so production has added
+    # columns in the order their migrations ran; declaring one mid-table made a
+    # fresh database order its columns differently, which shifted `ts`'s column
+    # index and `test_indexes_match_production_exactly` caught it via
+    # `PRAGMA index_xinfo`.
     sa.Column("person_id", sa.Text),
+    # The `ts` of the row this one replies to (`dataMessage.quote.id` for
+    # Signal), or NULL when the message is not a reply. Written in the same
+    # INSERT the parser's value arrives on, never by a follow-up UPDATE — same
+    # reason as `person_id` above. Unindexed on purpose: `idx_messages_conv_ts`
+    # is the one index that matters and it must not be disturbed.
+    #
+    # ANY FUTURE COLUMN GOES AFTER THIS ONE, for the append reason above.
+    # `tests/infra/test_schema_parity.py::
+    # test_the_column_order_of_a_fresh_database_matches_a_migrated_one` is what
+    # fails if it does not.
+    sa.Column("quoted_ts", sa.Integer),
     sa.CheckConstraint("conversation_type IN ('group','dm')"),
     sqlite_autoincrement=True,
 )

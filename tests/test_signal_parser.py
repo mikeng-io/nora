@@ -303,3 +303,46 @@ def test_a_malformed_mentions_entry_is_skipped_not_fatal():
     e = sse_envelope()
     e["envelope"]["dataMessage"]["mentions"] = ["not-a-dict", {"uuid": "u1"}, {}]
     assert parse_event(e, OWN).mentions == frozenset({"u1"})
+
+
+# ── the quote is a typed parent pointer (design/11 §2.1, §2.8) ───────────────
+# Bug A: signal-cli's shipped `quote.schema.json` carries `id` (REQUIRED),
+# `author`, `authorNumber`, `authorUuid`, `text`, `attachments`, `mentions` and
+# `textStyles` — and NO `authorName`. `_quoted`'s `q.get("authorName") or ""`
+# therefore yielded `""` on every real message, and `<replying_to author="">`
+# rendered "replying to nobody" for the whole life of that feature.
+
+
+def test_a_quote_becomes_a_typed_pointer_at_the_parent_message():
+    from nora.domain.models import Quote
+
+    msg = parse_event(envelope(quote={
+        "id": 1785950108291, "author": "u-nora", "authorNumber": "+85290000100",
+        "text": "早晨", "attachments": [],
+    }), OWN)
+    assert msg is not None
+    assert msg.quote == Quote(author_id="u-nora", text="早晨", quoted_ts=1785950108291)
+
+
+def test_a_quote_with_no_id_is_not_threadable_and_is_dropped():
+    """`id` is REQUIRED in signal-cli's quote schema. A quote without one carries
+    no pointer at a parent, so there is nothing threading could ever resolve."""
+    msg = parse_event(envelope(quote={"author": "u-nora", "text": "早晨"}), OWN)
+    assert msg is not None
+    assert msg.quote is None
+
+
+def test_quote_carries_no_author_name_because_signal_cli_never_sends_one():
+    """A field that is provably always empty is exactly how the `peer_card` bug
+    happened. The parent ROW's own `sender_name` is the attribution now."""
+    from dataclasses import fields
+
+    from nora.domain.models import Quote
+
+    assert {f.name for f in fields(Quote)} == {"author_id", "text", "quoted_ts"}
+
+
+def test_a_quote_with_a_non_integer_id_is_dropped_rather_than_raising():
+    msg = parse_event(envelope(quote={"id": "not-a-number", "text": "早晨"}), OWN)
+    assert msg is not None
+    assert msg.quote is None
