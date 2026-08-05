@@ -192,6 +192,33 @@ class ObsConfig(BaseModel):
     tracing: TracingConfig
 
 
+class LangfuseEvalConfig(BaseModel):
+    """Phase 7 / DEC-6: Langfuse as the store for eval results (datasets, dataset
+    runs, scores) — `strands-agents-evals` (`evals/run.py`) stays the runner.
+
+    `headers_env` deliberately names the SAME variable `obs.tracing.headers_env`
+    already points at (`LANGFUSE_OTLP_HEADERS`), not a second credential: its
+    value is already a Basic-auth header for this exact Langfuse project, in
+    OTel's `key=value`, URL-encoded shape — the same shape `evals.sink.
+    resolve_headers_from_env` decodes for the eval sink's plain HTTP calls.
+    Introducing a second `*_env` for the identical secret would be duplication
+    with no security benefit, not a stronger boundary (DEC-8: name the var,
+    don't inline it — not "one var per consumer").
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool
+    host: str
+    headers_env: str = ""
+
+
+class EvalsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    langfuse: LangfuseEvalConfig
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -203,6 +230,7 @@ class Config(BaseModel):
     persona: PersonaConfig
     identity_file: Path
     obs: ObsConfig
+    evals: EvalsConfig
 
     @model_validator(mode="after")
     def _resolve_paths(self, info: ValidationInfo) -> Config:

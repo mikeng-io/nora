@@ -69,3 +69,11 @@ exporter = "file"                     # console | otlp_http | file
 endpoint = ""
 headers_env = ""                      # env var NAME holding OTLP auth headers, never the
                                        # value (DEC-8); only read when exporter = "otlp_http"
+
+[evals.langfuse]
+enabled = false                       # opt-in: also requires `--export-langfuse` on the CLI
+host = "http://127.0.0.1:3100"
+headers_env = ""                      # same shape/var as obs.tracing.headers_env — see
+                                       # nora.config.LangfuseEvalConfig's docstring for why
+                                       # this reuses that credential rather than adding a
+                                       # second one

@@ -215,3 +215,49 @@ non-fatal — so the symptom is silence, not an error.
 
 **Rollback:** set `exporter = "file"` in `config.toml` and restart. No data migration,
 no schema change.
+
+## 7. "Where do eval results live?"
+
+**Langfuse, as of 2026-08-05 — verified end-to-end.** DEC-6: `strands-agents-evals`
+stays the *runner*; Langfuse is the *store* for datasets, dataset runs and scores.
+
+**Datasets** (one per corpus, seeded from the YAML in `evals/`):
+`nora-trigger`, `nora-no-trigger`, `nora-adversarial` — 12 items each, keyed
+`<corpus>/<case-name>`. Langfuse item IDs are unique **per project across all
+datasets**, which is why the ids are namespaced; a bare case name would let one
+corpus silently overwrite another's item.
+
+**Exporting a run** needs **both** switches — belt and braces, so an ordinary local
+eval never talks to the network:
+```bash
+uv run python -m evals.run --suite all --export-langfuse   # CLI flag
+# and config.toml: [evals.langfuse] enabled = true
+```
+`config.example.toml` deliberately keeps `enabled = false`: a fresh install should
+not assume a Langfuse exists.
+
+**Reading results:** each run becomes a dataset run; each evaluator contributes a
+BOOLEAN score (`exactly_once_send_reply`, `no_send_without_trigger`, `tool_budget`,
+`no_redundant_read`, `honcho_fed_once_per_reply`), plus `a8_silent_failure` for the
+A8 SLO. Langfuse's mean-of-run aggregation turns that last one into the
+`<1% silent failure` ratio directly. Re-running with the same run name **updates in
+place** rather than duplicating — ids are deterministic UUID5 over
+`(run_id, item_id, name)`.
+
+**The export can never fail the gate.** `NullEvalSink` is the default and
+`LangfuseEvalSink` swallows every transport error; a run against an unreachable
+Langfuse still prints its verdict and exits with the same code. That independence
+is deliberate — an observability store must not be able to break CI.
+
+**Known: `--suite all` currently reports GATE FAILED, and has since before this
+work.** The `trigger` suite's live-model path is deferred (see `evals/run.py`'s
+module docstring), so `ExactlyOnceSendReply` sees zero `send_reply` calls and
+scores `false`. Confirmed identical on the pre-Phase-7 commit. The export is
+working correctly — it is faithfully recording a real failing verdict.
+
+**Two wire-format traps, both found only by pushing to the live instance:**
+- `POST /api/public/dataset-run-items` returns **404** without a `traceId`. The
+  sink now supplies a deterministic one.
+- Scores go to `/api/public/scores`. `/api/public/v2/scores` exists but has **no
+  POST route** (405). Both failures were silent, because the sink swallows errors
+  by design — which is why the sink now logs the response body, not just the status.
