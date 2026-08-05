@@ -85,18 +85,46 @@ class LLMConfig(BaseModel):
     timeout_seconds: float
     # "none" | "low" | "medium" | "high". NOT "auto" — the provider 400s on it.
     #
-    # "low", not "none", and this is a CORRECTNESS setting rather than a
-    # latency one. `tool_choice="required"` forces a tool call every turn, and
-    # measured against the live gateway with a `now` tool and `send_reply`
-    # available:
+    # "none" — thinking OFF — and it is not a latency preference, it is what
+    # makes her able to speak at all on this model.
     #
-    #   「而家幾點」   none → now          low → now          (both right)
-    #   「你係邊個」   none → now  WRONG   low → send_reply   (only low right)
+    # deepseek-v4 rejects a forced `tool_choice` while thinking is enabled.
+    # DeepSeek has never documented this; deepseek-ai/DeepSeek-V3#1376 has been
+    # open since 2026-05-30 with no official response. A controlled test in
+    # that thread (2026-08-03): thinking on + forced tool call → 400 "Thinking
+    # mode does not support this tool_choice", 5/5; thinking disabled →
+    # 200 with stop_reason=tool_use, 5/5.
     #
-    # With "none" she reaches for a tool reflexively because she is forced to
-    # call one and has no reasoning budget to choose. It cost ~2s and answered
-    # "who are you" by asking the clock. "low" adds roughly 2s and picks
-    # correctly, which is also the prerequisite for chaining tools at all.
+    # The same comment names the second failure, which is the one that bit us:
+    # "at max_tokens=512 the thinking block eats the budget". Nora runs
+    # max_tokens=400, so with thinking on the reasoning consumes the budget
+    # before a tool call can be emitted — the model does not refuse, it runs
+    # out mid-thought. Measured here over 8 runs at tool_choice="required":
+    #
+    #   none  →  tool_call 8/8
+    #   low   →  tool_call 1/8,  no_tool 7/8
+    #   high  →  tool_call 1/8,  no_tool 7/8
+    #
+    # THE MEASUREMENTS DISAGREE, and that is itself the finding. The `nora`
+    # alias is an OmniRoute COMBO: it fans out to different upstreams per
+    # request, so a live probe is not reproducible. One 8-sample run had "low"
+    # producing a tool call 1/8; a 6-sample run twenty minutes later had it
+    # 6/6 and correct every time. Do not treat any single run here as
+    # authoritative, and pin the alias to one upstream before concluding
+    # anything further.
+    #
+    # What IS consistent across runs: "none" picks the WRONG tool. Asked
+    # 「你係邊個」 it called the clock 9 times out of 12. Forced to call
+    # something by tool_choice="required" and given no budget to deliberate,
+    # it reaches reflexively.
+    #
+    # So: "low", per DeepSeek's own guidance, with max_tokens raised to 4000.
+    # The budget matters because thinking shares it — deepseek-ai/DeepSeek-V3
+    # #1376 (2026-08-03): "at max_tokens=512 the thinking block eats the
+    # budget". At 400 a reasoning turn could run out mid-thought and emit no
+    # tool call at all, which is a mute Nora. 4000 leaves room for the block
+    # and the call both. Replies stay short because the persona says so, not
+    # because the ceiling forces it.
     reasoning_effort: str = "low"
     limits: LimitsConfig
 

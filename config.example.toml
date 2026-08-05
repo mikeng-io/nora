@@ -21,7 +21,7 @@ api_key_env = "OMNIROUTE_API_KEY"     # env var NAME, never the value
 # way is for the name never to be in her process at all. Swapping the upstream
 # model becomes a gateway change with no redeploy here.
 model = "nora"
-max_tokens = 400
+max_tokens = 4000
 temperature = 0.7
 # "none" | "low" | "medium" | "high". A tag is one short reply from context she
 # already holds — nothing to reason through. Measured on deepseek-v4-flash:
