@@ -40,7 +40,12 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
 from nora.ingest.pipeline import IngestPipeline
-from nora.ingest.policy import CompositePolicy, MentionPolicy, TriggerTextPolicy
+from nora.ingest.policy import (
+    CompositePolicy,
+    MentionPolicy,
+    ReplyToNoraPolicy,
+    TriggerTextPolicy,
+)
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona, PersonaError, PersonaStore
@@ -198,6 +203,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     policy = CompositePolicy((
         TriggerTextPolicy(cfg.engagement.trigger.text),
         MentionPolicy(registry.identity_for("signal").aliases),
+        ReplyToNoraPolicy(registry.identity_for("signal").aliases),
     ))
     assembler = TranscriptInjection(
         audit=audit, memory=memory, persons=persons,

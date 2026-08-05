@@ -109,3 +109,44 @@ async def test_trigger_text_still_wins_first_in_the_composite():
     assert men.engage is True and men.reason == "mention"
     neither = await p.should_engage(message=_mention_msg(set(), "just chatting"))
     assert neither.engage is False
+
+
+# ── replying to Nora is a trigger ───────────────────────────────────────────
+
+
+def _reply_msg(quote):
+    from nora.domain.models import NormalizedMessage
+    return NormalizedMessage("signal","g1","group","+8521","Miles",1,"咁又係",{},quote=quote)
+
+
+async def test_replying_to_noras_message_engages():
+    """Replying is how you address someone in a group chat — arguably more
+    directly than @-mentioning, since it points at a specific thing they said.
+    Without this, answering her meant typing the trigger text again."""
+    from nora.ingest.policy import ReplyToNoraPolicy
+    p = ReplyToNoraPolicy(frozenset({NORA_ACI, "+85290000100"}))
+    d = await p.should_engage(message=_reply_msg((NORA_ACI, "ทᴏʀɑ", "早晨")))
+    assert d.engage is True and d.reason == "reply_to_nora"
+
+
+async def test_replying_to_somebody_else_does_not_engage():
+    from nora.ingest.policy import ReplyToNoraPolicy
+    p = ReplyToNoraPolicy(frozenset({NORA_ACI}))
+    d = await p.should_engage(message=_reply_msg(("tylers-uuid", "Tyler", "食飯未")))
+    assert d.engage is False
+
+
+async def test_a_spoofed_display_name_cannot_trigger_her():
+    """Matched on the author's ID, never their name. A profile name is settable
+    by anyone, so matching it would let a member impersonate Nora and trigger
+    her by quoting themselves."""
+    from nora.ingest.policy import ReplyToNoraPolicy
+    p = ReplyToNoraPolicy(frozenset({NORA_ACI}))
+    d = await p.should_engage(message=_reply_msg(("impostor-uuid", "ทᴏʀɑ", "早晨")))
+    assert d.engage is False
+
+
+async def test_a_degraded_self_id_set_never_engages_on_a_reply():
+    from nora.ingest.policy import ReplyToNoraPolicy
+    p = ReplyToNoraPolicy(frozenset())
+    assert (await p.should_engage(message=_reply_msg((NORA_ACI, "ทᴏʀɑ", "x")))).engage is False

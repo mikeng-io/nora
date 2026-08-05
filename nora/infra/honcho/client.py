@@ -165,12 +165,28 @@ class HonchoClient:
         return result is not None
 
     async def peer_card(self, *, peer_id: str) -> list[str]:
-        """Durable recall about a peer. [] on any failure — a missing card is normal."""
+        """Durable recall about a peer. [] on any failure — a missing card is normal.
+
+        The field is `peer_card`, and it is a LIST. This read `content` as a
+        string, which Honcho has never returned: `GET /peers/{id}/card` answers
+        `{"peer_card": [...] | null}`, verified against the live instance and
+        against its OpenAPI schema. So this returned `[]` every single time and
+        the tagging path's entire recall channel has been dead for the life of
+        the deployment — silently, because "a missing card is normal" is a true
+        sentence that made the failure indistinguishable from the healthy case.
+
+        Third instance of one bug class, all found in this phase: a shape
+        nobody checked against the live service, pinned by a test double that
+        invented it (the others: `ensure_session` POSTing to a list endpoint,
+        and `parse_event` requiring a `method` key the HTTP transport does not
+        send). The test for THIS one asserted `{"content": ...}` — a payload
+        Honcho cannot produce.
+        """
         result = await self._get(self._url(f"/peers/{peer_id}/card"), self._card_timeout)
-        content = (result or {}).get("content")
-        if not isinstance(content, str) or not content.strip():
+        card = (result or {}).get("peer_card")
+        if not isinstance(card, list):
             return []
-        return [line.lstrip("-* ").strip() for line in content.splitlines() if line.strip()]
+        return [str(line).lstrip("-* ").strip() for line in card if str(line).strip()]
 
     async def health(self) -> MemoryHealth:
         result = await self._get(f"{self._base}/health", self._card_timeout)

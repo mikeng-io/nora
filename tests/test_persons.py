@@ -370,3 +370,23 @@ def test_a_single_account_still_needs_no_label(tmp_path):
     body = '[persons.ada]\nname = "Ada"\n[[persons.ada.signal]]\nuuid = "b68741f9"\n'
     persons = load_persons(_write(tmp_path, body))
     assert persons.resolve("signal", "b68741f9").person_id == "ada"
+
+
+def test_an_alias_never_resolves_a_sender(tmp_path):
+    """Aliases are for COMPREHENSION, never for identity.
+
+    A nickname is hand-written by the operator and a display name is settable
+    by anyone, so letting either resolve a sender would hand identity to
+    whoever can type it (design/10 §1.3). The property holds structurally —
+    `aliases` sits on the person, not inside a platform account block, so the
+    index loop cannot reach it — but structure is not a test, and this was
+    previously unpinned despite being claimed.
+    """
+    p = _write(tmp_path, (
+        '[persons.miles_novak]\nname = "Miles"\naliases = ["阿Miles", "俊爺", "norty"]\n'
+        '[[persons.miles_novak.signal]]\nphone = "+85290000101"\n'
+    ))
+    persons = load_persons(p)
+    assert persons.resolve("signal", "+85290000101").person_id == "miles_novak"
+    for alias in ("阿Miles", "俊爺", "norty", "Miles"):
+        assert persons.resolve("signal", alias) is None, alias

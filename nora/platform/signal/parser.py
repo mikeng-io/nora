@@ -40,7 +40,7 @@ def _mentioned_ids(data: dict) -> frozenset[str]:
     return frozenset(out)
 
 
-def _quoted(data: dict) -> tuple[str, str] | None:
+def _quoted(data: dict) -> tuple[str, str, str] | None:
     """`(author, text)` of the message this one replies to, if any.
 
     Signal carries a reply as `dataMessage.quote` — the quoted author and the
@@ -52,11 +52,15 @@ def _quoted(data: dict) -> tuple[str, str] | None:
     q = data.get("quote")
     if not isinstance(q, dict):
         return None
-    author = q.get("authorName") or q.get("author") or q.get("authorNumber") or ""
+    # The ID is what identity is decided on; the NAME is only ever rendered.
+    # Same split as the sender itself — a display name is spoofable, so it can
+    # be shown but never matched (design/10 §1.3).
+    author_id = q.get("author") or q.get("authorUuid") or q.get("authorNumber") or ""
+    author_name = q.get("authorName") or ""
     text = (q.get("text") or "").strip()
     if not text:
         return None
-    return (str(author), text)
+    return (str(author_id), str(author_name), text)
 
 
 def _body_parts(data: dict) -> list[str]:

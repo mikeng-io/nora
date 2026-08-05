@@ -45,7 +45,7 @@ def _payload_handler(payload, status=200):
 
 async def test_peer_card_returns_a_list_of_facts(server_factory):
     base_url = await server_factory(
-        _payload_handler({"content": "- likes espresso\n- lives in HK"})
+        _payload_handler({"peer_card": ["- likes espresso", "- lives in HK"]})
     )
     card = await HonchoClient(base_url, "nora").peer_card(peer_id="miles")
     assert card == ["likes espresso", "lives in HK"]
@@ -72,7 +72,7 @@ async def test_peer_card_uses_a_get_request_to_the_card_endpoint(server_factory)
     async def handler(request: web.Request) -> web.Response:
         captured["method"] = request.method
         captured["path"] = request.path
-        return web.json_response({"content": "- likes espresso"})
+        return web.json_response({"peer_card": ["- likes espresso"]})
 
     base_url = await server_factory(handler)
 
@@ -129,3 +129,19 @@ async def test_fake_honcho_can_simulate_being_down():
     fake = FakeHoncho(fail=True)
     assert await fake.feed("miles", "x") is False
     assert await fake.peer_card("miles") == []
+
+
+async def test_the_content_key_honcho_never_returns_yields_nothing(server_factory):
+    """The shape this client invented and its old test asserted back to itself.
+
+    `GET /peers/{id}/card` answers `{"peer_card": [...] | null}` — verified
+    against the live instance and its OpenAPI schema. It has never returned a
+    `content` string. Reading that key meant peer_card returned [] on every
+    call and the tagging path's recall channel was dead for the life of the
+    deployment, silently, because an empty card is indistinguishable from a
+    person Nora simply has no memories about yet.
+
+    Pinned so the invented shape cannot come back.
+    """
+    base_url = await server_factory(_payload_handler({"content": "- likes tea"}))
+    assert await HonchoClient(base_url, "nora").peer_card(peer_id="miles") == []

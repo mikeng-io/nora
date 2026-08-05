@@ -65,6 +65,35 @@ class MentionPolicy:
         return EngageDecision(engage=False, reason="no_trigger")
 
 
+class ReplyToNoraPolicy:
+    """Engage when the sender replied to one of Nora's own messages.
+
+    Replying to somebody is how you address them in a group chat — arguably
+    more directly than @-mentioning, since it points at a specific thing they
+    said. Without this, answering Nora meant either typing the trigger text or
+    tagging her again, which is not how anyone talks.
+
+    Signal carries the reply as `dataMessage.quote` with the quoted author, so
+    this matches that author against Nora's OWN identifier set — the same set
+    R-12 uses to refuse self-tags, and the same one `MentionPolicy` uses. It
+    became trustworthy only when DEC-19 fixed alias derivation: the quote
+    carries her ACI, and before that the set was `{primary}`.
+
+    Matched on the author's ID, never their display name (design/10 §1.3) — a
+    profile name is settable by anyone, so matching it would let a member
+    impersonate Nora and trigger her by quoting themselves.
+    """
+
+    def __init__(self, self_ids: frozenset[str]) -> None:
+        self._self_ids = self_ids
+
+    async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:
+        quote = message.quote
+        if quote and self._self_ids and quote[0] in self._self_ids:
+            return EngageDecision(engage=True, reason="reply_to_nora")
+        return EngageDecision(engage=False, reason="no_trigger")
+
+
 class CompositePolicy:
     """First match wins. Satisfies `EngagePolicy`.
 

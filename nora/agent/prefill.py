@@ -119,7 +119,7 @@ def build_tag_message(ctx: TagContext, *, tagger_name: str) -> str:
         aka = f' also_known_as="{_escape_attr(", ".join(tagger.aliases))}"'
     quoted = ""
     if ctx.message.quote:
-        author, text = ctx.message.quote
+        _, author, text = ctx.message.quote
         quoted = (
             f'<replying_to author="{_escape_attr(author)}">\n'
             f"{escape(text)}\n</replying_to>\n"
