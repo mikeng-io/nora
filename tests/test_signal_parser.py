@@ -210,3 +210,56 @@ def test_drops_an_event_that_is_neither_framing():
     assert parse_event({"jsonrpc": "2.0", "result": 0, "id": "x"}, OWN) is None
     assert parse_event({"envelope": "not-a-dict"}, OWN) is None
     assert parse_event({}, OWN) is None
+
+
+# ── edited messages ─────────────────────────────────────────────────────────
+# signal-cli nests an edit as `envelope.editMessage.dataMessage` (JsonEditMessage,
+# alongside targetSentTimestamp), NOT as `envelope.dataMessage`. Reading only the
+# top-level key made every edit silently invisible — the same wrong-silence shape
+# as the framing bug above, one key deeper.
+
+
+def sse_edit(message: str = "corrected", **over) -> dict:
+    inner = {
+        "message": message,
+        "groupInfo": {"groupId": "Z3JvdXA=", "groupName": "Ridgeline", "type": "DELIVER"},
+        "timestamp": 1800,
+    }
+    inner.update(over)
+    return {
+        "envelope": {
+            "source": "+85212345678",
+            "sourceName": "Miles",
+            "timestamp": 1800,
+            "editMessage": {"targetSentTimestamp": 1700, "dataMessage": inner},
+        },
+        "account": OWN,
+    }
+
+
+def test_an_edited_message_is_ingested():
+    msg = parse_event(sse_edit(), OWN)
+    assert msg is not None, "an edit must not be silently dropped"
+    assert msg.body == "corrected"
+    assert msg.conversation_id == "Z3JvdXA="
+
+
+def test_an_edit_still_obeys_the_self_send_rule():
+    e = sse_edit()
+    e["envelope"]["source"] = OWN
+    assert parse_event(e, OWN) is None       # R-12 holds for edits too
+
+
+def test_an_edit_of_a_dm_is_still_dropped():
+    assert parse_event(sse_edit(groupInfo=None), OWN) is None
+
+
+def test_an_empty_edit_is_dropped():
+    assert parse_event(sse_edit(message="   "), OWN) is None
+
+
+def test_an_edit_in_the_jsonrpc_framing_also_parses():
+    inner = sse_edit()["envelope"]["editMessage"]
+    e = {"method": "receive", "params": {"envelope": {
+        "source": "+85212345678", "timestamp": 1800, "editMessage": inner}}}
+    assert parse_event(e, OWN).body == "corrected"

@@ -59,7 +59,23 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
             return None
         data = env.get("dataMessage")
         if not isinstance(data, dict):
-            return None                       # syncMessage / typing / receipt / malformed
+            # An EDITED message is not a `dataMessage` — signal-cli nests it as
+            # `editMessage.dataMessage` alongside a `targetSentTimestamp`
+            # (JsonEditMessage). Reading only the top-level key made every edit
+            # silently invisible: not ingested, not audited, indistinguishable
+            # from a typing notification. Someone correcting a typo would watch
+            # Nora act on the text they had just replaced.
+            #
+            # The edit is ingested as its own row rather than amending the
+            # original. The transcript is an append-only audit (A9), `recent`
+            # tie-breaks on `id`, and the prefill wants the LATEST text — which
+            # a new row gives, in order, without a second write on the ingest
+            # path. It does mean both versions appear in context; that is the
+            # honest record, and it is what the operator would see in Signal.
+            edit = env.get("editMessage")
+            data = edit.get("dataMessage") if isinstance(edit, dict) else None
+            if not isinstance(data, dict):
+                return None                   # syncMessage / typing / receipt / malformed
 
         group_id = (data.get("groupInfo") or {}).get("groupId")
         if not group_id:
