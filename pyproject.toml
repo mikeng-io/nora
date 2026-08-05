@@ -20,6 +20,13 @@ dependencies = [
 [project.optional-dependencies]
 evals = ["strands-agents-evals==1.0.3"]
 
+# Makes `nora groups` and `nora persons pending` — the commands design/10 §6,
+# policy.example.toml and `nora.policy`'s own error messages all name — real
+# commands rather than shorthand for `python -m nora …`. Same entry point, so
+# the container's `python -m nora` CMD is unaffected.
+[project.scripts]
+nora = "nora.__main__:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

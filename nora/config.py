@@ -240,7 +240,23 @@ class Config(BaseModel):
         return self
 
 
-def load(path: Path) -> Config:
+def load(path: Path, *, require_secrets: bool = True) -> Config:
+    """Parse and validate config.toml.
+
+    `require_secrets` defaults to True and that is the daemon's behaviour,
+    unchanged: a missing LLM key must be a startup failure, because a Nora who
+    starts without one is a Nora who is silently unable to answer.
+
+    The read-only operator control plane (`nora groups`, `nora persons
+    pending`) passes False, and the reason is the 3am path it exists for: the
+    key lives in `.env`, which docker compose injects into the CONTAINER, so an
+    operator running these commands from his own shell — typically with the
+    container stopped, which is exactly when he needs them — has no such
+    variable exported. Neither command constructs an LLM client or reaches the
+    provider at all, so refusing to list group ids over a credential that
+    nothing on that path uses would be a self-inflicted outage of the tool
+    brought in to diagnose an outage.
+    """
     path = Path(path).expanduser().resolve()
     if not path.exists():
         raise ConfigError(f"config file not found: {path}")
@@ -253,7 +269,7 @@ def load(path: Path) -> Config:
         cfg = Config.model_validate(data, context={"base": path.parent})
     except ValidationError as exc:
         raise ConfigError(str(exc)) from exc
-    if not os.environ.get(cfg.llm.api_key_env):
+    if require_secrets and not os.environ.get(cfg.llm.api_key_env):
         raise ConfigError(
             f"environment variable {cfg.llm.api_key_env} is not set — refusing to start"
         )

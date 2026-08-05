@@ -8,6 +8,8 @@ without the other fails here, which is the point.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage
@@ -18,10 +20,12 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.testing.fakes import FakeAuditStore
 
 
-def _msg(conv="g1", body="hello", ts=1, sender="+852111", platform="signal") -> NormalizedMessage:
+def _msg(conv="g1", body="hello", ts=1, sender="+852111", platform="signal",
+         raw=None) -> NormalizedMessage:
     return NormalizedMessage(
         platform=platform, conversation_id=conv, conversation_type="group",
-        sender_id=sender, sender_name="Miles", timestamp=ts, body=body, raw={},
+        sender_id=sender, sender_name="Miles", timestamp=ts, body=body,
+        raw={} if raw is None else raw,
     )
 
 
@@ -211,6 +215,21 @@ async def test_unattributed_carries_the_platform_for_re_resolution(store):
     where `TranscriptRow` does not."""
     await store.append(message=_msg(platform="telegram", sender="@miles"))
     assert (await store.unattributed(limit=10))[0].platform == "telegram"
+
+
+async def test_unattributed_carries_the_full_envelope(store):
+    """`nora persons pending` reads a sender's OTHER id forms out of
+    `raw_json`: under sealed sender the same account arrives as a phone number
+    on one message and as an ACI on another, and `sender_id` alone therefore
+    lists one account as two pending entries. `FakeAuditStore` used to record
+    `raw_json` as None, which nothing noticed while nothing read it back — it
+    would have let every pending-sender test pass against a store production
+    does not have."""
+    envelope = {"envelope": {"source": "+852111", "sourceUuid": "u-1"}}
+    await store.append(message=_msg(raw=envelope))
+    row = (await store.unattributed(limit=10))[0]
+    assert row.raw_json is not None
+    assert json.loads(row.raw_json) == envelope
 
 
 async def test_unattributed_spans_conversations(store):
