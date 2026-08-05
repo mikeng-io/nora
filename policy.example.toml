@@ -1,0 +1,71 @@
+# WHO AND WHERE NORA ANSWERS. Copy to `policy.toml` (gitignored).
+#
+# Separate from config.toml (deploy cadence) and identity.toml (changes when a
+# human joins) because policy changes when TRUST changes. An allowlist buried
+# among port numbers is an allowlist nobody reviews.
+#
+# People are named by person_id from identity.toml, never by phone number. One
+# consequence worth knowing up front: a person_id covers EVERY account that
+# person holds, so allowlisting `miles` admits his work number too.
+
+# Deny by default. An empty file means nothing is allowed, and Nora REFUSES TO
+# START rather than running mute: under R-5 she is silent when broken, so a
+# silently-denied Nora is indistinguishable from a working one.
+default = "deny"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. DMs — a direct message has no stable conversation id; its identity IS the
+#    person, which is why this is its own list.
+#
+#    FORWARD-LOOKING: the Signal parser still drops every non-group message
+#    ("DM — out of scope in v2"), so this section is validated but not yet
+#    reachable. Nora warns at startup if it is non-empty.
+[dm]
+persons = ["miles"]        # [] means Nora accepts no DMs at all.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. CONVERSATIONS — which rooms she participates in, and who within them.
+#
+#    `id` is the canonical conversation_id exactly as it appears in the audit
+#    DB. Run `nora groups` to print every group's name beside its id; that is
+#    the answer to "I cannot tell which id is which group".
+#
+#      signal    groupId, base64
+#      telegram  chat.id, stringified int (negative for groups)
+#      discord   "<guild_id>/<channel_id>" — the adapter flattens the hierarchy
+#      whatsapp  group JID, ...@g.us
+
+[[conversations]]
+platform = "signal"
+id       = "Q2hhdEdyb3VwSWRFeGFtcGxlQmFzZTY0PT0="
+label    = "Family"          # for humans reading this file. NEVER matched on —
+                             # group names are not unique and are trivially
+                             # changed by anyone in the group.
+persons  = ["miles", "ada"]   # only these two may trigger Nora here. A new group
+                             # member is ignored until you add them.
+
+[[conversations]]
+platform = "telegram"
+id       = "-1001234567890"
+also_ids = ["-987654321"]    # Telegram CHANGES chat.id when a group becomes a
+                             # supergroup, reporting the old id once. Without
+                             # this the allowlist silently stops matching and
+                             # Nora goes quiet — invisible under R-5.
+label    = "Work"
+persons  = "*"               # anyone in this chat that Nora can NAME. An
+                             # unmapped sender is still refused: she cannot
+                             # tell that someone she cannot identify is in the
+                             # room, and the alternative would grant a stranger
+                             # the same access as a named friend.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NOT SUPPORTED, deliberately:
+#
+#   roles  = ["family"]   -> arbitrary named roles exist only on Discord.
+#   admins = true         -> would grant on membership status.
+#
+# Membership IS normalised in the domain to exactly two values (admin | member),
+# but policy does not GRANT on it: "is this sender an admin?" is a per-message
+# platform lookup on the path that must not stall the SSE reader, and granting
+# by membership hands authorisation to whoever can promote an admin, so this
+# file would stop being a complete description of who has access.

@@ -51,3 +51,4 @@ data/*.pre-alembic
 deploy/signal-cli/*.tar.gz
 # .asc is COMMITTED deliberately: the Dockerfile verifies the tarball against
 # it at build time, so it is part of the build inputs, not a fetched artifact.
+policy.toml
