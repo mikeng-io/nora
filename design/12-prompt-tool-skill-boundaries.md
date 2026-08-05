@@ -73,10 +73,18 @@ sources are operator configuration only.
 ## 3. Scope — what each may reach
 
 **The model names WHAT. Nora resolves WHERE.** This is already the rule for
-tools (DEC-21): the model's `conversation_id` argument is inert, `read_buffer`
-reads the closure's bound conversation and `send_reply` goes to the deliverer's
-bound target, and a mismatch is counted rather than obeyed. R-3 therefore holds
-by construction rather than by veto.
+tools (DEC-21): `read_buffer` reads the closure's bound conversation and
+`send_reply` goes to the deliverer's bound target. R-3 therefore holds by
+construction rather than by veto.
+
+**DEC-24 took it one step further, and that step is the rule for everything
+added later: an inert parameter is worse than no parameter.** The conversation
+argument was harmless — nothing read it — but Strands derives the model-facing
+schema from the callable, so declaring it FORCED the model to invent a group id
+on every call. On the first real tag it invented the wrong one three times and
+the turn died silent. A value Nora resolves herself must not appear in the
+schema at all; "the model may pass it, we will ignore it" still costs a guess
+per call.
 
 The same must hold for everything added later:
 
@@ -85,6 +93,8 @@ The same must hold for everything added later:
 - A group query takes no conversation argument at all; it is bound to the tag's.
 - An MCP tool (Phase 10) is bound the same way, and its arguments are treated
   as model-supplied — because they are.
+- A tool declares only what the model actually decides. Anything Nora already
+  knows is closed over, not asked for.
 
 **Scope is enforced at assembly, never at egress.** The roster leak of
 2026-08-06 is the proof: R-18 blocks phone numbers and ACIs from replies, and

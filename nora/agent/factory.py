@@ -21,15 +21,31 @@ API key itself — this module no longer reads the environment.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from openai import AsyncOpenAI
-from strands import Agent
+from strands import Agent, ModelRetryStrategy
 from strands.agent.conversation_manager import NullConversationManager
 from strands.models.openai import OpenAIModel
 
 from .guards import ReplyGuard
 
 log = logging.getLogger("nora.factory")
+
+# Nora's name in a trace, and the thing that makes a Langfuse span readable.
+# Strands names the agent span `f"invoke_agent {agent.name}"` and defaults
+# `name` to "Strands Agents" / `agent_id` to "default", so every trace this
+# process ever produced was called `invoke_agent Strands Agents` — correct,
+# and useless for finding anything. Kept as constants because the span name
+# is what a saved Langfuse view filters on: changing it silently orphans
+# whatever the operator has already saved.
+AGENT_NAME = "nora"
+AGENT_ID = "nora"
+
+# How much of one invocation's wall clock may be spent sleeping between retries.
+# The rest has to cover the model calls themselves, of which there may be
+# `max_attempts` — a quarter leaves three quarters for up to four attempts.
+RETRY_BACKOFF_FRACTION = 0.25
 
 
 def create_client(*, base_url: str, api_key: str) -> AsyncOpenAI:
@@ -96,6 +112,80 @@ def build_limits(*, max_tokens: int, turns: int, total_tokens: int) -> dict:
     }
 
 
+@dataclass(frozen=True)
+class RetryPolicy:
+    """Scalars for one `ModelRetryStrategy`, resolved once at startup.
+
+    A policy rather than a strategy INSTANCE because `ModelRetryStrategy` holds
+    mutable per-invocation state (`_current_attempt`, reset by its own
+    `AfterInvocationEvent` hook). Nora builds one `Agent` per tag and two tags
+    can overlap, so a shared instance would let one tag's retry counter decide
+    another tag's backoff. `create_agent` constructs a fresh strategy from these
+    numbers instead — the same reason `ReplyGuard` is per-tag.
+    """
+
+    max_attempts: int
+    initial_delay: int
+    max_delay: int
+
+    @property
+    def total_backoff_seconds(self) -> int:
+        """Worst-case seconds spent asleep before the last attempt gives up.
+
+        Mirrors `ModelRetryStrategy._calculate_delay`: attempt *n* (0-indexed)
+        sleeps `min(initial_delay * 2**n, max_delay)`, and there are
+        `max_attempts - 1` sleeps before the final attempt is refused.
+        """
+        return sum(
+            min(self.initial_delay * 2**attempt, self.max_delay)
+            for attempt in range(max(0, self.max_attempts - 1))
+        )
+
+
+def build_retry_policy(
+    *, timeout_seconds: float, initial_delay: int = 1,
+    backoff_fraction: float = RETRY_BACKOFF_FRACTION,
+) -> RetryPolicy:
+    """A retry budget that fits inside the invocation timeout — an A8 fix.
+
+    Strands' default is `max_attempts=6, initial_delay=4, max_delay=240`
+    (`strands/event_loop/_retry.py`), i.e. 4+8+16+32+64 = 124s of backoff before
+    it gives up. `nora.engagement.stages.invoke` wraps the whole invocation in
+    `asyncio.wait_for(..., timeout=llm.timeout_seconds)`, which is 30s, and the
+    retry sleeps happen INSIDE that wait — so the very first throttle would
+    burn 4s, retry, and the timeout would fire long before the strategy ever
+    gave up. The turn is then counted
+    `nora_silent_failures_total{reason="invocation_timeout"}` when what actually
+    happened was provider throttling. A8 exists to make the silent-failure rate
+    trustworthy, and a reason label that names the wrong cause is worse than a
+    missing one: it points the next investigation at latency instead of quota.
+
+    So the budget is derived from the timeout rather than configured beside it.
+    `timeout_seconds` is already per-tier config (`LLMConfig.timeout_seconds`),
+    and a second knob would be a second thing to keep consistent with it — the
+    invariant that matters (`total_backoff_seconds < timeout_seconds`) is one
+    nobody can violate if it is never written down twice.
+
+    At today's 30s: `initial_delay=1`, budget 7.5s, so 1+2+4 = 7s over four
+    attempts, leaving 23s for the calls themselves.
+    """
+    # A zero or negative base would never grow `spent` and the loop below would
+    # not terminate; one second is the smallest delay that is still a delay.
+    initial_delay = max(1, initial_delay)
+    budget = timeout_seconds * backoff_fraction
+    max_attempts, spent = 1, 0.0
+    while spent + initial_delay * 2 ** (max_attempts - 1) <= budget:
+        spent += initial_delay * 2 ** (max_attempts - 1)
+        max_attempts += 1
+    return RetryPolicy(
+        max_attempts=max_attempts,
+        initial_delay=initial_delay,
+        # Nothing may sleep longer than the whole backoff budget, whatever the
+        # doubling would otherwise produce.
+        max_delay=max(initial_delay, int(budget)),
+    )
+
+
 def create_agent(
     *,
     model: OpenAIModel,
@@ -104,9 +194,23 @@ def create_agent(
     pre_fill: list[dict],
     guard: ReplyGuard,
     trace_attributes: dict,
+    retry: RetryPolicy,
 ) -> Agent:
     return Agent(
         model=model,
+        # Identity, so a trace can be found. `name` becomes the span name;
+        # `agent_id` is stable rather than per-tag because the tag is already
+        # carried as a trace attribute (`nora.obs.tracing.trace_attributes`) and
+        # a per-tag agent_id would make every trace its own agent.
+        name=AGENT_NAME,
+        agent_id=AGENT_ID,
+        # Fresh per agent — see RetryPolicy's docstring for why this is not a
+        # shared instance.
+        retry_strategy=ModelRetryStrategy(
+            max_attempts=retry.max_attempts,
+            initial_delay=retry.initial_delay,
+            max_delay=retry.max_delay,
+        ),
         system_prompt=system_prompt,
         tools=tools,
         # pre_fill/messages are plain dicts by design end-to-end (build_prefill in

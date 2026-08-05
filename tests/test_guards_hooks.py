@@ -26,7 +26,7 @@ def _guard(metrics=None):
 
 def test_before_tool_allows_a_valid_call():
     g = _guard()
-    event = FakeBeforeEvent("send_reply", {"conversation_id": "g1", "text": "hi"})
+    event = FakeBeforeEvent("send_reply", {"text": "hi"})
     g._before_tool(event)
     assert event.cancel_tool is None
 
@@ -34,9 +34,27 @@ def test_before_tool_allows_a_valid_call():
 def test_before_tool_sets_cancel_tool_with_the_corrective_message():
     g = _guard()
     g.record("send_reply")
-    event = FakeBeforeEvent("send_reply", {"conversation_id": "g1", "text": "hi"})
+    event = FakeBeforeEvent("send_reply", {"text": "hi"})
     g._before_tool(event)
     assert "already sent your reply" in event.cancel_tool
+
+
+def test_before_tool_counts_an_out_of_schema_conversation_and_still_allows_the_call():
+    """DEC-24's scope counter, through the hook the SDK actually calls.
+
+    `BeforeToolCallEvent` carries the model's RAW `tool_use["input"]` — Strands
+    validates it afterwards, in `DecoratedFunctionTool.stream`. That ordering is
+    what keeps `nora_tool_scope_violations_total` reachable now that no tool
+    declares a conversation: the invented argument is visible here and gone by
+    the time the tool body runs. The call must not be cancelled — vetoing it is
+    the `no_send_call` bug DEC-21 fixed.
+    """
+    m = Metrics()
+    g = _guard(m)
+    event = FakeBeforeEvent("send_reply", {"conversation_id": "gEVIL", "text": "hi"})
+    g._before_tool(event)
+    assert event.cancel_tool is None
+    assert m.get("nora_tool_scope_violations_total", tool="send_reply") == 1
 
 
 def test_after_tool_records_a_successful_call():

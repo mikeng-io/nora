@@ -32,8 +32,12 @@ from nora.persona.loader import Persona
 class LiveAgentRunner:
     """Satisfies `nora.engagement.stages.invoke.AgentRunner`."""
 
-    def __init__(self, *, model: Any) -> None:
+    def __init__(self, *, model: Any, retry: factory.RetryPolicy) -> None:
         self._model = model
+        # Resolved once, from the tier's invocation timeout, and reused for
+        # every tag — the numbers are immutable, the strategy built from them
+        # is not (see `factory.RetryPolicy`).
+        self._retry = retry
 
     async def invoke(
         self,
@@ -54,5 +58,6 @@ class LiveAgentRunner:
             pre_fill=pre_fill,
             guard=guard,
             trace_attributes=trace_attributes,
+            retry=self._retry,
         )
         await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)

@@ -93,10 +93,7 @@ class _ReplyingRunner:
 
     async def invoke(self, *, tools, guard, ctx, **_kwargs) -> None:
         tools_by_name = {t.tool_name: t for t in tools}
-        args = {
-            "conversation_id": ctx.message.conversation_id,
-            "conversation_type": "group", "text": "ok",
-        }
+        args = {"text": "ok"}
         if guard.evaluate("send_reply", args) is None:
             result = tools_by_name["send_reply"](**args)
             if hasattr(result, "__await__"):

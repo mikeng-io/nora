@@ -9,8 +9,15 @@ def _guard(metrics=None) -> ReplyGuard:
     return ReplyGuard(conversation_id="g1", budgets=BUDGETS, metrics=metrics or Metrics())
 
 
-def _send(conversation_id="g1", text="hi") -> dict:
-    return {"conversation_id": conversation_id, "conversation_type": "group", "text": text}
+def _send(text="hi", **extra) -> dict:
+    """A `send_reply` call as the model emits it.
+
+    `send_reply(text)` is the whole schema since DEC-24, so the well-formed call
+    is just `{"text": ...}`. `extra` is how a test spells "the model also sent
+    something that is not in the schema" — the only form a scope probe can still
+    take, and the one `nora_tool_scope_violations_total` exists to see.
+    """
+    return {"text": text, **extra}
 
 
 def test_a_first_send_reply_is_allowed():
@@ -30,17 +37,20 @@ def test_second_send_reply_is_cancelled():
 
 
 def test_send_to_another_conversation_cannot_escape_scope_and_is_counted():
-    """R-3 holds BY CONSTRUCTION, not by veto.
+    """R-3 holds BY CONSTRUCTION, not by veto — and the argument is now
+    out-of-schema (DEC-24).
 
-    `send_reply` ignores this argument entirely — it calls
-    `deliverer.deliver(text)`, and `Deliverer` holds its target bound from
-    construction — so a foreign `conversation_id` cannot address another
-    conversation no matter what the model writes. Vetoing on it protected
-    nothing and made a model that cannot echo a base64 group id verbatim
-    structurally unable to reply: on the first real tag, three send_reply calls
-    were cancelled this way and the turn ended `no_send_call`.
+    `send_reply` never read this argument: it calls `deliverer.deliver(text)`,
+    and `Deliverer` holds its target bound from construction. Vetoing on it
+    protected nothing and made a model that cannot echo a base64 group id
+    verbatim structurally unable to reply — on the first real tag three
+    `send_reply` calls were cancelled this way and the turn ended
+    `no_send_call`. DEC-24 then deleted the parameter, so a model can only
+    supply one by inventing it.
 
-    The probe is still a model reaching outside its scope, so it is counted.
+    An invented one still reaches this hook (Strands validates the tool input
+    AFTER `BeforeToolCallEvent` and its pydantic model ignores undeclared
+    properties), so it is still counted and still not vetoed.
     """
     m = Metrics()
     assert _guard(m).evaluate("send_reply", _send(conversation_id="g2")) is None
@@ -59,9 +69,9 @@ def test_tool_call_budget_enforced_for_read_buffer():
     m = Metrics()
     g = _guard(m)
     for _ in range(2):
-        assert g.evaluate("read_buffer", {"conversation_id": "g1"}) is None
+        assert g.evaluate("read_buffer", {"limit": 40}) is None
         g.record("read_buffer")
-    msg = g.evaluate("read_buffer", {"conversation_id": "g1"})
+    msg = g.evaluate("read_buffer", {"limit": 40})
     assert msg is not None and "read_buffer" in msg
     assert m.get("nora_guard_vetoes_total", rule="R-7") == 1
 
@@ -77,7 +87,7 @@ def test_the_correction_names_what_the_model_already_has():
     g = _guard()
     g.record("read_buffer")
     g.record("read_buffer")
-    msg = g.evaluate("read_buffer", {"conversation_id": "g1"})
+    msg = g.evaluate("read_buffer", {"limit": 40})
     assert "already" in msg
 
 
@@ -87,13 +97,39 @@ def test_an_unknown_tool_is_cancelled():
 
 def test_read_buffer_to_another_conversation_is_counted_not_cancelled():
     """Same construction argument as send_reply: `read_buffer` reads the
-    closure's bound conversation and ignores this value (Phase 8 Task 1, which
-    closed a real cross-group READ leak). The row it returns is scoped whatever
-    the model asks for, so the probe is counted rather than vetoed."""
+    closure's bound conversation (Phase 8 Task 1, which closed a real
+    cross-group READ leak) and, since DEC-24, does not declare one at all. The
+    rows it returns are scoped whatever the model asks for, so the probe is
+    counted rather than vetoed."""
     m = Metrics()
-    assert _guard(m).evaluate("read_buffer", {"conversation_id": "g2"}) is None
+    assert _guard(m).evaluate("read_buffer", {"conversation_id": "g2", "limit": 40}) is None
     assert m.get("nora_tool_scope_violations_total", tool="read_buffer") == 1
     assert m.get("nora_guard_vetoes_total", rule="R-3") == 0
+
+
+def test_the_scope_counter_fires_for_any_tool_not_just_the_two_scoped_ones():
+    """No tool declares a conversation any more, so "the model named a
+    conversation" is a signal about the MODEL, not about which tool it aimed
+    at. Counting only `send_reply`/`read_buffer` would silently miss it on
+    `now` or on any tool added later."""
+    m = Metrics()
+    assert _guard(m).evaluate("read_peer_card", {"sender_id": "+1",
+                                                 "conversation_id": "g2"}) is None
+    assert m.get("nora_tool_scope_violations_total", tool="read_peer_card") == 1
+
+
+def test_a_well_formed_call_never_touches_the_scope_counter():
+    """The load-bearing half of DEC-24's counter decision (R-17's lesson in the
+    other direction). Absence of `conversation_id` is now the NORMAL case: if it
+    were treated as a mismatch, this counter would increment on every single
+    tool call and be exactly as uninformative as one pinned at zero."""
+    m = Metrics()
+    g = _guard(m)
+    g.evaluate("send_reply", _send())
+    g.evaluate("read_buffer", {"limit": 40})
+    g.evaluate("now", {})
+    for tool in ("send_reply", "read_buffer", "now"):
+        assert m.get("nora_tool_scope_violations_total", tool=tool) == 0
 
 
 def test_counters_are_per_guard_instance():
@@ -105,16 +141,18 @@ def test_counters_are_per_guard_instance():
 
 
 def test_a_missing_conversation_id_no_longer_blocks_the_reply():
-    """It used to be a hard veto. The bound target makes it irrelevant, and a
-    model that simply omits the field would otherwise never be able to speak."""
+    """It used to be a hard veto, then a counted mismatch, and is now simply
+    the shape of a correct call — there is no such parameter to omit. A model
+    that speaks with `{"text": ...}` alone must be allowed through and must not
+    be flagged for it."""
     m = Metrics()
     assert _guard(m).evaluate("send_reply", {"text": "hi"}) is None
-    assert m.get("nora_tool_scope_violations_total", tool="send_reply") == 1
+    assert m.get("nora_tool_scope_violations_total", tool="send_reply") == 0
 
 
 def test_evaluate_does_not_mutate_counts():
     g = _guard()
-    g.evaluate("read_buffer", {"conversation_id": "g1"})
-    g.evaluate("read_buffer", {"conversation_id": "g1"})
-    g.evaluate("read_buffer", {"conversation_id": "g1"})
+    g.evaluate("read_buffer", {"limit": 40})
+    g.evaluate("read_buffer", {"limit": 40})
+    g.evaluate("read_buffer", {"limit": 40})
     assert g.counts["read_buffer"] == 0     # only record() counts

@@ -6,9 +6,7 @@ FAKE_LLM_DELAY = 0.8      # E.5: a fixed 800ms model delay isolates our overhead
 
 
 def _script():
-    return [ScriptedTurn(tool_calls=[("send_reply", {"conversation_id": "g1",
-                                                     "conversation_type": "group",
-                                                     "text": "ok"})], final_text="ok")]
+    return [ScriptedTurn(tool_calls=[("send_reply", {"text": "ok"})], final_text="ok")]
 
 
 async def test_overhead_stays_within_the_budget(harness_factory):

@@ -67,38 +67,69 @@ def test_every_tool_has_a_model_facing_docstring(wiring):
 
 
 async def test_read_buffer_returns_rows_oldest_first(wiring):
-    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    rows = await _call(wiring["tools"]["read_buffer"], limit=40)
     assert [r["body"] for r in rows] == ["m0", "m1", "m2"]
 
 
-async def test_read_buffer_ignores_a_model_supplied_conversation_id_and_stays_bound(wiring):
-    """Task 1 PROBE: tools are bound to "g1"; the model asks for "g2", an id
-    it never saw and has no business reading. Before the fix, `read_buffer`'s
-    own `conversation_id` parameter shadowed the closure's bound value and
-    was passed straight to the store — this is the reproduction of exactly
-    that scenario. It must come back with g1's rows, never g2's secrets."""
-    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g2", limit=40)
+def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
+    """DEC-24, asserted on the SCHEMA rather than on the signature.
+
+    `inputSchema` is what Strands actually sends the model, derived from the
+    callable by `FunctionToolMetadata.extract_metadata`, so this is the only
+    assertion that fails if a conversation parameter comes back under any name
+    or any default. Task 1's cross-group read leak lived in exactly such a
+    parameter, and the first real tag died because the model could not guess
+    the value of one.
+    """
+    for name, tool in wiring["tools"].items():
+        properties = set(tool.tool_spec["inputSchema"]["json"].get("properties") or {})
+        assert not properties & {"conversation_id", "conversation_type"}, (
+            f"{name} makes the model invent a conversation nothing reads"
+        )
+    assert set(
+        wiring["tools"]["read_buffer"].tool_spec["inputSchema"]["json"]["properties"]
+    ) == {"limit"}
+    assert set(
+        wiring["tools"]["send_reply"].tool_spec["inputSchema"]["json"]["properties"]
+    ) == {"text"}
+
+
+def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(wiring):
+    """The SDK behaviour DEC-24's scope counter is built on, pinned here.
+
+    Deleting the conversation parameters only works if a model that supplies one
+    anyway still gets its reply through — otherwise the fix trades a veto for a
+    validation error and the turn dies the same way. Strands validates tool
+    input through a pydantic model built from the signature, and pydantic
+    ignores undeclared properties, so the argument is dropped and the call
+    proceeds. If a future SDK tightened that to `extra="forbid"`, this test
+    turns red before production does.
+    """
+    for name, supplied, expected in (
+        ("send_reply", {"conversation_id": "gEVIL", "conversation_type": "group",
+                        "text": "hi"}, {"text": "hi"}),
+        ("read_buffer", {"conversation_id": "gEVIL", "limit": 5}, {"limit": 5}),
+    ):
+        assert wiring["tools"][name]._metadata.validate_input(supplied) == expected
+
+
+async def test_read_buffer_reads_the_bound_conversation_and_nothing_else(wiring):
+    """Task 1's PROBE, now unrepresentable as an argument.
+
+    The tools are bound to `g1` and `g2` holds another group's rows. There is
+    no longer any input by which the model could ask for `g2` — the parameter
+    that used to shadow the closure's bound value is gone — so the leak is
+    closed by construction. This still asserts on the returned rows rather than
+    on the signature: what matters is that g2's messages never come back.
+    """
+    rows = await _call(wiring["tools"]["read_buffer"], limit=40)
     bodies = [r["body"] for r in rows]
     assert bodies == ["m0", "m1", "m2"]
     assert not any(b.startswith("secret") for b in bodies)
 
 
-async def test_read_buffer_counts_a_conversation_id_mismatch(wiring):
-    await _call(wiring["tools"]["read_buffer"], conversation_id="g2", limit=40)
-    assert wiring["metrics"].get(
-        "nora_tool_scope_violations_total", tool="read_buffer"
-    ) == 1.0
-
-
-async def test_read_buffer_does_not_count_a_matching_conversation_id(wiring):
-    await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
-    assert wiring["metrics"].get(
-        "nora_tool_scope_violations_total", tool="read_buffer"
-    ) == 0.0
-
-
 async def test_read_buffer_returns_only_model_relevant_fields(wiring):
-    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    rows = await _call(wiring["tools"]["read_buffer"], limit=40)
     # No raw_json, no ids. `reply_to` is absent rather than null on an
     # unthreaded row — see test_read_buffer_omits_reply_to_* below.
     assert set(rows[0]) == {"sender", "body", "ts"}
@@ -115,7 +146,7 @@ async def test_read_buffer_marks_a_reply_with_the_name_it_answers(wiring):
         "signal", "g1", "group", "+852333", "Tyler", 9, "你屋企", {},
         quote=Quote(author_id="+852111", text="whatever", quoted_ts=1),
     ))
-    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    rows = await _call(wiring["tools"]["read_buffer"], limit=40)
     assert rows[-1] == {"sender": "Tyler", "body": "你屋企", "ts": 9, "reply_to": "Miles"}
 
 
@@ -128,7 +159,7 @@ async def test_read_buffer_omits_reply_to_when_the_parent_is_not_in_the_rows(wir
         "signal", "g1", "group", "+852333", "Tyler", 9, "你屋企", {},
         quote=Quote(author_id="+852111", text="whatever", quoted_ts=999_999),
     ))
-    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    rows = await _call(wiring["tools"]["read_buffer"], limit=40)
     assert "reply_to" not in rows[-1]
 
 
@@ -142,7 +173,7 @@ async def test_read_buffer_names_nora_the_same_way_in_reply_to_as_in_sender(wiri
         "signal", "g1", "group", "+852333", "Tyler", 9, "得", {},
         quote=Quote(author_id="nora", text="whatever", quoted_ts=8),
     ))
-    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    rows = await _call(wiring["tools"]["read_buffer"], limit=40)
     assert rows[-2]["sender"] == "Nora"
     assert rows[-1]["reply_to"] == "Nora"
 
@@ -163,7 +194,7 @@ async def test_read_buffer_clamps_a_hostile_limit_before_it_reaches_the_store(wi
 
     monkeypatch.setattr(wiring["store"], "recent", spy)
     for hostile in (-1, 0):
-        rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=hostile)
+        rows = await _call(wiring["tools"]["read_buffer"], limit=hostile)
         assert len(rows) <= 1
     assert seen == [1, 1]
 
@@ -184,14 +215,13 @@ async def test_read_peer_card_returns_empty_when_honcho_is_down(wiring):
 
 
 async def test_send_reply_delegates_to_the_deliverer(wiring):
-    assert await _call(wiring["tools"]["send_reply"], conversation_id="g1",
-                       conversation_type="group", text="hello") is True
+    assert await _call(wiring["tools"]["send_reply"], text="hello") is True
     assert wiring["sink"].texts == ["hello"]
     assert wiring["deliverer"].delivered is True
 
 
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):
-    await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    await _call(wiring["tools"]["read_buffer"], limit=40)
     await _call(wiring["tools"]["read_peer_card"], sender_id="+852111")
     assert wiring["sink"].sent == []
 
@@ -201,7 +231,7 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(wiring["store"], "recent", boom)
-    assert await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40) == []
+    assert await _call(wiring["tools"]["read_buffer"], limit=40) == []
 
 
 async def _call(tool, **kwargs):

@@ -2,9 +2,7 @@ from nora.testing import ScriptedTurn, group_event
 
 
 def _script(text):
-    return [ScriptedTurn(tool_calls=[("send_reply", {"conversation_id": "g1",
-                                                     "conversation_type": "group",
-                                                     "text": text})], final_text=text)]
+    return [ScriptedTurn(tool_calls=[("send_reply", {"text": text})], final_text=text)]
 
 
 async def test_two_tags_produce_two_independent_invocations(harness_factory):

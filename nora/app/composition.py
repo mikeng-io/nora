@@ -229,7 +229,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         model=tier.model, max_tokens=tier.max_tokens, temperature=tier.temperature,
         client=client, reasoning_effort=tier.reasoning_effort,
     )
-    runner = LiveAgentRunner(model=model)
+    runner = LiveAgentRunner(
+        model=model,
+        # Derived from the same `timeout_seconds` the invoke stage enforces, so
+        # a throttle can never be misreported as a timeout (see
+        # `factory.build_retry_policy`).
+        retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+    )
     limits = factory.build_limits(
         max_tokens=tier.max_tokens, turns=tier.limits.turns, total_tokens=tier.limits.total_tokens,
     )
