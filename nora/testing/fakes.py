@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from nora.domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage, TranscriptRow
-from nora.domain.ports import MemoryHealth
+from nora.domain.ports import MemoryHealth, PlatformIdentity
 
 
 class FakeAuditStore:
@@ -135,12 +135,16 @@ class FakeAdapter:
     import `nora.testing`, not the other way around), so this reimplements just the
     group-message subset of `parse_event` it needs.
 
-    `PlatformAdapter` is a documented, currently-unconformed-by-anything port
-    (`tests/contract/test_port_conformance.py::test_signal_adapter_gap_to_platform_adapter_is_known`
-    pins `SignalAdapter` itself not conforming yet, deferred to the platforms phase) —
-    this fake mirrors `SignalAdapter`'s actual current shape (bare `bool`/`dict`
-    returns, positional `send`), not the port, so it does not newly trigger the
-    "second port implementation needs a contract suite" rule either.
+    `PlatformAdapter` is a documented, still-not-fully-conformed-to port. The platforms
+    phase closed the `resolve_identity()` gap
+    (`tests/contract/test_port_conformance.py` no longer pins it absent), so this
+    fake grows a `resolve_identity()` the same way `SignalAdapter` does. `send()`/
+    `health()`/`listen()`/`parse()` still mirror `SignalAdapter`'s pre-phase shape
+    (bare `bool`/`dict` returns, positional `send`) — those gaps close in later
+    tasks of the same phase, tracked by their own tests in
+    `tests/contract/test_port_conformance.py` — so this fake staying on the old
+    shape for those does not newly trigger the "second port implementation needs a
+    contract suite" rule either.
 
     `_account` (not `own_account`) deliberately matches `SignalAdapter._account`'s
     name: `nora.engagement.stages.admission`'s R-12 self-tag check reads
@@ -155,6 +159,9 @@ class FakeAdapter:
         self.sent: list[tuple[ConversationTarget, str]] = []
         self._succeed = succeed
         self._account = account
+
+    async def resolve_identity(self) -> PlatformIdentity:
+        return PlatformIdentity(platform=self.platform, primary=self._account or "nora")
 
     async def listen(self, on_event) -> None:
         return None

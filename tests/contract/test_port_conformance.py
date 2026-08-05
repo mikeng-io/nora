@@ -30,14 +30,15 @@ def test_fake_memory_store_satisfies_memory_store():
     assert isinstance(FakeMemoryStore(), MemoryStore)
 
 
-def test_signal_adapter_gap_to_platform_adapter_is_known():
-    """SignalAdapter does NOT yet satisfy PlatformAdapter, and that is expected:
-    resolve_identity() and the SendResult return type land in the platforms phase.
-    Pinning the gap keeps it visible instead of letting it drift."""
-    assert hasattr(SignalAdapter, "listen") and hasattr(SignalAdapter, "send")
-    assert not hasattr(SignalAdapter, "resolve_identity"), (
-        "SignalAdapter grew resolve_identity — update this test and the ports phase note"
-    )
+def test_signal_adapter_resolve_identity_satisfies_the_port_shape():
+    """Replaces `test_signal_adapter_gap_to_platform_adapter_is_known`, which pinned
+    `resolve_identity()` as absent — the platforms phase adds it, so this is the
+    positive assertion in its place. `send()`'s SendResult/keyword-only shape and
+    `health()`'s AdapterHealth shape are asserted by their own tests, added
+    alongside the tasks that close those two gaps."""
+    assert hasattr(SignalAdapter, "resolve_identity")
+    identity_sig = inspect.signature(SignalAdapter.resolve_identity)
+    assert identity_sig.return_annotation == "PlatformIdentity"
 
 
 def test_signal_adapter_health_gap_to_adapter_health_is_known():
