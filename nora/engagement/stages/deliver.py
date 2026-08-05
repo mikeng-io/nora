@@ -68,6 +68,7 @@ def check_outcome(
     *,
     deliverer: Deliverer,
     tag_id: str,
+    platform: str,
     metrics: Any,
     llm_state: Any = None,
 ) -> bool:
@@ -81,7 +82,7 @@ def check_outcome(
     if not deliverer.delivered:
         if not deliverer.attempted:
             log.warning("no_send_call (tag=%s); dropping the model's text", tag_id)
-            metrics.inc("nora_silent_failures_total", reason="no_send_call")
+            metrics.inc("nora_silent_failures_total", reason="no_send_call", platform=platform)
         return False
     if llm_state is not None:   # a delivered reply implies a successful invocation
         llm_state.last_success_at = time.time()

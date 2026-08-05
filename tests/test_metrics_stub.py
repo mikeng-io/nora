@@ -1,11 +1,18 @@
+"""The `Metrics` wrapper's own behaviour — the stub interface M4/M5 record
+through. Exercises real declared metric names only: prometheus-client
+requires every series to be declared (name + labelnames) upfront, so unlike
+the old hand-rolled store, an arbitrary undeclared name like `"x"` can no
+longer be invented on the fly.
+"""
+
 from nora.obs.metrics import Metrics
 
 
 def test_counters_accumulate():
     m = Metrics()
-    m.inc("nora_tags_total")
-    m.inc("nora_tags_total")
-    assert m.get("nora_tags_total") == 2
+    m.inc("nora_tags_debounced_total")
+    m.inc("nora_tags_debounced_total")
+    assert m.get("nora_tags_debounced_total") == 2
 
 
 def test_labels_are_distinct_series():
@@ -18,7 +25,7 @@ def test_labels_are_distinct_series():
 
 
 def test_unset_series_reads_as_zero():
-    assert Metrics().get("nora_tags_total") == 0
+    assert Metrics().get("nora_tags_debounced_total") == 0
 
 
 def test_histograms_record_observations():
@@ -35,21 +42,35 @@ def test_gauges_overwrite():
     assert m.get("nora_last_event_age_seconds") == 9.0
 
 
-def test_snapshot_is_stable_for_assertions():
+def test_snapshot_includes_recorded_counters():
     m = Metrics()
-    m.inc("a", reason="x")
-    assert m.snapshot() == {("a", (("reason", "x"),)): 1.0}
+    m.inc("nora_silent_failures_total", reason="empty_reply", platform="signal")
+    assert m.snapshot()[
+        ("nora_silent_failures_total", (("platform", "signal"), ("reason", "empty_reply")))
+    ] == 1.0
 
 
-def test_reset_clears_everything():
+def test_a_fresh_instance_starts_clean():
     m = Metrics()
-    m.inc("a")
-    m.reset()
-    assert m.snapshot() == {}
+    m.inc("nora_tags_debounced_total")
+    assert Metrics().get("nora_tags_debounced_total") == 0
+
+
+def test_get_without_a_label_sums_across_it():
+    """A query that omits a declared label marginalizes over it rather than
+    requiring an exact match — this is what lets an un-migrated call site
+    (recorded under the label's `""` default) and a migrated one both count
+    toward `metrics.get(name, stage="ambient")`-style assertions elsewhere in
+    the suite."""
+    m = Metrics()
+    m.inc("nora_errors_total", stage="ambient", platform="signal")
+    m.inc("nora_errors_total", stage="ambient", platform="telegram")
+    assert m.get("nora_errors_total", stage="ambient") == 2
+    assert m.get("nora_errors_total", stage="ambient", platform="signal") == 1
 
 
 def test_label_order_does_not_create_a_new_series():
     m = Metrics()
-    m.inc("x", a="1", b="2")
-    m.inc("x", b="2", a="1")
-    assert m.get("x", a="1", b="2") == 2
+    m.inc("nora_errors_total", stage="ambient", platform="signal")
+    m.inc("nora_errors_total", platform="signal", stage="ambient")
+    assert m.get("nora_errors_total", stage="ambient", platform="signal") == 2

@@ -158,7 +158,7 @@ class EngagementPipeline:
                 return
 
             delivered = deliver.check_outcome(
-                deliverer=handle.deliverer, tag_id=request.tag_id,
+                deliverer=handle.deliverer, tag_id=request.tag_id, platform=msg.platform,
                 llm_state=self._llm_state, metrics=self._metrics,
             )
             if not delivered:
@@ -171,7 +171,9 @@ class EngagementPipeline:
                 ))
         except BaseException:
             log.exception("tag pipeline failed (tag=%s); staying silent", request.tag_id)
-            self._metrics.inc("nora_silent_failures_total", reason="handler_error")
+            self._metrics.inc(
+                "nora_silent_failures_total", reason="handler_error", platform=msg.platform,
+            )
         finally:
             self._in_flight.discard(key)     # R-10: released on EVERY exit path
             total = time.perf_counter() - started

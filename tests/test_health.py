@@ -110,8 +110,9 @@ async def test_metrics_endpoint_serves_prometheus_text(client):
 
 
 async def test_metrics_endpoint_reflects_recorded_counters(client):
-    client.metrics.inc("nora_tags_total")
-    assert "nora_tags_total 1" in await (await client.get("/metrics")).text()
+    client.metrics.inc("nora_tags_total", platform="signal")
+    text = await (await client.get("/metrics")).text()
+    assert 'nora_tags_total{platform="signal"} 1.0' in text
 
 
 async def test_health_never_raises_on_a_broken_dependency(client, store, monkeypatch):

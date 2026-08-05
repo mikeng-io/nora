@@ -90,11 +90,16 @@ async def run(
         )
     except TimeoutError:
         log.error("invocation_timeout (tag=%s)", ctx.tag_id)
-        metrics.inc("nora_silent_failures_total", reason="invocation_timeout")
+        metrics.inc(
+            "nora_silent_failures_total", reason="invocation_timeout",
+            platform=ctx.message.platform,
+        )
         ok = False
     except Exception:
         log.exception("llm_error (tag=%s); staying silent", ctx.tag_id)
-        metrics.inc("nora_silent_failures_total", reason="llm_error")
+        metrics.inc(
+            "nora_silent_failures_total", reason="llm_error", platform=ctx.message.platform,
+        )
         ok = False
     finally:
         elapsed = time.perf_counter() - started

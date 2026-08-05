@@ -22,6 +22,6 @@ async def run(*, message: NormalizedMessage, audit: AuditStore, metrics: Any) ->
         await audit.append(message=message)
     except Exception:
         log.exception("audit append failed; dropping message")
-        metrics.inc("nora_errors_total", stage="ambient")
+        metrics.inc("nora_errors_total", stage="ambient", platform=message.platform)
         return False
     return True
