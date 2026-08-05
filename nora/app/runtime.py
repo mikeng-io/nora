@@ -94,7 +94,7 @@ class _PrunableStore(Protocol):
     deliberately has no `prune` — see `nora/domain/ports.py`'s module docstring:
     retention policy is owned by the runtime, not something a stage programs
     against through the port. This narrow local shape mirrors that call-out
-    (same pattern as `nora.ingest.stages.parse.ParsingAdapter`)."""
+    (same pattern as `nora.ingest.stages.audit`'s narrow use of `AuditStore`)."""
 
     async def prune_all(self) -> int: ...
 
@@ -143,14 +143,14 @@ class SupervisedAdapter:
     """A platform name paired with a zero-arg coroutine factory that runs its
     listen loop.
 
-    Deliberately not typed against a `PlatformAdapter` shape: today's
-    production `SignalAdapter` (`nora.platform.base`) takes a positional
-    `on_event` dict callback, and the target port
-    (`nora.domain.ports.PlatformAdapter`) takes a keyword-only `on_message`
-    callback over `NormalizedMessage` — the two do not agree yet (tracked by
-    `tests/contract/test_port_conformance.py`), and this module has no
-    business picking a side. The composition root binds whichever shape is
-    live at the call site, e.g. `functools.partial(adapter.listen, on_event)`.
+    Deliberately not typed against a `PlatformAdapter` shape: this module has
+    no business knowing any adapter's call signature — the composition root
+    binds whatever shape is live at the call site (today,
+    `functools.partial(adapter.listen, on_message=dispatcher.on_message)`,
+    since `SignalAdapter.listen` now satisfies
+    `nora.domain.ports.PlatformAdapter.listen`'s keyword-only
+    `on_message: Callable[[NormalizedMessage], Awaitable[None]]` shape). This
+    module only needs a zero-arg coroutine factory it can restart.
     """
 
     platform: str

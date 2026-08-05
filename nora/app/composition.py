@@ -153,7 +153,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         background.spawn(coro)
 
     ingest = IngestPipeline(
-        adapter=adapter, audit=audit, memory=memory, persons=persons,
+        audit=audit, memory=memory, persons=persons,
         policy=policy, metrics=metrics, spawn=_spawn,
     )
 

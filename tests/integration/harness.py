@@ -25,6 +25,7 @@ import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from nora.app.dispatch import Dispatcher
 from nora.app.offline import build_offline_pipeline
@@ -97,9 +98,19 @@ class _HarnessAdapter(SinkSender):
 
 
 class _HandlerView:
-    """Thin test-side view combining `Dispatcher.on_event` with direct access to
-    `EngagementPipeline`'s in-flight set, for the R-9/R-10 tests written against
-    `h.handler._in_flight` (the deleted `Handler`'s surface).
+    """Thin test-side view combining `Dispatcher.on_message` with direct access
+    to `EngagementPipeline`'s in-flight set, for the R-9/R-10 tests written
+    against `h.handler._in_flight` (the deleted `Handler`'s surface).
+
+    `on_event` keeps its pre-phase-4 name and raw-dict-in shape deliberately:
+    every test in this suite already calls `h.handler.on_event(group_event(...))`,
+    and this method is what stands in for the SSE loop that, in production, now
+    lives inside `SignalAdapter.listen` — parsing the raw event and dropping it
+    silently if it parses to `None`, then calling `Dispatcher.on_message` with
+    the result, exactly like the adapter's internal `_on_event` does (Trap B,
+    docs/superpowers/plans/2026-08-05-nora-phase4-platforms.md). `IngestPipeline`
+    no longer accepts raw dicts at all, so this parse-then-dispatch step cannot
+    move into `Dispatcher` itself.
 
     This is a proxy, not a retention: `_in_flight` is a `@property` reading the
     SAME set `EngagementPipeline` already owns and clears on every exit path
@@ -108,12 +119,17 @@ class _HandlerView:
     grew forever; this is a live view into already-bounded state.
     """
 
-    def __init__(self, *, dispatcher: Dispatcher, engagement: EngagementPipeline) -> None:
+    def __init__(
+        self, *, dispatcher: Dispatcher, engagement: EngagementPipeline, adapter: Any
+    ) -> None:
         self._dispatcher = dispatcher
         self._engagement = engagement
+        self._adapter = adapter
 
     async def on_event(self, raw_event: dict) -> None:
-        await self._dispatcher.on_event(raw_event)
+        message = await self._adapter.parse(raw_event)
+        if message is not None:
+            await self._dispatcher.on_message(message)
 
     @property
     def _in_flight(self):
@@ -369,7 +385,7 @@ async def build_handler(
         cfg, adapter=adapter, audit=store, memory=honcho_double, persons=persons,
         persona_store=persona_store, runner=runner, metrics=metrics,
     )
-    handler = _HandlerView(dispatcher=dispatcher, engagement=engagement)
+    handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
 
     harness = Harness(
         handler=handler,

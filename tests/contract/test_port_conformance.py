@@ -57,20 +57,19 @@ def test_signal_adapter_health_satisfies_the_port_shape():
     assert inspect.signature(SignalAdapter.health).return_annotation == "AdapterHealth"
 
 
-def test_signal_adapter_listen_gap_to_on_message_is_known():
-    """SignalAdapter.listen() does NOT yet satisfy PlatformAdapter, and that is
-    expected: it takes a positional on_event callback receiving a raw dict, where
-    the port declares a keyword-only on_message: Callable[[NormalizedMessage],
-    Awaitable[None]]. Pinning the gap keeps it visible instead of letting it drift."""
+def test_signal_adapter_listen_satisfies_the_port_shape():
+    """Replaces `test_signal_adapter_listen_gap_to_on_message_is_known`, which pinned
+    `listen()` taking a positional `on_event` dict callback — the platforms phase's
+    fourth and final gap close. `listen()` now takes a keyword-only `on_message`
+    callback over `NormalizedMessage`; parsing moved inside the adapter
+    (`nora.platform.signal.parser.parse_event`, called from `SignalAdapter.listen`
+    itself), off `IngestPipeline` entirely (Trap B). `SignalAdapter.parse` came off
+    the public surface as part of the same change — the port deliberately has no
+    `parse()` (see `nora.domain.ports`'s module docstring)."""
     params = inspect.signature(SignalAdapter.listen).parameters
-    assert "on_event" in params and "on_message" not in params, (
-        "SignalAdapter.listen() gained on_message — update this test and ARCHITECTURE.md's "
-        "PlatformAdapter known-gap row"
-    )
-    assert params["on_event"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD, (
-        "SignalAdapter.listen()'s callback became keyword-only — update this test and "
-        "ARCHITECTURE.md's PlatformAdapter known-gap row"
-    )
+    assert "on_message" in params
+    assert params["on_message"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert not hasattr(SignalAdapter, "parse")
 
 
 def test_runtime_checkable_protocols_only_check_method_names():

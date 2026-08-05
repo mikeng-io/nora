@@ -1,7 +1,6 @@
 from aiohttp import web
 
 from nora.domain.models import ConversationTarget
-from nora.platform.base import PlatformAdapter
 from nora.platform.signal.adapter import SignalAdapter
 
 
@@ -14,20 +13,83 @@ def _accounts_app(payload) -> web.Application:
     return app
 
 
-def test_adapter_satisfies_the_protocol():
-    assert isinstance(SignalAdapter("http://127.0.0.1:18080", "+852111"), PlatformAdapter)
+def _receive_event(*, source: str, group_id: str | None = "g", text: str = "hi") -> dict:
+    data_message: dict = {"message": text}
+    if group_id is not None:
+        data_message["groupInfo"] = {"groupId": group_id}
+    return {"method": "receive", "params": {"envelope": {
+        "source": source, "dataMessage": data_message}}}
 
 
 def test_adapter_declares_its_platform():
     assert SignalAdapter("http://x", "+1").platform == "signal"
 
 
-async def test_parse_filters_our_own_account():
+def test_parse_is_not_on_the_public_surface():
+    """The platforms phase's Trap B: `PlatformAdapter` deliberately has no
+    `parse()` — every adapter parses its own transport internally, inside
+    `listen()`. Keeping `parse` around as a public method would let a caller
+    bypass the drop rules `listen()` enforces (DMs, sync messages, self-sends,
+    empty bodies)."""
+    assert not hasattr(SignalAdapter, "parse")
+
+
+async def test_listen_parses_and_forwards_only_parseable_events():
+    """`listen(*, on_message)` parses internally via `parse_event` and drops
+    anything that parses to `None` — R-12's first pass (a DM, a self-send)
+    plus an empty body — before `on_message` is ever called. The daemon
+    connection itself (`SignalListener`) is swapped for a canned feed here;
+    that half is `test_signal_listener.py`'s job, untouched by this phase.
+    """
     adapter = SignalAdapter("http://x", "+852999")
-    event = {"method": "receive", "params": {"envelope": {
-        "source": "+852999", "dataMessage": {"message": "hi",
-                                             "groupInfo": {"groupId": "g"}}}}}
-    assert await adapter.parse(event) is None
+    events = [
+        _receive_event(source="+852111", group_id=None),        # DM — dropped
+        _receive_event(source="+852999", group_id="g"),         # self-send — dropped (R-12)
+        _receive_event(source="+852111", group_id="g", text=""),  # empty body — dropped
+        _receive_event(source="+852111", group_id="g", text="hello"),  # kept
+    ]
+
+    async def _fake_listen(on_event):
+        for event in events:
+            await on_event(event)
+
+    adapter._listener.listen = _fake_listen  # white-box: swap the daemon connection only
+
+    received = []
+
+    async def _capture(message):
+        received.append(message)
+
+    await adapter.listen(on_message=_capture)
+
+    assert len(received) == 1
+    assert received[0].body == "hello"
+    assert received[0].sender_id == "+852111"
+
+
+async def test_listen_forwarding_unparseable_events_would_fail_the_drop_case():
+    """PROBE (task-4-brief.md): if the adapter forwarded every event instead of
+    dropping the unparseable ones, this same drop-case assertion would fail —
+    this test IS that check, kept in the suite as the permanent guard against
+    that regression (the probe itself is run manually against a deliberately
+    broken adapter and reverted; see the task report)."""
+    adapter = SignalAdapter("http://x", "+852999")
+    events = [_receive_event(source="+852111", group_id=None)]  # a DM: must be dropped
+
+    async def _fake_listen(on_event):
+        for event in events:
+            await on_event(event)
+
+    adapter._listener.listen = _fake_listen
+
+    received: list = []
+
+    async def _capture(message):
+        received.append(message)
+
+    await adapter.listen(on_message=_capture)
+
+    assert received == []
 
 
 async def test_health_reports_connection_state():

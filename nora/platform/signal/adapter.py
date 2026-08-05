@@ -38,11 +38,25 @@ class SignalAdapter:
             )
         return self._identity
 
-    async def listen(self, on_event: Callable[[dict], Awaitable[None]]) -> None:
-        await self._listener.listen(on_event)
+    async def listen(
+        self, *, on_message: Callable[[NormalizedMessage], Awaitable[None]]
+    ) -> None:
+        """Satisfies the port's `listen(*, on_message)` — no `parse()` on the public
+        surface (see `nora.domain.ports`'s module docstring: forcing every adapter to
+        pretend its transport is dict-shaped is wrong for Discord/Telegram). Parsing
+        happens here, internally, via `nora.platform.signal.parser.parse_event`; a
+        `None` result — a DM, a sync message, a self-send, an empty body (R-12's
+        first pass) — is dropped before `on_message` is ever called. `Trap B`
+        (docs/superpowers/plans/2026-08-05-nora-phase4-platforms.md) is what moved
+        this parse-and-drop step out of `nora.ingest.pipeline` and in here.
+        """
 
-    async def parse(self, raw_event: dict) -> NormalizedMessage | None:
-        return parse_event(raw_event, self._account)
+        async def _on_event(raw_event: dict) -> None:
+            message = parse_event(raw_event, self._account)
+            if message is not None:
+                await on_message(message)
+
+        await self._listener.listen(_on_event)
 
     async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
         return await self._sender.send(target, text)

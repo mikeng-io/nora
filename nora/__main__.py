@@ -114,7 +114,9 @@ class App:
             deps.background,
             [runtime.SupervisedAdapter(
                 platform=deps.adapter.platform,
-                listen=functools.partial(deps.adapter.listen, deps.dispatcher.on_event),
+                listen=functools.partial(
+                    deps.adapter.listen, on_message=deps.dispatcher.on_message
+                ),
             )],
             deps.metrics,
         )
