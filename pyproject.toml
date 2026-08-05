@@ -12,6 +12,9 @@ dependencies = [
     "pydantic>=2.8",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
+    "prometheus-client>=0.26.0",
+    "structlog>=26.1.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.44.0",
 ]
 
 [project.optional-dependencies]
@@ -68,16 +71,6 @@ warn_return_any = true
 no_implicit_reexport = true
 strict_equality = true
 extra_checks = true
-
-# The gRPC OTLP exporter is a genuinely missing optional dependency, not a
-# suppression of real errors: Phase 6 replaces it with the HTTP/protobuf OTLP
-# exporter because Langfuse's `/api/public/otel` endpoint is HTTP, not gRPC,
-# so installing the gRPC package now would be the wrong dependency to add.
-# Scoped to this exact module path only — nora.obs and every other module
-# stay under full checking.
-[[tool.mypy.overrides]]
-module = "opentelemetry.exporter.otlp.*"
-ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

@@ -1,7 +1,14 @@
 """The ONLY module that constructs Strands objects (spec C.7).
 
-One AsyncOpenAI client for the whole process (audit T2) — never one per tag. The
-caller owns the client lifecycle; close_client() runs on shutdown.
+One `AsyncOpenAI` client for the whole process (audit T2) — never one per
+tag — but that guarantee now lives in the composition root's *call
+discipline*, not in a module-level singleton (DEC-13): `create_client` is a
+plain constructor, called exactly once by
+`nora.app.composition.build_dependencies`, whose result is threaded through
+`Dependencies.client` to every consumer. `nora.__main__.App.shutdown` closes
+that same object directly (`await self.deps.client.close()`) — there is
+nothing left in this module to reset between tests, and nothing left for a
+test to leak into another one via import-time state.
 
 Takes explicit scalars, never `nora.config` objects — this used to be the one
 documented exception to "only app and `__main__` read config"
@@ -24,23 +31,11 @@ from .guards import ReplyGuard
 
 log = logging.getLogger("nora.factory")
 
-_CLIENT: AsyncOpenAI | None = None
-
 
 def create_client(*, base_url: str, api_key: str) -> AsyncOpenAI:
-    global _CLIENT
-    if _CLIENT is None:
-        if not api_key:
-            raise RuntimeError("api_key is empty — refusing to start")
-        _CLIENT = AsyncOpenAI(api_key=api_key, base_url=base_url)
-    return _CLIENT
-
-
-async def close_client() -> None:
-    global _CLIENT
-    if _CLIENT is not None:
-        await _CLIENT.close()
-        _CLIENT = None
+    if not api_key:
+        raise RuntimeError("api_key is empty — refusing to start")
+    return AsyncOpenAI(api_key=api_key, base_url=base_url)
 
 
 def create_model_provider(

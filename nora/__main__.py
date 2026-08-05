@@ -19,7 +19,6 @@ import time
 from pathlib import Path
 
 from . import config
-from .agent import factory
 from .app import runtime
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .config import ConfigError
@@ -53,6 +52,7 @@ async def build_app(config_path: Path) -> App:
         enabled=cfg.obs.tracing.enabled,
         exporter=cfg.obs.tracing.exporter,
         endpoint=cfg.obs.tracing.endpoint,
+        headers_env=cfg.obs.tracing.headers_env,
     )
 
     deps = await build_dependencies(cfg)
@@ -136,7 +136,7 @@ class App:
     async def shutdown(self) -> None:
         if self._health_runner is not None:
             await self._health_runner.cleanup()
-        await factory.close_client()
+        await self.deps.client.close()
         await self.deps.audit.aclose()
 
 

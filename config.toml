@@ -71,5 +71,7 @@ port = 9100
 
 [obs.tracing]
 enabled = true
-exporter = "file"
+exporter = "file"                     # console | otlp_http | file
 endpoint = ""
+headers_env = ""                      # env var NAME holding OTLP auth headers, never the
+                                       # value (DEC-8); only read when exporter = "otlp_http"

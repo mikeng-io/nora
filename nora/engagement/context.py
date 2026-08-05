@@ -57,7 +57,7 @@ class TranscriptInjection:
             ))
         except Exception:
             log.exception("context collection failed; continuing with an empty transcript")
-            self._metrics.inc("nora_errors_total", stage="context")
+            self._metrics.inc("nora_errors_total", stage="context", platform=msg.platform)
 
         ref = self._persons.resolve(msg.platform, msg.sender_id)
         card: tuple[str, ...] = ()

@@ -1,5 +1,6 @@
 import pytest
 
+from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore
 from tests.test_persona_loader import write  # reuse the frontmatter writer
 
@@ -16,7 +17,8 @@ def persona_dir(tmp_path):
 
 def _store(d) -> PersonaStore:
     return PersonaStore(d, canary="CANARY-XYZ", display_name="Nora",
-                        trigger="nora.000", language_hint="hk-canto-en-traditional")
+                        trigger="nora.000", language_hint="hk-canto-en-traditional",
+                        metrics=Metrics())
 
 
 def test_assembly_wraps_each_section_with_name_and_version(persona_dir):
@@ -53,8 +55,8 @@ def test_runtime_context_is_appended_after_the_persona_block(persona_dir):
 
 def test_sha256_excludes_runtime_context(persona_dir):
     """RK-6: the hash is persona identity, not deployment context."""
-    a = PersonaStore(persona_dir, canary="C1", trigger="nora.000").get()
-    b = PersonaStore(persona_dir, canary="C2", trigger="other.999").get()
+    a = PersonaStore(persona_dir, canary="C1", trigger="nora.000", metrics=Metrics()).get()
+    b = PersonaStore(persona_dir, canary="C2", trigger="other.999", metrics=Metrics()).get()
     assert a.sha256 == b.sha256
     assert a.text != b.text
 

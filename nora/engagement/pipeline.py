@@ -42,6 +42,7 @@ from typing import Any
 from nora.agent.prefill import build_prefill, build_tag_message
 from nora.agent.registry import ToolRegistry
 from nora.domain.ports import AuditStore, EngagementRequest, MemoryStore
+from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
 from nora.tag import Debounce
 
@@ -120,6 +121,10 @@ class EngagementPipeline:
         key = (msg.platform, msg.conversation_id)
         started = time.perf_counter()
         llm_elapsed = 0.0
+        # Every log line emitted for the rest of this tag — across every stage
+        # this method calls into — carries tag_id without any of them naming
+        # it explicitly (nora.obs.logging's contextvar bridge).
+        bind_tag_id(request.tag_id)
         try:
             ctx = await self._context.assemble(request=request)
             persona = self._persona_store.get(applies_to="tag")
@@ -158,7 +163,7 @@ class EngagementPipeline:
                 return
 
             delivered = deliver.check_outcome(
-                deliverer=handle.deliverer, tag_id=request.tag_id,
+                deliverer=handle.deliverer, tag_id=request.tag_id, platform=msg.platform,
                 llm_state=self._llm_state, metrics=self._metrics,
             )
             if not delivered:
@@ -171,9 +176,12 @@ class EngagementPipeline:
                 ))
         except BaseException:
             log.exception("tag pipeline failed (tag=%s); staying silent", request.tag_id)
-            self._metrics.inc("nora_silent_failures_total", reason="handler_error")
+            self._metrics.inc(
+                "nora_silent_failures_total", reason="handler_error", platform=msg.platform,
+            )
         finally:
             self._in_flight.discard(key)     # R-10: released on EVERY exit path
             total = time.perf_counter() - started
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
+            clear_tag_id()

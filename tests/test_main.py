@@ -125,11 +125,10 @@ async def test_the_database_is_migrated_at_startup(env):
 
 
 async def test_shutdown_closes_the_omniroute_client(env):
-    from nora.agent import factory
-
     app = await build_app(env)
+    client = app.deps.client
     await app.shutdown()
-    assert factory._CLIENT is None
+    assert client.is_closed()
 
 
 async def test_the_prune_sweep_actually_prunes(tmp_path, monkeypatch):

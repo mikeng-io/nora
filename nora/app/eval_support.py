@@ -21,6 +21,7 @@ from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
+from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona, PersonaStore
 from nora.persons import Persons, load_persons
 from nora.tag import is_tagged
@@ -32,6 +33,7 @@ __all__ = [
     "Config",
     "ConfigError",
     "LeakGuard",
+    "Metrics",
     "Persona",
     "PersonaStore",
     "Persons",

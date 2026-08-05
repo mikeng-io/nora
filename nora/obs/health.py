@@ -96,6 +96,12 @@ def build_health_app(
         return web.json_response(body, status=200 if healthy else 503)
 
     async def metrics_endpoint(request: web.Request) -> web.Response:
+        # Deliberately not prometheus-client's own CONTENT_TYPE_LATEST: in this
+        # version it advertises "version=1.0.0" even though generate_latest()
+        # still renders the classic 0.0.4-style text format actually produced
+        # below — using it here would be an accidental behaviour change this
+        # task never asked for. This header is unchanged from before the
+        # prometheus-client swap.
         text = request.app["metrics"].render()
         return web.Response(text=text, headers={"Content-Type": "text/plain; version=0.0.4"})
 

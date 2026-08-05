@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from nora.obs.metrics import Metrics
 from nora.persona.loader import PersonaStore, parse_section
 
 PERSONA_DIR = Path(__file__).resolve().parents[1] / "nora" / "persona"
@@ -23,12 +24,12 @@ def test_each_file_has_the_expected_name_and_order(stem, order):
 
 
 def test_the_shipped_persona_assembles_in_strict_mode():
-    persona = PersonaStore(PERSONA_DIR, canary="C", strict=True).get()
+    persona = PersonaStore(PERSONA_DIR, canary="C", strict=True, metrics=Metrics()).get()
     assert [s.name for s in persona.sections] == ["soul", "voice", "conduct", "guardrails"]
 
 
 def test_guardrails_is_last_for_recency():
-    persona = PersonaStore(PERSONA_DIR, canary="C").get()
+    persona = PersonaStore(PERSONA_DIR, canary="C", metrics=Metrics()).get()
     assert persona.sections[-1].name == "guardrails"
 
 

@@ -63,7 +63,7 @@ async def test_check_outcome_counts_no_send_call_when_the_model_never_attempted(
     )
 
     delivered = deliver.check_outcome(
-        deliverer=handle.deliverer, tag_id="tag-1", metrics=metrics,
+        deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
     )
 
     assert delivered is False
@@ -83,7 +83,7 @@ async def test_check_outcome_does_not_double_count_when_the_model_attempted_but_
     await handle.deliverer.deliver("hello")
 
     delivered = deliver.check_outcome(
-        deliverer=handle.deliverer, tag_id="tag-1", metrics=metrics,
+        deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
     )
 
     assert delivered is False
@@ -103,7 +103,8 @@ async def test_check_outcome_returns_true_and_sets_llm_state_on_a_delivered_repl
     before = time.time()
 
     delivered = deliver.check_outcome(
-        deliverer=handle.deliverer, tag_id="tag-1", llm_state=llm_state, metrics=metrics,
+        deliverer=handle.deliverer, tag_id="tag-1", platform="signal", llm_state=llm_state,
+        metrics=metrics,
     )
 
     assert delivered is True
@@ -120,7 +121,9 @@ async def test_check_outcome_tolerates_no_llm_state():
     )
     await handle.deliverer.deliver("hello")
 
-    result = deliver.check_outcome(deliverer=handle.deliverer, tag_id="tag-1", metrics=metrics)
+    result = deliver.check_outcome(
+        deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
+    )
     assert result is True
 
 

@@ -28,7 +28,7 @@ def persona(tmp_path):
     d = tmp_path / "persona"
     d.mkdir()
     write(d, "guardrails.md", name="guardrails", order=40, body=GUARDRAIL_BODY)
-    return PersonaStore(d, canary="CANARY-1", display_name="Nora").get()
+    return PersonaStore(d, canary="CANARY-1", display_name="Nora", metrics=Metrics()).get()
 
 
 def _deliverer(store, persona, sink, metrics=None) -> Deliverer:

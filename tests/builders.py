@@ -85,7 +85,9 @@ def make_logging_config(**kw: Any) -> LoggingConfig:
 
 
 def make_tracing_config(**kw: Any) -> TracingConfig:
-    return TracingConfig(**{"enabled": False, "exporter": "file", "endpoint": "", **kw})
+    return TracingConfig(**{
+        "enabled": False, "exporter": "file", "endpoint": "", "headers_env": "", **kw,
+    })
 
 
 def load_example_config(tmp_path: Path) -> Config:

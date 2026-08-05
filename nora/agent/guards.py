@@ -14,7 +14,7 @@ from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider,
 
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..domain.ports import SendResult
-from ..obs.metrics import METRICS
+from ..obs.metrics import Metrics
 from ..persona.loader import Persona
 
 log = logging.getLogger("nora.guards")
@@ -72,7 +72,7 @@ class Deliverer:
         canary: str,
         tag_id: str,
         nora_sender_id: str,
-        metrics=METRICS,
+        metrics: Metrics,
     ) -> None:
         self._store = store
         self._adapter = adapter
@@ -106,14 +106,18 @@ class Deliverer:
 
         if not text or not text.strip():                       # R-4
             log.warning("delivery refused: empty reply (tag=%s)", self._tag_id)
-            self._metrics.inc("nora_silent_failures_total", reason="empty_reply")
+            self._metrics.inc(
+                "nora_silent_failures_total", reason="empty_reply", platform=self._target.platform,
+            )
             return False
 
         reason = self._leak.check(text)                        # R-6
         if reason:
             log.error("persona_leak_blocked: %s (tag=%s)", reason, self._tag_id)
             self._metrics.inc("nora_leak_blocks_total")
-            self._metrics.inc("nora_silent_failures_total", reason="persona_leak")
+            self._metrics.inc(
+                "nora_silent_failures_total", reason="persona_leak", platform=self._target.platform,
+            )
             return False
 
         self._attempted = True
@@ -134,7 +138,10 @@ class Deliverer:
             )
         except Exception:
             log.exception("audit_write_failed (tag=%s); staying silent", self._tag_id)
-            self._metrics.inc("nora_silent_failures_total", reason="audit_write_failed")
+            self._metrics.inc(
+                "nora_silent_failures_total", reason="audit_write_failed",
+                platform=self._target.platform,
+            )
             return False
 
         try:
@@ -154,10 +161,12 @@ class Deliverer:
         if result.ok:
             self._delivered = True
             self._last_text = text
-            self._metrics.inc("nora_replies_total", status="sent")
+            self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)
         else:
-            self._metrics.inc("nora_replies_total", status="failed")
-            self._metrics.inc("nora_silent_failures_total", reason="send_failed")
+            self._metrics.inc("nora_replies_total", status="failed", platform=self._target.platform)
+            self._metrics.inc(
+                "nora_silent_failures_total", reason="send_failed", platform=self._target.platform,
+            )
         return result.ok
 
 
@@ -188,7 +197,7 @@ class ReplyGuard(HookProvider):
 
     def __init__(
         self, *, conversation_id: str, budgets: Mapping[str, int], deliverer=None,
-        metrics=METRICS,
+        metrics: Metrics,
     ) -> None:
         self._conversation_id = conversation_id
         self._budgets = dict(budgets)

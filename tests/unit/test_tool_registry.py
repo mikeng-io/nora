@@ -3,23 +3,15 @@ one place that builds them for a tag, adapted to Strands tool objects."""
 
 from __future__ import annotations
 
-import pytest
-
 from nora.agent import factory
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import ConversationTarget
+from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona
 from tests.fakes import FakeHoncho, SinkSender
 
 TARGET = ConversationTarget("signal", "g1", "group")
-
-
-@pytest.fixture(autouse=True)
-async def _reset_client():
-    await factory.close_client()
-    yield
-    await factory.close_client()
 
 
 def _persona() -> Persona:
@@ -42,7 +34,7 @@ class _FakePersons:
 def _deliverer() -> Deliverer:
     return Deliverer(
         store=_FakeStore(), adapter=SinkSender(), target=TARGET, persona=_persona(),
-        canary="C", tag_id="t1", nora_sender_id="nora",
+        canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics(),
     )
 
 
@@ -88,7 +80,8 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     tools = _built_tools(ToolRegistry())
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
-        guard=ReplyGuard(conversation_id="g1", budgets=ToolRegistry().budgets()),
+        guard=ReplyGuard(conversation_id="g1", budgets=ToolRegistry().budgets(),
+                        metrics=Metrics()),
         trace_attributes={},
     )
     assert len(agent.tool_names) == 3

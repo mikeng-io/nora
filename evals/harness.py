@@ -33,7 +33,7 @@ from pathlib import Path
 
 import yaml
 
-from nora.app.eval_support import PersonaStore, load_eval_config, load_persons
+from nora.app.eval_support import Metrics, PersonaStore, load_eval_config, load_persons
 from nora.app.offline import build_offline_pipeline
 from nora.testing import (
     FakeAdapter,
@@ -142,10 +142,11 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
     tool_calls = [name for turn in turns for name, _ in turn.tool_calls]
 
     cfg = load_eval_config((REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml"))
+    metrics = Metrics()
     persona_store = PersonaStore(
         PERSONA_DIR, strict=cfg.persona.strict, reload=cfg.persona.reload,
         canary=cfg.persona.canary, display_name=cfg.persona.display_name,
-        trigger=cfg.engagement.trigger.text,
+        trigger=cfg.engagement.trigger.text, metrics=metrics,
     )
 
     with tempfile.TemporaryDirectory(prefix="nora-eval-") as tmp:
@@ -160,7 +161,7 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
         try:
             dispatcher, _engagement, background = build_offline_pipeline(
                 cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
-                persona_store=persona_store, runner=runner,
+                persona_store=persona_store, runner=runner, metrics=metrics,
             )
             body = _build_body(case)
             # Mirrors tests/integration/harness.py::_HandlerView.on_event: parse the

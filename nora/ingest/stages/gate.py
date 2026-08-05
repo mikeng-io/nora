@@ -23,5 +23,5 @@ async def run(*, message: NormalizedMessage, policy: EngagePolicy, metrics: Any)
         return await policy.should_engage(message=message)
     except Exception:
         log.exception("engage policy failed; declining to engage")
-        metrics.inc("nora_errors_total", stage="engage_gate")
+        metrics.inc("nora_errors_total", stage="engage_gate", platform=message.platform)
         return EngageDecision(engage=False, reason="policy_error")

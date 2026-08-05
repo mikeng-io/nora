@@ -22,6 +22,8 @@ from collections.abc import Coroutine
 from dataclasses import dataclass
 from typing import Any
 
+from openai import AsyncOpenAI
+
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.config import Config
@@ -39,7 +41,7 @@ from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.health import LLMState
-from nora.obs.metrics import METRICS, Metrics
+from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona, PersonaError, PersonaStore
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
@@ -82,6 +84,13 @@ class Dependencies:
     port. `persons`, `metrics`, `persona`, `persona_store`, `debounce`,
     `background`, `llm_state`, `ingest`, `engagement`, `dispatcher` stay
     concrete too: none has a port at all.
+
+    `client` (DEC-13): the process-wide `AsyncOpenAI` instance, constructed
+    exactly once by `build_dependencies` below. It used to be a module-level
+    singleton in `nora.agent.factory` (`_CLIENT`, memoized and reset by a
+    test-only `close_client()`); it is now an ordinary collaborator like
+    everything else here, and `nora.__main__.App.shutdown` closes it
+    directly instead of calling back into `nora.agent.factory`.
     """
 
     audit: AuditStore
@@ -100,6 +109,7 @@ class Dependencies:
     debounce: Debounce
     background: BackgroundTasks
     llm_state: LLMState
+    client: AsyncOpenAI
 
 
 async def build_dependencies(cfg: Config) -> Dependencies:
@@ -118,7 +128,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         run_migrations(cfg.store.db_path)
     except Exception as exc:
         raise StartupError(f"migration error: {exc}") from exc
-    metrics = METRICS
+    metrics = Metrics()
     audit = SqlAuditStore(
         create_sql_engine(cfg.store.db_path),
         max_per_conversation=cfg.store.max_per_conversation,
@@ -151,7 +161,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     persona_store = PersonaStore(
         cfg.persona.dir, strict=cfg.persona.strict, reload=cfg.persona.reload,
         canary=cfg.persona.canary, display_name=cfg.persona.display_name,
-        trigger=cfg.engagement.trigger.text,
+        trigger=cfg.engagement.trigger.text, metrics=metrics,
     )
     try:
         persona = persona_store.get(applies_to="tag")
@@ -212,5 +222,5 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         dispatcher=dispatcher, adapter=adapter, account=account, persona=persona,
         persona_store=persona_store, debounce=debounce, background=background,
-        llm_state=llm_state,
+        llm_state=llm_state, client=client,
     )

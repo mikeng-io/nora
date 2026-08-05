@@ -64,5 +64,5 @@ async def run(
         return False
 
     in_flight.add(key)
-    metrics.inc("nora_tags_total")
+    metrics.inc("nora_tags_total", platform=message.platform)
     return True

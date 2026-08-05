@@ -45,6 +45,7 @@ from evals.harness import Case, load_cases, run_case
 from evals.judge import _build_judge_prompt, evaluate_raw
 from nora.app.eval_support import (
     LeakGuard,
+    Metrics,
     PersonaStore,
     create_client,
     create_model_provider,
@@ -185,7 +186,7 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
         persona = PersonaStore(
             cfg.persona.dir, strict=cfg.persona.strict, reload=cfg.persona.reload,
             canary=cfg.persona.canary, display_name=cfg.persona.display_name,
-            trigger=cfg.engagement.trigger.text,
+            trigger=cfg.engagement.trigger.text, metrics=Metrics(),
         ).get(applies_to="tag")
         leak_guard = LeakGuard(persona, cfg.persona.canary)
         section_names = tuple(s.name for s in persona.sections)

@@ -31,7 +31,7 @@ async def client(aiohttp_client, store):
     app = build_health_app(
         adapter=SinkSender(), store=store, honcho=FakeHoncho(),
         persona_store=PersonaStore(
-            __import__("pathlib").Path("nora/persona"), canary="C"),
+            __import__("pathlib").Path("nora/persona"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
     )
     c = await aiohttp_client(app)
@@ -63,9 +63,11 @@ async def test_health_returns_503_when_sqlite_is_unreachable(aiohttp_client):
 
     from nora.persona.loader import PersonaStore
 
+    metrics = Metrics()
     app = build_health_app(adapter=SinkSender(), store=_BrokenStore(),
-                           honcho=FakeHoncho(), metrics=Metrics(),
-                           persona_store=PersonaStore(Path("nora/persona"), canary="C"),
+                           honcho=FakeHoncho(), metrics=metrics,
+                           persona_store=PersonaStore(Path("nora/persona"), canary="C",
+                                                       metrics=metrics),
                            started_at=0.0, llm_state=LLMState())
     c = await aiohttp_client(app)
     assert (await c.get("/health")).status == 503
@@ -93,9 +95,11 @@ async def test_health_reports_the_last_omniroute_success(aiohttp_client, store):
 
     state = LLMState()
     state.last_success_at = 1700.0
+    metrics = Metrics()
     app = build_health_app(adapter=SinkSender(), store=store,
-                           honcho=FakeHoncho(), metrics=Metrics(),
-                           persona_store=PersonaStore(Path("nora/persona"), canary="C"),
+                           honcho=FakeHoncho(), metrics=metrics,
+                           persona_store=PersonaStore(Path("nora/persona"), canary="C",
+                                                       metrics=metrics),
                            started_at=0.0, llm_state=state)
     c = await aiohttp_client(app)
     body = await (await c.get("/health")).json()
@@ -110,8 +114,9 @@ async def test_metrics_endpoint_serves_prometheus_text(client):
 
 
 async def test_metrics_endpoint_reflects_recorded_counters(client):
-    client.metrics.inc("nora_tags_total")
-    assert "nora_tags_total 1" in await (await client.get("/metrics")).text()
+    client.metrics.inc("nora_tags_total", platform="signal")
+    text = await (await client.get("/metrics")).text()
+    assert 'nora_tags_total{platform="signal"} 1.0' in text
 
 
 async def test_health_never_raises_on_a_broken_dependency(client, store, monkeypatch):
