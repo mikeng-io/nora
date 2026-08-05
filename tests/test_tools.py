@@ -2,7 +2,7 @@ import pytest
 
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
-from nora.agent.tools import build_tools
+from nora.agent.tools import READ_BUFFER_DEFAULT, READ_BUFFER_MAX, build_tools
 from nora.domain.models import ConversationTarget, NormalizedMessage, Quote
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
@@ -208,6 +208,53 @@ async def test_read_buffer_clamps_a_hostile_limit_before_it_reaches_the_store(wi
         rows = await _call(wiring["tools"]["read_buffer"], limit=hostile)
         assert len(rows) <= 1
     assert seen == [1, 1]
+
+
+async def test_read_buffer_clamps_the_top_end_to_the_declared_ceiling(wiring, monkeypatch):
+    """The other end of the same clamp, and the expensive one (R-24).
+
+    `limit` is MODEL-supplied and nothing downstream bounds it — `store.recent`
+    serves whatever it is handed. Measured 2026-08-06, `read_buffer(200)` cost
+    6,592 tokens per call and stayed in context for every later call of the
+    loop; at `budget: 2` that was 13,184 tokens, more than half the
+    `total_tokens = 24000` in force at the time. This asserts what actually
+    reaches the store, not what the tool returns, so it fails even on a
+    conversation too short to notice the difference.
+    """
+    seen: list[int] = []
+    real_recent = wiring["store"].recent
+
+    async def spy(*, conversation_id, limit):
+        seen.append(limit)
+        return await real_recent(conversation_id=conversation_id, limit=limit)
+
+    monkeypatch.setattr(wiring["store"], "recent", spy)
+    for greedy in (READ_BUFFER_MAX + 1, 200, 10_000):
+        await _call(wiring["tools"]["read_buffer"], limit=greedy)
+    assert seen == [READ_BUFFER_MAX, READ_BUFFER_MAX, READ_BUFFER_MAX]
+    # Spelled out, not just compared to the constant: an assertion written only
+    # against `READ_BUFFER_MAX` asserts the implementation back to itself and
+    # would stay green if the ceiling went back to 200.
+    assert seen == [60, 60, 60]
+
+
+async def test_read_buffer_defaults_to_less_than_the_ceiling(wiring, monkeypatch):
+    """A model that does not name a `limit` is asking for a little more than
+    the prefill already gave it, not for the whole room — so the default is
+    not the maximum. Strands fills an omitted argument from the signature's
+    own default, so this is what an unqualified call really costs."""
+    seen: list[int] = []
+    real_recent = wiring["store"].recent
+
+    async def spy(*, conversation_id, limit):
+        seen.append(limit)
+        return await real_recent(conversation_id=conversation_id, limit=limit)
+
+    monkeypatch.setattr(wiring["store"], "recent", spy)
+    await _call(wiring["tools"]["read_buffer"])
+    assert seen == [READ_BUFFER_DEFAULT]
+    assert seen == [25]                       # the literal, for the same reason as above
+    assert READ_BUFFER_DEFAULT < READ_BUFFER_MAX
 
 
 async def test_read_peer_card_resolves_the_sender_to_a_person(wiring):

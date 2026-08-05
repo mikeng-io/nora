@@ -45,7 +45,7 @@ from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona
 from nora.persons import Persons
 from nora.tag import Debounce
-from nora.testing import FakeAuditStore, FakeRosterSource
+from nora.testing import FakeAuditStore, FakeRosterSource, limit_stop_reason
 from nora.testing.scripted_agent import _invoke_tool
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
@@ -142,6 +142,11 @@ class ScriptedTurn:
     tool_calls: list[tuple[str, dict]] = dataclasses.field(default_factory=list)
     final_text: str = ""
     bypass_guard: bool = False
+    # What this cycle COSTS, so a scripted turn can reach R-8's caps the way a
+    # real one does — same two fields, same meaning, as
+    # `nora.testing.ScriptedTurn`.
+    total_tokens: int = 0
+    output_tokens: int = 0
 
 
 class ScriptedRunner:
@@ -160,7 +165,7 @@ class ScriptedRunner:
         self.invocations = 0
         self.calls: list[dict] = []
 
-    async def invoke(self, **kwargs) -> None:
+    async def invoke(self, **kwargs) -> str | None:
         self.invocations += 1
         self.calls.append(kwargs)
         if self.delay:
@@ -169,6 +174,8 @@ class ScriptedRunner:
             raise self.raises
         tools_by_name = {t.tool_name: t for t in kwargs["tools"]}
         guard = kwargs["guard"]
+        limits = kwargs.get("limits")
+        cycles = total_tokens = output_tokens = 0
         for turn in self.turns:
             for name, args in turn.tool_calls:
                 if not turn.bypass_guard:
@@ -177,6 +184,23 @@ class ScriptedRunner:
                         continue
                 await _invoke_tool(tools_by_name[name], **args)
                 guard.record(name)
+            # Same budget accounting as `nora.testing.FakeAgentRunner` — and
+            # via the same shared function, so the two scripted doubles in this
+            # repo cannot disagree about when a turn runs out of budget. See
+            # `limit_stop_reason` for why it is a transcription of Strands'
+            # `_check_limits` rather than a flag this double is handed.
+            cycles += 1
+            total_tokens += turn.total_tokens
+            output_tokens += turn.output_tokens
+            if not turn.tool_calls:
+                return "end_turn"
+            stop = limit_stop_reason(
+                cycles=cycles, total_tokens=total_tokens,
+                output_tokens=output_tokens, limits=limits,
+            )
+            if stop is not None:
+                return stop
+        return "end_turn"
 
 
 

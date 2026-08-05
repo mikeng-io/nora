@@ -77,7 +77,9 @@ def build_offline_pipeline(
 
     tier = cfg.llm
     limits = factory.build_limits(
-        max_tokens=tier.max_tokens, turns=tier.limits.turns, total_tokens=tier.limits.total_tokens,
+        output_tokens=tier.limits.output_tokens,
+        turns=tier.limits.turns,
+        total_tokens=tier.limits.total_tokens,
     )
     tool_registry = ToolRegistry()
     engagement = EngagementPipeline(

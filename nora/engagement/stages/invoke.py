@@ -25,10 +25,15 @@ immediately before `factory.create_agent` (`nora/handler.py:133`) — and
 handed to the runner rather than left for it to recompute.
 
 
-Returns `(ok, elapsed)` rather than just `ok`: `elapsed` is the single
-measurement both recorded as `nora_llm_latency_seconds` here AND reused by
-`nora.engagement.pipeline` for the `nora_overhead_seconds` computation —
-one clock read, not two independent ones that could drift apart.
+Returns `(ok, elapsed, stop_reason)` rather than just `ok`: `elapsed` is the
+single measurement both recorded as `nora_llm_latency_seconds` here AND reused
+by `nora.engagement.pipeline` for the `nora_overhead_seconds` computation —
+one clock read, not two independent ones that could drift apart —
+and `stop_reason` is how the agent LOOP ended (R-23), which no amount of
+`ok` can express: a turn that Strands cut off on `limit_total_tokens` returns
+normally with `ok=True` and no reply, which is exactly what a model declining
+to call `send_reply` also looks like from here. The distinction is made at
+`nora.engagement.stages.deliver.check_outcome`, which needs this value.
 """
 
 from __future__ import annotations
@@ -58,7 +63,7 @@ class AgentRunner(Protocol):
         limits: dict,
         ctx: TagContext,
         trace_attributes: dict,
-    ) -> None: ...
+    ) -> str | None: ...
 
 
 async def run(
@@ -73,14 +78,25 @@ async def run(
     ctx: TagContext,
     timeout_seconds: float,
     metrics: Any,
-) -> tuple[bool, float]:
-    """Return `(ok, elapsed)`. `ok` is False on a timeout or any other
-    exception, in which case the model was never allowed to reply — the
-    caller must not proceed to delivery."""
+) -> tuple[bool, float, str | None]:
+    """Return `(ok, elapsed, stop_reason)`. `ok` is False on a timeout or any
+    other exception, in which case the model was never allowed to reply — the
+    caller must not proceed to delivery.
+
+    `stop_reason` is how the agent LOOP ended and is `None` exactly when the
+    invocation did not complete (both `except` branches below), because there
+    is no loop outcome to report when the loop was abandoned — those two cases
+    already name their own cause. When it is not None it is counted here as
+    `nora_llm_stop_reason_total{reason}` and handed back for
+    `nora.engagement.stages.deliver.check_outcome` to label a silent turn
+    with (R-23): `limit_total_tokens` and `no_send_call` are different
+    failures and used to be the same metric.
+    """
     started = time.perf_counter()
     ok = True
+    stop_reason: str | None = None
     try:
-        await asyncio.wait_for(
+        stop_reason = await asyncio.wait_for(
             runner.invoke(
                 persona=persona, tools=tools, pre_fill=pre_fill, guard=guard,
                 tag_message=tag_message, limits=limits, ctx=ctx,
@@ -104,4 +120,10 @@ async def run(
     finally:
         elapsed = time.perf_counter() - started
         metrics.observe("nora_llm_latency_seconds", elapsed)
-    return ok, elapsed
+    if stop_reason is not None:
+        # Every completed invocation, not just the ones that ran out of
+        # budget: a series that only ever carries `limit_*` cannot say what
+        # fraction of turns are being cut off, and `end_turn` being the
+        # overwhelming majority is the thing that makes a `limit_*` legible.
+        metrics.inc("nora_llm_stop_reason_total", reason=stop_reason)
+    return ok, elapsed, stop_reason

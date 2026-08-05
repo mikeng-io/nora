@@ -36,7 +36,12 @@ from nora.testing.fakes import (
     FakeMemoryStore,
     FakeRosterSource,
 )
-from nora.testing.scripted_agent import FakeAgentRunner, ScriptedTurn, group_event
+from nora.testing.scripted_agent import (
+    FakeAgentRunner,
+    ScriptedTurn,
+    group_event,
+    limit_stop_reason,
+)
 
 __all__ = [
     "FakeAdapter",
@@ -46,4 +51,5 @@ __all__ = [
     "FakeRosterSource",
     "ScriptedTurn",
     "group_event",
+    "limit_stop_reason",
 ]

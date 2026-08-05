@@ -215,7 +215,7 @@ class EngagementPipeline:
                 ctx, tagger_name=tagger_name, display_name=self._display_name,
             )
 
-            ok, llm_elapsed = await invoke.run(
+            ok, llm_elapsed, stop_reason = await invoke.run(
                 runner=self._runner, persona=persona, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tag_message=tag_message, limits=self._limits, ctx=ctx,
                 timeout_seconds=self._timeout_seconds, metrics=self._metrics,
@@ -223,9 +223,13 @@ class EngagementPipeline:
             if not ok:
                 return
 
+            # `stop_reason` is threaded rather than dropped (R-23): without it
+            # a turn Strands cut off at one of R-8's caps is indistinguishable
+            # here from a model that chose not to speak, and both would count
+            # as `no_send_call`.
             delivered = deliver.check_outcome(
                 deliverer=handle.deliverer, tag_id=request.tag_id, platform=msg.platform,
-                llm_state=self._llm_state, metrics=self._metrics,
+                stop_reason=stop_reason, llm_state=self._llm_state, metrics=self._metrics,
             )
             if not delivered:
                 return                       # `finally` still resolves the indicator

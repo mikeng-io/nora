@@ -12,8 +12,10 @@ has had its turn).
 
 `check_outcome` owns the post-invocation "did anything actually go out" check
 carried over from `handler.py:205-212`: a model that never calls `send_reply`
-is counted as `nora_silent_failures_total{reason="no_send_call"}`; a
-delivered reply marks `llm_state.last_success_at`.
+is counted as `nora_silent_failures_total{reason="no_send_call"}` — unless the
+agent loop was cut off by one of R-8's caps, in which case the label names
+that cap instead (R-23, see the function's own docstring); a delivered reply
+marks `llm_state.last_success_at`.
 """
 
 from __future__ import annotations
@@ -64,25 +66,50 @@ def build(
     return DeliveryHandle(deliverer=deliverer, guard=guard)
 
 
+# The three `stop_reason` values that mean R-8's caps ended the turn, rather
+# than the model doing so. Taken from `strands.types.event_loop.StopReason`,
+# copied rather than imported because `nora.engagement` may not import
+# `strands` (`tests/test_boundaries.py::test_strands_import_boundary`).
+BUDGET_STOP_REASONS = frozenset({
+    "limit_turns", "limit_total_tokens", "limit_output_tokens",
+})
+
+
 def check_outcome(
     *,
     deliverer: Deliverer,
     tag_id: str,
     platform: str,
     metrics: Any,
+    stop_reason: str | None,
     llm_state: Any = None,
 ) -> bool:
     """Return True iff a reply was actually delivered.
 
-    A False return with `deliverer.attempted` also False means the model
-    never called `send_reply` at all — counted separately from every other
-    silent-failure reason `Deliverer.deliver` itself already counts (empty
-    reply, leak, audit failure, send failure), which all imply `attempted`.
+    A False return with `deliverer.attempted` also False means nothing was
+    ever sent — counted separately from every other silent-failure reason
+    `Deliverer.deliver` itself already counts (empty reply, leak, audit
+    failure, send failure), which all imply `attempted`.
+
+    **`stop_reason` is what decides WHICH reason that is, and it is a required
+    argument on purpose** (R-23). It used to be unconditionally
+    `no_send_call`, and there are two very different turns behind that label:
+    a model that had every chance and chose not to speak, and a loop that
+    Strands terminated on one of R-8's caps — which it does by returning
+    normally, with no exception, no log and no warning anywhere in the SDK.
+    Both produced `nora_silent_failures_total{reason="no_send_call"}` and a
+    ⚠️, byte for byte, so the most likely cause of a silent turn looked
+    exactly like the most benign one. DEC-25 already established the
+    principle on the retry path: a `reason` label naming the wrong cause is
+    worse than a missing one, because it aims the next investigation at the
+    wrong thing. No default value, so a new call site cannot quietly go back
+    to always saying `no_send_call`.
     """
     if not deliverer.delivered:
         if not deliverer.attempted:
-            log.warning("no_send_call (tag=%s); dropping the model's text", tag_id)
-            metrics.inc("nora_silent_failures_total", reason="no_send_call", platform=platform)
+            reason = stop_reason if stop_reason in BUDGET_STOP_REASONS else "no_send_call"
+            log.warning("%s (tag=%s); dropping the model's text", reason, tag_id)
+            metrics.inc("nora_silent_failures_total", reason=reason, platform=platform)
         return False
     if llm_state is not None:   # a delivered reply implies a successful invocation
         llm_state.last_success_at = time.time()

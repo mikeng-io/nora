@@ -68,10 +68,25 @@ class MemoryConfig(BaseModel):
 
 
 class LimitsConfig(BaseModel):
+    """R-8's three caps, all of which bound the WHOLE agent loop for one tag.
+
+    `output_tokens` is separate from `LLMConfig.max_tokens` on purpose and is
+    the reason this class has three fields instead of two: `max_tokens` is the
+    provider's per-CALL ceiling, this is the loop's budget across every call
+    the turn makes. They used to be the same number — see
+    `nora.agent.factory.build_limits` for the measurement that separated them.
+
+    None of the three is optional. A missing `output_tokens` would silently
+    mean "unbounded" to Strands (`_check_limits` skips a cap it cannot find),
+    and an unbounded budget nobody chose is exactly the state this field
+    exists to end.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     turns: int
     total_tokens: int
+    output_tokens: int
 
 
 class LLMConfig(BaseModel):
@@ -118,13 +133,23 @@ class LLMConfig(BaseModel):
     # something by tool_choice="required" and given no budget to deliberate,
     # it reaches reflexively.
     #
-    # So: "low", per DeepSeek's own guidance, with max_tokens raised to 4000.
+    # So: "low", per DeepSeek's own guidance, with max_tokens raised off 400.
     # The budget matters because thinking shares it — deepseek-ai/DeepSeek-V3
     # #1376 (2026-08-03): "at max_tokens=512 the thinking block eats the
     # budget". At 400 a reasoning turn could run out mid-thought and emit no
-    # tool call at all, which is a mute Nora. 4000 leaves room for the block
-    # and the call both. Replies stay short because the persona says so, not
-    # because the ceiling forces it.
+    # tool call at all, which is a mute Nora.
+    #
+    # It was 4000 from 2026-08-03 to 2026-08-06; it is now 2000. 4000 was
+    # never a measured number, and while it was ALSO the loop's whole output
+    # budget (`build_limits` passed it straight through as `output_tokens`)
+    # one call could and did spend the entire turn: 3,993 / 3,987 / 3,974
+    # completion tokens on three consecutive calls. Measured on the same
+    # deployment, the largest LEGITIMATE completion — reasoning block plus the
+    # tool call, not a runaway — was 371 tokens, so 2000 is 5.4x headroom for
+    # the thing that actually happens and no longer doubles as the loop's
+    # budget (`[llm.limits] output_tokens` is that, and is 6x this).
+    # Replies stay short because the persona says so, not because the ceiling
+    # forces it.
     reasoning_effort: str = "low"
     limits: LimitsConfig
 

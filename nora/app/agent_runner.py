@@ -50,7 +50,19 @@ class LiveAgentRunner:
         limits: dict[str, Any],
         ctx: TagContext,
         trace_attributes: dict[str, Any],
-    ) -> None:
+    ) -> str | None:
+        """Run the turn and return Strands' `stop_reason` (R-23).
+
+        This method used to `await factory.invoke(...)` and DISCARD the
+        `AgentResult` it returned, so `stop_reason` — the SDK's only signal
+        that a turn was cut off by one of R-8's caps rather than finished —
+        never left this line. Nothing in `nora/` read it, the loop stopping on
+        `limit_total_tokens` raised nothing and logged nothing, and the turn
+        was reported as `no_send_call`: identical to the model choosing not to
+        speak. The value is returned as a plain `str | None` rather than the
+        SDK's `StopReason` literal for the same reason `model` above is `Any`
+        — this module does not import `strands`.
+        """
         agent = factory.create_agent(
             model=self._model,
             system_prompt=persona.text,
@@ -60,4 +72,10 @@ class LiveAgentRunner:
             trace_attributes=trace_attributes,
             retry=self._retry,
         )
-        await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)
+        result = await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)
+        # `isinstance`, not a cast: `factory.invoke` is typed `Any` to keep
+        # `strands` out of this module, and an unchecked `Any` returned from a
+        # `str | None` signature is precisely what mypy's `warn_return_any`
+        # exists to stop. A shape that is not a string is not a stop reason.
+        stop_reason = getattr(result, "stop_reason", None)
+        return stop_reason if isinstance(stop_reason, str) else None

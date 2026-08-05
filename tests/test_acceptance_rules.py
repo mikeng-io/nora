@@ -33,6 +33,8 @@ RULE_TESTS = {
     "R-20": "test_a_forged_quote_cannot_put_words_in_someone_elses_mouth",
     "R-21": "test_not_being_here_is_indistinguishable_from_not_existing",
     "R-22": "test_nothing_known_is_distinguishable_from_could_not_ask",
+    "R-23": "test_a_budget_stop_is_distinguishable_from_a_silent_model",
+    "R-24": "test_no_single_call_can_spend_the_whole_turn_budget",
 }
 
 

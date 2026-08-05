@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from openai import AsyncOpenAI
 from strands import Agent, ModelRetryStrategy
@@ -91,9 +92,31 @@ def create_model_provider(
     )
 
 
-def build_limits(*, max_tokens: int, turns: int, total_tokens: int) -> dict:
-    """R-8: `output_tokens` derives from the active tier; `turns` and
-    `total_tokens` come from the limits object.
+def build_limits(*, output_tokens: int, turns: int, total_tokens: int) -> dict:
+    """R-8: the three caps Strands enforces around the WHOLE agent loop.
+
+    All three are LOOP budgets. `output_tokens` is the one that reads like a
+    per-call ceiling and is not, and until 2026-08-06 it was passed
+    `llm.max_tokens` — the tier's genuine per-CALL ceiling — under a docstring
+    that said "`output_tokens` derives from the active tier", which stated the
+    bug as though it were the intent. The effect was that the whole loop was
+    allowed to emit exactly what a single call was allowed to emit.
+
+    Measured against the live gateway, three consecutive single model calls
+    emitted 3,993 / 3,987 / 3,974 completion tokens against `max_tokens =
+    4000` — 99.8% of the loop's entire output budget spent by the first call.
+    Any turn that needed a second one was cut short by a cap nobody had
+    chosen, and (before the `stop_reason` work below) the cut was reported as
+    the model declining to speak. So the loop budget is now supplied
+    explicitly by the composition root from `[llm.limits] output_tokens`,
+    sized as a MULTIPLE of the per-call ceiling (today 12,000 against
+    `max_tokens = 2000`, 6x) rather than equal to it. `nora.agent.factory` is
+    deliberately not the place that knows the multiple — it takes the number.
+
+    See `nora.engagement.stages.invoke` for what happens when one of these
+    three does bind: Strands returns an `AgentResult` whose `stop_reason` is
+    `limit_turns` / `limit_total_tokens` / `limit_output_tokens`, raises
+    nothing, and logs nothing (R-23).
 
     Scalarised in Task 8 (Phase 3's composition-root cutover): this used to
     take `(tier, limits)` object pairs because the now-deleted
@@ -107,7 +130,7 @@ def build_limits(*, max_tokens: int, turns: int, total_tokens: int) -> dict:
     """
     return {
         "turns": turns,
-        "output_tokens": max_tokens,
+        "output_tokens": output_tokens,
         "total_tokens": total_tokens,
     }
 
@@ -231,7 +254,23 @@ def create_agent(
     )
 
 
-async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limits: dict):
+async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limits: dict) -> Any:
+    """Run one turn and return Strands' `AgentResult` — `stop_reason` included.
+
+    The return value is NOT decoration and must not be dropped again (R-23).
+    When one of `limits`' three caps binds, Strands' `_check_limits` yields an
+    `EventLoopStopEvent` carrying `stop_reason="limit_total_tokens"` (or
+    `limit_turns` / `limit_output_tokens`) and returns normally: no exception,
+    no log line, no warning anywhere in the SDK — verified end to end against
+    1.50.2. `AgentResult.stop_reason` is the ONLY channel that says a turn was
+    cut off rather than finished, so `nora.app.agent_runner.LiveAgentRunner`
+    reads it off this result and hands it up the stage chain.
+
+    Typed `Any` rather than `strands.agent.AgentResult` so that callers in
+    `nora.app` — which mypy checks strictly and which must not import
+    `strands` (`tests/test_boundaries.py::test_strands_import_boundary`) —
+    can narrow the one attribute they want without naming the SDK type.
+    """
     return await agent.invoke_async(
         tag_message,
         invocation_state=invocation_state,

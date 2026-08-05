@@ -238,8 +238,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # `factory.build_retry_policy`).
         retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
     )
+    # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`.
+    # The two were the same value until 2026-08-06, which made the whole
+    # loop's output budget equal to one call's ceiling — see
+    # `factory.build_limits` for the measurement.
     limits = factory.build_limits(
-        max_tokens=tier.max_tokens, turns=tier.limits.turns, total_tokens=tier.limits.total_tokens,
+        output_tokens=tier.limits.output_tokens,
+        turns=tier.limits.turns,
+        total_tokens=tier.limits.total_tokens,
     )
 
     tool_registry = ToolRegistry()

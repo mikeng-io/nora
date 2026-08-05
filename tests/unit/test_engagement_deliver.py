@@ -64,6 +64,7 @@ async def test_check_outcome_counts_no_send_call_when_the_model_never_attempted(
 
     delivered = deliver.check_outcome(
         deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
+        stop_reason="end_turn",
     )
 
     assert delivered is False
@@ -84,6 +85,7 @@ async def test_check_outcome_does_not_double_count_when_the_model_attempted_but_
 
     delivered = deliver.check_outcome(
         deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
+        stop_reason="end_turn",
     )
 
     assert delivered is False
@@ -104,7 +106,7 @@ async def test_check_outcome_returns_true_and_sets_llm_state_on_a_delivered_repl
 
     delivered = deliver.check_outcome(
         deliverer=handle.deliverer, tag_id="tag-1", platform="signal", llm_state=llm_state,
-        metrics=metrics,
+        metrics=metrics, stop_reason="end_turn",
     )
 
     assert delivered is True
@@ -123,8 +125,68 @@ async def test_check_outcome_tolerates_no_llm_state():
 
     result = deliver.check_outcome(
         deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
+        stop_reason="end_turn",
     )
     assert result is True
+
+
+async def test_a_turn_cut_off_by_a_budget_cap_is_not_labelled_no_send_call():
+    """R-23, at `check_outcome`'s own level.
+
+    Every one of R-8's three caps ends the loop by RETURNING — Strands raises
+    nothing and logs nothing — so from here a turn that ran out of budget and
+    a model that chose not to speak are the same two booleans
+    (`delivered=False`, `attempted=False`). Only `stop_reason` separates them,
+    and the whole point is that the `reason` label names the true cause.
+    """
+    for stop_reason in ("limit_total_tokens", "limit_turns", "limit_output_tokens"):
+        metrics = Metrics()
+        handle = deliver.build(
+            store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, persona=_persona(),
+            canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
+            budgets=BUDGETS, metrics=metrics,
+        )
+
+        delivered = deliver.check_outcome(
+            deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
+            stop_reason=stop_reason,
+        )
+
+        assert delivered is False
+        assert metrics.get("nora_silent_failures_total", reason=stop_reason) == 1
+        assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 0
+
+
+async def test_an_ordinary_stop_reason_still_counts_no_send_call():
+    """The other half of R-23: only the BUDGET reasons are relabelled. A model
+    that finished its turn (`end_turn`) or was cut off by the provider's own
+    per-call ceiling (`max_tokens`) and still never called `send_reply` chose
+    not to speak, and must keep saying so — a relabelling that swallowed
+    `no_send_call` entirely would trade one blind spot for another."""
+    for stop_reason in ("end_turn", "tool_use", "max_tokens", None):
+        metrics = Metrics()
+        handle = deliver.build(
+            store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, persona=_persona(),
+            canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
+            budgets=BUDGETS, metrics=metrics,
+        )
+
+        deliver.check_outcome(
+            deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
+            stop_reason=stop_reason,
+        )
+
+        assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1, stop_reason
+
+
+def test_check_outcome_cannot_be_called_without_a_stop_reason():
+    """`stop_reason` has no default, so a future call site cannot quietly go
+    back to labelling every silent turn `no_send_call` — which is the shape of
+    the bug R-23 fixes, and exactly what a defaulted parameter would allow."""
+    import inspect
+
+    param = inspect.signature(deliver.check_outcome).parameters["stop_reason"]
+    assert param.default is inspect.Parameter.empty
 
 
 async def test_a_delivered_reply_is_recorded_in_the_audit_store():

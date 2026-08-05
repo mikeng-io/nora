@@ -91,6 +91,30 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
     "recall": 2,
 }
 
+# `read_buffer`'s clamp, and the single source both the clamp and the
+# model-facing docstring below read from — `tests/test_tools.py::
+# test_the_model_is_told_the_same_ceiling_the_clamp_enforces` fails if they
+# drift, which matters because the docstring IS the schema the model sees.
+#
+# THE MODEL CHOOSES `limit`. Nothing else does — it is the one number in this
+# module a model invents on every call, and the clamp is the only thing
+# standing between that invented number and a third of the turn's budget.
+# Round-trip cost of ONE tool result, measured 2026-08-06, and paid again on
+# EVERY subsequent call in the loop because the result stays in context:
+#
+#   read_buffer(200) -> 6,592 tokens        recall        ->   151
+#   read_buffer(40)  -> 1,368 tokens        lookup_person ->   112
+#
+# `read_buffer` has `budget: 2` (R-7/DEC-10), so at the old ceiling of 200 two
+# calls were 13,184 tokens — a fifth of `total_tokens = 64000` on their own,
+# and more than half of the 24,000 that cap used to be. 60 caps the pair at
+# roughly 4,000, in the same order as the three cheap tools rather than an
+# order above them. 25 is the default because the prefill already carries the
+# last `store.context_window` (40) messages: a call that does not say how far
+# back it wants is looking for a little more, not for the whole room.
+READ_BUFFER_MAX = 60
+READ_BUFFER_DEFAULT = 25
+
 
 def _asked_about(name: str) -> dict:
     """Echo the model's own word back, unless the word is an identifier.
@@ -154,22 +178,32 @@ def build_tool_specs(
     # removes the shadow along with the shape of that bug.
     bound_conversation_id = conversation_id
 
-    async def read_buffer(limit: int = 40) -> list[dict]:
+    async def read_buffer(limit: int = READ_BUFFER_DEFAULT) -> list[dict]:
         """Read older messages from this conversation.
 
         You already have the most recent messages in front of you. Only call this if you
         need to look further back than what you were shown. Returns messages oldest-first.
 
         Args:
-            limit: How many recent messages to fetch (max 200).
+            limit: How many recent messages to fetch (max 60).
         """
+        # The `60` above is deliberately a LITERAL, not an f-string
+        # interpolation of READ_BUFFER_MAX: an f-string here would not be a
+        # docstring at all — `__doc__` would be None and Strands would derive
+        # an EMPTY model-facing description and parameter schema from it
+        # (`FunctionToolMetadata.extract_metadata`), which is the whole
+        # contract this module's own docstring describes. The pair is kept in
+        # step by a test instead, not by the interpreter.
         try:
-            # Clamp both ends: `limit` is a model-supplied argument, and a
-            # non-positive value must never reach the store. SQLite renders
+            # Clamp both ends. `limit` is MODEL-SUPPLIED, so this clamp is the
+            # only bound on it — see `READ_BUFFER_MAX` above for the measured
+            # cost of getting it wrong at the top end. At the bottom end a
+            # non-positive value must never reach the store: SQLite renders
             # `LIMIT -1` as unbounded, so an unclamped negative limit would
             # dump the entire conversation into context.
             rows = await store.recent(
-                conversation_id=bound_conversation_id, limit=max(1, min(int(limit), 200))
+                conversation_id=bound_conversation_id,
+                limit=max(1, min(int(limit), READ_BUFFER_MAX)),
             )
         except Exception:
             log.exception("read_buffer failed")

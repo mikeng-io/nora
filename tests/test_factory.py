@@ -53,14 +53,29 @@ def test_model_provider_carries_the_tier_params():
 
 
 def test_build_limits_matches_r8():
-    assert factory.build_limits(max_tokens=400, turns=4, total_tokens=24000) == {
-        "turns": 4, "output_tokens": 400, "total_tokens": 24000
+    assert factory.build_limits(output_tokens=12000, turns=4, total_tokens=64000) == {
+        "turns": 4, "output_tokens": 12000, "total_tokens": 64000
     }
 
 
-def test_build_limits_uses_the_active_tier_max_tokens():
-    limits = factory.build_limits(max_tokens=1200, turns=4, total_tokens=24000)
-    assert limits["output_tokens"] == 1200
+def test_build_limits_takes_the_loop_budget_and_never_the_per_call_ceiling():
+    """R-24, at this function's own level.
+
+    `output_tokens` used to BE `max_tokens` — the loop was allowed to emit
+    exactly what one call was allowed to emit, and measured calls emitted
+    99.8% of it (3,993 of 4,000). There is no longer a `max_tokens` parameter
+    to pass, which is what makes the regression unspellable rather than merely
+    unlikely: the only way back is to change the signature.
+    """
+    import inspect
+
+    params = inspect.signature(factory.build_limits).parameters
+    assert "max_tokens" not in params, "the per-call ceiling is not the loop's budget"
+    assert set(params) == {"output_tokens", "turns", "total_tokens"}
+    # And the value is passed through untouched, not derived from anything.
+    assert factory.build_limits(
+        output_tokens=999, turns=4, total_tokens=64000,
+    )["output_tokens"] == 999
 
 
 def test_create_agent_is_stateless_by_construction():

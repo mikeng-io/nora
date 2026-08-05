@@ -189,6 +189,30 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(ok / empty / unavailable).",
         ("status",),
     ),
+    # R-23. HOW the agent loop ended, every turn, straight off Strands'
+    # `AgentResult.stop_reason`. This exists because the SDK reports a turn
+    # that ran out of budget by returning normally: `_check_limits` yields an
+    # `EventLoopStopEvent` with `stop_reason="limit_total_tokens"` and stops —
+    # no exception, no log line, no warning anywhere in it. Nothing in `nora/`
+    # read `stop_reason` at all, and `LiveAgentRunner.invoke` discarded the
+    # `AgentResult` outright, so a turn cut off by the token cap was
+    # BYTE-IDENTICAL to a model that simply chose not to call `send_reply`:
+    # both surfaced as `nora_silent_failures_total{reason="no_send_call"}`
+    # plus a ⚠️. The single most likely cause of a silent turn was
+    # indistinguishable from the most benign one.
+    #
+    # Recorded on EVERY completed invocation, not only the failing ones, so
+    # the healthy shape is visible too — `end_turn` and `tool_use` are the
+    # normal values and a series that only ever carries `limit_*` cannot tell
+    # an operator what fraction of turns are being cut off. Alert on any
+    # sustained `limit_*`; raising a cap without this counter just moves the
+    # cliff somewhere nobody is looking.
+    _CounterSpec(
+        "nora_llm_stop_reason_total",
+        "How the agent loop terminated, by Strands stop_reason "
+        "(end_turn / tool_use / limit_turns / limit_total_tokens / ...).",
+        ("reason",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

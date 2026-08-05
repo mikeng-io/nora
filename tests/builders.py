@@ -46,7 +46,7 @@ def override_config(base: Any, changes: dict[str, Any]) -> Any:
 
 
 def make_limits(**kw: Any) -> LimitsConfig:
-    return LimitsConfig(**{"turns": 4, "total_tokens": 24000, **kw})
+    return LimitsConfig(**{"turns": 4, "total_tokens": 64000, "output_tokens": 12000, **kw})
 
 
 def make_llm_config(**kw: Any) -> LLMConfig:
