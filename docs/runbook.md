@@ -322,9 +322,12 @@ editor and these. Neither needs `OMNIROUTE_API_KEY`; listing group ids has
 nothing to do with the LLM.
 
 ```bash
-nora groups                     # every group, its id, and whether policy allows it
-nora persons pending            # senders Nora could not map, with paste-ready stanzas
+uv run nora groups              # every group, its id, and whether policy allows it
+uv run nora persons pending     # senders Nora could not map, with paste-ready stanzas
 ```
+
+(`nora` is a console script declared in `pyproject.toml`; `uv run` is what puts
+it on PATH from a bare shell. `uv run python -m nora …` is identical.)
 
 **`nora groups`** answers "I cannot tell which group id is which". It prints
 each group's name beside the base64 `conversation_id` you need for
@@ -346,7 +349,7 @@ they said *before* you mapped them into their Honcho peer — Nora never writes
 `identity.toml` herself (D6).
 
 ```bash
-$ nora groups
+$ uv run nora groups
 ALLOWED  Ridgeline
          id = Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34=
          member=yes  members=3
