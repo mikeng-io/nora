@@ -261,3 +261,66 @@ working correctly — it is faithfully recording a real failing verdict.
 - Scores go to `/api/public/scores`. `/api/public/v2/scores` exists but has **no
   POST route** (405). Both failures were silent, because the sink swallows errors
   by design — which is why the sink now logs the response body, not just the status.
+
+
+## 8. "Where does everything live?" (read this first, months later)
+
+One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
+
+```
+~/workspace/nora/
+  docker-compose.yml        both services: nora + signal-cli
+  deploy/signal-cli/        Dockerfile + fetch.sh (16K; the 115MB tarball is
+                            fetched on demand, never committed)
+  data/                     Nora's own state — messages.db, nora.log
+                            (bind-mounted into the nora container as /app/data)
+  state/signal-cli/         SIGNAL ACCOUNT: identity keys, sessions, group and
+                            contact caches. 1.4MB. gitignored.
+```
+
+**`data/` vs `state/` is deliberate.** Nora's container mounts `./data`; it does
+NOT mount `./state`. She has no business reading Signal identity keys, so they
+sit outside her reach.
+
+**What is irreplaceable:** `state/signal-cli/data/` — that is the device
+registration. Lose it and you re-link a device (QR scan from the primary phone).
+Everything else regenerates: `stickers/` and `avatars/` are caches that were
+7.6MB and 560KB and were pruned on 2026-08-05; signal-cli refetches them on
+demand.
+
+**Back up:**
+```bash
+tar czf ~/backups/nora-state-$(date +%Y%m%d).tar.gz -C ~/workspace/nora state data
+```
+
+**Restore:** stop the stack, extract over `state/`, start. The account is
+identified by `state/signal-cli/data/accounts.json` plus the `892678*` files
+beside it.
+
+**Existing backup:** `/home/norty/backups/signal-cli-20260805-173329/signal-cli-data.tar.gz`
+— taken *before* the 0.14.4.1 → 0.14.7 migration. signal-cli migrates its store
+schema one-way on first run of a new version, so that archive is the only way
+back to 0.14.4.1.
+
+### Facts that cost hours to learn
+
+- **`--receive-mode=on-start` is mandatory.** Without it signal-cli serves every
+  JSON-RPC call correctly and never opens its websocket to Signal. It ran that
+  way on the host for 61 days: `/health` green, `nora_messages_total` at `0.0`,
+  not one message delivered. Under R-5 that is indistinguishable from a quiet
+  group.
+- **Java 25 is required** (class file version 69). Temurin 21 dies at class load.
+- **Group state can go stale on a linked device.** If `listGroups` returns `[]`
+  for a group you know exists, call `sendSyncRequest` over `/api/v1/rpc` — that
+  is what made `Ridgeline` appear.
+- **The daemon is Nora's, not shared.** It was documented as "neutral and
+  shared" from the Hermes era; hermes-agent runs profiles `attest`/`bento`/
+  `default` and has no `nora` profile. signal-cli *binds* `:18080`; Nora is its
+  only client.
+- **Device 2 is named `nora`** (renamed from `HermesAgent`, 2026-08-05, via
+  `updateAccount --device-name`).
+- **The account is a LINKED DEVICE**, not a standalone registration. The primary
+  phone can be off for normal operation — Signal delivers to each device
+  independently — but Signal unlinks devices after prolonged inactivity, and
+  going standalone would require re-registering the number, which logs the phone
+  out.

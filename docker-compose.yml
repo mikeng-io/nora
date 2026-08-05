@@ -29,7 +29,10 @@ services:
     volumes:
       # Identity keys, group state, contacts. Losing this loses the device
       # registration itself — not just message history.
-      - /home/norty/.local/share/signal-cli:/data/signal-cli
+      # Lives INSIDE the repo tree so there is exactly one place to look, back
+      # up, and restore. Deliberately NOT under ./data — Nora bind-mounts that
+      # as /app/data, and she has no business reading Signal identity keys.
+      - ./state/signal-cli:/data/signal-cli
     environment:
       - XDG_DATA_HOME=/data
     # --receive-mode=on-start is load-bearing, not decoration. Without it the
