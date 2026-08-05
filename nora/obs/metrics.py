@@ -110,6 +110,34 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Adapter listen() loop restarts after a failure, by platform.",
         ("platform",),
     ),
+    # Lazy adoption. A backfill that silently does nothing is an R-5 failure;
+    # nora/app/adoption.py documents why these two are not redundant (a failed
+    # feed is left unmarked on purpose, so it retries on the next start).
+    _CounterSpec(
+        "nora_lazy_adoptions_total",
+        "Unattributed audit rows fed and marked by the startup backfill.",
+        ("platform",),
+    ),
+    _CounterSpec(
+        "nora_adoption_failures_total",
+        "Adoptable rows whose Honcho feed failed; left unmarked to retry.",
+        ("platform",),
+    ),
+    # Progress reactions (nora/engagement/stages/indicate.py). Reactions are
+    # decoration and every failure of one is swallowed so it can never touch
+    # the reply — which is exactly why they need a counter, or "she stopped
+    # showing the eyes" becomes another unobservable silence. One name, three
+    # labels, because the interesting questions are all cross-cuts of the same
+    # series: `phase` (ack/done/gave_up/clear) says WHICH indicator, `status`
+    # (sent/failed/unsupported) says how it went. `unsupported` is not a
+    # failure — it is the steady state of any platform without reactions, and
+    # summing it into `failed` would make a correctly-degrading adapter look
+    # broken forever.
+    _CounterSpec(
+        "nora_reactions_total",
+        "Progress-indicator reactions attempted, by lifecycle phase and outcome.",
+        ("platform", "phase", "status"),
+    ),
     _CounterSpec(
         "nora_tool_scope_violations_total",
         "A model-supplied tool argument disagreed with the scope the tool was "

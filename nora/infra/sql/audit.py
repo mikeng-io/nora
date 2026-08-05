@@ -18,7 +18,12 @@ import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
+from nora.domain.models import (
+    DeliveryStatus,
+    NormalizedMessage,
+    TranscriptRow,
+    UnattributedRow,
+)
 from nora.infra.sql.migrations_runner import head_revision
 from nora.infra.sql.schema import MESSAGES
 
@@ -133,6 +138,69 @@ class SqlAuditStore:
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+
+    async def unattributed(self, *, limit: int) -> list[UnattributedRow]:
+        """Audited rows still attributed to nobody, OLDEST FIRST.
+
+        The ordering is load-bearing, not incidental: the caller
+        (`nora.app.adoption`) replays these into a person's Honcho peer, and a
+        peer's memory has to read chronologically. `ts`, not `id` — a row's
+        insert order is the order Nora *received* it, which under signal-cli's
+        catch-up delivery is not the order it was *sent*. `id` only breaks ties.
+
+        `is_nora = 0` is part of the predicate deliberately. Nora's own replies
+        are audited with `person_id` NULL too, and her account is never written
+        to identity.toml (DEC-9), so they can never resolve to a person — every
+        one of them would otherwise be re-scanned, forever, on every restart.
+
+        A non-positive `limit` short-circuits for the same reason `recent` does:
+        SQLAlchemy renders `.limit(-1)` as SQLite's unbounded `LIMIT -1`.
+        """
+        if limit <= 0:
+            return []
+        stmt = (
+            sa.select(
+                MESSAGES.c.id, MESSAGES.c.platform, MESSAGES.c.sender_id,
+                MESSAGES.c.ts, MESSAGES.c.body,
+            )
+            .where(MESSAGES.c.person_id.is_(None), MESSAGES.c.is_nora == 0)
+            .order_by(MESSAGES.c.ts.asc(), MESSAGES.c.id.asc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [
+            UnattributedRow(
+                id=r.id, platform=r.platform, sender_id=r.sender_id, ts=r.ts, body=r.body,
+            )
+            for r in rows
+        ]
+
+    async def set_person_id(self, *, row_id: int, person_id: str) -> None:
+        """Attribute one already-audited row. One row per statement, on purpose.
+
+        This is the only write lazy adoption performs, and it is off the ingest
+        path entirely (see this module's docstring: WAL permits exactly one
+        writer, and the ingest path's documented failure behaviour is to DROP
+        the message). A single batched UPDATE across the whole backlog would
+        hold that one writer for the length of the batch; a row at a time,
+        interleaved with the caller's awaited Honcho feed, never does.
+
+        An unknown `row_id` is a silent no-op, matching `set_delivery_status` —
+        the row may have been pruned out from under the backfill between the
+        scan and this call, which is harmless, not a failure.
+        """
+        stmt = (
+            sa.update(MESSAGES)
+            .where(MESSAGES.c.id == row_id)
+            .values(person_id=person_id)
+        )
+        try:
+            async with self._engine.begin() as conn:
+                await conn.execute(stmt)
+        except OperationalError as exc:
+            self._note_busy(exc)
+            raise
 
     async def stats(self) -> dict[str, Any]:
         """`schema_revision` replaces the retired `schema_version`.

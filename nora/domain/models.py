@@ -72,6 +72,30 @@ class TranscriptRow:
 
 
 @dataclass(frozen=True)
+class UnattributedRow:
+    """One audited message that carries no `person_id` — its sender resolved to
+    nobody at the moment of ingest (D6).
+
+    Returned by `AuditStore.unattributed`, which is what the startup
+    lazy-adoption backfill (`nora.app.adoption`) re-resolves against a freshly
+    loaded `identity.toml`. It carries `platform` — which `TranscriptRow`
+    deliberately does not, being scoped to one conversation already — because
+    person resolution is keyed `(platform, sender_id)`, so a row without its
+    platform cannot be re-resolved at all.
+
+    `body` is `str | None` for the same reason the column is nullable: an
+    attachment-only message audits with no text. There is nothing to feed a
+    peer from such a row, only a `person_id` to record.
+    """
+
+    id: int
+    platform: str
+    sender_id: str
+    ts: int
+    body: str | None
+
+
+@dataclass(frozen=True)
 class TagContext:
     """Everything the tagging path assembles before the model is constructed."""
 

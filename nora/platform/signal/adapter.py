@@ -6,10 +6,11 @@ import time
 from collections.abc import Awaitable, Callable
 
 from ...domain.models import ConversationTarget, NormalizedMessage
-from ...domain.ports import AdapterHealth, PlatformIdentity, SendResult
+from ...domain.ports import AdapterHealth, PlatformIdentity, ReactionResult, SendResult
 from .account import derive_aliases
 from .listener import SignalListener
 from .parser import parse_event
+from .react import SignalReactor
 from .send import SignalSender
 
 
@@ -21,6 +22,7 @@ class SignalAdapter:
         self._account = account
         self._listener = SignalListener(base_url)
         self._sender = SignalSender(base_url)
+        self._reactor = SignalReactor(base_url)
         self._identity: PlatformIdentity | None = None
 
     async def resolve_identity(self) -> PlatformIdentity:
@@ -60,6 +62,19 @@ class SignalAdapter:
 
     async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
         return await self._sender.send(target, text)
+
+    async def react(
+        self,
+        *,
+        target: ConversationTarget,
+        emoji: str,
+        to_author: str,
+        to_timestamp: int,
+        remove: bool = False,
+    ) -> ReactionResult:
+        return await self._reactor.react(
+            target, emoji, to_author=to_author, to_timestamp=to_timestamp, remove=remove,
+        )
 
     async def health(self) -> AdapterHealth:
         last = self._listener.last_event_at

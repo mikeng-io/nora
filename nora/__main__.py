@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from . import config
-from .app import runtime
+from .app import adoption, runtime
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .config import ConfigError
 from .obs.health import build_health_app, serve
@@ -29,6 +29,7 @@ from .obs.tracing import setup_tracing
 PRUNE_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_TTL_SECONDS = 3600.0
+ADOPTION_START_DELAY_SECONDS = adoption.DEFAULT_START_DELAY_SECONDS
 
 log = logging.getLogger("nora.__main__")
 
@@ -102,6 +103,11 @@ class App:
 
         deps.background.spawn(heartbeat(deps.metrics))
         deps.background.spawn(self._update_last_event_age())
+        # Lazy adoption, spawned exactly like the prune sweep and for the same
+        # reason: it writes to SQLite, WAL permits one writer, and the ingest
+        # path drops a message it cannot audit. Nothing awaits it — a slow or
+        # failing backfill must not delay the adapters coming up.
+        deps.background.spawn(self._adopt_pending())
         deps.background.spawn(runtime.prune_loop(
             deps.audit, deps.metrics, interval_seconds=PRUNE_INTERVAL_SECONDS,
         ))
@@ -124,6 +130,17 @@ class App:
             await asyncio.gather(*adapter_tasks)
         finally:
             await deps.background.cancel_all()
+
+    async def _adopt_pending(self) -> None:
+        """Adapts `adoption.backfill`'s `AdoptionCounts` return to the
+        `Coroutine[Any, Any, None]` `BackgroundTasks.spawn` accepts. The counts
+        are for callers that want them (tests); production reads the log line
+        and the two `nora_*adoption*` counters."""
+        deps = self.deps
+        await adoption.backfill(
+            audit=deps.audit, memory=deps.memory, persons=deps.persons,
+            metrics=deps.metrics, start_delay_seconds=ADOPTION_START_DELAY_SECONDS,
+        )
 
     async def _update_last_event_age(self) -> None:
         while True:

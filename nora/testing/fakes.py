@@ -4,8 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from nora.domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage, TranscriptRow
-from nora.domain.ports import AdapterHealth, MemoryHealth, PlatformIdentity, SendResult
+from nora.domain.models import (
+    ConversationTarget,
+    DeliveryStatus,
+    NormalizedMessage,
+    TranscriptRow,
+    UnattributedRow,
+)
+from nora.domain.ports import (
+    AdapterHealth,
+    MemoryHealth,
+    PlatformIdentity,
+    ReactionResult,
+    SendResult,
+)
 
 
 class FakeAuditStore:
@@ -42,6 +54,10 @@ class FakeAuditStore:
         row_id = len(self.rows) + 1
         self.rows.append({
             "id": row_id,
+            # `platform` is recorded because `unattributed` has to return it:
+            # re-resolving a sender is keyed (platform, sender_id), and a row
+            # without its platform cannot be re-resolved at all.
+            "platform": message.platform,
             "conversation_id": message.conversation_id,
             "sender_id": message.sender_id,
             "sender_name": message.sender_name,
@@ -75,6 +91,29 @@ class FakeAuditStore:
         for row in self.rows:
             if row["id"] == row_id:
                 row["delivery_status"] = status
+                return
+
+    async def unattributed(self, *, limit: int) -> list[UnattributedRow]:
+        """Mirrors `SqlAuditStore.unattributed`: person_id IS NULL, never
+        Nora's own rows, oldest first with `id` only as a tie-break, and `[]`
+        for a non-positive limit. Every one of those is pinned for BOTH stores
+        by `tests/contract/test_audit_store_contract.py`."""
+        if limit <= 0:
+            return []
+        candidates = [r for r in self.rows if r["person_id"] is None and not r["is_nora"]]
+        candidates.sort(key=lambda r: (r["ts"], r["id"]))
+        return [
+            UnattributedRow(
+                id=r["id"], platform=r["platform"], sender_id=r["sender_id"],
+                ts=r["ts"], body=r["body"],
+            )
+            for r in candidates[:limit]
+        ]
+
+    async def set_person_id(self, *, row_id: int, person_id: str) -> None:
+        for row in self.rows:
+            if row["id"] == row_id:
+                row["person_id"] = person_id
                 return
 
     async def stats(self) -> dict[str, Any]:
@@ -159,9 +198,13 @@ class FakeAdapter:
 
     platform = "signal"
 
-    def __init__(self, *, succeed: bool = True, account: str = "") -> None:
+    def __init__(
+        self, *, succeed: bool = True, account: str = "", react_fails: bool = False,
+    ) -> None:
         self.sent: list[tuple[ConversationTarget, str]] = []
+        self.reactions: list[tuple[ConversationTarget, str, str, int, bool]] = []
         self._succeed = succeed
+        self._react_fails = react_fails
         self._account = account
 
     async def resolve_identity(self) -> PlatformIdentity:
@@ -196,6 +239,32 @@ class FakeAdapter:
     async def send(self, target: ConversationTarget, text: str) -> SendResult:
         self.sent.append((target, text))
         return SendResult(ok=self._succeed)
+
+    async def react(
+        self,
+        *,
+        target: ConversationTarget,
+        emoji: str,
+        to_author: str,
+        to_timestamp: int,
+        remove: bool = False,
+    ) -> ReactionResult:
+        """Records reactions instead of performing them.
+
+        Keyword-only and `ReactionResult`-returning, matching the port exactly —
+        unlike `send` above, whose positional drift predates the port. This is
+        `PlatformAdapter.react`'s second implementation, so per CLAUDE.md it is
+        bound to `SignalAdapter.react` by a shared contract suite both pass
+        (`tests/contract/test_reaction_contract.py`) rather than being free to
+        drift. `FakeAdapter`'s documented exemption does not stretch to cover it:
+        that exemption is about `parse()`/`listen()`, which are not on the port
+        at all, whereas `react()` is.
+
+        `react_fails=True` simulates a working platform whose reaction call is
+        rejected — the R-5 path where the reply must still go out.
+        """
+        self.reactions.append((target, emoji, to_author, to_timestamp, remove))
+        return ReactionResult(ok=not self._react_fails)
 
     async def health(self) -> AdapterHealth:
         return AdapterHealth(platform=self.platform, connected=True, last_event_age_seconds=0.0)

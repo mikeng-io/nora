@@ -18,10 +18,10 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.testing.fakes import FakeAuditStore
 
 
-def _msg(conv="g1", body="hello", ts=1) -> NormalizedMessage:
+def _msg(conv="g1", body="hello", ts=1, sender="+852111", platform="signal") -> NormalizedMessage:
     return NormalizedMessage(
-        platform="signal", conversation_id=conv, conversation_type="group",
-        sender_id="+852111", sender_name="Miles", timestamp=ts, body=body, raw={},
+        platform=platform, conversation_id=conv, conversation_type="group",
+        sender_id=sender, sender_name="Miles", timestamp=ts, body=body, raw={},
     )
 
 
@@ -134,6 +134,91 @@ async def test_recent_rows_are_transcript_rows_not_dicts(store):
     row = (await store.recent(conversation_id="g1", limit=1))[0]
     assert row.body == "hello"
     assert not isinstance(row, dict)
+
+
+# ---------------------------------------------------------------------------
+# unattributed / set_person_id — the lazy-adoption pair. Both stores or neither.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_row_appended_without_a_person_id_is_unattributed(store):
+    await store.append(message=_msg())
+    rows = await store.unattributed(limit=10)
+    assert [(r.platform, r.sender_id, r.body) for r in rows] == [("signal", "+852111", "hello")]
+
+
+async def test_a_row_appended_with_a_person_id_is_never_unattributed(store):
+    await store.append(message=_msg(), person_id="miles")
+    assert await store.unattributed(limit=10) == []
+
+
+async def test_unattributed_returns_rows_oldest_first(store):
+    """Load-bearing ordering, not cosmetic: `nora.app.adoption` replays these
+    into a person's Honcho peer, and a peer's memory must read chronologically.
+    Appended newest-first here so insertion order and `ts` order disagree."""
+    for i in (3, 1, 2):
+        await store.append(message=_msg(body=f"m{i}", ts=i))
+    assert [r.body for r in await store.unattributed(limit=10)] == ["m1", "m2", "m3"]
+
+
+async def test_unattributed_never_returns_noras_own_rows(store):
+    """Nora's replies are audited with `person_id` NULL too, and her account is
+    never in identity.toml (DEC-9) — so they can never resolve, and would
+    otherwise be rescanned on every restart forever."""
+    await store.append(message=_msg(body="hers"), is_nora=True)
+    await store.append(message=_msg(body="theirs", ts=2))
+    assert [r.body for r in await store.unattributed(limit=10)] == ["theirs"]
+
+
+async def test_unattributed_honours_its_limit(store):
+    for i in range(5):
+        await store.append(message=_msg(body=f"m{i}", ts=i))
+    assert [r.body for r in await store.unattributed(limit=2)] == ["m0", "m1"]
+
+
+async def test_unattributed_with_a_non_positive_limit_is_empty(store):
+    """Same trap `recent` documents: SQLAlchemy renders `.limit(-1)` as SQLite's
+    unbounded `LIMIT -1`, so a naive implementation returns everything."""
+    await store.append(message=_msg())
+    assert await store.unattributed(limit=0) == []
+    assert await store.unattributed(limit=-1) == []
+
+
+async def test_set_person_id_removes_the_row_from_unattributed(store):
+    """`person_id` IS the idempotence marker — a marked row must stop matching."""
+    row_id = await store.append(message=_msg())
+    await store.set_person_id(row_id=row_id, person_id="miles")
+    assert await store.unattributed(limit=10) == []
+
+
+async def test_set_person_id_marks_only_the_matching_row(store):
+    first = await store.append(message=_msg(body="first"))
+    await store.append(message=_msg(body="second", ts=2))
+    await store.set_person_id(row_id=first, person_id="miles")
+    assert [r.body for r in await store.unattributed(limit=10)] == ["second"]
+
+
+async def test_set_person_id_on_an_unknown_row_is_a_silent_no_op(store):
+    """Mirrors `set_delivery_status`: the row may have been pruned between the
+    backfill's scan and its write, which is harmless, not a failure."""
+    await store.set_person_id(row_id=9999, person_id="miles")
+    assert await store.unattributed(limit=10) == []
+
+
+async def test_unattributed_carries_the_platform_for_re_resolution(store):
+    """Resolution is keyed (platform, sender_id) — a row without its platform
+    cannot be re-resolved at all, which is why `UnattributedRow` carries one
+    where `TranscriptRow` does not."""
+    await store.append(message=_msg(platform="telegram", sender="@miles"))
+    assert (await store.unattributed(limit=10))[0].platform == "telegram"
+
+
+async def test_unattributed_spans_conversations(store):
+    """Unlike `recent`, this is a whole-table question: the operator adopted a
+    person, not a room."""
+    await store.append(message=_msg(conv="g1", body="a"))
+    await store.append(message=_msg(conv="g2", body="b", ts=2))
+    assert {r.body for r in await store.unattributed(limit=10)} == {"a", "b"}
 
 
 def test_both_implementations_satisfy_the_port():
