@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from nora.domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage, TranscriptRow
-from nora.domain.ports import MemoryHealth, PlatformIdentity
+from nora.domain.ports import MemoryHealth, PlatformIdentity, SendResult
 
 
 class FakeAuditStore:
@@ -136,13 +136,13 @@ class FakeAdapter:
     group-message subset of `parse_event` it needs.
 
     `PlatformAdapter` is a documented, still-not-fully-conformed-to port. The platforms
-    phase closed the `resolve_identity()` gap
-    (`tests/contract/test_port_conformance.py` no longer pins it absent), so this
-    fake grows a `resolve_identity()` the same way `SignalAdapter` does. `send()`/
-    `health()`/`listen()`/`parse()` still mirror `SignalAdapter`'s pre-phase shape
-    (bare `bool`/`dict` returns, positional `send`) — those gaps close in later
-    tasks of the same phase, tracked by their own tests in
-    `tests/contract/test_port_conformance.py` — so this fake staying on the old
+    phase closed the `resolve_identity()` and `send()` gaps
+    (`tests/contract/test_port_conformance.py` no longer pins either absent), so
+    this fake grows a `resolve_identity()` and a `SendResult`-returning `send()`
+    the same way `SignalAdapter` does. `health()`/`listen()`/`parse()` still
+    mirror `SignalAdapter`'s pre-phase shape (a bare `dict`, positional `listen`) —
+    those gaps close in later tasks of the same phase, tracked by their own tests
+    in `tests/contract/test_port_conformance.py` — so this fake staying on the old
     shape for those does not newly trigger the "second port implementation needs a
     contract suite" rule either.
 
@@ -189,9 +189,9 @@ class FakeAdapter:
             body=text, raw=raw_event,
         )
 
-    async def send(self, target: ConversationTarget, text: str) -> bool:
+    async def send(self, target: ConversationTarget, text: str) -> SendResult:
         self.sent.append((target, text))
-        return self._succeed
+        return SendResult(ok=self._succeed)
 
     async def health(self) -> dict:
         return {"connected": True, "last_event_age_seconds": 0.0}

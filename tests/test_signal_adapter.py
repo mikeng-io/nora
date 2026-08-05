@@ -39,8 +39,9 @@ async def test_health_reports_connection_state():
 
 async def test_send_delegates_to_the_sender():
     adapter = SignalAdapter("http://127.0.0.1:1", "+1")
-    # unreachable daemon → False, never an exception
-    assert await adapter.send(ConversationTarget("signal", "g", "group"), "x") is False
+    # unreachable daemon → not ok, never an exception
+    result = await adapter.send(target=ConversationTarget("signal", "g", "group"), text="x")
+    assert result.ok is False
 
 
 async def test_resolve_identity_always_includes_the_primary(aiohttp_server):

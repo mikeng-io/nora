@@ -6,7 +6,7 @@ import time
 from collections.abc import Awaitable, Callable
 
 from ...domain.models import ConversationTarget, NormalizedMessage
-from ...domain.ports import PlatformIdentity
+from ...domain.ports import PlatformIdentity, SendResult
 from .account import derive_aliases
 from .listener import SignalListener
 from .parser import parse_event
@@ -44,8 +44,8 @@ class SignalAdapter:
     async def parse(self, raw_event: dict) -> NormalizedMessage | None:
         return parse_event(raw_event, self._account)
 
-    async def send(self, target: ConversationTarget, text: str, *, request_id: str = "") -> bool:
-        return await self._sender.send(target, text, request_id=request_id)
+    async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
+        return await self._sender.send(target, text)
 
     async def health(self) -> dict:
         last = self._listener.last_event_at

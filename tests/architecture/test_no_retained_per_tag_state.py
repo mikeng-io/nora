@@ -26,7 +26,7 @@ import gc
 from nora.agent.guards import ReplyGuard
 from nora.app.runtime import BackgroundTasks
 from nora.domain.models import NormalizedMessage
-from nora.domain.ports import EngageDecision, EngagementRequest, MemoryHealth
+from nora.domain.ports import EngageDecision, EngagementRequest, MemoryHealth, SendResult
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.obs.metrics import Metrics
@@ -41,9 +41,9 @@ class _FakeAdapter:
         self._account = "+852000"
         self.sent: list[tuple] = []
 
-    async def send(self, target, text: str) -> bool:
+    async def send(self, *, target, text: str) -> SendResult:
         self.sent.append((target, text))
-        return True
+        return SendResult(ok=True)
 
 
 class _FakeMemory:

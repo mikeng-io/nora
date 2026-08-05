@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from nora.domain.models import ConversationTarget, NormalizedMessage
-from nora.domain.ports import MemoryHealth, PlatformIdentity
+from nora.domain.ports import MemoryHealth, PlatformIdentity, SendResult
 
 
 class FakeHoncho:
@@ -65,9 +65,9 @@ class SinkSender:
     async def resolve_identity(self) -> PlatformIdentity:
         return PlatformIdentity(platform=self.platform, primary=self._account)
 
-    async def send(self, target: ConversationTarget, text: str) -> bool:
+    async def send(self, target: ConversationTarget, text: str) -> SendResult:
         self.sent.append((target, text))
-        return self._succeed
+        return SendResult(ok=self._succeed)
 
     async def health(self) -> dict:
         return {"connected": True, "last_event_age_seconds": 0.0}

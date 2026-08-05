@@ -41,6 +41,15 @@ def test_signal_adapter_resolve_identity_satisfies_the_port_shape():
     assert identity_sig.return_annotation == "PlatformIdentity"
 
 
+def test_signal_adapter_send_satisfies_the_port_shape():
+    """`send()` becomes keyword-only-after-self and returns `SendResult` instead
+    of a positional-target bare `bool` — the platforms phase's second gap close."""
+    send_params = inspect.signature(SignalAdapter.send).parameters
+    assert send_params["target"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert send_params["text"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert inspect.signature(SignalAdapter.send).return_annotation == "SendResult"
+
+
 def test_signal_adapter_health_gap_to_adapter_health_is_known():
     """SignalAdapter.health() does NOT yet satisfy PlatformAdapter, and that is
     expected: it returns a plain dict where the port declares -> AdapterHealth.

@@ -10,13 +10,15 @@ def test_sink_sender_satisfies_the_protocol():
 async def test_sink_sender_records_instead_of_sending():
     sink = SinkSender()
     target = ConversationTarget("signal", "g1", "group")
-    assert await sink.send(target, "hello") is True
+    result = await sink.send(target, "hello")
+    assert result.ok is True
     assert sink.sent == [(target, "hello")]
 
 
 async def test_sink_sender_can_simulate_a_send_failure():
     sink = SinkSender(succeed=False)
-    assert await sink.send(ConversationTarget("signal", "g1", "group"), "x") is False
+    result = await sink.send(ConversationTarget("signal", "g1", "group"), "x")
+    assert result.ok is False
     assert len(sink.sent) == 1     # the attempt is still recorded
 
 

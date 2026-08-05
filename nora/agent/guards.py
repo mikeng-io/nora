@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
 
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
+from ..domain.ports import SendResult
 from ..obs.metrics import METRICS
 from ..persona.loader import Persona
 
@@ -136,27 +137,27 @@ class Deliverer:
             return False
 
         try:
-            ok = await self._adapter.send(self._target, text)
+            result = await self._adapter.send(target=self._target, text=text)
         except Exception:
             log.exception("send raised (tag=%s)", self._tag_id)
-            ok = False
+            result = SendResult(ok=False)
 
         try:
             await self._store.set_delivery_status(
                 row_id=row_id,
-                status=DeliveryStatus.SENT if ok else DeliveryStatus.FAILED,
+                status=DeliveryStatus.SENT if result.ok else DeliveryStatus.FAILED,
             )
         except Exception:
             log.exception("delivery_status update failed (tag=%s)", self._tag_id)
 
-        if ok:
+        if result.ok:
             self._delivered = True
             self._last_text = text
             self._metrics.inc("nora_replies_total", status="sent")
         else:
             self._metrics.inc("nora_replies_total", status="failed")
             self._metrics.inc("nora_silent_failures_total", reason="send_failed")
-        return ok
+        return result.ok
 
 
 class ReplyGuard(HookProvider):
