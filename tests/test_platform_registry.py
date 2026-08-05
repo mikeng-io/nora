@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import pytest
 from aiohttp import web
 
+from nora.obs.metrics import Metrics
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
 
@@ -39,7 +40,7 @@ async def test_an_enabled_platform_is_built_and_its_identity_resolved(aiohttp_se
     base_url = str(server.make_url("")).rstrip("/")
     cfg = _PlatformsCfg(signal=_SignalCfg(base_url=base_url, account="+852999", enabled=True))
 
-    registry = await AdapterRegistry.from_config(cfg)
+    registry = await AdapterRegistry.from_config(cfg, metrics=Metrics())
 
     assert "signal" in registry
     assert len(registry) == 1
@@ -54,7 +55,7 @@ async def test_a_disabled_platform_is_built_by_no_one():
         signal=_SignalCfg(base_url="http://127.0.0.1:1", account="+852999", enabled=False)
     )
 
-    registry = await AdapterRegistry.from_config(cfg)
+    registry = await AdapterRegistry.from_config(cfg, metrics=Metrics())
 
     assert "signal" not in registry
     assert len(registry) == 0
@@ -69,7 +70,7 @@ async def test_an_unreachable_daemon_fails_fast_with_a_readable_message():
     )
 
     with pytest.raises(AdapterRegistryError, match="account"):
-        await AdapterRegistry.from_config(cfg)
+        await AdapterRegistry.from_config(cfg, metrics=Metrics())
 
 
 async def test_a_configured_account_override_skips_the_daemon_round_trip():
@@ -82,7 +83,7 @@ async def test_a_configured_account_override_skips_the_daemon_round_trip():
         signal=_SignalCfg(base_url="http://127.0.0.1:1", account="+852999", enabled=True)
     )
 
-    registry = await AdapterRegistry.from_config(cfg)
+    registry = await AdapterRegistry.from_config(cfg, metrics=Metrics())
 
     assert registry.identity_for("signal").primary == "+852999"
 
@@ -103,4 +104,4 @@ async def test_resolve_identity_failing_fails_the_whole_registry(monkeypatch):
     )
 
     with pytest.raises(AdapterRegistryError, match="identity"):
-        await AdapterRegistry.from_config(cfg)
+        await AdapterRegistry.from_config(cfg, metrics=Metrics())

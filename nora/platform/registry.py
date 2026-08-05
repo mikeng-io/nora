@@ -19,8 +19,11 @@ platform is built and resolved by no one, silently.
 **Nora's own account is never written to `identity.toml`** (DEC-9) — that
 file describes other people, not Nora. This module never writes to it and
 never reads it; the identity it resolves comes from the platform's own daemon
-(`nora.platform.signal.account.derive_account`/`derive_aliases`), not from
-person mapping.
+(`nora.platform.signal.account.derive_account` and
+`nora.platform.signal.self_id.derive_identifiers`), not from person mapping.
+Nora's own ids are typed `nora.domain.identity.Identifier`s — the same model
+`identity.toml` uses for everybody else (design/10 §5) — so "is this sender
+Nora?" and "which person is this sender?" are answered by the same flattening.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from typing import Protocol
 from nora.domain.ports import PlatformIdentity
 from nora.platform.signal.account import AccountError, derive_account
 from nora.platform.signal.adapter import SignalAdapter
+from nora.platform.signal.self_id import MetricsSink
 
 
 class AdapterRegistryError(Exception):
@@ -93,11 +97,17 @@ class AdapterRegistry:
     identities: dict[str, PlatformIdentity] = field(default_factory=dict)
 
     @classmethod
-    async def from_config(cls, platforms: _PlatformsConfig) -> AdapterRegistry:
+    async def from_config(
+        cls, platforms: _PlatformsConfig, *, metrics: MetricsSink
+    ) -> AdapterRegistry:
         """Build+resolve every enabled platform. Today that is Signal alone;
         a second platform is one more `if platforms.<x>.enabled:` block, not a
         rewrite of this method's shape. `platforms` is `cfg.platforms`, not
-        `cfg` itself — see `_PlatformsConfig`'s docstring."""
+        `cfg` itself — see `_PlatformsConfig`'s docstring.
+
+        `metrics` is threaded to each adapter so `resolve_identity()`'s
+        enrichment can count its own degradation (R-17). It is required for the
+        reason `SignalAdapter.__init__` gives."""
         adapters: dict[str, SignalAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
@@ -110,7 +120,7 @@ class AdapterRegistry:
             except AccountError as exc:
                 raise AdapterRegistryError(f"signal account error: {exc}") from exc
 
-            adapter = SignalAdapter(signal_cfg.base_url, account)
+            adapter = SignalAdapter(signal_cfg.base_url, account, metrics=metrics)
             try:
                 identity = await adapter.resolve_identity()
             except Exception as exc:

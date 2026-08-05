@@ -151,7 +151,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
 
     try:
-        registry = await AdapterRegistry.from_config(cfg.platforms)
+        registry = await AdapterRegistry.from_config(cfg.platforms, metrics=metrics)
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
     if "signal" not in registry:

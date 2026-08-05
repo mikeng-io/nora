@@ -135,6 +135,25 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "tagged one) and was ignored rather than honoured, by tool.",
         ("tool",),
     ),
+    # R-17. Nora's own-identity enrichment degraded. This one exists because it
+    # was ALREADY degrading, on every single start, for the whole life of the
+    # deployment: `derive_aliases` read `/api/v1/accounts`, an endpoint
+    # signal-cli has never served (its `--http` mode exposes exactly three:
+    # /api/v1/rpc, /api/v1/events, /api/v1/check), so `aliases` fell back to
+    # `{primary}` with one log line and no series to alert on. R-12
+    # ("never treat my own message as a tag") then collapsed to a plain
+    # equality check against the phone number, and a self-send arriving under
+    # her ACI would have been treated as somebody else's tag. `reason` is the
+    # useful cut: `unreachable` is an ops problem, `no_self_contact_row` and
+    # `bad_payload` mean the daemon answered but not with what we parse — a
+    # signal-cli upgrade breaking the shape, which is the failure mode that
+    # would otherwise reproduce the original silence exactly.
+    _CounterSpec(
+        "nora_identity_enrichment_degraded_total",
+        "Nora's own-identity derivation fell back to fewer id forms than asked "
+        "for, by platform and reason.",
+        ("platform", "reason"),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -152,6 +171,19 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # and is otherwise indistinguishable from a counter for these call sites.
     _GaugeSpec("honcho_feed_success", "Successful Honcho feed calls."),
     _GaugeSpec("honcho_feed_failure", "Failed Honcho feed calls."),
+    # R-17's other half, and the more important half. A failure COUNTER alone
+    # cannot distinguish "0 because enrichment is healthy" from "0 because the
+    # enrichment code was deleted, or never runs" — which is the exact trap
+    # that let the original degradation hide. This gauge is always published,
+    # on every path including total failure, so `nora_identity_aliases == 1`
+    # says "R-12 is down to equality against the primary id" out loud and
+    # `>= 2` says the derivation worked. Alert on `== 1`, not on the counter.
+    _GaugeSpec(
+        "nora_identity_aliases",
+        "Distinct id forms Nora recognises as her own, by platform. 1 means "
+        "enrichment produced nothing beyond the configured primary.",
+        ("platform",),
+    ),
 )
 
 _HISTOGRAMS: tuple[_HistogramSpec, ...] = (

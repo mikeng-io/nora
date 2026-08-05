@@ -56,8 +56,31 @@ is correct. To tell "quiet" from "broken":
    edited `identity.toml`, **restart her** — mapping is startup-only, so an edit alone
    changes nothing.
 
-If the silent-failure rate is low, `/health` is `200`, and neither denial counter is
-moving, she's just quiet — nobody has tagged her.
+5. Check whether she still knows **who she is**. This one does not make her silent — it
+   makes her answer *herself*, which is worse:
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep -E 'nora_identity_aliases|nora_identity_enrichment_degraded_total'
+   ```
+
+   `nora_identity_aliases{platform="signal"}` is the number of id forms Nora recognises
+   as her own. **Alert on `== 1`.** One means enrichment produced nothing beyond the
+   phone number in `platforms.signal.account`, so R-12 ("never treat my own message as a
+   tag") has collapsed from a set-membership test to a plain string equality — and a
+   self-send arriving under her ACI or username would be handled as somebody else's tag.
+   A healthy Signal start reads **4**: phone, ACI, username, PNI. The
+   `..._degraded_total` counter's `reason` label says which half failed: `unreachable`
+   (the daemon), `no_self_contact_row` or `no_phone_number_identity` (the daemon answered
+   but not in the shape we parse — suspect a signal-cli upgrade).
+
+   **This is a fixed regression, recorded because it ran for the deployment's whole
+   life.** The old code read `GET /api/v1/accounts`, which signal-cli **has never
+   served** — see "Facts that cost hours to learn" below — so `aliases` fell back to
+   `{primary}` on every single start, with one `log.warning` and no metric. Both series
+   above exist so that state can never be invisible again.
+
+If the silent-failure rate is low, `/health` is `200`, neither denial counter is moving,
+and `nora_identity_aliases` is above 1, she's just quiet — nobody has tagged her.
 
 ## 2. "A persona edit broke her"
 
@@ -357,6 +380,33 @@ back to 0.14.4.1.
   not one message delivered. Under R-5 that is indistinguishable from a quiet
   group.
 - **Java 25 is required** (class file version 69). Temurin 21 dies at class load.
+- **`GET /api/v1/accounts` does not exist and never did.** signal-cli's `--http` mode
+  serves exactly three endpoints — `POST /api/v1/rpc`, `GET /api/v1/events`,
+  `GET /api/v1/check` — per `signal-cli-jsonrpc(5)`, shipped in the image:
+
+  ```bash
+  docker exec signal-cli sh -c 'zcat /opt/signal-cli-0.14.7/man/man5/signal-cli-jsonrpc.5.gz'
+  ```
+
+  Nora read `/api/v1/accounts` for alias enrichment until 2026-08-05 and got a 404 every
+  start. Note that `/api/v1/check`, not `/health`, is the daemon's own liveness route.
+- **The JSON-RPC that actually answers "who am I".** There is no single call:
+  - `listAccounts` → `-32601 Method not implemented`. It only exists in MULTI-account
+    mode (daemon started with no `-a`). Ours is pinned to one account, so **no RPC
+    reveals which account that is** — `platforms.signal.account` in `config.toml` is
+    load-bearing, not a convenience override.
+  - `listContacts` with `{"recipient": "<number>"}` → her own row, a purely local store
+    read: `number`, `uuid` (her **ACI**), `username`.
+  - `getUserStatus` with `{"recipient": ["<number>"]}` → **the PNI, not the ACI.** It
+    answers a phone-number lookup, so the `uuid` it returns is the phone-number identity.
+    Cross-checked against the account store, where `aciAccountData.serviceId` and
+    `pniAccountData.serviceId` are two different UUIDs. Wiring only `getUserStatus` —
+    the obvious one-call fix — collects the wrong UUID and still looks like it worked.
+    `nora/platform/signal/self_id.py` batches both calls into one POST and keeps both.
+- **Nora's Signal identity, for cross-checking a metric:** phone `+85290000100`,
+  username `nora.000`, ACI `a1000000-0000-4000-8000-000000000000`, PNI
+  `a10000ff-0000-4000-8000-0000000000ff`. Four id forms, which is why a healthy
+  `nora_identity_aliases` reads 4.
 - **Group state can go stale on a linked device.** If `listGroups` returns `[]`
   for a group you know exists, call `sendSyncRequest` over `/api/v1/rpc` — that
   is what made `Ridgeline` appear.

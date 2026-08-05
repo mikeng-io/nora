@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from aiohttp import web
 
@@ -42,5 +44,15 @@ async def test_no_accounts_is_a_startup_failure(aiohttp_server):
 
 
 async def test_an_unreachable_daemon_is_a_startup_failure():
-    with pytest.raises(AccountError, match="could not reach"):
+    with pytest.raises(AccountError, match="could not read"):
+        await derive_account("http://127.0.0.1:1", timeout=0.3)
+
+
+async def test_the_failure_message_names_the_config_key_that_is_the_real_fix():
+    """`/api/v1/accounts` is not a route signal-cli has ever served, and its
+    `listAccounts` RPC is multi-account-mode only, so on this daemon there is no
+    discovery path at all — `platforms.signal.account` is the only way through.
+    An operator reading this exception must not go hunting for a broken daemon.
+    See `nora.platform.signal.self_id` for the endpoint survey."""
+    with pytest.raises(AccountError, match=re.escape("platforms.signal.account")):
         await derive_account("http://127.0.0.1:1", timeout=0.3)
