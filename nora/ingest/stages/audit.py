@@ -1,4 +1,4 @@
-"""Stage 2 — the audit write. Failure drops the message; it never re-raises.
+"""The audit write. Failure drops the message; it never re-raises.
 
 `on_event` is awaited by the SSE reader (`platform/signal/listener.py`), so a
 raise here would stop ingest for every conversation on this adapter. Dropping
@@ -10,16 +10,29 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from nora.domain.models import NormalizedMessage
+from nora.domain.models import NormalizedMessage, PersonRef
 from nora.domain.ports import AuditStore
 
 log = logging.getLogger("nora.ingest.audit")
 
 
-async def run(*, message: NormalizedMessage, audit: AuditStore, metrics: Any) -> bool:
-    """Return True if the message was recorded and ingest should continue."""
+async def run(
+    *,
+    message: NormalizedMessage,
+    audit: AuditStore,
+    metrics: Any,
+    person: PersonRef | None = None,
+) -> bool:
+    """Return True if the message was recorded and ingest should continue.
+
+    `person` is already resolved (identity runs first) so it lands in this one
+    INSERT rather than a follow-up UPDATE — WAL allows a single writer and this
+    path drops the message on contention.
+    """
     try:
-        await audit.append(message=message)
+        await audit.append(
+            message=message, person_id=person.person_id if person else None
+        )
     except Exception:
         log.exception("audit append failed; dropping message")
         metrics.inc("nora_errors_total", stage="ambient", platform=message.platform)

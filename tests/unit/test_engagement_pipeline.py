@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import time
 
 from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
@@ -25,10 +26,12 @@ from nora.domain.ports import (
     EngagementRequest,
     MemoryHealth,
     PlatformIdentity,
+    ReactionResult,
     SendResult,
 )
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.stages import indicate
 from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona
 from nora.persons import Persons
@@ -321,7 +324,21 @@ async def test_the_feedback_feed_is_spawned_through_the_injected_tracker():
 
     # The feedback feed is still in flight — it must be tracked by the
     # injected `background`, the one `deps.background.cancel_all()` reaches.
-    assert len(background) == 1
+    #
+    # Filtered to tasks that have not finished, rather than `len(background)`:
+    # the progress-reaction lifecycle (`nora.engagement.stages.indicate`) is
+    # spawned through the SAME injected tracker, deliberately — it must be
+    # cancellable at shutdown for exactly the reason this test exists. Against
+    # this test's default `_FakeAdapter`, which has no `react` at all, both of
+    # those tasks complete on their first scheduling, but a completed task is
+    # only discarded from `_tasks` one `call_soon` tick later (see `_drain`'s
+    # docstring), so a raw count here would be racing that callback rather than
+    # asserting anything about the feed. The discrimination is unchanged: if the
+    # feed were not spawned through this tracker, `memory.started` would never
+    # fire and the `wait_for` above would fail first; if it were spawned and
+    # immediately awaited, nothing would be pending here at all.
+    pending = [task for task in background._tasks if not task.done()]
+    assert len(pending) == 1
 
     await background.cancel_all()
 
@@ -475,3 +492,239 @@ async def test_a_self_tag_is_refused_and_admission_never_runs_the_pipeline():
 
     assert pipeline._in_flight == set()
     assert metrics.get("nora_tags_total") == 0
+
+
+# ---------------------------------------------------------------------------
+# Progress reactions (nora/engagement/stages/indicate.py).
+#
+# `_FakeAdapter` above deliberately has NO `react` method, so every test before
+# this point is already exercising the "platform that cannot react" path — the
+# reaction feature is additive to all of them or they would have broken. The
+# tests below add an adapter that can.
+# ---------------------------------------------------------------------------
+
+
+class _ReactingAdapter(_FakeAdapter):
+    def __init__(self, *, react_ok: bool = True, react_delay: float = 0.0, **kw) -> None:
+        super().__init__(**kw)
+        self.reactions: list[tuple[str, str, int, bool]] = []
+        self._react_ok = react_ok
+        self._react_delay = react_delay
+
+    async def react(self, *, target, emoji, to_author, to_timestamp, remove=False):
+        if self._react_delay:
+            await asyncio.sleep(self._react_delay)
+        self.reactions.append((emoji, to_author, to_timestamp, remove))
+        return ReactionResult(ok=self._react_ok)
+
+    @property
+    def emojis(self) -> list[str]:
+        return [e for e, _, _, remove in self.reactions if not remove]
+
+
+async def test_accepting_a_tag_reacts_to_the_tagging_message_then_resolves():
+    """The feature, end to end through the real pipeline: 👀 on accept, ✅ once
+    the reply is out, both aimed at the tagging message's author/timestamp.
+
+    PROBE: delete the `indicate.begin(...)` call in
+    `nora/engagement/pipeline.py::_run_admitted` and this fails."""
+    adapter = _ReactingAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.emojis == [indicate.ACK, indicate.DONE]
+    assert adapter.reactions[0][1:3] == ("+852111", 1)   # tagger, tagging timestamp
+    assert adapter.texts == ["今晚七點半得"]
+    assert metrics.get("nora_reactions_total", phase="ack", status="sent") == 1.0
+
+
+async def test_a_reaction_failure_never_prevents_the_reply():
+    """R-5: a reaction is decoration. If every reaction call fails, the reply
+    still goes out, the group sees no error, and the failures are counted.
+
+    PROBE: make `indicate._react` re-raise instead of swallowing, and the
+    pipeline's spawned tasks start failing while this assertion on `texts`
+    still passes — which is why the metric assertion is here too."""
+    adapter = _ReactingAdapter(react_ok=False)
+    pipeline, metrics, _audit, memory, background = _build_pipeline(adapter=adapter)
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["今晚七點半得"]
+    assert len([f for f in memory.fed if "[Nora]" in f[1]]) == 1
+    assert metrics.get("nora_reactions_total", status="failed") == 3.0
+    assert metrics.get("nora_silent_failures_total") == 0.0
+    assert pipeline._in_flight == set()
+
+
+async def test_a_platform_that_cannot_react_still_replies_normally():
+    """A future adapter with no `react` at all — the degradation case. It must
+    reply exactly as before and be counted as unsupported, never crash.
+
+    PROBE: replace `getattr(adapter, "react", None)` in `indicate._react` with
+    a direct attribute access and this tag fails with AttributeError."""
+    adapter = _FakeAdapter()                     # no `react` method at all
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["今晚七點半得"]
+    assert metrics.get("nora_reactions_total", status="unsupported") == 3.0
+    assert metrics.get("nora_silent_failures_total") == 0.0
+
+
+async def test_reactions_do_not_consume_the_reply_budget_so_r2_still_allows_one_reply():
+    """R-2/R-2b with reactions live: two `send_reply` calls, still exactly one
+    text delivered, and the reaction lifecycle unaffected by the veto.
+
+    A reaction is not a tool and never touches `Deliverer`, so the attempt
+    latch is neither consumed nor re-armed by it — the second call is vetoed by
+    `ReplyGuard` exactly as it was before this feature existed."""
+    adapter = _ReactingAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(tool_calls=[
+            ("send_reply", {"conversation_id": "g1", "conversation_type": "group",
+                            "text": "first"}),
+            ("send_reply", {"conversation_id": "g1", "conversation_type": "group",
+                            "text": "second"}),
+        ])]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["first"]
+    assert metrics.get("nora_guard_vetoes_total", rule="R-2") == 1
+    assert adapter.emojis == [indicate.ACK, indicate.DONE]
+
+
+async def test_the_model_cannot_emit_a_reaction_itself():
+    """R-7 default-deny still covers the new side effect: `react` was never
+    registered as a tool, so a model that invents one is vetoed before
+    anything runs, and no reaction is produced by it."""
+    adapter = _ReactingAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(tool_calls=[
+            ("react", {"conversation_id": "g1", "emoji": "\N{PILE OF POO}"}),
+            ("send_reply", {"conversation_id": "g1", "conversation_type": "group",
+                            "text": "hi"}),
+        ])]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.get("nora_guard_vetoes_total", rule="R-7") == 1
+    assert "\N{PILE OF POO}" not in adapter.emojis
+    assert adapter.texts == ["hi"]
+
+
+async def test_a_turn_that_never_replied_resolves_to_a_caution_and_says_nothing():
+    """The failure-resolution decision at pipeline level: the model never calls
+    `send_reply`, so nothing is delivered — the 👀 must not be left stranded
+    (indistinguishable from "still thinking") and must not become a ✅
+    (claiming a reply that does not exist). No text reaches the group either
+    way, so R-5 is intact.
+
+    PROBE: pass `delivered=True` unconditionally to `indicate.resolve` in the
+    pipeline's `finally` and this fails on the ✅."""
+    adapter = _ReactingAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.sent == []                       # nothing said to the group
+    assert adapter.emojis == [indicate.ACK, indicate.GAVE_UP]
+    assert indicate.DONE not in adapter.emojis
+    assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
+
+
+async def test_a_crashed_turn_still_resolves_the_indicator():
+    """The 👀 is resolved from the pipeline's `finally`, so even the outer
+    `except BaseException` path — which never reaches `check_outcome` at all —
+    leaves a terminal state on the message rather than a stranded 👀.
+
+    PROBE: move `indicate.resolve(...)` out of the `finally` and up next to
+    `check_outcome`, and this fails."""
+    adapter = _ReactingAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter, context_assembler=_FaultingContextAssembler(),
+    )
+
+    await pipeline.run(_request())                  # must not raise
+    await _drain(background)
+
+    assert adapter.emojis == [indicate.ACK, indicate.GAVE_UP]
+    assert metrics.get("nora_silent_failures_total", reason="handler_error") == 1
+
+
+async def test_the_reply_does_not_wait_for_the_reaction():
+    """Constraint: reactions must not delay the reply measurably. With a
+    reaction that takes far longer than the whole turn, the reply is already
+    delivered by the time `run` returns while the reactions are still in
+    flight — which is only true because they are spawned, not awaited.
+
+    PROBE: `await` the coroutines in `indicate.begin`/`resolve` instead of
+    spawning them, and the reply becomes hostage to the reaction's latency;
+    the `background` assertion below fails."""
+    adapter = _ReactingAdapter(react_delay=0.2)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+
+    started = time.perf_counter()
+    await pipeline.run(_request())
+    elapsed = time.perf_counter() - started
+
+    assert adapter.texts == ["今晚七點半得"]   # replied already
+    assert adapter.emojis == []                # reaction still in flight
+    assert len(background) > 0
+    assert elapsed < 0.2
+
+    await _drain(background)
+    assert adapter.emojis == [indicate.ACK, indicate.DONE]
+
+
+async def test_a_slow_reaction_is_not_counted_as_tag_overhead():
+    """`nora_overhead_seconds` is the metric that would catch a decoration
+    creeping onto the critical path, so it is asserted directly rather than
+    inferred from wall-clock."""
+    adapter = _ReactingAdapter(react_delay=0.2)
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+
+    await pipeline.run(_request())
+    overhead = metrics.observations("nora_overhead_seconds")
+    await _drain(background)
+
+    assert len(overhead) == 1
+    assert overhead[0] < 0.2
+
+
+async def test_a_timed_out_turn_resolves_to_a_caution_too():
+    """The `if not ok: return` exit after `invoke.run` is a THIRD distinct path
+    out of a tag, separate from the crash path and the no_send_call path, and it
+    never reaches `check_outcome` at all. It must still terminate the indicator.
+
+    PROBE: this is the case that survives moving `indicate.resolve` from the
+    `finally` up next to `check_outcome` — the crash test alone does not catch
+    a resolve placed after `invoke.run` but before delivery."""
+    adapter = _ReactingAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter, runner=ScriptedRunner(_reply_turns(), delay=0.2),
+        timeout_seconds=0.01,
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.sent == []
+    assert adapter.emojis == [indicate.ACK, indicate.GAVE_UP]
+    assert metrics.get("nora_silent_failures_total", reason="invocation_timeout") == 1

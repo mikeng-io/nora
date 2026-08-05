@@ -48,8 +48,15 @@ async def test_feed_creates_a_session_then_posts_the_message_batch(server_factor
     client = HonchoClient(base_url, "nora")
 
     assert await client.feed(peer_id="miles", text="hello") is True
+    # The session is created at the WORKSPACE level. This test previously
+    # asserted `/peers/miles/sessions`, which is a LIST endpoint — it answers
+    # 200 with a pagination envelope carrying no `id`, so `ensure_session`
+    # returned None, `feed` returned False before posting anything, and Honcho
+    # received nothing for the entire life of the deployment. The test passed
+    # throughout, because it was written against the implementation rather
+    # than the API and its fake server answered whatever was asked of it.
     assert calls == [
-        ("POST", "/v3/workspaces/nora/peers/miles/sessions"),
+        ("POST", "/v3/workspaces/nora/sessions"),
         ("POST", "/v3/workspaces/nora/sessions/sess-1/messages"),
     ]
 
@@ -192,3 +199,67 @@ async def test_different_peers_are_not_serialised_behind_one_lock(monkeypatch):
     client = HonchoClient("http://127.0.0.1:8000", "nora")
     assert client._peer_lock("a") is not client._peer_lock("b")
     assert client._peer_lock("a") is client._peer_lock("a")
+
+
+async def test_the_session_is_created_at_the_workspace_level(server_factory):
+    """The bug that made Honcho a no-op for the deployment's entire life.
+
+    `POST /peers/{id}/sessions` is a LIST endpoint on the real server: it
+    answers **200** with a pagination envelope and no `id`. `ensure_session`
+    read `.get("id")` off that, got None, and `feed` returned False before
+    posting anything — silently, because feeding is best-effort by contract
+    and the caller only counts a failure. Both feed counters sat at 0.0 and
+    nothing else noticed.
+
+    The old test could not have caught it: its fake answered every path with a
+    created session, so it asserted the implementation back to itself. This
+    fake answers the way the LIVE server does — verified against it — which is
+    what makes the URL load-bearing here.
+    """
+    calls: list[str] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        calls.append(request.path)
+        if request.path.endswith("/peers/miles/sessions"):
+            # what the real server returns: a list, not a creation
+            return web.json_response({"items": [], "total": 0, "page": 1, "pages": 0})
+        if request.path.endswith("/v3/workspaces/nora/sessions"):
+            return web.json_response({"id": "nora-miles"})
+        return web.json_response({"ok": True})
+
+    base_url = await server_factory(handler)
+    client = HonchoClient(base_url, "nora")
+
+    assert await client.feed(peer_id="miles", text="hello") is True
+    assert "/v3/workspaces/nora/sessions" in calls
+    assert "/v3/workspaces/nora/sessions/nora-miles/messages" in calls
+
+
+async def test_a_list_shaped_session_response_is_not_mistaken_for_a_created_one(
+
+    server_factory,
+):
+    """The bug that made Honcho a no-op for the deployment's entire life.
+
+    `POST /peers/{id}/sessions` is a LIST endpoint: it answers **200** with a
+    pagination envelope and no `id`. `ensure_session` read `.get("id")` off it,
+    got None, and `feed` returned False before posting anything — silently,
+    because feeding is best-effort by contract and the caller just counts a
+    failure. Both feed counters sat at 0.0 and nothing else noticed.
+
+    A 200 that is not a created session must NOT be treated as one.
+    """
+    calls: list[str] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        calls.append(request.path)
+        return web.json_response({"items": [], "total": 0, "page": 1, "pages": 0})
+
+    base_url = await server_factory(handler)
+    client = HonchoClient(base_url, "nora")
+
+    assert await client.ensure_session("miles") is None
+    assert await client.feed(peer_id="miles", text="hello") is False
+    assert not any("/messages" in c for c in calls), (
+        "no message may be posted when the session was never created"
+    )

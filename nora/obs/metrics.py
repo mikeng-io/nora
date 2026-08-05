@@ -21,102 +21,17 @@ under `platform=""`, never dropped or rejected).
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import NamedTuple
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
-_DEFAULT_BUCKETS: tuple[float, ...] = (0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30)
-
-
-class _CounterSpec(NamedTuple):
-    name: str
-    help_text: str
-    labelnames: tuple[str, ...] = ()
-
-
-class _GaugeSpec(NamedTuple):
-    name: str
-    help_text: str
-    labelnames: tuple[str, ...] = ()
-
-
-class _HistogramSpec(NamedTuple):
-    name: str
-    help_text: str
-    buckets: tuple[float, ...] = _DEFAULT_BUCKETS
-
-
-# Every metric name below already existed before this module's prometheus-client
-# rewrite — names are append-only (an SRE's repo; renames break dashboards).
-# `platform` is new on the four series spec §6 calls out (today only
-# `nora_messages_total` had one, so with N adapters a stuck/failing platform
-# was invisible in the other three): nora_tags_total, nora_replies_total,
-# nora_silent_failures_total, nora_errors_total.
-_COUNTERS: tuple[_CounterSpec, ...] = (
-    _CounterSpec("nora_messages_total", "Ambient messages ingested, by platform.", ("platform",)),
-    _CounterSpec(
-        "nora_tags_total", "Tags detected and accepted for handling.", ("platform",),
-    ),
-    _CounterSpec("nora_tags_debounced_total", "Tags dropped by the debounce window."),
-    _CounterSpec(
-        "nora_tags_dropped_total", "Tags dropped for a reason other than debounce.", ("reason",),
-    ),
-    _CounterSpec(
-        "nora_replies_total", "Delivery attempts, by outcome status.", ("status", "platform"),
-    ),
-    _CounterSpec(
-        "nora_errors_total", "Internal errors, by processing stage.", ("stage", "platform"),
-    ),
-    _CounterSpec(
-        "nora_silent_failures_total",
-        "Failures kept silent from the group, by reason.",
-        ("reason", "platform"),
-    ),
-    _CounterSpec("nora_guard_vetoes_total", "ReplyGuard vetoes, by rule.", ("rule",)),
-    _CounterSpec(
-        "nora_leak_blocks_total", "Replies blocked by the persona/canary leak guard.",
-    ),
-    _CounterSpec("nora_persona_reload_failures_total", "Persona hot-reload failures."),
-    _CounterSpec("nora_store_busy_total", "SQLITE_BUSY responses from the audit store."),
-    _CounterSpec(
-        "nora_adapter_restarts_total",
-        "Adapter listen() loop restarts after a failure, by platform.",
-        ("platform",),
-    ),
+from .metric_specs import (
+    _COUNTERS,
+    _GAUGES,
+    _HISTOGRAMS,
+    DECLARED_NAMES,
 )
 
-_GAUGES: tuple[_GaugeSpec, ...] = (
-    _GaugeSpec("nora_last_event_age_seconds", "Seconds since the last ingest event."),
-    # `Gauge`, not `Counter`, on purpose: prometheus-client's exposition format
-    # unconditionally appends `_total` to every counter-typed series' rendered
-    # name (`exposition.py::generate_latest`, hardcoded, not configurable —
-    # verified directly, including via a hand-rolled custom Collector, which
-    # hits the same unconditional munging). These two names predate that
-    # OpenMetrics convention and don't end in `_total`; using `Counter` would
-    # silently rename them to `honcho_feed_success_total` /
-    # `honcho_feed_failure_total` — exactly the kind of rename this repo's
-    # append-only metric-name contract forbids. A `Gauge` only ever
-    # incremented (see `Metrics.inc`) renders under its exact declared name
-    # and is otherwise indistinguishable from a counter for these call sites.
-    _GaugeSpec("honcho_feed_success", "Successful Honcho feed calls."),
-    _GaugeSpec("honcho_feed_failure", "Failed Honcho feed calls."),
-)
-
-_HISTOGRAMS: tuple[_HistogramSpec, ...] = (
-    _HistogramSpec(
-        "nora_tag_latency_seconds", "End-to-end tag latency, including the model call.",
-    ),
-    _HistogramSpec("nora_llm_latency_seconds", "Model invocation latency."),
-    _HistogramSpec("nora_overhead_seconds", "Tag latency excluding the model call."),
-)
-
-# The full set of declared metric names, independent of kind — what the
-# name-preservation test (tests/test_metrics_export.py) enumerates against.
-DECLARED_NAMES: frozenset[str] = (
-    frozenset(spec.name for spec in _COUNTERS)
-    | frozenset(spec.name for spec in _GAUGES)
-    | frozenset(spec.name for spec in _HISTOGRAMS)
-)
+__all__ = ["DECLARED_NAMES", "Metrics"]
 
 
 def _obs_key(name: str, labels: dict[str, object]) -> tuple[str, tuple[tuple[str, str], ...]]:

@@ -5,6 +5,7 @@
 # this repo's layout).
 
 identity_file = "identity.toml"
+policy_file = "policy.toml"
 
 [platforms.signal]
 base_url = "http://127.0.0.1:18080"

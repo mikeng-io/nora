@@ -4,7 +4,8 @@ keep living where they live until the phase that migrates them.
 
 Standard library only, same rule as the rest of `nora/domain`: if a port needs
 aiohttp, strands, sqlalchemy, pydantic or prometheus_client to express itself,
-the port is wrong. `nora.domain.models` is the one allowed sibling import.
+the port is wrong. `nora.domain.models` and `nora.domain.identity` are the only
+allowed sibling imports.
 
 Each shape below encodes a decision that cost something to reach. Simplifying
 it back to the "obvious" version silently reintroduces the bug it was built to
@@ -14,7 +15,10 @@ avoid:
   `sourceNumber` and sometimes a UUID, and Telegram has both a numeric id and
   a username. R-12 (ignore Nora's own messages) must test *membership* in
   `aliases`, not equality against a single id, or self-recognition silently
-  breaks the moment a second platform is wired in.
+  breaks the moment a second platform is wired in. The type now lives in
+  `nora.domain.identity` (re-exported below) and carries typed `identifiers`
+  alongside the flat `aliases` — see its own docstring, and R-17 for why a
+  degraded derivation of it must be counted rather than merely logged.
 
 - `SendResult` replaces a bare `bool` because Telegram answers rate limiting
   with a 429 and a `retry_after` value, and `Deliverer`'s latch counts
@@ -32,6 +36,22 @@ avoid:
   gateway events and Telegram's update batches are not. Parsers stay
   per-adapter, tested directly against their own transport shape.
 
+- `react()` lives on THIS port, not a separate capability protocol: reacting
+  is a platform capability like sending, and the alternative has the
+  engagement layer `isinstance`-testing a narrower protocol, putting platform
+  knowledge back in the layer whose whole job is not to have any.
+  `ReactionResult` carries `supported` as well as `ok`, so "this platform has
+  no reactions" (never an exception) stays distinguishable from "the reaction
+  failed" — only one of those is worth an alert. There is deliberately no
+  shared `UNSUPPORTED_REACTION` constant: DEC-13's gate forbids binding a
+  locally-defined class's instance at module level, and it checks the *shape*,
+  not mutability, so a frozen dataclass is no exception.
+  `nora.engagement.stages.indicate` also tolerates an adapter with no `react`
+  attribute at all — a decoration may never crash a tag. Parameters are
+  `to_author`/`to_timestamp` because `target` here already means the
+  `ConversationTarget`; Signal's `targetAuthor`/`targetTimestamp` are
+  translated in `nora.platform.signal.react` with every other wire name.
+
 - `AuditStore.recent` returns `TranscriptRow`, not the `dict[str, Any]` row
   blobs the old `nora/store/db.py` returned, and `delivery_status` is
   `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlAuditStore`
@@ -46,6 +66,17 @@ avoid:
   not something any stage programs against through the port. Putting it on the
   port would oblige every future implementation — including fakes — to
   implement a retention policy they do not have.
+
+- `AuditStore` DOES carry `unattributed`/`set_person_id`, which looks like the
+  same "retention chore" shape `prune` was refused for above, and is not. The
+  distinction is who programs against it: `prune_all` is a policy the store
+  decides for itself and no caller reasons about, whereas lazy adoption
+  (`nora.app.adoption`) is a caller with a question only the store can answer —
+  "which audited messages are still attributed to nobody?" — followed by a
+  decision that same caller makes. A `MemoryStore`-backed or Postgres-backed
+  `AuditStore` would have to answer that question too, so it belongs on the
+  port. `set_person_id` mirrors `set_delivery_status` exactly: one row, by id,
+  unknown id is a silent no-op.
 
 - `AuditStore.append` has **no `max_per_conversation` parameter**. Retention
   window size is a policy decided at the store's construction, not a value
@@ -90,35 +121,32 @@ change at every call site; keyword-only buys free extensibility forever.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
+from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
     NormalizedMessage,
     TagContext,
     TranscriptRow,
+    UnattributedRow,
 )
+
+# `PlatformIdentity` is re-exported, not declared here — it moved next to
+# `Identifier` in `nora.domain.identity` when it grew a typed `identifiers`
+# field (design/10 §5), which also bought this module back some of its 300-line
+# cap. The `X as X` above is not a typo: it is PEP 484's explicit re-export
+# marker, which mypy's `no_implicit_reexport` requires before another module may
+# import the name through here. `__all__` would satisfy mypy too, but would also
+# narrow `from nora.domain.ports import *` to that one name.
 
 
 class ModelTier(Enum):
     FLASH = "flash"
     DEEP = "deep"
-
-
-@dataclass(frozen=True)
-class PlatformIdentity:
-    """Nora's own identity on a platform, as a set of aliases rather than a
-    single id — see module docstring."""
-
-    platform: str
-    primary: str
-    aliases: frozenset[str] = field(default_factory=frozenset)
-
-    def __post_init__(self) -> None:  # primary is always an alias of itself
-        object.__setattr__(self, "aliases", frozenset(self.aliases) | {self.primary})
 
 
 @dataclass(frozen=True)
@@ -128,6 +156,15 @@ class SendResult:
     ok: bool
     retryable: bool = False
     retry_after: float | None = None
+
+
+@dataclass(frozen=True)
+class ReactionResult:
+    """Outcome of a reaction attempt. `supported` is a separate axis from `ok` —
+    see module docstring."""
+
+    ok: bool
+    supported: bool = True
 
 
 @dataclass(frozen=True)
@@ -190,6 +227,16 @@ class PlatformAdapter(Protocol):
 
     async def send(self, *, target: ConversationTarget, text: str) -> SendResult: ...
 
+    async def react(
+        self,
+        *,
+        target: ConversationTarget,
+        emoji: str,
+        to_author: str,
+        to_timestamp: int,
+        remove: bool = False,
+    ) -> ReactionResult: ...
+
     async def health(self) -> AdapterHealth: ...
 
 
@@ -203,11 +250,16 @@ class AuditStore(Protocol):
         message: NormalizedMessage,
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
+        person_id: str | None = None,
     ) -> int: ...
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
 
     async def set_delivery_status(self, *, row_id: int, status: DeliveryStatus) -> None: ...
+
+    async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
+
+    async def set_person_id(self, *, row_id: int, person_id: str) -> None: ...
 
     async def stats(self) -> dict[str, Any]: ...
 

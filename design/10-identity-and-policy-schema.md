@@ -4,7 +4,7 @@ title: "Nora — Identity and Policy Schema"
 description: "A platform-neutral schema for who people are (identity.toml) and what is allowed (policy.toml), designed against the real identifier shapes of Signal, Telegram, Discord and WhatsApp."
 tags: [nora, design, identity, policy, allowlist, multi-platform]
 timestamp: '2026-08-05'
-status: proposal
+status: implemented
 edges:
   - {dst: 04-config-identity.md, rel: amends, provenance: asserted}
   - {dst: 09-decision-index.md, rel: extends, provenance: asserted}
@@ -12,17 +12,34 @@ edges:
 
 # Identity and Policy Schema
 
-**Status: proposal.** Nothing here is built. It exists so the schema is settled
-before a second platform lands, because the schema is the thing that decides
-whether platform four is an edit or a rebuild.
+**Status: implemented (Phase 8, 2026-08-05).** Written as a proposal so the
+schema would be settled before a second platform landed; it was then built
+essentially as specified, with one correction recorded in §1 and §7.4 — many
+ACCOUNTS per platform, not one account with many id forms. Read §1–§4 as
+current, and treat any remaining future tense as historical. The schema is what
+decides whether platform four is an edit or a rebuild, which is why it was
+settled first.
 
 ## 1. The problem, stated precisely
 
-Today `identity.toml` maps **one id per platform per person**
-(`nora/persons.py:55`, `platforms: dict[str, str | int]`), and the Signal parser
-reads **one** sender field (`parser.py:35`,
-`source or sourceNumber`). Both assume a person has a single, stable,
-operator-obtainable identifier on each platform.
+Identity has **two independent axes**, and the original version of this
+document conflated them:
+
+* **many id FORMS per account** — `phone`, `uuid` and `username` are three ways
+  of naming the *same* Signal registration. Nora matches on any of them.
+* **many ACCOUNTS per platform** — a dual-SIM personal/work pair, a second
+  Discord, a burner Telegram. Different registrations, *same human*.
+
+The first draft of §3 modelled only the first axis, so a person had exactly one
+account per platform and `phone` held exactly one value. That is wrong, and it
+was wrong on first contact with real operator data: the operator holds two
+Signal accounts, and splitting him into two `person_id`s would have violated A2
+and split his Honcho peer card. **Many accounts per platform is the baseline
+case, not an edge case.**
+
+The original narrowness — `identity.toml` mapping one id per platform per
+person, and the Signal parser reading `source or sourceNumber` only — assumed a
+person has a single, stable, operator-obtainable identifier on each platform.
 
 **That assumption is false on all four target platforms, for different reasons.**
 
@@ -98,7 +115,7 @@ id silently stops matching — Nora goes quiet, which under R-5 is invisible.
 reason a person must. This is not Telegram-specific pedantry: it is the same
 shape as the person problem.
 
-## 3. Proposed `identity.toml`
+## 3. `identity.toml`
 
 Hand-editable (D6), one section per person, ids typed by **kind** so matching
 can reason about them.
@@ -107,28 +124,54 @@ can reason about them.
 [persons.miles]
 name = "Miles"
 
-# Every id form Nora may see for this person, per platform.
-# Keys are the id KIND; the vocabulary is fixed per platform (§3.1).
-[persons.miles.signal]
+# One block per ACCOUNT. Keys inside are the id KINDS Nora may see for THAT
+# account; the vocabulary is fixed per platform (§3.1). `label` is never
+# matched on (§1.3) and is required once a platform holds two or more accounts.
+[[persons.miles.signal]]
+label    = "personal"
 phone    = "+85212345678"
 uuid     = "8185b8fa-1234-5678-9abc-def012345678"   # discovered by Nora, confirmed by you
 username = "miles.42"
 
-[persons.miles.telegram]
+# A SECOND Signal account, same human. This is the axis the first draft of this
+# document had nowhere to express.
+[[persons.miles.signal]]
+label    = "business"
+phone    = "+85287654321"
+uuid     = "a1000002-1234-5678-9abc-def012345678"
+
+[[persons.miles.telegram]]
 user_id  = "123456789"
 username = "pinegrove"
 
-[persons.miles.discord]
+[[persons.miles.discord]]
 user_id  = "100000000000000003"
 
-[persons.miles.whatsapp]
+[[persons.miles.whatsapp]]
 phone    = "+85212345678"
 ```
 
+**Multiplicity lives at the table level, never at the leaf.** The obvious
+alternative — letting a kind hold a list, `phone = ["+852…", "+852…"]` — is
+rejected for three reasons: it severs the pairing between a phone and the ACI
+of the *same* registration; it makes `nora persons pending`'s paste-ready
+stanza (§6) unimplementable for an existing person, since there is no
+self-contained block to emit; and it forces the leaf type to widen from
+`str | int` to accept a list, which is the only thing stopping `str(["+1"])`
+from reaching the reverse index as a key no sender can ever present — a
+permanently mute Nora with no error, invisible under R-5.
+
 `honcho_peer_id == person_id` is unchanged (A2): **one human, one peer, across
-every platform.** That is what makes Discord-Miles and Signal-Miles the same
-person, and it already works — it is the *mapping* that was too narrow, not the
-peer model.
+every platform — and across every account on a platform.** That is what makes
+Discord-Miles and Signal-Miles the same person, and it is equally what makes
+work-Miles and personal-Miles the same person. Two accounts on one platform is
+precisely the case A2 exists to handle; it already works — it is the *mapping*
+that was too narrow, not the peer model.
+
+A consequence worth stating plainly, because it will otherwise be learned by
+surprise: since `policy.toml` grants by `person_id` only (§4.6), allowlisting
+`miles` grants **every** account he holds. "I allowlisted my personal number"
+and "my work number can also trigger Nora" are the same fact under this schema.
 
 ### 3.1 Id-kind vocabulary
 
@@ -321,3 +364,24 @@ rule, and so a degraded discovery is *counted* rather than silently logged.
    and currently holds one placeholder entry, so accepting the old
    `signal = "+852…"` shorthand would buy nothing and leave two shapes to
    support forever. The loader raises a readable error naming the new form.
+4. **Many accounts per platform is the baseline** (§1, §3), not an edge case —
+   settled with the operator 2026-08-05 after his own two Signal accounts broke
+   the first draft: *"u should EXPECT each person can hv multiple account for
+   each platform."* One `[[persons.<id>.<platform>]]` block per account.
+
+   This is a **second hard break**, on the same reasoning as 3 above, and it
+   gets the same treatment: a bespoke error naming the `[[ ]]` form rather than
+   pydantic's generic "Input should be a valid list".
+
+   Two loudness rules come with it, both guarding failures that are otherwise
+   silent:
+
+   - An account block listing **no matchable id** (only a `label`) is refused.
+     It would sit in the file looking like a mapping while resolving no one.
+   - The **same id in two of one person's account blocks** is refused. That is
+     the copy-paste-and-forget-to-edit mistake, and nothing else catches it:
+     both blocks map to the same `person_id`, so the cross-person duplicate
+     check never fires, while the id that was never pasted resolves to nobody.
+     Under sealed sender that unpasted ACI is often the only id Nora sees.
+     A distinct `label` per account is required once a platform holds two or
+     more, as a second, independent tripwire on the same mistake.

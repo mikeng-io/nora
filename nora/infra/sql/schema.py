@@ -47,6 +47,18 @@ MESSAGES = sa.Table(
         nullable=False,
         server_default=sa.text("(datetime('now'))"),
     ),
+    # The resolved person_id, or NULL when the sender mapped to nobody at the
+    # moment of ingest. Written in the same INSERT (identity resolves before
+    # the audit write), never by a follow-up UPDATE — WAL allows one writer and
+    # this path drops the message on contention. Unindexed on purpose:
+    # cardinality is a handful of people.
+    #
+    # LAST on purpose, and this position is load-bearing. `ALTER TABLE ADD
+    # COLUMN` appends to the end, so production has it last; declaring it
+    # mid-table made a fresh database order its columns differently, which
+    # shifted `ts`'s column index and `test_indexes_match_production_exactly`
+    # caught it via `PRAGMA index_xinfo`. Any future column goes here too.
+    sa.Column("person_id", sa.Text),
     sa.CheckConstraint("conversation_type IN ('group','dm')"),
     sqlite_autoincrement=True,
 )

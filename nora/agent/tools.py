@@ -39,8 +39,16 @@ def build_tool_specs(
     persons,
     honcho,
     deliverer,
+    metrics,
     context_window: int = 40,
 ) -> tuple[ToolSpec, ...]:
+    # Captured under a name distinct from read_buffer's own `conversation_id`
+    # parameter on purpose. That parameter is model-supplied and SHADOWS this
+    # one inside read_buffer's body — reading the bare name there is exactly
+    # the cross-group read leak Task 1 closes. Every reference to "this tag's
+    # conversation" inside read_buffer must go through `bound_conversation_id`.
+    bound_conversation_id = conversation_id
+
     async def read_buffer(
         conversation_id: str, conversation_type: str = "group", limit: int = 40
     ) -> list[dict]:
@@ -54,13 +62,26 @@ def build_tool_specs(
             conversation_type: Always "group".
             limit: How many recent messages to fetch (max 200).
         """
+        if conversation_id != bound_conversation_id:
+            # The model asked for a conversation this tag was never bound to.
+            # R-3 only guards the *send* target — nothing guarded the *read*
+            # source before this, so a model asking (accidentally or as a
+            # probe) for another group's id must never be silently honoured
+            # NOR silently corrected. Log it and count it; still serve the
+            # conversation these tools were actually built for.
+            log.warning(
+                "read_buffer: model requested conversation_id=%r but tools are bound "
+                "to %r; ignoring the request and staying bound",
+                conversation_id, bound_conversation_id,
+            )
+            metrics.inc("nora_tool_scope_violations_total", tool="read_buffer")
         try:
             # Clamp both ends: `limit` is a model-supplied argument, and a
             # non-positive value must never reach the store. SQLite renders
             # `LIMIT -1` as unbounded, so an unclamped negative limit would
             # dump the entire conversation into context.
             rows = await store.recent(
-                conversation_id=conversation_id, limit=max(1, min(int(limit), 200))
+                conversation_id=bound_conversation_id, limit=max(1, min(int(limit), 200))
             )
         except Exception:
             log.exception("read_buffer failed")
@@ -74,6 +95,17 @@ def build_tool_specs(
             for r in rows
         ]
 
+    # Reviewed for the same shadowing shape as read_buffer (Task 1): `sender_id`
+    # here is also model-supplied and unscoped, hardcoded to "signal". This is
+    # NOT fixed in this task — see task-1-brief.md and the phase-8 notes for the
+    # judgement — but it is not a silent gap either: it reads a durable,
+    # per-PERSON Honcho card (not raw messages), and any sender_id valid enough
+    # to resolve already had to be a real platform id someone confirmed into
+    # identity.toml, so the disclosure is "what Nora recalls about a known
+    # person" rather than another group's live transcript. Still a real gap:
+    # nothing here checks that sender_id belongs to *this* conversation, so a
+    # model that already knows (or guesses) another person's platform id can
+    # pull their peer card across conversation boundaries.
     async def read_peer_card(sender_id: str) -> list[str]:
         """Look up what you durably recall about a person.
 
@@ -129,6 +161,7 @@ def build_tools(
     persons,
     honcho,
     deliverer,
+    metrics,
     context_window: int = 40,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
@@ -137,6 +170,7 @@ def build_tools(
     the callable", see `nora.agent.ports.adapt`)."""
     specs = build_tool_specs(
         store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-        persons=persons, honcho=honcho, deliverer=deliverer, context_window=context_window,
+        persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+        context_window=context_window,
     )
     return [adapt(spec) for spec in specs]

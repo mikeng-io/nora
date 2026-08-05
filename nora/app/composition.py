@@ -17,6 +17,7 @@ await this function, construct `App`.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Coroutine
 from dataclasses import dataclass
@@ -46,11 +47,14 @@ from nora.persona.loader import Persona, PersonaError, PersonaStore
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
+from nora.policy import PolicyError, load_policy
 from nora.tag import Debounce
 
 from .agent_runner import LiveAgentRunner
 from .dispatch import Dispatcher
 from .runtime import BackgroundTasks
+
+log = logging.getLogger("nora.app.composition")
 
 
 class StartupError(Exception):
@@ -125,6 +129,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         raise StartupError(f"person mapping error: {exc}") from exc
 
     try:
+        allowlist = load_policy(cfg.policy_file)
+    except PolicyError as exc:
+        raise StartupError(f"policy error: {exc}") from exc
+    if allowlist.dm_persons:
+        log.warning(
+            "policy.toml lists %d DM principal(s), but the Signal parser still "
+            "drops every non-group message — this section does nothing yet",
+            len(allowlist.dm_persons),
+        )
+
+    try:
         run_migrations(cfg.store.db_path)
     except Exception as exc:
         raise StartupError(f"migration error: {exc}") from exc
@@ -136,7 +151,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
 
     try:
-        registry = await AdapterRegistry.from_config(cfg.platforms)
+        registry = await AdapterRegistry.from_config(cfg.platforms, metrics=metrics)
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
     if "signal" not in registry:
@@ -190,7 +205,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
 
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
-        policy=policy, metrics=metrics, spawn=_spawn,
+        policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
     )
 
     tier = cfg.llm.tiers.flash

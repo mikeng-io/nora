@@ -78,7 +78,12 @@ def test_the_baseline_revision_is_on_disk_where_alembic_looks():
 
     versions = ROOT / "nora" / "infra" / "sql" / "migrations" / "versions"
     assert list(versions.glob("*.py")), "no revision files"
-    assert head_revision() == "0001_baseline"
+    # The baseline must still be on disk — Alembic walks the chain from it —
+    # but it stopped being the head the moment a second revision landed, so
+    # assert the chain's shape rather than pinning a name that every future
+    # migration would have to come back and edit.
+    assert (versions / "0001_baseline.py").exists(), "baseline revision missing"
+    assert head_revision() != "0001_baseline", "head should advance past baseline"
 
 
 def test_the_dockerfile_copies_alembic_ini():

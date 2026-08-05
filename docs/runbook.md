@@ -28,8 +28,59 @@ is correct. To tell "quiet" from "broken":
    stream dropped, the DB is unreachable, Honcho is down, or the LLM hasn't answered
    recently.
 
-If both the silent-failure rate is low and `/health` is `200`, she's just quiet — nobody
-has tagged her.
+3. Check whether she is **refusing on purpose**. Deny-by-default means a correct,
+   healthy Nora can be completely silent because `policy.toml` does not list the room or
+   the person. Both refusals are counted, so this is one command:
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep -E 'nora_denied_(conversations|senders)_total'
+   ```
+
+   - `nora_denied_conversations_total` rising → the conversation is not in `policy.toml`.
+     Nothing from it is recorded either (the room gate runs before the audit write), so
+     the audit DB will show no trace of it at all. Run `nora groups` to see the group's
+     name beside the id you need to add.
+   - `nora_denied_senders_total` rising → the room is allowed but the sender is not in
+     that entry's `persons` list. The message **is** audited, so it is visible in
+     `messages`; it just was not answered.
+
+4. Check whether she is answering but **remembering nothing**:
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep nora_unmapped_senders_total
+   ```
+
+   A rising count means senders are resolving to no person in `identity.toml`. This one
+   is deceptive: Nora still replies and still addresses them by their Signal profile
+   name, so she looks completely normal while writing nothing to Honcho. If you have
+   edited `identity.toml`, **restart her** — mapping is startup-only, so an edit alone
+   changes nothing.
+
+5. Check whether she still knows **who she is**. This one does not make her silent — it
+   makes her answer *herself*, which is worse:
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep -E 'nora_identity_aliases|nora_identity_enrichment_degraded_total'
+   ```
+
+   `nora_identity_aliases{platform="signal"}` is the number of id forms Nora recognises
+   as her own. **Alert on `== 1`.** One means enrichment produced nothing beyond the
+   phone number in `platforms.signal.account`, so R-12 ("never treat my own message as a
+   tag") has collapsed from a set-membership test to a plain string equality — and a
+   self-send arriving under her ACI or username would be handled as somebody else's tag.
+   A healthy Signal start reads **4**: phone, ACI, username, PNI. The
+   `..._degraded_total` counter's `reason` label says which half failed: `unreachable`
+   (the daemon), `no_self_contact_row` or `no_phone_number_identity` (the daemon answered
+   but not in the shape we parse — suspect a signal-cli upgrade).
+
+   **This is a fixed regression, recorded because it ran for the deployment's whole
+   life.** The old code read `GET /api/v1/accounts`, which signal-cli **has never
+   served** — see "Facts that cost hours to learn" below — so `aliases` fell back to
+   `{primary}` on every single start, with one `log.warning` and no metric. Both series
+   above exist so that state can never be invisible again.
+
+If the silent-failure rate is low, `/health` is `200`, neither denial counter is moving,
+and `nora_identity_aliases` is above 1, she's just quiet — nobody has tagged her.
 
 ## 2. "A persona edit broke her"
 
@@ -261,3 +312,158 @@ working correctly — it is faithfully recording a real failing verdict.
 - Scores go to `/api/public/scores`. `/api/public/v2/scores` exists but has **no
   POST route** (405). Both failures were silent, because the sink swallows errors
   by design — which is why the sink now logs the response body, not just the status.
+
+
+## 8. "Who is this, and which group is that?" — the control plane
+
+Two read-only commands. Neither writes a file, neither writes to the daemon,
+and both work with the Nora container **stopped** — the 3am path is docker, an
+editor and these. Neither needs `OMNIROUTE_API_KEY`; listing group ids has
+nothing to do with the LLM.
+
+```bash
+uv run nora groups              # every group, its id, and whether policy allows it
+uv run nora persons pending     # senders Nora could not map, with paste-ready stanzas
+```
+
+(`nora` is a console script declared in `pyproject.toml`; `uv run` is what puts
+it on PATH from a bare shell. `uv run python -m nora …` is identical.)
+
+**`nora groups`** answers "I cannot tell which group id is which". It prints
+each group's name beside the base64 `conversation_id` you need for
+`policy.toml`, marks it ALLOWED or DENIED, and emits a paste-ready
+`[[conversations]]` block for the denied ones.
+
+**`nora persons pending`** answers "who is this ACI?". It lists every sender in
+the audit DB that maps to no person, correlated into **accounts** rather than
+raw ids — under sealed sender the same account arrives as a phone number on one
+message and an ACI on another, and filing those as two pending entries would
+walk you straight into the duplicate-block startup error. Correlation uses the
+group rosters as well as `listContacts`, which matters more than it sounds: on
+this deployment only **3 of 83** contacts carry both a number and a uuid, while
+every group member does.
+
+**Adopting somebody is just editing the file.** Paste the stanza into
+`identity.toml` and restart. Lazy adoption (DEC-16) then backfills everything
+they said *before* you mapped them into their Honcho peer — Nora never writes
+`identity.toml` herself (D6).
+
+```bash
+$ uv run nora groups
+ALLOWED  Ridgeline
+         id = Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34=
+         member=yes  members=3
+         policy: labelled "Ridgeline", persons = ['miles']
+```
+
+If the daemon is unreachable, `groups` exits 1 with the two commands to run;
+`pending` still works but loses display names and says so — with no roster to
+correlate against, one person's ids may appear as several entries.
+
+## 9. "Where does everything live?" (read this first, months later)
+
+One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
+
+```
+~/workspace/nora/
+  docker-compose.yml        both services: nora + signal-cli
+  deploy/signal-cli/        Dockerfile + fetch.sh (16K; the 115MB tarball is
+                            fetched on demand, never committed)
+  config.toml               deploy cadence: ports, models, timeouts
+  identity.toml             WHO PEOPLE ARE. gitignored. One
+                            [[persons.<id>.<platform>]] block per ACCOUNT — a
+                            person may hold several on one platform, and they
+                            all resolve to one person_id (= their Honcho peer).
+  policy.toml               WHO MAY TALK TO HER, AND WHERE. gitignored, deny by
+                            default. She REFUSES TO START if it is missing or
+                            allows nothing — running mute would be
+                            indistinguishable from working (R-5).
+  data/                     Nora's own state — messages.db, nora.log
+                            (bind-mounted into the nora container as /app/data)
+  state/signal-cli/         SIGNAL ACCOUNT: identity keys, sessions, group and
+                            contact caches. 1.4MB. gitignored.
+```
+
+**Three config files, three lifetimes, on purpose.** `config.toml` changes when the
+deployment changes; `identity.toml` when a human joins; `policy.toml` when TRUST
+changes. Keeping them apart is what stops an allowlist from being buried among port
+numbers where nobody reviews it. Both `identity.toml` and `policy.toml` are
+gitignored and bind-mounted read-only into the container.
+
+**Editing either one requires a restart.** Mapping and policy are both loaded once at
+startup (Q4). An edit alone changes nothing, and nothing warns you — this is the single
+most likely way to lose an hour. `nora_unmapped_senders_total` is the tell.
+
+**`data/` vs `state/` is deliberate.** Nora's container mounts `./data`; it does
+NOT mount `./state`. She has no business reading Signal identity keys, so they
+sit outside her reach.
+
+**What is irreplaceable:** `state/signal-cli/data/` — that is the device
+registration. Lose it and you re-link a device (QR scan from the primary phone).
+Everything else regenerates: `stickers/` and `avatars/` are caches that were
+7.6MB and 560KB and were pruned on 2026-08-05; signal-cli refetches them on
+demand.
+
+**Back up:**
+```bash
+tar czf ~/backups/nora-state-$(date +%Y%m%d).tar.gz -C ~/workspace/nora state data
+```
+
+**Restore:** stop the stack, extract over `state/`, start. The account is
+identified by `state/signal-cli/data/accounts.json` plus the `892678*` files
+beside it.
+
+**Existing backup:** `/home/norty/backups/signal-cli-20260805-173329/signal-cli-data.tar.gz`
+— taken *before* the 0.14.4.1 → 0.14.7 migration. signal-cli migrates its store
+schema one-way on first run of a new version, so that archive is the only way
+back to 0.14.4.1.
+
+### Facts that cost hours to learn
+
+- **`--receive-mode=on-start` is mandatory.** Without it signal-cli serves every
+  JSON-RPC call correctly and never opens its websocket to Signal. It ran that
+  way on the host for 61 days: `/health` green, `nora_messages_total` at `0.0`,
+  not one message delivered. Under R-5 that is indistinguishable from a quiet
+  group.
+- **Java 25 is required** (class file version 69). Temurin 21 dies at class load.
+- **`GET /api/v1/accounts` does not exist and never did.** signal-cli's `--http` mode
+  serves exactly three endpoints — `POST /api/v1/rpc`, `GET /api/v1/events`,
+  `GET /api/v1/check` — per `signal-cli-jsonrpc(5)`, shipped in the image:
+
+  ```bash
+  docker exec signal-cli sh -c 'zcat /opt/signal-cli-0.14.7/man/man5/signal-cli-jsonrpc.5.gz'
+  ```
+
+  Nora read `/api/v1/accounts` for alias enrichment until 2026-08-05 and got a 404 every
+  start. Note that `/api/v1/check`, not `/health`, is the daemon's own liveness route.
+- **The JSON-RPC that actually answers "who am I".** There is no single call:
+  - `listAccounts` → `-32601 Method not implemented`. It only exists in MULTI-account
+    mode (daemon started with no `-a`). Ours is pinned to one account, so **no RPC
+    reveals which account that is** — `platforms.signal.account` in `config.toml` is
+    load-bearing, not a convenience override.
+  - `listContacts` with `{"recipient": "<number>"}` → her own row, a purely local store
+    read: `number`, `uuid` (her **ACI**), `username`.
+  - `getUserStatus` with `{"recipient": ["<number>"]}` → **the PNI, not the ACI.** It
+    answers a phone-number lookup, so the `uuid` it returns is the phone-number identity.
+    Cross-checked against the account store, where `aciAccountData.serviceId` and
+    `pniAccountData.serviceId` are two different UUIDs. Wiring only `getUserStatus` —
+    the obvious one-call fix — collects the wrong UUID and still looks like it worked.
+    `nora/platform/signal/self_id.py` batches both calls into one POST and keeps both.
+- **Nora's Signal identity, for cross-checking a metric:** phone `+85290000100`,
+  username `nora.000`, ACI `a1000000-0000-4000-8000-000000000000`, PNI
+  `a10000ff-0000-4000-8000-0000000000ff`. Four id forms, which is why a healthy
+  `nora_identity_aliases` reads 4.
+- **Group state can go stale on a linked device.** If `listGroups` returns `[]`
+  for a group you know exists, call `sendSyncRequest` over `/api/v1/rpc` — that
+  is what made `Ridgeline` appear.
+- **The daemon is Nora's, not shared.** It was documented as "neutral and
+  shared" from the Hermes era; hermes-agent runs profiles `attest`/`bento`/
+  `default` and has no `nora` profile. signal-cli *binds* `:18080`; Nora is its
+  only client.
+- **Device 2 is named `nora`** (renamed from `HermesAgent`, 2026-08-05, via
+  `updateAccount --device-name`).
+- **The account is a LINKED DEVICE**, not a standalone registration. The primary
+  phone can be off for normal operation — Signal delivers to each device
+  independently — but Signal unlinks devices after prolonged inactivity, and
+  going standalone would require re-registering the number, which logs the phone
+  out.

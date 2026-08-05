@@ -14,6 +14,27 @@ Guidance for Claude Code (and any other agent) working in this repo.
    inside the file itself. Read for *why*, not for current state — that's
    what 1–3 are for.
 
+## The three config files
+
+Three files, three lifetimes, deliberately not merged (DEC-8's argument,
+extended):
+
+| file | answers | changes when |
+|---|---|---|
+| `config.toml` | ports, models, timeouts | the deployment changes |
+| `identity.toml` | **who people are** | a human joins |
+| `policy.toml` | **who may talk to her, and where** | trust changes |
+
+The last two are gitignored, bind-mounted read-only into the container, and
+**loaded once at startup** — editing either without a restart changes nothing
+and warns you about nothing. `nora_unmapped_senders_total` is the tell.
+
+`identity.toml` takes one `[[persons.<id>.<platform>]]` block **per account**;
+one person may hold several on a platform and they all resolve to a single
+`person_id`, which is their Honcho peer (A2, DEC-14). `policy.toml` is
+deny-by-default and Nora **refuses to start** if it is missing or allows
+nothing — running mute would be indistinguishable from working (R-5).
+
 ## Gate commands
 
 Run before claiming anything is done, and before every commit:
@@ -45,8 +66,24 @@ below) is `tests/architecture/test_module_size.py`; it runs inside
 
 - **Never `pip install`.** Dependencies are added with `uv add`, never raw pip
   — this is one of the five operational constraints below.
-- **Never touch the signal-cli daemon.** It is neutral and shared, not owned
-  by Nora — see below.
+- **Never write a test whose fake answers every request the same way.** Three
+  separate no-ops shipped green this way and each was invisible for months:
+  signal-cli ran without `--receive-mode` so no websocket ever opened; the SSE
+  parser required a `method` key the HTTP transport does not send, so every
+  real message was dropped; and `HonchoClient.ensure_session` POSTed to a
+  **list** endpoint, so `feed()` returned `False` before making a single HTTP
+  call and Nora's semantic memory received nothing for the entire life of the
+  deployment. That last one had a passing test — it asserted the wrong URL,
+  against a fake server that returned `{"id": ...}` for *any* path, so it
+  asserted the implementation back to itself. **Make the fake behave like the
+  real server**, including the shapes it returns for the wrong call. If
+  reverting the code under test does not turn the test red, the test is
+  decorative.
+- **Never point signal-cli at a different account, re-register it, or unlink
+  its device** without an explicit decision — that store holds the device
+  registration, and losing it means re-linking. Nora *does* now own the daemon
+  (see constraint 3); routine reads and RPC calls are ordinary, destructive
+  account operations are not.
 - **Never reference the archived legacy path** (`~/.hermes/profiles/nora/`) —
   it no longer exists; see below.
 - **Never assert a per-tag object was cleaned up by checking that an
@@ -73,8 +110,30 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
    `127.0.0.53`).
 2. Honcho health uses **`GET /health`**, not `GET /v3/workspaces` (POST-only →
    405 → forever `health: starting`).
-3. **The signal-cli daemon is neutral and shared — never touched.** It is not
-   owned by Nora. `derive_account` reads from it; nothing writes to it.
+3. **signal-cli is Nora's transport and runs in her compose project.**
+   *Corrected 2026-08-05.* This constraint used to read "neutral and shared —
+   never touched", which was true when the legacy Hermes gateway used it. It is
+   no longer: signal-cli *binds* `:18080` and Nora was its only *client* (`ss -tlnp` shows
+   java listening, `python3 -m nora` merely connecting), and
+   hermes-agent runs profiles `attest`/`bento`/`default` with no `nora` profile.
+   The daemon now lives in `docker-compose.yml` alongside Nora, built from
+   `deploy/signal-cli/` (upstream ships **no** official image, so `fetch.sh`
+   downloads and GPG-verifies the release tarball against AsamK's key
+   `FA10826A74907F9EC6BBB7FC2BA2CD21B5B09570`).
+
+   **`--receive-mode=on-start` is load-bearing — never drop it.** Without that
+   flag signal-cli starts its HTTP server and answers every RPC perfectly while
+   **never opening its websocket to Signal**, so not a single message is
+   delivered. The host daemon ran that way for 61 days: `listGroups`,
+   `listContacts` and `sendSyncRequest` all worked, `/health` was green, and
+   `nora_messages_total` sat at `0.0` the entire time. Under R-5 Nora is silent
+   when broken, so it was indistinguishable from a quiet group.
+
+   It needs **Java 25** (class file version 69). Temurin 21 fails at class load.
+
+   If group state goes stale on a linked device, `sendSyncRequest` over
+   `/api/v1/rpc` asks the primary to re-send it — that is what made the
+   `Ridgeline` group appear after `listGroups` had returned `[]`.
 4. The legacy Hermes gateway is archived at
    `/home/norty/backups/nora-legacy-profile-20260804/`. Do not reference the
    old `~/.hermes/profiles/nora/` path.

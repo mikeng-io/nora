@@ -17,6 +17,7 @@ import inspect
 
 from nora.domain.ports import MemoryStore, PlatformAdapter
 from nora.infra.honcho import HonchoClient
+from nora.obs.metrics import Metrics
 from nora.platform.signal.adapter import SignalAdapter
 from nora.testing import FakeMemoryStore
 
@@ -89,7 +90,7 @@ def test_signal_adapter_satisfies_platform_adapter():
     renamed to `platform`. This IS the phase's headline goal: `SignalAdapter`
     genuinely satisfies `PlatformAdapter`, not just method-by-method in
     isolation."""
-    assert isinstance(SignalAdapter("http://x", "+1"), PlatformAdapter)
+    assert isinstance(SignalAdapter("http://x", "+1", metrics=Metrics()), PlatformAdapter)
 
 
 def test_runtime_checkable_protocols_only_check_method_names():

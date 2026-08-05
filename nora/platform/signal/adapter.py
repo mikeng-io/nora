@@ -6,21 +6,27 @@ import time
 from collections.abc import Awaitable, Callable
 
 from ...domain.models import ConversationTarget, NormalizedMessage
-from ...domain.ports import AdapterHealth, PlatformIdentity, SendResult
-from .account import derive_aliases
+from ...domain.ports import AdapterHealth, PlatformIdentity, ReactionResult, SendResult
 from .listener import SignalListener
 from .parser import parse_event
+from .react import SignalReactor
+from .self_id import MetricsSink, derive_identifiers
 from .send import SignalSender
 
 
 class SignalAdapter:
     platform = "signal"
 
-    def __init__(self, base_url: str, account: str) -> None:
+    def __init__(self, base_url: str, account: str, *, metrics: MetricsSink) -> None:
+        """`metrics` is required, not optional with a null default: identity
+        enrichment degrading uncounted is R-17's entire subject, and an optional
+        collaborator is how it stayed uncounted before."""
         self._base_url = base_url
         self._account = account
+        self._metrics = metrics
         self._listener = SignalListener(base_url)
         self._sender = SignalSender(base_url)
+        self._reactor = SignalReactor(base_url)
         self._identity: PlatformIdentity | None = None
 
     async def resolve_identity(self) -> PlatformIdentity:
@@ -30,11 +36,20 @@ class SignalAdapter:
         calls this on every `/health` poll to fill in `sse.account` (Trap A), and a
         network hit on every poll would defeat the point of asking a question whose
         answer does not change while the process is alive.
+
+        Memoization is on SUCCESS-OR-DEGRADED alike, deliberately: a degraded
+        derivation is still a stable answer, and retrying it per call would put
+        a daemon round trip back on the `/health` path. The degradation is
+        counted once, at startup, which is when an operator can act on it.
         """
         if self._identity is None:
-            aliases = await derive_aliases(self._base_url, self._account)
+            identifiers = await derive_identifiers(
+                self._base_url, self._account, metrics=self._metrics,
+                platform=self.platform,
+            )
             self._identity = PlatformIdentity(
-                platform=self.platform, primary=self._account, aliases=aliases,
+                platform=self.platform, primary=self._account,
+                identifiers=identifiers,
             )
         return self._identity
 
@@ -60,6 +75,19 @@ class SignalAdapter:
 
     async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
         return await self._sender.send(target, text)
+
+    async def react(
+        self,
+        *,
+        target: ConversationTarget,
+        emoji: str,
+        to_author: str,
+        to_timestamp: int,
+        remove: bool = False,
+    ) -> ReactionResult:
+        return await self._reactor.react(
+            target, emoji, to_author=to_author, to_timestamp=to_timestamp, remove=remove,
+        )
 
     async def health(self) -> AdapterHealth:
         last = self._listener.last_event_at

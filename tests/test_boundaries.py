@@ -146,3 +146,20 @@ def test_domain_imports_only_the_standard_library():
             elif top not in allowed:
                 offenders.append(f"{path.relative_to(ROOT)}: {mod}")
     assert not offenders, f"domain/ may import only the stdlib: {offenders}"
+
+
+def test_composition_never_uses_the_permissive_policy():
+    """`nora.policy.permissive_policy` exists for `nora.app.offline` only —
+    the eval and integration harnesses drive synthetic conversation ids that no
+    real `policy.toml` would list. In production it would silently disable
+    deny-by-default: every room allowed, every sender admitted, with a valid
+    policy.toml sitting on disk looking authoritative.
+
+    `nora/policy.py` claimed this test existed before it did. The one-line
+    accident it guards against would otherwise ship green.
+    """
+    src = (ROOT / "nora" / "app" / "composition.py").read_text()
+    assert "permissive_policy" not in src, (
+        "composition.py must build the allowlist from policy.toml, never the "
+        "permissive one — that would disable deny-by-default in production"
+    )

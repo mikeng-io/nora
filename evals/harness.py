@@ -51,7 +51,7 @@ PERSONA_DIR = REPO_ROOT / "nora" / "persona"
 # feed (which requires a resolved `ctx.tagger`, `nora/engagement/stages/feedback.py`)
 # actually fires — matches `tests/integration/harness.py`'s own default identity.
 _IDENTITY_TOML = (
-    '[persons.miles]\nname = "Miles"\n[persons.miles.platforms]\nsignal = "+852111"\n'
+    '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "+852111"\n'
 )
 
 # Kept in sync with config.example.toml's engagement.trigger.text — the single real

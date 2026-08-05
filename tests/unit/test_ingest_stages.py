@@ -108,12 +108,21 @@ async def test_an_unmapped_sender_is_audited_but_never_fed():
     spawned: list = []
     msg = _msg(sender_id="+85299999999")
 
-    recorded = await audit.run(message=msg, audit=store, metrics=metrics)
+    person = await identity.run(message=msg, persons=persons, metrics=metrics)
+    assert person is None
+
+    recorded = await audit.run(
+        message=msg, audit=store, metrics=metrics, person=person
+    )
     assert recorded is True
     assert len(store.rows) == 1
+    assert store.rows[0]["person_id"] is None, "unmapped must be recorded as NULL"
 
-    person = await identity.run(message=msg, persons=persons)
-    assert person is None
+    # The whole point: an unmapped sender is otherwise SYMPTOMLESS. It is
+    # audited, the gate still runs, and the prefill still shows the sender's
+    # platform display name — so without this counter "identity.toml is wrong"
+    # looks exactly like "nobody talked to her".
+    assert metrics.get("nora_unmapped_senders_total", platform="signal") == 1
 
     await memory_feed.run(
         message=msg, person=person, memory=fake_memory, metrics=metrics,

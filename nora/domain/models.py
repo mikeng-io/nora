@@ -72,6 +72,50 @@ class TranscriptRow:
 
 
 @dataclass(frozen=True)
+class UnattributedRow:
+    """One audited message that carries no `person_id` — its sender resolved to
+    nobody at the moment of ingest (D6).
+
+    Returned by `AuditStore.unattributed`, which is what the startup
+    lazy-adoption backfill (`nora.app.adoption`) re-resolves against a freshly
+    loaded `identity.toml`. It carries `platform` — which `TranscriptRow`
+    deliberately does not, being scoped to one conversation already — because
+    person resolution is keyed `(platform, sender_id)`, so a row without its
+    platform cannot be re-resolved at all.
+
+    `body` is `str | None` for the same reason the column is nullable: an
+    attachment-only message audits with no text. There is nothing to feed a
+    peer from such a row, only a `person_id` to record.
+
+    `raw_json` is the FULL stored envelope, and it is here for the operator
+    control plane (`nora persons pending`), not for adoption — which ignores
+    it. It has to be here rather than on a second port method because of what
+    `sender_id` alone cannot answer: under Signal's sealed sender the same
+    account arrives as a phone number on one message and as an ACI uuid on
+    another (`nora.platform.signal.parser` reads `source or sourceNumber or
+    sourceUuid`), so a column of `sender_id`s lists ONE account as TWO pending
+    entries — and pasting those into two `[[persons.x.signal]]` blocks is
+    precisely the copy-paste duplicate `nora.persons.load_persons` now refuses
+    to start on. The envelope carries every id form that arrived together, so
+    it is what lets them be correlated back into one account.
+
+    The cost is one extra column on a scan `nora.app.adoption` runs at every
+    start; it is bounded by that scan's own `limit` (1000 rows) and by an
+    audit table already bounded by retention, and a Signal envelope is a
+    couple of kilobytes. A second port method returning the same rows plus
+    one column would have been the alternative, and it would oblige every
+    future `AuditStore` to implement two near-identical scans.
+    """
+
+    id: int
+    platform: str
+    sender_id: str
+    ts: int
+    body: str | None
+    raw_json: str | None = None
+
+
+@dataclass(frozen=True)
 class TagContext:
     """Everything the tagging path assembles before the model is constructed."""
 

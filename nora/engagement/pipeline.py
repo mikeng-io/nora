@@ -46,7 +46,7 @@ from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
 from nora.tag import Debounce
 
-from .stages import admission, deliver, feedback, invoke
+from .stages import admission, deliver, feedback, indicate, invoke
 from .stages.invoke import AgentRunner
 
 log = logging.getLogger("nora.engagement.pipeline")
@@ -121,10 +121,23 @@ class EngagementPipeline:
         key = (msg.platform, msg.conversation_id)
         started = time.perf_counter()
         llm_elapsed = 0.0
+        delivered = False
         # Every log line emitted for the rest of this tag — across every stage
         # this method calls into — carries tag_id without any of them naming
         # it explicitly (nora.obs.logging's contextvar bridge).
         bind_tag_id(request.tag_id)
+        # 👀 on the tagging message, the moment the tag is admitted. Scheduled
+        # through `spawn`, so the round-trip to the platform is never in front
+        # of the model call — see `nora.engagement.stages.indicate`'s docstring
+        # for that, for why a reaction cannot touch R-2/R-3, and for why a
+        # failed turn resolves to ⚠️ rather than a ✅ that would claim a reply
+        # nobody is going to receive. Constructed OUTSIDE the `try` so the
+        # `finally` below can never reference it unbound; `begin` only spawns,
+        # and cannot raise past its own guard.
+        indicator = indicate.begin(
+            adapter=self._adapter, message=msg, tag_id=request.tag_id,
+            metrics=self._metrics, spawn=self._spawn,
+        )
         try:
             ctx = await self._context.assemble(request=request)
             persona = self._persona_store.get(applies_to="tag")
@@ -146,7 +159,7 @@ class EngagementPipeline:
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer,
-                context_window=self._context_window,
+                context_window=self._context_window, metrics=self._metrics,
             )
             tagger_name = self._persons.display_name(msg)
             pre_fill = build_prefill(
@@ -167,12 +180,13 @@ class EngagementPipeline:
                 llm_state=self._llm_state, metrics=self._metrics,
             )
             if not delivered:
-                return
+                return                       # `finally` still resolves the indicator
 
             if ctx.tagger is not None:   # step 4: exactly one exchange feed
                 self._spawn(feedback.run(
                     memory=self._memory, ctx=ctx, tagger_name=tagger_name,
                     display_name=self._display_name, deliverer=handle.deliverer,
+                    metrics=self._metrics,
                 ))
         except BaseException:
             log.exception("tag pipeline failed (tag=%s); staying silent", request.tag_id)
@@ -180,6 +194,14 @@ class EngagementPipeline:
                 "nora_silent_failures_total", reason="handler_error", platform=msg.platform,
             )
         finally:
+            # Resolved here, not after `check_outcome`, so that EVERY exit path
+            # a tag has — timeout, llm_error, guard veto, no_send_call, and the
+            # outer BaseException — replaces the 👀 with a terminal state. A
+            # resolution reachable only from the happy path would strand the
+            # 👀 on exactly the failures it exists to make legible.
+            indicate.resolve(
+                indicator=indicator, delivered=delivered, spawn=self._spawn,
+            )
             self._in_flight.discard(key)     # R-10: released on EVERY exit path
             total = time.perf_counter() - started
             self._metrics.observe("nora_tag_latency_seconds", total)

@@ -23,7 +23,13 @@ def cfg(tmp_path, monkeypatch):
     # the config file's own directory (nora/config.py's path-resolution context);
     # build_dependencies() calls load_persons() against it, so it must exist.
     (tmp_path / "identity.toml").write_text(
-        '[persons.miles]\nname = "Miles"\n[persons.miles.platforms]\nsignal = "+852111"\n'
+        '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "+852111"\n'
+    )
+    # policy.toml resolves the same way. `persons = "*"` keeps these wiring
+    # tests about the dependency graph rather than the allowlist.
+    (tmp_path / "policy.toml").write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        'id = "g1"\npersons = "*"\n'
     )
     # config.example.toml's store.db_path ("~/workspace/nora/data/messages.db") is
     # absolute, so it survives path resolution untouched regardless of where this

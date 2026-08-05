@@ -1,18 +1,32 @@
-"""identity.toml → reverse index (spec C.6, D.2). Startup-only; no hot reload in v2 (Q4)."""
+"""identity.toml → reverse index (spec C.6, D.2; design/10 §3, §7.3).
+
+Startup-only; no hot reload in v2 (Q4).
+
+Two independent axes, which design/10 §3 originally conflated:
+
+  * many ACCOUNTS per platform — a dual-SIM personal/work pair, a second
+    Discord. One `[[persons.<id>.<platform>]]` block each. This is the
+    baseline case, not an edge case.
+  * many ID FORMS per account — phone / uuid / username all naming the same
+    registration. Keys inside one block.
+
+Both flatten into one reverse index, so every id a person presents resolves to
+the same `person_id` and therefore to one Honcho peer card (A2). A hidden
+Signal phone number still resolves as long as the operator pasted in the ACI
+Nora saw.
+"""
 
 from __future__ import annotations
 
-import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import ValidationError
 
+from .domain.identity import ACCOUNT_LABEL_KEY
 from .domain.models import NormalizedMessage, PersonRef
-
-# Honcho requires ^[a-zA-Z0-9_-]+$ for peer ids, and honcho_peer_id == person_id.
-_PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+from .persons_file import PLATFORM_FIELDS, _PersonsFile
 
 
 class PersonsError(Exception):
@@ -30,7 +44,7 @@ def sanitize_unmapped(sender_id: str) -> str:
 @dataclass(frozen=True)
 class Persons:
     by_person: dict[str, PersonRef]
-    index: dict[tuple[str, str], str] = field(repr=False)   # (platform, sender_id) → person_id
+    index: dict[tuple[str, str], str] = field(repr=False)   # (platform, id_value) → person_id
 
     def resolve(self, platform: str, sender_id: str) -> PersonRef | None:
         person_id = self.index.get((platform, sender_id))
@@ -41,37 +55,6 @@ class Persons:
         if ref:
             return ref.name
         return msg.sender_name or sanitize_unmapped(msg.sender_id)
-
-
-class _PersonEntry(BaseModel):
-    """Shape validation only — the coercion of `sender_id` to `str` (needed for TOML's
-    real integer types, e.g. Telegram numeric IDs) stays down in the reverse-index build
-    below, alongside the domain logic it's part of.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    name: str | None = None
-    platforms: dict[str, str | int] = Field(default_factory=dict)
-
-
-class _PersonsFile(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    persons: dict[str, _PersonEntry] = Field(default_factory=dict)
-
-    @field_validator("persons")
-    @classmethod
-    def _check_person_ids(
-        cls, value: dict[str, _PersonEntry]
-    ) -> dict[str, _PersonEntry]:
-        for person_id in value:
-            if not _PERSON_ID_RE.match(person_id):
-                raise ValueError(
-                    f"person_id {person_id!r} must match ^[a-zA-Z0-9_-]+$ "
-                    "(it is used verbatim as the Honcho peer id)"
-                )
-        return value
 
 
 def load_persons(path: Path) -> Persons:
@@ -95,13 +78,43 @@ def load_persons(path: Path) -> Persons:
         by_person[person_id] = PersonRef(
             person_id=person_id, name=name, honcho_peer_id=person_id
         )
-        for platform, sender_id in entry.platforms.items():
-            key = (platform, str(sender_id))
-            if key in index:
-                raise PersonsError(
-                    f"duplicate ({platform}, {sender_id}) mapped to both "
-                    f"{index[key]!r} and {person_id!r} — an ambiguous identity would "
-                    "silently misattribute Honcho memory"
-                )
-            index[key] = person_id
+        # Every kind of every account (design/10 §3.2) flattens into one
+        # index, which is what makes all of a person's accounts land on a
+        # single `honcho_peer_id` (A2).
+        for platform in PLATFORM_FIELDS:
+            # (platform, value) → the index of the account block that claimed
+            # it, so the two duplicate cases can be told apart below.
+            claimed_by: dict[tuple[str, str], int] = {}
+            for account_no, account in enumerate(getattr(entry, platform) or ()):
+                for kind, id_value in account.items():
+                    if kind == ACCOUNT_LABEL_KEY:
+                        continue          # human-only, never matched (§1.3)
+                    key = (platform, str(id_value))
+
+                    # Same id in two of ONE person's blocks: the
+                    # copy-paste-and-forget-to-edit mistake. Silent, because
+                    # both blocks map to this person so the cross-person check
+                    # never fires, while the id that was never pasted resolves
+                    # to nobody — and under sealed sender that is often the
+                    # only id Nora sees. Tolerated WITHIN one block, where the
+                    # same literal under two kinds is harmless.
+                    previous = claimed_by.get(key)
+                    if previous is not None and previous != account_no:
+                        raise PersonsError(
+                            f"{person_id!r} lists ({platform}, {id_value}) in "
+                            f"two different account blocks (#{previous + 1} and "
+                            f"#{account_no + 1}) — did you copy the block and "
+                            "forget to edit this id? The account whose real id "
+                            "is missing would silently resolve to nobody."
+                        )
+                    claimed_by[key] = account_no
+
+                    existing = index.get(key)
+                    if existing is not None and existing != person_id:
+                        raise PersonsError(
+                            f"duplicate ({platform}, {id_value}) mapped to both "
+                            f"{existing!r} and {person_id!r} — an ambiguous identity "
+                            "would silently misattribute Honcho memory"
+                        )
+                    index[key] = person_id
     return Persons(by_person=by_person, index=index)

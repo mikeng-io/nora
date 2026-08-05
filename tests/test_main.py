@@ -20,7 +20,12 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
 
     app = web.Application()
     app.router.add_get("/api/v1/accounts", accounts)
-    app.router.add_route("*", "/{tail:.*}", lambda r: web.json_response({"ok": True}))
+    # `id` is what makes this catch-all a *working* Honcho as well as a working
+    # signal-cli: `HonchoClient.ensure_session` reads `id` off the session POST
+    # and returns None (so `feed` returns False) without it. Nothing asserts on
+    # the extra key; it is what lets a test drive a successful feed end to end.
+    app.router.add_route("*", "/{tail:.*}",
+                         lambda r: web.json_response({"ok": True, "id": "session-1"}))
     daemon = await aiohttp_server(app)
 
     with (ROOT / "config.example.toml").open("rb") as f:
@@ -32,9 +37,14 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
     cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
     cfg["persona"]["dir"] = str(ROOT / "nora" / "persona")
     cfg["identity_file"] = str(tmp_path / "identity.toml")
+    cfg["policy_file"] = str(tmp_path / "policy.toml")
     cfg["obs"]["metrics"]["port"] = 0
     (tmp_path / "identity.toml").write_text(
-        "[persons.miles]\nname = \"Miles\"\n[persons.miles.platforms]\nsignal = \"+852111\"\n"
+        "[persons.miles]\nname = \"Miles\"\n[[persons.miles.signal]]\nphone = \"+852111\"\n"
+    )
+    (tmp_path / "policy.toml").write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        'id = "Z3JvdXA="\npersons = "*"\n'
     )
     path = tmp_path / "config.toml"
     with path.open("wb") as f:
@@ -73,8 +83,8 @@ async def test_a_broken_persona_refuses_to_start(env, tmp_path):
 
 async def test_a_duplicate_person_mapping_refuses_to_start(env, tmp_path):
     (tmp_path / "identity.toml").write_text(
-        "[persons.a]\nname = \"A\"\n[persons.a.platforms]\nsignal = \"+1\"\n"
-        "[persons.b]\nname = \"B\"\n[persons.b.platforms]\nsignal = \"+1\"\n"
+        "[persons.a]\nname = \"A\"\n[[persons.a.signal]]\nphone = \"+1\"\n"
+        "[persons.b]\nname = \"B\"\n[[persons.b.signal]]\nphone = \"+1\"\n"
     )
     with pytest.raises(StartupError, match="duplicate"):
         await build_app(env)
@@ -169,3 +179,41 @@ async def test_the_prune_sweep_actually_prunes(tmp_path, monkeypatch):
         assert len(await store.recent(conversation_id="g1", limit=1000)) == 3
     finally:
         await store.aclose()
+
+
+async def test_app_run_spawns_the_lazy_adoption_backfill(env, monkeypatch):
+    """The wiring, not the coroutine: build the real app, audit a message from a
+    sender identity.toml *does* know, then drive `App.run()` long enough for the
+    background sweep to fire, and assert the row came back marked.
+
+    `App.run()` blocks forever by design (it gathers the adapter tasks), so this
+    runs it as a task and cancels it — the same shape production shutdown uses.
+    """
+    import asyncio
+    import contextlib
+
+    import nora.__main__ as main_module
+    from nora.domain.models import NormalizedMessage
+
+    monkeypatch.setattr(main_module, "ADOPTION_START_DELAY_SECONDS", 0.0)
+    app = await build_app(env)
+    try:
+        # Ingested while unmapped: person_id NULL, nothing ever fed.
+        row_id = await app.deps.audit.append(message=NormalizedMessage(
+            "signal", "Z3JvdXA=", "group", "+852111", "Miles", 1, "congee", {}))
+        assert (await app.deps.audit.unattributed(limit=10))[0].id == row_id
+
+        task = asyncio.create_task(app.run())
+        for _ in range(100):
+            await asyncio.sleep(0.02)
+            if not await app.deps.audit.unattributed(limit=10):
+                break
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        assert await app.deps.audit.unattributed(limit=10) == [], (
+            "App.run() must spawn the lazy-adoption backfill"
+        )
+    finally:
+        await app.shutdown()

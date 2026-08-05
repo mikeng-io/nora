@@ -42,6 +42,7 @@ def _built_tools(registry: ToolRegistry) -> list:
     return registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
+        metrics=Metrics(),
     )
 
 
@@ -68,6 +69,7 @@ def test_specs_carry_the_same_budgets_as_budgets():
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
+        metrics=Metrics(),
     )
     assert {s.name: s.budget for s in specs} == dict(registry.budgets())
 
