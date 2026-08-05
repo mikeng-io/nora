@@ -145,3 +145,68 @@ def test_a_malformed_envelope_never_raises(event):
 
 def test_whitespace_only_message_with_no_attachment_is_dropped():
     assert parse_event(envelope(message="   "), OWN) is None
+
+
+# ── transport framing ────────────────────────────────────────────────────────
+# signal-cli frames the same envelope two ways and the man page documents only
+# the JSON-RPC one. Nora runs on the HTTP SSE transport, which uses the other.
+# Every test above builds the JSON-RPC form, which is exactly why a parser that
+# understood ONLY that form passed the whole suite while ingesting nothing in
+# production for 61 days. These pin the shape actually observed on the wire.
+
+
+def sse_envelope(**data_over) -> dict:
+    """The literal shape captured from GET /api/v1/events on signal-cli 0.14.7.
+
+    No `method`, no `params` — envelope at the top level, `receive` having been
+    carried in the SSE `event:` field that the listener strips.
+    """
+    data = {"message": "hello", "groupInfo": {"groupId": "Z3JvdXA="}, "timestamp": 1700}
+    data.update(data_over)
+    return {
+        "envelope": {
+            "source": "+85212345678",
+            "sourceName": "Miles",
+            "timestamp": 1700,
+            "dataMessage": data,
+        },
+        "account": OWN,
+    }
+
+
+def test_parses_the_http_sse_framing_with_no_method_key():
+    msg = parse_event(sse_envelope(), OWN)
+    assert msg is not None, "the HTTP SSE framing must parse — this is the live transport"
+    assert msg.body == "hello"
+    assert msg.conversation_id == "Z3JvdXA="
+    assert msg.sender_id == "+85212345678"
+
+
+def test_sse_framing_still_drops_a_self_send():
+    e = sse_envelope()
+    e["envelope"]["source"] = OWN
+    assert parse_event(e, OWN) is None      # R-12 holds on both framings
+
+
+def test_sse_framing_still_drops_a_dm():
+    assert parse_event(sse_envelope(groupInfo=None), OWN) is None
+
+
+def test_sse_framing_still_drops_a_typing_notification():
+    e = sse_envelope()
+    e["envelope"].pop("dataMessage")
+    e["envelope"]["typingMessage"] = {"action": "STARTED", "groupId": "Z3JvdXA="}
+    assert parse_event(e, OWN) is None
+
+
+def test_parses_the_subscribe_receive_framing():
+    """--receive-mode=manual nests the envelope under params.result."""
+    inner = envelope()["params"]["envelope"]
+    e = {"method": "receive", "params": {"subscription": 0, "result": {"envelope": inner}}}
+    assert parse_event(e, OWN).body == "hello"
+
+
+def test_drops_an_event_that_is_neither_framing():
+    assert parse_event({"jsonrpc": "2.0", "result": 0, "id": "x"}, OWN) is None
+    assert parse_event({"envelope": "not-a-dict"}, OWN) is None
+    assert parse_event({}, OWN) is None

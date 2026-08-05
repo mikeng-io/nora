@@ -19,11 +19,44 @@ def _attachment_placeholder(att: dict) -> str:
     return f"[attachment: {att.get('filename') or att.get('id') or 'file'}]"
 
 
+def _extract_envelope(event: dict) -> dict | None:
+    """Return the envelope from either of signal-cli's two framings, or None.
+
+    signal-cli frames the *same* envelope two different ways, and its
+    `signal-cli-jsonrpc(5)` man page documents only the first:
+
+        socket / TCP / stdin   {"method": "receive", "params": {"envelope": …}}
+        HTTP GET /api/v1/events    {"envelope": …, "account": …}
+
+    The SSE stream carries `receive` in the SSE ``event:`` field — which the
+    listener strips along with the framing — and puts the envelope at the top
+    level with **no** ``method`` key at all. Nora runs on the HTTP transport,
+    so the old ``method != "receive"`` guard dropped every real message before
+    it was ever looked at: signal-cli received, Nora ingested nothing, and
+    under R-5 that is indistinguishable from a quiet group.
+
+    Both framings are live — the socket transports really do send the
+    JSON-RPC form — so this accepts either rather than trading one hardcoded
+    assumption for the opposite one.
+    """
+    if "method" in event:
+        if event.get("method") != "receive":
+            return None                       # typing/receipt notification
+        params = event.get("params") or {}
+        # subscribeReceive (--receive-mode=manual) nests one level deeper.
+        result = params.get("result")
+        if isinstance(result, dict):
+            return result.get("envelope") or {}
+        return params.get("envelope") or {}
+    env = event.get("envelope")
+    return env if isinstance(env, dict) else None
+
+
 def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
     try:
-        if (event or {}).get("method") != "receive":
+        env = _extract_envelope(event or {})
+        if env is None:
             return None
-        env = ((event.get("params") or {}).get("envelope")) or {}
         data = env.get("dataMessage")
         if not isinstance(data, dict):
             return None                       # syncMessage / typing / receipt / malformed
