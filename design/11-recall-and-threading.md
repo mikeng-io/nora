@@ -227,7 +227,31 @@ guard. Say so rather than implying otherwise.
 
 ## 1.6 What should NOT be built
 
-- **No lookup tool.** Not `recall_about`, not a scoped `read_peer_card`. §1.2.
+- **~~No lookup tool.~~ CONTRADICTED IN CODE 2026-08-06 — unresolved, and
+  deliberately not retracted yet.** `recall(person)`, `lookup_person(name)`
+  and `group_members()` shipped as TOOLS in commit `f630d8b` (DEC-27, R-21,
+  R-22). That is precisely what this line forbade, and neither DEC-27 nor
+  design/12's update noticed.
+
+  **Do not retract either side on argument alone — the disagreement is
+  empirical.** §1.2's case rests on one measured claim: that `read_peer_card`
+  "has existed for the whole deployment and has never been called", because
+  `tool_choice="required"` makes `send_reply` the turn-one attractor and
+  `ReplyGuard` cancels on delivery. If that still holds, the three new tools
+  are dead code that looks like a feature — this repo's signature bug. If it
+  no longer holds, §1.2 is dead and should say so.
+
+  What changed since that measurement, and why it may no longer hold:
+  `reasoning_effort` moved to `"low"` (measured 2026-08-06 to change first-call
+  tool selection from reflexive to correct), and `_context_header` now names
+  every tool in prose rather than leaving them to the raw schema.
+
+  **The settling measurement, not yet run:** a live tag asking about a person
+  by nickname, checking whether the model calls `lookup_person`/`recall` at
+  all. The merge that shipped them verified wiring and scoping against live
+  services but explicitly did NOT test model selection. Until that runs, this
+  document and the code disagree, and the disagreement is recorded here rather
+  than resolved by whoever writes next.
 - **No `chat` on the tag path.** Measured 6.9–8.3 s.
 - **No `target=` theory-of-mind in v1.** §1.3.
 - **No recall for unmapped members.** They have no peer. They render by display
