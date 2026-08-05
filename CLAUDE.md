@@ -58,9 +58,9 @@ correction to its original server-default claim.
 If it reports a phantom contract failure that doesn't reproduce after a clean
 checkout, delete that directory before spending time on it.
 
-The module-size gate (spec §10's 300-line hard cap on production modules,
-below) is `tests/architecture/test_module_size.py`; it runs inside
-`uv run pytest -q` too, no separate command.
+There is no longer a module-size gate. Spec §10's 300-line hard cap was
+deleted 2026-08-06 — see the Conventions section below for why, and prefer
+counting a module's responsibilities to counting its lines.
 
 ## Never
 
@@ -141,9 +141,23 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
 
 ## Conventions (spec §10 — the short version; see the spec for the rest)
 
-- Module size: soft cap 200 lines, hard cap 300. One stage, one module, one
-  public entry point. The hard cap is enforced, for production modules under
-  `nora/` only, by `tests/architecture/test_module_size.py`.
+- **One stage, one module, one public entry point.** This is about
+  RESPONSIBILITIES, not lines. A 400-line module doing one thing is fine; a
+  150-line module doing five is not.
+
+  There used to be a mechanical 300-line cap enforced in CI (spec §10),
+  calibrated on `handler.py` "going wrong at 229 lines with 8
+  responsibilities". It was deleted 2026-08-06. The calibration confused the
+  symptom for the cause: `handler.py` was bad because of the eight
+  responsibilities, and a line count cannot see those. In practice the gate
+  made things worse — it was satisfied twice by DELETING explanatory comments
+  from `nora/agent/guards.py` rather than by changing any structure, which is
+  the opposite of what it existed to encourage, and it blocked
+  `nora/domain/ports.py` (pure Protocol declarations, nothing to split) from
+  gaining a method. Its own docstring conceded that file was "legitimately
+  dense with no behaviour to split out" and enforced the cap on it regardless.
+
+  If a module feels too big, count what it is responsible for.
 - Test-seam policy: production classes take collaborators through `__init__`
   only — no `*_fn` hooks, no `_for_test` params, no module-level mutable
   singletons.
