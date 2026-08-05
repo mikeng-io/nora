@@ -26,7 +26,13 @@ import gc
 from nora.agent.guards import ReplyGuard
 from nora.app.runtime import BackgroundTasks
 from nora.domain.models import NormalizedMessage
-from nora.domain.ports import EngageDecision, EngagementRequest, MemoryHealth
+from nora.domain.ports import (
+    EngageDecision,
+    EngagementRequest,
+    MemoryHealth,
+    PlatformIdentity,
+    SendResult,
+)
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.obs.metrics import Metrics
@@ -37,13 +43,18 @@ from nora.testing import FakeAuditStore
 
 
 class _FakeAdapter:
+    platform = "signal"
+
     def __init__(self) -> None:
         self._account = "+852000"
         self.sent: list[tuple] = []
 
-    async def send(self, target, text: str) -> bool:
+    async def resolve_identity(self) -> PlatformIdentity:
+        return PlatformIdentity(platform=self.platform, primary=self._account)
+
+    async def send(self, *, target, text: str) -> SendResult:
         self.sent.append((target, text))
-        return True
+        return SendResult(ok=True)
 
 
 class _FakeMemory:

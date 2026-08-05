@@ -13,8 +13,8 @@ dependencies only, never `Config`.
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
+from nora.domain.models import NormalizedMessage
 from nora.domain.ports import EngagementRequest
 from nora.engagement.pipeline import EngagementPipeline
 from nora.ingest.pipeline import IngestPipeline
@@ -23,8 +23,13 @@ from .runtime import BackgroundTasks
 
 
 class Dispatcher:
-    """`on_event` is what a platform adapter's `listen()` loop calls per raw
-    event — the direct replacement for `Handler.on_event`.
+    """`on_message` is what a platform adapter's `listen()` loop calls per
+    already-parsed message — the direct replacement for `Handler.on_event`.
+    Renamed from `on_event` (which took a raw, platform-shaped dict) when the
+    platforms phase moved parsing onto the adapter itself
+    (`SignalAdapter.listen`, Trap B): `PlatformAdapter` deliberately has no
+    `parse()`, so by the time anything reaches this class the event is
+    already a `NormalizedMessage`, not a dict of unknown shape.
 
     Ingest always runs, awaited inline: it is deterministic and never
     constructs an Agent (R-1), so there is nothing in it worth spawning off
@@ -51,8 +56,8 @@ class Dispatcher:
         self._engagement = engagement
         self._background = background
 
-    async def on_event(self, raw_event: dict[str, Any]) -> None:
-        result = await self._ingest.run(raw_event=raw_event)
+    async def on_message(self, message: NormalizedMessage) -> None:
+        result = await self._ingest.run(message=message)
         if result.message is None or result.decision is None or not result.decision.engage:
             return
         request = EngagementRequest(

@@ -13,12 +13,14 @@ Every fake that is a second implementation of one of `nora/domain/ports.py`'s
 ports is bound by a contract suite in `tests/contract/` that it and the
 production implementation both pass — `FakeAuditStore` (`AuditStore`) and
 `FakeMemoryStore` (`MemoryStore`). Adding such a fake without one is a
-project rule violation, not a shortcut. `FakeAdapter` mirrors
-`SignalAdapter`'s current (not-yet-`PlatformAdapter`-conforming) shape, so it
-is exempt for the same reason `SignalAdapter` itself is — see
-`FakeAdapter`'s docstring. `ScriptedTurn`/`FakeAgentRunner` satisfy
-`nora.engagement.stages.invoke.AgentRunner`, a stage-level `Protocol`, not
-one of `nora/domain/ports.py`'s ports — also exempt; see their docstrings.
+project rule violation, not a shortcut. `FakeAdapter` is exempt: it keeps
+`.parse()` public and `.listen()` a no-op rather than mirroring
+`SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop (nothing
+drives `FakeAdapter` through a real SSE loop), so it never claims to satisfy
+`PlatformAdapter` as a second implementation — see `FakeAdapter`'s docstring.
+`ScriptedTurn`/`FakeAgentRunner` satisfy `nora.engagement.stages.invoke.
+AgentRunner`, a stage-level `Protocol`, not one of `nora/domain/ports.py`'s
+ports — also exempt; see their docstrings.
 """
 
 from nora.testing.fakes import FakeAdapter, FakeAuditStore, FakeMemoryStore

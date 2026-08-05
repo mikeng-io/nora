@@ -1,4 +1,4 @@
-"""signal-cli JSON-RPC send (spec C.3). Returns bool; never raises to the caller."""
+"""signal-cli JSON-RPC send (spec C.3). Returns SendResult; never raises to the caller."""
 
 from __future__ import annotations
 
@@ -8,8 +8,23 @@ import os
 import aiohttp
 
 from ...domain.models import ConversationTarget
+from ...domain.ports import SendResult
 
 log = logging.getLogger("nora.signal.send")
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    """Parse a `Retry-After` header as seconds. Only the delta-seconds form is
+    handled — signal-cli has no documented use of the HTTP-date form. A missing
+    or unparseable header degrades to `None`: the caller still learns the send is
+    retryable, just without a hint of how long to wait.
+    """
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def __getattr__(name: str):
@@ -30,11 +45,13 @@ class SignalSender:
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
 
-    async def send(self, target: ConversationTarget, text: str, *, request_id: str = "") -> bool:
+    async def send(
+        self, target: ConversationTarget, text: str, *, request_id: str = ""
+    ) -> SendResult:
         if target.conversation_type != "group":
             log.error("refusing to send to conversation_type=%r (v2 is groups only)",
                       target.conversation_type)
-            return False
+            return SendResult(ok=False)
         payload = {
             "jsonrpc": "2.0",
             "method": "send",
@@ -46,18 +63,23 @@ class SignalSender:
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.post(f"{self._base_url}/api/v1/rpc", json=payload) as resp,
             ):
+                if resp.status == 429:
+                    retry_after = _retry_after_seconds(resp.headers.get("Retry-After"))
+                    log.error("send rate-limited: HTTP 429 (conversation=%s, id=%s)",
+                              target.conversation_id, request_id)
+                    return SendResult(ok=False, retryable=True, retry_after=retry_after)
                 if resp.status != 200:
                     log.error("send failed: HTTP %s (conversation=%s, id=%s)",
                               resp.status, target.conversation_id, request_id)
-                    return False
+                    return SendResult(ok=False)
                 body = await resp.json()
         except Exception as exc:               # noqa: BLE001 — a send failure is never fatal
             log.error("send failed: %s (conversation=%s, id=%s)",
                       type(exc).__name__, target.conversation_id, request_id)
-            return False
+            return SendResult(ok=False)
         if isinstance(body, dict) and body.get("error"):
             log.error("send rejected by signal-cli (conversation=%s, id=%s)",
                       target.conversation_id, request_id)
-            return False
+            return SendResult(ok=False)
         log.info("sent %d chars to %s (id=%s)", len(text), target.conversation_id, request_id)
-        return True
+        return SendResult(ok=True)

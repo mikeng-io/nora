@@ -1,6 +1,14 @@
-"""`IngestPipeline` wiring: does it call the five stages in the right order
+"""`IngestPipeline` wiring: does it call the four stages in the right order
 and assemble the right `IngestResult`? Per-stage failure behaviour is
 `test_ingest_stages.py`'s job; this file is about sequencing.
+
+`IngestPipeline.run` takes an already-normalized `message`, not a raw event —
+parsing (the former stage 1, "row 1" of spec §4.3's failure table) moved onto
+the adapter (`SignalAdapter.listen`, Trap B in
+docs/superpowers/plans/2026-08-05-nora-phase4-platforms.md). The drop-case
+coverage that test used to give — a DM, a sync message, a self-send, an empty
+body all coming back `None` — now lives in `tests/test_signal_adapter.py`,
+against the adapter that actually does that parsing.
 """
 
 from __future__ import annotations
@@ -19,16 +27,6 @@ def _msg(sender_id: str = "+852111", body: str = "hello") -> NormalizedMessage:
         platform="signal", conversation_id="g1", conversation_type="group",
         sender_id=sender_id, sender_name="Miles", timestamp=1, body=body, raw={},
     )
-
-
-class FakeAdapter:
-    def __init__(self, message: NormalizedMessage | None) -> None:
-        self._message = message
-        self.parsed_events: list[dict] = []
-
-    async def parse(self, raw_event: dict) -> NormalizedMessage | None:
-        self.parsed_events.append(raw_event)
-        return self._message
 
 
 class FakeMemory:
@@ -55,9 +53,8 @@ class FakeMemory:
         return None
 
 
-def _pipeline(*, adapter, memory, persons, policy, spawn, audit=None):
+def _pipeline(*, memory, persons, policy, spawn, audit=None):
     return IngestPipeline(
-        adapter=adapter,
         audit=audit if audit is not None else FakeAuditStore(),
         memory=memory,
         persons=persons,
@@ -65,24 +62,6 @@ def _pipeline(*, adapter, memory, persons, policy, spawn, audit=None):
         metrics=Metrics(),
         spawn=spawn,
     )
-
-
-async def test_when_the_adapter_declines_to_parse_the_pipeline_drops_silently():
-    """Row 1: a DM, a sync message, a self-send, an empty body all come back
-    as `adapter.parse(...) is None`, and nothing downstream should run."""
-    spawned: list = []
-    adapter = FakeAdapter(None)
-    memory = FakeMemory()
-    pipeline = _pipeline(
-        adapter=adapter, memory=memory, persons=Persons(by_person={}, index={}),
-        policy=TriggerTextPolicy("nora.000"), spawn=spawned.append,
-    )
-
-    result = await pipeline.run(raw_event={"sync": True})
-
-    assert result == IngestResult(message=None, decision=None)
-    assert spawned == []
-    assert memory.calls == []
 
 
 async def test_when_the_audit_write_fails_the_pipeline_stops_before_identity_and_gate(
@@ -100,12 +79,12 @@ async def test_when_the_audit_write_fails_the_pipeline_stops_before_identity_and
     spawned: list = []
     memory = FakeMemory()
     pipeline = _pipeline(
-        adapter=FakeAdapter(msg), audit=store, memory=memory,
+        audit=store, memory=memory,
         persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=spawned.append,
     )
 
-    result = await pipeline.run(raw_event={})
+    result = await pipeline.run(message=msg)
 
     assert result == IngestResult(message=None, decision=None)
     assert spawned == []
@@ -119,11 +98,11 @@ async def test_an_unmapped_sender_still_reaches_the_gate():
     spawned: list = []
     memory = FakeMemory()
     pipeline = _pipeline(
-        adapter=FakeAdapter(msg), memory=memory, persons=Persons(by_person={}, index={}),
+        memory=memory, persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=spawned.append,
     )
 
-    result = await pipeline.run(raw_event={})
+    result = await pipeline.run(message=msg)
 
     assert result.message == msg
     assert result.decision is not None
@@ -133,8 +112,8 @@ async def test_an_unmapped_sender_still_reaches_the_gate():
 
 
 async def test_a_mapped_trigger_message_engages_and_feeds_memory_off_path():
-    """The happy path: parsed, audited, identified, fed off-path via spawn,
-    and engaged by the real TriggerTextPolicy."""
+    """The happy path: audited, identified, fed off-path via spawn, and
+    engaged by the real TriggerTextPolicy."""
     msg = _msg(sender_id="+852111", body="nora.000 what's up")
     persons = Persons(
         by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
@@ -144,11 +123,11 @@ async def test_a_mapped_trigger_message_engages_and_feeds_memory_off_path():
     memory = FakeMemory()
     store = FakeAuditStore()
     pipeline = _pipeline(
-        adapter=FakeAdapter(msg), audit=store, memory=memory, persons=persons,
+        audit=store, memory=memory, persons=persons,
         policy=TriggerTextPolicy("nora.000"), spawn=spawned.append,
     )
 
-    result = await pipeline.run(raw_event={})
+    result = await pipeline.run(message=msg)
 
     assert result.message == msg
     assert result.decision.engage is True

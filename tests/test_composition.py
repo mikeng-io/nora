@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from nora.app.composition import Dependencies, build_dependencies
+from nora.app.composition import Dependencies, StartupError, build_dependencies
 from nora.config import load
 from tests.builders import override_config
 
@@ -57,6 +57,17 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.ingest is not None
     assert deps.engagement is not None
     assert deps.dispatcher is not None
+
+
+async def test_no_enabled_platform_refuses_to_start(cfg):
+    """`platforms.signal.enabled = false` is honoured now (nora.platform.registry
+    .AdapterRegistry) — previously (config.py's "NOT YET HONOURED" comment)
+    SignalAdapter started regardless. With no platform enabled there is nothing
+    for the engagement pipeline to send through, so this is a startup failure,
+    not a degraded start."""
+    disabled = override_config(cfg, {"platforms.signal.enabled": False})
+    with pytest.raises(StartupError, match="no platform adapter is enabled"):
+        await build_dependencies(disabled)
 
 
 def test_build_dependencies_never_wires_the_real_database(cfg, tmp_path):

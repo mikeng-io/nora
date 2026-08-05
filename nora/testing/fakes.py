@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from nora.domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage, TranscriptRow
-from nora.domain.ports import MemoryHealth
+from nora.domain.ports import AdapterHealth, MemoryHealth, PlatformIdentity, SendResult
 
 
 class FakeAuditStore:
@@ -135,18 +135,24 @@ class FakeAdapter:
     import `nora.testing`, not the other way around), so this reimplements just the
     group-message subset of `parse_event` it needs.
 
-    `PlatformAdapter` is a documented, currently-unconformed-by-anything port
-    (`tests/contract/test_port_conformance.py::test_signal_adapter_gap_to_platform_adapter_is_known`
-    pins `SignalAdapter` itself not conforming yet, deferred to the platforms phase) —
-    this fake mirrors `SignalAdapter`'s actual current shape (bare `bool`/`dict`
-    returns, positional `send`), not the port, so it does not newly trigger the
-    "second port implementation needs a contract suite" rule either.
+    `SignalAdapter` now satisfies `nora.domain.ports.PlatformAdapter` in full — the
+    platforms phase closed every gap, including `isinstance(SignalAdapter(...),
+    PlatformAdapter)` (`tests/contract/test_port_conformance.py`). This fake keeps
+    `resolve_identity()`/`send()`/`health()` in the port's shape, but `.listen()` stays
+    a no-op and `.parse()` stays public and dict-in rather than mirroring
+    `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop: nothing here
+    drives this fake through a real SSE loop — `evals/harness.py` and
+    `tests/integration/harness.py`'s `_HandlerView` both call `.parse()` directly, the
+    same parse-then-dispatch shape `SignalAdapter.listen` uses internally, to turn one
+    raw `group_event(...)` into a `NormalizedMessage` without a socket. Keeping `.parse()`
+    public here does not reintroduce the "second port implementation needs a contract
+    suite" rule either: `parse()` is not on the port at all (`nora.domain.ports`'s
+    module docstring).
 
-    `_account` (not `own_account`) deliberately matches `SignalAdapter._account`'s
-    name: `nora.engagement.stages.admission`'s R-12 self-tag check reads
-    `adapter._account` directly (its own `_AccountHolder` narrow `Protocol`), so
-    any adapter double must carry that exact attribute name to be admitted through
-    the pipeline at all.
+    `_account` is retained (not `own_account`) for parsing and for
+    `resolve_identity()`'s `primary` — `nora.engagement.stages.admission`'s R-12 no
+    longer reads it directly (it takes a resolved `PlatformIdentity` now), but
+    `resolve_identity()` still needs *some* account value to publish.
     """
 
     platform = "signal"
@@ -155,6 +161,9 @@ class FakeAdapter:
         self.sent: list[tuple[ConversationTarget, str]] = []
         self._succeed = succeed
         self._account = account
+
+    async def resolve_identity(self) -> PlatformIdentity:
+        return PlatformIdentity(platform=self.platform, primary=self._account or "nora")
 
     async def listen(self, on_event) -> None:
         return None
@@ -182,12 +191,12 @@ class FakeAdapter:
             body=text, raw=raw_event,
         )
 
-    async def send(self, target: ConversationTarget, text: str) -> bool:
+    async def send(self, target: ConversationTarget, text: str) -> SendResult:
         self.sent.append((target, text))
-        return self._succeed
+        return SendResult(ok=self._succeed)
 
-    async def health(self) -> dict:
-        return {"connected": True, "last_event_age_seconds": 0.0}
+    async def health(self) -> AdapterHealth:
+        return AdapterHealth(platform=self.platform, connected=True, last_event_age_seconds=0.0)
 
     @property
     def texts(self) -> list[str]:

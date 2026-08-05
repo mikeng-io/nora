@@ -54,3 +54,44 @@ async def derive_account(
         )
     log.info("derived Signal account from the daemon")
     return accounts[0]
+
+
+async def derive_aliases(
+    base_url: str,
+    primary: str,
+    *,
+    timeout: float = 5.0,  # noqa: ASYNC109 -- caller budget; asyncio.timeout is Phase 6
+) -> frozenset[str]:
+    """Every id form the daemon reports for `primary` — signal-cli sometimes pairs
+    a phone number with a UUID for the same account. See `nora.domain.ports`'s
+    module docstring for why `PlatformIdentity.aliases` exists: R-12 must test
+    membership, not equality, or self-recognition breaks the moment a second
+    platform is wired in.
+
+    Reads the same `/api/v1/accounts` endpoint `derive_account` uses; never writes
+    to the daemon. Unlike `derive_account`, an unreachable daemon (or one that
+    reports nothing beyond the bare number) is not a startup failure here —
+    `primary` is already known by the time this runs, so this is best-effort
+    enrichment, not a precondition, and always degrades to `{primary}`.
+    """
+    url = f"{base_url.rstrip('/')}/api/v1/accounts"
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=timeout)
+        ) as session, session.get(url) as resp:
+            resp.raise_for_status()
+            payload = await resp.json()
+    except Exception as exc:            # noqa: BLE001 -- best-effort enrichment, never fatal
+        log.warning("could not derive alias id forms from the daemon: %s", exc)
+        return frozenset({primary})
+
+    for entry in payload or []:
+        if not isinstance(entry, dict):
+            continue
+        number = entry.get("number") or entry.get("account") or ""
+        if number != primary:
+            continue
+        forms = {v for v in (entry.get("number"), entry.get("account"), entry.get("uuid")) if v}
+        forms.add(primary)
+        return frozenset(forms)
+    return frozenset({primary})

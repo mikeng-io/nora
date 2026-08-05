@@ -41,7 +41,22 @@ def build_health_app(
         healthy = True
 
         try:
-            sse = await a["adapter"].health()
+            adapter_health = await a["adapter"].health()
+            sse = {
+                "connected": adapter_health.connected,
+                "last_event_age_seconds": adapter_health.last_event_age_seconds,
+                "platform": adapter_health.platform,
+            }
+            # `account` comes from resolve_identity(), not a new AdapterHealth
+            # field (Trap A, spec's platforms phase): identity and connectivity
+            # are different concerns, and SignalAdapter.resolve_identity() is
+            # memoized, so this costs a network round trip at most once per
+            # process, not once per poll.
+            try:
+                identity = await a["adapter"].resolve_identity()
+                sse["account"] = identity.primary
+            except Exception:                  # noqa: BLE001 — a health check never raises
+                sse["account"] = None
         except Exception:                      # noqa: BLE001 — a health check never raises
             sse = {"connected": False}
         if not sse.get("connected", False):

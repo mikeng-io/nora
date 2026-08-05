@@ -114,7 +114,9 @@ class App:
             deps.background,
             [runtime.SupervisedAdapter(
                 platform=deps.adapter.platform,
-                listen=functools.partial(deps.adapter.listen, deps.dispatcher.on_event),
+                listen=functools.partial(
+                    deps.adapter.listen, on_message=deps.dispatcher.on_message
+                ),
             )],
             deps.metrics,
         )
@@ -127,7 +129,7 @@ class App:
         while True:
             await asyncio.sleep(10.0)
             health = await self.deps.adapter.health()
-            age = health.get("last_event_age_seconds")
+            age = health.last_event_age_seconds
             if age is not None:
                 self.deps.metrics.gauge("nora_last_event_age_seconds", age)
 

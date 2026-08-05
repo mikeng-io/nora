@@ -94,10 +94,19 @@ class EngagementPipeline:
 
     async def run(self, request: EngagementRequest) -> None:
         """Admit, then (if admitted) run the tag. See module docstring for
-        why admission is called here, outside the lock-release `finally`."""
+        why admission is called here, outside the lock-release `finally`.
+
+        `resolve_identity()` is memoized on the adapter after its first call
+        (and is already forced to succeed once, fail-fast, at startup by
+        `nora.platform.registry.AdapterRegistry.from_config`), so calling it
+        again here is an in-process lookup, not a fresh network round-trip —
+        R-12 (`nora.engagement.stages.admission`) needs the resolved identity,
+        not the adapter itself, to check self-tag membership.
+        """
         message = request.message
+        identity = await self._adapter.resolve_identity()
         admitted = await admission.run(
-            message=message, adapter=self._adapter, debounce=self._debounce,
+            message=message, identity=identity, debounce=self._debounce,
             in_flight=self._in_flight, metrics=self._metrics,
         )
         if not admitted:

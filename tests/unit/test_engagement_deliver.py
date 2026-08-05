@@ -9,6 +9,7 @@ import time
 
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.domain.models import ConversationTarget, DeliveryStatus
+from nora.domain.ports import SendResult
 from nora.engagement.stages import deliver
 from nora.obs.metrics import Metrics
 from nora.persona.loader import Persona
@@ -29,9 +30,9 @@ class _FakeAdapter:
         self.sent: list[tuple[ConversationTarget, str]] = []
         self._succeed = succeed
 
-    async def send(self, target: ConversationTarget, text: str) -> bool:
+    async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
         self.sent.append((target, text))
-        return self._succeed
+        return SendResult(ok=self._succeed)
 
 
 class _LLMState:

@@ -1,15 +1,25 @@
-"""`IngestPipeline` — runs the five ambient stages in order (spec §4.3).
+"""`IngestPipeline` — runs the four ambient stages in order (spec §4.3).
 
 A readable table of contents, not a decision-maker: every branch belongs to
 the stage that owns it (`nora.ingest.stages.*`). This module only sequences
-the five calls and assembles the result — nothing here inspects message
+the four calls and assembles the result — nothing here inspects message
 content, catches an exception, or decides anything.
 
-`message=None` in the returned `IngestResult` means the event was dropped —
-either the adapter declined to normalize it (stage 1) or the audit write
-failed (stage 2, which drops rather than re-raises). A message that made it
-past both is always paired with a `decision`, even for an unmapped sender
-(D6) or a policy error (stage 5 degrades closed rather than propagating).
+`run` takes an already-normalized `message`, not a raw event: parsing (the
+former stage 1) moved onto the adapter itself
+(`nora.platform.signal.adapter.SignalAdapter.listen`), which drops anything
+that parses to `None` — a DM, a sync message, a self-send, an empty body —
+before this pipeline ever sees it. `PlatformAdapter` deliberately has no
+`parse()` (`nora.domain.ports`'s module docstring), so `IngestPipeline` is not
+the place that could do this parsing generically even if it wanted to. See
+Trap B in `docs/superpowers/plans/2026-08-05-nora-phase4-platforms.md`.
+
+`message=None` in the returned `IngestResult` now means only that the audit
+write failed (the audit stage drops rather than re-raises) — the only
+remaining way `run` returns with nothing to show for its input. A message
+that made it past that is always paired with a `decision`, even for an
+unmapped sender (D6) or a policy error (the gate stage degrades closed rather
+than propagating).
 """
 
 from __future__ import annotations
@@ -26,8 +36,6 @@ from .stages import audit as audit_stage
 from .stages import gate as gate_stage
 from .stages import identity as identity_stage
 from .stages import memory_feed as memory_feed_stage
-from .stages import parse as parse_stage
-from .stages.parse import ParsingAdapter
 
 
 @dataclass(frozen=True)
@@ -40,7 +48,6 @@ class IngestPipeline:
     def __init__(
         self,
         *,
-        adapter: ParsingAdapter,
         audit: AuditStore,
         memory: MemoryStore,
         persons: Persons,
@@ -48,7 +55,6 @@ class IngestPipeline:
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], None],
     ) -> None:
-        self._adapter = adapter
         self._audit = audit
         self._memory = memory
         self._persons = persons
@@ -56,11 +62,13 @@ class IngestPipeline:
         self._metrics = metrics
         self._spawn = spawn
 
-    async def run(self, *, raw_event: dict) -> IngestResult:
+    async def run(self, *, message: NormalizedMessage) -> IngestResult:
+        """`message` is already normalized — the caller (the adapter's `listen()`
+        loop, via `nora.app.dispatch.Dispatcher.on_message`) never hands this a
+        `None`. The `nora_messages_total` increment replaces what the deleted
+        parse stage used to do right after a successful `adapter.parse()`."""
         m = self._metrics
-        message = await parse_stage.run(adapter=self._adapter, raw_event=raw_event, metrics=m)
-        if message is None:
-            return IngestResult(message=None, decision=None)
+        m.inc("nora_messages_total", platform=message.platform)
 
         recorded = await audit_stage.run(message=message, audit=self._audit, metrics=m)
         if not recorded:

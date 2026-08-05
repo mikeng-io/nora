@@ -3,6 +3,7 @@ import pytest
 from aiohttp import web
 
 from nora.domain.models import ConversationTarget
+from nora.domain.ports import SendResult
 from nora.platform.signal.send import SignalSender
 
 TARGET = ConversationTarget("signal", "Z3JvdXA=", "group")
@@ -28,7 +29,8 @@ async def rpc_server(aiohttp_server):
 
 async def test_send_posts_the_expected_jsonrpc_shape(rpc_server):
     sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
-    assert await sender.send(TARGET, "hello", request_id="tag-1") is True
+    result = await sender.send(TARGET, "hello", request_id="tag-1")
+    assert result == SendResult(ok=True)
     body = rpc_server.calls[0]
     assert body["jsonrpc"] == "2.0"
     assert body["method"] == "send"
@@ -37,7 +39,7 @@ async def test_send_posts_the_expected_jsonrpc_shape(rpc_server):
     assert body["id"] == "tag-1"
 
 
-async def test_send_returns_false_on_a_server_error(aiohttp_server):
+async def test_send_returns_a_non_retryable_failure_on_a_server_error(aiohttp_server):
     async def handler(request):
         return web.Response(status=500, text="boom")
 
@@ -45,7 +47,35 @@ async def test_send_returns_false_on_a_server_error(aiohttp_server):
     app.router.add_post("/api/v1/rpc", handler)
     server = await aiohttp_server(app)
     sender = SignalSender(str(server.make_url("")).rstrip("/"))
-    assert await sender.send(TARGET, "hello") is False
+    result = await sender.send(TARGET, "hello")
+    assert result.ok is False
+    assert result.retryable is False
+
+
+async def test_send_maps_http_429_to_a_retryable_failure(aiohttp_server):
+    async def handler(request):
+        return web.Response(status=429, headers={"Retry-After": "5"})
+
+    app = web.Application()
+    app.router.add_post("/api/v1/rpc", handler)
+    server = await aiohttp_server(app)
+    sender = SignalSender(str(server.make_url("")).rstrip("/"))
+    result = await sender.send(TARGET, "hello")
+    assert result == SendResult(ok=False, retryable=True, retry_after=5.0)
+
+
+async def test_send_maps_http_429_without_retry_after_to_a_retryable_failure(aiohttp_server):
+    async def handler(request):
+        return web.Response(status=429)
+
+    app = web.Application()
+    app.router.add_post("/api/v1/rpc", handler)
+    server = await aiohttp_server(app)
+    sender = SignalSender(str(server.make_url("")).rstrip("/"))
+    result = await sender.send(TARGET, "hello")
+    assert result.ok is False
+    assert result.retryable is True
+    assert result.retry_after is None
 
 
 async def test_send_returns_false_on_a_jsonrpc_error_body(aiohttp_server):
@@ -57,12 +87,14 @@ async def test_send_returns_false_on_a_jsonrpc_error_body(aiohttp_server):
     app.router.add_post("/api/v1/rpc", handler)
     server = await aiohttp_server(app)
     sender = SignalSender(str(server.make_url("")).rstrip("/"))
-    assert await sender.send(TARGET, "hello") is False
+    result = await sender.send(TARGET, "hello")
+    assert result.ok is False
 
 
 async def test_send_returns_false_when_the_daemon_is_unreachable():
     sender = SignalSender("http://127.0.0.1:1", timeout=0.5)
-    assert await sender.send(TARGET, "hello") is False
+    result = await sender.send(TARGET, "hello")
+    assert result.ok is False
 
 
 async def test_send_never_raises_on_a_timeout(aiohttp_server):
@@ -76,7 +108,8 @@ async def test_send_never_raises_on_a_timeout(aiohttp_server):
     app.router.add_post("/api/v1/rpc", handler)
     server = await aiohttp_server(app)
     sender = SignalSender(str(server.make_url("")).rstrip("/"), timeout=0.2)
-    assert await sender.send(TARGET, "hello") is False
+    result = await sender.send(TARGET, "hello")
+    assert result.ok is False
 
 
 async def test_send_does_not_log_the_message_body(rpc_server, caplog):
@@ -89,5 +122,6 @@ async def test_send_does_not_log_the_message_body(rpc_server, caplog):
 async def test_a_dm_target_is_refused_in_v2(rpc_server):
     sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
     dm = ConversationTarget("signal", "+85212345678", "dm")
-    assert await sender.send(dm, "hi") is False
+    result = await sender.send(dm, "hi")
+    assert result.ok is False
     assert rpc_server.calls == []

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from nora.domain.models import ConversationTarget, NormalizedMessage
-from nora.domain.ports import MemoryHealth
+from nora.domain.ports import AdapterHealth, MemoryHealth, PlatformIdentity, SendResult
 
 
 class FakeHoncho:
@@ -47,10 +47,11 @@ class SinkSender:
 
     platform = "signal"
 
-    def __init__(self, *, succeed: bool = True) -> None:
+    def __init__(self, *, succeed: bool = True, account: str = "+00000000000") -> None:
         self.sent: list[tuple[ConversationTarget, str]] = []
         self.events: list[dict] = []
         self._succeed = succeed
+        self._account = account
 
     async def listen(self, on_event: Callable[[dict], Awaitable[None]]) -> None:
         for event in self.events:
@@ -61,12 +62,15 @@ class SinkSender:
 
         return parse_event(raw_event, own_account="+00000000000")
 
-    async def send(self, target: ConversationTarget, text: str) -> bool:
-        self.sent.append((target, text))
-        return self._succeed
+    async def resolve_identity(self) -> PlatformIdentity:
+        return PlatformIdentity(platform=self.platform, primary=self._account)
 
-    async def health(self) -> dict:
-        return {"connected": True, "last_event_age_seconds": 0.0}
+    async def send(self, target: ConversationTarget, text: str) -> SendResult:
+        self.sent.append((target, text))
+        return SendResult(ok=self._succeed)
+
+    async def health(self) -> AdapterHealth:
+        return AdapterHealth(platform=self.platform, connected=True, last_event_age_seconds=0.0)
 
     @property
     def texts(self) -> list[str]:

@@ -163,7 +163,13 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
                 persona_store=persona_store, runner=runner,
             )
             body = _build_body(case)
-            await dispatcher.on_event(group_event(body=body))
+            # Mirrors tests/integration/harness.py::_HandlerView.on_event: parse the
+            # raw signal-cli-shaped event the same way SignalAdapter.listen() would
+            # internally (Trap B moved that step off IngestPipeline and onto the
+            # adapter), then dispatch only if it parsed to something.
+            message = await adapter.parse(group_event(body=body))
+            if message is not None:
+                await dispatcher.on_message(message)
             await _drain(background)
         finally:
             await audit.aclose()
