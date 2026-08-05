@@ -205,6 +205,7 @@ def _build_pipeline(
     debounce_seconds: float = 0.0,
     clock=None,
     background=None,
+    reactions: bool = True,
 ):
     audit = audit if audit is not None else FakeAuditStore()
     memory = memory if memory is not None else _FakeMemory()
@@ -232,6 +233,7 @@ def _build_pipeline(
         metrics=metrics,
         spawn=background.spawn,
         llm_state=llm_state,
+        reactions=reactions,
     )
     return pipeline, metrics, audit, memory, background
 
@@ -727,3 +729,28 @@ async def test_a_timed_out_turn_resolves_to_a_caution_too():
     assert adapter.sent == []
     assert adapter.emojis == [indicate.ACK, indicate.GAVE_UP]
     assert metrics.get("nora_silent_failures_total", reason="invocation_timeout") == 1
+
+
+async def test_reactions_disabled_puts_nothing_on_the_message():
+    """`engagement.reactions.enabled = false`: she replies and reacts to
+    nothing. Asserted against the ADAPTER, because the flag's whole promise is
+    what the GROUP sees — an assertion that `indicate.begin` went uncalled
+    would pass just as well if `resolve` still fired a stray ✅.
+
+    Both the 👀 and its terminal ✅ must be absent: the flag turns the feature
+    off, it does not merely skip the opening reaction and strand the closing
+    one on a message that never got marked.
+
+    PROBE: drop the `if self._reactions` guard in
+    `nora/engagement/pipeline.py::_run_admitted` and this fails."""
+    adapter = _ReactingAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter, reactions=False,
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.reactions == []
+    assert adapter.texts == ["今晚七點半得"]          # the reply is untouched
+    assert metrics.get("nora_reactions_total", phase="ack", status="sent") == 0.0

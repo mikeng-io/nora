@@ -74,6 +74,7 @@ class EngagementPipeline:
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], Any],
         llm_state: Any = None,
+        reactions: bool = True,
     ) -> None:
         self._adapter = adapter
         self._audit = audit
@@ -92,6 +93,7 @@ class EngagementPipeline:
         self._limits = limits
         self._metrics = metrics
         self._spawn = spawn
+        self._reactions = reactions
         self._llm_state = llm_state
         self._in_flight: set[tuple[str, str]] = set()
 
@@ -134,9 +136,17 @@ class EngagementPipeline:
         # nobody is going to receive. Constructed OUTSIDE the `try` so the
         # `finally` below can never reference it unbound; `begin` only spawns,
         # and cannot raise past its own guard.
-        indicator = indicate.begin(
-            adapter=self._adapter, message=msg, tag_id=request.tag_id,
-            metrics=self._metrics, spawn=self._spawn,
+        # `engagement.reactions.enabled = false` leaves `indicator` None, which
+        # `indicate.resolve` already treats as "nothing to replace" — so the
+        # flag is one branch here and none in the `finally`. A second branch
+        # down there could drift out of step with this one and strand a 👀.
+        indicator = (
+            indicate.begin(
+                adapter=self._adapter, message=msg, tag_id=request.tag_id,
+                metrics=self._metrics, spawn=self._spawn,
+            )
+            if self._reactions
+            else None
         )
         try:
             ctx = await self._context.assemble(request=request)

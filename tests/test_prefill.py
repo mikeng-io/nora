@@ -168,12 +168,42 @@ def _at(s: str):
     return datetime.fromisoformat(s).astimezone()
 
 
-def test_the_header_states_the_current_time():
+def test_the_prefill_states_the_current_time():
     """She had no clock anywhere — not here, not in the persona — so 今晚, 琴日
-    and 而家 were ungrounded and "what time is it" was unanswerable."""
+    and 而家 were ungrounded and "what time is it" was unanswerable.
+
+    Asserted against the whole PREFILL rather than the header, because the
+    clock moved out of the header on 2026-08-06 for prompt-cache reasons (see
+    `test_the_header_is_byte_identical_between_tags`). What matters to her is
+    that the time reaches the model; which of the three messages carries it is
+    a caching decision, not a behavioural one."""
+    from nora.agent.prefill import build_prefill
+    msgs = build_prefill(
+        _ctx(), display_name="Nora", context_window=40,
+        now=_at("2026-08-06T01:26:00"),
+    )
+    text = "".join(part["text"] for m in msgs for part in m["content"])
+    assert "Thursday 6 August 2026, 01:26" in text
+
+
+def test_the_header_is_byte_identical_between_tags():
+    """The header is the head of the prompt, and DeepSeek's context cache
+    matches on an exact prefix — the first differing byte ends the hit for
+    everything after it.
+
+    Measured 2026-08-06: the PINNED route caches whole requests only, not
+    prefixes (1800 shared tokens behind a differing tail hit zero; a
+    byte-identical request hit 1837/1838), so this ordering is unmeasurable
+    there today. It is enforced anyway because DeepSeek's own API and every
+    other major provider do cache on prefix, and a volatile byte in this header
+    would cost the whole prefix the moment the route changes.
+
+    PROBE: put anything time-varying back into `_context_header` — the old
+    `+ _now_line(now)` is the exact shape — and this fails."""
     from nora.agent.prefill import _context_header
-    header = _context_header(40, _at("2026-08-06T01:26:00"))
-    assert "Thursday 6 August 2026, 01:26" in header
+    assert _context_header(40) == _context_header(40)
+    # ...and specifically carries no clock, which is how it regressed before.
+    assert "Right now it is" not in _context_header(40)
 
 
 def test_transcript_lines_carry_their_age():

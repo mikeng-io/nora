@@ -22,11 +22,28 @@ workspace_id = "nora"
 base_url = "http://localhost:20128/v1"   # OmniRoute OpenAI-compatible
 api_key_env = "OMNIROUTE_API_KEY"        # env var NAME, never the value
 
-# The gateway alias, deliberately — not the upstream model name. Nora must
-# never be able to disclose what she runs on (guardrails.md), and the surest
-# way is for the name never to be in her process at all. Swapping the upstream
-# model becomes a gateway change with no redeploy here.
-model = "nora"
+# PINNED to one upstream, not the `nora` combo. The combo fans out per request
+# and only ONE of its three upstreams accepts a forced tool_choice while
+# thinking is enabled — measured 4/4 each, not sampled:
+#
+#   deepseek/deepseek-v4-flash       400 "Thinking mode does not support this
+#   opencode-go/deepseek-v4-flash    400  tool_choice" (deepseek-ai/DeepSeek-V3#1376)
+#   opencode-zen/deepseek-v4-flash   200, and picks the right tool 4/4
+#
+# So on the combo she was on a coin flip: routed to zen she chained correctly,
+# routed to either other she 400'd mid-turn and went silent — showing the group
+# ⚠️, which reads as "gave up" rather than "the provider refused the request".
+#
+# This gives up the alias's benefit of keeping the upstream name out of her
+# process (R-18 still blocks model names from replies, so she cannot say it).
+# Determinism is worth more than the indirection.
+#
+# WATCH THIS: zen is the only one of the three that reports no reasoning_tokens
+# in usage, which suggests a different — possibly older — build than the other
+# two. If that is why it accepts the forced tool_choice, their next update
+# could start 400ing with nothing changing here. The version-independent
+# fallback is reasoning_effort = "none", which works on all three.
+model = "opencode-zen/deepseek-v4-flash"
 max_tokens = 4000
 temperature = 0.7
 # "none" | "low" | "medium" | "high". A tag is one short reply from context she
@@ -41,6 +58,11 @@ total_tokens = 24000
 
 [engagement]
 policy = "trigger_text"
+
+[engagement.reactions]
+# 👀 while she works, then ✅ (replied) or ⚠️ (failed).
+# Off = she writes nothing to the group but replies.
+enabled = true
 
 [engagement.trigger]
 text = "nora.000"

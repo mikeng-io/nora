@@ -136,11 +136,28 @@ class TriggerConfig(BaseModel):
     min_interval_seconds: float
 
 
+class ReactionsConfig(BaseModel):
+    """The 👀 / ✅ / ⚠️ progress reactions on the tagging message.
+
+    Off is a supported operating mode, not a degradation: reactions are the
+    ONLY thing Nora writes to a conversation that is not a reply, and some
+    groups will not want an agent decorating their messages. Defaults to on
+    because under R-5 she is otherwise silent when broken — with reactions
+    off, a tag that dies produces no observable trace in the group at all,
+    and the operator is back to reading logs to tell "thinking" from "dead".
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = True
+
+
 class EngagementConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     policy: Literal["trigger_text"]
     trigger: TriggerConfig
+    reactions: ReactionsConfig = ReactionsConfig()
 
 
 class StoreConfig(BaseModel):

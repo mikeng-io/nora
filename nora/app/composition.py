@@ -249,6 +249,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
+        reactions=cfg.engagement.reactions.enabled,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 

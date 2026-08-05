@@ -131,7 +131,7 @@ def test_config_uses_the_target_shape(toml_path):
     assert cfg.store.max_per_conversation == 500
     assert cfg.store.context_window == 40
     # tiers replace default/deep, and carry their own timeout
-    assert cfg.llm.model == "nora"
+    assert cfg.llm.model == "opencode-zen/deepseek-v4-flash"
     assert cfg.llm.timeout_seconds == 30
     assert cfg.llm.limits.turns == 8
     # engagement owns the trigger; policy is declared even though only one exists
