@@ -2,7 +2,7 @@ import pytest
 
 from nora.agent.guards import Deliverer
 from nora.agent.tools import build_tools
-from nora.domain.models import ConversationTarget, NormalizedMessage
+from nora.domain.models import ConversationTarget, NormalizedMessage, Quote
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -99,7 +99,52 @@ async def test_read_buffer_does_not_count_a_matching_conversation_id(wiring):
 
 async def test_read_buffer_returns_only_model_relevant_fields(wiring):
     rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
-    assert set(rows[0]) == {"sender", "body", "ts"}    # no raw_json, no ids
+    # No raw_json, no ids. `reply_to` is absent rather than null on an
+    # unthreaded row — see test_read_buffer_omits_reply_to_* below.
+    assert set(rows[0]) == {"sender", "body", "ts"}
+
+
+async def test_read_buffer_marks_a_reply_with_the_name_it_answers(wiring):
+    """design/11 §2.6: if the prefilled transcript teaches `[A ↳ B]` and
+    `read_buffer` returns un-threaded rows, the older messages look
+    structurally different and the model reads a missing arrow as «not a
+    reply». JSON, not the arrow — a tool returns data; the arrow is prompt
+    syntax."""
+    store = wiring["store"]
+    await store.append(message=NormalizedMessage(
+        "signal", "g1", "group", "+852333", "Tyler", 9, "你屋企", {},
+        quote=Quote(author_id="+852111", text="whatever", quoted_ts=1),
+    ))
+    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    assert rows[-1] == {"sender": "Tyler", "body": "你屋企", "ts": 9, "reply_to": "Miles"}
+
+
+async def test_read_buffer_omits_reply_to_when_the_parent_is_not_in_the_rows(wiring):
+    """Resolution happens ONLY within the rows this call already returns — no
+    extra query from inside a tool. An unresolved parent drops the key rather
+    than reporting a null the model would have to interpret."""
+    store = wiring["store"]
+    await store.append(message=NormalizedMessage(
+        "signal", "g1", "group", "+852333", "Tyler", 9, "你屋企", {},
+        quote=Quote(author_id="+852111", text="whatever", quoted_ts=999_999),
+    ))
+    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    assert "reply_to" not in rows[-1]
+
+
+async def test_read_buffer_names_nora_the_same_way_in_reply_to_as_in_sender(wiring):
+    store = wiring["store"]
+    await store.append(
+        message=NormalizedMessage("signal", "g1", "group", "nora", None, 8, "七點半", {}),
+        is_nora=True,
+    )
+    await store.append(message=NormalizedMessage(
+        "signal", "g1", "group", "+852333", "Tyler", 9, "得", {},
+        quote=Quote(author_id="nora", text="whatever", quoted_ts=8),
+    ))
+    rows = await _call(wiring["tools"]["read_buffer"], conversation_id="g1", limit=40)
+    assert rows[-2]["sender"] == "Nora"
+    assert rows[-1]["reply_to"] == "Nora"
 
 
 async def test_read_buffer_clamps_a_hostile_limit_before_it_reaches_the_store(wiring, monkeypatch):

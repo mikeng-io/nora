@@ -17,6 +17,41 @@ class ConversationTarget:
 
 
 @dataclass(frozen=True)
+class Quote:
+    """The message this one replies to — a POINTER, plus the quoting sender's
+    unverified copy of what it said.
+
+    `quoted_ts` is `dataMessage.quote.id`, the parent's platform sent-timestamp,
+    and it is the only field of this type anything durable is built on: it is
+    what `messages.quoted_ts` stores and what resolves to a parent row.
+
+    `text` is carried for the ingest policies that need it and is **never
+    rendered to the model** — R-20. It comes from the QUOTING sender's envelope
+    and is verified against nothing, so Alice can construct a quote asserting
+    Bob said anything at all. `nora.agent.prefill` shows the resolved parent
+    row's body instead, or nothing.
+
+    There is deliberately **no `author_name`**. signal-cli's shipped
+    `quote.schema.json` carries `id` (required), `author`, `authorNumber`,
+    `authorUuid`, `text`, `attachments`, `mentions` and `textStyles` — and no
+    `authorName` at all. The old `q.get("authorName") or ""` therefore yielded
+    `""` on every real message and rendered `<replying_to author="">`, i.e.
+    "replying to nobody", for the whole life of that feature. A field that is
+    provably always empty is exactly how the `peer_card` bug happened.
+    Attribution comes from the resolved parent row, whose `sender_id` /
+    `person_id` Nora recorded herself.
+
+    `author_id` is kept because it is what `ReplyToNoraPolicy` matches against
+    her own identifier set to decide that a reply IS a tag — an id, never a
+    display name (design/10 §1.3).
+    """
+
+    author_id: str
+    text: str
+    quoted_ts: int
+
+
+@dataclass(frozen=True)
 class NormalizedMessage:
     platform: str                  # "signal"
     conversation_id: str           # base64 group id for Signal — platform-neutral key
@@ -32,10 +67,11 @@ class NormalizedMessage:
     # parallel array, so a mention is invisible to any substring match.
     # Defaulted so every existing positional construction stays valid.
     mentions: frozenset[str] = frozenset()
-    # `(author, text)` of the message this one replies to. Signal carries a
-    # reply structurally, not in the body, so without this a reply reads as a
-    # non-sequitur — "your place" with no way to know whose.
-    quote: tuple[str, str, str] | None = None    # (author_id, author_name, text)
+    # The message this one replies to. Signal carries a reply structurally, not
+    # in the body, so without this a reply reads as a non-sequitur — "your
+    # place" with no way to know whose. See `Quote` for why it is a pointer and
+    # why the text it carries is never shown to the model.
+    quote: Quote | None = None
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(self.platform, self.conversation_id, self.conversation_type)
@@ -88,6 +124,14 @@ class TranscriptRow:
     is_nora: bool
     delivery_status: DeliveryStatus
     raw_json: str | None
+    # The `ts` of the row this one replies to, or None. ONE column, not two:
+    # the parent row's own `sender_id`/`person_id` is authoritative, whereas
+    # `Quote.author_id` is supplied by whoever built the quote — storing both
+    # would be two sources of truth, and the untrustworthy one is the one that
+    # would get rendered. Store the pointer, derive the attribution.
+    #
+    # Defaulted so every existing positional construction stays valid.
+    quoted_ts: int | None = None
 
 
 @dataclass(frozen=True)

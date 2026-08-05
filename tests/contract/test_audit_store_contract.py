@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from nora.domain.models import DeliveryStatus, NormalizedMessage
+from nora.domain.models import DeliveryStatus, NormalizedMessage, Quote
 from nora.domain.ports import AuditStore
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
@@ -21,11 +21,11 @@ from nora.testing.fakes import FakeAuditStore
 
 
 def _msg(conv="g1", body="hello", ts=1, sender="+852111", platform="signal",
-         raw=None) -> NormalizedMessage:
+         raw=None, quote=None) -> NormalizedMessage:
     return NormalizedMessage(
         platform=platform, conversation_id=conv, conversation_type="group",
         sender_id=sender, sender_name="Miles", timestamp=ts, body=body,
-        raw={} if raw is None else raw,
+        raw={} if raw is None else raw, quote=quote,
     )
 
 
@@ -97,20 +97,71 @@ async def test_is_nora_round_trips(store):
     assert (await store.recent(conversation_id="g1", limit=1))[0].is_nora is True
 
 
-async def test_set_delivery_status_is_visible_in_recent(store):
+async def test_set_delivery_outcome_is_visible_in_recent(store):
     row_id = await store.append(message=_msg())
-    await store.set_delivery_status(row_id=row_id, status=DeliveryStatus.SENT)
+    await store.set_delivery_outcome(row_id=row_id, status=DeliveryStatus.SENT)
     assert (await store.recent(conversation_id="g1", limit=1))[0].delivery_status \
         is DeliveryStatus.SENT
 
 
-async def test_set_delivery_status_updates_only_the_matching_row(store):
+async def test_set_delivery_outcome_updates_only_the_matching_row(store):
     first = await store.append(message=_msg(body="first"))
     await store.append(message=_msg(body="second", ts=2))
-    await store.set_delivery_status(row_id=first, status=DeliveryStatus.SENT)
+    await store.set_delivery_outcome(row_id=first, status=DeliveryStatus.SENT)
     by_body = {r.body: r for r in await store.recent(conversation_id="g1", limit=10)}
     assert by_body["first"].delivery_status is DeliveryStatus.SENT
     assert by_body["second"].delivery_status is DeliveryStatus.PENDING
+
+
+async def test_set_delivery_outcome_corrects_the_rows_timestamp(store):
+    """Bug B (design/11 §2.3). `Deliverer` stamps `time.time()` locally at
+    record-first time; Signal assigns its own sent-timestamp and that is what a
+    reply's `quote.id` points at. The correction rides the post-send update
+    that already existed — no second write, so WAL's single writer is
+    untouched and A9's record-first ordering is preserved."""
+    row_id = await store.append(message=_msg(ts=1785950108283))
+    await store.set_delivery_outcome(
+        row_id=row_id, status=DeliveryStatus.SENT, ts=1785950108291,
+    )
+    assert (await store.recent(conversation_id="g1", limit=1))[0].ts == 1785950108291
+
+
+async def test_set_delivery_outcome_without_a_ts_leaves_the_timestamp_alone(store):
+    """A platform that answered without a timestamp must not blank the row —
+    `recent` orders on `ts`, so a NULL or 0 there is a corrupt transcript."""
+    row_id = await store.append(message=_msg(ts=4242))
+    await store.set_delivery_outcome(row_id=row_id, status=DeliveryStatus.FAILED)
+    assert (await store.recent(conversation_id="g1", limit=1))[0].ts == 4242
+
+
+async def test_set_delivery_outcome_on_an_unknown_row_is_a_silent_no_op(store):
+    await store.set_delivery_outcome(row_id=9999, status=DeliveryStatus.SENT, ts=1)
+
+
+# ---------------------------------------------------------------------------
+# quoted_ts — the parent pointer, written in the SAME insert (design/11 §2.2)
+# ---------------------------------------------------------------------------
+
+
+async def test_quoted_ts_round_trips_through_recent(store):
+    await store.append(message=_msg(quote=Quote(author_id="u-1", text="早晨",
+                                                quoted_ts=1785950108291)))
+    assert (await store.recent(conversation_id="g1", limit=1))[0].quoted_ts \
+        == 1785950108291
+
+
+async def test_a_message_with_no_quote_has_a_null_quoted_ts(store):
+    await store.append(message=_msg())
+    assert (await store.recent(conversation_id="g1", limit=1))[0].quoted_ts is None
+
+
+async def test_quoted_ts_needs_no_extra_argument_because_it_rides_the_message(store):
+    """It is a value the parser already extracted, so it lands in the one
+    INSERT `append` already performs — exactly what DEC-15 did for `person_id`,
+    and for the same reason (this path drops the message on WAL contention)."""
+    row_id = await store.append(message=_msg(quote=Quote(author_id="u", text="t", quoted_ts=7)))
+    rows = await store.recent(conversation_id="g1", limit=10)
+    assert [(r.id, r.quoted_ts) for r in rows] == [(row_id, 7)]
 
 
 async def test_row_ids_are_positive_and_start_at_one(store):

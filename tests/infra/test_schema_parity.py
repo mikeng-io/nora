@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
+from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import METADATA
 
 PROD_DB = Path(__file__).resolve().parents[2] / "data" / "messages.db"
@@ -102,3 +103,24 @@ def test_indexes_match_production_exactly(fresh_db):
         pytest.skip("no production database on this host")
     for index in ("idx_messages_conv_ts", "idx_messages_is_nora"):
         assert _index_xinfo(fresh_db, index) == _index_xinfo(PROD_DB, index), index
+
+
+def test_the_column_order_of_a_fresh_database_matches_a_migrated_one(fresh_db, tmp_path):
+    """The append-position rule, enforced instead of merely commented.
+
+    `ALTER TABLE ADD COLUMN` appends, so a migrated database has every added
+    column at the end. Declaring one mid-table in `schema.py` makes a fresh
+    database order its columns differently, which shifts `ts`'s column index —
+    the failure `test_indexes_match_production_exactly` caught for `person_id`,
+    and which is invisible on a host with no production database at all. This
+    catches it from the metadata alone.
+    """
+    migrated = tmp_path / "migrated.db"
+    run_migrations(migrated)
+    assert list(_table_info(fresh_db)) == list(_table_info(migrated))
+
+
+def test_quoted_ts_is_the_last_declared_column(fresh_db):
+    """`person_id` was last; `quoted_ts` is now, and anything after it must be
+    appended in turn. Spelled out so the next column's author sees it fail."""
+    assert list(_table_info(fresh_db))[-1] == "quoted_ts"

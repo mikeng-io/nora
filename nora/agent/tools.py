@@ -86,14 +86,29 @@ def build_tool_specs(
         except Exception:
             log.exception("read_buffer failed")
             return []
-        return [
-            {
-                "sender": "Nora" if r.is_nora else (r.sender_name or "unknown"),
-                "body": r.body,
-                "ts": r.ts,
-            }
-            for r in rows
-        ]
+        # `reply_to` keeps this tool structurally consistent with the prefilled
+        # transcript, and that consistency is the point. If the prefill teaches
+        # `[A ↳ B]` and read_buffer then hands back un-threaded rows, the older
+        # messages look STRUCTURALLY different and the model reads a missing
+        # arrow as "not a reply". JSON, not the arrow — a tool returns data,
+        # the arrow is prompt syntax.
+        #
+        # Resolution happens ONLY within the rows this call already returned:
+        # no extra query from inside a tool, on the reply path, ever. An
+        # unresolved parent drops the key rather than reporting a null the
+        # model would then have to interpret.
+        def who(row) -> str:
+            return "Nora" if row.is_nora else (row.sender_name or "unknown")
+
+        by_ts = {r.ts: r for r in rows}
+        out = []
+        for r in rows:
+            item = {"sender": who(r), "body": r.body, "ts": r.ts}
+            parent = by_ts.get(r.quoted_ts) if r.quoted_ts is not None else None
+            if parent is not None and parent.id != r.id:
+                item["reply_to"] = who(parent)
+            out.append(item)
+        return out
 
     # Reviewed for the same shadowing shape as read_buffer (Task 1): `sender_id`
     # here is also model-supplied and unscoped, hardcoded to "signal". This is

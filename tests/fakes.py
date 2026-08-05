@@ -47,11 +47,18 @@ class SinkSender:
 
     platform = "signal"
 
-    def __init__(self, *, succeed: bool = True, account: str = "+00000000000") -> None:
+    def __init__(
+        self, *, succeed: bool = True, account: str = "+00000000000",
+        timestamp: int | None = None,
+    ) -> None:
         self.sent: list[tuple[ConversationTarget, str]] = []
         self.events: list[dict] = []
         self._succeed = succeed
         self._account = account
+        # The platform's OWN sent-timestamp, which real signal-cli returns and
+        # a reply's `quote.id` points at (design/11 §2.3). `None` — the default
+        # — is the shape of a daemon that answered without one.
+        self._timestamp = timestamp
 
     async def listen(self, on_event: Callable[[dict], Awaitable[None]]) -> None:
         for event in self.events:
@@ -67,7 +74,7 @@ class SinkSender:
 
     async def send(self, target: ConversationTarget, text: str) -> SendResult:
         self.sent.append((target, text))
-        return SendResult(ok=self._succeed)
+        return SendResult(ok=self._succeed, timestamp=self._timestamp)
 
     async def health(self) -> AdapterHealth:
         return AdapterHealth(platform=self.platform, connected=True, last_event_age_seconds=0.0)

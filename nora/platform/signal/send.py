@@ -27,6 +27,37 @@ def _retry_after_seconds(value: str | None) -> float | None:
         return None
 
 
+def _sent_timestamp(body: object) -> int | None:
+    """The PLATFORM's own sent-timestamp out of a JSON-RPC `send` result.
+
+    signal-cli answers `send` with `{"timestamp": <long>, "results": [...]}` —
+    `org.asamk.signal.util.SendMessageResultUtils.outputResult` writes exactly
+    that `Map.of` to the JsonWriter, and `SignalJsonRpcCommandHandler.runCommand`
+    returns the single written object as the JSON-RPC `result`. (Read out of
+    the shipped 0.14.7 jar; no live send was made to confirm it, since the only
+    live group is a real one.)
+
+    This body used to be discarded after the `error` check, which is Bug B:
+    `Deliverer` stamps `time.time()` locally, Signal assigns this instead, and
+    this is what a reply's `dataMessage.quote.id` points at. Measured 8 ms
+    apart on live data — close enough to look right, never equal, so a join by
+    `ts` silently resolved every sender except Nora herself.
+
+    Anything unparseable degrades to `None` rather than raising: a send that
+    reached the group must never be reported as failed over a missing field.
+    """
+    if not isinstance(body, dict):
+        return None
+    result = body.get("result")
+    if not isinstance(result, dict):
+        return None
+    value = result.get("timestamp")
+    # `bool` is an `int` in Python and `True` would silently become 1.
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def __getattr__(name: str):
     # Task 16 guard (spec E.3): `_PYTEST_GUARD` reads True whenever the caller is
     # currently running under pytest, so tests can assert the real send path is
@@ -82,4 +113,4 @@ class SignalSender:
                       target.conversation_id, request_id)
             return SendResult(ok=False)
         log.info("sent %d chars to %s (id=%s)", len(text), target.conversation_id, request_id)
-        return SendResult(ok=True)
+        return SendResult(ok=True, timestamp=_sent_timestamp(body))

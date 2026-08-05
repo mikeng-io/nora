@@ -67,6 +67,9 @@ class FakeAuditStore:
             "body": message.body,
             "is_nora": is_nora,
             "delivery_status": delivery_status,
+            # The parent pointer rides the message, exactly as it does in
+            # `SqlAuditStore.append` — no extra parameter on either store.
+            "quoted_ts": message.quote.quoted_ts if message.quote else None,
             # `json.dumps`, not `None`. It used to be `None`, which was only
             # invisible while nothing read it back: `unattributed` now returns
             # `raw_json`, and the operator control plane
@@ -88,16 +91,23 @@ class FakeAuditStore:
                 id=r["id"], sender_id=r["sender_id"], sender_name=r["sender_name"],
                 ts=r["ts"], body=r["body"], is_nora=r["is_nora"],
                 delivery_status=r["delivery_status"], raw_json=r["raw_json"],
+                quoted_ts=r["quoted_ts"],
             )
             for r in window
         ]
 
-    async def set_delivery_status(
-        self, *, row_id: int, status: DeliveryStatus
+    async def set_delivery_outcome(
+        self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
     ) -> None:
+        """Mirrors `SqlAuditStore.set_delivery_outcome`, `ts=None` included:
+        a platform that returned no timestamp must leave the row's own alone,
+        not blank it. Both halves are pinned for both stores by
+        `tests/contract/test_audit_store_contract.py`."""
         for row in self.rows:
             if row["id"] == row_id:
                 row["delivery_status"] = status
+                if ts is not None:
+                    row["ts"] = ts
                 return
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]:

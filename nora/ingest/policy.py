@@ -89,7 +89,7 @@ class ReplyToNoraPolicy:
 
     async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:
         quote = message.quote
-        if quote and self._self_ids and quote[0] in self._self_ids:
+        if quote and self._self_ids and quote.author_id in self._self_ids:
             return EngageDecision(engage=True, reason="reply_to_nora")
         return EngageDecision(engage=False, reason="no_trigger")
 

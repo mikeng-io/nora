@@ -174,7 +174,9 @@ class EngagementPipeline:
                 # The tagger's own aliases still reach the model via
                 # `build_tag_message`, which is scoped by construction.
             )
-            tag_message = build_tag_message(ctx, tagger_name=tagger_name)
+            tag_message = build_tag_message(
+                ctx, tagger_name=tagger_name, display_name=self._display_name,
+            )
 
             ok, llm_elapsed = await invoke.run(
                 runner=self._runner, persona=persona, tools=tools, pre_fill=pre_fill,
