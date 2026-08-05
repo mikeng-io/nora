@@ -44,7 +44,7 @@ def _body_parts(data: dict) -> list[str]:
     return parts
 
 
-def _extract_envelope(event: dict) -> dict | None:
+def extract_envelope(event: dict) -> dict | None:
     """Return the envelope from either of signal-cli's two framings, or None.
 
     signal-cli frames the *same* envelope two different ways, and its
@@ -63,6 +63,12 @@ def _extract_envelope(event: dict) -> dict | None:
     Both framings are live — the socket transports really do send the
     JSON-RPC form — so this accepts either rather than trading one hardcoded
     assumption for the opposite one.
+
+    PUBLIC because `messages.raw_json` stores whatever `parse_event` was
+    handed, so the operator control plane (`nora.app.pending`, reading a
+    sender's id forms back out of a stored envelope) has to unwrap exactly
+    the same two framings. A private copy there would be a second place to
+    fix when a third framing appears.
     """
     if "method" in event:
         if event.get("method") != "receive":
@@ -79,7 +85,7 @@ def _extract_envelope(event: dict) -> dict | None:
 
 def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
     try:
-        env = _extract_envelope(event or {})
+        env = extract_envelope(event or {})
         if env is None:
             return None
         data = env.get("dataMessage")

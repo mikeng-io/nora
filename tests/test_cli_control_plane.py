@@ -1,0 +1,574 @@
+"""The operator control plane: `nora groups` and `nora persons pending`.
+
+Plan Task 6 / design/10 §6. Every test here drives the REAL argparse surface
+(`nora.__main__.build_parser`) against a real SQLite audit database and a fake
+signal-cli speaking the daemon's verified wire shape, because the properties
+that matter are end-to-end ones: that two ids of one account collapse, that the
+emitted stanza parses, and that nothing is written.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import tomllib
+from pathlib import Path
+
+import pytest
+import tomli_w
+from aiohttp import web
+
+from nora.__main__ import build_parser
+from nora.app import cli
+from nora.domain.models import NormalizedMessage
+from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
+from nora.persons import load_persons
+from nora.policy import load_policy
+
+ROOT = Path(__file__).resolve().parents[1]
+
+GROUP_ID = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
+OTHER_GROUP_ID = "T3RoZXJHcm91cElkQmFzZTY0PT0="
+MILES_PHONE = "+85290000101"
+MILES_ACI = "a1000001-0000-4000-8000-000000000001"
+STRANGER = "+85200000000"
+
+
+# ── fake signal-cli ──────────────────────────────────────────────────────────
+
+def daemon_app(*, groups=None, contacts=None, seen=None):
+    """A signal-cli whose `/api/v1/rpc` answers the two read methods, and
+    records every method it was asked for."""
+
+    async def rpc(request):
+        payload = await request.json()
+        if seen is not None:
+            seen.append(payload["method"])
+        result = groups if payload["method"] == "listGroups" else contacts
+        return web.json_response({"jsonrpc": "2.0", "result": result or [],
+                                  "id": payload["id"]})
+
+    app = web.Application()
+    app.router.add_post("/api/v1/rpc", rpc)
+    return app
+
+
+def group_row(*, id=GROUP_ID, name="Ridgeline", members=()):
+    return {
+        "id": id, "name": name, "isMember": True, "isBlocked": False,
+        "members": [dict(m) for m in members],
+    }
+
+
+MILES_MEMBER = {"number": MILES_PHONE, "uuid": MILES_ACI, "isAdmin": True}
+
+
+def envelope(*, source="", number="", uuid="", name="", body="hi", ts=1):
+    """One stored signal-cli envelope, in the HTTP-transport framing
+    `messages.raw_json` actually holds (verified against the live DB)."""
+    env = {"sourceName": name, "timestamp": ts,
+           "dataMessage": {"message": body, "groupInfo": {"groupId": GROUP_ID}}}
+    for key, value in (("source", source), ("sourceNumber", number), ("sourceUuid", uuid)):
+        if value:
+            env[key] = value
+    return {"envelope": env, "account": "+85290000100"}
+
+
+# ── fixtures ─────────────────────────────────────────────────────────────────
+
+IDENTITY_EMPTY = "[persons.nobody]\nname = \"Nobody\"\n[[persons.nobody.signal]]\nphone = \"+0\"\n"
+POLICY_ALLOWING_GROUP = (
+    'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+    f'id = "{GROUP_ID}"\nlabel = "Ridgeline"\npersons = ["nobody"]\n'
+)
+
+
+@pytest.fixture
+async def env(tmp_path, aiohttp_server, monkeypatch):
+    """A config.toml, an identity.toml, a policy.toml, a migrated database and
+    a fake daemon — the whole 3am situation, with nothing else running.
+
+    `OMNIROUTE_API_KEY` is deliberately UNSET: the key lives in `.env` and is
+    injected into the container, so the operator's shell does not have it, and
+    a control plane that refused to run without it would be useless exactly
+    when it is needed.
+    """
+    monkeypatch.delenv("OMNIROUTE_API_KEY", raising=False)
+    state = {"groups": [], "contacts": [], "seen": []}
+
+    async def rpc(request):
+        payload = await request.json()
+        state["seen"].append(payload["method"])
+        result = state["groups"] if payload["method"] == "listGroups" else state["contacts"]
+        return web.json_response({"jsonrpc": "2.0", "result": result, "id": payload["id"]})
+
+    app = web.Application()
+    app.router.add_post("/api/v1/rpc", rpc)
+    daemon = await aiohttp_server(app)
+
+    with (ROOT / "config.example.toml").open("rb") as f:
+        cfg = tomllib.load(f)
+    cfg["platforms"]["signal"]["base_url"] = str(daemon.make_url("")).rstrip("/")
+    cfg["store"]["db_path"] = str(tmp_path / "messages.db")
+    cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
+    cfg["persona"]["dir"] = str(ROOT / "nora" / "persona")
+    cfg["identity_file"] = str(tmp_path / "identity.toml")
+    cfg["policy_file"] = str(tmp_path / "policy.toml")
+    (tmp_path / "identity.toml").write_text(IDENTITY_EMPTY)
+    (tmp_path / "policy.toml").write_text(POLICY_ALLOWING_GROUP)
+    config_path = tmp_path / "config.toml"
+    with config_path.open("wb") as f:
+        tomli_w.dump(cfg, f)
+
+    run_migrations(tmp_path / "messages.db")
+    state.update(path=config_path, tmp=tmp_path)
+    return state
+
+
+async def audit(env, *, sender, raw, ts=1, body="hi", person_id=None):
+    store = SqlAuditStore(create_sql_engine(env["tmp"] / "messages.db"))
+    try:
+        return await store.append(
+            message=NormalizedMessage(
+                platform="signal", conversation_id=GROUP_ID, conversation_type="group",
+                sender_id=sender, sender_name=None, timestamp=ts, body=body, raw=raw,
+            ),
+            person_id=person_id,
+        )
+    finally:
+        await store.aclose()
+
+
+async def invoke(env, *argv):
+    """Parse and run through the real CLI surface, returning the exit code.
+
+    `cli.execute`, not `cli.run`: the two differ only by `asyncio.run`, which
+    cannot nest inside the loop pytest-asyncio already owns. The error handling
+    under test lives in `execute`; `test_run_turns_a_cli_error_into_an_exit_code`
+    covers the sync wrapper separately.
+    """
+    args = build_parser().parse_args([*argv, "--config", str(env["path"])])
+    return await cli.execute(args)
+
+
+# ── nora groups ──────────────────────────────────────────────────────────────
+
+async def test_groups_marks_an_allowlisted_group_allowed(env, capsys):
+    env["groups"] = [group_row()]
+    assert await invoke(env, "groups") == 0
+    out = capsys.readouterr().out
+    assert "ALLOWED" in out
+    assert "DENIED" not in out
+    assert GROUP_ID in out
+    assert "Ridgeline" in out
+    assert "1 group(s): 1 allowed, 0 denied." in out
+
+
+async def test_groups_marks_an_unlisted_group_denied(env, capsys):
+    """The operator's original question — which id is which group — answered
+    beside the verdict, so a denied group is identifiable rather than a
+    base64 blob he has to guess at."""
+    env["groups"] = [group_row(id=OTHER_GROUP_ID, name="Family")]
+    assert await invoke(env, "groups") == 0
+    out = capsys.readouterr().out
+    assert "DENIED" in out
+    assert "ALLOWED" not in out
+    assert "Family" in out and OTHER_GROUP_ID in out
+    assert "1 group(s): 0 allowed, 1 denied." in out
+
+
+async def test_groups_shows_both_verdicts_side_by_side(env, capsys):
+    env["groups"] = [group_row(), group_row(id=OTHER_GROUP_ID, name="Family")]
+    await invoke(env, "groups")
+    out = capsys.readouterr().out
+    assert "2 group(s): 1 allowed, 1 denied." in out
+
+
+async def test_the_denied_groups_paste_stanza_actually_allows_it(env, capsys, tmp_path):
+    """The suggestion is only worth printing if pasting it works: the emitted
+    `[[conversations]]` block must parse AND flip the verdict."""
+    env["groups"] = [group_row(id=OTHER_GROUP_ID, name="Family")]
+    await invoke(env, "groups")
+    out = capsys.readouterr().out
+    block = out[out.index("[[conversations]]"):out.index("persons  =")]
+    pasted = tmp_path / "pasted-policy.toml"
+    pasted.write_text(
+        'default = "deny"\n'
+        + "\n".join(line.strip() for line in block.splitlines())
+        + '\npersons = "*"\n'
+    )
+    policy = load_policy(pasted)
+    assert policy.is_allowed(
+        platform="signal", conversation_id=OTHER_GROUP_ID, person_id=None
+    )
+
+
+async def test_groups_degrades_to_one_sentence_when_the_daemon_is_down(env, capsys):
+    """No traceback, a named exit code, and the two commands that diagnose it."""
+    cfg = tomllib.loads(env["path"].read_text())
+    cfg["platforms"]["signal"]["base_url"] = "http://127.0.0.1:1"
+    env["path"].write_text(tomli_w.dumps(cfg))
+    assert await invoke(env, "groups") == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "could not reach the signal-cli daemon" in captured.err
+    assert "docker compose ps signal-cli" in captured.err
+    assert "Traceback" not in captured.err
+
+
+async def test_groups_only_asks_the_daemon_to_read(env):
+    env["groups"] = [group_row()]
+    await invoke(env, "groups")
+    assert env["seen"] == ["listGroups"]
+
+
+# ── nora persons pending ─────────────────────────────────────────────────────
+
+async def test_two_ids_of_one_account_collapse_into_one_pending_entry(env, capsys):
+    """THE core requirement. Sealed sender delivers the same account as a phone
+    number on one message and as an ACI on another; listing them separately
+    would invite two `[[persons.x.signal]]` blocks — the copy-paste duplicate
+    `load_persons` refuses to start on."""
+    env["contacts"] = [{"number": MILES_PHONE, "uuid": MILES_ACI, "name": "Miles Novak"}]
+    await audit(env, sender=MILES_PHONE, ts=1,
+                raw=envelope(source=MILES_PHONE, number=MILES_PHONE, name="Miles Novak"))
+    await audit(env, sender=MILES_ACI, ts=2, raw=envelope(uuid=MILES_ACI, name="Miles Novak"))
+
+    assert await invoke(env, "persons", "pending") == 0
+    out = capsys.readouterr().out
+    assert "# 1 unmapped account(s) from 2 unattributed row(s)." in out
+    assert out.count("[[persons.") == 1
+    assert MILES_PHONE in out and MILES_ACI in out
+    assert "Miles Novak" in out
+
+
+async def test_a_group_roster_correlates_ids_no_contact_pairs(env, capsys):
+    """`listContacts` is not enough on its own: on the live daemon only 3 of 83
+    contacts carry both a number and a uuid, while every group MEMBER does. A
+    contact list that pairs nothing must still collapse the account."""
+    env["contacts"] = [{"number": MILES_PHONE, "name": "Miles Novak"}]      # no uuid
+    env["groups"] = [group_row(members=[MILES_MEMBER])]
+    await audit(env, sender=MILES_PHONE, ts=1, raw=envelope(source=MILES_PHONE))
+    await audit(env, sender=MILES_ACI, ts=2, raw=envelope(uuid=MILES_ACI))
+
+    await invoke(env, "persons", "pending")
+    out = capsys.readouterr().out
+    assert "# 1 unmapped account(s)" in out
+    assert MILES_PHONE in out and MILES_ACI in out
+
+
+async def test_one_envelope_alone_collapses_its_own_id_forms(env, capsys):
+    """The correlator of last resort, and the only one left when the daemon is
+    down: ids that arrived on the SAME envelope named one sender by
+    construction."""
+    await audit(env, sender=MILES_PHONE, ts=1,
+                raw=envelope(source=MILES_PHONE, number=MILES_PHONE, uuid=MILES_ACI))
+    await invoke(env, "persons", "pending")
+    out = capsys.readouterr().out
+    assert "# 1 unmapped account(s)" in out
+    assert MILES_PHONE in out and MILES_ACI in out
+
+
+async def test_a_later_row_merges_two_accounts_already_filed_apart(env, capsys):
+    """With no daemon there is nothing to link ids before the rows are read, so
+    the FIRST two rows are filed under separate roots and only the third joins
+    them. Grouping in the same pass that links would leave the first two filed
+    under the roots they had at the time — one account reported as two, which
+    is the duplicate-block trap.
+    """
+    cfg = tomllib.loads(env["path"].read_text())
+    cfg["platforms"]["signal"]["base_url"] = "http://127.0.0.1:1"
+    env["path"].write_text(tomli_w.dumps(cfg))
+    await audit(env, sender=MILES_ACI, ts=1, raw=envelope(uuid=MILES_ACI))
+    await audit(env, sender=MILES_PHONE, ts=2, raw=envelope(source=MILES_PHONE))
+    await audit(env, sender=MILES_PHONE, ts=3,
+                raw=envelope(source=MILES_PHONE, uuid=MILES_ACI))
+
+    await invoke(env, "persons", "pending")
+    out = capsys.readouterr().out
+    assert "# 1 unmapped account(s) from 3 unattributed row(s)." in out
+    assert out.count("[[persons.") == 1
+
+
+async def test_a_sender_absent_from_listcontacts_reads_unknown(env, capsys):
+    env["contacts"] = [{"number": MILES_PHONE, "uuid": MILES_ACI, "name": "Miles Novak"}]
+    await audit(env, sender=STRANGER, raw=envelope(source=STRANGER, number=STRANGER))
+    await invoke(env, "persons", "pending")
+    out = capsys.readouterr().out
+    assert "# ── unknown  (signal)" in out
+    assert "# not in signal-cli's contacts" in out
+    assert STRANGER in out
+
+
+async def test_a_spoofable_profile_name_is_never_the_identification(env, capsys):
+    """`sourceName` is chosen by the sender and changeable at will (§1.3). It
+    is reported and labelled, never printed as who this account IS."""
+    await audit(env, sender=STRANGER,
+                raw=envelope(source=STRANGER, name="Miles Novak"))
+    await invoke(env, "persons", "pending")
+    out = capsys.readouterr().out
+    assert "# ── unknown  (signal)" in out
+    assert "sender-controlled and spoofable" in out
+    assert 'name = "Miles Novak"' not in out
+
+
+async def test_the_emitted_stanza_parses_and_resolves_every_id(env, capsys, tmp_path):
+    """The output is worthless if a paste breaks startup. Round-trip it through
+    the real loader and confirm every id form resolves to the same person."""
+    env["contacts"] = [{"number": MILES_PHONE, "uuid": MILES_ACI, "name": "Miles Novak"}]
+    await audit(env, sender=MILES_PHONE, ts=1, raw=envelope(source=MILES_PHONE))
+    await audit(env, sender=MILES_ACI, ts=2, raw=envelope(uuid=MILES_ACI))
+    await invoke(env, "persons", "pending")
+    out = capsys.readouterr().out
+
+    stanza = out[out.index("[persons."):out.index("# Paste into identity.toml")]
+    pasted = tmp_path / "pasted-identity.toml"
+    pasted.write_text(stanza)
+    persons = load_persons(pasted)
+    resolved = {persons.resolve("signal", MILES_PHONE), persons.resolve("signal", MILES_ACI)}
+    assert len(resolved) == 1 and None not in resolved
+    assert next(iter(resolved)).name == "Miles Novak"
+
+
+async def test_two_unknown_accounts_get_distinct_person_ids(env, capsys, tmp_path):
+    """Both slug to `person`, and two `[persons.person]` tables in one file is
+    a TOML duplicate-key error — the stanza would not even load."""
+    await audit(env, sender=STRANGER, ts=1, raw=envelope(source=STRANGER))
+    await audit(env, sender="+85211111111", ts=2, raw=envelope(source="+85211111111"))
+    await invoke(env, "persons", "pending")
+    out = capsys.readouterr().out
+    stanza = out[out.index("[persons."):out.index("# Paste into identity.toml")]
+    pasted = tmp_path / "pasted-identity.toml"
+    pasted.write_text(stanza)
+    assert len(load_persons(pasted).by_person) == 2
+
+
+async def test_a_sender_mapped_since_ingest_is_no_longer_pending(env, capsys):
+    """`person_id IS NULL` means "unmapped WHEN IT ARRIVED". Once the operator
+    has added the account, the row belongs to lazy adoption (DEC-16), not to
+    this list — and re-suggesting it is how a duplicate block gets pasted."""
+    env["tmp"].joinpath("identity.toml").write_text(
+        f'[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "{MILES_PHONE}"\n'
+    )
+    await audit(env, sender=MILES_PHONE, raw=envelope(source=MILES_PHONE))
+    await invoke(env, "persons", "pending")
+    out = capsys.readouterr().out
+    assert "# No unmapped senders" in out
+    assert MILES_PHONE not in out
+
+
+async def test_mapping_one_id_form_retires_the_whole_account(env, capsys):
+    """The correlation cuts both ways: an operator who mapped the phone number
+    must not be told the ACI is still pending, because pasting THAT is the
+    same-id-in-two-blocks error."""
+    env["contacts"] = [{"number": MILES_PHONE, "uuid": MILES_ACI, "name": "Miles Novak"}]
+    env["tmp"].joinpath("identity.toml").write_text(
+        f'[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "{MILES_PHONE}"\n'
+    )
+    await audit(env, sender=MILES_ACI, raw=envelope(uuid=MILES_ACI))
+    await invoke(env, "persons", "pending")
+    assert "# No unmapped senders" in capsys.readouterr().out
+
+
+async def test_pending_survives_an_unreachable_daemon(env, capsys):
+    """It loses the names, and says so — rather than failing, which would make
+    the tool useless in the one situation it exists for."""
+    cfg = tomllib.loads(env["path"].read_text())
+    cfg["platforms"]["signal"]["base_url"] = "http://127.0.0.1:1"
+    env["path"].write_text(tomli_w.dumps(cfg))
+    await audit(env, sender=MILES_PHONE, raw=envelope(source=MILES_PHONE, name="Miles Novak"))
+
+    assert await invoke(env, "persons", "pending") == 0
+    out = capsys.readouterr().out
+    assert "WARNING: signal-cli is unreachable" in out
+    assert "one person may appear twice" in out
+    assert "# ── unknown  (signal)" in out
+    assert MILES_PHONE in out
+    # It must not claim a lookup it never performed came back empty.
+    assert "not in signal-cli's contacts" not in out
+    assert "signal-cli was unreachable, so no name could be looked up" in out
+
+
+async def test_pending_only_asks_the_daemon_to_read(env):
+    await audit(env, sender=MILES_PHONE, raw=envelope(source=MILES_PHONE))
+    await invoke(env, "persons", "pending")
+    assert sorted(env["seen"]) == ["listContacts", "listGroups"]
+
+
+async def test_noras_own_rows_are_never_offered_for_adoption(env, capsys):
+    """Her account is never written to identity.toml (DEC-9), so an outbound
+    row can only ever resolve to nobody — offering it would be a permanent,
+    unfixable entry at the top of this list."""
+    store = SqlAuditStore(create_sql_engine(env["tmp"] / "messages.db"))
+    try:
+        await store.append(message=NormalizedMessage(
+            platform="signal", conversation_id=GROUP_ID, conversation_type="group",
+            sender_id="+85290000100", sender_name="Nora", timestamp=1,
+            body="mine", raw=envelope(source="+85290000100"),
+        ), is_nora=True)
+    finally:
+        await store.aclose()
+    await invoke(env, "persons", "pending")
+    assert "# No unattributed audit rows at all" in capsys.readouterr().out
+
+
+async def test_a_truncated_scan_says_so(env, capsys):
+    """A silently truncated list is one an operator would read as complete."""
+    for i in range(3):
+        await audit(env, sender=f"+8521111111{i}", ts=i,
+                    raw=envelope(source=f"+8521111111{i}"))
+    await invoke(env, "persons", "pending", "--limit", "2")
+    out = capsys.readouterr().out
+    assert "# The scan stopped at its 2-row limit" in out
+
+
+async def test_a_non_positive_limit_is_refused(env, capsys):
+    """`unattributed(limit=0)` returns `[]`, so without this the report would
+    announce "no unattributed audit rows at all" — a false statement about the
+    database, produced by a typo in a flag."""
+    await audit(env, sender=MILES_PHONE, raw=envelope(source=MILES_PHONE))
+    assert await invoke(env, "persons", "pending", "--limit", "0") == 1
+    captured = capsys.readouterr()
+    assert "--limit must be positive" in captured.err
+    assert "No unattributed audit rows" not in captured.out
+
+
+async def test_a_missing_database_is_a_sentence_not_a_traceback(env, capsys):
+    (env["tmp"] / "messages.db").unlink()
+    assert await invoke(env, "persons", "pending") == 1
+    err = capsys.readouterr().err
+    assert "no audit database at" in err
+    assert "Traceback" not in err
+
+
+# ── read-only, and the daemon-less path ──────────────────────────────────────
+
+def _tree(path: Path) -> dict[str, str]:
+    return {
+        str(p.relative_to(path)): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in sorted(path.rglob("*")) if p.is_file()
+    }
+
+
+async def _rows(env):
+    store = SqlAuditStore(create_sql_engine(env["tmp"] / "messages.db"))
+    try:
+        return await store.recent(conversation_id=GROUP_ID, limit=1000)
+    finally:
+        await store.aclose()
+
+
+# SQLite's shared-memory index and write-ahead log. Reading ANY wal-mode
+# database materialises these, and a read-only connection cannot checkpoint, so
+# it cannot remove them on close either. They carry no message data. The one
+# way to avoid them — `immutable=1`, which skips the shm — asserts the file
+# cannot change, which is false whenever Nora is running, and buys a clean
+# directory listing with torn reads. So they are tolerated BY NAME: any other
+# new file, and any change to a file that already existed, still fails.
+SQLITE_SIDECARS = {"messages.db-shm", "messages.db-wal"}
+
+
+@pytest.mark.parametrize("argv", [("groups",), ("persons", "pending")])
+async def test_neither_command_writes_anything(env, capsys, argv):
+    """D6 is not negotiable: identity.toml stays authoritative and hand-edited.
+    Hashing the whole tree catches a rewritten config.toml, a rewritten
+    identity.toml, a mutated database file and any file the command invented."""
+    env["groups"] = [group_row(members=[MILES_MEMBER])]
+    env["contacts"] = [{"number": MILES_PHONE, "uuid": MILES_ACI, "name": "Miles Novak"}]
+    await audit(env, sender=MILES_ACI, raw=envelope(uuid=MILES_ACI))
+
+    before = _tree(env["tmp"])
+    assert {"config.toml", "identity.toml", "policy.toml", "messages.db"} <= set(before)
+    assert await invoke(env, *argv) == 0
+    capsys.readouterr()
+    after = {k: v for k, v in _tree(env["tmp"]).items() if k not in SQLITE_SIDECARS}
+    assert after == before
+
+
+@pytest.mark.parametrize("argv", [("groups",), ("persons", "pending")])
+async def test_neither_command_changes_a_single_audit_row(env, capsys, argv):
+    """Closes the gap the sidecar exemption above leaves: the rows themselves,
+    read back through a fresh store."""
+    env["contacts"] = [{"number": MILES_PHONE, "uuid": MILES_ACI, "name": "Miles Novak"}]
+    await audit(env, sender=MILES_ACI, raw=envelope(uuid=MILES_ACI))
+    before = await _rows(env)
+    assert before, "the fixture must have audited something to compare"
+    await invoke(env, *argv)
+    capsys.readouterr()
+    assert await _rows(env) == before
+
+
+async def test_the_store_the_cli_actually_opens_refuses_a_write(env):
+    """`cli.readonly_store` is the one place the control plane opens the audit
+    database, so this is the store the commands really use — not a separately
+    constructed engine that happens to be read-only.
+
+    It is `set_person_id` rather than a raw DELETE on purpose: that is the one
+    write on the whole `AuditStore` port a pending-sender tool could plausibly
+    grow into ("adopt them for me"), and D6 says it must not. The driver
+    refuses it, so no future edit can add it by accident.
+    """
+    row_id = await audit(env, sender=MILES_PHONE, raw=envelope(source=MILES_PHONE))
+    store = cli.readonly_store(env["tmp"] / "messages.db")
+    try:
+        assert await store.unattributed(limit=10), "the store must still READ"
+        with pytest.raises(Exception, match=r"readonly|query_only|attempt to write"):
+            await store.set_person_id(row_id=row_id, person_id="miles")
+    finally:
+        await store.aclose()
+    assert (await _rows(env))[0].sender_id == MILES_PHONE
+
+
+async def test_pending_needs_no_llm_credential(env, capsys, monkeypatch):
+    """The key lives in `.env` and reaches the CONTAINER, not the operator's
+    shell — and the container is stopped in the situation this tool exists for.
+    Refusing to list group ids over a credential nothing on this path uses
+    would be a self-inflicted outage."""
+    monkeypatch.delenv("OMNIROUTE_API_KEY", raising=False)
+    await audit(env, sender=MILES_PHONE, raw=envelope(source=MILES_PHONE))
+    assert await invoke(env, "persons", "pending") == 0
+    assert "OMNIROUTE_API_KEY" not in capsys.readouterr().out
+
+
+async def test_the_daemon_still_needs_its_key(env, monkeypatch):
+    """The relaxation is scoped to the control plane. `nora.config.load`'s
+    default is unchanged, so the daemon still refuses to start mute."""
+    from nora.config import ConfigError, load
+
+    monkeypatch.delenv("OMNIROUTE_API_KEY", raising=False)
+    with pytest.raises(ConfigError, match="OMNIROUTE_API_KEY"):
+        load(env["path"])
+
+
+# ── the argparse surface ─────────────────────────────────────────────────────
+
+def test_the_bare_daemon_invocation_is_unchanged():
+    """`--config` must keep working exactly as before: no subcommand, same
+    default, same attribute."""
+    assert build_parser().parse_args([]).config == "config.toml"
+    assert build_parser().parse_args(["--config", "x.toml"]).config == "x.toml"
+    assert getattr(build_parser().parse_args([]), "func", None) is None
+
+
+@pytest.mark.parametrize("argv", [
+    ["--config", "x.toml", "groups"],
+    ["groups", "--config", "x.toml"],
+    ["--config", "x.toml", "persons", "pending"],
+    ["persons", "pending", "--config", "x.toml"],
+])
+def test_config_is_accepted_on_either_side_of_the_subcommand(argv):
+    """`argparse.SUPPRESS` on the subparser copy is what stops a subcommand
+    without the flag from clobbering the top-level value with a second
+    default."""
+    assert build_parser().parse_args(argv).config == "x.toml"
+
+
+def test_run_turns_a_cli_error_into_an_exit_code(capsys):
+    """`cli.run` is the only place `asyncio.run` is called, and the only place
+    an exception may reach the terminal."""
+    async def boom(_args):
+        raise cli.CliError("nope")
+
+    args = build_parser().parse_args(["groups"])
+    args.func = boom
+    assert cli.run(args) == 1
+    assert capsys.readouterr().err.strip() == "error: nope"

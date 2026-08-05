@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from . import config
-from .app import adoption, runtime
+from .app import adoption, cli, runtime
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .config import ConfigError
 from .obs.health import build_health_app, serve
@@ -33,7 +33,7 @@ ADOPTION_START_DELAY_SECONDS = adoption.DEFAULT_START_DELAY_SECONDS
 
 log = logging.getLogger("nora.__main__")
 
-__all__ = ["App", "StartupError", "build_app", "main"]
+__all__ = ["App", "StartupError", "build_app", "build_parser", "main"]
 
 
 async def build_app(config_path: Path) -> App:
@@ -157,10 +157,33 @@ class App:
         await self.deps.audit.aclose()
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
+def build_parser() -> argparse.ArgumentParser:
+    """The CLI surface: the daemon (no subcommand) plus the read-only control
+    plane (`groups`, `persons pending`).
+
+    `--config` is unchanged for the daemon — `python -m nora` and `python -m
+    nora --config other.toml` behave exactly as before, because the subparsers
+    are not `required`. It is also repeated on every subcommand through
+    `_config_parent`, with `default=argparse.SUPPRESS` so that a subcommand
+    which does NOT carry the flag leaves the top-level value in place instead
+    of overwriting it with a second default. That is what makes both
+    `nora --config c.toml groups` and the more natural `nora groups --config
+    c.toml` work.
+    """
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument("--config", default=argparse.SUPPRESS)
+
+    parser = argparse.ArgumentParser(prog="nora")
     parser.add_argument("--config", default="config.toml")
-    args = parser.parse_args()
+    subparsers = parser.add_subparsers(dest="command")
+    cli.add_subcommands(subparsers, parent)
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    if getattr(args, "func", None) is not None:
+        return cli.run(args)
 
     async def _run() -> None:
         app = await build_app(Path(args.config))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from nora.domain.models import (
@@ -66,7 +67,13 @@ class FakeAuditStore:
             "body": message.body,
             "is_nora": is_nora,
             "delivery_status": delivery_status,
-            "raw_json": None,
+            # `json.dumps`, not `None`. It used to be `None`, which was only
+            # invisible while nothing read it back: `unattributed` now returns
+            # `raw_json`, and the operator control plane
+            # (`nora.app.pending`) correlates a sender's id forms out of that
+            # envelope. A fake that dropped it would let every pending-sender
+            # test pass against a store production does not have.
+            "raw_json": json.dumps(message.raw),
         })
         return row_id
 
@@ -105,7 +112,7 @@ class FakeAuditStore:
         return [
             UnattributedRow(
                 id=r["id"], platform=r["platform"], sender_id=r["sender_id"],
-                ts=r["ts"], body=r["body"],
+                ts=r["ts"], body=r["body"], raw_json=r["raw_json"],
             )
             for r in candidates[:limit]
         ]
