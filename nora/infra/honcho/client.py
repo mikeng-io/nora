@@ -118,20 +118,40 @@ class HonchoClient:
             await self._create_peer(peer_id)
 
     async def ensure_session(self, peer_id: str) -> str | None:
-        # Same defect, same fix: two concurrent misses without this lock POST
-        # twice and split one peer's conversation across two sessions.
+        """The peer's one session id, created on first use.
+
+        Sessions are created at the WORKSPACE level. This used to POST to
+        `/peers/{peer_id}/sessions`, which is not a create endpoint at all —
+        it LISTS a peer's sessions and answers 200 with a pagination envelope
+        (`{"items": [], "total": 0, ...}`). That envelope has no `id`, so this
+        returned None every single time, `feed` returned False before posting
+        anything, and **Honcho never received one message** for the entire life
+        of the deployment. Verified against the live instance: the old path
+        answers 200-with-no-id, `POST /sessions` answers 201 with the session.
+
+        It failed invisibly because feeding is best-effort by contract — the
+        caller counts `honcho_feed_failure` and moves on, and nothing else
+        depends on the result. Both feed counters sat at 0.0.
+
+        The id is deterministic, so it survives a restart without state and
+        re-creating it is idempotent (the live instance answers 200 with the
+        same id on a repeat POST). The cache below only saves a round trip.
+        """
         async with self._peer_lock(peer_id):
             cached = self._sessions.get(peer_id)
             if cached is not None:
                 return cached
+            session_id = f"nora-{peer_id}"
             result = await self._post(
-                self._url(f"/peers/{peer_id}/sessions"), {}, self._feed_timeout
+                self._url("/sessions"), {"id": session_id}, self._feed_timeout
             )
-            session_id = result.get("id") if result is not None else None
-            if not isinstance(session_id, str) or not session_id:
+            if result is None:
                 return None
-            self._sessions[peer_id] = session_id
-            return session_id
+            returned = result.get("id")
+            if not isinstance(returned, str) or not returned:
+                return None
+            self._sessions[peer_id] = returned
+            return returned
 
     async def feed(self, *, peer_id: str, text: str) -> bool:
         session_id = await self.ensure_session(peer_id)
