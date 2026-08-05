@@ -78,6 +78,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec("nora_persona_reload_failures_total", "Persona hot-reload failures."),
     _CounterSpec("nora_store_busy_total", "SQLITE_BUSY responses from the audit store."),
+    # An unmapped sender is an EXPECTED outcome (D6), so it is not an error —
+    # but it was previously unobservable, and its symptom set is empty: the
+    # message is still audited, the gate still runs, the prefill still shows
+    # the sender's platform display name, and nothing reaches Honcho. Nora
+    # looks like she is working and remembers nothing. Counting it is what
+    # separates "nobody talked to her" from "her identity file is wrong, or
+    # you edited it and never restarted" (mapping is startup-only, Q4).
+    _CounterSpec(
+        "nora_unmapped_senders_total",
+        "Ambient messages whose sender resolved to no person.",
+        ("platform",),
+    ),
     _CounterSpec(
         "nora_adapter_restarts_total",
         "Adapter listen() loop restarts after a failure, by platform.",

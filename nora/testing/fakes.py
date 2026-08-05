@@ -29,6 +29,7 @@ class FakeAuditStore:
         message: NormalizedMessage,
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
+        person_id: str | None = None,
     ) -> int:
         # Deliberately does NOT raise when closed. `SqlAuditStore.aclose`
         # delegates to `AsyncEngine.dispose()`, which releases the pool but
@@ -44,6 +45,7 @@ class FakeAuditStore:
             "conversation_id": message.conversation_id,
             "sender_id": message.sender_id,
             "sender_name": message.sender_name,
+            "person_id": person_id,
             "ts": message.timestamp,
             "body": message.body,
             "is_nora": is_nora,

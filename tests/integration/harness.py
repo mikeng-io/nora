@@ -72,11 +72,26 @@ class _StoreProxy:
 
 
 class _FailingAppendStore(_StoreProxy):
-    async def append(self, *, message, is_nora=False, delivery_status=DeliveryStatus.PENDING):
+    # Keep this signature in lockstep with `AuditStore.append`. It forwards
+    # every argument, so a parameter added to the port and not added here is
+    # not an inert omission: the ambient append raises TypeError, ingest drops
+    # the message, and the tag path this fault exists to exercise never runs.
+    async def append(
+        self,
+        *,
+        message,
+        is_nora=False,
+        delivery_status=DeliveryStatus.PENDING,
+        person_id=None,
+    ):
         if is_nora:
             raise RuntimeError("disk full")
         return await self._inner.append(
-            message=message, is_nora=is_nora, delivery_status=delivery_status)
+            message=message,
+            is_nora=is_nora,
+            delivery_status=delivery_status,
+            person_id=person_id,
+        )
 
 
 class _FailingRecentStore(_StoreProxy):

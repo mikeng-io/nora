@@ -7,7 +7,6 @@ that is all this file claims for it.
 
 from __future__ import annotations
 
-import shutil
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -71,7 +70,14 @@ def test_a_copy_of_the_production_database_passes_alembic_check(tmp_path):
     if not PROD_DB.exists():
         pytest.skip("no production database on this host")
     copy = tmp_path / "prod-copy.db"
-    shutil.copy(PROD_DB, copy)
+    # `shutil.copy` is WRONG for a WAL database: it takes only the main file
+    # and leaves the -wal sidecar behind, so the copy reflects whatever was
+    # last checkpointed rather than the real schema. That silently checked a
+    # STALE schema — a migration applied but not yet checkpointed was invisible
+    # here, which can produce a false PASS as easily as a false failure.
+    # SQLite's backup API is WAL-aware and does not mutate the source.
+    with sqlite3.connect(PROD_DB) as src, sqlite3.connect(copy) as dst:
+        src.backup(dst)
     with sqlite3.connect(copy) as conn:     # stamped in Task 10; stamp the copy here
         conn.execute(
             "CREATE TABLE IF NOT EXISTS alembic_version "

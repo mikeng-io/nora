@@ -203,6 +203,7 @@ class AuditStore(Protocol):
         message: NormalizedMessage,
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
+        person_id: str | None = None,
     ) -> int: ...
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...

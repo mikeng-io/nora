@@ -55,6 +55,7 @@ class SqlAuditStore:
         message: NormalizedMessage,
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
+        person_id: str | None = None,
     ) -> int:
         stmt = sa.insert(MESSAGES).values(
             platform=message.platform,
@@ -62,6 +63,7 @@ class SqlAuditStore:
             conversation_type=message.conversation_type,
             sender_id=message.sender_id,
             sender_name=message.sender_name,
+            person_id=person_id,
             ts=message.timestamp,
             body=message.body,
             is_nora=int(is_nora),

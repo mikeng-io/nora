@@ -70,11 +70,18 @@ class IngestPipeline:
         m = self._metrics
         m.inc("nora_messages_total", platform=message.platform)
 
-        recorded = await audit_stage.run(message=message, audit=self._audit, metrics=m)
+        # Identity first, so the resolved person_id lands in the audit INSERT
+        # instead of a second write. `Persons.resolve` is two dict lookups on a
+        # startup-built frozen mapping — no I/O, so nothing fallible moved
+        # ahead of the record.
+        person = await identity_stage.run(
+            message=message, persons=self._persons, metrics=m
+        )
+        recorded = await audit_stage.run(
+            message=message, audit=self._audit, metrics=m, person=person
+        )
         if not recorded:
             return IngestResult(message=None, decision=None)
-
-        person = await identity_stage.run(message=message, persons=self._persons)
         await memory_feed_stage.run(
             message=message, person=person, memory=self._memory, metrics=m, spawn=self._spawn,
         )
