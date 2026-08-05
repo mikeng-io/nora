@@ -182,12 +182,17 @@ def test_build_sink_is_null_when_the_export_flag_is_absent(monkeypatch):
 
 
 def test_build_sink_is_null_when_config_disables_langfuse_even_with_the_flag(monkeypatch):
-    """Both flag AND config must opt in — config ships enabled=false, so the
-    flag alone is not enough. (This is also why this repo's own config.toml can
-    carry a real host without ever risking a live push in CI: `enabled=false`
-    there stops it.)"""
+    """Both flag AND config must opt in — the flag alone is not enough.
+
+    The disabled config is built explicitly rather than read from this repo's
+    `config.toml`, which `_example_cfg()` prefers. An earlier version asserted
+    that file's live value, which made a unit test of `_build_sink`'s logic fail
+    the moment the deployment enabled the export — a false dependency, not a
+    real regression. This mirrors its sibling below, which overrides to True."""
+    from tests.builders import override_config
+
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg = _example_cfg()
+    cfg = override_config(_example_cfg(), {"evals.langfuse.enabled": False})
     assert cfg.evals.langfuse.enabled is False
     assert isinstance(_build_sink(cfg, export=True), NullEvalSink)
 

@@ -77,8 +77,12 @@ headers_env = "LANGFUSE_OTLP_HEADERS"                      # env var NAME holdin
                                        # value (DEC-8); only read when exporter = "otlp_http"
 
 [evals.langfuse]
-enabled = false                       # left off deliberately — Phase 7 Task 4 (live push,
-                                       # out of scope for the landing commits) flips this on
-                                       # after its own verification
+# Verified live 2026-08-05: three datasets (nora-trigger / nora-no-trigger /
+# nora-adversarial) with 12 items each, a dataset run, and 60 BOOLEAN scores read
+# back from Langfuse. Export ALSO requires `--export-langfuse` on the CLI, so
+# enabling here does not make any ordinary `python -m evals.run` talk to the network.
+# config.example.toml deliberately keeps this false — a fresh install should not
+# assume a Langfuse exists.
+enabled = true
 host = "http://127.0.0.1:3100"
 headers_env = "LANGFUSE_OTLP_HEADERS"
