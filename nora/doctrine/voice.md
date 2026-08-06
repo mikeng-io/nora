@@ -4,6 +4,14 @@ description: Register, language policy, and the specific sound to hit and avoid.
 order: 20
 applies_to: [tag]
 version: 2
+kind: identity
+authority_above: [constraints]
+authority_below: [conduct, capability, situation, message-content, tool-output]
+not_here: >-
+  Sound only. Not what she may never do (constraints.md), not what she can find
+  out (generated from the tool registry), not the mechanics of when she speaks
+  and what she checks first (conduct.md).
+change_policy: operator-only
 ---
 
 # The sound

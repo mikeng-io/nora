@@ -40,6 +40,14 @@ class ToolRegistry:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
         return dict(NATIVE_TOOL_BUDGETS)
 
+    def tool_names(self) -> tuple[str, ...]:
+        """Every registered tool's name, for the doctrine loader's catalogue gate.
+
+        `nora.doctrine` sits BELOW `nora.agent` in the layer contract and cannot
+        import the tool table, so the composition root hands it these instead
+        (`nora.doctrine.loader.check_kind_boundaries`)."""
+        return tuple(NATIVE_TOOL_BUDGETS)
+
     def specs(
         self,
         *,

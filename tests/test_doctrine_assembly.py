@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -9,37 +10,53 @@ from tests.test_doctrine_loader import write  # reuse the frontmatter writer
 ROOT = Path(__file__).resolve().parents[1]
 SHIPPED = ROOT / "nora" / "doctrine"
 AT_RENAME = ROOT / "tests" / "fixtures" / "doctrine_assembled_at_rename.txt"
+_SECTION_RE = re.compile(r"<section[^>]*>\n(.*?)\n</section>", re.DOTALL)
 
 
-def test_the_rename_changed_only_the_wrapper_tag():
-    """DEC-29 commit 1: `nora/persona/` -> `nora/doctrine/`, with PROOF that not
-    one byte of what the model reads moved with it.
+def _bodies(assembled: str) -> list[str]:
+    return _SECTION_RE.findall(assembled)
 
-    The fixture is the assembled block as it stood at b0a460c, captured before
-    the rename ran. Every file was renamed on disk, every class and every
-    frontmatter-adjacent identifier changed — and the only difference the model
-    can observe is the four characters of the wrapper tag. Section `name`s are
-    still `soul`/`guardrails` here on purpose; they follow in the frontmatter
-    commit, which rewrites the section tag wholesale anyway.
 
-    This test is the baseline the two behavioural commits after it are measured
-    against, and it is deliberately a whole-text comparison rather than a hash:
-    when it does change, the diff is the review.
+def test_the_frontmatter_commit_changed_only_the_section_tags():
+    """DEC-29 commit 2 pins what commit 1 pinned exactly, minus the tag.
+
+    The fixture is the assembled block as it stood at b0a460c, before the
+    rename. Commit 1's version of this test compared the WHOLE string and
+    passed: the rename moved four files, five classes and a metric, and the
+    model saw four characters change. This commit rewrites every section tag —
+    `version` out, `kind` and `description` in — so the tags are excluded here
+    and the bodies are not. Not one word of prose may move in a commit whose
+    subject is frontmatter.
+
+    When the bodies DO change (they do, in the commit after this one), the
+    fixture is regenerated in the same commit and the diff is the review.
     """
-    expected = AT_RENAME.read_text(encoding="utf-8")
-    expected = (expected.replace("<nora_persona>", "<nora_doctrine>")
-                        .replace("</nora_persona>", "</nora_doctrine>"))
     shipped = DoctrineStore(SHIPPED, canary="C", strict=True, metrics=Metrics()).get()
-    assert shipped.doctrine_text == expected
+    assert _bodies(shipped.doctrine_text) == _bodies(AT_RENAME.read_text(encoding="utf-8"))
+
+
+def test_version_is_not_paid_for_on_every_call():
+    """design/17 §5b: `version` is build metadata and does not belong in the prompt.
+
+    It is still in frontmatter — `Doctrine.versions()` reads it for the log line
+    that says which doctrine answered a tag — it just is not sent to the model
+    any more. There is nothing she can do with it except reason about it.
+    """
+    shipped = DoctrineStore(SHIPPED, canary="C", strict=True, metrics=Metrics()).get()
+    assert "version=" not in shipped.doctrine_text
+    assert shipped.versions()          # still available off the prompt path
 
 
 @pytest.fixture
 def doctrine_dir(tmp_path):
     d = tmp_path / "doctrine"
     d.mkdir()
-    write(d, "identity.md", name="soul", order=10, version=3, body="Who you are.")
-    write(d, "voice.md", name="voice", order=20, version=2, body="The sound.")
-    write(d, "constraints.md", name="guardrails", order=40, version=1, body="Hard rules.")
+    write(d, "identity.md", name="soul", order=10, version=3, body="Who you are.",
+          desc="Who she is")
+    write(d, "voice.md", name="voice", order=20, version=2, body="The sound.",
+          desc="How she sounds")
+    write(d, "constraints.md", name="guardrails", order=40, version=1, body="Hard rules.",
+          kind="constraint", desc='Hard rules — "never", and it means it')
     return d
 
 
@@ -49,11 +66,22 @@ def _store(d) -> DoctrineStore:
                         metrics=Metrics())
 
 
-def test_assembly_wraps_each_section_with_name_and_version(doctrine_dir):
+def test_assembly_wraps_each_section_with_its_kind_and_description(doctrine_dir):
     text = _store(doctrine_dir).get().text
-    assert '<section name="soul" version="3">' in text
-    assert '<section name="voice" version="2">' in text
+    assert '<section kind="identity" name="soul" description="Who she is">' in text
+    assert '<section kind="identity" name="voice" description="How she sounds">' in text
     assert text.count("</section>") == 3
+
+
+def test_a_description_containing_a_quote_cannot_break_out_of_the_attribute(doctrine_dir):
+    """R-13's habit, applied to operator-authored text that is not an attack surface.
+
+    The cost of escaping here is nothing; the cost of the habit of not escaping
+    a value on its way into an attribute is what R-13 exists for.
+    """
+    text = _store(doctrine_dir).get().text
+    assert 'description="Hard rules — &quot;never&quot;, and it means it">' in text
+    assert text.count("<section ") == 3
 
 
 def test_assembly_is_wrapped_in_nora_doctrine(doctrine_dir):

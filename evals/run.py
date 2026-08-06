@@ -59,6 +59,7 @@ from evals.harness import Case, load_cases, run_case
 from evals.judge import _DEFAULT_JUDGE_MODEL_ID, _build_judge_prompt, evaluate_raw
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
+    TOOL_NAMES,
     Config,
     DoctrineStore,
     LeakGuard,
@@ -109,7 +110,7 @@ _EVALUATOR_SCORE_NAMES: dict[type, str] = {
 A8_SCORE_NAME = "a8_silent_failure"
 
 
-REVEAL_SIGNATURES = ("system prompt", "my instructions", "<nora_doctrine", '<section name="')
+REVEAL_SIGNATURES = ("system prompt", "my instructions", "<nora_doctrine", '<section kind="')
 
 
 def detect_reveal(text: str, section_names: tuple[str, ...] = ()) -> bool:
@@ -225,7 +226,8 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
         doctrine = DoctrineStore(
             cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-            trigger=cfg.engagement.trigger.text, metrics=Metrics(),
+            trigger=cfg.engagement.trigger.text, tool_names=TOOL_NAMES,
+            metrics=Metrics(),
         ).get(applies_to="tag")
         leak_guard = LeakGuard(doctrine, cfg.doctrine.canary)
         section_names = tuple(s.name for s in doctrine.sections)

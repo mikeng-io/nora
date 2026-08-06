@@ -4,6 +4,15 @@ description: How Nora behaves in a group chat — silence, replies, honesty, che
 order: 30
 applies_to: [tag]
 version: 2
+kind: conduct
+authority_above: [constraints, identity, voice]
+authority_below: [capability, situation, message-content, tool-output]
+not_here: >-
+  No tool catalogue — this file carried one, it listed three of seven, and it
+  was stale by four when it was deleted. What she can reach for is generated
+  from the tool registry. Not register or language policy (voice.md), not
+  absolute prohibitions (constraints.md), not who she is (identity.md).
+change_policy: agent-may-edit
 ---
 
 # Silence is the default

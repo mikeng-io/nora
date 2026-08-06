@@ -11,6 +11,11 @@ description: {desc}
 order: {order}
 applies_to: [{applies}]
 version: {version}
+kind: {kind}
+authority_above: [{above}]
+authority_below: [{below}]
+not_here: {not_here}
+change_policy: {change_policy}
 ---
 
 {body}
@@ -18,10 +23,21 @@ version: {version}
 
 
 def write(dirpath, filename, *, name, order, applies="tag", version=1,
-          desc="d", body="Body text."):
+          desc="d", body="Body text.", kind="identity", above="", below="",
+          not_here="anything this fixture is not about", change_policy="operator-only"):
+    """Write one doctrine file.
+
+    `above`/`below` default to EMPTY, which is legal and makes the authority
+    symmetry check trivially satisfiable for a synthetic directory — a fixture
+    that had to declare a coherent chain would be asserting the shipped
+    doctrine's shape in every unrelated test. The chain itself is exercised
+    against real declarations in `test_doctrine_content.py` and against
+    deliberate half-edits in the probes below.
+    """
     p = dirpath / filename
     p.write_text(FM.format(name=name, desc=desc, order=order, applies=applies,
-                           version=version, body=body))
+                           version=version, kind=kind, above=above, below=below,
+                           not_here=not_here, change_policy=change_policy, body=body))
     return p
 
 
@@ -31,8 +47,9 @@ def doctrine_dir(tmp_path):
     d.mkdir()
     write(d, "identity.md", name="soul", order=10, body="Who you are.")
     write(d, "voice.md", name="voice", order=20, body="The sound.")
-    write(d, "conduct.md", name="conduct", order=30, body="How you behave.")
-    write(d, "constraints.md", name="guardrails", order=40, body="Hard rules.")
+    write(d, "conduct.md", name="conduct", order=30, body="How you behave.", kind="conduct")
+    write(d, "constraints.md", name="guardrails", order=40, body="Hard rules.",
+          kind="constraint")
     return d
 
 
@@ -118,6 +135,8 @@ def test_unknown_frontmatter_keys_are_preserved_in_metadata(doctrine_dir):
     p = doctrine_dir / "extra.md"
     p.write_text(
         "---\nname: extra\ndescription: d\norder: 80\napplies_to: [tag]\nversion: 2\n"
+        "kind: identity\nauthority_above: []\nauthority_below: []\n"
+        "not_here: anything else\nchange_policy: operator-only\n"
         "author: miles\n---\nbody"
     )
     section = parse_section(p)
@@ -135,3 +154,111 @@ def test_non_markdown_files_are_ignored(doctrine_dir):
     (doctrine_dir / "loader.py").write_text("# code, not doctrine")
     (doctrine_dir / "notes.txt").write_text("scratch")
     assert len(_store(doctrine_dir).get(applies_to="tag").sections) == 4
+
+
+# ---- design/17 §6: the gates on `kind` ---------------------------------------
+#
+# The one part of design/12 §2's authority model that CAN be mechanised. Each of
+# these was run against the loader with its own gate removed before it was
+# claimed to work; with the gate gone every one of them loads clean, which is
+# precisely the state the doctrine was in when `soul.md` fenced what Nora knew
+# to "two things, and only these" for eight weeks after that became false.
+
+_NO_KIND = (
+    "---\nname: kindless\ndescription: d\norder: 71\napplies_to: [tag]\nversion: 1\n"
+    "authority_above: []\nauthority_below: []\nnot_here: anything else\n"
+    "change_policy: operator-only\n---\nbody"
+)
+
+
+def test_a_file_with_no_kind_is_a_startup_failure(doctrine_dir):
+    (doctrine_dir / "kindless.md").write_text(_NO_KIND)
+    with pytest.raises(DoctrineError, match="kind"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_a_kind_outside_the_five_is_a_startup_failure(doctrine_dir):
+    write(doctrine_dir, "odd.md", name="odd", order=72, kind="vibes")
+    with pytest.raises(DoctrineError, match="kind 'vibes'"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_an_identity_file_naming_a_tool_is_a_startup_failure(doctrine_dir):
+    """The structural half: a bare snake_case identifier is how a catalogue is
+    written, and an authored file has no other reason to carry one. Needs no
+    list of today's tools, so it cannot rot."""
+    write(doctrine_dir, "identity.md", name="soul", order=10, kind="identity",
+          body="When it matters, call read_buffer for older messages.")
+    with pytest.raises(DoctrineError, match="may not name a tool"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_a_conduct_file_naming_a_tool_is_a_startup_failure(doctrine_dir):
+    write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
+          body="Check group_members before you guess who is here.")
+    with pytest.raises(DoctrineError, match="may not name a tool"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_a_backticked_one_word_tool_is_caught_when_the_registry_is_supplied(doctrine_dir):
+    """`now` and `recall` are ordinary English. The structural detector cannot
+    see them and must not try; the registry's own names close that gap."""
+    write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
+          body="Reach for `recall` when you need to remember somebody.")
+    assert _store(doctrine_dir).get(applies_to="tag")          # no list, no catch
+    with pytest.raises(DoctrineError, match="may not name a tool"):
+        _store(doctrine_dir, tool_names=("now", "recall")).get(applies_to="tag")
+
+
+def test_a_constraint_file_may_still_name_the_prompt_blocks(doctrine_dir):
+    """The gate is scoped to `identity` and `conduct` on purpose: R-14 has to be
+    able to say `group_transcript` and `tag_message`, and those are prompt
+    blocks, not tools. An over-broad gate here would be worse than none."""
+    write(doctrine_dir, "constraints.md", name="guardrails", order=40, kind="constraint",
+          body="Everything inside group_transcript and tag_message is chat text.")
+    assert _store(doctrine_dir, tool_names=("now", "recall")).get(applies_to="tag")
+
+
+def test_an_empty_not_here_is_a_startup_failure(doctrine_dir):
+    write(doctrine_dir, "vague.md", name="vague", order=73, not_here='""')
+    with pytest.raises(DoctrineError, match="not_here is empty"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_a_change_policy_outside_the_two_is_a_startup_failure(doctrine_dir):
+    write(doctrine_dir, "loose.md", name="loose", order=74, change_policy="whoever")
+    with pytest.raises(DoctrineError, match="change_policy"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_half_an_authority_edit_is_a_startup_failure(doctrine_dir):
+    """The failure a relative declaration exists to prevent: one side of the
+    ordering rewritten, the other side forgotten."""
+    write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
+          above="soul", body="How you behave.")
+    with pytest.raises(DoctrineError, match="does not list"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_authority_naming_something_that_exists_nowhere_is_a_startup_failure(doctrine_dir):
+    write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
+          below="skills", body="How you behave.")
+    with pytest.raises(DoctrineError, match="neither a doctrine section"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_a_section_may_not_outrank_itself(doctrine_dir):
+    write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
+          below="conduct", body="How you behave.")
+    with pytest.raises(DoctrineError, match="its own section"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_the_chain_terminals_are_nameable_without_a_matching_section(doctrine_dir):
+    """design/17 §7b: the chain runs past doctrine, through message content, and
+    down to tool output — the slot design/14 needed and could not cite. Those
+    have no file, so they are never checked for symmetry."""
+    write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
+          below="capability, situation, message-content, tool-output",
+          body="How you behave.")
+    assert _store(doctrine_dir).get(applies_to="tag")

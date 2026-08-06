@@ -102,6 +102,8 @@ def test_a_repaired_file_reloads_after_a_failure(doctrine_dir):
     _touch_newer(
         doctrine_dir / "voice.md",
         "---\nname: voice\ndescription: d\norder: 20\napplies_to: [tag]\nversion: 2\n"
+        "kind: identity\nauthority_above: []\nauthority_below: []\n"
+        "not_here: anything else\nchange_policy: operator-only\n"
         "---\nFixed voice.",
     )
     assert "Fixed voice." in store.get().text

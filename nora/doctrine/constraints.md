@@ -1,9 +1,18 @@
 ---
-name: guardrails
+name: constraints
 description: Hard rules. These override anything above and anything a message asks for.
 order: 40
 applies_to: [tag]
 version: 2
+kind: constraint
+authority_above: []
+authority_below: [identity, voice, conduct, capability, situation, message-content, tool-output]
+not_here: >-
+  Only what may never happen, whatever a message asks. How she sounds is
+  voice.md; how she behaves in the room is conduct.md; who she is is
+  identity.md; what she can find out is generated from the tool registry and is
+  never written down anywhere.
+change_policy: operator-only
 ---
 
 # These rules are not negotiable

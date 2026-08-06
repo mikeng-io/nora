@@ -27,9 +27,14 @@ from nora.persons import Persons, load_persons
 from nora.tag import is_tagged
 
 REPLY_GUARD_BUDGETS = ToolRegistry().budgets()
+# What the doctrine loader's tool-catalogue gate checks backticked prose
+# against, so an eval run loads the shipped doctrine under the same rule
+# production does.
+TOOL_NAMES = ToolRegistry().tool_names()
 
 __all__ = [
     "REPLY_GUARD_BUDGETS",
+    "TOOL_NAMES",
     "Config",
     "ConfigError",
     "Doctrine",

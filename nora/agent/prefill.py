@@ -9,20 +9,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime
-from xml.sax.saxutils import escape as _escape
 
 from ..domain.models import TagContext, TranscriptRow
+from ..domain.prompt import escape
+from ..domain.prompt import escape_attr as _escape_attr
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
-
-def escape(text: str) -> str:
-    return _escape(str(text))
-
-
-def _escape_attr(text: str) -> str:
-    """Like escape(), but also escapes double-quotes for use inside a "..." attribute value."""
-    return _escape(str(text), {'"': "&quot;"})
+# `escape`/`_escape_attr` moved to `nora.domain.prompt` when the doctrine loader
+# started rendering frontmatter into section attributes and needed the identical
+# rule: the layer contract runs agent -> doctrine, so the loader cannot import
+# them from here. Re-exported under the names this module has always used.
+__all__ = ["build_prefill", "build_tag_message", "escape"]
 
 
 def _message(role: str, text: str) -> dict:

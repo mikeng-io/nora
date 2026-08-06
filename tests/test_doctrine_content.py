@@ -4,47 +4,82 @@ from pathlib import Path
 
 import pytest
 
+from nora.agent.registry import ToolRegistry
 from nora.doctrine.loader import DoctrineStore, parse_section
 from nora.obs.metrics import Metrics
 
 DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 
-# stem -> (section name, order). The two are DELIBERATELY out of step for the
-# length of this one commit: `soul.md`/`guardrails.md` became
-# `identity.md`/`constraints.md` on disk, but the frontmatter `name` still
-# renders into `<section name="…">`, and DEC-29's rename commit is required to
-# leave the assembled prompt byte-identical (see
-# `test_doctrine_assembly.py::test_the_rename_changed_only_the_wrapper_tag`).
-# The names follow in the frontmatter commit, where the section tag is rewritten
-# wholesale anyway.
+# stem -> (kind, order). The stem, the frontmatter `name` and the section tag
+# all agree from the frontmatter commit onwards; commit 1 deliberately left the
+# names behind so the rename could be proved byte-neutral.
 EXPECTED = {
-    "identity": ("soul", 10),
-    "voice": ("voice", 20),
+    "identity": ("identity", 10),
+    "voice": ("identity", 20),
     "conduct": ("conduct", 30),
-    "constraints": ("guardrails", 40),
+    "constraints": ("constraint", 40),
 }
+
+
+def _shipped(**kw):
+    return DoctrineStore(DOCTRINE_DIR, canary="C", strict=True,
+                         tool_names=ToolRegistry().tool_names(), metrics=Metrics(), **kw)
 
 
 def test_exactly_the_four_files_ship():
     assert {p.stem for p in DOCTRINE_DIR.glob("*.md")} == set(EXPECTED)
 
 
-@pytest.mark.parametrize("stem,name,order", sorted((s, n, o) for s, (n, o) in EXPECTED.items()))
-def test_each_file_has_the_expected_name_and_order(stem, name, order):
+@pytest.mark.parametrize("stem,kind,order", sorted((s, k, o) for s, (k, o) in EXPECTED.items()))
+def test_each_file_has_the_expected_name_kind_and_order(stem, kind, order):
     section = parse_section(DOCTRINE_DIR / f"{stem}.md")
-    assert section.name == name
+    assert section.name == stem
+    assert section.kind == kind
     assert section.order == order
     assert section.applies_to == ("tag",)
 
 
 def test_the_shipped_doctrine_assembles_in_strict_mode():
-    doctrine = DoctrineStore(DOCTRINE_DIR, canary="C", strict=True, metrics=Metrics()).get()
-    assert [s.name for s in doctrine.sections] == ["soul", "voice", "conduct", "guardrails"]
+    doctrine = _shipped().get()
+    assert [s.name for s in doctrine.sections] == \
+        ["identity", "voice", "conduct", "constraints"]
 
 
-def test_guardrails_is_last_for_recency():
-    doctrine = DoctrineStore(DOCTRINE_DIR, canary="C", metrics=Metrics()).get()
-    assert doctrine.sections[-1].name == "guardrails"
+def test_constraints_is_last_for_recency():
+    assert _shipped().get().sections[-1].name == "constraints"
+
+
+def test_every_shipped_file_says_what_it_must_not_contain():
+    """design/17 §7b item 2 — the boundary `soul.md` lacked.
+
+    Had it carried a line saying capability lives elsewhere, its capability
+    claim would have looked wrong the day it was written rather than eight weeks
+    later. The loader rejects an empty `not_here`; this asserts the shipped
+    files actually point somewhere rather than saying "nothing".
+    """
+    for section in _shipped().get().sections:
+        assert len(section.not_here) > 40, section.name
+        assert ".md" in section.not_here or "registry" in section.not_here, section.name
+
+
+def test_voice_is_the_operators_alone():
+    """design/17 §7b item 3: until this field existed, `voice.md`'s protection
+    was the operator saying so in conversation."""
+    assert parse_section(DOCTRINE_DIR / "voice.md").change_policy == "operator-only"
+    assert parse_section(DOCTRINE_DIR / "constraints.md").change_policy == "operator-only"
+    assert parse_section(DOCTRINE_DIR / "identity.md").change_policy == "operator-only"
+
+
+def test_the_authority_chain_is_declared_relatively_and_terminates_at_tool_output():
+    """`constraints.md` used to call itself "not negotiable" — an adjective with
+    no position in an ordering. It now states its edges, and every other file
+    states the same edge from the other side (the loader checks that symmetry).
+    """
+    sections = {s.name: s for s in _shipped().get().sections}
+    assert sections["constraints"].authority_above == ()
+    for name in ("identity", "voice", "conduct"):
+        assert "constraints" in sections[name].authority_above
+        assert "tool-output" in sections[name].authority_below
 
 
 def test_voice_states_the_hong_kong_language_policy():

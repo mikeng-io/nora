@@ -33,7 +33,13 @@ from pathlib import Path
 
 import yaml
 
-from nora.app.eval_support import DoctrineStore, Metrics, load_eval_config, load_persons
+from nora.app.eval_support import (
+    TOOL_NAMES,
+    DoctrineStore,
+    Metrics,
+    load_eval_config,
+    load_persons,
+)
 from nora.app.offline import build_offline_pipeline
 from nora.testing import (
     FakeAdapter,
@@ -146,7 +152,8 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
     doctrine_store = DoctrineStore(
         DOCTRINE_DIR, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        trigger=cfg.engagement.trigger.text, metrics=metrics,
+        trigger=cfg.engagement.trigger.text, tool_names=TOOL_NAMES,
+        metrics=metrics,
     )
 
     with tempfile.TemporaryDirectory(prefix="nora-eval-") as tmp:

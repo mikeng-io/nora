@@ -183,7 +183,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     doctrine_store = DoctrineStore(
         cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        trigger=cfg.engagement.trigger.text, metrics=metrics,
+        trigger=cfg.engagement.trigger.text,
+        tool_names=ToolRegistry().tool_names(),
+        metrics=metrics,
     )
     try:
         doctrine = doctrine_store.get(applies_to="tag")
