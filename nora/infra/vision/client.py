@@ -44,32 +44,36 @@ log = logging.getLogger("nora.vision")
 # How much of the loop's own timeout one vision call may spend. A fraction < 1
 # is what MAKES the derived budget provably shorter than the loop's
 # `asyncio.wait_for`, so a hung MiMo can never become the loop's silent
-# `invocation_timeout`. Half leaves the other half for the text turns that must
-# still run after the description comes back.
-VISION_TIMEOUT_FRACTION = 0.5
+# `invocation_timeout`. The share is divided by the tool's BUDGET in
+# `derive_vision_timeout`, so `budget * derived < loop`: two hung image reads in
+# one turn (the case budget 2 exists for) still leave headroom for the text
+# turns. A per-CALL fraction alone reopened that hole — both reviews 2026-08-07.
+VISION_LOOP_SHARE = 0.6
 
 # Authored, fixed, and small — never model-supplied. The description it asks for
 # is untrusted egress (design/14 §2.1), screened by the tool on every serve.
 _PROMPT = "Describe this image. If it contains text in it, transcribe that text."
 
 
-def derive_vision_timeout(*, loop_timeout_seconds: float, configured: float) -> float:
-    """The per-call vision budget: the smaller of the configured ceiling and a
-    fixed fraction of the loop timeout.
+def derive_vision_timeout(
+    *, loop_timeout_seconds: float, configured: float, budget: int
+) -> float:
+    """The per-call vision budget: small enough that `budget` calls together stay
+    under the loop's `wait_for`, leaving headroom for the text turns.
 
-    Derived from `llm.timeout_seconds` rather than configured beside it, the way
-    `factory.build_retry_policy` derives its backoff — the invariant that matters
-    (`derived < loop_timeout_seconds`) is one nobody can violate if it is never
-    written down twice. The `min` with the fraction is what guarantees it: for
-    any `configured`, however large, the result is at most
-    `loop_timeout_seconds * VISION_TIMEOUT_FRACTION`, which is strictly less than
-    the loop budget.
+    Derived from `llm.timeout_seconds` AND the tool's `budget`, never configured
+    beside them (the `factory.build_retry_policy` argument): the invariant that
+    matters — `budget * derived < loop_timeout_seconds` — is one nobody can
+    violate if it is never written down twice. `VISION_LOOP_SHARE / budget` is
+    what guarantees it: for any `configured`, however large, the result is at
+    most `loop_timeout_seconds * VISION_LOOP_SHARE / budget`, so the AGGREGATE of
+    `budget` calls is at most `loop * VISION_LOOP_SHARE`, strictly less than the
+    loop. No `max(0.1, …)` floor: for any positive loop the per-call ceiling is
+    positive and below the loop, and a floor could exceed the ceiling for a
+    sub-second loop and void the guarantee (both reviews' low finding).
     """
-    ceiling = loop_timeout_seconds * VISION_TIMEOUT_FRACTION
-    budget = min(configured, ceiling) if configured > 0 else ceiling
-    # Never non-positive (a zero budget would time out instantly and never
-    # describe anything), never above the fraction ceiling.
-    return max(0.1, min(budget, ceiling))
+    per_call = loop_timeout_seconds * VISION_LOOP_SHARE / max(1, budget)
+    return min(configured, per_call) if configured > 0 else per_call
 
 
 @dataclass(frozen=True)

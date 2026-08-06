@@ -30,7 +30,7 @@ from aiohttp.test_utils import TestServer
 from openai import AsyncOpenAI
 
 from nora.infra.vision import (
-    VISION_TIMEOUT_FRACTION,
+    VISION_LOOP_SHARE,
     VisionClient,
     derive_vision_timeout,
 )
@@ -117,16 +117,22 @@ def _client(
 # ---- the derived timeout is provably shorter than the loop budget -----------
 
 @pytest.mark.parametrize("loop,configured", [(30.0, 20.0), (30.0, 999.0), (10.0, 8.0), (8.0, 20.0)])
-def test_the_vision_timeout_is_always_shorter_than_the_loop_budget(loop, configured):
-    """The blocker (§2/§6.2): a MiMo call inside the shared loop `wait_for` must
-    time out FIRST, or a hung model becomes the loop's silent `invocation_timeout`
-    (R-5). `min(configured, loop * fraction)` guarantees it for ANY configured
-    value — reverting to `configured` alone lets a 999 s knob outlive a 30 s loop
-    and turns this red on the second case."""
-    derived = derive_vision_timeout(loop_timeout_seconds=loop, configured=configured)
-    assert derived < loop
-    assert derived <= loop * VISION_TIMEOUT_FRACTION
+@pytest.mark.parametrize("budget", [1, 2, 3])
+def test_the_budget_of_vision_calls_together_stays_under_the_loop(loop, configured, budget):
+    """The blocker (§2/§6.2) in its AGGREGATE form, which both reviews 2026-08-07
+    demanded: ONE call < loop is not enough — `media_fetch` has budget 2, so two
+    hung calls inside the shared `wait_for` must STILL leave headroom, or the
+    second is the loop's silent `invocation_timeout` (R-5). Dividing the per-call
+    ceiling by the budget guarantees `budget * derived <= loop * VISION_LOOP_SHARE
+    < loop` for ANY configured value; reverting to a per-call fraction (not
+    dividing by budget) turns the budget>=2 cases red, and a 999 s knob still
+    cannot outlive the loop."""
+    derived = derive_vision_timeout(
+        loop_timeout_seconds=loop, configured=configured, budget=budget,
+    )
     assert derived > 0
+    assert budget * derived <= loop * VISION_LOOP_SHARE
+    assert budget * derived < loop            # headroom for the text turns
 
 
 # ---- a well-formed call ------------------------------------------------------

@@ -27,6 +27,7 @@ from openai import AsyncOpenAI
 
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
+from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.ports import (
@@ -302,6 +303,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         timeout_seconds=derive_vision_timeout(
             loop_timeout_seconds=tier.timeout_seconds,
             configured=cfg.media.vision_timeout_seconds,
+            # The tool's OWN budget (DEC-10, one number): `budget` calls share the
+            # loop, so the per-call ceiling divides by it — two image reads still
+            # leave headroom for the text turns (both reviews 2026-08-07).
+            budget=NATIVE_TOOL_BUDGETS["media_fetch"],
         ),
     )
     tool_registry = ToolRegistry(route=route_client, vision=vision_client, blobs=blobs)
