@@ -124,14 +124,26 @@ async def test_lock_released_on_timeout(harness_factory):
 
 
 async def test_concurrent_tags_same_conversation(harness_factory):
-    """R-10: the second tag is dropped, not queued."""
+    """R-10 + R-29: at most ONE turn runs at a time for a conversation (the
+    lock), but the second tag is now QUEUED and answered after the first —
+    not dropped. Three people tagging at once each get a reply."""
     h = await harness_factory(script=_reply_script(), delay=0.3, debounce=0)
     await h.handler.on_event(group_event(body="nora.000 one"))
     await asyncio.sleep(0.05)
+    # First tag is in flight; the second arrives while it runs.
+    assert len(h.handler._in_flight) == 1
     await h.handler.on_event(group_event(body="nora.000 two"))
+    # R-10 still holds: exactly one in-flight turn — the second is QUEUED behind
+    # it, not running concurrently.
+    assert len(h.handler._in_flight) == 1
+
     await h.drain()
-    assert len(h.sink.sent) == 1
-    assert h.metrics.get("nora_tags_dropped_total", reason="in_flight") == 1
+
+    # R-29: both replies went out, none dropped, the queue drained empty.
+    assert len(h.sink.sent) == 2
+    assert h.handler._in_flight == set()
+    assert h.metrics.get("nora_tags_queued_total") == 1
+    assert h.metrics.get("nora_tags_dropped_total", reason="in_flight") == 0
 
 
 async def test_limits_passed_through(harness_factory):

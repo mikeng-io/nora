@@ -300,6 +300,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
         reactions=cfg.engagement.reactions.enabled,
         roster_source=roster_source,
+        queue_max=cfg.engagement.queue.max_depth,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 

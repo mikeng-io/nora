@@ -59,6 +59,12 @@ RULE_TESTS = {
     # (the intended activation) but can never introduce a new source — item 6
     # can never reach item 5 (design/12 §2, DEC-48).
     "R-29": "test_a_message_can_name_a_skill_but_never_load_one",
+    # R-29: a second tag for a conversation already handling one is QUEUED, not
+    # dropped — three people tagging at once each get a reply, in FIFO order,
+    # while different conversations still run concurrently. Next free number
+    # after R-28 (R-26 is reserved by design/proposed/18 for the unshipped
+    # context-budget work), DEC-48. See `nora.engagement.queue`.
+    "R-30": "test_three_tags_for_one_conversation_are_answered_in_fifo_order",
 }
 
 

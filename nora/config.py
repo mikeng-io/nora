@@ -12,7 +12,14 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, ValidationInfo, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    model_validator,
+)
 
 
 class ConfigError(Exception):
@@ -177,12 +184,26 @@ class ReactionsConfig(BaseModel):
     enabled: bool = True
 
 
+class QueueConfig(BaseModel):
+    """The per-conversation FIFO queue that holds tags arriving while a turn is
+    already in flight (R-29). `max_depth` bounds a FLOOD, not waiting: tags
+    already queued keep their place however long the turn ahead takes, and there
+    is deliberately no staleness rule — only the (max_depth + 1)th arrival is
+    shed, counted as `nora_tags_dropped_total{reason="queue_full"}`. See
+    `nora.engagement.queue`."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    max_depth: int = Field(default=16, ge=1)
+
+
 class EngagementConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     policy: Literal["trigger_text"]
     trigger: TriggerConfig
     reactions: ReactionsConfig = ReactionsConfig()
+    queue: QueueConfig = QueueConfig()
 
 
 class StoreConfig(BaseModel):

@@ -12,6 +12,7 @@ from aiohttp import web
 from nora.domain.identity import Identifier
 from nora.domain.models import NormalizedMessage
 from nora.engagement.stages import admission
+from nora.engagement.stages.admission import Admission
 from nora.obs.metrics import Metrics
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.self_id import (
@@ -245,14 +246,16 @@ async def test_degraded_identity_enrichment_is_counted_and_r12_still_holds(
     assert identity.aliases == frozenset({PRIMARY})
 
     # (2) R-12 still refuses her own message, by the one id that IS known.
-    admitted = await admission.run(
+    verdict = admission.run(
         message=_self_tag(PRIMARY),
         identity=identity,
         debounce=Debounce(0.0),
         in_flight=set(),
+        queue_depth=0,
+        queue_max=16,
         metrics=metrics,
     )
-    assert admitted is False
+    assert verdict is Admission.REJECTED
     assert metrics.get("nora_tags_total", platform="signal") == 0.0
 
 
@@ -276,14 +279,16 @@ async def test_enrichment_widens_r12_to_the_aci_it_could_not_see_before(
     assert ACI in enriched.aliases
     assert ACI not in fallback.aliases
 
-    async def _admit(identity, metrics):
-        return await admission.run(
+    def _admit(identity, metrics):
+        return admission.run(
             message=_self_tag(ACI), identity=identity, debounce=Debounce(0.0),
-            in_flight=set(), metrics=metrics,
+            in_flight=set(), queue_depth=0, queue_max=16, metrics=metrics,
         )
 
-    assert await _admit(enriched, working) is False
-    assert await _admit(fallback, degraded) is True
+    # Refused (self-tag) only when enrichment saw the ACI; under the degraded
+    # set the same message is admitted as somebody else's tag — the R-12 hole.
+    assert _admit(enriched, working) is Admission.REJECTED
+    assert _admit(fallback, degraded) is Admission.RUN_NOW
 
 
 async def test_the_account_may_be_configured_as_a_uuid(aiohttp_server):

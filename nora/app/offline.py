@@ -96,6 +96,7 @@ def build_offline_pipeline(
         # honestly here instead of claiming the group is empty. A harness that
         # wants to exercise them passes a `RosterSource`.
         roster_source=roster_source,
+        queue_max=cfg.engagement.queue.max_depth,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
     return dispatcher, engagement, background

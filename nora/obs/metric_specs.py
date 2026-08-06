@@ -49,7 +49,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec("nora_tags_debounced_total", "Tags dropped by the debounce window."),
     _CounterSpec(
-        "nora_tags_dropped_total", "Tags dropped for a reason other than debounce.", ("reason",),
+        "nora_tags_queued_total",
+        "Tags placed in a conversation's FIFO queue behind an in-flight turn (R-29).",
+    ),
+    _CounterSpec(
+        "nora_tags_dropped_total",
+        "Tags dropped for a reason other than debounce (today: reason=\"queue_full\", "
+        "a per-conversation queue at its flood bound).",
+        ("reason",),
     ),
     _CounterSpec(
         "nora_replies_total", "Delivery attempts, by outcome status.", ("status", "platform"),

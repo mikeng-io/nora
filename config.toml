@@ -91,6 +91,12 @@ policy = "trigger_text"
 # Off = she writes nothing to the group but replies.
 enabled = true
 
+[engagement.queue]
+# Per-conversation FIFO depth beyond which an arriving tag is shed as a flood
+# (R-29). Bounds runaway growth, not waiting — a queued tag keeps its place
+# however long the turn ahead of it takes, and there is no staleness rule.
+max_depth = 16
+
 [engagement.trigger]
 text = "nora.000"
 min_interval_seconds = 5
