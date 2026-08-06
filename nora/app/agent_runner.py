@@ -10,13 +10,22 @@ plumbing so `nora.engagement.stages.invoke` never has to import `strands`
 itself (only `nora.agent.**` may — `tests/test_boundaries.py::
 test_strands_import_boundary`).
 
-Built once at process start around an already-constructed model provider
-(never per tag — see `nora.agent.factory`'s own docstring on why the
-underlying `AsyncOpenAI` client is a process-wide singleton). `model` is
-typed `Any`, not `strands.models.openai.OpenAIModel`, so that this module
-does not need to import strands either — only `nora.app.composition`, which
-builds one via `nora.agent.factory.create_model_provider`, ever constructs
-one.
+Built once at process start around a `nora.agent.factory.ModelSource`, which
+builds ONE MODEL PER TAG over the process-wide `AsyncOpenAI` client.
+
+**It used to hold one already-constructed model for the whole process**, and
+that was correct only while the model was immutable. Step 5b makes
+`tool_choice` per-turn state — `required` until she has spoken, `auto`
+after — and `EngagementPipeline._in_flight` keys on
+`(platform, conversation_id)`, so two conversations run concurrently: one
+model would have applied tag A's relaxation to tag B's FIRST call, which
+design/16 §2.1 measured as sending nothing 5/6. Audit T2's actual guarantee,
+one CLIENT per process, is unchanged — `ModelSource` is built around the same
+single client. `tests/test_model_per_tag.py` is the probe.
+
+`models` is typed `Any`, not `nora.agent.factory.ModelSource`, so that this
+module does not need to import strands either — only `nora.app.composition`,
+which builds the source, ever names the SDK type.
 """
 
 from __future__ import annotations
@@ -32,8 +41,8 @@ from nora.domain.models import TagContext
 class LiveAgentRunner:
     """Satisfies `nora.engagement.stages.invoke.AgentRunner`."""
 
-    def __init__(self, *, model: Any, retry: factory.RetryPolicy) -> None:
-        self._model = model
+    def __init__(self, *, models: Any, retry: factory.RetryPolicy) -> None:
+        self._models = models
         # Resolved once, from the tier's invocation timeout, and reused for
         # every tag — the numbers are immutable, the strategy built from them
         # is not (see `factory.RetryPolicy`).
@@ -64,7 +73,9 @@ class LiveAgentRunner:
         — this module does not import `strands`.
         """
         agent = factory.create_agent(
-            model=self._model,
+            # ONE MODEL PER TAG. See this module's docstring: `tool_choice` is
+            # per-turn state and two tags overlap.
+            model=self._models.create(),
             system_prompt=doctrine.text,
             tools=tools,
             pre_fill=pre_fill,

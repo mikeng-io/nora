@@ -21,6 +21,7 @@ from ..doctrine.loader import Doctrine
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..domain.ports import SendResult
 from ..obs.metrics import Metrics
+from . import tool_choice
 from .egress import LeakGuard, scan_reply
 
 log = logging.getLogger("nora.guards")
@@ -30,10 +31,33 @@ log = logging.getLogger("nora.guards")
 
 
 class Deliverer:
-    """Single-shot delivery: audit-first, then send. The ONLY caller of adapter.send().
+    """Bounded delivery: audit-first, then send. The ONLY caller of adapter.send().
 
-    The latch counts *attempts*, not successes (R-2): a failed send consumes the shot,
-    because v2 has no auto-retry and a second attempt would be an unbounded loop.
+    The latch counts *attempts*, not successes (R-2): a failed send consumes a
+    message, because v2 has no auto-retry and a second attempt would be an
+    unbounded loop.
+
+    **`message_cap` is the number, and it is REQUIRED (DEC-42).** It is the
+    same number `ReplyGuard` enforces as `send_reply`'s R-7 budget, threaded
+    from the same `ToolRegistry.budgets()` mapping through
+    `nora.engagement.stages.deliver.build`, because DEC-32's whole argument is
+    that the cap must be ONE number: R-7's budget check runs BEFORE R-2's
+    latch, so two numbers that disagree resolve silently in favour of the
+    smaller and report the refusal under the other one's name.
+
+    No default, deliberately. A `message_cap = 1` default would make "raised
+    the budget and forgot the deliverer" — the precise failure
+    `docs/superpowers/plans/2026-08-06-nora-grounding-implementation.md` §5e
+    names — construct cleanly and cap her at one message anyway, which is
+    exactly the invisible half of that trap.
+
+    **`last_text` is deleted rather than generalised.** It existed so the tag
+    path could feed Nora's reply to Honcho; DEC-36 removed that feed entirely
+    (`nora.engagement.stages.feedback` now takes no deliverer and feeds only
+    the tagger's own words), leaving one attribute whose only remaining
+    property was being WRONG under multi-message — design/16 §4 predicted a
+    four-message reply feeding the last message and silently dropping three.
+    Structural absence beats a comment saying not to use it.
     """
 
     def __init__(
@@ -46,6 +70,7 @@ class Deliverer:
         canary: str,
         tag_id: str,
         nora_sender_id: str,
+        message_cap: int,
         metrics: Metrics,
     ) -> None:
         self._store = store
@@ -56,9 +81,9 @@ class Deliverer:
         self._metrics = metrics
         self._leak = LeakGuard(doctrine, canary)
         self._doctrine_sha256 = doctrine.sha256
-        self._attempted = False
+        self._message_cap = message_cap
+        self._attempts = 0
         self._delivered_count = 0
-        self._last_text: str | None = None
 
     @property
     def delivered(self) -> bool:
@@ -69,25 +94,37 @@ class Deliverer:
         """How many messages actually reached the group this tag.
 
         Derived from, rather than kept beside, the `delivered` flag — one
-        counter, so the two can never disagree. It is 0 or 1 today and cannot
-        be more: R-2's latch refuses a second `deliver` call. That is exactly
-        why it exists now — `nora_messages_per_tag` needs a baseline recorded
-        while the answer is still known, before multi-message (step 5) makes
-        every reading of the histogram a comparison against nothing.
+        counter, so the two can never disagree. `nora_messages_per_tag` reads
+        it, and the histogram's baseline was recorded while the answer was
+        still known to be 0-or-1, before this became able to exceed 1.
         """
         return self._delivered_count
 
     @property
-    def attempted(self) -> bool:
-        return self._attempted
+    def attempts(self) -> int:
+        """Messages this tag has SPENT — sent, refused, or failed in flight."""
+        return self._attempts
 
     @property
-    def last_text(self) -> str | None:
-        return self._last_text
+    def attempted(self) -> bool:
+        return self._attempts > 0
+
+    @property
+    def exhausted(self) -> bool:
+        """No message left. R-2's latch, generalised from one to `message_cap`.
+
+        This is what `ReplyGuard` asks instead of `attempted`: with the cap at
+        1 the two are the same predicate, and above 1 `attempted` would refuse
+        the second message while claiming multi-message shipped.
+        """
+        return self._attempts >= self._message_cap
 
     async def deliver(self, text: str, *, source: str = "tool") -> bool:
-        if self._attempted:                                    # R-2
-            log.warning("delivery refused: already attempted (tag=%s)", self._tag_id)
+        if self.exhausted:                                     # R-2
+            log.warning(
+                "delivery refused: %d message(s) already spent of %d (tag=%s)",
+                self._attempts, self._message_cap, self._tag_id,
+            )
             self._metrics.inc("nora_guard_vetoes_total", rule="R-2")
             return False
 
@@ -122,7 +159,7 @@ class Deliverer:
             )
             return False
 
-        self._attempted = True
+        self._attempts += 1
         row = NormalizedMessage(
             platform=self._target.platform,
             conversation_id=self._target.conversation_id,
@@ -163,7 +200,6 @@ class Deliverer:
 
         if result.ok:
             self._delivered_count += 1
-            self._last_text = text
             self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)
         else:
             self._metrics.inc("nora_replies_total", status="failed", platform=self._target.platform)
@@ -218,6 +254,7 @@ class ReplyGuard(HookProvider):
         self.counts: dict[str, int] = dict.fromkeys(self._budgets, 0)
         # Set by `_after_tool` when a terminal verb has actually RUN — not
         # when one was merely attempted. See `_before_model`.
+        self._spoke = False
         self._turn_is_over = False
 
     def _veto(self, rule: str, message: str) -> str:
@@ -320,12 +357,20 @@ class ReplyGuard(HookProvider):
             if not text.strip():
                 return self._veto("R-4", "Your reply text is empty. "
                                          "Send real text or end your turn.")
-            # R-2's latch, the authoritative single-shot mechanism (spec S4) —
-            # and, TODAY, UNREACHABLE FOR A SECOND `send_reply`: the budget
-            # check above has already refused it, because that budget is 1.
-            # This branch only fires if something raised the budget without
-            # revising R-2, which is precisely the ordering trap named there.
-            if self._deliverer is not None and self._deliverer.attempted:
+            # R-2's latch, the authoritative bounded-delivery mechanism (spec
+            # S4), asked of the DELIVERER rather than recomputed here. It is
+            # still unreachable for a well-behaved turn — the budget check
+            # above refuses the (cap+1)th call first, from the same number —
+            # and it is the backstop for the one case where the two counters
+            # legitimately disagree: `record` skips a call that raised or was
+            # cancelled, while `Deliverer` has already spent the message if it
+            # got as far as the audit write.
+            #
+            # `exhausted`, not `attempted` (DEC-42). Asking `attempted` is what
+            # would leave multi-message dead after the budget was raised: the
+            # second `send_reply` would be refused by the latch instead of the
+            # budget, which is the same silence wearing the other rule's name.
+            if self._deliverer is not None and self._deliverer.exhausted:
                 return self._veto(
                     "R-2", "You already sent your reply. Do not call send_reply "
                            "again. If you still need something, use one of the "
@@ -338,8 +383,30 @@ class ReplyGuard(HookProvider):
         registry.add_callback(AfterToolCallEvent, self._after_tool)
         registry.add_callback(BeforeModelCallEvent, self._before_model)
 
+    def _terminal_budget_spent(self) -> bool:
+        """True once NO terminal verb can be called again this turn.
+
+        The turn-ending condition, generalised from DEC-32's "a terminal verb
+        has run" by DEC-42. With `send_reply`'s budget at 1 the two are the
+        same predicate — running it spends it — which is what makes
+        multi-message ship INERT: raise the budget and this stops firing after
+        the first message without any other edit.
+
+        `self._terminal` is checked for emptiness first because `all(())` is
+        True: a guard told nothing is terminal would otherwise end the turn
+        before the first model call, which is the opposite of the ~25s runaway
+        DEC-21 fixed but just as broken.
+        """
+        return bool(self._terminal) and all(
+            self.counts.get(name, 0) >= self._budgets.get(name, 0) for name in self._terminal
+        )
+
     def _before_model(self, event: BeforeModelCallEvent) -> None:
-        """End the turn as soon as a TERMINAL verb has run (DEC-32).
+        """Relax `tool_choice` once she has spoken; end the turn at the cap.
+
+        **Two things, in that order, and the order is the mechanism** (DEC-42,
+        `design/proposed/16-multi-message-replies.md` §2). The counter half
+        first, because it is what the docstring below is about.
 
         `tool_choice="required"` (see `nora.agent.factory`) is the only reason
         this model calls `send_reply` at all — but it applies to EVERY turn, so
@@ -351,9 +418,9 @@ class ReplyGuard(HookProvider):
         observed live.
 
         Cancelling here is the narrow fix. The R-7 budget already refuses a
-        second `send_reply` (it is 1, and it is checked before R-2's latch), so
-        nothing after the first call can change what the group sees — the
-        remaining turns were pure cost.
+        `send_reply` past the cap (it is checked before R-2's latch), so
+        nothing after the last allowed call can change what the group sees —
+        the remaining turns were pure cost.
 
         **This asked `self._deliverer.delivered` until DEC-32**, which made
         "the turn is over" a property of ONE tool's side effect rather than of
@@ -369,9 +436,33 @@ class ReplyGuard(HookProvider):
         stops. The group sees the same thing either way — the tool call was
         recorded, so the budget of 1 is spent and a retry is already refused —
         and the difference is purely the forced turns that followed.
+
+        **The RELAXATION half (DEC-42).** Once a terminal verb has run she has
+        spoken, and from that model call onwards `tool_choice` becomes `auto`
+        — so she may stop by declining to call anything, which under `required`
+        she structurally cannot (§2.1's C: `required` after a reply never
+        stops, 6/6). It is done HERE, and only here, because
+        `BeforeModelCallEvent._can_write` is `return name == "cancel"`: the
+        event refuses attribute ASSIGNMENT on itself, which an earlier draft of
+        design/16 §4 misread as the model being unreachable. `HookEvent.agent`
+        is a public field and `OpenAIModel.update_config` exists, so
+        `event.agent.model` is reachable and writable — pinned against the real
+        SDK by `tests/test_strands_api_contract.py`, because the whole
+        mechanism rests on it.
+
+        Reaching the model would be UNSAFE without step 5a. It is per tag now
+        (`nora.agent.factory.ModelSource`); shared, this line would have
+        relaxed a concurrent tag's FIRST call, which design/16 §2.1 measured as
+        sending nothing 5/6. `tests/test_model_per_tag.py` is that probe.
+
+        Ordered cancel-first so the relaxation is never applied to a model call
+        that is not going to happen.
         """
         if self._turn_is_over:
             event.cancel = "Reply already sent — the turn is finished."
+            return
+        if self._spoke:
+            tool_choice.relax(getattr(getattr(event, "agent", None), "model", None))
 
     def _before_tool(self, event) -> None:
         try:
@@ -411,6 +502,14 @@ class ReplyGuard(HookProvider):
             name = (getattr(event, "tool_use", None) or {}).get("name", "")
             self.record(name)
             if name in self._terminal:
-                self._turn_is_over = True
+                # She has spoken: `_before_model` relaxes `tool_choice` from
+                # here on, and ends the turn once every terminal verb's budget
+                # is spent. Two flags rather than one because they answer two
+                # questions — "may she stop?" and "must she?" — and at a
+                # `send_reply` budget of 1 they happen to flip together, which
+                # is precisely why collapsing them would look correct today and
+                # cap her at one message forever.
+                self._spoke = True
+                self._turn_is_over = self._terminal_budget_spent()
         except Exception:
             log.exception("ReplyGuard._after_tool raised; ignoring")

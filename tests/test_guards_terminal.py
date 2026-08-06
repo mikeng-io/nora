@@ -32,14 +32,18 @@ from nora.app.agent_runner import LiveAgentRunner
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget, NormalizedMessage, TagContext
 from nora.obs.metrics import Metrics
-from tests.fakes import SinkSender
+from tests.fakes import FixedModelSource, SinkSender
 
 RETRY = factory.build_retry_policy(timeout_seconds=30.0)
 TARGET = ConversationTarget("signal", "g1", "group")
 
-# High enough that R-7 never fires: this file is about the OTHER thing that
-# stops a turn, and a budget veto would end the loop for an unrelated reason.
-BUDGETS = {"now": 99}
+# The terminal verb's budget IS the message cap since DEC-42 — the turn ends
+# when no terminal verb can be called AGAIN, not when one has been called once.
+# `1` here therefore mirrors `send_reply`'s own budget and makes this file's
+# probes read exactly as they did before that change; `BUDGETS_TWICE` is the
+# same declaration with the cap raised, which is what multi-message does.
+BUDGETS = {"now": 1}
+BUDGETS_TWICE = {"now": 2}
 
 
 # ---- the shapes the SDK really passes -------------------------------------
@@ -75,19 +79,21 @@ class _BeforeModelCall:
 class _NeverLatches:
     """A `Deliverer` that delivered nothing — the control for the probe.
 
-    Not a stand-in for the real class: `delivered`/`attempted` are the two
-    properties `ReplyGuard` reads, and both answer False here because nothing
-    was ever sent. A test whose deliverer claimed delivery would make the
-    reverted implementation pass and the probe worthless.
+    Not a stand-in for the real class: `delivered`/`attempted`/`exhausted` are
+    the properties `ReplyGuard` reads, and all answer False here because
+    nothing was ever sent and nothing was therefore spent. A test whose
+    deliverer claimed delivery would make the reverted implementation pass and
+    the probe worthless.
     """
 
     delivered = False
     attempted = False
+    exhausted = False
 
 
-def _guard(*, terminal, deliverer=None, metrics=None) -> ReplyGuard:
+def _guard(*, terminal, deliverer=None, metrics=None, budgets=None) -> ReplyGuard:
     return ReplyGuard(
-        conversation_id="g1", budgets=BUDGETS, terminal=terminal,
+        conversation_id="g1", budgets=budgets or BUDGETS, terminal=terminal,
         deliverer=deliverer, metrics=metrics or Metrics(),
     )
 
@@ -257,18 +263,19 @@ def _ctx() -> TagContext:
     )
 
 
-async def _drive(*, terminal) -> _AlwaysCallsNow:
+async def _drive(*, terminal, budgets=None) -> _AlwaysCallsNow:
     """Four turns' worth of rope, a real `Deliverer` that is never called."""
     model = _AlwaysCallsNow()
+    budgets = budgets or BUDGETS
     deliverer = Deliverer(
         store=_Store(), adapter=SinkSender(), target=TARGET, doctrine=_doctrine(),
-        canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics(),
+        canary="C", tag_id="t1", nora_sender_id="nora", message_cap=1, metrics=Metrics(),
     )
     tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
-                          when="the stub turn needs a tool", budget=99))
-    await LiveAgentRunner(model=model, retry=RETRY).invoke(
+                          when="the stub turn needs a tool", budget=budgets["now"]))
+    await LiveAgentRunner(models=FixedModelSource(model), retry=RETRY).invoke(
         doctrine=_doctrine(), tools=[tool], pre_fill=[],
-        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=terminal,
+        guard=ReplyGuard(conversation_id="g1", budgets=budgets, terminal=terminal,
                          deliverer=deliverer, metrics=Metrics()),
         tag_message="<tag_message/>", ctx=_ctx(), trace_attributes={},
         limits={"turns": 4, "output_tokens": 12_000, "total_tokens": 64_000},
@@ -296,3 +303,55 @@ async def test_the_same_turn_with_nothing_terminal_runs_to_the_cap():
     """
     model = await _drive(terminal=ToolRegistry().terminal_tools())
     assert model.calls == 4
+
+
+# ---- DEC-42: the turn ends at the CAP, not at the first terminal call ------
+
+
+def test_a_terminal_tool_with_budget_left_does_not_end_the_turn():
+    """The unit half of the relaxation, and the one line of DEC-42 that makes
+    multi-message possible at all.
+
+    Same guard, same terminal declaration, same single call — one different
+    number. Under DEC-32 the turn ended the instant a terminal verb ran, which
+    is why `send_reply` could never produce a second message however high its
+    budget went: the loop was cancelled before the model was asked again.
+    """
+    guard = _guard(terminal={"now"}, budgets=BUDGETS_TWICE)
+    guard._after_tool(_AfterToolCall("now"))
+    event = _BeforeModelCall()
+    guard._before_model(event)
+    assert event.cancel is False
+
+
+def test_the_turn_ends_once_the_terminal_budget_is_spent():
+    guard = _guard(terminal={"now"}, budgets=BUDGETS_TWICE)
+    guard._after_tool(_AfterToolCall("now"))
+    guard._after_tool(_AfterToolCall("now"))
+    event = _BeforeModelCall()
+    guard._before_model(event)
+    assert event.cancel == "Reply already sent — the turn is finished."
+
+
+def test_a_guard_told_nothing_is_terminal_does_not_end_the_turn_immediately():
+    """`all(())` is True, so the exhaustion test has to check emptiness first.
+
+    Without that check a guard with no terminal verbs would cancel before the
+    FIRST model call — every tag silent, and silent is R-5's normal-looking
+    state. The pre-DEC-42 code could not have this bug (it only ever SET the
+    flag), which is exactly why it is worth a test now.
+    """
+    event = _BeforeModelCall()
+    _guard(terminal=frozenset())._before_model(event)
+    assert event.cancel is False
+
+
+async def test_a_raised_terminal_budget_buys_a_second_model_call():
+    """The SDK half of the same thing: the real loop runs twice, not once.
+
+    `test_a_second_verb_declared_terminal_ends_the_turn` above is this test's
+    control at a budget of 1 — identical model, identical tool, identical
+    declaration, and it stops after one pass.
+    """
+    model = await _drive(terminal={"now"}, budgets=BUDGETS_TWICE)
+    assert model.calls == 2

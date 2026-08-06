@@ -42,6 +42,12 @@ RULE_TESTS = {
     # as-nothing-found trap R-27 was registered for. R-28 stays reserved for
     # search/fetch (design/14 §2.3).
     "R-27b": "test_a_place_the_route_does_not_serve_is_never_no_such_place",
+    # R-2/R-2b keep their entries rather than gaining new ones: DEC-40 revised
+    # the RULE (one message became `send_reply`'s budget) and both named tests
+    # were rewritten in place to assert the revised invariant, which is what
+    # `design/proposed/16-multi-message-replies.md` §6.7 asks for. A new key
+    # would leave the old one pointing at a rule nobody enforces.
+    "R-25": "test_a_turn_cut_off_between_messages_is_counted_as_partial",
 }
 
 

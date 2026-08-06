@@ -139,12 +139,20 @@ class EngagementPipeline:
         started = time.perf_counter()
         llm_elapsed = 0.0
         delivered = False
+        # Both bound BEFORE the `try` for the same reason `handle` is: the
+        # `finally` reads them on every exit path, including one that faults
+        # before the model is ever invoked. `completed` flips at the END of the
+        # try block — it is the only thing that distinguishes "the pipeline ran
+        # to the end" from "something raised past it", which
+        # `deliver.truncation_reason` needs and no stop reason can express.
+        stop_reason: str | None = None
+        completed = False
         # Bound BEFORE the `try` so the `finally` can read the tag's delivery
         # count on every exit path, including one that faults inside
         # `context.assemble` before there is a handle at all. Reading it off
         # the `Deliverer` rather than tracking a second local is deliberate:
-        # a local would be one more thing to remember to increment when step 5
-        # makes the count able to exceed 1.
+        # a local would be one more thing to remember to increment now that
+        # DEC-40 has made the count able to exceed 1.
         handle: deliver.DeliveryHandle | None = None
         # Every log line emitted for the rest of this tag — across every stage
         # this method calls into — carries tag_id without any of them naming
@@ -241,6 +249,10 @@ class EngagementPipeline:
                 timeout_seconds=self._timeout_seconds, metrics=self._metrics,
             )
             if not ok:
+                # A timeout or an `llm_error`. Messages may ALREADY have gone
+                # out — under multi-message that is the common shape, not an
+                # edge case — so this is a partial delivery, not a silent turn,
+                # and the `finally` counts it as one.
                 return
 
             # `stop_reason` is threaded rather than dropped (R-23): without it
@@ -263,6 +275,7 @@ class EngagementPipeline:
                 self._spawn(feedback.run(
                     memory=self._memory, ctx=ctx, metrics=self._metrics,
                 ))
+            completed = True
         except BaseException:
             log.exception("tag pipeline failed (tag=%s); staying silent", request.tag_id)
             self._metrics.inc(
@@ -282,11 +295,27 @@ class EngagementPipeline:
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
             # One observation per ADMITTED tag, silent turns included as 0 —
-            # see `nora.obs.metric_specs`. R-2 caps it at 1 today, so the
-            # series is flat by construction; step 5 is what makes it move,
-            # and a baseline recorded afterwards would not be one.
-            self._metrics.observe(
-                "nora_messages_per_tag",
-                float(handle.deliverer.delivered_count) if handle is not None else 0.0,
-            )
+            # see `nora.obs.metric_specs`. The `send_reply` budget caps it, so
+            # while that budget is 1 the series is flat by construction; the
+            # baseline was recorded before DEC-40 made it able to move.
+            messages = handle.deliverer.delivered_count if handle is not None else 0
+            self._metrics.observe("nora_messages_per_tag", float(messages))
+            # DEC-40's observable. A turn that sent SOME of its messages and
+            # then stopped is not a silent turn — `delivered` is True, the
+            # indicator resolves ✅ and Honcho is fed — so nothing R-23 built
+            # can see it. Counted here, in the `finally`, because that is the
+            # one point every exit path passes through: the cap-cut loop, the
+            # timeout, the llm_error, and the outer `BaseException` alike.
+            if messages:
+                reason = deliver.truncation_reason(
+                    stop_reason=stop_reason, completed=completed,
+                )
+                if reason is not None:
+                    log.warning(
+                        "partial_reply: %d message(s) sent, then %s (tag=%s)",
+                        messages, reason, request.tag_id,
+                    )
+                    self._metrics.inc(
+                        "nora_partial_replies_total", reason=reason, platform=msg.platform,
+                    )
             clear_tag_id()

@@ -140,3 +140,57 @@ def test_obligation_6b_strands_evals_surface():
         assert symbol is not None, f"DRIFT: strands_evals.{name} is gone"
     assert hasattr(strands_evals.Experiment, "run_evaluations")
     assert hasattr(strands_evals.Experiment, "to_file")
+
+
+def test_obligation_7_the_tool_choice_flip_is_reachable_from_a_before_model_hook():
+    """DEC-42's whole mechanism, verified against the SDK rather than assumed.
+
+    `design/proposed/16-multi-message-replies.md` §4 said in an earlier draft
+    that `BeforeModelCallEvent` "cannot write it" because `_can_write` is
+    `return name == "cancel"`. That is true and it is about the EVENT: the
+    event refuses attribute assignment on itself. It says nothing about
+    reachability. `HookEvent.agent` is a plain required field, `Agent.model`
+    is public, and `OpenAIModel.update_config` exists — so
+    `event.agent.model.update_config(params=...)` is the route, and
+    `nora.agent.tool_choice.relax` takes it.
+
+    Three assertions, because losing any one of them silently disables
+    multi-message: she would keep `tool_choice="required"` for the whole turn,
+    never be permitted to stop, and be cut off by a cap instead — which
+    design/16 §2.1 measured (C) as never stopping, 6/6.
+
+    The `update_config` REPLACE semantics are asserted too. It is
+    `self.config.update(model_config)`, a shallow dict update, so writing
+    `params={"tool_choice": "auto"}` drops `max_tokens`, `temperature` and
+    `reasoning_effort` for the rest of the turn. `relax` reads, copies and
+    writes the params dict back whole; if the SDK ever started merging that
+    would still be correct, and if it stopped being a replace nobody would
+    notice without this.
+    """
+    import dataclasses
+
+    from openai import AsyncOpenAI
+    from strands.hooks import BeforeModelCallEvent
+    from strands.models.openai import OpenAIModel
+
+    fields = {f.name for f in dataclasses.fields(BeforeModelCallEvent)}
+    assert "agent" in fields, (
+        "DRIFT: BeforeModelCallEvent no longer carries `agent` — ReplyGuard has "
+        "no route to the model and tool_choice can never be relaxed (DEC-42)"
+    )
+    assert BeforeModelCallEvent._can_write(None, "cancel") is True
+    assert BeforeModelCallEvent._can_write(None, "agent") is False, (
+        "the event is read-only except for `cancel`; if that changed, the "
+        "reasoning in nora.agent.tool_choice's docstring needs rereading"
+    )
+
+    model = OpenAIModel(
+        model_id="m", client=AsyncOpenAI(api_key="k", base_url="http://localhost:1/v1"),
+        params={"max_tokens": 7, "tool_choice": "required"},
+    )
+    model.update_config(params={"tool_choice": "auto"})
+    assert model.get_config()["params"] == {"tool_choice": "auto"}, (
+        "DRIFT: OpenAIModel.update_config now MERGES params instead of replacing "
+        "them — nora.agent.tool_choice.relax reads-copies-writes to survive the "
+        "replace, which is still correct, but the docstring's reasoning is stale"
+    )

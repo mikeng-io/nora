@@ -203,3 +203,45 @@ async def test_a_delivered_reply_is_recorded_in_the_audit_store():
     nora_rows = [r for r in await store.recent(conversation_id="g1", limit=10) if r.is_nora]
     assert len(nora_rows) == 1
     assert nora_rows[0].delivery_status is DeliveryStatus.SENT
+
+
+# ---- DEC-40 -----------------------------------------------------------------
+
+
+def test_build_takes_the_deliverers_message_cap_from_the_same_budget_table():
+    """One number, two enforcers (DEC-32, DEC-40). R-7's budget check runs
+    BEFORE R-2's latch, so a `Deliverer` capped independently of the guard
+    would silently win whenever it was the smaller of the two and file the
+    refusal under the other rule's name."""
+    handle = deliver.build(
+        store=FakeAuditStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
+        doctrine=_doctrine(), canary="CANARY", tag_id="tag-1",
+        nora_sender_id="+8520000", conversation_id="g1",
+        budgets={**BUDGETS, "send_reply": 4}, terminal=TERMINAL, metrics=Metrics(),
+    )
+    assert handle.deliverer._message_cap == 4
+
+
+def test_a_finished_turn_has_no_truncation_reason():
+    assert deliver.truncation_reason(stop_reason="end_turn", completed=True) is None
+
+
+def test_a_cap_that_cut_the_loop_names_itself():
+    """The reason joins straight against `nora_llm_stop_reason_total`, so
+    "which cap truncates replies" is one query rather than a correlation."""
+    for reason in deliver.BUDGET_STOP_REASONS:
+        assert deliver.truncation_reason(stop_reason=reason, completed=True) == reason
+
+
+def test_an_invocation_that_never_returned_is_named_apart_from_a_cap():
+    """A timeout or an `llm_error` produces NO stop reason at all
+    (`nora.engagement.stages.invoke` returns None for exactly those two), and
+    borrowing a `limit_*` label would aim the next investigation at the token
+    budget — DEC-25's argument."""
+    assert deliver.truncation_reason(stop_reason=None, completed=False) == "invocation_failed"
+
+
+def test_a_fault_after_the_loop_finished_is_named_apart_again():
+    """The outer `BaseException`: the loop DID return a stop reason, so the
+    turn was not cut off by a cap or a timeout — something after it raised."""
+    assert deliver.truncation_reason(stop_reason="end_turn", completed=False) == "pipeline_error"

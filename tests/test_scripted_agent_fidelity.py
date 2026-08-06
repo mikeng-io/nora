@@ -36,6 +36,7 @@ from nora.doctrine.loader import Doctrine
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.obs.metrics import Metrics
 from nora.testing import FakeAgentRunner, ScriptedTurn
+from tests.fakes import FixedModelSource
 
 RETRY = factory.build_retry_policy(timeout_seconds=30.0)
 
@@ -139,7 +140,7 @@ async def test_the_real_sdk_fires_after_tool_for_a_call_the_guard_cancelled():
     the same thing, and `cancel_message` is the only field that separates them.
     """
     guard = _guard()
-    await LiveAgentRunner(model=_AsksTwice(), retry=RETRY).invoke(
+    await LiveAgentRunner(models=FixedModelSource(_AsksTwice()), retry=RETRY).invoke(
         doctrine=_doctrine(), tools=[_tool()], pre_fill=[], guard=guard,
         tag_message="<tag_message/>", ctx=_ctx(), trace_attributes={},
         limits={"turns": 2, "output_tokens": 12_000, "total_tokens": 64_000},
@@ -188,3 +189,82 @@ async def test_the_double_never_runs_the_tool_it_cancelled():
         tools=[tool], guard=_guard(), limits=None,
     )
     assert calls == ["now"]
+
+
+# ---- the before-model half: the agent, the model, and the flip -------------
+#
+# `ReplyGuard._before_model` gained a second job in DEC-42: it relaxes
+# `tool_choice` through `event.agent.model`. A double that dispatched a
+# before-model event with no `agent` would silently exercise nothing — the
+# relaxation would be a no-op in every scripted scenario and real in
+# production, which is the same divergence this file already exists for, in a
+# new place.
+
+
+def test_the_double_dispatches_a_before_model_event_carrying_an_agent_and_a_model():
+    from nora.testing import ScriptedModel
+    from nora.testing.scripted_agent import _Agent, _BeforeModelCall
+
+    event = _BeforeModelCall(_Agent(ScriptedModel()))
+    assert event.cancel is False
+    assert isinstance(event.agent.model, ScriptedModel)
+
+
+def test_the_doubles_first_call_tool_choice_agrees_with_the_real_one():
+    """The transcribed constant, pinned against the module it was copied from.
+
+    `nora.testing` sits below `nora.agent` in the layers contract and cannot
+    import it, so `TOOL_CHOICE_FIRST_CALL` is a copy — and a copy nobody
+    compares is how the doctrine catalogue drifted for eight weeks.
+    """
+    from nora.agent.tool_choice import FIRST_CALL
+    from nora.testing import TOOL_CHOICE_FIRST_CALL
+
+    assert TOOL_CHOICE_FIRST_CALL == FIRST_CALL
+
+
+def test_the_scripted_model_replaces_params_the_way_the_real_one_does():
+    """`update_config` is `config.update(...)`, a shallow replace. A double
+    that merged would let `relax` drop `max_tokens` here and in production."""
+    from nora.testing import ScriptedModel
+
+    model = ScriptedModel({"max_tokens": 7, "tool_choice": "required"})
+    model.update_config(params={"tool_choice": "auto"})
+    assert model.get_config()["params"] == {"tool_choice": "auto"}
+
+
+async def test_the_double_relaxes_tool_choice_after_a_terminal_verb_runs():
+    """THE PROBE for the before-model half.
+
+    `now` is terminal with a budget of 2, so the guard permits a second model
+    call and relaxes it — the `required → auto` sequence design/16 §2 is
+    entirely about. Drop `agent` from `_BeforeModelCall` (or stop passing a
+    model) and this goes red while every other scripted scenario stays green.
+    """
+    guard = ReplyGuard(conversation_id="g1", budgets={"now": 2}, terminal={"now"},
+                       metrics=Metrics())
+    runner = FakeAgentRunner([
+        ScriptedTurn(tool_calls=[("now", {})]),
+        ScriptedTurn(tool_calls=[("now", {})]),
+    ])
+    tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
+                          when="the stub turn needs a tool", budget=2, terminal=True))
+    await runner.invoke(tools=[tool], guard=guard, limits=None)
+    assert runner.tool_choices == ["required", "auto"]
+
+
+async def test_each_invocation_gets_its_own_scripted_model():
+    """Per-tag, mirroring `LiveAgentRunner`'s `ModelSource` (step 5a). Share one
+    and the second tag would start where the first left off — `auto` on its
+    first call, which design/16 §2.1 measured as sending nothing 5/6."""
+    runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("now", {})])])
+    tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
+                          when="the stub turn needs a tool", budget=2, terminal=True))
+    guard_kwargs = {"conversation_id": "g1", "budgets": {"now": 2}, "terminal": {"now"}}
+    await runner.invoke(tools=[tool], guard=ReplyGuard(metrics=Metrics(), **guard_kwargs),
+                        limits=None)
+    await runner.invoke(tools=[tool], guard=ReplyGuard(metrics=Metrics(), **guard_kwargs),
+                        limits=None)
+    assert len(runner.models) == 2
+    assert runner.models[0] is not runner.models[1]
+    assert runner.tool_choices == ["required", "required"]

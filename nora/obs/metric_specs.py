@@ -264,6 +264,35 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "account resolved to no person.",
         ("platform",),
     ),
+    # DEC-40. A turn that sent SOME of its messages and then stopped for a
+    # reason that was not "she was finished".
+    #
+    # This is the failure multi-message introduces, and it is invisible to
+    # every series that already exists. R-23's work made a SILENT turn's cause
+    # legible — `no_send_call` versus `limit_total_tokens` — but a turn cut off
+    # after message 2 of 4 is not silent: `delivered` is True,
+    # `check_outcome` returns True, the group gets ✅, Honcho is fed, and
+    # `nora_silent_failures_total` never moves. The group simply reads half a
+    # thought, ending mid-sentence, with nothing anywhere saying so.
+    #
+    # `nora_messages_per_tag` cannot answer it either: a 2 is a 2 whether she
+    # meant to stop there or was stopped, and once the histogram legitimately
+    # spans 1-4 there is no shape to read a truncation out of.
+    #
+    # `reason` reuses Strands' `limit_*` vocabulary where the loop reported
+    # one, so it joins directly against `nora_llm_stop_reason_total`, and adds
+    # two of its own for the paths that produce no stop reason at all:
+    # `invocation_failed` (timeout or `llm_error` — the invocation never
+    # returned, so there is nothing to ask) and `pipeline_error` (the outer
+    # `BaseException`). Alert on any of it: unlike a cap on a SILENT turn,
+    # every increment here is a message the group was meant to receive.
+    _CounterSpec(
+        "nora_partial_replies_total",
+        "Tags that delivered at least one message and then stopped early, by "
+        "why the turn ended (limit_turns / limit_total_tokens / "
+        "limit_output_tokens / invocation_failed / pipeline_error).",
+        ("reason", "platform"),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
