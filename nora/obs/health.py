@@ -64,9 +64,9 @@ def build_health_app(
 
         try:
             stats = await a["store"].stats()
-            sqlite = {"reachable": True, "rows": stats["messages"]}
+            store = {"reachable": True, "rows": stats["messages"]}
         except Exception:                      # noqa: BLE001
-            sqlite = {"reachable": False}
+            store = {"reachable": False}
             healthy = False
 
         try:
@@ -85,7 +85,7 @@ def build_health_app(
 
         body = {
             "sse": sse,
-            "sqlite": sqlite,
+            "store": store,
             "honcho": honcho_health,
             "omniroute": {"last_success_at": a["llm_state"].last_success_at},
             "errors_since_restart": _sum_series(a["metrics"], "nora_errors_total"),

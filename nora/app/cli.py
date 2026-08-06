@@ -9,23 +9,22 @@ restart, at which point `nora.app.adoption` backfills the history (DEC-16).
 Three properties are load-bearing, and each is enforced by something rather
 than promised:
 
-* **Nothing is written.** The audit database is opened through
-  `create_readonly_sql_engine` — `mode=ro` plus `PRAGMA query_only=ON`, so a
-  write fails at the driver — and the only daemon calls go through
-  `nora.platform.signal.directory`, whose method allowlist holds exactly
-  `listGroups` and `listContacts`. One honest caveat: reading a wal-mode
-  SQLite database materialises its `-shm`/`-wal` sidecars, and a read-only
-  connection cannot checkpoint, so it cannot remove them on close either.
-  They contain no message data, no row is touched, and the only way to avoid
-  them (`immutable=1`) asserts the file cannot change — false whenever Nora is
-  running, and it would buy a clean directory listing with torn reads.
-  `tests/test_cli_control_plane.py` exempts those two names and nothing else.
-* **It works with the Nora container stopped.** Nothing here builds an adapter,
-  binds the metrics port, opens the SSE stream, runs a migration or constructs
-  an LLM client. `config.load(..., require_secrets=False)` is what keeps a
-  missing `OMNIROUTE_API_KEY` — which lives in `.env` and is injected into the
-  CONTAINER, not into the operator's shell — from failing a command that never
-  talks to the provider.
+* **Nothing is written.** The record store is opened through
+  `create_readonly_sql_engine` — every connection sets
+  `default_transaction_read_only=on`, so any write raises
+  `ReadOnlySqlTransaction` at the server (design/20 §3) — and the only daemon
+  calls go through `nora.platform.signal.directory`, whose method allowlist
+  holds exactly `listGroups` and `listContacts`. In the deployment this engine
+  additionally connects as a `GRANT SELECT`-only role whose write privileges do
+  not exist at all; that role is defence in depth on top of the session setting.
+* **It runs alongside `nora-db`, not the Nora agent.** Nothing here builds an
+  adapter, binds the metrics port, opens the SSE stream, runs a migration or
+  constructs an LLM client. `config.load(..., require_secrets=False)` keeps a
+  missing `OMNIROUTE_API_KEY` — injected into the CONTAINER, not the operator's
+  shell — from failing a command that never talks to the provider. It does need
+  the `nora` network to reach `nora-db`, so after the migration the operator
+  runs it via `docker exec` into a `nora`-network container as the read-only
+  role (design/20 §3); the URL comes from `DATABASE_URL` there, same as Nora.
 * **A broken daemon degrades to a sentence, never a traceback.** `nora groups`
   cannot do its job without signal-cli and says so with an exit code;
   `nora persons pending` can, losing only the display names, and says that too.
@@ -35,14 +34,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
+
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 from nora.app import report
 from nora.app.pending import correlate
 from nora.config import Config, ConfigError, load
 from nora.domain.models import UnattributedRow
-from nora.infra.sql import SqlAuditStore, create_readonly_sql_engine
+from nora.infra.sql import SqlRecordStore, create_readonly_sql_engine
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.signal import directory
 from nora.policy import Policy, PolicyError, load_policy
@@ -165,19 +168,20 @@ async def cmd_pending(args: argparse.Namespace) -> int:
     persons = _persons(cfg)
     limit = int(args.limit)
     if limit <= 0:
-        # `AuditStore.unattributed` returns `[]` for a non-positive limit, and
+        # `RecordStore.unattributed` returns `[]` for a non-positive limit, and
         # the report would then say "no unattributed rows at all" — a false
         # statement about the database produced by a typo in a flag.
         raise CliError(f"--limit must be positive; got {limit}")
+    url = _database_url(cfg)
     contacts, groups, note = await _directory(base_url=signal.base_url,
                                               account=signal.account)
-    rows = await _unattributed(cfg.store.db_path, limit=limit)
+    rows = await _unattributed(url, limit=limit)
     accounts = correlate(rows=rows, persons=persons, contacts=contacts, groups=groups)
 
     for line in report.render_pending(
         accounts=accounts,
         identity_path=str(cfg.identity_file),
-        db_path=str(cfg.store.db_path),
+        source=_redacted(url),
         scanned=len(rows),
         truncated=len(rows) >= limit,
         daemon_note=note,
@@ -212,36 +216,66 @@ async def _directory(
     return contacts, groups, ""
 
 
-def readonly_store(db_path: Path) -> SqlAuditStore:
-    """The ONE place this package opens the audit database.
+def _database_url(cfg: Config) -> str:
+    """The PostgreSQL URL, from the env var `store.database_url_env` names (DEC-8).
+
+    A `CliError`, not a startup crash: the operator running this by hand needs a
+    readable sentence about the one variable to export, not a traceback.
+    """
+    url = os.environ.get(cfg.store.database_url_env, "")
+    if not url:
+        raise CliError(
+            f"environment variable {cfg.store.database_url_env} is not set — it "
+            "must hold the PostgreSQL URL of the record store. After cutover this "
+            "command runs via `docker exec` into a nora-network container, where "
+            "the container already carries it (design/20 §3)."
+        )
+    return url
+
+
+def _redacted(url: str) -> str:
+    """`user@host:port/dbname`, never the password — this string is printed, and
+    a credential must never reach the report (DEC-8)."""
+    try:
+        u = make_url(url)
+    except ArgumentError:
+        return "the PostgreSQL record store"
+    where = "/".join(filter(None, [f"{u.host or ''}:{u.port}" if u.host else "", u.database]))
+    return f"{u.username}@{where}" if u.username else where or "the PostgreSQL record store"
+
+
+def readonly_store(url: str) -> SqlRecordStore:
+    """The ONE place this package opens the record store.
 
     Public, and a named function rather than an inline constructor call, so a
-    test can hold the actual object the commands use and prove a write through
-    it is refused. Asserting only that `create_readonly_sql_engine` refuses
-    writes proves nothing about whether the CLI calls it — swapping this line
-    for `create_sql_engine` would leave such a test green, because a command
-    that issues only SELECTs changes no bytes either way.
+    test can hold the actual object the commands use and prove a write through it
+    is refused. Asserting only that `create_readonly_sql_engine` refuses writes
+    proves nothing about whether the CLI calls it — swapping this line for
+    `create_sql_engine` would leave such a test green, because a command that
+    issues only SELECTs changes no bytes either way.
     """
-    return SqlAuditStore(create_readonly_sql_engine(db_path))
+    return SqlRecordStore(create_readonly_sql_engine(url))
 
 
-async def _unattributed(db_path: Path, *, limit: int) -> list[UnattributedRow]:
+async def _unattributed(url: str, *, limit: int) -> list[UnattributedRow]:
     """Read the unattributed backlog through the port, read-only.
 
     No `run_migrations` call, deliberately: migrating is a write, and a
-    control-plane command that silently upgraded the schema of a database whose
-    daemon is stopped would be doing the single most dangerous thing available
-    to it while claiming to be read-only.
+    control-plane command that silently upgraded the schema while claiming to be
+    read-only would be doing the single most dangerous thing available to it.
+
+    A store that cannot be reached at all — `nora-db` down, or a database that
+    does not exist yet because Nora has never run against it — becomes one
+    readable line, never a traceback.
     """
-    if not await asyncio.to_thread(db_path.exists):
-        raise CliError(
-            f"no audit database at {db_path} — Nora has not run against this "
-            "config yet, so there are no senders to adopt."
-        )
-    store = readonly_store(db_path)
+    store = readonly_store(url)
     try:
         return await store.unattributed(limit=limit)
     except Exception as exc:  # one readable line, never a traceback
-        raise CliError(f"could not read {db_path}: {type(exc).__name__}: {exc}") from exc
+        raise CliError(
+            f"could not read the record store at {_redacted(url)}: "
+            f"{type(exc).__name__}: {exc}. Is nora-db up, and has Nora run "
+            "against this config yet?"
+        ) from exc
     finally:
         await store.aclose()

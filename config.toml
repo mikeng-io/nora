@@ -102,7 +102,14 @@ text = "nora.000"
 min_interval_seconds = 5
 
 [store]
-db_path = "data/messages.db"
+# The record store is PostgreSQL (design/20). Its URL is injected by the host
+# through the env var named here (DEC-8: name the var, never inline the value),
+# not written in this file. `docker compose` sets DATABASE_URL from `.env` to
+# `postgresql+asyncpg://nora:…@nora-db/nora`.
+database_url_env = "DATABASE_URL"
+# On-disk root for media byte custody (DEC-43/47). A Postgres URL has no
+# directory, so the media root is its own key; blobs live at `data_dir/media`.
+data_dir = "data"
 max_per_conversation = 500
 context_window = 40
 

@@ -85,7 +85,14 @@ text = "nora.000"
 min_interval_seconds = 5
 
 [store]
-db_path = "~/workspace/nora/data/messages.db"
+# The record store is PostgreSQL (design/20). The URL is injected by the host
+# through the env var named here (DEC-8: name the var, never inline the value).
+# `docker compose` sets DATABASE_URL from `.env` to
+# `postgresql+asyncpg://nora:…@nora-db/nora`.
+database_url_env = "DATABASE_URL"
+# On-disk root for media byte custody. A Postgres URL has no directory, so the
+# media root is its own key; blobs live at `data_dir/media`.
+data_dir = "~/workspace/nora/data"
 max_per_conversation = 500
 context_window = 40
 
@@ -93,11 +100,11 @@ context_window = 40
 # SECTION IS OPTIONAL — every key below is its own default — so a config.toml
 # without it behaves identically.
 #
-# There is no path key on purpose: media lives beside `store.db_path`, in
-# `data/media/<first2>/<rest>`, keyed by the sha256 of the content. The row and
-# the blob it names are one record; a second root would let them be backed up
-# and deleted separately, and the first time that happened the transcript would
-# point at blobs nobody kept.
+# There is no media path key on purpose: media lives under `store.data_dir`, in
+# `media/<first2>/<rest>`, keyed by the sha256 of the content. The row and the
+# blob it names are one record; a media-specific root would let them be backed
+# up and deleted separately, and the first time that happened the transcript
+# would point at blobs nobody kept.
 #
 # ENCRYPTION AT REST (DEC-47). The bytes on disk are AES-256-GCM ciphertext, not
 # the picture. For IMAGES, EXIF/embedded metadata (GPS, device id) is stripped

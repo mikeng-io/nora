@@ -148,7 +148,7 @@ operator playbook when a doctrine edit misbehaves.
 
 ## Observability
 
-- `GET /health` — JSON with `sse`, `sqlite`, `honcho`, `omniroute` status, error counts
+- `GET /health` — JSON with `sse`, `store`, `honcho`, `omniroute` status, error counts
   since restart, uptime, `doctrine_sha256`, and `strands_version`. Returns `200` when
   healthy, `503` when degraded.
 - `GET /metrics` — Prometheus text format: `nora_messages_total`, `nora_tags_total`,

@@ -209,13 +209,21 @@ class EngagementConfig(BaseModel):
 class StoreConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    db_path: Path
+    # NAMES the env var holding the PostgreSQL URL, never the URL itself (DEC-8,
+    # `api_key_env`-style). The value is `postgresql+asyncpg://…` and is injected
+    # by the host (docker compose from `.env`), so a credential never lands in a
+    # committed file. The composition root is the one reader.
+    database_url_env: str = "DATABASE_URL"
+    # The on-disk root for media byte custody (DEC-43/47). Under SQLite this was
+    # derived from `db_path.parent`; a Postgres URL has no directory, so the media
+    # root is its own key. Blobs live at `data_dir / "media"`.
+    data_dir: Path
     max_per_conversation: int
     context_window: int
 
     @model_validator(mode="after")
     def _resolve_paths(self, info: ValidationInfo) -> StoreConfig:
-        _resolve_context_field(self, "db_path", info)
+        _resolve_context_field(self, "data_dir", info)
         return self
 
 
@@ -227,12 +235,13 @@ class MediaConfig(BaseModel):
     loading, and `extra="forbid"` means a required section would be a startup
     failure on upgrade rather than a feature.
 
-    There is deliberately **no path key.** Media lives beside the audit
-    database, under `store.db_path`'s directory, because they are one custody
-    boundary: the row and the blob it names are the same record, are backed up
-    together, and are deleted together. A second configurable root would let
-    them be separated, and the first time that happened the transcript would
-    reference blobs on a volume nobody backed up.
+    There is deliberately **no path key here.** Media lives under
+    `store.data_dir / "media"` — the record row and the blob it names are one
+    custody boundary, backed up and deleted together. A media-specific root would
+    let them be separated, and the first time that happened the transcript would
+    reference blobs on a volume nobody backed up. (Under SQLite this root was
+    `store.db_path`'s directory; a Postgres URL has no directory, so `data_dir`
+    now carries it — still one key, still one boundary.)
 
     `enabled` defaults to True because the A9 fix is the point of the feature —
     but see DEC-43's open question: RETENTION for this data is an operator

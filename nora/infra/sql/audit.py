@@ -1,12 +1,18 @@
-"""`AuditStore` over SQLAlchemy Core. Role: audit record + the tagging path's
+"""`RecordStore` over SQLAlchemy Core. Role: audit record + the tagging path's
 context source. No semantics live here.
 
 `append` is a bare INSERT. It used to run the INSERT and a correlated-subquery
 prune in one transaction on every message — O(rows-per-conversation) per write.
-WAL permits exactly one writer, so under an N-listener burst that produced
-SQLITE_BUSY, and the ingest path's documented failure behaviour is to drop the
-message. Pruning is now a periodic sweep (`prune_all`), so a retention chore
-can never cost an audit row.
+Under SQLite's WAL that produced SQLITE_BUSY under an N-listener burst, and the
+ingest path's documented failure behaviour is to drop the message. Pruning was
+split into a periodic sweep (`prune_all`) for that reason and stays split.
+
+The store is Postgres since the 2026-08-07 migration (design/20). MVCC lets
+writers proceed concurrently, so the whole SQLite WAL apparatus — the
+`OperationalError` "database is locked" handling, `_note_busy`, and the
+`nora_store_busy_total` metric — is gone; there is no single-writer contention
+left to count. The one real driver break the swap forced is here in `append`:
+asyncpg has no `lastrowid`, so the new id comes back via `RETURNING`.
 """
 
 from __future__ import annotations
@@ -15,7 +21,6 @@ import json
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.media import media_json
@@ -31,8 +36,8 @@ from nora.infra.sql.schema import MESSAGES
 DEFAULT_MAX_PER_CONVERSATION = 500
 
 
-class SqlAuditStore:
-    """Satisfies `nora.domain.ports.AuditStore`."""
+class SqlRecordStore:
+    """Satisfies `nora.domain.ports.RecordStore`."""
 
     def __init__(
         self,
@@ -88,24 +93,21 @@ class SqlAuditStore:
             # in which the record says `[image a3f2c1]` while nothing can
             # produce `a3f2c1`.
             media_json=media_json(message.media_blobs),
-        )
-        try:
-            async with self._engine.begin() as conn:
-                result = await conn.execute(stmt)
-        except OperationalError as exc:
-            self._note_busy(exc)
-            raise
-        # `lastrowid`, not `inserted_primary_key[0]`: the latter is typed
-        # `Any | None` and fails strict mypy with "not indexable". `lastrowid`
-        # is a plain `int` and is what the legacy `db.append` used too.
-        return int(result.lastrowid)
+        ).returning(MESSAGES.c.id)
+        # `RETURNING id` + `scalar_one`, not `lastrowid`: asyncpg has no
+        # `lastrowid` (it is always `None`), so the id the row was assigned is
+        # read back from the statement itself. `scalar_one` also asserts exactly
+        # one row came back, which a bare INSERT always produces.
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return int(result.scalar_one())
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
         """Newest `limit` rows for one conversation, returned oldest-first.
 
         A non-positive `limit` short-circuits to `[]` rather than reaching
         SQL: SQLAlchemy renders `.limit(-1)` as `LIMIT -1`, which SQLite
-        treats as unbounded, not zero. `FakeAuditStore.recent` already
+        treats as unbounded, not zero. `FakeRecordStore.recent` already
         returns `[]` for `limit <= 0`; this keeps both implementations
         agreeing (see `tests/contract/test_audit_store_contract.py`).
         """
@@ -157,9 +159,9 @@ class SqlAuditStore:
         close enough to look right, never equal, so a join by `ts` silently
         resolved every sender in the room except Nora herself — and a reply to
         Nora is the most common reply in a group where Nora is tagged. Riding
-        the post-send update that already existed keeps this module's opening
-        promise intact: WAL permits exactly one writer, and the reply path does
-        not grow another statement to contend for it.
+        the post-send update that already existed keeps the reply path a single
+        statement — one write for the outcome and the corrected timestamp
+        together, not two.
 
         `ts=None` leaves the timestamp alone. A platform that answered without
         one is a thinner transcript; a row stamped 0 or NULL is a corrupt one,
@@ -219,11 +221,10 @@ class SqlAuditStore:
         """Attribute one already-audited row. One row per statement, on purpose.
 
         This is the only write lazy adoption performs, and it is off the ingest
-        path entirely (see this module's docstring: WAL permits exactly one
-        writer, and the ingest path's documented failure behaviour is to DROP
-        the message). A single batched UPDATE across the whole backlog would
-        hold that one writer for the length of the batch; a row at a time,
-        interleaved with the caller's awaited Honcho feed, never does.
+        path entirely. A single batched UPDATE across the whole backlog would
+        hold a transaction open for the length of the batch and lock every row
+        it touched; a row at a time, interleaved with the caller's awaited Honcho
+        feed, never does.
 
         An unknown `row_id` is a silent no-op, matching `set_delivery_outcome` —
         the row may have been pruned out from under the backfill between the
@@ -234,12 +235,8 @@ class SqlAuditStore:
             .where(MESSAGES.c.id == row_id)
             .values(person_id=person_id)
         )
-        try:
-            async with self._engine.begin() as conn:
-                await conn.execute(stmt)
-        except OperationalError as exc:
-            self._note_busy(exc)
-            raise
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
 
     async def stats(self) -> dict[str, Any]:
         """`schema_revision` replaces the retired `schema_version`.
@@ -255,7 +252,7 @@ class SqlAuditStore:
         actual state was a deliberate choice, not an oversight — the
         alternative, `current_revision()`, opens a new synchronous
         connection per call (it is not async-native, unlike everything
-        else `SqlAuditStore` does), and `stats()` is on `/health`'s hot
+        else `SqlRecordStore` does), and `stats()` is on `/health`'s hot
         path. `GET /health` today only reads `stats()["messages"]`, not
         this field, so the distinction has no live consequence yet — but a
         future caller of `schema_revision` should read it as "what this
@@ -293,14 +290,6 @@ class SqlAuditStore:
         ).subquery()
         doomed = sa.select(ranked.c.id).where(ranked.c.rank > keep)
         stmt = sa.delete(MESSAGES).where(MESSAGES.c.id.in_(doomed))
-        try:
-            async with self._engine.begin() as conn:
-                result = await conn.execute(stmt)
-        except OperationalError as exc:
-            self._note_busy(exc)
-            raise
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
         return int(result.rowcount or 0)
-
-    def _note_busy(self, exc: OperationalError) -> None:
-        if self._metrics is not None and "database is locked" in str(exc).lower():
-            self._metrics.inc("nora_store_busy_total")

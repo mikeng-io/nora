@@ -144,7 +144,7 @@ def render_pending(
     *,
     accounts: list[PendingAccount],
     identity_path: str,
-    db_path: str,
+    source: str,
     scanned: int,
     truncated: bool,
     daemon_note: str = "",
@@ -162,7 +162,7 @@ def render_pending(
     `load_persons`.
     """
     lines = [
-        f"# unmapped senders in {db_path}",
+        f"# unmapped senders in {source}",
         f"# identity: {identity_path}",
     ]
     lines += [f"# {line}" for line in daemon_note.splitlines()]

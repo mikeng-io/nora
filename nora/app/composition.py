@@ -1,6 +1,6 @@
 """The ONE place that reads Settings. Everything else receives dependencies.
 
-A stage never sees Config; it receives an AuditStore, a MemoryStore, a Persons.
+A stage never sees Config; it receives an RecordStore, a MemoryStore, a Persons.
 That is what makes stages testable in isolation and what stops the god object
 from reforming. Enforced by import-linter (DEC-12).
 
@@ -30,13 +30,13 @@ from nora.agent.registry import ToolRegistry
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.ports import (
-    AuditStore,
     BlobStore,
     ContextAssembler,
     EngagePolicy,
     MediaSource,
     MemoryStore,
     PlatformAdapter,
+    RecordStore,
     RosterSource,
 )
 from nora.engagement.context import TranscriptInjection
@@ -44,7 +44,7 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.honcho import HonchoClient
-from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
+from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
     CompositePolicy,
@@ -87,7 +87,7 @@ class Dependencies:
     of widening this type's reach.
 
     `audit`, `memory`, `policy`, `assembler` are annotated with their ports
-    (`AuditStore`, `MemoryStore`, `EngagePolicy`, `ContextAssembler`), not
+    (`RecordStore`, `MemoryStore`, `EngagePolicy`, `ContextAssembler`), not
     their concrete classes — all four live inside mypy's strict override
     (`nora.app.*`), so each is a permanent, statically-checked proof that its
     concrete class conforms to the port, not just a one-time `isinstance`
@@ -109,7 +109,7 @@ class Dependencies:
     directly instead of calling back into `nora.agent.factory`.
     """
 
-    audit: AuditStore
+    audit: RecordStore
     memory: MemoryStore
     persons: Persons
     metrics: Metrics
@@ -151,13 +151,20 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             len(allowlist.dm_persons),
         )
 
+    database_url = os.environ.get(cfg.store.database_url_env, "")
+    if not database_url:
+        raise StartupError(
+            f"environment variable {cfg.store.database_url_env} is not set — "
+            "the PostgreSQL URL (postgresql+asyncpg://…) must be injected by the "
+            "host (DEC-8); refusing to start"
+        )
     try:
-        run_migrations(cfg.store.db_path)
+        run_migrations(database_url)
     except Exception as exc:
         raise StartupError(f"migration error: {exc}") from exc
     metrics = Metrics()
-    audit = SqlAuditStore(
-        create_sql_engine(cfg.store.db_path),
+    audit = SqlRecordStore(
+        create_sql_engine(database_url),
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
     )
@@ -331,9 +338,9 @@ def _build_media_custody(cfg: Config) -> tuple[MediaSource | None, BlobStore | N
     record, and losing it must never take the daemon down or, worse, write
     plaintext by accident. `config.load` therefore does not check this variable.
 
-    The blob root is `store.db_path`'s directory `/ media`, with no config key of
-    its own (see `MediaConfig`): the row and the blob it names are one custody
-    boundary, backed up and deleted together.
+    The blob root is `store.data_dir / "media"`, with no media-specific config key
+    (see `MediaConfig`): the row and the blob it names are one custody boundary,
+    backed up and deleted together.
     """
     media = cfg.media
     if not media.enabled:
@@ -367,5 +374,5 @@ def _build_media_custody(cfg: Config) -> tuple[MediaSource | None, BlobStore | N
         timeout_seconds=media.timeout_seconds,
         max_bytes=media.max_bytes,
     )
-    blobs = FilesystemBlobStore(cfg.store.db_path.parent / "media", cipher=cipher)
+    blobs = FilesystemBlobStore(cfg.store.data_dir / "media", cipher=cipher)
     return source, blobs
