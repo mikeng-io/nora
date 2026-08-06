@@ -9,9 +9,52 @@ status: proposed
 
 # Multi-message replies
 
-**R-2 today: one reply per tag.** One tag, one `send_reply`, one message. The
-operator wants two, three or four — because that is how people text, and
-because it is what lets a GIF land on its own (`design/15` §1.1).
+**R-2 today: one reply per tag.** One tag, one `send_reply`, one message.
+
+## 0. What this is actually for — corrected 2026-08-06
+
+An earlier draft of this document framed multi-message as **pacing**: one answer,
+chunked across two or three messages so it reads like texting. That is cosmetic,
+and it is the wrong problem.
+
+The operator's correction: it is about being **multipurpose**. One turn may need
+to perform several *distinct acts*, and each act is its own message.
+
+    「@nora 幫每個人設計最好路線」
+      -> 「Miles Tyler Aaron 一齊搭車，19:25 出門」    a plan for one group
+      -> 「@Grant 你揸車，泊 Yoho，$18/hr」         a different plan, different person
+      -> 「@Blake 你幾點收工？」                       a QUESTION, not an answer
+
+Those are not one message split up. They are different answers to different
+sub-questions, addressed to different people — and the third is not an answer at
+all. Three consequences follow, and none of them follow from the pacing framing:
+
+- **Each message can have its own recipient.** 「@Grant …」 as a message
+  addressed to one person is a different act from a paragraph that mentions him.
+  DEC-34 shipped the mention capability that makes this possible.
+- **A GIF beside text is TWO messages, not one attachment with a caption.**
+  `design/15` §1 argued for a single message on the grounds that a person does
+  not double-notify. That holds when the caption *belongs to* the GIF; it is
+  wrong when the GIF is a reaction and the text is an answer. Two acts, two
+  messages.
+- **Asking is a first-class act.** She answers what she can and asks for what
+  only someone else knows, in the same turn — not as a fallback when she fails,
+  but as an ordinary part of doing the job. This is the navigation case
+  (`design/14` §5.3: position is not intent).
+
+**The mechanism in §2 is unaffected** — `required`-then-`auto`, per-message
+guards, per-message audit rows, and the cap all support N distinct acts exactly
+as well as N chunks.
+
+**What changes is the doctrine line that turns it on.** "Sometimes split your
+reply across messages like a person texting" produces chunking. The rule wants
+to be closer to: *a turn may contain several distinct acts — answering, asking,
+reacting — and each is its own message, addressed to whoever it concerns.*
+
+That framing also removes a tuning problem: the number of messages falls out of
+how many acts the turn contains, rather than being a stylistic dial someone has
+to calibrate. §2.2's cap stays as a backstop against a model that will not stop,
+not as the thing that decides length.
 
 This document changes R-2 from *one message* to *one turn, bounded messages*.
 It is not a GIF feature; it applies to every reply Nora sends, and GIFs merely
