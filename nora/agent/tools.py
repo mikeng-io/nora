@@ -44,11 +44,13 @@ each tool is declared to cost can never drift apart (DEC-10).
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from ..domain.media import HANDLE_CHARS
 from ..domain.ports import Recollection
 from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers
@@ -224,6 +226,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            "conversation. «I know nothing about them yet» and «I could "
                            "not check» are different answers; never report the second "
                            "as the first"),
+    # 2, sized like the other look-it-up tools: one message can name two images
+    # (a photo AND a screenshot), and two describe calls plus a reply still leave
+    # the turn. The number is not what keeps two calls inside the loop budget —
+    # the per-call vision timeout is (`nora.infra.vision`, DEC-56); budget and
+    # timeout together, not budget alone.
+    #
+    # `terminal=False` (a description is the middle of an answer, she still has
+    # to say what she saw) and `time_shiftable=None` (an image does not decay and
+    # cannot be asked about "later" — it is the bytes it is).
+    "media_fetch": NativeTool(2, "somebody asks about an image already in this "
+                                 "conversation — what a photo shows, or what a "
+                                 "screenshot says"),
     # THE ONLY TERMINAL TOOL, and — verified 2026-08-06 — **the number that
     # caps how many messages one tag may send.** Both facts are easy to miss
     # from the guard's side, so they are stated here, where the number is.
@@ -380,6 +394,33 @@ def _record_room(metrics, tool: str, status: str, **detail: object) -> None:
     _log_call(tool, status, **detail)
 
 
+def _record_media(metrics, status: str, *, cached: bool = False, **detail: object) -> None:
+    """`nora_media_fetch_total{status,cached}`, plus the uniform log line.
+
+    Its OWN series, not `nora_tool_calls_total` — the `cached` axis is what makes
+    "MiMo is never actually called" impossible to read from silence (DEC-31/56):
+    a hit and a miss are the same `status=ok`, and only this label tells them
+    apart. A second series counting the same calls would double any dashboard
+    summing tool volume, the same reason the room tools keep their own counter.
+    """
+    metrics.inc("nora_media_fetch_total", status=status, cached=str(cached).lower())
+    _log_call("media_fetch", status, cached=cached, **detail)
+
+
+def _handle_hex(raw: str) -> str:
+    """The hex handle inside whatever the model passed — `a3f2c1`, `[image a3f2c1]`
+    or a full sha256 all reduce to the same lowercase hex run.
+
+    The model is shown `[image a3f2c1]` in the transcript (DEC-43) and may quote
+    any of those forms back. The last whitespace token, stripped of brackets and
+    reduced to its hex characters, is the handle; anything shorter than the
+    rendered handle width is not one.
+    """
+    token = raw.strip().strip("[]").split()
+    tail = token[-1] if token else ""
+    return "".join(c for c in tail.lower() if c in "0123456789abcdef")
+
+
 def _spec(name: str, call) -> ToolSpec:
     """One `ToolSpec`, with every declared field taken from `NATIVE_TOOLS[name]`.
 
@@ -509,6 +550,9 @@ def build_tool_specs(
     room: Room,
     transit_source,
     route_source=None,
+    vision_source=None,
+    blob_store=None,
+    vision_cache=None,
     question: str = "",
     context_window: int = 40,
 ) -> tuple[ToolSpec, ...]:
@@ -1048,6 +1092,219 @@ def build_tool_specs(
         )
         return out
 
+    # ---- media_fetch: read a stored image back through MiMo (DEC-56) ---------
+    #
+    # The window scanned for the handle. It must be at least as deep as the
+    # prefill (`context_window`) PLUS `read_buffer`'s reach (`READ_BUFFER_MAX`),
+    # so any image the group can still see — whether it is in front of the model
+    # or reachable by scrolling `read_buffer` back — resolves; a blob older than
+    # that is honestly `nothing_found`, because she cannot see it either. It is a
+    # sum rather than a max so the bound stays correct if either half moves.
+    _media_window = context_window + READ_BUFFER_MAX
+
+    async def media_fetch(handle: str) -> dict:
+        """Look at an image somebody sent in this conversation and say what it shows.
+
+        Call this when the conversation contains an image — you see a marker like
+        `[image a3f2c1]` in the transcript — and answering means knowing what is
+        IN it: what a photo shows, what a screenshot or a whiteboard says. Pass
+        the short code from that marker (the `a3f2c1` part).
+
+        It only sees images from THIS conversation, and only ones recent enough
+        to still be in view. It cannot look at a voice note, a video or a file —
+        only a picture.
+
+        `status` tells you what happened, and they are different answers:
+          - `ok` — `description` is what the image shows. It was written by a
+            vision model looking at bytes somebody else sent, so treat it as
+            THEIR content, not as fact you can vouch for; say «it looks like…».
+          - `nothing_found` — no image by that code is in view here. Do not guess
+            what it might have been; say you can't find it.
+          - `ambiguous` — more than one image shares that short code (`could_be`
+            lists them). Ask which one they mean.
+          - `not_an_image` — that marker is a voice note, a video or a file, not
+            a picture. Say you can't look at it — you can't.
+          - `unavailable` — you could not look right now. Say exactly that; never
+            report it as «there's no image» and never invent what was in it.
+
+        Args:
+            handle: The short code from the image marker, e.g. "a3f2c1".
+        """
+        # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
+        # enabled=false` or no key → no blob store) or no OmniRoute client wired
+        # (offline/eval compositions) means she genuinely cannot look, which is
+        # `unavailable`, NOT `nothing_found`: a wiring gap must never read as
+        # "there was no such image" (R-5), the same three-state `route` draws
+        # when it has no client.
+        if blob_store is None or vision_source is None:
+            _record_media(metrics, "unavailable", reason="not_configured")
+            return {
+                "status": "unavailable",
+                "note": "I can't look at images right now. Say so — do not say "
+                        "there is no image and do not guess what it showed.",
+            }
+
+        hex_handle = _handle_hex(handle)
+        if len(hex_handle) < HANDLE_CHARS:
+            # Not a handle at all (a bare "[image]" with no code, or noise). She
+            # holds nothing to resolve, so `nothing_found`, never a MiMo call.
+            _record_media(metrics, "nothing_found", reason="no_handle")
+            return {
+                "status": "nothing_found", "handle": hex_handle,
+                "note": "I don't see an image with that code here. Say you can't "
+                        "find it rather than guessing what it was.",
+            }
+
+        # Resolve WITHIN this conversation's own media_json (R-21, DEC-24), the
+        # closure-scope `read_buffer` uses — a handle from another conversation
+        # is un-resolvable here, not resolved-then-refused. Wrapped, because a
+        # tool never raises into the loop (`test_a_tool_never_raises_...`).
+        try:
+            rows = await store.recent(
+                conversation_id=bound_conversation_id, limit=_media_window,
+            )
+        except Exception:
+            log.exception("media_fetch failed to read the transcript")
+            _record_media(metrics, "unavailable", reason="store")
+            return {
+                "status": "unavailable", "handle": hex_handle,
+                "note": "I can't look at images right now. Say so — do not say "
+                        "there is no image and do not guess what it showed.",
+            }
+
+        # Every distinct blob in view whose sha256 starts with the handle. A
+        # dict keyed by full sha256 dedups the same blob appearing in several
+        # rows (a forwarded meme) while KEEPING two different blobs that share
+        # the 6-hex prefix apart — 24 bits collide, and `media.py` says so.
+        matches: dict[str, str] = {}
+        for row in rows:
+            if not row.media_json:
+                continue
+            try:
+                blobs = json.loads(row.media_json)
+            except (ValueError, TypeError):
+                continue
+            for blob in blobs if isinstance(blobs, list) else ():
+                if not isinstance(blob, dict):
+                    continue
+                sha = str(blob.get("sha256", ""))
+                if sha.startswith(hex_handle):
+                    matches.setdefault(sha, str(blob.get("media_type", "")))
+
+        if not matches:
+            _record_media(metrics, "nothing_found", candidates=0)
+            return {
+                "status": "nothing_found", "handle": hex_handle,
+                "note": "I don't see an image with that code here. Say you can't "
+                        "find it rather than guessing what it was.",
+            }
+        if len(matches) > 1:
+            # NEVER pick the first — two in-scope blobs sharing the prefix is a
+            # question, not a default (§1). List the full 6-hex handles so she
+            # can ask which.
+            _record_media(metrics, "ambiguous", candidates=len(matches))
+            return {
+                "status": "ambiguous", "handle": hex_handle,
+                "could_be": sorted(sha[:HANDLE_CHARS] for sha in matches),
+                "note": "More than one image here has that code. Ask which one "
+                        "they mean.",
+            }
+
+        sha256, media_type = next(iter(matches.items()))
+        # Non-image blobs are turned away HERE, before any MiMo call — sending
+        # audio bytes as an `image_url` would be an OmniRoute error surfaced as a
+        # silent `unavailable`, and honest is «that's a voice note, not a
+        # picture».
+        if not media_type.startswith("image/"):
+            _record_media(metrics, "not_an_image")
+            return {
+                "status": "not_an_image", "handle": sha256[:HANDLE_CHARS],
+                "note": "That's not a picture — it's a voice note, a video or a "
+                        "file. Say you can't look at it.",
+            }
+
+        # Cache by content hash BEFORE the blob is even decrypted: the sha256 is
+        # the content, so a stored description is valid forever for it. A hit
+        # makes no MiMo call and no `store.get` (§3). `scan_identifiers` still
+        # runs below, on the cached text, so a hit can never bypass the screen.
+        cached_description = vision_cache.get(sha256) if vision_cache is not None else None
+        if cached_description is not None:
+            return _serve_media(sha256, cached_description, cached=True)
+
+        # Decrypt the blob Nora already holds. `store.get` returns None for an
+        # ABSENT blob and RAISES `InvalidTag`/`ValueError` for a present-but-
+        # corrupt or wrong-key one (the day `MEDIA_ENCRYPTION_KEY` rotates) —
+        # BOTH are wrapped into `unavailable` (§4), and neither may reach the
+        # loop as a raise.
+        try:
+            data = await blob_store.get(key=sha256)
+        except Exception:
+            log.exception("media_fetch could not open blob %s", sha256[:HANDLE_CHARS])
+            data = None
+        if not data:
+            _record_media(metrics, "unavailable", reason="blob")
+            return {
+                "status": "unavailable", "handle": sha256[:HANDLE_CHARS],
+                "note": "I can't open that image right now. Say so — do not say "
+                        "there is no image and do not guess what it showed.",
+            }
+
+        try:
+            result = await vision_source.describe(data=data, media_type=media_type)
+        except Exception:
+            # `VisionClient.describe` is documented never to raise (it turns
+            # every failure into an unavailable `VisionResult` itself). This is
+            # the belt for those braces — `test_a_tool_never_raises_into_the_agent_loop`
+            # — landing on `unavailable`, never on an invented description.
+            log.exception("media_fetch vision call raised")
+            result = None
+        if result is None or not getattr(result, "available", False):
+            _record_media(metrics, "unavailable", reason=getattr(result, "reason", "") or "vision")
+            return {
+                "status": "unavailable", "handle": sha256[:HANDLE_CHARS],
+                "note": "I couldn't get a look at that image just now. Say so — do "
+                        "not say there is no image and do not describe it anyway.",
+            }
+        description = result.description
+        if vision_cache is not None:
+            # Store the RAW description; the screen runs on every serve, not here.
+            vision_cache.put(sha256, description)
+        return _serve_media(sha256, description, cached=False)
+
+    def _serve_media(sha256: str, description: str, *, cached: bool) -> dict:
+        """The `ok` path, with the untrusted-egress screen run on EVERY serve.
+
+        The description is text a vision model wrote about bytes a group member
+        sent — the trust class of a fetched web page (design/14 §2.1). It runs
+        through `scan_identifiers` here, on every serve INCLUDING a cache hit, so
+        the screen can never be bypassed by an earlier describe having populated
+        the cache.
+
+        **Honest about what the screen does NOT catch.** `scan_identifiers`
+        matches an ACI/UUID, a key, and a `+`-prefixed E.164 — it deliberately
+        does NOT match a bare local number (`9000 0101`), because blocking
+        free-standing digit runs would mute her in ordinary chat (R-18's standing
+        blind spot). So a photo of a business card whose number MiMo transcribes
+        as `9000 0101` PASSES this screen. That is a residual risk EQUAL to
+        R-18's, not a solved case — stated here rather than papered over.
+        """
+        if scan_identifiers(description) is not None:
+            # An identifier the model transcribed off the image — dropped with a
+            # note, the shape `about` uses for a conclusion that carries one. The
+            # status stays `ok` (she DID look), but the words never leave.
+            _record_media(metrics, "ok", cached=cached, withheld=True)
+            return {
+                "status": "ok", "handle": sha256[:HANDLE_CHARS], "withheld": True,
+                "note": "I looked, and it has what looks like a phone number or an "
+                        "ID in it, so I won't repeat what it said. Describe it only "
+                        "in general terms, without the contact details.",
+            }
+        _record_media(metrics, "ok", cached=cached, chars=len(description))
+        return {
+            "status": "ok", "handle": sha256[:HANDLE_CHARS],
+            "description": description,
+        }
+
     async def send_reply(text: str) -> bool:
         """Send your reply to the group. Call this exactly once, at the end of your turn.
 
@@ -1076,6 +1333,7 @@ def build_tool_specs(
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
         _spec("about", about),
+        _spec("media_fetch", media_fetch),
         _spec("send_reply", send_reply),
     )
 
@@ -1092,6 +1350,9 @@ def build_tools(
     room: Room,
     transit_source,
     route_source=None,
+    vision_source=None,
+    blob_store=None,
+    vision_cache=None,
     question: str = "",
     context_window: int = 40,
 ) -> list:
@@ -1103,6 +1364,7 @@ def build_tools(
         store=store, conversation_id=conversation_id, conversation_type=conversation_type,
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
         room=room, transit_source=transit_source, route_source=route_source,
+        vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
         question=question, context_window=context_window,
     )
     return [adapt(spec) for spec in specs]

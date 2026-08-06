@@ -409,6 +409,24 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "whereis disclosures refused because the conversation was not a subset "
         "of the circle (R-21 fail-closed seam, design/19 §5).",
     ),
+    # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
+    # never actually called" impossible to read from silence: a cache hit and a
+    # miss are the SAME status=ok, and only this label tells them apart. Its own
+    # series rather than `nora_tool_calls_total` for the room-tools reason — a
+    # second series counting the same calls would double any tool-volume sum.
+    #   ok            — described (see `cached` for hit/miss).
+    #   nothing_found — no such image in view here.
+    #   ambiguous     — two in-scope blobs share the handle prefix.
+    #   not_an_image  — the handle resolved to a voice note / video / file.
+    #   unavailable   — custody off, the blob was absent/corrupt, or MiMo did
+    #                   not answer within the derived vision timeout.
+    _CounterSpec(
+        "nora_media_fetch_total",
+        "media_fetch calls, by outcome (ok / nothing_found / ambiguous / "
+        "not_an_image / unavailable) and whether the description was served "
+        "from the content-hash cache (cached=true/false).",
+        ("status", "cached"),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

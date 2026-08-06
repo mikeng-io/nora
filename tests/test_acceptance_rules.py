@@ -77,6 +77,16 @@ RULE_TESTS = {
     # of an UNMOVED member produce ONE row — the property that makes presence a
     # time-series of distinct fixes rather than a duplication of every poll.
     "R-32": "test_an_unmoved_member_is_recorded_once",
+    # R-33: media_fetch reads a stored image back through MiMo-V2.5, scoped to
+    # THIS conversation's custody over a bounded window, cached by content hash
+    # and screened on every serve, under its own vision timeout (derived from
+    # llm.timeout_seconds, provably < the loop budget) and byte ceiling. The
+    # MiMo description is untrusted egress — identifier-screened like `about`,
+    # with the honest caveat that a bare local number is a residual risk equal
+    # to R-18's. Image only; `not_an_image` for the rest; inert-by-config behind
+    # [media] enabled. Next free number after the presence pair R-31/R-32
+    # (R-26 is still reserved by design/proposed/18). See DEC-56.
+    "R-33": "test_a_stored_image_is_read_only_within_scope_and_screened_on_serve",
 }
 
 

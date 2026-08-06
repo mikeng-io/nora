@@ -61,6 +61,7 @@ def test_the_registry_exposes_every_declared_tool():
     assert {t.tool_name for t in tools} == {
         "now", "read_buffer", "send_reply",
         "group_members", "lookup_person", "about", "calculate", "transit", "route",
+        "media_fetch",
     }
 
 
@@ -86,6 +87,10 @@ def test_budgets_match_todays_table():
         # `group_members`: re-activating a skill re-injects a body already in
         # context and cannot improve the answer.
         "skills": 1,
+        # One message can name two images (a photo AND a screenshot); the
+        # per-call vision timeout, not this number, is what keeps two describe
+        # calls inside the loop budget (DEC-56).
+        "media_fetch": 2,
     }
 
 

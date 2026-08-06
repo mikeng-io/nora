@@ -155,6 +155,15 @@ headers_env = "LANGFUSE_OTLP_HEADERS"
 # set enabled = true AND put a base64 32-byte key in the env var below.
 enabled = false
 encryption_key_env = "MEDIA_ENCRYPTION_KEY"
+# Reading a stored image back through MiMo-V2.5 (the `media_fetch` tool, DEC-56).
+# Inert while enabled=false above; these are the READ half's knobs, all defaulted.
+# vision_max_bytes is far below max_bytes on purpose; vision_timeout_seconds is a
+# ceiling the tool derives its real per-call budget under (< the loop timeout).
+vision_model = "opencode-go/mimo-v2.5"
+vision_max_tokens = 1024
+vision_reasoning_effort = "low"
+vision_max_bytes = 8388608
+vision_timeout_seconds = 20.0
 
 [route]
 # Google Routes v2 — journey planning with arrive_by (DEC-46). Costs money and
