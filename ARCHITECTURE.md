@@ -44,12 +44,43 @@ Signal group
    └─ trigger text present? ── no ──▶ done, ambient only
                               └─ yes ──▶
 ② ENGAGEMENT / TAGGING PATH (trigger only, via the Strands Agents SDK)
-   collect context (recent buffer rows, tagger's Honcho peer card, doctrine)
+   collect context (recent buffer rows, tagger's peer card†, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
    → tools: now / read_buffer / read_peer_card / send_reply
             + room-scoped: group_members / lookup_person / recall
    → reply → audit row (delivery_status=pending → sent/failed) → Honcho feed
+
+   † the peer-card endpoint returns null in this deployment (DEC-27); the block
+     is empty in practice. `recall` reads `representation` instead.
 ```
+
+## The three memory layers
+
+Nora has one record and one interpretation of it, and they are frequently
+confused — including in this document until 2026-08-06.
+
+| layer | store | what it holds | how she reads it |
+|---|---|---|---|
+| **hot** | SQLite | the last 40 messages, verbatim | injected into every tag prompt |
+| **deeper** | **the same SQLite** | everything older, verbatim | `read_buffer` — a wider window, **not a second system** |
+| **derived** | Honcho | conclusions *about people* | `recall` |
+
+**SQLite is the RECORD; Honcho is the INTERPRETATION.** SQLite stores what was
+literally said, is authoritative, and is the only thing R-2/A9 guarantee. Honcho
+stores what a deriver concluded from it, is best-effort, and is allowed to be
+absent — `nora.infra`'s docstring explains why the two clients have opposite
+error contracts for exactly this reason.
+
+The consequence worth stating: `read_buffer` returning nothing means *nothing
+was said*. `recall` returning nothing means *nothing was concluded*, which is a
+different and much weaker claim — hence `Recollection.reachable`, so "I could
+not ask" never collapses into "there is nothing".
+
+**Under review as of 2026-08-06.** A live `representation` was measured to be
+~88% events restated in the third person ("asked what time it was") rather than
+durable traits, i.e. the hot layer re-rendered at ~151 tokens a call. Whether
+that is the corpus (everything fed so far is the operator testing her) or the
+deriver is being settled; until it is, do not build further on Honcho.
 
 **D1 — the boundary rule.** The Agent SDK never sees ambient-only traffic. It is
 constructed, invoked, and discarded once per tag. Ambient ingest is a pure,
