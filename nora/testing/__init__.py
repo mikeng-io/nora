@@ -37,18 +37,22 @@ from nora.testing.fakes import (
     FakeRosterSource,
 )
 from nora.testing.scripted_agent import (
+    TOOL_CHOICE_FIRST_CALL,
     FakeAgentRunner,
+    ScriptedModel,
     ScriptedTurn,
     group_event,
     limit_stop_reason,
 )
 
 __all__ = [
+    "TOOL_CHOICE_FIRST_CALL",
     "FakeAdapter",
     "FakeAgentRunner",
     "FakeAuditStore",
     "FakeMemoryStore",
     "FakeRosterSource",
+    "ScriptedModel",
     "ScriptedTurn",
     "group_event",
     "limit_stop_reason",

@@ -2,7 +2,12 @@ import pytest
 
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
-from nora.agent.tools import READ_BUFFER_DEFAULT, READ_BUFFER_MAX, build_tools
+from nora.agent.tools import (
+    NATIVE_TOOL_BUDGETS,
+    READ_BUFFER_DEFAULT,
+    READ_BUFFER_MAX,
+    build_tools,
+)
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget, NormalizedMessage, Quote
 from nora.infra.sql.audit import SqlAuditStore
@@ -41,7 +46,9 @@ async def wiring(tmp_path):
     sink = SinkSender()
     honcho = FakeHoncho(cards={"miles": ["likes espresso"]})
     deliverer = Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
-                          canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics())
+                          canary="C", tag_id="t1", nora_sender_id="nora",
+                          message_cap=NATIVE_TOOL_BUDGETS["send_reply"],
+                          metrics=Metrics())
     metrics = Metrics()
     persons = load_persons(persons_file)
     # No roster source: this fixture is about the tools that do not need one.

@@ -164,44 +164,64 @@ def test_evaluate_does_not_mutate_counts():
 
 
 class _Deliverer:
-    """The two properties `ReplyGuard` reads off a `Deliverer`, and nothing else.
+    """The properties `ReplyGuard` reads off a `Deliverer` — with the real
+    relationship between them, not three independent booleans.
 
-    `attempted` is R-2's latch — the authoritative single-shot mechanism (spec
-    S4) — and it is a CONSTRUCTOR ARGUMENT here because these tests need both
-    answers from it: `True` is today's deliverer after a send, `False` is what
-    a future relaxation of R-2 would make it. A fake that answered the same way
-    every time could not express the question this section asks.
+    `exhausted` is DERIVED from `attempts` against `message_cap`, exactly as
+    `nora.agent.guards.Deliverer` derives it, so a fake that was handed 1 of 2
+    messages answers `attempted=True, exhausted=False` the way the real object
+    does. Spelling the three out independently would let a test assert a state
+    the real class cannot be in — and this section's whole subject is which of
+    two mechanisms refuses a call, so a fake that could disagree with itself
+    would be asserting the test's own arrangement back at it.
     """
 
-    def __init__(self, *, attempted: bool) -> None:
-        self.attempted = attempted
-        self.delivered = attempted
+    def __init__(self, *, attempts: int, message_cap: int) -> None:
+        self.attempts = attempts
+        self.delivered = attempts > 0
+        self.attempted = attempts > 0
+        self.exhausted = attempts >= message_cap
 
 
-def _guard_with(*, attempted: bool, send_reply_budget: int, metrics=None) -> ReplyGuard:
+def _guard_with(*, attempts: int, send_reply_budget: int,
+                deliverer_cap: int | None = None, metrics=None) -> ReplyGuard:
+    """A guard whose deliverer may DISAGREE with its budget.
+
+    `deliverer_cap` defaults to the budget, which is what
+    `nora.engagement.stages.deliver.build` guarantees in production by reading
+    both from the same mapping. Passing a different one is how this file spells
+    the wiring fault that guarantee exists to prevent.
+    """
     return ReplyGuard(
         conversation_id="g1",
         budgets={**BUDGETS, "send_reply": send_reply_budget},
-        terminal=TERMINAL, deliverer=_Deliverer(attempted=attempted),
+        terminal=TERMINAL,
+        deliverer=_Deliverer(
+            attempts=attempts,
+            message_cap=send_reply_budget if deliverer_cap is None else deliverer_cap,
+        ),
         metrics=metrics or Metrics(),
     )
 
 
 def test_relaxing_r_2_alone_does_not_buy_a_second_message():
-    """THE TRAP, made visible before step 5 walks into it.
+    """THE TRAP, still visible after DEC-40 walked past it.
 
-    `evaluate` checks the R-7 per-tool budget BEFORE it checks
-    `Deliverer.attempted`, and `NATIVE_TOOL_BUDGETS["send_reply"]` is 1. So a
-    change that relaxes R-2 — the latch, the thing every document calls "the
-    one-reply rule" — and touches nothing else leaves multi-message SILENTLY
-    DEAD: the second `send_reply` is refused by a number nobody edited, and the
-    veto it emits says `rule="R-2"`, which is the rule that was just relaxed.
+    `evaluate` checks the R-7 per-tool budget BEFORE it checks the deliverer,
+    and `NATIVE_TOOL_BUDGETS["send_reply"]` is 1. So a change that relaxes R-2
+    — the latch, the thing every document calls "the one-reply rule" — and
+    touches nothing else leaves multi-message SILENTLY DEAD: the second
+    `send_reply` is refused by a number nobody edited, and the veto it emits
+    says `rule="R-2"`, which is the rule that was just relaxed.
+
+    The deliverer here is NOT exhausted (its cap is 1 but it has spent
+    nothing), so the latch below cannot be what refuses this call.
 
     `design/proposed/16-multi-message-replies.md` §4 caught this shape one line
     lower down, in `Deliverer._attempted`, and missed it here.
     """
     m = Metrics()
-    g = _guard_with(attempted=False, send_reply_budget=1, metrics=m)
+    g = _guard_with(attempts=0, send_reply_budget=1, metrics=m)
     g.record("send_reply")
     assert g.evaluate("send_reply", _send("and one more thing")) is not None
     # Reported as R-2 although the BUDGET is what refused it. Asserted, not
@@ -211,23 +231,38 @@ def test_relaxing_r_2_alone_does_not_buy_a_second_message():
 
 
 def test_the_budget_is_the_number_that_refused_it():
-    """The attribution. Same relaxed latch, same second call, budget of 2 —
+    """The attribution. Same untouched latch, same second call, budget of 2 —
     and it is allowed. So the refusal above came from the budget and from
-    nothing else; when step 5 lands, THIS is the number that has to move."""
-    g = _guard_with(attempted=False, send_reply_budget=2)
+    nothing else, and THIS is the number an operator raises."""
+    g = _guard_with(attempts=1, send_reply_budget=2)
     g.record("send_reply")
     assert g.evaluate("send_reply", _send("and one more thing")) is None
 
 
-def test_with_the_budget_raised_the_latch_is_what_refuses_the_second_message():
-    """The other half of the ordering: raise the cap and R-2 becomes reachable.
+def test_a_deliverer_capped_below_the_budget_refuses_what_the_budget_allowed():
+    """The other half of the ordering, restated for DEC-40.
 
-    Today's deliverer latches on the first attempt, so a budget raised without
-    revising `Deliverer` moves the refusal here rather than removing it —
-    which is the failure design/16 §4 names, now with a test that fails if
-    someone raises the budget and calls multi-message done."""
+    Before DEC-40 this said "today's deliverer latches on the first attempt",
+    which was a property of the code. It is now a property of one number, and
+    the number can only disagree with the budget if somebody wires it by hand:
+    `deliver.build` reads `message_cap` out of the same `budgets` mapping it
+    hands the guard. This is what that wiring fault would look like — R-7 lets
+    the second message through and R-2 refuses it, so multi-message ships dead
+    with the refusal filed under the rule that was relaxed to enable it.
+    """
     m = Metrics()
-    g = _guard_with(attempted=True, send_reply_budget=2, metrics=m)
+    g = _guard_with(attempts=1, send_reply_budget=2, deliverer_cap=1, metrics=m)
     g.record("send_reply")
     assert g.evaluate("send_reply", _send("and one more thing")) is not None
     assert m.get("nora_guard_vetoes_total", rule="R-2") == 1
+
+
+def test_the_latch_still_refuses_the_message_after_the_last_one():
+    """R-2b at a raised cap: the deliverer is the authoritative bound.
+
+    Reachable in production only when the guard's own count and the deliverer's
+    disagree — a `send_reply` that raised, or one the guard cancelled after the
+    audit row was written — which is precisely why the backstop is kept.
+    """
+    g = _guard_with(attempts=2, send_reply_budget=2)
+    assert g.evaluate("send_reply", _send("and one more thing")) is not None

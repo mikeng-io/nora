@@ -1,7 +1,12 @@
 """The ONLY module that constructs Strands objects (spec C.7).
 
-One `AsyncOpenAI` client for the whole process (audit T2) — never one per
-tag — but that guarantee now lives in the composition root's *call
+One `AsyncOpenAI` client for the whole process (audit T2) — never one per tag.
+**One `OpenAIModel` PER TAG, though** (DEC-40, `ModelSource` below): the client
+is what pools connections and is the thing audit T2 is actually about, while
+the model is a config dict whose `tool_choice` is per-turn state. Sharing the
+model would apply one tag's relaxation to a concurrent tag's first call.
+
+The client guarantee lives in the composition root's *call
 discipline*, not in a module-level singleton (DEC-13): `create_client` is a
 plain constructor, called exactly once by
 `nora.app.composition.build_dependencies`, whose result is threaded through
@@ -30,6 +35,7 @@ from strands.agent.conversation_manager import NullConversationManager
 from strands.models.openai import OpenAIModel
 
 from .guards import ReplyGuard
+from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
 
@@ -76,6 +82,14 @@ def create_model_provider(
     This constrains the model to call SOME tool, not `send_reply` specifically,
     so `read_buffer`/`read_peer_card` remain reachable and R-7's default-deny
     is untouched.
+
+    **It is the FIRST value of a sequence, not a constant, since step 5b**:
+    `ReplyGuard` flips this same model to `auto` once she has spoken, so she is
+    compelled to answer and then permitted to stop. `nora.agent.tool_choice`
+    owns both ends and the measurements behind them. That flip is why the
+    object this function returns is now built PER TAG (`ModelSource` below) —
+    it is per-turn mutable state, and one instance shared by two concurrent
+    tags would apply one tag's relaxation to the other tag's first call.
     """
     return OpenAIModel(
         model_id=model,
@@ -83,13 +97,62 @@ def create_model_provider(
         params={
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "tool_choice": "required",
+            "tool_choice": FIRST_CALL,
             # Comes from the tier (config.toml), not from here — a runtime
             # value belongs in config, not in code (DEC-8). See
             # `LLMTierConfig.reasoning_effort` for the measurements.
             "reasoning_effort": reasoning_effort,
         },
     )
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    """Scalars for one `OpenAIModel`, resolved once at startup.
+
+    A spec rather than a model INSTANCE, for the same reason `RetryPolicy`
+    below is a policy rather than a `ModelRetryStrategy`: the numbers are
+    immutable and shareable, the object built from them is neither. An
+    `OpenAIModel` carries `config["params"]`, which `nora.agent.tool_choice`
+    mutates mid-turn, so one shared instance would let one tag's relaxation
+    decide another tag's first call — and design/16 §2.1 measured that call as
+    sending nothing 5/6.
+    """
+
+    model: str
+    max_tokens: int
+    temperature: float
+    reasoning_effort: str = "none"
+
+
+class ModelSource:
+    """One `OpenAIModel` PER TAG, over the process-wide `AsyncOpenAI` client.
+
+    Audit T2's guarantee is "one CLIENT per process" — that is the one that
+    matters, because it is what pools connections — and it is untouched here:
+    the client is built exactly once by `nora.app.composition.build_dependencies`
+    and handed in. The MODEL is a config dict with a client reference; building
+    one per tag costs nothing and is what makes `tool_choice` (and, usefully,
+    `reasoning_effort`) per-tag state.
+
+    A constructed collaborator, injected into
+    `nora.app.agent_runner.LiveAgentRunner` through `__init__` — never a
+    factory callable or a module-level singleton (CLAUDE.md's test-seam
+    policy). Tests that need to drive the real Strands loop against a stub
+    `Model` pass a stand-in with the same one-method surface
+    (`tests/fakes.py::FixedModelSource`).
+    """
+
+    def __init__(self, *, client: AsyncOpenAI, spec: ModelSpec) -> None:
+        self._client = client
+        self._spec = spec
+
+    def create(self) -> OpenAIModel:
+        return create_model_provider(
+            model=self._spec.model, max_tokens=self._spec.max_tokens,
+            temperature=self._spec.temperature, client=self._client,
+            reasoning_effort=self._spec.reasoning_effort,
+        )
 
 
 def build_limits(*, output_tokens: int, turns: int, total_tokens: int) -> dict:

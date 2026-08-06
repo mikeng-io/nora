@@ -210,12 +210,61 @@ class _AfterToolCall:
         )
 
 
+#: `nora.agent.tool_choice.FIRST_CALL`, transcribed rather than imported —
+#: `nora.testing` sits BELOW `nora.agent` in the layers contract
+#: (`pyproject.toml`'s import-linter config), the same reason
+#: `limit_stop_reason` above transcribes Strands' `_check_limits`.
+#: `tests/test_scripted_agent_fidelity.py` asserts the two agree, so the copy
+#: cannot drift silently.
+TOOL_CHOICE_FIRST_CALL = "required"
+
+
+class ScriptedModel:
+    """The `OpenAIModel` surface a hook reaches through `event.agent.model`.
+
+    `update_config` is `self.config.update(...)` — the REAL 1.50.2 semantics,
+    a shallow dict update, so `update_config(params={...})` REPLACES the whole
+    params dict. That is not a convenience: `ReplyGuard` relaxes `tool_choice`
+    by writing `params` back whole, and a double that merged instead would let
+    a relaxation which silently dropped `max_tokens`, `temperature` and
+    `reasoning_effort` pass every test here and lose them in production.
+    """
+
+    def __init__(self, params: dict | None = None) -> None:
+        self.config: dict = {
+            "model_id": "scripted",
+            "params": dict(params or {"tool_choice": TOOL_CHOICE_FIRST_CALL}),
+        }
+
+    def update_config(self, **model_config) -> None:
+        self.config.update(model_config)
+
+    def get_config(self) -> dict:
+        return self.config
+
+    @property
+    def tool_choice(self):
+        return self.config["params"].get("tool_choice")
+
+
+class _Agent:
+    """`HookEvent.agent` — a required dataclass field on every single-agent hook
+    event, and the ONLY route a `BeforeModelCallEvent` hook has to the model
+    (`_can_write` is `return name == "cancel"`, so the event itself is
+    read-only except for cancellation). Carrying it is what lets `ReplyGuard`'s
+    relaxation run here exactly as it does under the SDK."""
+
+    def __init__(self, model: ScriptedModel) -> None:
+        self.model = model
+
+
 class _BeforeModelCall:
     """`cancel` starts False and is a `bool | str`, exactly as the SDK declares."""
 
     sdk_event = "BeforeModelCallEvent"
 
-    def __init__(self) -> None:
+    def __init__(self, agent: _Agent) -> None:
+        self.agent = agent
         self.cancel: bool | str = False
 
 
@@ -235,10 +284,21 @@ class FakeAgentRunner:
     costs, and what ends a turn, are decided by `ReplyGuard` here exactly as they
     are in production; this module only supplies the events.
 
+    **A FRESH `ScriptedModel` PER `invoke`**, mirroring
+    `nora.app.agent_runner.LiveAgentRunner`'s per-tag
+    `nora.agent.factory.ModelSource` (step 5a). Without it a scenario could not
+    tell "`tool_choice` was relaxed for this tag" from "it was relaxed for the
+    previous one and never reset", which is the exact confusion the production
+    change exists to remove.
+
     `on_call`, if given, is invoked with this call's kwargs before anything else —
     the hook callers use to keep a cumulative call log that survives swapping the
-    active runner mid-scenario. This is TEST-side bookkeeping only, unbounded for
-    exactly as long as one scenario's harness lives — nothing production retains it.
+    active runner mid-scenario. `models` and `tool_choices` are the same kind of
+    bookkeeping: `tool_choices` records the value in force at EVERY model call
+    across every invocation, in order, so a scenario can assert the
+    `required → auto` sequence rather than a final state. All TEST-side,
+    unbounded for exactly as long as one scenario's harness lives — nothing
+    production retains any of it.
     """
 
     def __init__(self, turns: list[ScriptedTurn] | None = None, *, delay: float = 0.0,
@@ -249,6 +309,8 @@ class FakeAgentRunner:
         self.raises = raises
         self._on_call = on_call
         self.invocations = 0
+        self.models: list[ScriptedModel] = []
+        self.tool_choices: list = []
 
     async def invoke(self, **kwargs) -> str | None:
         """Replay the script and return the `stop_reason` the real loop would.
@@ -274,13 +336,20 @@ class FakeAgentRunner:
         limits = kwargs.get("limits")
         hooks = _HookRegistry()
         guard.register_hooks(hooks)
+        model = ScriptedModel()
+        self.models.append(model)
+        agent = _Agent(model)
         cycles = total_tokens = output_tokens = 0
         for turn in self.turns:
-            if hooks.dispatch(_BeforeModelCall()).cancel:
+            if hooks.dispatch(_BeforeModelCall(agent)).cancel:
                 # A terminal verb has run and the guard ended the turn, so the
                 # SDK never makes this model call. A script with turns after
                 # that point is describing something production cannot do.
                 return "end_turn"
+            # Recorded AFTER the hooks, because that is when the SDK reads the
+            # model's config to build the request — a value sampled before them
+            # would miss the relaxation this line exists to make visible.
+            self.tool_choices.append(model.tool_choice)
             for name, args in turn.tool_calls:
                 if not turn.bypass_guard:
                     veto = hooks.dispatch(_BeforeToolCall(name, args)).cancel_tool

@@ -125,3 +125,28 @@ class FakeClock:
 
     def advance(self, seconds: float) -> None:
         self.t += seconds
+
+
+class FixedModelSource:
+    """A `nora.agent.factory.ModelSource` stand-in that hands out ONE given model.
+
+    For the tests that drive the REAL Strands loop against a stub `Model` — the
+    turn-ending probe, the stop-reason probe, the scripted-agent fidelity probe
+    — where the model is the instrument being read and there is exactly one
+    turn, so per-tag freshness is not the property under test.
+
+    **Deliberately the same object every time, and that is not the
+    answers-everything-the-same trap**: the property this class does NOT hold
+    is the subject of its own probe file, `tests/test_model_per_tag.py`, which
+    uses a source that builds a fresh model per `create()` and asserts on what
+    each tag's model call actually saw. Reach for this one only when a test
+    wants a single model it can inspect afterwards.
+    """
+
+    def __init__(self, model: object) -> None:
+        self._model = model
+        self.creates = 0
+
+    def create(self) -> object:
+        self.creates += 1
+        return self._model

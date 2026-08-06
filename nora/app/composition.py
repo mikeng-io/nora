@@ -230,12 +230,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     tier = cfg.llm
     api_key = os.environ.get(cfg.llm.api_key_env, "")  # presence already checked by config.load
     client = factory.create_client(base_url=cfg.llm.base_url, api_key=api_key)
-    model = factory.create_model_provider(
-        model=tier.model, max_tokens=tier.max_tokens, temperature=tier.temperature,
-        client=client, reasoning_effort=tier.reasoning_effort,
+    # One CLIENT (audit T2, DEC-13), MANY MODELS — one per tag, built by this
+    # source. The model carries `tool_choice`, which `ReplyGuard` flips
+    # mid-turn from `required` to `auto` (design/16 §2), so it is per-turn
+    # mutable state and two concurrent conversations must not share it.
+    models = factory.ModelSource(
+        client=client,
+        spec=factory.ModelSpec(
+            model=tier.model, max_tokens=tier.max_tokens, temperature=tier.temperature,
+            reasoning_effort=tier.reasoning_effort,
+        ),
     )
     runner = LiveAgentRunner(
-        model=model,
+        models=models,
         # Derived from the same `timeout_seconds` the invoke stage enforces, so
         # a throttle can never be misreported as a timeout (see
         # `factory.build_retry_policy`).

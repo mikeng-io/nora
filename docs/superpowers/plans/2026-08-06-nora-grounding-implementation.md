@@ -122,6 +122,17 @@ a tunable cap yet, and a config key with no reader is how the last one rotted.
 
 ## Step 5 — per-tag `OpenAIModel`, then multi-message
 
+**SHIPPED 2026-08-07 (DEC-40), INERT.** Every part below is built and
+`NATIVE_TOOLS["send_reply"].budget` is still **1**, so behaviour is
+unchanged — one message per tag, asserted by
+`tests/unit/test_engagement_pipeline.py::
+test_under_todays_doctrine_a_tag_still_produces_exactly_one_message`.
+**Raising that budget is the remaining operator edit** (5e), and it belongs
+with the `voice.md` change that decides how talkative she is, not with the
+machinery. 5c landed as R-25 (`nora_partial_replies_total`); 5d needed no
+code — DEC-36 had already reduced the tag path to one Honcho document
+carrying the tagger's words, so message count cannot reach it.
+
 **5a.** Construct the model per tag over the process-wide `AsyncOpenAI` client.
 One shared instance today (`composition.py`) means flipping `tool_choice` for
 one tag flips it for another tag's first call — measured to send nothing 5/6.

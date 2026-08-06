@@ -35,6 +35,12 @@ RULE_TESTS = {
     "R-22": "test_nothing_known_is_distinguishable_from_could_not_ask",
     "R-23": "test_a_budget_stop_is_distinguishable_from_a_silent_model",
     "R-24": "test_no_single_call_can_spend_the_whole_turn_budget",
+    # R-2/R-2b keep their entries rather than gaining new ones: DEC-40 revised
+    # the RULE (one message became `send_reply`'s budget) and both named tests
+    # were rewritten in place to assert the revised invariant, which is what
+    # `design/proposed/16-multi-message-replies.md` §6.7 asks for. A new key
+    # would leave the old one pointing at a rule nobody enforces.
+    "R-25": "test_a_turn_cut_off_between_messages_is_counted_as_partial",
 }
 
 

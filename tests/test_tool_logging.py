@@ -28,7 +28,7 @@ import pytest
 from nora.agent.egress import scan_identifiers
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
-from nora.agent.tools import build_tools
+from nora.agent.tools import NATIVE_TOOL_BUDGETS, build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget, DeliveryStatus, TranscriptRow
 from nora.obs.logging import bind_tag_id, clear_tag_id, setup_logging
@@ -118,7 +118,8 @@ def wiring(tmp_path, restore_logging):
     deliverer = Deliverer(
         store=_FakeAudit(), adapter=sink,
         target=ConversationTarget("signal", GROUP, "group"), doctrine=doctrine,
-        canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics(),
+        canary="C", tag_id="t1", nora_sender_id="nora",
+        message_cap=NATIVE_TOOL_BUDGETS["send_reply"], metrics=Metrics(),
     )
     room = Room(
         platform="signal", conversation_id=GROUP,

@@ -3,6 +3,7 @@ import time
 import pytest
 
 from nora.agent.guards import Deliverer
+from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget
 from nora.infra.sql.audit import SqlAuditStore
@@ -33,10 +34,18 @@ def doctrine(tmp_path):
     return DoctrineStore(d, canary="CANARY-1", display_name="Nora", metrics=Metrics()).get()
 
 
-def _deliverer(store, doctrine, sink, metrics=None) -> Deliverer:
+#: The cap every test below runs against unless it says otherwise — read from
+#: the ONE table that declares it (DEC-32), never spelled `1` here. If the
+#: budget is raised in `nora.agent.tools`, `test_deliverer_latch_is_single_shot`
+#: below is meant to follow it rather than pin a number the rest of the system
+#: no longer enforces.
+MESSAGE_CAP = NATIVE_TOOL_BUDGETS["send_reply"]
+
+
+def _deliverer(store, doctrine, sink, metrics=None, *, message_cap=MESSAGE_CAP) -> Deliverer:
     return Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                      canary="CANARY-1", tag_id="tag-1", nora_sender_id="nora",
-                     metrics=metrics or Metrics())
+                     message_cap=message_cap, metrics=metrics or Metrics())
 
 
 async def test_happy_path_records_then_sends(store, doctrine):
@@ -51,22 +60,105 @@ async def test_happy_path_records_then_sends(store, doctrine):
 
 
 async def test_deliverer_latch_is_single_shot(store, doctrine):
-    """R-2: the second attempt is refused even though the first succeeded."""
+    """R-2b, revised in place rather than replaced (DEC-40).
+
+    The latch is bounded by `message_cap`, and at the declared cap it refuses
+    the next attempt however the previous ones went. The name and the rule
+    registration are unchanged because the INVARIANT is unchanged — a tag
+    cannot produce unbounded output — and at today's cap of 1 that reads
+    exactly as it always did: one message, then refusal.
+
+    Asserted against `MESSAGE_CAP` rather than the literal 1, so this test
+    tracks the table instead of freezing it. Spell `1` here and raising the
+    budget turns R-2b's own named test red for having done the right thing.
+    """
     sink = SinkSender()
     d = _deliverer(store, doctrine, sink)
-    assert await d.deliver("first") is True
-    assert await d.deliver("second") is False
-    assert sink.texts == ["first"]
-    assert len(await store.recent(conversation_id="g1", limit=10)) == 1
+    for i in range(MESSAGE_CAP):
+        assert await d.deliver(f"message {i}") is True
+    assert d.exhausted is True
+    assert await d.deliver("one more") is False
+    assert sink.texts == [f"message {i}" for i in range(MESSAGE_CAP)]
+    assert len(await store.recent(conversation_id="g1", limit=10)) == MESSAGE_CAP
 
 
 async def test_the_latch_counts_attempts_not_successes(store, doctrine):
-    """R-2: a failed send still consumes the single shot — no silent retry."""
+    """R-2: a failed send still consumes a message — no silent retry."""
     sink = SinkSender(succeed=False)
-    d = _deliverer(store, doctrine, sink)
+    d = _deliverer(store, doctrine, sink, message_cap=1)
     assert await d.deliver("first") is False
     assert await d.deliver("second") is False
     assert sink.texts == ["first"]
+
+
+# ── the cap, above 1: what multi-message actually buys ──────────────────────
+#
+# `message_cap` is `NATIVE_TOOLS["send_reply"].budget` in production and it is
+# 1 today, so the tests below pass the number directly. That is not a second
+# source of truth — it is how this file asks what happens WHEN the operator
+# raises it, which is a question the shipped value cannot answer while it is 1.
+
+
+async def test_a_raised_cap_lets_one_tag_send_several_messages(store, doctrine):
+    """The feature, at the layer that used to make it impossible.
+
+    `Deliverer` is where R-2 really lived (design/16 §4): the guard's budget
+    check refuses the (cap+1)th call first, but the latch below it refused the
+    SECOND unconditionally, so a raised budget alone would have moved the
+    refusal without removing it.
+    """
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink, message_cap=3)
+    assert await d.deliver("一") is True
+    assert await d.deliver("二") is True
+    assert await d.deliver("三") is True
+    assert sink.texts == ["一", "二", "三"]
+    assert d.delivered_count == 3
+
+
+async def test_a_raised_cap_is_still_a_cap(store, doctrine):
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink, message_cap=2)
+    assert await d.deliver("一") is True
+    assert await d.deliver("二") is True
+    assert await d.deliver("三") is False
+    assert sink.texts == ["一", "二"]
+
+
+async def test_every_message_is_recorded_and_scanned_on_its_own(store, doctrine):
+    """R-6's canary and R-18's egress scan run PER MESSAGE (design/16 §4).
+
+    The probe is a turn whose SECOND message carries a phone number: a guard
+    that ran once per turn would clear the first message and wave the rest
+    through, which is the failure that makes multi-message a leak rather than
+    a feature. A9's record-first is asserted in the same breath — one audit
+    row per message that was sent, and none for the one that was refused.
+    """
+    sink = SinkSender()
+    m = Metrics()
+    d = _deliverer(store, doctrine, sink, m, message_cap=3)
+    assert await d.deliver("等我搵下") is True
+    assert await d.deliver("佢個號碼係 +85290000101 呀") is False
+    assert await d.deliver("問返佢啦") is True
+    assert sink.texts == ["等我搵下", "問返佢啦"]
+    assert m.get("nora_egress_blocks_total", kind="phone") == 1
+    rows = await store.recent(conversation_id="g1", limit=10)
+    assert [r.body for r in rows] == ["等我搵下", "問返佢啦"]
+    assert d.delivered_count == 2
+
+
+async def test_a_refused_message_does_not_spend_one(store, doctrine):
+    """R-18/R-6/R-4 refusals happen BEFORE the attempt counter moves, so a
+    blocked message leaves the allowance intact and she can still say
+    something. The alternative — a leak costing her the whole turn — is how a
+    single bad sentence would silence a four-message reply."""
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink, message_cap=2)
+    assert await d.deliver("我行緊 claude opus 呀") is False
+    assert d.attempts == 0
+    assert await d.deliver("一") is True
+    assert await d.deliver("二") is True
+    assert sink.texts == ["一", "二"]
 
 
 async def test_empty_reply_not_sent(store, doctrine):

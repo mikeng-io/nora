@@ -59,7 +59,15 @@ def build(
 ) -> DeliveryHandle:
     deliverer = Deliverer(
         store=store, adapter=adapter, target=target, doctrine=doctrine, canary=canary,
-        tag_id=tag_id, nora_sender_id=nora_sender_id, metrics=metrics,
+        tag_id=tag_id, nora_sender_id=nora_sender_id,
+        # THE MESSAGE CAP, and there is only one of it (DEC-32, DEC-40): the
+        # `Deliverer`'s latch and `ReplyGuard`'s R-7 budget are the SAME number,
+        # read here from the same mapping, so they cannot drift. `budgets`
+        # is indexed, not `.get`-ed with a fallback — a registry with no
+        # `send_reply` is a wiring fault, and a default would let it start and
+        # then bound her replies by a number nobody chose.
+        message_cap=budgets["send_reply"],
+        metrics=metrics,
     )
     # `budgets` and `terminal` travel together and come from the same place
     # (`ToolRegistry`) — what a tool costs and whether calling it ends the turn
@@ -78,6 +86,37 @@ def build(
 BUDGET_STOP_REASONS = frozenset({
     "limit_turns", "limit_total_tokens", "limit_output_tokens",
 })
+
+
+def truncation_reason(*, stop_reason: str | None, completed: bool) -> str | None:
+    """Why a turn that had ALREADY sent something stopped — or None if it finished.
+
+    The observable DEC-40 adds, and the reason it is needed: multi-message's
+    own failure mode is a turn cut off between messages, and that turn looks
+    successful everywhere else. `deliverer.delivered` is True, `check_outcome`
+    returns True, the indicator resolves ✅, the memory feed runs, and
+    `nora_silent_failures_total` stays flat — R-23 only relabels turns that
+    said NOTHING. The group reads half a thought and no series moves.
+
+    Callers pass this only when at least one message went out; the count is
+    the caller's to know (`EngagementPipeline`'s `finally` reads it off the
+    `Deliverer`, which is the one place every exit path converges).
+
+    `completed` is "the pipeline reached the end of its try block". Both
+    arguments are needed because they answer different halves: `stop_reason`
+    covers a loop Strands cut off and returned NORMALLY from — the case with
+    no exception, no log and no warning anywhere in the SDK — while
+    `completed` covers the ones that never got that far. `stop_reason is None`
+    means the invocation itself did not return (`nora.engagement.stages.invoke`
+    documents that exactly), which is a timeout or an `llm_error`; both already
+    name their own cause on `nora_silent_failures_total`, and this counter adds
+    the fact that messages had already gone out when it happened.
+    """
+    if stop_reason in BUDGET_STOP_REASONS:
+        return stop_reason
+    if completed:
+        return None
+    return "invocation_failed" if stop_reason is None else "pipeline_error"
 
 
 def check_outcome(

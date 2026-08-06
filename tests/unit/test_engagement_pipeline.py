@@ -23,7 +23,6 @@ difference between the copy and the real thing observable.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import time
 
 from nora.agent.registry import ToolRegistry
@@ -45,7 +44,12 @@ from nora.engagement.stages import indicate
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.tag import Debounce
-from nora.testing import FakeAuditStore, FakeRosterSource, limit_stop_reason
+from nora.testing import (
+    FakeAgentRunner,
+    FakeAuditStore,
+    FakeRosterSource,
+    ScriptedTurn,
+)
 from nora.testing.scripted_agent import _invoke_tool
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
@@ -137,72 +141,27 @@ class _LLMState:
         self.last_success_at: float | None = None
 
 
-@dataclasses.dataclass
-class ScriptedTurn:
-    tool_calls: list[tuple[str, dict]] = dataclasses.field(default_factory=list)
-    final_text: str = ""
-    bypass_guard: bool = False
-    # What this cycle COSTS, so a scripted turn can reach R-8's caps the way a
-    # real one does — same two fields, same meaning, as
-    # `nora.testing.ScriptedTurn`.
-    total_tokens: int = 0
-    output_tokens: int = 0
+class ScriptedRunner(FakeAgentRunner):
+    """`nora.testing.FakeAgentRunner`, plus this file's `calls` bookkeeping.
 
+    It used to be a SECOND, hand-written replay that called `guard.evaluate`
+    and `guard.record` directly and never dispatched `BeforeModelCallEvent` at
+    all. That is the divergence DEC-33 already removed once from
+    `nora.testing.FakeAgentRunner`, kept alive here — and DEC-40 made it
+    actively misleading: the guard's before-model hook is now what ENDS a turn
+    and what relaxes `tool_choice`, so a double that never fired it would let
+    a multi-message scenario "pass" against a mechanism it never exercised.
 
-class ScriptedRunner:
-    """Replays scripted tool calls against the REAL tools/guards the pipeline
-    built — mirrors `tests/integration/harness.py::FakeLLM`, the same shape
-    for the same reason: proves *our* orchestration, not Strands' agent loop.
+    `calls` is the only thing this subclass adds, and it is wired through the
+    shared double's own `on_call` seam.
     """
 
     def __init__(
         self, turns: list[ScriptedTurn] | None = None, *,
         delay: float = 0.0, raises: Exception | None = None,
     ) -> None:
-        self.turns = turns or []
-        self.delay = delay
-        self.raises = raises
-        self.invocations = 0
         self.calls: list[dict] = []
-
-    async def invoke(self, **kwargs) -> str | None:
-        self.invocations += 1
-        self.calls.append(kwargs)
-        if self.delay:
-            await asyncio.sleep(self.delay)
-        if self.raises:
-            raise self.raises
-        tools_by_name = {t.tool_name: t for t in kwargs["tools"]}
-        guard = kwargs["guard"]
-        limits = kwargs.get("limits")
-        cycles = total_tokens = output_tokens = 0
-        for turn in self.turns:
-            for name, args in turn.tool_calls:
-                if not turn.bypass_guard:
-                    veto = guard.evaluate(name, args)
-                    if veto:
-                        continue
-                await _invoke_tool(tools_by_name[name], **args)
-                guard.record(name)
-            # Same budget accounting as `nora.testing.FakeAgentRunner` — and
-            # via the same shared function, so the two scripted doubles in this
-            # repo cannot disagree about when a turn runs out of budget. See
-            # `limit_stop_reason` for why it is a transcription of Strands'
-            # `_check_limits` rather than a flag this double is handed.
-            cycles += 1
-            total_tokens += turn.total_tokens
-            output_tokens += turn.output_tokens
-            if not turn.tool_calls:
-                return "end_turn"
-            stop = limit_stop_reason(
-                cycles=cycles, total_tokens=total_tokens,
-                output_tokens=output_tokens, limits=limits,
-            )
-            if stop is not None:
-                return stop
-        return "end_turn"
-
-
+        super().__init__(turns, delay=delay, raises=raises, on_call=self.calls.append)
 
 
 class _CriticalFault(BaseException):
@@ -250,6 +209,7 @@ def _build_pipeline(
     background=None,
     reactions: bool = True,
     roster_source=None,
+    tool_registry=None,
 ):
     audit = audit if audit is not None else FakeAuditStore()
     memory = memory if memory is not None else _FakeMemory()
@@ -266,7 +226,7 @@ def _build_pipeline(
         doctrine_store=_FakeDoctrineStore(),
         context_assembler=context_assembler,
         runner=runner or ScriptedRunner(_reply_turns()),
-        tool_registry=ToolRegistry(),
+        tool_registry=tool_registry or ToolRegistry(),
         debounce=Debounce(debounce_seconds, clock=clock or _FakeClock()),
         canary="CANARY-XYZ",
         display_name="Nora",
@@ -948,3 +908,260 @@ async def test_recall_asks_about_the_tagging_message_without_being_told_it():
     await pipeline.run(_request(_msg()))
     await _drain(background)
     assert memory.queries == [("miles", "nora.000 幾點食飯")]
+
+
+# ---------------------------------------------------------------------------
+# DEC-40 — multi-message, shipped inert, and what it breaks when it is not
+# ---------------------------------------------------------------------------
+
+
+class _RaisedCap(ToolRegistry):
+    """The real registry with ONE number changed: `send_reply`'s budget.
+
+    Subclassed rather than replaced by a fake, so `build()`, `terminal_tools()`
+    and `capability()` are all still the production ones and a scenario runs
+    the real tools against the real guard. Raising this number is exactly what
+    an operator does to enable multi-message
+    (`NATIVE_TOOLS["send_reply"].budget`, DEC-32) — it is not a second cap,
+    it IS the cap, and `deliver.build` reads the deliverer's `message_cap` out
+    of this same mapping.
+    """
+
+    def __init__(self, messages: int) -> None:
+        self._messages = messages
+
+    def budgets(self):
+        return {**super().budgets(), "send_reply": self._messages}
+
+
+def _multi_turns(*texts: str) -> list[ScriptedTurn]:
+    """One model cycle per message, which is the shape a real multi-message
+    turn has: `send_reply` returns, the loop comes back for another pass."""
+    return [
+        ScriptedTurn(tool_calls=[("send_reply", {"text": t})], final_text=t)
+        for t in texts
+    ]
+
+
+async def test_under_todays_doctrine_a_tag_still_produces_exactly_one_message():
+    """SHIPS INERT — asserted, not assumed (design/16 §5, §6.6).
+
+    The mechanism is in place and the shipped `send_reply` budget is still 1,
+    so a model that tries to send three messages sends ONE. This is the test
+    that has to stay green through the whole of DEC-40: the behaviour change
+    is an operator's `NATIVE_TOOLS` edit plus a `voice.md` edit, never a side
+    effect of the machinery landing.
+    """
+    adapter = _FakeAdapter()
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        adapter=adapter, metrics=metrics,
+        runner=ScriptedRunner(_multi_turns("一", "二", "三")),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["一"]
+    assert metrics.observations("nora_messages_per_tag") == [1.0]
+
+
+async def test_raising_the_send_reply_budget_is_all_it_takes():
+    """The other side of the same coin, and the proof the mechanism is live.
+
+    Identical script, identical pipeline, one number. If this needed anything
+    else — a config key, a guard edit, a second latch — the feature would be
+    shipping half-wired and `test_under_todays_doctrine_...` above would be
+    passing for the wrong reason.
+    """
+    adapter = _FakeAdapter()
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(3),
+        runner=ScriptedRunner(_multi_turns("一", "二", "三")),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["一", "二", "三"]
+    assert metrics.observations("nora_messages_per_tag") == [3.0]
+    assert metrics.get("nora_partial_replies_total", reason="limit_turns") == 0
+
+
+async def test_the_raised_cap_is_still_a_cap():
+    adapter = _FakeAdapter()
+    pipeline, _, _, _, background = _build_pipeline(
+        adapter=adapter, tool_registry=_RaisedCap(2),
+        runner=ScriptedRunner(_multi_turns("一", "二", "三", "四")),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["一", "二"]
+
+
+async def test_the_canary_and_r18_run_on_every_message_not_just_the_first():
+    """design/16 §4's own probe: a turn whose SECOND message carries a phone
+    number. A guard that ran once per turn would clear message one and wave
+    the rest of the turn through — which turns multi-message from a feature
+    into a leak."""
+    adapter = _FakeAdapter()
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(3),
+        runner=ScriptedRunner(_multi_turns("等我搵下", "佢個號碼係 +85290000101", "問返佢啦")),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["等我搵下", "問返佢啦"]
+    assert metrics.get("nora_egress_blocks_total", kind="phone") == 1
+
+
+async def test_every_message_gets_its_own_audit_row():
+    """A9 record-first, per message. Recording a three-message reply as one
+    row would leave the audit — and therefore `read_buffer`, and therefore the
+    next turn's transcript — holding a conversation that did not happen."""
+    adapter = _FakeAdapter()
+    pipeline, _, audit, _, background = _build_pipeline(
+        adapter=adapter, tool_registry=_RaisedCap(3),
+        runner=ScriptedRunner(_multi_turns("一", "二", "三")),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    nora_rows = [r for r in await audit.recent(conversation_id="g1", limit=20) if r.is_nora]
+    assert [r.body for r in nora_rows] == ["一", "二", "三"]
+
+
+async def test_a_multi_message_turn_still_feeds_honcho_exactly_once():
+    """5d, and the half design/16 §4 got wrong before DEC-36 landed.
+
+    The tag path's Honcho write carries the TAGGER'S words and nothing else,
+    so message count cannot affect it — one tag, one feed, whatever she said
+    back. Asserted rather than assumed because the failure it guards against
+    is not recoverable: Honcho keeps the CONCLUSION, not the text, so feeding
+    the tagger's question three times cannot be undone by a backfill.
+    """
+    memory = _FakeMemory()
+    pipeline, _, _, _, background = _build_pipeline(
+        memory=memory, tool_registry=_RaisedCap(3),
+        runner=ScriptedRunner(_multi_turns("一", "二", "三")),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert memory.fed == [("miles", "nora.000 幾點食飯")]
+
+
+# ---- the partial-delivery observable ---------------------------------------
+
+
+async def test_a_turn_cut_off_between_messages_is_counted_as_partial():
+    """THE PROBE for 5c. Two of three messages went out and the loop was cut
+    off by R-8's turn cap.
+
+    Everything else about this turn looks successful: `delivered` is True,
+    `check_outcome` returns True, the indicator resolves ✅, Honcho is fed and
+    `nora_silent_failures_total` never moves — R-23 only relabels turns that
+    said NOTHING. Without this counter the group reads half a thought and no
+    series anywhere says so.
+    """
+    adapter = _FakeAdapter()
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(3),
+        runner=ScriptedRunner([
+            ScriptedTurn(tool_calls=[("send_reply", {"text": "一"})], total_tokens=20_000),
+            ScriptedTurn(tool_calls=[("send_reply", {"text": "二"})], total_tokens=20_000),
+            ScriptedTurn(tool_calls=[("send_reply", {"text": "三"})]),
+        ]),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["一", "二"]
+    assert metrics.get("nora_partial_replies_total", reason="limit_total_tokens") == 1
+    # The turn is NOT silent, and that is the whole point: nothing R-23 built
+    # can see it.
+    assert metrics.get("nora_silent_failures_total", reason="limit_total_tokens") == 0
+    assert metrics.observations("nora_messages_per_tag") == [2.0]
+
+
+async def test_a_turn_that_said_nothing_is_a_silent_failure_not_a_partial_one():
+    """The control. R-23's label still owns the silent case, and the two
+    counters must never both fire for the same turn — a partial reply is a
+    delivery problem, a silent one is a "she never spoke" problem, and summing
+    them would put the two most different outcomes in one number."""
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        metrics=metrics,
+        runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
+    assert metrics.get("nora_partial_replies_total", reason="no_send_call") == 0
+
+
+class _HangsAfterReplying(ScriptedRunner):
+    """Replays its script, then hangs past the invocation timeout.
+
+    The shape a slow LAST model call really has, and the one exit path with no
+    stop reason at all: the invocation never returned, so there is nothing to
+    ask it how the loop ended.
+    """
+
+    async def invoke(self, **kwargs):
+        result = await super().invoke(**kwargs)
+        await asyncio.sleep(5.0)
+        return result
+
+
+async def test_a_timeout_after_the_messages_went_out_is_counted_as_partial():
+    """`invocation_failed` names the cause honestly rather than borrowing a
+    `limit_*` label, which would aim the next investigation at the token
+    budget — DEC-25's argument, applied to this counter."""
+    adapter = _FakeAdapter()
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(3),
+        runner=_HangsAfterReplying(_multi_turns("一", "二")), timeout_seconds=0.05,
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["一", "二"]
+    assert metrics.get("nora_partial_replies_total", reason="invocation_failed") == 1
+    # The timeout is still counted as itself. The two answer different
+    # questions — "why did the turn end" and "did the group get everything" —
+    # and one has never been able to answer the other.
+    assert metrics.get("nora_silent_failures_total", reason="invocation_timeout") == 1
+
+
+async def test_a_timeout_that_delivered_nothing_is_not_a_partial_reply():
+    """The control: no messages, no partial. Otherwise every timeout would
+    read as a truncated reply and the counter would measure timeouts."""
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        metrics=metrics, runner=ScriptedRunner(_reply_turns(), delay=5.0),
+        timeout_seconds=0.05,
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.get("nora_partial_replies_total", reason="invocation_failed") == 0
+    assert metrics.get("nora_silent_failures_total", reason="invocation_timeout") == 1
+
+
+async def test_a_complete_turn_is_never_counted_as_partial():
+    """The control for the observable itself: a turn that finished normally
+    must leave this counter alone, or a dashboard built on it reads every
+    successful reply as a truncation."""
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(metrics=metrics)
+    await pipeline.run(_request())
+    await _drain(background)
+
+    for reason in ("limit_turns", "limit_total_tokens", "invocation_failed", "pipeline_error"):
+        assert metrics.get("nora_partial_replies_total", reason=reason) == 0

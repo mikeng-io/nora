@@ -24,6 +24,7 @@ from nora.app.agent_runner import LiveAgentRunner
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.obs.metrics import Metrics
+from tests.fakes import FixedModelSource
 
 BUDGETS = ToolRegistry().budgets()
 TERMINAL = ToolRegistry().terminal_tools()
@@ -127,7 +128,7 @@ async def _run(
     *, tokens_per_call: int, limits: dict, tool_use_calls: int = 1,
 ) -> tuple[str | None, _StubModel]:
     model = _StubModel(tokens_per_call=tokens_per_call, tool_use_calls=tool_use_calls)
-    runner = LiveAgentRunner(model=model, retry=RETRY)
+    runner = LiveAgentRunner(models=FixedModelSource(model), retry=RETRY)
     stop_reason = await runner.invoke(
         doctrine=_doctrine(), tools=[_tool()], pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,

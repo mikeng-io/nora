@@ -4,10 +4,44 @@ title: "Nora — multi-message replies: relaxing R-2"
 description: "Letting one tag produce several messages, and why the tool_choice sequence is the whole mechanism."
 tags: [nora, design, r-2, reply-guard, tool-choice, voice]
 timestamp: '2026-08-06'
-status: proposed
+status: built
 ---
 
 # Multi-message replies
+
+> **BUILT 2026-08-07 as DEC-40, and shipped INERT.** The mechanism is in place;
+> `NATIVE_TOOLS["send_reply"].budget` is still **1**, so behaviour is unchanged
+> — one message per tag — and `tests/unit/test_engagement_pipeline.py::
+> test_under_todays_doctrine_a_tag_still_produces_exactly_one_message` asserts
+> that rather than assuming it (§5, §6.6). Turning it on is two operator edits:
+> raise that budget, then say so in `voice.md`.
+>
+> **Three corrections to the text below, in the order they matter:**
+>
+> 1. **§2.2's `llm.limits.messages` (new) was NOT added, and must not be.**
+>    DEC-32 decided the cap is `NATIVE_TOOLS["send_reply"].budget` and that
+>    there is exactly one number: R-7's budget check runs before R-2's latch,
+>    so a second number in `config.toml` would silently win whenever it was
+>    smaller and report the refusal as R-2. `Deliverer.message_cap` is read
+>    from that same table by `nora.engagement.stages.deliver.build`.
+> 2. **§4's first blocker is wrong.** `BeforeModelCallEvent._can_write` guards
+>    attribute assignment ON THE EVENT, not reachability. `HookEvent.agent` is
+>    public and `OpenAIModel.update_config` exists, so the flip DOES live in
+>    `ReplyGuard._before_model` (`nora.agent.tool_choice.relax`). §4's SECOND
+>    blocker is correct and its resolution is what shipped —
+>    `factory.ModelSource` builds one model per tag over the process-wide
+>    client.
+> 3. **§4's `Deliverer._last_text`/`feedback.py` worry is already resolved by
+>    DEC-36**, which stopped the tag path feeding Nora's reply at all. There is
+>    one Honcho document per tag, carrying the tagger's words, whatever the
+>    message count. `last_text` is deleted rather than generalised.
+>
+> §4's remaining items all shipped: `ReplyGuard` counts instead of latching
+> (it ends the turn when no terminal verb has budget left), the canary and R-18
+> run per message, each message gets its own audit row, and `indicate.resolve`
+> was already once-per-tag in the pipeline's `finally`. §6.2's probe is
+> `tests/test_guards_terminal.py`; the truncation observable §4 asked for is
+> R-25 (`nora_partial_replies_total`).
 
 **R-2 today: one reply per tag.** One tag, one `send_reply`, one message. The
 operator wants two, three or four — because that is how people text, and
