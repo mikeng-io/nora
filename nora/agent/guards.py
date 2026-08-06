@@ -21,7 +21,7 @@ from ..doctrine.loader import Doctrine
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..domain.ports import SendResult
 from ..obs.metrics import Metrics
-from .egress import LeakGuard, scan_egress
+from .egress import LeakGuard, scan_reply
 
 log = logging.getLogger("nora.guards")
 
@@ -96,8 +96,10 @@ class Deliverer:
             return False
 
         # R-18 — see `nora.agent.egress` for why this exists and what it
-        # deliberately does not match.
-        kind = scan_egress(text)
+        # deliberately does not match. This is the ONE caller of `scan_reply`,
+        # the strict predicate: `text` here is addressed to the group, so the
+        # model name is a disclosure. Everywhere else uses `scan_identifiers`.
+        kind = scan_reply(text)
         if kind:
             log.error("egress_blocked: %s (tag=%s)", kind, self._tag_id)
             self._metrics.inc("nora_egress_blocks_total", kind=kind)

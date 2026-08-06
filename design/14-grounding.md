@@ -90,6 +90,12 @@ name her model), catastrophic for queries: 「搵首 haiku」 would be refused, 
 `scan_identifiers()` (tool arguments) and `scan_reply()` (identifiers + model
 names) so the two call sites cannot be confused.
 
+**Built 2026-08-06 (DEC-30).** `scan_egress` is gone rather than deprecated —
+a third name that does one of the two jobs is how the wrong one gets called
+later. It also turned out to be a live bug, not only a prerequisite: `recall`
+was filtering Honcho conclusions through the reply predicate, so every durable
+memory naming an LLM was silently withheld from a group of software engineers.
+
 ### 2.3 Corrections to the first draft, recorded
 
 - **"The query never leaves the host" was false.** SearXNG is a metasearch

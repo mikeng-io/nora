@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from ..domain.ports import Recollection
-from .egress import scan_egress
+from .egress import scan_identifiers
 from .ports import ToolSpec, adapt
 from .room import Room, RoomView
 
@@ -166,8 +166,18 @@ def _asked_about(name: str) -> dict:
     R-18 fails closed on the whole reply. That found a real hole in the first
     draft of these tools: the room-scoped tools were safe by construction on
     everything they LOOKED UP and unsafe on the one field they parroted.
+
+    `scan_identifiers`, not `scan_reply`, and the difference is deliberate. The
+    hole this closes is a phone number or an ACI arriving back inside a tool
+    result — an identifier is unsafe at every exit. A MODEL NAME here is not a
+    disclosure at all: the model supplied the word, so echoing it tells the
+    model nothing it did not just write, and if that word reaches the reply,
+    `Deliverer` blocks it there, which is where R-6/R-18's rule actually lives.
+    Under `scan_reply` a lookup for a person nicknamed after a poem — or any of
+    the other eight ordinary words `_MODELNAME` matches — silently lost the
+    disambiguation this field exists to provide.
     """
-    return {} if scan_egress(name) else {"asked_about": name}
+    return {} if scan_identifiers(name) else {"asked_about": name}
 
 
 def _miss(name: str, view: RoomView) -> dict:
@@ -454,12 +464,20 @@ def build_tool_specs(
                 "note": "My memory is not answering. Say you can't check right "
                         "now — do not say you don't remember them.",
             }
-        # Anything R-18 would refuse to let out is dropped HERE rather than at
-        # egress, and that is not belt-and-braces: `scan_egress` fails closed
-        # on the WHOLE reply, so one conclusion carrying somebody's number
-        # would cost the entire message. Honcho conclusions are distilled from
-        # what people actually said, so they can and do carry exactly that.
-        kept = tuple(c for c in memory.conclusions if scan_egress(c) is None)
+        # An IDENTIFIER is dropped HERE rather than at egress, and that is not
+        # belt-and-braces: R-18 fails closed on the WHOLE reply, so one
+        # conclusion carrying somebody's number would cost the entire message.
+        # Honcho conclusions are distilled from what people actually said, so
+        # they can and do carry exactly that.
+        #
+        # `scan_identifiers`, not the reply predicate. This filtered through
+        # `scan_egress` until 2026-08-06, which meant every durable memory
+        # naming an LLM — `claude`, `gemini`, `haiku`, `opus`, `sonnet` and
+        # four more — was silently withheld from a group of software engineers
+        # who talk about them constantly. What she runs on stays hers because
+        # `Deliverer` refuses to SAY it, not because she is made to forget
+        # what other people said.
+        kept = tuple(c for c in memory.conclusions if scan_identifiers(c) is None)
         withheld = len(memory.conclusions) - len(kept)
         if not kept:
             metrics.inc("nora_recall_total", status="empty")

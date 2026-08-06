@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from nora.agent.egress import scan_egress
+from nora.agent.egress import scan_identifiers
 from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.obs.metrics import Metrics
@@ -242,7 +242,7 @@ async def test_a_model_supplied_identifier_is_never_echoed_back(persons):
     result = await _call(tools["lookup_person"], name="+85288888888")
     assert result["status"] == "not_found"
     assert "asked_about" not in result
-    assert scan_egress(repr(result)) is None
+    assert scan_identifiers(repr(result)) is None
 
 
 async def test_lookup_person_reports_an_ambiguous_nickname_rather_than_picking(persons, tmp_path):
@@ -364,6 +364,42 @@ async def test_recall_withholds_a_conclusion_that_carries_an_identifier(persons)
     assert result["withheld"] == 2
 
 
+async def test_recall_keeps_a_conclusion_that_merely_names_an_llm(persons):
+    """The bug the split fixes. `recall` filtered conclusions through the REPLY
+    predicate, whose `_MODELNAME` pattern matches nine words — including
+    `claude`, `gemini`, `haiku` and `opus`. In a group of software engineers
+    that silently withheld a large share of everything Honcho had ever
+    concluded, and the only trace was a `withheld` count.
+
+    What the model she runs on is remains hers alone: that is a property of
+    the REPLY (R-6/R-18, `Deliverer`), not of a durable memory about a person.
+    A number in the same list is still dropped, because that one is unsafe
+    everywhere."""
+    honcho = FakeHoncho(conclusions={"miles_novak": [
+        "Miles ships an app that calls Claude and Gemini",
+        "Miles prefers haiku over sonnet for cheap classification",
+        "Miles's number is +85290000101",
+    ]})
+    result = await _call(_build(persons=persons, honcho=honcho)["recall"], person="Miles")
+    assert result["status"] == "ok"
+    assert result["recall"] == [
+        "Miles ships an app that calls Claude and Gemini",
+        "Miles prefers haiku over sonnet for cheap classification",
+    ]
+    assert result["withheld"] == 1
+
+
+async def test_a_model_named_in_a_lookup_argument_is_still_echoed_back(persons):
+    """`asked_about` exists to tell two lookups in one turn apart, so dropping
+    it costs the model the disambiguation it was added for. A model name in a
+    model-supplied argument discloses nothing — the model wrote it, and if it
+    reaches the reply `Deliverer` blocks it there. Only identifiers are dropped
+    (see the test above this one's sibling)."""
+    result = await _call(_build(persons=persons)["lookup_person"], name="Claude")
+    assert result["status"] == "not_found"
+    assert result["asked_about"] == "Claude"
+
+
 async def test_no_room_scoped_tool_can_return_a_phone_number_or_an_aci(persons):
     """R-18 as a property of these tools rather than of the egress guard: what
     they hand the model must already be safe to say out loud, or the guard
@@ -377,7 +413,7 @@ async def test_no_room_scoped_tool_can_return_a_phone_number_or_an_aci(persons):
         await _call(tools["recall"], person="Miles"),
     ]
     for answer in answers:
-        assert scan_egress(repr(answer)) is None, answer
+        assert scan_identifiers(repr(answer)) is None, answer
 
 
 async def test_a_phone_number_is_not_a_name_and_resolves_nobody(persons):
