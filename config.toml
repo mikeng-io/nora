@@ -142,3 +142,11 @@ headers_env = "LANGFUSE_OTLP_HEADERS"
 # set enabled = true AND put a base64 32-byte key in the env var below.
 enabled = false
 encryption_key_env = "MEDIA_ENCRYPTION_KEY"
+
+[route]
+# Google Routes v2 — journey planning with arrive_by (DEC-46). Costs money and
+# reaches Google, so off-by-default in code; turned ON here because the key is
+# provisioned (restricted to Routes+Places+Geocoding, HK$100/mo budget alert).
+# R-28 blocks a person's name/position from ever leaving in origin/destination.
+enabled = true
+api_key_env = "GOOGLE_MAPS_API_KEY"

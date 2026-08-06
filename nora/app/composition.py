@@ -266,7 +266,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         total_tokens=tier.limits.total_tokens,
     )
 
-    tool_registry = ToolRegistry()
+    # `route` (Google, DEC-46) is wired ONLY when [route] enabled AND its key
+    # env var holds a value — the same enabled-AND-key gate as media custody.
+    # Off (or keyless) leaves the registry without a RouteClient, so `route`
+    # answers `unavailable` and never reaches Google (a legitimate three-state,
+    # not a leak). R-28 screens person names before any call regardless.
+    route_client = None
+    if cfg.route.enabled:
+        route_key = os.environ.get(cfg.route.api_key_env, "")
+        if route_key:
+            from nora.infra.routes.client import RouteClient
+            route_client = RouteClient(api_key=route_key)
+        else:
+            log.warning(
+                "route enabled but %s is unset — routing stays unavailable",
+                cfg.route.api_key_env,
+            )
+    tool_registry = ToolRegistry(route=route_client)
     # The room-scoped tools' one platform dependency. Built here rather than
     # taken off the adapter because membership is a read-only DIRECTORY query
     # (`nora.platform.signal.directory`'s two-method allowlist), not part of the
