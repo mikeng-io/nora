@@ -59,7 +59,7 @@ def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
         "now", "read_buffer", "read_peer_card", "send_reply",
-        "group_members", "lookup_person", "recall",
+        "group_members", "lookup_person", "recall", "calculate",
     }
 
 
@@ -69,7 +69,19 @@ def test_budgets_match_todays_table():
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 2, "recall": 2,
+        # The one tool whose budget is sized by the QUESTION rather than by
+        # cost: it is a pure function with no network and no clock, so four
+        # calls are four model round trips and nothing else.
+        "calculate": 4,
     }
+
+
+def test_calculate_is_not_terminal_and_ends_no_turn():
+    """`terminal` truncates a turn when it is wrong, and arithmetic is the
+    middle of an answer rather than the end of one — she works a total out and
+    then still has to say it. `time_shiftable` has no meaning here either way:
+    unlike `now`, the answer to `1485/7` does not depend on when it is asked."""
+    assert ToolRegistry().terminal_tools() == frozenset({"send_reply"})
 
 
 def test_budgets_do_not_require_runtime_dependencies():

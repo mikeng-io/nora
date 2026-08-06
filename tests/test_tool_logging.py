@@ -187,12 +187,37 @@ async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
     await _call(tools["group_members"])
     await _call(tools["lookup_person"], name="阿豹")
     await _call(tools["recall"], person="俊爺")
+    await _call(tools["calculate"], expression="1485/7")
     await _call(tools["send_reply"], text="七點半")
     named = [record["tool"] for record in _tool_lines(wiring["path"])]
     assert sorted(named) == sorted([
         "now", "read_buffer", "read_peer_card", "group_members",
-        "lookup_person", "recall", "send_reply",
+        "lookup_person", "recall", "calculate", "send_reply",
     ])
+
+
+async def test_no_calculate_line_carries_the_expression_the_model_wrote(wiring):
+    """`_log_call` takes COUNTS and statuses, never the model's own argument,
+    and `calculate`'s argument is no different from `lookup_person`'s `name`.
+
+    `+85290000101 + 0` is valid arithmetic, so a model can put a phone number
+    in this parameter as easily as in that one — and `data/nora.log` is a
+    worse place for one than a tool result is, because nothing scans it on the
+    way out. The expression reaches the TRACE through the tool result, which is
+    where DEC-31 wanted it; it does not reach the log.
+    """
+    await _call(wiring["tools"]["calculate"], expression="+85290000101 + 0")
+    await _call(wiring["tools"]["calculate"], expression="1485/7")
+    lines = [record for record in _tool_lines(wiring["path"])
+             if record["tool"] == "calculate"]
+    assert len(lines) == 2
+    for line in lines:
+        rendered = json.dumps(line, ensure_ascii=False)
+        assert "85290000101" not in rendered
+        assert "1485/7" not in rendered
+        assert scan_identifiers(rendered) is None
+    # It still says how it answered — silence is what DEC-31 was fixing.
+    assert [line["status"] for line in lines] == ["ok", "ok"]
 
 
 async def test_a_line_says_how_the_tool_answered_not_just_that_it_ran(wiring):

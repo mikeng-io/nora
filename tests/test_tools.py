@@ -63,7 +63,7 @@ async def wiring(tmp_path):
 def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
         "now", "read_buffer", "read_peer_card", "send_reply",
-        "group_members", "lookup_person", "recall",
+        "group_members", "lookup_person", "recall", "calculate",
     }
 
 
@@ -388,6 +388,84 @@ async def test_a_refused_send_is_not_counted_as_a_sent_one(wiring):
     assert metrics.get("nora_tool_calls_total", tool="send_reply", status="ok") == 1
     assert metrics.get("nora_tool_calls_total", tool="send_reply", status="refused") == 1
     assert wiring["sink"].texts == ["hello"]
+
+
+# ---- calculate ---------------------------------------------------------------
+#
+# The evaluator itself is exercised in tests/unit/test_arithmetic.py, against
+# the measurements that motivated it. What is asserted here is only what the
+# TOOL adds: the wiring, the counter, and the two things the tool is
+# responsible for that the pure function is not.
+
+
+async def test_calculate_hands_back_the_expression_beside_the_result(wiring):
+    """DEC-31's shape. A model that divides by 5 when there were 6 people is
+    still wrong, and this tool cannot fix that — the expression is what makes
+    the mistake visible to somebody reading the trace instead of only to the
+    group, who see a confident number and no way to check it."""
+    out = await _call(wiring["tools"]["calculate"], expression="1485/6")
+    assert out["status"] == "ok"
+    assert out["expression"] == "1485/6"
+    assert out["result"] == "247.5"
+
+
+async def test_calculate_is_counted_by_how_it_answered(wiring):
+    """`ok` and `refused` counted apart. A refusal counted as `ok` would make
+    «is the model writing expressions she can actually evaluate» unanswerable
+    from `/metrics`, which is the DEC-31 failure in a new place."""
+    tools, metrics = wiring["tools"], wiring["metrics"]
+    await _call(tools["calculate"], expression="(1200 + 285) / 5")
+    await _call(tools["calculate"], expression="__import__('os').system('x')")
+    assert metrics.get("nora_tool_calls_total", tool="calculate", status="ok") == 1
+    assert metrics.get("nora_tool_calls_total", tool="calculate", status="refused") == 1
+
+
+async def test_calculate_never_raises_into_the_agent_loop(wiring):
+    """The rule the whole module is built around: an exception here costs the
+    entire reply, and a turn that dies is silent rather than wrong (R-5)."""
+    for expression in ("2**9999999999", "(1).__class__", "1 +", "", "1/0",
+                       "x", "lambda: 1", "(" * 5000 + "1" + ")" * 5000):
+        out = await _call(wiring["tools"]["calculate"], expression=expression)
+        assert out["status"] == "refused", expression
+        assert out["note"], expression
+
+
+async def test_calculate_does_not_echo_an_identifier_back_at_the_model(wiring):
+    """`expression` is MODEL-SUPPLIED, and `+85290000101 + 0` is real
+    arithmetic — a unary plus on an integer. `_asked_about` exists because a
+    model does put phone numbers in a string parameter, and the same hole is
+    open here: an identifier handed back inside a tool result is unsafe at
+    that exit, and R-18 then fails closed on the whole reply.
+
+    HONESTLY BOUNDED, and the bound is inherent. The RESULT of that expression
+    is `85290000101`, which is a number — there is nothing about it that
+    distinguishes it from arithmetic, here or at egress. What this drops is the
+    echo, which is the part that is recoverable at the call site.
+    """
+    out = await _call(wiring["tools"]["calculate"], expression="+85290000101 + 0")
+    assert out["status"] == "ok"
+    assert "expression" not in out
+    # An ordinary calculation keeps its echo — the guard must not cost the
+    # thing the echo exists for.
+    assert (await _call(
+        wiring["tools"]["calculate"], expression="1485/7",
+    ))["expression"] == "1485/7"
+
+
+async def test_calculate_needs_none_of_the_tags_collaborators(wiring):
+    """It is a pure function: no store, no daemon, no Honcho, no clock. That
+    is why `unavailable` has no branch — there is nothing to be unavailable —
+    and why breaking every collaborator changes nothing about its answer."""
+    async def boom(*a, **kw):
+        raise RuntimeError("everything is down")
+
+    for dep in (wiring["store"], wiring["honcho"], wiring["deliverer"]):
+        for attr in ("recent", "peer_card", "representation", "deliver"):
+            if hasattr(dep, attr):
+                setattr(dep, attr, boom)
+    out = await _call(wiring["tools"]["calculate"], expression="1485/7")
+    assert out["status"] == "ok"
+    assert out["split"]["leftover"] == "0.02"
 
 
 async def _call(tool, **kwargs):

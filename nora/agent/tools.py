@@ -50,6 +50,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from ..domain.ports import Recollection
+from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers
 from .ports import ToolSpec, adapt
 from .room import Room, RoomView
@@ -97,6 +98,24 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # tool absent from this mapping, which is what stops a model inventing one.
     "now": NativeTool(2, "anything that depends on when it is — never guess the "
                          "date or time from the transcript"),
+    # 4, and the only budget here NOT sized by what a call costs. This is the
+    # cheapest tool in the set by a wide margin — a pure function over a
+    # string, no network, no clock, no daemon, measured at well under a
+    # millisecond including the cases it refuses — so the only currency it
+    # spends is the model round trip, and `llm.limits.turns = 8` is the real
+    # ceiling. It is sized by the QUESTION instead: a bill with a service
+    # charge, one person who already paid, and a split is genuinely subtotal ->
+    # +service -> -prepaid -> /people if she works it stepwise. A fifth
+    # arithmetic step in one turn means she should have written one expression.
+    #
+    # `terminal=False`, and not by default — working out a total is the middle
+    # of an answer, never the end of one; she still has to say it.
+    # `time_shiftable` has no meaning for this tool in either direction, which
+    # is worth stating rather than leaving ambiguous: unlike `now`, the answer
+    # to `1485/7` is the same whenever it is asked.
+    "calculate": NativeTool(4, "any arithmetic at all — never work a number out in "
+                               "your head, and never state one you did not get "
+                               "from here"),
     "read_buffer": NativeTool(2, "something was said further back than the messages "
                                  "you were shown"),
     "read_peer_card": NativeTool(1, "durable memory addressed by a raw platform id. "
@@ -649,6 +668,61 @@ def build_tool_specs(
         _record(metrics, "now", "ok", at=moment.isoformat(timespec="seconds"))
         return moment.strftime("%A %-d %B %Y, %H:%M (%Z)")
 
+    async def calculate(expression: str) -> dict:
+        """Work out a number exactly. Use this for ALL arithmetic, however easy it looks.
+
+        Never do a calculation in your head and never state a number you did not get
+        from here. A wrong total sounds exactly like a right one and the group has no
+        way to check it — 「每人 $247.50」 reads the same either way.
+
+        Write the whole thing as one expression: numbers, brackets, and + - * / // % **.
+        A service charge is `1350 * 1.1`; a split is `1485 / 7`; both together are
+        `(1350 * 1.1) / 7`. No names, no functions, no units, no currency signs.
+
+        `status` is `ok` or `refused`, and a refusal tells you what to fix — read it
+        and try again rather than answering from your own arithmetic.
+
+        On `ok` you get `result` (exact), and then at most one of:
+          - `rounded_to_cents`, when the exact answer has more digits than money does.
+          - `split`, when the division does not come out evenly. `each` is what
+            everyone pays, `leftover` is what that still leaves owing, and
+            `settles_as` is how to make it come out exactly. Say the leftover out
+            loud — do not quietly drop it, and do not multiply it back yourself.
+
+        This gets the arithmetic right. It does NOT check that you asked the right
+        question: if you divide by 5 when six people ate, you get an exact answer to
+        the wrong sum. Count the people first.
+
+        Args:
+            expression: The calculation, e.g. "(1350 * 1.1) / 7".
+        """
+        # The evaluator is pure and documented never to raise (see
+        # `nora.agent.arithmetic`), so there is no try/except here and no
+        # `unavailable` status: it holds none of this tag's collaborators, so
+        # there is nothing that can be unreachable. A bare `except` would only
+        # be able to invent a state that cannot happen.
+        out = evaluate_expression(expression)
+        # Same hole `_asked_about` exists for, in the one other place a
+        # MODEL-SUPPLIED string is handed straight back. `+85290000101 + 0` is
+        # real arithmetic — a unary plus on an integer — so a model can put a
+        # phone number here exactly as it does in `lookup_person(name=...)`,
+        # and an identifier inside a tool result costs the whole reply at R-18.
+        # Only the ECHO is recoverable: the RESULT of that expression is
+        # `85290000101`, which is a number and nothing distinguishes it from
+        # arithmetic, here or at egress.
+        if scan_identifiers(expression) is not None:
+            out.pop("expression", None)
+        # COUNTS and status, never the expression — `_log_call`'s rule, and
+        # `data/nora.log` is a worse place for a model-supplied string than a
+        # tool result is, because nothing scans it on the way out. The
+        # expression still reaches the TRACE, in the result above, which is
+        # what DEC-31 asked for: `1485/6` is checkable, `247.5` is not.
+        _record(
+            metrics, "calculate", out["status"],
+            chars=len(expression or ""), split="split" in out,
+        )
+        return out
+
     async def send_reply(text: str) -> bool:
         """Send your reply to the group. Call this exactly once, at the end of your turn.
 
@@ -670,6 +744,7 @@ def build_tool_specs(
 
     return (
         _spec("now", now),
+        _spec("calculate", calculate),
         _spec("read_buffer", read_buffer),
         _spec("read_peer_card", read_peer_card),
         _spec("group_members", group_members),
