@@ -142,10 +142,45 @@ def test_0003_adds_quoted_ts_without_disturbing_the_ts_desc_index(tmp_path):
     assert named["ts"][3] == 1, "precondition: ts is already DESC at 0002"
     assert "quoted_ts" not in _columns(path)
 
-    command.upgrade(alembic_config(path), "head")
+    # This revision, not "head": 0004 appends a column of its own, so a test
+    # pinned to head stops describing the migration it is named after the
+    # moment another one lands behind it.
+    command.upgrade(alembic_config(path), "0003_quoted_ts")
 
     assert _index_xinfo(path, "idx_messages_conv_ts") == before
     assert _columns(path)[-1] == "quoted_ts", "ADD COLUMN appends; it must be last"
+
+
+def test_0004_adds_media_json_without_disturbing_the_ts_desc_index(tmp_path):
+    """Same trap, same assertion, one revision later (DEC-45).
+
+    Copied rather than parametrized on purpose: each of these names the column
+    it is about, so a failure says which migration moved the index rather than
+    which row of a table did. Probed the same way 0003 was — swapping
+    `op.add_column` for `op.batch_alter_table(..., recreate="always")` turns
+    `ts`'s xinfo `desc` flag from 1 to 0 and this goes red.
+    """
+    path = tmp_path / "upgrade-0004.db"
+    command.upgrade(alembic_config(path), "0003_quoted_ts")
+    before = _index_xinfo(path, "idx_messages_conv_ts")
+    named = {r[2]: r for r in before if r[2] is not None}
+    assert named["ts"][3] == 1, "precondition: ts is already DESC at 0003"
+    assert "media_json" not in _columns(path)
+
+    command.upgrade(alembic_config(path), "0004_media_json")
+
+    assert _index_xinfo(path, "idx_messages_conv_ts") == before
+    assert _columns(path)[-1] == "media_json", "ADD COLUMN appends; it must be last"
+
+
+def test_0004_downgrade_also_leaves_the_index_alone(tmp_path):
+    path = tmp_path / "roundtrip-0004.db"
+    run_migrations(path)
+    before = _index_xinfo(path, "idx_messages_conv_ts")
+    command.downgrade(alembic_config(path), "0003_quoted_ts")
+    assert "media_json" not in _columns(path)
+    assert _columns(path)[-1] == "quoted_ts"
+    assert _index_xinfo(path, "idx_messages_conv_ts") == before
 
 
 def test_0003_on_a_copy_of_the_production_database_preserves_ts_desc(tmp_path):
@@ -160,7 +195,10 @@ def test_0003_on_a_copy_of_the_production_database_preserves_ts_desc(tmp_path):
     before = _index_xinfo(copy, "idx_messages_conv_ts")
     command.upgrade(alembic_config(copy), "head")
     assert _index_xinfo(copy, "idx_messages_conv_ts") == before
-    assert _columns(copy)[-1] == "quoted_ts"
+    # `head`, so this one moves with the last migration by design — it is the
+    # "does the real file survive the whole chain" check, not a per-revision
+    # one. `test_0004_adds_media_json_...` is what pins 0004 specifically.
+    assert _columns(copy)[-1] == "media_json"
 
 
 def test_0003_downgrade_also_leaves_the_index_alone(tmp_path):

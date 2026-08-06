@@ -89,6 +89,27 @@ db_path = "~/workspace/nora/data/messages.db"
 max_per_conversation = 500
 context_window = 40
 
+# Attachment byte custody (DEC-45). The WHOLE SECTION IS OPTIONAL — every key
+# below is its own default — so a config.toml without it behaves identically.
+#
+# There is no path key on purpose: media lives beside `store.db_path`, in
+# `data/media/<first2>/<rest>`, keyed by the sha256 of the content. The row and
+# the blob it names are one record; a second root would let them be backed up
+# and deleted separately, and the first time that happened the transcript would
+# point at blobs nobody kept.
+#
+# RETENTION IS NOT DECIDED. `store.max_per_conversation` prunes MESSAGES; no
+# sweep deletes blobs yet, so today this grows without bound. That is DEC-45's
+# open question and it is the operator's to answer — this is the most PII-heavy
+# data in the system. `enabled = false` is the honest off switch in the
+# meantime: attachments are then recorded exactly as before (a placeholder, no
+# handle) and every one is counted under
+# nora_media_custody_total{status="not_configured"}.
+[media]
+enabled = true
+max_bytes = 104857600     # 100 MiB — Signal's own attachment ceiling
+timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never the message
+
 [doctrine]
 dir = "nora/doctrine"
 reload = "mtime"                      # mtime | startup

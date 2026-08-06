@@ -66,11 +66,30 @@ MESSAGES = sa.Table(
     # reason as `person_id` above. Unindexed on purpose: `idx_messages_conv_ts`
     # is the one index that matters and it must not be disturbed.
     #
+    sa.Column("quoted_ts", sa.Integer),
+    # What Nora HOLDS for this row's attachments: a JSON array of
+    # `{sha256, media_type, size, filename}`, or NULL when she holds nothing —
+    # which is both "there were no attachments" and "there were, and the bytes
+    # could not be copied". Those two are distinguished by the body (`[image]`
+    # with no handle) and by `nora_media_custody_total`, not by this column;
+    # a column that claimed custody it did not have would be the A9 violation
+    # this whole change exists to end.
+    #
+    # ONE JSON column, not four scalars, because a Signal message carries a
+    # LIST of attachments — four columns would silently describe the first one
+    # and lose the rest. And not a second table, because the retention story is
+    # the whole reason media is being recorded carefully: `prune_all` already
+    # deletes messages by conversation, a child table would need a cascade and
+    # a second sweep to stay consistent with it, and the blob sweep reads the
+    # surviving rows either way. The cost is that this column is not queryable
+    # by hash without a scan; nothing queries it by hash, and an index here
+    # would disturb the one index that matters.
+    #
     # ANY FUTURE COLUMN GOES AFTER THIS ONE, for the append reason above.
     # `tests/infra/test_schema_parity.py::
     # test_the_column_order_of_a_fresh_database_matches_a_migrated_one` is what
     # fails if it does not.
-    sa.Column("quoted_ts", sa.Integer),
+    sa.Column("media_json", sa.Text),
     sa.CheckConstraint("conversation_type IN ('group','dm')"),
     sqlite_autoincrement=True,
 )

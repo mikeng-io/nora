@@ -116,11 +116,93 @@ def test_image_attachment_becomes_a_placeholder():
 
 
 def test_named_attachment_becomes_a_placeholder():
+    """The filename is NOT rendered any more (DEC-45). A filename is
+    sender-supplied text of unbounded shape — it can carry a phone number, an
+    ACI, or a prompt — and it was going straight into the body Nora reasons
+    over. What she needs is what KIND of thing arrived, which the registered
+    media type already says."""
     msg = parse_event(
         envelope(message=None, attachments=[{"contentType": "application/pdf",
                                              "filename": "spec.pdf"}]), OWN
     )
-    assert msg.body == "[attachment: spec.pdf]"
+    assert msg.body == "[document]"
+
+
+def test_a_voice_note_says_that_somebody_spoke():
+    """The defect DEC-45 exists for. `_attachment_placeholder` special-cased
+    `image/` and nothing else, so a voice note — the second most common thing
+    sent in this group — reached her as `[attachment: 1754…aac]`: a filename,
+    with no way to tell that a human had spoken."""
+    msg = parse_event(
+        envelope(message=None, attachments=[
+            {"contentType": "audio/aac", "filename": "1754521883.aac",
+             "voiceNote": True, "id": "att1"},
+        ]), OWN
+    )
+    assert msg.body == "[voice note]"
+
+
+def test_audio_that_is_not_a_voice_note_is_not_called_one():
+    """A shared song is not somebody speaking. Same top-level type, different
+    thing, and conflating them would put words in a member's mouth."""
+    msg = parse_event(
+        envelope(message=None, attachments=[
+            {"contentType": "audio/mpeg", "filename": "track.mp3", "id": "att2"},
+        ]), OWN
+    )
+    assert msg.body == "[audio]"
+
+
+def test_video_and_document_are_distinguished():
+    msg = parse_event(
+        envelope(message=None, attachments=[
+            {"contentType": "video/mp4", "id": "v"},
+            {"contentType": "text/plain", "filename": "notes.txt", "id": "d"},
+        ]), OWN
+    )
+    assert msg.body == "[video] [document]"
+
+
+def test_a_media_type_with_parameters_is_still_parsed():
+    """RFC 6838 §4.3: a content type may carry parameters. Prefix matching on
+    the raw string got this right by accident for `image/`; the taxonomy must
+    get it right on purpose for everything else."""
+    msg = parse_event(
+        envelope(message=None, attachments=[
+            {"contentType": "AUDIO/OGG; codecs=opus", "voiceNote": True, "id": "o"},
+        ]), OWN
+    )
+    assert msg.body == "[voice note]"
+
+
+def test_an_attachment_with_no_content_type_falls_back_to_the_filename():
+    """`mimetypes` — the stdlib's own registry — rather than a second hand-rolled
+    extension table."""
+    msg = parse_event(
+        envelope(message=None, attachments=[{"filename": "holiday.jpeg", "id": "n"}]), OWN
+    )
+    assert msg.body == "[image]"
+
+
+def test_an_unidentifiable_attachment_still_renders_something():
+    msg = parse_event(envelope(message=None, attachments=[{"id": "mystery"}]), OWN)
+    assert msg.body == "[file]"
+
+
+def test_the_parser_carries_the_attachment_refs_alongside_the_body():
+    """The placeholder is for Nora; the ref is for custody. Both come off the
+    same envelope so the ingest stage never re-parses one."""
+    msg = parse_event(
+        envelope(message=None, attachments=[
+            {"contentType": "image/jpeg", "id": "att-1", "filename": "a.jpg", "size": 42},
+        ]), OWN
+    )
+    assert len(msg.media) == 1
+    ref = msg.media[0]
+    assert ref.platform_id == "att-1"
+    assert ref.media_type == "image/jpeg"
+    assert ref.filename == "a.jpg"
+    assert ref.size == 42
 
 
 def test_text_and_attachment_are_joined():

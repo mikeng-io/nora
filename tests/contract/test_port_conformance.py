@@ -15,11 +15,13 @@ return `True`.
 
 import inspect
 
-from nora.domain.ports import MemoryStore, PlatformAdapter
+from nora.domain.ports import BlobStore, MediaSource, MemoryStore, PlatformAdapter
+from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.honcho import HonchoClient
 from nora.obs.metrics import Metrics
 from nora.platform.signal.adapter import SignalAdapter
-from nora.testing import FakeMemoryStore
+from nora.platform.signal.media import SignalMediaSource
+from nora.testing import FakeBlobStore, FakeMediaSource, FakeMemoryStore
 
 
 def test_honcho_client_satisfies_memory_store_method_names():
@@ -109,3 +111,25 @@ def test_runtime_checkable_protocols_only_check_method_names():
         async def aclose(self): ...
 
     assert isinstance(Fake(), MemoryStore)
+
+
+def test_the_media_ports_conform_in_both_implementations(tmp_path):
+    """DEC-45's two new ports, both implementations each.
+
+    `isinstance` against a `runtime_checkable` Protocol only checks method
+    NAMES (see `test_runtime_checkable_protocols_only_check_method_names`
+    below for the trap demonstrated directly), so this is a name-level floor.
+    The SHAPE check for the production side is mypy's — `nora.infra` and
+    `nora.domain` are both inside the strict override — and the BEHAVIOURAL
+    check is `tests/contract/test_blob_store_contract.py` and
+    `test_media_source_contract.py`, one suite over both implementations each.
+
+    `nora.platform` is NOT inside mypy's scoped strict override, so
+    `SignalMediaSource` has no static conformance proof the way
+    `SqlAuditStore` does; this assertion and the contract suite are what stand
+    in for it.
+    """
+    assert isinstance(FilesystemBlobStore(tmp_path), BlobStore)
+    assert isinstance(FakeBlobStore(), BlobStore)
+    assert isinstance(SignalMediaSource(base_url="http://127.0.0.1:18080"), MediaSource)
+    assert isinstance(FakeMediaSource(), MediaSource)

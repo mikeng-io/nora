@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from .media import MediaBlob, MediaRef
+
 
 @dataclass(frozen=True)
 class ConversationTarget:
@@ -72,6 +74,20 @@ class NormalizedMessage:
     # place" with no way to know whose. See `Quote` for why it is a pointer and
     # why the text it carries is never shown to the model.
     quote: Quote | None = None
+    # What the PLATFORM said about each attachment, in body order. Structural,
+    # like `mentions`: the body carries `[image]`, and which attachment that
+    # placeholder stands for lives here. Produced by the parser.
+    media: tuple[MediaRef, ...] = ()
+    # What Nora actually HOLDS for each attachment she managed to copy —
+    # produced by `nora.ingest.stages.media`, never by the parser, and empty on
+    # every message that carried none or whose bytes could not be fetched.
+    #
+    # It rides the message rather than being a parameter on `AuditStore.append`
+    # for exactly the reason `quote.quoted_ts` does (DEC-23, and DEC-15 before
+    # it): WAL permits one writer, the ingest path drops a message on
+    # contention, and a second write to attach custody to an already-inserted
+    # row would be a second contender for it. Same INSERT, no extra parameter.
+    media_blobs: tuple[MediaBlob, ...] = ()
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(self.platform, self.conversation_id, self.conversation_type)
@@ -132,6 +148,12 @@ class TranscriptRow:
     #
     # Defaulted so every existing positional construction stays valid.
     quoted_ts: int | None = None
+    # The raw `messages.media_json` text — a JSON array of the `MediaBlob`s
+    # Nora holds for this row, or None when she holds none. Returned as stored,
+    # not as objects: nothing renders it today, and a decoded shape nobody
+    # consumes would be an invented contract. `nora.domain.media` is what a
+    # retrieval tool would decode it through when one exists.
+    media_json: str | None = None
 
 
 @dataclass(frozen=True)

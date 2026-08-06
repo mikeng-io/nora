@@ -160,3 +160,45 @@ def test_constructing_config_without_base_context_is_an_error():
     data = tomllib.loads((ROOT / "config.example.toml").read_text())
     with pytest.raises(ValidationError, match="base directory context is required"):
         Config.model_validate(data)
+
+
+def test_the_media_section_is_optional_and_defaults_to_custody_on(toml_path, monkeypatch):
+    """DEC-45. `extra="forbid"` makes "old config keeps loading" a real
+    constraint, not a courtesy: a REQUIRED [media] section would turn an
+    upgrade into a refusal to start on a file the operator never edited.
+
+    Deleting the section from the example is the probe — the values asserted
+    are the class defaults, so this fails if a default silently changes.
+    """
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[media]\n")
+    assert tail, "config.example.toml no longer declares [media]"
+    # Everything after [media] up to the next section header goes too.
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
+
+    cfg = load(toml_path)
+
+    assert cfg.media.enabled is True
+    assert cfg.media.max_bytes == 100 * 1024 * 1024
+    assert cfg.media.timeout_seconds == 8.0
+
+
+def test_media_custody_can_be_switched_off(toml_path):
+    """The honest off switch while retention is undecided — the most PII-heavy
+    data in the system must have one."""
+    # Targeted at THIS section: `platforms.signal.enabled = true` appears
+    # earlier in the file, and a blind first-match replace silently edited that
+    # instead — which is how a test asserts a default back to itself.
+    toml_path.write_text(
+        toml_path.read_text().replace("[media]\nenabled = true", "[media]\nenabled = false")
+    )
+    assert load(toml_path).media.enabled is False
+
+
+def test_an_unknown_media_key_is_still_a_startup_failure(toml_path):
+    """Defaulted does not mean lenient: a typo in this section must not
+    silently mean "custody off"."""
+    toml_path.write_text(toml_path.read_text() + '\n[media]\nenabledd = true\n')
+    with pytest.raises(ConfigError):
+        load(toml_path)

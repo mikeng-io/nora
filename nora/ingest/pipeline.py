@@ -32,13 +32,21 @@ from dataclasses import dataclass
 from typing import Any
 
 from nora.domain.models import NormalizedMessage
-from nora.domain.ports import AuditStore, EngageDecision, EngagePolicy, MemoryStore
+from nora.domain.ports import (
+    AuditStore,
+    BlobStore,
+    EngageDecision,
+    EngagePolicy,
+    MediaSource,
+    MemoryStore,
+)
 from nora.persons import Persons
 from nora.policy import Policy
 
 from .stages import audit as audit_stage
 from .stages import gate as gate_stage
 from .stages import identity as identity_stage
+from .stages import media as media_stage
 from .stages import memory_feed as memory_feed_stage
 from .stages import scope as scope_stage
 
@@ -62,7 +70,19 @@ class IngestPipeline:
         allowlist: Policy,
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], None],
+        media_source: MediaSource | None = None,
+        blobs: BlobStore | None = None,
     ) -> None:
+        """`media_source`/`blobs` default to None — media custody OFF — and
+        that default is a wiring state, not a design position (DEC-45).
+
+        Both are optional so this constructor stayed compatible with a
+        composition root being edited in another worktree on the same day.
+        With either absent, `media` counts every attachment it sees as
+        `not_configured` and records the message exactly as before; nothing is
+        silently skipped. Supplying both is what turns custody on, and it is
+        the one line the composition root owes this feature.
+        """
         self._audit = audit
         self._memory = memory
         self._persons = persons
@@ -70,6 +90,8 @@ class IngestPipeline:
         self._allowlist = allowlist
         self._metrics = metrics
         self._spawn = spawn
+        self._media_source = media_source
+        self._blobs = blobs
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
@@ -92,6 +114,14 @@ class IngestPipeline:
         # ahead of the record.
         person = await identity_stage.run(
             message=message, persons=self._persons, metrics=m
+        )
+        # Custody BEFORE the record, not after it (A9, DEC-45). This is the one
+        # stage that returns a new message: the body gains the durable handle
+        # for every attachment whose bytes are now Nora's, so the row and the
+        # blob it names are committed by the same INSERT. See that module for
+        # why it is inline rather than spawned like `memory_feed`.
+        message = await media_stage.run(
+            message=message, source=self._media_source, blobs=self._blobs, metrics=m,
         )
         recorded = await audit_stage.run(
             message=message, audit=self._audit, metrics=m, person=person
