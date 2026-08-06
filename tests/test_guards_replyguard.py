@@ -26,11 +26,15 @@ def test_a_first_send_reply_is_allowed():
     assert _guard().evaluate("send_reply", _send()) is None
 
 
-def test_second_send_reply_is_cancelled():
+def test_send_reply_past_the_cap_is_cancelled():
+    """The cap is 3 (DEC-42, multi-message active). The first three are allowed;
+    the fourth is refused — by the R-7 budget, reported as R-2 (both branches
+    share the model-facing sentence, DEC-33)."""
     m = Metrics()
     g = _guard(m)
-    g.evaluate("send_reply", _send())
-    g.record("send_reply")
+    for _ in range(3):
+        assert g.evaluate("send_reply", _send()) is None
+        g.record("send_reply")
     msg = g.evaluate("send_reply", _send())
     assert msg is not None
     assert "already sent your reply" in msg
@@ -136,7 +140,8 @@ def test_a_well_formed_call_never_touches_the_scope_counter():
 def test_counters_are_per_guard_instance():
     """R-2: constructed fresh per tag, so counters reset by construction."""
     a, b = _guard(), _guard()
-    a.record("send_reply")
+    for _ in range(3):                      # spend a's cap of 3
+        a.record("send_reply")
     assert a.evaluate("send_reply", _send()) is not None
     assert b.evaluate("send_reply", _send()) is None
 

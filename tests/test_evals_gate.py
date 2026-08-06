@@ -3,10 +3,10 @@ from pathlib import Path
 from typing import Any
 
 from evals.evaluators import (
-    ExactlyOnceSendReply,
     HonchoFedOncePerReply,
     NoRedundantRead,
     NoSendWithoutTrigger,
+    RepliesAtLeastOnce,
     ToolBudget,
 )
 from evals.harness import Trajectory
@@ -19,17 +19,20 @@ def _t(tool_calls=(), sent=(), reply=None, feeds=0, prefill_sufficient=True) -> 
                       honcho_feeds=feeds, prefill_sufficient=prefill_sufficient)
 
 
-def test_exactly_once_passes_on_a_single_send():
-    assert ExactlyOnceSendReply().evaluate(_t(["send_reply"], ["hi"], "hi")).passed
+def test_replies_at_least_once_passes_on_a_single_send():
+    assert RepliesAtLeastOnce().evaluate(_t(["send_reply"], ["hi"], "hi")).passed
 
 
-def test_exactly_once_fails_on_zero_sends():
-    assert not ExactlyOnceSendReply().evaluate(_t([], [], None)).passed
+def test_replies_at_least_once_fails_on_zero_sends():
+    assert not RepliesAtLeastOnce().evaluate(_t([], [], None)).passed
 
 
-def test_exactly_once_fails_on_two_sends():
-    assert not ExactlyOnceSendReply().evaluate(_t(["send_reply", "send_reply"],
-                                                  ["a", "b"], "b")).passed
+def test_replies_at_least_once_passes_on_two_sends():
+    """Multi-message (DEC-42): two replies are valid, so this PASSES where the
+    cap-of-1 `ExactlyOnceSendReply` failed. The upper bound (never past the cap)
+    moved to `ToolBudget`, asserted in test_tool_budget_enforces_the_r7_limits."""
+    assert RepliesAtLeastOnce().evaluate(_t(["send_reply", "send_reply"],
+                                            ["a", "b"], "b")).passed
 
 
 def test_no_send_without_trigger_passes_on_silence():
@@ -45,6 +48,11 @@ def test_tool_budget_enforces_the_r7_limits():
     assert not ToolBudget().evaluate(
         _t(["read_buffer", "read_buffer", "read_buffer", "send_reply"])).passed
     assert not ToolBudget().evaluate(_t(["group_members", "group_members"])).passed
+    # send_reply's own upper bound (the cap of 3) is ToolBudget's job now that
+    # RepliesAtLeastOnce owns only the lower bound (DEC-42).
+    assert ToolBudget().evaluate(_t(["send_reply", "send_reply", "send_reply"])).passed
+    assert not ToolBudget().evaluate(
+        _t(["send_reply", "send_reply", "send_reply", "send_reply"])).passed
 
 
 def test_no_redundant_read_fails_when_prefill_was_sufficient():
@@ -66,7 +74,7 @@ def test_honcho_fed_once_per_delivered_reply():
 
 def test_deterministic_evaluators_are_hard_gates():
     """No confidence weighting — these are mechanical facts (spec E.4)."""
-    result = ExactlyOnceSendReply().evaluate(_t([], [], None))
+    result = RepliesAtLeastOnce().evaluate(_t([], [], None))
     assert not hasattr(result, "confidence")
 
 
@@ -125,7 +133,7 @@ async def test_run_suite_scores_every_no_trigger_case_with_a_boolean(monkeypatch
 
 
 async def test_run_suite_scores_every_deterministic_evaluator_for_trigger_cases(monkeypatch):
-    """Carries the 4 trigger-side evaluators through unchanged (ExactlyOnceSendReply,
+    """Carries the 4 trigger-side evaluators through unchanged (RepliesAtLeastOnce,
     ToolBudget, NoRedundantRead, HonchoFedOncePerReply) — one BOOLEAN score each,
     same verdict the printed [PASS]/[FAIL] line already reported."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -135,7 +143,7 @@ async def test_run_suite_scores_every_deterministic_evaluator_for_trigger_cases(
 
     names = {s["name"] for s in sink.scores}
     assert names == {
-        "exactly_once_send_reply", "tool_budget", "no_redundant_read",
+        "replies_at_least_once", "tool_budget", "no_redundant_read",
         "honcho_fed_once_per_reply", "a8_silent_failure",
     }
     assert all(s["data_type"] == "BOOLEAN" and isinstance(s["value"], float)

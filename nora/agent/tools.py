@@ -256,22 +256,33 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "fetch": NativeTool(2, "read the actual page behind one of the links a search just "
                            "returned this turn — only those links, never an address you "
                            "made up"),
-    # THE ONLY TERMINAL TOOL, and — verified 2026-08-06 — **the number that
-    # caps how many messages one tag may send.** Both facts are easy to miss
-    # from the guard's side, so they are stated here, where the number is.
+    # THE ONLY TERMINAL TOOL, and **the number that caps how many messages one
+    # tag may send** (verified 2026-08-06). Both facts are easy to miss from the
+    # guard's side, so they are stated here, where the number is.
     #
-    # `ReplyGuard.evaluate` checks this budget (R-7) BEFORE it checks
-    # `Deliverer.attempted` (R-2): a second `send_reply` is refused by the
-    # budget and never reaches the latch. So relaxing R-2 alone — the obvious
-    # reading of `design/proposed/16-multi-message-replies.md` — leaves
-    # multi-message SILENTLY DEAD, refused by a number nobody edited. When
-    # step 5 lands, **this budget IS the message cap** (DEC-32): if the cap
-    # becomes operator-tunable it must arrive here, through the registry, so
-    # `ReplyGuard` still reads exactly one number. Never a second cap checked
-    # beside this one — that is the drift DEC-10 exists to prevent.
-    "send_reply": NativeTool(1, "the only way anything you write reaches the group. "
-                                "Call it once, at the end; if you never call it, "
-                                "nothing is sent",
+    # **3 — multi-message is now ACTIVE (DEC-42, activating design/16).** It
+    # shipped INERT at 1, and the whole delivery path was already built to read
+    # this one number as the cap: `Deliverer.exhausted` is
+    # `attempts >= message_cap` (not `attempted`), `ReplyGuard._terminal_budget_spent`
+    # ends the turn only when every terminal verb's budget is spent, and
+    # `_before_model` relaxes `tool_choice` to `auto` after the first send so she
+    # MAY stop before reaching the cap. So raising 1→3 HERE, and nowhere else, is
+    # the entire activation — exactly the property DEC-10 exists for (the number a
+    # tool costs lives with the tool). **3, not higher, on purpose:** multi-message
+    # is MULTIPURPOSE — distinct acts addressed to different people, never one
+    # thought chunked — and in a five-person group two or three addressees is the
+    # real ceiling; the day that changes it is a one-line raise (operator decision,
+    # 2026-08-07).
+    #
+    # `ReplyGuard.evaluate` checks this budget (R-7) BEFORE `Deliverer.exhausted`
+    # (R-2), so the (cap+1)th `send_reply` is refused by the budget and the latch
+    # is the backstop for the one case the two counters legitimately disagree (a
+    # call that reached the audit write but not `record`). Never a second cap
+    # checked beside this one — that is the drift DEC-10 exists to prevent.
+    "send_reply": NativeTool(3, "the only way anything you write reaches the group; "
+                                "send one message per distinct thing you are saying — "
+                                "usually one, up to 3 only when addressing different "
+                                "people",
                              terminal=True),
     # THE ACTIVATION TOOL (DEC-50, activating DEC-48). It is `plugin=True`, so
     # this entry exists for ONE reason: R-7 default-denies any tool absent from
@@ -1499,14 +1510,20 @@ def build_tool_specs(
         return out
 
     async def send_reply(text: str) -> bool:
-        """Send your reply to the group. Call this exactly once, at the end of your turn.
+        """Send a message to the group. This is the only way anything you write is sent.
 
-        This is the only way anything you write reaches the group. If you do not call it,
-        nothing is sent. It always goes to the conversation you were tagged in — you do
-        not choose where, and there is nothing to name.
+        Usually you call this ONCE, at the end of your turn. You MAY call it up to three
+        times — but only for genuinely SEPARATE messages: a reply to the person who
+        tagged you AND a word to someone else, two distinct things addressed to two
+        different people. That is what a second message is for.
+
+        Do NOT split one answer across several messages to pace or pad it — one thought
+        is one message. If everything you have to say is to one person about one thing,
+        send it once. If you never call this, nothing is sent; it always goes to the
+        conversation you were tagged in — you do not choose where.
 
         Args:
-            text: Your reply, in your own voice.
+            text: One message, in your own voice.
         """
         sent = await deliverer.deliver(text, source="tool")
         # A LENGTH, never the reply. `Deliverer` already logs the specific
