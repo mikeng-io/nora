@@ -171,11 +171,22 @@ part to design:
 - Live location is **the most sensitive data in this system**, more than phone
   numbers. A number identifies; a position tracks. `identity.toml` is
   gitignored and mounted read-only for less than this.
-- It is therefore subject to §2.2's **hard block**: a person's live position
-  may inform a route Nora computes, but must never appear in a query leaving
-  the host, and must never be reported to the group. 「Tyler 而家喺邊」 asked
-  by someone else is a disclosure, not a lookup — the same shape as R-21, one
-  level up.
+- **In-group disclosure is fine — operator decision, 2026-08-06.** An earlier
+  draft said a position must never be reported to the group. That imported a
+  boundary that does not exist here: everyone in the group is in the same
+  Life360 circle and can already see each other. 「Tyler 而家喺 Yoho」 discloses
+  nothing the app does not.
+
+  **But the guarantee must be mechanical, not remembered.** Report a position
+  only into a conversation whose members are a SUBSET of the Life360 circle.
+  Today they match; the day someone joins the Signal group who is not in the
+  circle, this must hold by construction. That is R-21's shape one level up,
+  and R-21 is enforced at assembly for exactly this reason.
+
+- **Outbound is a different question and the block stands.** "Nora may tell
+  your friends where you are" is not "Nora may send your live coordinates to
+  Google." She can compute a route FROM a position without that position
+  appearing in an argument that leaves the host (§2.2).
 - **Read at decision points, never persisted.** A tool called during a turn,
   not a background collector. That keeps it inside R-5's model, where failure
   is visible in a turn rather than silently stale on disk.
