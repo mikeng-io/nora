@@ -28,6 +28,7 @@ import time
 
 from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
+from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef
 from nora.domain.ports import (
     EngageDecision,
@@ -42,7 +43,6 @@ from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.stages import indicate
 from nora.obs.metrics import Metrics
-from nora.doctrine.loader import Doctrine
 from nora.persons import Persons
 from nora.tag import Debounce
 from nora.testing import FakeAuditStore, FakeRosterSource, limit_stop_reason

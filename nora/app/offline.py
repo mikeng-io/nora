@@ -23,13 +23,13 @@ from typing import Any
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.config import Config
+from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import AuditStore, MemoryStore, RosterSource
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
-from nora.doctrine.loader import DoctrineStore
 from nora.persons import Persons
 from nora.policy import permissive_policy
 from nora.tag import Debounce

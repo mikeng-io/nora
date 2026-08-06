@@ -26,6 +26,7 @@ import gc
 from nora.agent.guards import ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
+from nora.doctrine.loader import Doctrine
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import (
     EngageDecision,
@@ -37,7 +38,6 @@ from nora.domain.ports import (
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.obs.metrics import Metrics
-from nora.doctrine.loader import Doctrine
 from nora.persons import Persons
 from nora.tag import Debounce
 from nora.testing import FakeAuditStore

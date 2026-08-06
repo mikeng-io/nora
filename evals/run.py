@@ -60,9 +60,9 @@ from evals.judge import _DEFAULT_JUDGE_MODEL_ID, _build_judge_prompt, evaluate_r
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
     Config,
+    DoctrineStore,
     LeakGuard,
     Metrics,
-    DoctrineStore,
     create_client,
     create_model_provider,
     is_tagged,

@@ -27,8 +27,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from nora.agent.guards import Deliverer, ReplyGuard
-from nora.domain.models import ConversationTarget
 from nora.doctrine.loader import Doctrine
+from nora.domain.models import ConversationTarget
 
 log = logging.getLogger("nora.engagement.deliver")
 

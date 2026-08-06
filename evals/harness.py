@@ -33,7 +33,7 @@ from pathlib import Path
 
 import yaml
 
-from nora.app.eval_support import Metrics, DoctrineStore, load_eval_config, load_persons
+from nora.app.eval_support import DoctrineStore, Metrics, load_eval_config, load_persons
 from nora.app.offline import build_offline_pipeline
 from nora.testing import (
     FakeAdapter,

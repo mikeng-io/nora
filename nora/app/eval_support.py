@@ -21,8 +21,8 @@ from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
-from nora.obs.metrics import Metrics
 from nora.doctrine.loader import Doctrine, DoctrineStore
+from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
 from nora.tag import is_tagged
 
@@ -32,10 +32,10 @@ __all__ = [
     "REPLY_GUARD_BUDGETS",
     "Config",
     "ConfigError",
-    "LeakGuard",
-    "Metrics",
     "Doctrine",
     "DoctrineStore",
+    "LeakGuard",
+    "Metrics",
     "Persons",
     "create_client",
     "create_model_provider",

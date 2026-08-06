@@ -6,8 +6,8 @@ from tests.builders import make_tracing_config
 
 
 def test_trace_attributes_carry_the_provenance_fields(tmp_path):
-    from nora.domain.models import NormalizedMessage, TagContext
     from nora.doctrine.loader import DoctrineStore
+    from nora.domain.models import NormalizedMessage, TagContext
     from tests.test_doctrine_loader import write
 
     d = tmp_path / "p"
@@ -22,8 +22,8 @@ def test_trace_attributes_carry_the_provenance_fields(tmp_path):
 
 
 def test_trace_attributes_never_carry_message_content(tmp_path):
-    from nora.domain.models import NormalizedMessage, TagContext
     from nora.doctrine.loader import DoctrineStore
+    from nora.domain.models import NormalizedMessage, TagContext
     from tests.test_doctrine_loader import write
 
     d = tmp_path / "p"

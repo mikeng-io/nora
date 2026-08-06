@@ -31,6 +31,7 @@ from nora.app.dispatch import Dispatcher
 from nora.app.offline import build_offline_pipeline
 from nora.app.runtime import BackgroundTasks
 from nora.config import Config
+from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import DeliveryStatus
 from nora.domain.ports import AuditStore
 from nora.engagement.pipeline import EngagementPipeline
@@ -38,7 +39,6 @@ from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
-from nora.doctrine.loader import DoctrineStore
 from nora.persons import load_persons
 from nora.testing import FakeAgentRunner, ScriptedTurn
 from tests.builders import load_example_config, override_config

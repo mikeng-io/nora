@@ -9,11 +9,11 @@ import time
 
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.registry import ToolRegistry
+from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget, DeliveryStatus
 from nora.domain.ports import SendResult
 from nora.engagement.stages import deliver
 from nora.obs.metrics import Metrics
-from nora.doctrine.loader import Doctrine
 from nora.testing import FakeAuditStore
 
 TARGET = ConversationTarget(platform="signal", conversation_id="g1", conversation_type="group")

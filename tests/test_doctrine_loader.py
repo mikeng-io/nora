@@ -1,8 +1,8 @@
 
 import pytest
 
-from nora.obs.metrics import Metrics
 from nora.doctrine.loader import DoctrineError, DoctrineStore, parse_section
+from nora.obs.metrics import Metrics
 
 FM = """\
 ---

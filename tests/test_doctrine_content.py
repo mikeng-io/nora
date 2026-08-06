@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from nora.obs.metrics import Metrics
 from nora.doctrine.loader import DoctrineStore, parse_section
+from nora.obs.metrics import Metrics
 
 DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 

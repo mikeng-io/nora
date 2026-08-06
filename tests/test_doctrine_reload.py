@@ -1,7 +1,7 @@
 import pytest
 
-from nora.obs.metrics import Metrics
 from nora.doctrine.loader import DoctrineStore
+from nora.obs.metrics import Metrics
 from tests.test_doctrine_loader import write
 
 

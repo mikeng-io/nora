@@ -21,9 +21,9 @@ from nora.agent.guards import ReplyGuard
 from nora.agent.ports import ToolSpec, adapt
 from nora.agent.registry import ToolRegistry
 from nora.app.agent_runner import LiveAgentRunner
+from nora.doctrine.loader import Doctrine
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.obs.metrics import Metrics
-from nora.doctrine.loader import Doctrine
 
 BUDGETS = ToolRegistry().budgets()
 RETRY = factory.build_retry_policy(timeout_seconds=30.0)

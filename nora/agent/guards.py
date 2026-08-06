@@ -17,10 +17,10 @@ from strands.hooks import (
     HookRegistry,
 )
 
+from ..doctrine.loader import Doctrine
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..domain.ports import SendResult
 from ..obs.metrics import Metrics
-from ..doctrine.loader import Doctrine
 from .egress import LeakGuard, scan_egress
 
 log = logging.getLogger("nora.guards")
@@ -90,7 +90,8 @@ class Deliverer:
             log.error("doctrine_leak_blocked: %s (tag=%s)", reason, self._tag_id)
             self._metrics.inc("nora_leak_blocks_total")
             self._metrics.inc(
-                "nora_silent_failures_total", reason="doctrine_leak", platform=self._target.platform,
+                "nora_silent_failures_total", reason="doctrine_leak",
+                platform=self._target.platform,
             )
             return False
 

@@ -3,12 +3,12 @@ import pytest
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
 from nora.agent.tools import READ_BUFFER_DEFAULT, READ_BUFFER_MAX, build_tools
+from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget, NormalizedMessage, Quote
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
-from nora.doctrine.loader import DoctrineStore
 from nora.persons import load_persons
 from tests.fakes import FakeHoncho, SinkSender
 from tests.test_doctrine_loader import write

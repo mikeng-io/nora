@@ -8,9 +8,9 @@ from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
+from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
-from nora.doctrine.loader import Doctrine
 from tests.fakes import FakeHoncho, SinkSender
 
 TARGET = ConversationTarget("signal", "g1", "group")

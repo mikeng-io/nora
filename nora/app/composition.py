@@ -28,6 +28,7 @@ from openai import AsyncOpenAI
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.config import Config
+from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.ports import (
     AuditStore,
     ContextAssembler,
@@ -49,7 +50,6 @@ from nora.ingest.policy import (
 )
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
-from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter

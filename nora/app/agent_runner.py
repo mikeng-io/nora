@@ -25,8 +25,8 @@ from typing import Any
 
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
-from nora.domain.models import TagContext
 from nora.doctrine.loader import Doctrine
+from nora.domain.models import TagContext
 
 
 class LiveAgentRunner:
