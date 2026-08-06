@@ -97,6 +97,20 @@ services:
       # and not `:?`. config.toml's obs.tracing.headers_env names this variable; the
       # value never appears in config (DEC-8).
       - LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}
+      # The group is in Hong Kong. Without this the container runs UTC, and
+      # `nora.agent.prefill._now_line` — which calls `datetime.now().astimezone()`
+      # — tells her it is 07:05 when the group's clock says 15:05.
+      #
+      # Found live 2026-08-06: asked 「今日係幾時？幾點？」 she answered
+      # 「凌晨2:55」 in the middle of a Hong Kong afternoon. Nothing failed, no
+      # error was logged, and the only symptom was a confident wrong answer —
+      # R-5's shape, in the one module written specifically to stop it (that
+      # docstring's whole purpose is grounding 今晚 / 琴日 / 而家 / 尋日).
+      #
+      # This is a floor, not the fix. A container-level default still means the
+      # same code gives different answers in different environments and no test
+      # can catch it; the timezone belongs in config.toml, read explicitly.
+      - TZ=Asia/Hong_Kong
     volumes:
       - ./data:/app/data
       - ./config.toml:/app/config.toml:ro
