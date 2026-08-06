@@ -61,6 +61,7 @@ def test_the_registry_exposes_every_declared_tool():
     assert {t.tool_name for t in tools} == {
         "now", "read_buffer", "send_reply",
         "group_members", "lookup_person", "about", "calculate", "transit", "route",
+        "media_fetch",
     }
 
 
@@ -80,6 +81,10 @@ def test_budgets_match_todays_table():
         # Sized like transit: two place lookups plus a route, paid and external,
         # so a turn may reach for it twice but not more (DEC-46).
         "route": 2,
+        # One message can name two images (a photo AND a screenshot); the
+        # per-call vision timeout, not this number, is what keeps two describe
+        # calls inside the loop budget (DEC-56).
+        "media_fetch": 2,
     }
 
 

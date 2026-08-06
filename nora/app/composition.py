@@ -45,6 +45,7 @@ from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
+from nora.infra.vision import VisionClient, derive_vision_timeout
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
     CompositePolicy,
@@ -282,7 +283,28 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "route enabled but %s is unset — routing stays unavailable",
                 cfg.route.api_key_env,
             )
-    tool_registry = ToolRegistry(route=route_client)
+    # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
+    # collaborators are wired together: the blob store (already built above,
+    # `None` while `[media] enabled=false` or unkeyed) and a `VisionClient` over
+    # the process-wide OmniRoute client. The vision call gets its OWN timeout,
+    # DERIVED from the same `timeout_seconds` the invoke stage enforces so it is
+    # provably shorter than the loop's `asyncio.wait_for` — a hung MiMo becomes
+    # the tool's `unavailable`, never the loop's silent `invocation_timeout`
+    # (the way `factory.build_retry_policy` derives its backoff). The client is
+    # always present (the LLM key is required to start); `media_fetch` still
+    # answers `unavailable` whenever `blobs` is None, the inert-by-config shape.
+    vision_client = VisionClient(
+        client=client,
+        model=cfg.media.vision_model,
+        max_tokens=cfg.media.vision_max_tokens,
+        reasoning_effort=cfg.media.vision_reasoning_effort,
+        max_bytes=cfg.media.vision_max_bytes,
+        timeout_seconds=derive_vision_timeout(
+            loop_timeout_seconds=tier.timeout_seconds,
+            configured=cfg.media.vision_timeout_seconds,
+        ),
+    )
+    tool_registry = ToolRegistry(route=route_client, vision=vision_client, blobs=blobs)
     # The room-scoped tools' one platform dependency. Built here rather than
     # taken off the adapter because membership is a read-only DIRECTORY query
     # (`nora.platform.signal.directory`'s two-method allowlist), not part of the

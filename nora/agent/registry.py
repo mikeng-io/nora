@@ -28,8 +28,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..domain.ports import BlobStore
 from ..infra.routes import RouteClient
 from ..infra.transit import TransitClient
+from ..infra.vision import VisionCache, VisionClient
 from .ports import ToolSpec, adapt
 from .room import Room
 from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs
@@ -61,6 +63,8 @@ class ToolRegistry:
         self, *,
         transit: TransitClient | None = None,
         route: RouteClient | None = None,
+        vision: VisionClient | None = None,
+        blobs: BlobStore | None = None,
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -72,6 +76,20 @@ class ToolRegistry:
         # built from the resolved `[route]` key (DEC-8); until it does, `route`
         # is present in the catalogue and refuses to leak, but cannot travel.
         self._route = route
+        # `vision`/`blobs` are the `media_fetch` collaborators (DEC-56), wired
+        # together and only when custody is on (`[media] enabled` + key → a blob
+        # store) AND a reachable OmniRoute client exists. Either being None
+        # leaves `media_fetch` answering `unavailable` — the same inert-by-config
+        # shape as keyless `route` — so it ships present-but-inert while
+        # `[media] enabled=false`.
+        self._vision = vision
+        self._blobs = blobs
+        # The description cache lives HERE, once per process, for the reason the
+        # transit catalogue does: keyed by content hash, a per-tag cache would
+        # never hit, and a module-level singleton is what the test-seam policy
+        # forbids. Held even when `media_fetch` is inert — it costs an empty
+        # dict and means turning custody on wires nothing new here.
+        self._vision_cache = VisionCache()
 
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
@@ -180,14 +198,17 @@ class ToolRegistry:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
 
-        `transit_source` and `route_source` are NOT in this signature and must
-        not become one: each is the registry's own long-lived collaborator, not
-        something a tag brings with it, so every caller of `specs()`/`build()`
-        is unchanged by their arrival."""
+        `transit_source`/`route_source`/`vision_source`/`blob_store`/
+        `vision_cache` are NOT in this signature and must not become one: each is
+        the registry's own long-lived collaborator (or, for the cache, its own
+        per-process state), not something a tag brings with it, so every caller
+        of `specs()`/`build()` is unchanged by their arrival."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=self._transit, route_source=self._route,
+            vision_source=self._vision, blob_store=self._blobs,
+            vision_cache=self._vision_cache,
             question=question, context_window=context_window,
         )
 
