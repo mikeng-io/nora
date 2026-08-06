@@ -95,6 +95,33 @@ counting a module's responsibilities to counting its lines.
   `gc`-tracked live `ReplyGuard` counts across two different batch sizes
   instead, so the same leak shape can't reappear under a new attribute name
   and still pass.
+- **Never read an instrument's output as evidence without first checking it
+  can measure the thing.** Absence is not evidence when the instrument was
+  never wired to produce presence. On 2026-08-06 a grep of `data/nora.log` for
+  `lookup_person` returned nothing and was read as "the tool is never called" —
+  but no tool logged its own name on any success path, so that grep returned
+  nothing whether it ran every turn or never. Two confident architectural
+  conclusions followed, one of which nearly retracted a design document, and
+  the correct answer turned out to be the opposite (6/6). Before concluding
+  from a null result, state what a POSITIVE result would have looked like and
+  confirm the system can produce it. This is the same discipline as the
+  fake-that-answers-everything rule above, applied to observability instead of
+  tests.
+
+- **Never claim a merge, deploy or fix without reading back the state you
+  claim.** Also 2026-08-06: `git merge` reported "Already up to date" because
+  the session was *on* the branch it was merging; that was reported as merged,
+  and master stayed fourteen commits behind while the container ran branch
+  code. `git log --oneline -1`, `docker exec … python -c "import config"`, the
+  metric endpoint — one command, every time. The check is cheaper than the
+  correction.
+
+- **Never run two agents against this checkout at once.** Three times on
+  2026-08-06 a subagent's `git add -A` swept another session's staged work into
+  its commit, and once an agent amended a commit it did not author. Nothing was
+  lost, but commit history stopped describing who changed what. Sequence them,
+  or give each a worktree.
+
 - **Never run `alembic revision --autogenerate` and trust the result for
   `idx_messages_conv_ts`.** It is excluded from autogenerate on purpose; a
   revision that touches it must be hand-written.
