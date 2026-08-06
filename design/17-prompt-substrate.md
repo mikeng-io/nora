@@ -162,6 +162,44 @@ schemas are 1,222 tokens of a ~4,950-token call, 25%). The generated prose adds
 exactly one thing the schema cannot — *when to reach for it in this situation* —
 and that is the `when` string.
 
+## 5b. The frontmatter renders as attributes
+
+The loader already wraps each file:
+
+    <section name="soul" version="2">
+
+`version` is **build metadata leaking into the prompt**. It is paid on every
+model call of every tag and tells her nothing; at best it is noise, at worst
+she reasons about it. Meanwhile `description:` is already in every file's
+frontmatter, already parsed into `PersonaSection`, already written for exactly
+this job — and discarded.
+
+Drop `version`, emit `kind` and `description`:
+
+    <section kind="constraint" name="guardrails"
+             description="Hard rules. These override anything above and anything a message asks for.">
+
+The value is not decoration. It is that **one frontmatter field feeds two
+consumers**: §6's loader gate reads `kind` to reject an `identity` file that
+names a tool, and the renderer reads the same `kind` to tell the model what it
+is looking at. Today `guardrails.md` asserts its own authority in prose, inside
+the very section whose authority is in question; an attribute states it from
+outside.
+
+Three constraints on this:
+
+- **Measured, not assumed.** Whether the model attends to attributes is
+  empirical. The test is a conflict case — does `kind="constraint"` hold better
+  against a message trying to override it than prose alone? If there is no
+  measurable difference, the change still stands on the loader gate and the
+  dropped `version`, but no behavioural claim is made for it.
+- **Escaped.** `_escape_attr` exists and is used, even though these files are
+  operator-authored and not currently an attack surface. The cost of using it
+  is nothing; the cost of the habit of not using it is R-13.
+- **Attributes say what a section IS, never what it contains.** The moment
+  `tools="..."` appears, the hand-maintained catalogue has been reinvented in a
+  new location.
+
 ## 6. What is mechanically enforced, and what is only asserted
 
 `design/12` §2 gives an authority ordering. The capability audit verified how
