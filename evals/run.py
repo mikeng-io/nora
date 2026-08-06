@@ -49,10 +49,10 @@ import yaml
 
 from evals.datasets import CORPUS_DATASETS, item_id
 from evals.evaluators import (
-    ExactlyOnceSendReply,
     HonchoFedOncePerReply,
     NoRedundantRead,
     NoSendWithoutTrigger,
+    RepliesAtLeastOnce,
     ToolBudget,
 )
 from evals.harness import Case, load_cases, run_case
@@ -75,7 +75,7 @@ CASES_DIR = Path(__file__).resolve().parent / "cases"
 ADVERSARIAL_DIR = Path("evals") / "adversarial"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-TRIGGER_EVALUATORS = (ExactlyOnceSendReply(), ToolBudget(), NoRedundantRead(),
+TRIGGER_EVALUATORS = (RepliesAtLeastOnce(), ToolBudget(), NoRedundantRead(),
                       HonchoFedOncePerReply())
 NO_TRIGGER_EVALUATORS = (NoSendWithoutTrigger(),)
 
@@ -94,7 +94,7 @@ SUITES = {
 # warning) — never CATEGORICAL/TEXT, which is a string value and would be the wrong
 # type for a pass/fail fact.
 _EVALUATOR_SCORE_NAMES: dict[type, str] = {
-    ExactlyOnceSendReply: "exactly_once_send_reply",
+    RepliesAtLeastOnce: "replies_at_least_once",
     NoSendWithoutTrigger: "no_send_without_trigger",
     ToolBudget: "tool_budget",
     NoRedundantRead: "no_redundant_read",

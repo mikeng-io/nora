@@ -12,10 +12,18 @@ class Result:
     reason: str = ""
 
 
-class ExactlyOnceSendReply:
+class RepliesAtLeastOnce:
+    """A triggered turn must produce a reply.
+
+    Was `ExactlyOnceSendReply` (n == 1), the cap-of-1 invariant. Multi-message
+    (DEC-42) makes two or three replies valid, so the exactly-one upper bound is
+    gone from here; the lower bound (she MUST reply when called) stays, and the
+    upper bound (never past the cap) is owned by `ToolBudget`, which reads the
+    same `send_reply` budget — so the two are one number, not two (DEC-10)."""
+
     def evaluate(self, t) -> Result:
         n = t.tool_calls.count("send_reply")
-        return Result(n == 1, f"send_reply called {n} time(s), expected exactly 1")
+        return Result(n >= 1, f"send_reply called {n} time(s), expected at least 1")
 
 
 class NoSendWithoutTrigger:

@@ -311,8 +311,8 @@ class ReplyGuard(HookProvider):
 
         # R-7's per-tool budget, and — for `send_reply` — **the message cap**.
         # THIS CHECK RUNS BEFORE R-2's latch below, and that ordering is half of
-        # DEC-32. `NATIVE_TOOL_BUDGETS["send_reply"]` is 1, so a second reply is
-        # refused HERE, by a number, and never reaches `Deliverer.attempted`.
+        # DEC-32. `NATIVE_TOOL_BUDGETS["send_reply"]` is 3 (DEC-42 activated), so
+        # the FOURTH reply is refused HERE and never reaches `Deliverer.exhausted`.
         # Relaxing R-2 alone — which is what
         # `design/proposed/16-multi-message-replies.md` reads like — would leave
         # multi-message silently dead: the model would be told "you already sent
@@ -429,12 +429,14 @@ class ReplyGuard(HookProvider):
         step on the tag path). Both are now a `terminal=True` in `NATIVE_TOOLS`,
         with no edit to this file.
 
-        The one behavioural difference is a `send_reply` the `Deliverer`
-        REFUSED (R-6 canary, R-18 egress, an audit-write or send failure).
-        `delivered` stayed False, so the loop used to keep running; it now
-        stops. The group sees the same thing either way — the tool call was
-        recorded, so the budget of 1 is spent and a retry is already refused —
-        and the difference is purely the forced turns that followed.
+        The one behavioural difference DEC-32 accepted is a `send_reply` the
+        `Deliverer` REFUSED (R-6 canary, R-18 egress, an audit-write or send
+        failure): `delivered` stayed False, so the loop used to keep running,
+        and DEC-32 made it stop once the terminal budget was spent. Under the cap
+        of 3 (DEC-42) that difference shrinks — a refused reply is RECORDED, so it
+        spends one of the three rather than ending the turn; the turn ends only
+        when all three are spent, and the (cap+1)th is already refused by the
+        budget.
 
         **The RELAXATION half (DEC-42).** Once a terminal verb has run she has
         spoken, and from that model call onwards `tool_choice` becomes `auto`
