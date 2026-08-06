@@ -221,7 +221,7 @@ Tone policy splits across two homes, along `design/12` §1's rule:
 
 **`voice.md` — when a GIF is in register at all.** This is needed on every
 turn, so it is prompt, not tool. It is also the half that decides whether the
-feature is charming or exhausting, and it is a *persona* judgment the operator
+feature is charming or exhausting, and it is a *doctrine* judgment the operator
 should write rather than one I should invent. The questions it must answer:
 does she GIF a serious question (no), does she GIF when someone is upset
 (almost never, and never instead of words), how often is too often, and does a
@@ -293,13 +293,35 @@ What we actually have:
   reason this design would need revisiting before Nora ever joined a room
   that was not this one.
 
-**The canary problem.** R-6's `LeakGuard` and the canary ride in text. A
-GIF-only reply carries neither. If `voice.md` permits caption-less GIFs, some
-replies leave with no canary — so either captions are mandatory (simplest,
-and defensible: a person usually says something with the GIF), or the canary
-mechanism must be understood to cover a strict subset of her output. That is a
-decision, not an oversight, and it should be made explicitly rather than
-discovered.
+**There is no canary problem — corrected 2026-08-06.** An earlier draft of
+this section claimed R-6's canary "rides in text", so a caption-less GIF would
+leave with none, and treated that as the design's one blocking decision. That
+is backwards. `LeakGuard.check` (`nora/agent/egress.py`) reads:
+
+    if not text:
+        return None
+    if self._canary and self._canary in text:
+        return "canary"
+
+The canary is a **tripwire planted in the doctrine**, not a watermark she
+emits: it fires when she regurgitates her own system prompt. Empty text returns
+`None` immediately — there is nothing to leak and nothing to check, and a GIF
+cannot leak the doctrine. R-18 is the same shape: no text, nothing to scan.
+
+So captioned and caption-less differ in only two ways, and neither is a
+guardrail:
+
+- **Memory (A9).** A caption-less GIF feeds a description rather than words, so
+  her durable record of that exchange is thinner. §5 already requires a
+  described act; using Giphy's `alt_text` — already fetched for §4.1's
+  metadata filter — recovers most of it for free.
+- **Feel.** Replying with just a GIF is ordinary human behaviour, and forcing a
+  caption every time is the stiffness `voice.md` spends a section warning
+  against.
+
+**Resolution: caption-less is allowed**, and the memory feed carries the
+`alt_text` description. The frame-text hole above is unaffected either way — a
+caption never made the pixels scannable.
 
 **Outbound egress applies unchanged.** `design/14` §2.2 governs: the search
 query leaves the host, so it passes the R-18 predicate *before* the call.

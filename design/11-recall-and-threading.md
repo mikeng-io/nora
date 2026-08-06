@@ -239,14 +239,14 @@ guard. Say so rather than implying otherwise.
   `ReplyGuard` cancels on delivery — so an optional lookup tool sits in a
   window the model never enters. **That claim is dead.** Measured against
   `opencode-zen/deepseek-v4-flash` with the real schemas and the real
-  assembled persona, 「邊個係阿豹妹？」:
+  assembled doctrine, 「邊個係阿豹妹？」:
 
-      turn one    lookup_person 6/6      (persona only, and full prefill: 6/6 each)
+      turn one    lookup_person 6/6      (doctrine only, and full prefill: 6/6 each)
       turn two    recall        6/6      (after lookup_person returns a person)
 
   The model does not merely enter that window, it enters it *first*: `recall`
   and `lookup_person` beat `send_reply` on every run of a person-question, and
-  under the pre-audit persona as well as the current one. What changed since
+  under the pre-audit doctrine as well as the current one. What changed since
   the original measurement is what §1.6 already guessed — `reasoning_effort`
   moved to `"low"`, and `_context_header` names every tool in prose.
 
@@ -355,7 +355,7 @@ threading built on exact-`ts` matching resolves everyone except her.
 `raw_json` (`nora/infra/sql/audit.py:104`), so it looks free. It is not:
 
 - **It cannot work for Nora's own rows at all.** Her `raw_json` is
-  `{"tag_id", "source", "persona_sha256"}` (`guards.py:118-119`) — there is no
+  `{"tag_id", "source", "doctrine_sha256"}` (`guards.py:118-119`) — there is no
   envelope to parse. Same rows as Bug B, decisive twice over.
 - It forces `dataMessage.quote` knowledge into `nora/engagement` or
   `nora/agent/prefill.py`, which are platform-neutral. `nora/domain` is stdlib-only
