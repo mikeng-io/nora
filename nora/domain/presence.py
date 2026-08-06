@@ -1,0 +1,76 @@
+"""Platform-neutral presence contracts (design/19). Standard library only —
+the same framework-free rule as the rest of `nora.domain`.
+
+Two types, and the split matters:
+
+- `WireState` is how ONE read of a Life360 member classified — the study's typed
+  enum (§4.4). It is recorded on every stored fix and emitted per member per
+  cycle, so «this member turned sharing off» is a KNOWN STATE, not a gap (§7.3).
+  `unavailable` is the read-level failure — the daemon could not read the member
+  at all — and it must never be summed with `sharing_off`/`no_fix`, which are
+  the member's own reported condition. Collapsing «I could not look» into «they
+  are not sharing» is R-5's shape aimed at a location, and it is exactly the
+  ambiguity the collector's canary exists to keep visible.
+
+- `PresenceFix` is one stored row — a DISTINCT location fix, written only when
+  the member's `location.timestamp` advanced (§1, the change-recorder). `ts` is
+  epoch MILLISECONDS (Life360's own unit and the reason the column is BIGINT,
+  design/20 §2), and `recorded_at` is when Nora wrote the row — the two are kept
+  apart because a stationary phone holds one fix for many minutes, so `ts` is the
+  age of the position and `recorded_at` is the age of the observation. `whereis`
+  carries the `ts` age to the model (§7.6), never `recorded_at`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import StrEnum
+
+
+class WireState(StrEnum):
+    """How one member read classified (design/19 §4.4, the Life360 study's enum).
+
+    `StrEnum` so the stored `wire_state` column round-trips through
+    `WireState(row.wire_state)` and so a metric label is the bare word
+    (`"live"`) rather than `WireState.LIVE`.
+    """
+
+    # The phone reported a fresh position and is sharing it.
+    LIVE = "live"
+    # Sharing, but the last position is old — the phone is backgrounded or still.
+    STALE = "stale"
+    # The member has location sharing turned OFF. A KNOWN state, not a gap.
+    SHARING_OFF = "sharing_off"
+    # The phone is unreachable (offline, no signal) — Life360 says so.
+    DISCONNECTED = "disconnected"
+    # Sharing is on but there is no position at all yet (never located).
+    NO_FIX = "no_fix"
+    # The DAEMON could not read this member — a read-level failure, never the
+    # member's own condition. Held apart from the five above on purpose.
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True)
+class PresenceFix:
+    """One distinct location fix for one circle member, as stored and as read.
+
+    Mirrors `TranscriptRow`: a typed row the store produces and `whereis`
+    consumes, never a `dict[str, Any]`. `lat`/`lng` are always present — a fix
+    is a position by definition, and a member with no position produces no fix
+    (its state is carried by `WireState` and the per-cycle metric instead, not
+    by a null-island row). The optional fields are optional because Life360
+    omits them for a member who is not driving, whose phone did not report a
+    battery, or whose coordinate did not reverse-geocode.
+    """
+
+    circle_id: str
+    person_id: str
+    ts: int                       # epoch MILLISECONDS — the position's own age
+    lat: float
+    lng: float
+    wire_state: WireState
+    recorded_at: int              # epoch MILLISECONDS — when Nora wrote the row
+    accuracy_m: float | None = None
+    is_driving: bool | None = None
+    battery: float | None = None
+    address: str | None = None

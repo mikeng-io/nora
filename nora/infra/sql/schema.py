@@ -1,4 +1,4 @@
-"""The single source of truth for Nora's one table, in its PostgreSQL shape.
+"""The single source of truth for Nora's tables, in their PostgreSQL shape.
 
 Every declaration below is load-bearing; the ones that look like SQLAlchemy
 defaults are not. The store was SQLite until the 2026-08-07 migration
@@ -94,3 +94,62 @@ IDX_CONV_TS = sa.Index(
     "idx_messages_conv_ts", MESSAGES.c.conversation_id, sa.text("ts DESC")
 )
 IDX_IS_NORA = sa.Index("idx_messages_is_nora", MESSAGES.c.is_nora)
+
+
+# `presence_fixes` — the presence collector's record (design/19 §3). It lives in
+# the SAME `nora` database as `messages`, PLAINTEXT (DEC-54), and joins
+# everything else on `person_id` — the roster's canonical id — which is the
+# whole reason the store was unified onto one database (design/20).
+#
+# Every column mirrors a decision in design/19 §3:
+# - `ts` is `sa.BigInteger` (INT8), NOT `sa.Integer`. Life360 fix timestamps are
+#   epoch MILLISECONDS (~1.78e12), the identical INT4 overflow `messages.ts`
+#   fixes — silent under R-5 on Postgres. `recorded_at` is BIGINT for the same
+#   reason: it is `int(time.time() * 1000)`.
+# - `lat`/`lng` are `NOT NULL`: a fix IS a position (the change-recorder only
+#   writes when an advancing `location.timestamp` arrives, which carries
+#   coordinates). A member with no position produces no row — its state rides
+#   `wire_state` on its last row and the per-cycle metric, never a null-island
+#   fix (design/19 §7.6).
+# - `accuracy_m`/`is_driving`/`battery`/`address` are nullable: Life360 omits
+#   them for a still member, a non-driver, a phone with no battery report, or a
+#   coordinate that did not reverse-geocode.
+# - `wire_state` is `NOT NULL` TEXT holding a `nora.domain.presence.WireState`
+#   value, so «sharing off» is a stored fact rather than an absent row.
+# - `is_driving` is INT (0/1), matching `messages.is_nora`'s convention rather
+#   than importing a Postgres BOOLEAN this schema does not otherwise use.
+PRESENCE_FIXES = sa.Table(
+    "presence_fixes",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column("circle_id", sa.Text, nullable=False),
+    sa.Column("person_id", sa.Text, nullable=False),
+    # Epoch MILLISECONDS — the position's own timestamp (Life360's unit). BIGINT
+    # for the same overflow reason `messages.ts` is (design/20 §2).
+    sa.Column("ts", sa.BigInteger, nullable=False),
+    sa.Column("lat", sa.Float, nullable=False),
+    sa.Column("lng", sa.Float, nullable=False),
+    sa.Column("accuracy_m", sa.Float),
+    sa.Column("is_driving", sa.Integer),
+    sa.Column("battery", sa.Float),
+    sa.Column("address", sa.Text),
+    sa.Column("wire_state", sa.Text, nullable=False),
+    # Epoch MILLISECONDS: when Nora wrote this row, distinct from `ts`. Kept
+    # separate because a stationary phone holds one fix for many minutes — `ts`
+    # is the age of the POSITION, `recorded_at` the age of the OBSERVATION.
+    sa.Column("recorded_at", sa.BigInteger, nullable=False),
+)
+
+# `(circle_id, person_id, ts DESC)` — the same alembic-check-blind DESC shape as
+# `idx_messages_conv_ts` (design/19 §8): autogenerate cannot see the per-column
+# ordering, so this index is EXCLUDED in `migrations/env.py::include_object`,
+# authored by hand as raw DDL in `0002_presence_fixes`, and its `ts DESC` order
+# is asserted from `pg_index.indoption` by `tests/infra/test_schema_parity.py`.
+# It is the index every presence query runs on: `whereis` is the latest row for
+# one `(circle_id, person_id)`; derivation reads one member's time window.
+IDX_PRESENCE_MEMBER_TS = sa.Index(
+    "idx_presence_member_ts",
+    PRESENCE_FIXES.c.circle_id,
+    PRESENCE_FIXES.c.person_id,
+    sa.text("ts DESC"),
+)

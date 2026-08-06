@@ -19,6 +19,7 @@ from nora.infra.sql.migrations_runner import (
     run_migrations,
     sync_url_for,
 )
+from nora.infra.sql.schema import METADATA
 
 
 async def test_upgrade_head_reaches_the_head_revision(pg_url):
@@ -61,8 +62,12 @@ async def test_a_signal_magnitude_timestamp_round_trips_through_the_store(pg_url
         await store.aclose()
 
 
-def test_the_only_tables_are_messages_and_alembic_version(pg_url):
-    """Rollback depends on this: dropping those two undoes the phase."""
+def test_the_only_tables_are_the_declared_ones_and_alembic_version(pg_url):
+    """Rollback depends on this: the migrated database holds exactly the tables
+    the metadata declares plus Alembic's own `alembic_version`. `presence_fixes`
+    (design/19) joined the chain, so the expected set is derived from
+    `schema.METADATA` rather than hard-coded — a new table lands here with no
+    edit, a STRAY table (one not in the metadata) still fails."""
     run_migrations(pg_url)
     engine = sa.create_engine(sync_url_for(pg_url))
     try:
@@ -75,4 +80,4 @@ def test_the_only_tables_are_messages_and_alembic_version(pg_url):
             }
     finally:
         engine.dispose()
-    assert names == {"messages", "alembic_version"}
+    assert names == set(METADATA.tables) | {"alembic_version"}

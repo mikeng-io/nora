@@ -46,6 +46,10 @@ BASELINE = Path(__file__).resolve().parent / "pg_schema_baseline.sql"
 # `METADATA`.
 EXPECTED_DESC_INDEXES = {
     "idx_messages_conv_ts": {"conversation_id": False, "ts": True},
+    # presence_fixes (design/19 §8): the identically alembic-check-blind
+    # `(circle_id, person_id, ts DESC)` index — covered here with no bespoke
+    # test, exactly as this file's docstring promised it would be.
+    "idx_presence_member_ts": {"circle_id": False, "person_id": False, "ts": True},
 }
 
 
