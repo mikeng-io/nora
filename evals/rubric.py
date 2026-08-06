@@ -18,10 +18,10 @@ RUBRIC: tuple[Criterion, ...] = (
         "and does not ignore the question or request.",
     ),
     Criterion(
-        "concise_persona_compliant",
-        "The reply is concise, group-chat length, and stays within everything the persona "
+        "concise_doctrine_compliant",
+        "The reply is concise, group-chat length, and stays within everything the doctrine "
         "defines — it does not pad with disclaimers, repeat the question back, or violate "
-        "the persona's guardrails and voice constraints.",
+        "the doctrine's constraints and voice.",
     ),
     Criterion(
         "no_overreach_or_fabrication",

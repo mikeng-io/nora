@@ -28,6 +28,7 @@ import time
 
 from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
+from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef
 from nora.domain.ports import (
     EngageDecision,
@@ -42,7 +43,6 @@ from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.stages import indicate
 from nora.obs.metrics import Metrics
-from nora.persona.loader import Persona
 from nora.persons import Persons
 from nora.tag import Debounce
 from nora.testing import FakeAuditStore, FakeRosterSource, limit_stop_reason
@@ -107,7 +107,7 @@ class _FakeMemory:
 
 
 class _RecordingMemory(_FakeMemory):
-    """`_FakeMemory` plus the one endpoint the `recall` tool speaks to.
+    """`_FakeMemory` plus the one endpoint the `about` tool speaks to.
 
     Unknown peers are reachable-with-nothing, exactly as the live Honcho is
     (200 and an empty string, never a 404) — a fake that 404'd instead would
@@ -124,11 +124,11 @@ class _RecordingMemory(_FakeMemory):
         return Recollection(reachable=True, conclusions=("Miles is from Ridgeline",))
 
 
-class _FakePersonaStore:
-    def get(self, *, applies_to: str = "tag") -> Persona:
-        return Persona(
-            sections=(), text="<nora_persona>be helpful</nora_persona>",
-            persona_text="be helpful", sha256="deadbeef", runtime_context="", loaded_at=0.0,
+class _FakeDoctrineStore:
+    def get(self, *, applies_to: str = "tag") -> Doctrine:
+        return Doctrine(
+            sections=(), text="<nora_doctrine>be helpful</nora_doctrine>",
+            doctrine_text="be helpful", sha256="deadbeef", runtime_context="", loaded_at=0.0,
         )
 
 
@@ -263,7 +263,7 @@ def _build_pipeline(
         audit=audit,
         memory=memory,
         persons=PERSONS,
-        persona_store=_FakePersonaStore(),
+        doctrine_store=_FakeDoctrineStore(),
         context_assembler=context_assembler,
         runner=runner or ScriptedRunner(_reply_turns()),
         tool_registry=ToolRegistry(),
@@ -319,7 +319,10 @@ async def test_a_successful_tag_delivers_releases_the_lock_and_feeds_the_exchang
     assert adapter.texts == ["今晚七點半得"]
     assert pipeline._in_flight == set()
     assert llm_state.last_success_at is not None
-    assert len([f for f in memory.fed if "[Nora]" in f[1]]) == 1
+    # DEC-36: the tagger's own words, under the tagger's peer, and nothing
+    # else. This used to look for `"[Nora]"` in the fed text — the marker of
+    # the two-speaker transcript that made her replies evidence about him.
+    assert memory.fed == [("miles", "nora.000 幾點食飯")]
     assert len(metrics.observations("nora_tag_latency_seconds")) == 1
     assert len(metrics.observations("nora_overhead_seconds")) == 1
 
@@ -488,6 +491,73 @@ async def test_latency_and_overhead_are_observed_on_every_path():
 
 
 # ---------------------------------------------------------------------------
+# nora_messages_per_tag — the baseline for multi-message
+# ---------------------------------------------------------------------------
+
+
+async def test_a_delivered_tag_observes_one_message():
+    """Flat at 1 by construction today: R-2 latches after the first delivery.
+
+    That is what makes it worth recording NOW. Multi-message's predicted
+    failure is that the cap becomes a quota always spent in full, and a
+    histogram first written after the behaviour changes has nothing to be a
+    change from.
+    """
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(metrics=metrics)
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.observations("nora_messages_per_tag") == [1.0]
+
+
+async def test_a_silent_tag_observes_zero_rather_than_nothing_at_all():
+    """A histogram that only records successes cannot answer "how often does
+    she say nothing", which is the same question. Every admitted tag
+    contributes exactly one observation."""
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        metrics=metrics,
+        runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.observations("nora_messages_per_tag") == [0.0]
+
+
+async def test_a_failed_send_observes_zero_not_one():
+    """The count is `Deliverer.delivered_count`, which counts what the ADAPTER
+    accepted — R-2's latch counts attempts, and reading the latch instead would
+    report a message the group never received."""
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        metrics=metrics, adapter=_FakeAdapter(succeed=False),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.observations("nora_messages_per_tag") == [0.0]
+
+
+async def test_a_tag_that_faults_before_there_is_a_deliverer_still_observes_zero():
+    """The `finally` runs on a fault raised inside `context.assemble`, before
+    the pipeline has built a `DeliveryHandle` at all. A histogram silently
+    missing its most interesting exit path is R-5's failure mode again."""
+    metrics = Metrics()
+    pipeline, _, _, _, _background = _build_pipeline(
+        metrics=metrics, context_assembler=_FaultingContextAssembler(),
+    )
+
+    await pipeline.run(_request())
+
+    assert metrics.observations("nora_messages_per_tag") == [0.0]
+
+
+# ---------------------------------------------------------------------------
 # R-10: admission owns acquisition; a rejected admission never touches
 # another tag's lock.
 # ---------------------------------------------------------------------------
@@ -603,7 +673,7 @@ async def test_a_reaction_failure_never_prevents_the_reply():
     await _drain(background)
 
     assert adapter.texts == ["今晚七點半得"]
-    assert len([f for f in memory.fed if "[Nora]" in f[1]]) == 1
+    assert memory.fed == [("miles", "nora.000 幾點食飯")]
     assert metrics.get("nora_reactions_total", status="failed") == 3.0
     assert metrics.get("nora_silent_failures_total") == 0.0
     assert pipeline._in_flight == set()
@@ -867,9 +937,9 @@ async def test_a_pipeline_with_no_roster_source_degrades_instead_of_emptying_the
 
 
 async def test_recall_asks_about_the_tagging_message_without_being_told_it():
-    """DEC-24 end to end: `recall(person)` has one parameter, and the QUESTION
+    """DEC-24 end to end: `about(person)` has one parameter, and the QUESTION
     reaches Honcho anyway because the pipeline closed over the tag body."""
-    runner = _RoomRunner("recall", person="Miles")
+    runner = _RoomRunner("about", person="Miles")
     memory = _RecordingMemory()
     pipeline, _metrics, _audit, _memory2, background = _build_pipeline(
         runner=runner, memory=memory,

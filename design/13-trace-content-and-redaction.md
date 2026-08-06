@@ -27,8 +27,8 @@ they carry:
 | Nora's replies and her tool-call arguments | `gen_ai.assistant.message` / `gen_ai.choice` | yes, under `gen_ai.output.messages` |
 | `read_buffer`'s returned rows (i.e. more group messages) | tool span, `tool.result` | yes — policed under `gen_ai.input.messages` |
 | the system prompt on the `chat` span | `gen_ai.system.message` event | yes, under `gen_ai.system_instructions` |
-| **the entire persona on the AGENT span** | plain `system_prompt` span attribute | **no — see §4** |
-| `tag_id`, `conversation_id`, `persona_sha256` | span attributes | n/a — provenance only, no content (`nora.obs.tracing.trace_attributes`, and a test pins it) |
+| **the entire doctrine on the AGENT span** | plain `system_prompt` span attribute | **no — see §4** |
+| `tag_id`, `conversation_id`, `doctrine_sha256` | span attributes | n/a — provenance only, no content (`nora.obs.tracing.trace_attributes`, and a test pins it) |
 
 R-18 (`nora.agent.egress`) guards what reaches the GROUP. Nothing guards what
 reaches the trace, and design/12 §3 already states the general form of this
@@ -92,7 +92,7 @@ transcript and keep the trajectory — turning it off removes both.
 `Agent._start_agent_trace_span` (agent.py:1470) passes `system_prompt=self.system_prompt`
 into `Tracer.start_agent_span` as a `**kwargs` extra, and `start_agent_span`
 does `attributes.update({k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool))})`.
-So the persona lands on the agent span as a plain attribute literally named
+So the doctrine lands on the agent span as a plain attribute literally named
 `system_prompt`, never passing through `_redact`. Observed in all three
 configurations above, including the fully-redacted one:
 
@@ -100,7 +100,7 @@ configurations above, including the fully-redacted one:
 "attributes": { ..., "system_prompt": "PERSONA-SOUL-TEXT", ... }
 ```
 
-The persona is Nora's own text rather than anyone's messages, so it is a
+The doctrine is Nora's own text rather than anyone's messages, so it is a
 different kind of disclosure from the transcript — but it is worth knowing that
 "turn on redaction" does not mean "the span carries no prompt".
 
@@ -152,7 +152,7 @@ visibility, which is the part worth arguing about.
 
 But the honest answer is that the native lever is too blunt to be the end
 state: it cannot separate "the group's transcript" from "what a tool
-returned", and it cannot touch the persona attribute at all. If traces are
+returned", and it cannot touch the doctrine attribute at all. If traces are
 load-bearing for evaluation, C is the option that actually does what is
 wanted, and its cost is operational rather than informational.
 

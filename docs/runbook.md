@@ -82,30 +82,30 @@ is correct. To tell "quiet" from "broken":
 If the silent-failure rate is low, `/health` is `200`, neither denial counter is moving,
 and `nora_identity_aliases` is above 1, she's just quiet — nobody has tagged her.
 
-## 2. "A persona edit broke her"
+## 2. "A doctrine edit broke her"
 
-Persona files (`nora/persona/*.md`) are hot-reloaded on every tag when
-`persona.reload: mtime` — editing them never needs a restart. But a bad edit (broken
+Doctrine files (`nora/doctrine/*.md`) are hot-reloaded on every tag when
+`doctrine.reload: mtime` — editing them never needs a restart. But a bad edit (broken
 frontmatter, missing required key, unparseable YAML) fails to parse.
 
 1. Check the reload-failure counter:
 
    ```bash
-   curl -s http://127.0.0.1:9100/metrics | grep nora_persona_reload_failures_total
+   curl -s http://127.0.0.1:9100/metrics | grep nora_doctrine_reload_failures_total
    ```
 
 2. Confirm it in the logs:
 
    ```bash
-   grep persona_reload_failed data/nora.log
+   grep doctrine_reload_failed data/nora.log
    ```
 
-   A failed reparse **keeps the last good persona** — Nora keeps replying with the
-   previous, working version, not with a crash or a half-parsed persona. The counter and
+   A failed reparse **keeps the last good doctrine** — Nora keeps replying with the
+   previous, working version, not with a crash or a half-parsed doctrine. The counter and
    log line are how you find out a bad edit is sitting there even though nothing looked
    broken from the group's side.
 
-3. Fix it: revert the file to the last-good version (`git checkout -- nora/persona/<file>.md`
+3. Fix it: revert the file to the last-good version (`git checkout -- nora/doctrine/<file>.md`
    or restore your edit). **No restart needed** — the next tag re-stats the directory,
    sees the corrected mtime, and reparses successfully.
 
@@ -200,18 +200,18 @@ container.
    docker compose restart nora
    ```
 
-## 5. "Which persona produced this reply?"
+## 5. "Which doctrine produced this reply?"
 
-Every reply's log line and trace carry `persona_sha256` — the sha256 of the persona version
-active for that specific tag, computed at `PersonaStore.get()` time. Find the tag by its
+Every reply's log line and trace carry `doctrine_sha256` — the sha256 of the doctrine version
+active for that specific tag, computed at `DoctrineStore.get()` time. Find the tag by its
 `tag_id` (or by time) and read the hash straight off that line:
 
 ```bash
-grep persona_sha256 data/nora.log | tail -1
+grep doctrine_sha256 data/nora.log | tail -1
 ```
 
-The same value is also reported live in `GET /health` (`persona_sha256` field) and as an
-OpenTelemetry span attribute, so you can confirm whether the *current* running persona
+The same value is also reported live in `GET /health` (`doctrine_sha256` field) and as an
+OpenTelemetry span attribute, so you can confirm whether the *current* running doctrine
 matches the one that produced a given historical reply, or whether it has since been
 hot-reloaded to something else.
 
@@ -258,7 +258,7 @@ with `headers_env = "LANGFUSE_OTLP_HEADERS"`. The credential lives in the gitign
   no-auth, not refuse to boot. `test_otlp_http_setup_does_not_crash_on_an_unreachable_endpoint`
   pins the same property for a dead collector.
 - `trace_attributes` emits **provenance only, never message content** — there is a
-  dedicated test. `persona_sha256` on every span is DEC-5's trace-to-prompt linkage.
+  dedicated test. `doctrine_sha256` on every span is DEC-5's trace-to-prompt linkage.
 
 **If traces stop appearing:** check the container log first. A 401 or a connection
 refusal is logged there and nowhere else, precisely because tracing failures are

@@ -15,7 +15,7 @@ PRESERVED_METRIC_NAMES = frozenset({
     "nora_silent_failures_total",
     "nora_guard_vetoes_total",
     "nora_leak_blocks_total",
-    "nora_persona_reload_failures_total",
+    "nora_doctrine_reload_failures_total",
     "honcho_feed_success",
     "honcho_feed_failure",
     "nora_tag_latency_seconds",
@@ -93,6 +93,23 @@ def test_histograms_render_buckets_sum_and_count():
     assert 'nora_tag_latency_seconds_bucket{le="+Inf"} 2.0' in text
     assert "nora_tag_latency_seconds_sum 7.4" in text
     assert "nora_tag_latency_seconds_count 2.0" in text
+
+
+def test_the_per_tag_message_histogram_is_bucketed_for_counts_not_seconds():
+    """It shares `observe()` with three latency histograms, so it would
+    silently inherit their `0.1 … 30` seconds buckets — under which 1 and 2
+    messages land in the same bucket and the whole series says nothing. The
+    number it exists to make legible (step 5: does the cap become a quota
+    always spent in full?) is only visible if consecutive integers separate."""
+    m = Metrics()
+    for delivered in (0, 1, 1, 2):
+        m.observe("nora_messages_per_tag", delivered)
+    text = m.render()
+    assert "# TYPE nora_messages_per_tag histogram" in text
+    assert 'nora_messages_per_tag_bucket{le="0.0"} 1.0' in text
+    assert 'nora_messages_per_tag_bucket{le="1.0"} 3.0' in text
+    assert 'nora_messages_per_tag_bucket{le="2.0"} 4.0' in text
+    assert "nora_messages_per_tag_count 4.0" in text
 
 
 def test_gauges_render_as_gauges():

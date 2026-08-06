@@ -18,32 +18,154 @@ from nora.domain.ports import MemoryHealth, Recollection
 
 log = logging.getLogger("nora.honcho")
 
-# `[2026-08-05 17:18:04] miles_novak is named Miles` — Honcho stamps each conclusion
-# with when it drew it. The timestamp is provenance for a human reading the
-# store, not something to read out in a group chat, and leaving it in front of
-# every line invites the model to quote it back as if it were a fact about the
-# conversation.
+# `[2026-08-06 11:04:13] probe_zzz is not coming to events on Thursdays`.
+#
+# THE STAMP IS BATCH-LEVEL, not per-conclusion. This comment used to say Honcho
+# "stamps each conclusion with when it drew it", which is wrong in the way that
+# matters: it is `internal_metadata["message_created_at"]` — the created_at of
+# the MESSAGE whose arrival triggered the derivation — copied onto every
+# conclusion in that batch (`src/utils/representation.py::
+# _safe_datetime_from_metadata`, honcho 3.0.11). Counted on the live instance:
+# `probe_zzz`'s 102 documents carry SIX distinct stamps, one of them shared by
+# 77 of them. So it is not a recency signal at conclusion granularity and
+# nothing downstream may sort or age by it.
+#
+# It is dropped for the reason it always was: provenance for a human reading
+# the store, not something to read out in a group chat — in front of every line
+# it invites the model to quote it back as a fact about the conversation.
 _STAMP = re.compile(r"^\[[^\]]*\]\s*")
+# `[id:abc123] ` — only emitted for `include_ids=True`, which this client never
+# asks for. Stripped anyway: it costs one regex and the alternative, if the
+# default ever flips, is a nanoid read out to the group.
+_ID = re.compile(r"^\[id:[^\]]*\]\s*")
+# ` **Pattern** [high]: <conclusion>` and ` **CONTRADICTION**: <content>` — the
+# two derived sections that label their conclusion inline instead of stamping
+# it. The confidence token is dropped with the label: `about` hands the
+# model a
+# flat list of things Nora knows, and `high`/`medium`/`low` is a number she
+# cannot calibrate, act on, or explain to a group.
+_PATTERN = re.compile(r"^\*\*Pattern\*\*\s*\[[^\]]*\]:\s*")
+_CONTRADICTION = re.compile(r"^\*\*CONTRADICTION\*\*:\s*")
+
+# Cosine distance above which a semantic hit is discarded rather than returned.
+#
+# BRACKETED ON BOTH SIDES against the live instance and the `probe_zzz` corpus
+# on 2026-08-06, because a threshold justified from one direction only is a
+# guess:
+#
+#   d       "how does he get to work"      "quantum chromodynamics lattice…"
+#   none    5 hits, correct                5 hits — the VW Golf, the rusty
+#   0.8     5 hits, correct                Chinese: pure nearest-neighbour noise
+#   0.5     5 hits, correct                0 hits
+#   0.3     0 hits — kills the real one    0 hits
+#
+# Without a floor the semantic channel ALWAYS returns `top_k` rows: pgvector
+# ranks, it does not judge, so a question about nothing in the corpus comes back
+# with the nearest unrelated facts and Nora reads them out as though they were
+# an answer. 0.5 is the widest value that rejects that cleanly while keeping
+# every real hit. Calibrated against the embedding model, not the deployment,
+# which is why it lives here and not in `config.toml`.
+_MAX_DISTANCE = 0.5
 
 
 def _conclusions(representation: Any) -> tuple[str, ...]:
-    """One prose blob → one conclusion per line, headings and bullets removed.
+    """One markdown blob → one conclusion per OBSERVATION. Never one per line.
 
-    Markdown `## Explicit Observations` / `## Deductions` headings are dropped
-    rather than carried: they are the store's own filing structure, and a tool
-    that returned them would be handing the model section titles to repeat.
+    ## What is actually on the wire
+
+    `Representation.format_as_markdown` (honcho 3.0.11, read out of the running
+    container rather than out of docs) emits FOUR sections, and only the first
+    is one-line-per-fact::
+
+        ## Explicit Observations
+        [<stamp>] <content>
+
+        ## Deductive Observations
+        [<stamp>] <conclusion>
+           Premises:
+           - <premise>
+
+        ## Inductive Observations
+         **Pattern** [<confidence>]: <conclusion>
+           **Type**: <pattern_type>
+           **Sources**:
+           - <source>
+           - ... and <n> more
+
+        ## Contradictions
+         **CONTRADICTION**: <content>
+           **Conflicting statements**:
+           - <source>
+
+    The premises under a deduction and the sources under a pattern are the
+    observations it was BUILT FROM. They are not independent facts, and
+    returning them flattened both inflates what Nora appears to know and hands
+    the model the same fact twice. Measured before this was written: the live
+    body for `probe_zzz` produced **151 "conclusions" from 25 documents**, of
+    which most were premise and source bullets, and every pattern arrived as
+    `Pattern** [high]: …` because the old `.lstrip("-*")` ate markdown bold from
+    the left and left the closing asterisks behind.
+
+    Only the Explicit section had ever been tested, because the only fixture was
+    `miles_novak`, whose 16 documents are all `level='explicit'`. Nothing had fired
+    yet purely because the old call shape (`search_top_k == max_conclusions`)
+    zeroed the two channels that surface derived levels — so fixing the call
+    shape without fixing this would have SHIPPED the mangling.
+
+    ## Why prose is still parsed at all
+
+    `POST /v3/workspaces/{ws}/conclusions/query` returns structured `Conclusion`
+    objects (`id`, `content`, `observer`, `observed`, `session_id`,
+    `created_at`) with clean `content` for every level and no parser needed. It
+    was evaluated against this and REJECTED, for one reason that is not about
+    tidiness: it is **semantic search and nothing else**. Its handler is a
+    single `crud.query_documents` call over one embedding of `body.query`
+    (`src/routers/conclusions.py::query_conclusions`), so it has no access to
+    the most-derived channel or the recent channel that
+    `get_working_representation` blends. Adopting it would hard-code the exact
+    failure the call shape below exists to undo — one channel of three, deciding
+    everything — and would trade a parser for a permanent loss of coverage.
+    It also carries no `distance` in its response, so it does not even buy back
+    a ranking signal; `distance` there is an input threshold, exactly as
+    `search_max_distance` is here.
+
+    ## The rules, and why they are these rules
+
+    A conclusion line is never a bullet and never indented; a premise, a source
+    and a sub-label are always one or the other. That is the discriminator, and
+    it is a property of the emitter rather than of any one body. An unrecognised
+    bold label is DROPPED rather than passed through, so a level Honcho adds
+    upstream degrades to silence instead of arriving as a fact Nora believes.
+
     Non-string input (a shape change upstream) yields `()` — the caller still
     knows the request itself succeeded, which is the distinction that matters.
     """
     if not isinstance(representation, str):
         return ()
-    lines = []
+    out: list[str] = []
     for raw in representation.splitlines():
-        line = _STAMP.sub("", raw.strip().lstrip("-*").strip()).strip()
+        line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        lines.append(line)
-    return tuple(lines)
+        # A premise, a source, or `- ... and 3 more`. No conclusion at any of
+        # the four levels is ever emitted as a bullet.
+        if line.startswith(("- ", "* ")) or line in ("-", "*"):
+            continue
+        # `   Premises:`, `   **Type**: …`, `   **Sources**:`,
+        # `   **Conflicting statements**:` — the sub-labels, all indented by the
+        # emitter. Conclusion lines start at column 0 (explicit, deductive) or
+        # after a single space (inductive, contradiction).
+        if raw.startswith("   "):
+            continue
+        line = _PATTERN.sub("", _STAMP.sub("", _ID.sub("", line)), count=1)
+        line = _CONTRADICTION.sub("", line, count=1).strip()
+        # Anything still wearing a bold label is a shape this parser has not
+        # been taught. `Pattern** [high]: …` is what passing it through looks
+        # like, and it is what this function was rewritten to stop emitting.
+        if not line or line.startswith("**"):
+            continue
+        out.append(line)
+    return tuple(out)
 
 
 class HonchoClient:
@@ -62,7 +184,7 @@ class HonchoClient:
         self._card_timeout = card_timeout
         # Measured at 0.19 to 0.26 s against the live instance on 2026-08-06, so
         # 3 s is ~12x headroom rather than a guess. It is a ceiling on a call
-        # that happens INSIDE a live turn (the `recall` tool), which is why it
+        # that happens INSIDE a live turn (`about`), which is why it
         # is bounded at all: the tag already costs a model round trip per tool
         # call, and a hung memory service must not add to that.
         self._representation_timeout = representation_timeout
@@ -224,7 +346,7 @@ class HonchoClient:
         return [str(line).lstrip("-* ").strip() for line in card if str(line).strip()]
 
     async def representation(
-        self, *, peer_id: str, search_query: str, max_conclusions: int = 5
+        self, *, peer_id: str, search_query: str, max_conclusions: int = 9
     ) -> Recollection:
         """What Honcho concludes about one peer, curated to one question.
 
@@ -253,13 +375,50 @@ class HonchoClient:
         (`ensure_session` builds `nora-<peer_id>`), so scoping to one would
         return a subset of what the unscoped call already returns for that
         same peer.
+
+        ## `max_conclusions` is a budget split THREE ways, not a row limit
+
+        Read out of `src/crud/representation.py::
+        _get_working_representation_internal` (honcho 3.0.11), which spends it
+        across three independent queries::
+
+            semantic = min(search_top_k or total // 3, total)   # pgvector rank
+            derived  = min(total // 3, total - semantic)        # times_derived DESC
+            recent   = total - semantic - derived               # created_at DESC
+
+        This used to send `search_top_k = max_conclusions` and no
+        `include_most_frequent`, which computes to `semantic = 5, derived = 0,
+        recent = 0`: **the semantic channel ate the entire budget and the other
+        two were structurally unreachable.** The derived channel is the one
+        ADR 0001 says Honcho exists for — `times_derived` counts how often the
+        deduplicator has re-derived the same conclusion, so it ranks the durable
+        core of what is known about a person above whatever one question happens
+        to embed near.
+
+        `search_top_k = max_conclusions // 3` restores an even three-way blend.
+        That is also Honcho's own default when `search_top_k` is omitted, and it
+        is sent explicitly anyway: an upstream default is a value that can change
+        underneath us without a diff, and the one thing this endpoint has proven
+        is that its behaviour is worth pinning from this side. `max(1, …)` keeps
+        it inside the API's `ge=1` bound for small budgets.
+
+        `max_conclusions` rose from 5 to 9 in the same change, because the split
+        turns it into three budgets rather than one. At 5 the semantic channel
+        was **one row**, and measured against `probe_zzz` — a corpus that
+        demonstrably contains the answer — one row was not enough to answer «how
+        does he get to work»: the nearest hit is *does the morning school run*
+        and *drives to work instead of taking the train* is third. 9 gives 3/3/3
+        and costs roughly 1,100 characters of tool result, in the same order as
+        `read_buffer`'s default and well inside `llm.limits`.
         """
         result = await self._post(
             self._url(f"/peers/{peer_id}/representation"),
             {
                 "search_query": search_query,
                 "max_conclusions": max_conclusions,
-                "search_top_k": max_conclusions,
+                "search_top_k": max(1, max_conclusions // 3),
+                "include_most_frequent": True,
+                "search_max_distance": _MAX_DISTANCE,
             },
             self._representation_timeout,
         )

@@ -17,10 +17,10 @@ def _script(text="reply"):
         ("llm_timeout", False, "invocation_timeout"),
         ("empty_reply", False, "empty_reply"),
         ("db_append_fails", False, "audit_write_failed"),
-        ("leak_guard_trips", False, "persona_leak"),
+        ("leak_guard_trips", False, "doctrine_leak"),
         ("no_send_call", False, "no_send_call"),
         ("honcho_down", True, None),
-        ("persona_reload_fails", True, None),
+        ("doctrine_reload_fails", True, None),
         ("context_read_fails", True, None),
         ("send_fails", True, "send_failed"),
     ],
@@ -69,9 +69,9 @@ async def test_a_reply_still_happens_with_no_peer_card(harness_factory):
     assert h.honcho.fed == []
 
 
-async def test_a_broken_persona_edit_uses_the_last_good_persona(harness_factory):
-    h = await harness_factory(script=_script(), fault="persona_reload_fails")
+async def test_a_broken_doctrine_edit_uses_the_last_good_doctrine(harness_factory):
+    h = await harness_factory(script=_script(), fault="doctrine_reload_fails")
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
     assert len(h.sink.sent) == 1
-    assert h.persona_store.reload_failures == 1
+    assert h.doctrine_store.reload_failures == 1

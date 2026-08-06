@@ -75,10 +75,10 @@ def _build_exporter(exporter: str, endpoint: str, headers_env: str) -> _SpanExpo
     raise ValueError(f"unknown tracing exporter: {exporter!r}")
 
 
-def trace_attributes(ctx, persona) -> dict:
+def trace_attributes(ctx, doctrine) -> dict:
     """Provenance only — never message content (see the dedicated test for this)."""
     return {
         "tag_id": ctx.tag_id,
         "conversation_id": ctx.message.conversation_id,
-        "persona_sha256": persona.sha256,
+        "doctrine_sha256": doctrine.sha256,
     }

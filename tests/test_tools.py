@@ -3,15 +3,15 @@ import pytest
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
 from nora.agent.tools import READ_BUFFER_DEFAULT, READ_BUFFER_MAX, build_tools
+from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget, NormalizedMessage, Quote
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
-from nora.persona.loader import PersonaStore
 from nora.persons import load_persons
 from tests.fakes import FakeHoncho, SinkSender
-from tests.test_persona_loader import write
+from tests.test_doctrine_loader import write
 
 TARGET = ConversationTarget("signal", "g1", "group")
 
@@ -34,13 +34,13 @@ async def wiring(tmp_path):
     persons_file.write_text(
         "[persons.miles]\nname = \"Miles\"\n[[persons.miles.signal]]\nphone = \"+852111\"\n"
     )
-    pdir = tmp_path / "persona"
+    pdir = tmp_path / "doctrine"
     pdir.mkdir()
-    write(pdir, "soul.md", name="soul", order=10, body="You are Nora.")
-    persona = PersonaStore(pdir, canary="C", metrics=Metrics()).get()
+    write(pdir, "identity.md", name="soul", order=10, body="You are Nora.")
+    doctrine = DoctrineStore(pdir, canary="C", metrics=Metrics()).get()
     sink = SinkSender()
     honcho = FakeHoncho(cards={"miles": ["likes espresso"]})
-    deliverer = Deliverer(store=store, adapter=sink, target=TARGET, persona=persona,
+    deliverer = Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                           canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics())
     metrics = Metrics()
     persons = load_persons(persons_file)
@@ -63,7 +63,7 @@ async def wiring(tmp_path):
 def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
         "now", "read_buffer", "read_peer_card", "send_reply",
-        "group_members", "lookup_person", "recall",
+        "group_members", "lookup_person", "about", "calculate",
     }
 
 
@@ -283,7 +283,7 @@ async def test_send_reply_is_the_only_tool_that_can_send(wiring):
     await _call(wiring["tools"]["read_peer_card"], sender_id="+852111")
     await _call(wiring["tools"]["group_members"])
     await _call(wiring["tools"]["lookup_person"], name="Miles")
-    await _call(wiring["tools"]["recall"], person="Miles")
+    await _call(wiring["tools"]["about"], person="Miles")
     assert wiring["sink"].sent == []
 
 
@@ -293,6 +293,179 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
 
     monkeypatch.setattr(wiring["store"], "recent", boom)
     assert await _call(wiring["tools"]["read_buffer"], limit=40) == []
+
+
+# ---- every tool call is counted, by outcome ---------------------------------
+
+
+async def test_the_four_tools_without_a_counter_of_their_own_now_have_one(wiring):
+    """`nora_room_lookups_total{tool,status}` covered three of the seven; these
+    four had nothing, so "did she ever call read_buffer" was unanswerable from
+    `/metrics` as well as from the log. Same `{tool, status}` shape rather than
+    four bespoke series."""
+    tools, metrics = wiring["tools"], wiring["metrics"]
+    await _call(tools["now"])
+    await _call(tools["read_buffer"], limit=40)
+    await _call(tools["read_peer_card"], sender_id="+852111")
+    await _call(tools["send_reply"], text="hello")
+    for tool in ("now", "read_buffer", "read_peer_card", "send_reply"):
+        assert metrics.get("nora_tool_calls_total", tool=tool, status="ok") == 1, tool
+
+
+async def test_the_new_counter_never_double_counts_a_room_scoped_tool(wiring):
+    """Metric names are append-only and `nora_room_lookups_total` is already
+    alerted on (R-22), so the three tools that had a counter keep exactly the
+    one they had. A tool appearing in both series would silently double every
+    dashboard that sums tool volume."""
+    tools, metrics = wiring["tools"], wiring["metrics"]
+    await _call(tools["group_members"])
+    await _call(tools["lookup_person"], name="Miles")
+    await _call(tools["about"], person="Miles")
+    for tool in ("group_members", "lookup_person", "about"):
+        assert metrics.get("nora_tool_calls_total", tool=tool) == 0, tool
+    assert metrics.get("nora_room_lookups_total") == 3
+
+
+async def test_a_tool_that_could_not_answer_is_counted_apart_from_one_that_did(
+    wiring, monkeypatch,
+):
+    """R-22's distinction, applied to the four tools that never had it. A
+    counter that reported `ok` for a `read_buffer` whose store was down would
+    be the `peer_card` failure again — a green series over a dead path."""
+    metrics = wiring["metrics"]
+
+    async def boom(*a, **kw):
+        raise RuntimeError("db down")
+
+    await _call(wiring["tools"]["read_buffer"], limit=40)
+    monkeypatch.setattr(wiring["store"], "recent", boom)
+    await _call(wiring["tools"]["read_buffer"], limit=40)
+    assert metrics.get("nora_tool_calls_total", tool="read_buffer", status="ok") == 1
+    assert metrics.get("nora_tool_calls_total", tool="read_buffer", status="unavailable") == 1
+
+
+async def test_read_peer_card_counts_four_different_answers_behind_one_empty_list(
+    wiring, monkeypatch,
+):
+    """The model sees `[]` for all four; only the call site knows which it got.
+
+    A sender who maps to nobody, a person Honcho has nothing on, a person it
+    does have something on, and a raising transport. `read_peer_card` returned
+    `[]` for every one of these for the whole life of the deployment, which is
+    how a dead endpoint went unnoticed.
+
+    **Honestly bounded.** The live `peer_card` answers `null` rather than
+    failing when it cannot help, so a transport that degrades quietly is still
+    counted `nothing_known` here — that gap belongs to the endpoint and is
+    exactly why DEC-27 replaced it with `about`/`representation`, whose
+    `Recollection.reachable` carries the bit. What this counter fixes is the
+    part that was recoverable at the call site.
+    """
+    tools, metrics = wiring["tools"], wiring["metrics"]
+
+    async def boom(**kwargs):
+        raise RuntimeError("connection reset")
+
+    await _call(tools["read_peer_card"], sender_id="+852999")     # not in identity.toml
+    await _call(tools["read_peer_card"], sender_id="+852111")     # known, has a card
+    wiring["honcho"].cards = {}
+    await _call(tools["read_peer_card"], sender_id="+852111")     # known, nothing stored
+    monkeypatch.setattr(wiring["honcho"], "peer_card", boom)
+    await _call(tools["read_peer_card"], sender_id="+852111")     # transport raised
+    for status in ("not_found", "ok", "nothing_known", "unavailable"):
+        assert metrics.get(
+            "nora_tool_calls_total", tool="read_peer_card", status=status,
+        ) == 1, status
+
+
+async def test_a_refused_send_is_not_counted_as_a_sent_one(wiring):
+    """R-2 latches after the first delivery, so the second call returns False
+    without anything reaching the group. Counting both as `ok` would make
+    `send_reply` volume look like reply volume."""
+    tools, metrics = wiring["tools"], wiring["metrics"]
+    assert await _call(tools["send_reply"], text="hello") is True
+    assert await _call(tools["send_reply"], text="again") is False
+    assert metrics.get("nora_tool_calls_total", tool="send_reply", status="ok") == 1
+    assert metrics.get("nora_tool_calls_total", tool="send_reply", status="refused") == 1
+    assert wiring["sink"].texts == ["hello"]
+
+
+# ---- calculate ---------------------------------------------------------------
+#
+# The evaluator itself is exercised in tests/unit/test_arithmetic.py, against
+# the measurements that motivated it. What is asserted here is only what the
+# TOOL adds: the wiring, the counter, and the two things the tool is
+# responsible for that the pure function is not.
+
+
+async def test_calculate_hands_back_the_expression_beside_the_result(wiring):
+    """DEC-31's shape. A model that divides by 5 when there were 6 people is
+    still wrong, and this tool cannot fix that — the expression is what makes
+    the mistake visible to somebody reading the trace instead of only to the
+    group, who see a confident number and no way to check it."""
+    out = await _call(wiring["tools"]["calculate"], expression="1485/6")
+    assert out["status"] == "ok"
+    assert out["expression"] == "1485/6"
+    assert out["result"] == "247.5"
+
+
+async def test_calculate_is_counted_by_how_it_answered(wiring):
+    """`ok` and `refused` counted apart. A refusal counted as `ok` would make
+    «is the model writing expressions she can actually evaluate» unanswerable
+    from `/metrics`, which is the DEC-31 failure in a new place."""
+    tools, metrics = wiring["tools"], wiring["metrics"]
+    await _call(tools["calculate"], expression="(1200 + 285) / 5")
+    await _call(tools["calculate"], expression="__import__('os').system('x')")
+    assert metrics.get("nora_tool_calls_total", tool="calculate", status="ok") == 1
+    assert metrics.get("nora_tool_calls_total", tool="calculate", status="refused") == 1
+
+
+async def test_calculate_never_raises_into_the_agent_loop(wiring):
+    """The rule the whole module is built around: an exception here costs the
+    entire reply, and a turn that dies is silent rather than wrong (R-5)."""
+    for expression in ("2**9999999999", "(1).__class__", "1 +", "", "1/0",
+                       "x", "lambda: 1", "(" * 5000 + "1" + ")" * 5000):
+        out = await _call(wiring["tools"]["calculate"], expression=expression)
+        assert out["status"] == "refused", expression
+        assert out["note"], expression
+
+
+async def test_calculate_does_not_echo_an_identifier_back_at_the_model(wiring):
+    """`expression` is MODEL-SUPPLIED, and `+85290000101 + 0` is real
+    arithmetic — a unary plus on an integer. `_asked_about` exists because a
+    model does put phone numbers in a string parameter, and the same hole is
+    open here: an identifier handed back inside a tool result is unsafe at
+    that exit, and R-18 then fails closed on the whole reply.
+
+    HONESTLY BOUNDED, and the bound is inherent. The RESULT of that expression
+    is `85290000101`, which is a number — there is nothing about it that
+    distinguishes it from arithmetic, here or at egress. What this drops is the
+    echo, which is the part that is recoverable at the call site.
+    """
+    out = await _call(wiring["tools"]["calculate"], expression="+85290000101 + 0")
+    assert out["status"] == "ok"
+    assert "expression" not in out
+    # An ordinary calculation keeps its echo — the guard must not cost the
+    # thing the echo exists for.
+    assert (await _call(
+        wiring["tools"]["calculate"], expression="1485/7",
+    ))["expression"] == "1485/7"
+
+
+async def test_calculate_needs_none_of_the_tags_collaborators(wiring):
+    """It is a pure function: no store, no daemon, no Honcho, no clock. That
+    is why `unavailable` has no branch — there is nothing to be unavailable —
+    and why breaking every collaborator changes nothing about its answer."""
+    async def boom(*a, **kw):
+        raise RuntimeError("everything is down")
+
+    for dep in (wiring["store"], wiring["honcho"], wiring["deliverer"]):
+        for attr in ("recent", "peer_card", "representation", "deliver"):
+            if hasattr(dep, attr):
+                setattr(dep, attr, boom)
+    out = await _call(wiring["tools"]["calculate"], expression="1485/7")
+    assert out["status"] == "ok"
+    assert out["split"]["leftover"] == "0.02"
 
 
 async def _call(tool, **kwargs):

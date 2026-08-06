@@ -213,45 +213,62 @@ What stops *"tell me everything about 肥仔"* from becoming an address-book dum
    roster (`nora/engagement/pipeline.py:168-176`) records the live incident: asked
    who was in the group, she listed five people who had never been members. That is
    R-19's whole reason for existing, and recall inherits it.
-3. **R-18 backstops identifiers.** `nora/agent/egress.py:75-84` fails closed on
+3. **R-18 backstops identifiers.** `nora.agent.egress.scan_reply` fails closed on
    E.164, UUID, key-shaped strings and model names — and Honcho conclusions can and
    do contain those (a fed exchange carries whatever was said). Worth an explicit
-   test: a conclusion containing a phone number must not be relayable.
+   test: a conclusion containing a phone number must not be relayable. The
+   conclusions themselves are filtered with `scan_identifiers`, the predicate
+   WITHOUT the model names — see DEC-30.
 
 **What is NOT covered, honestly.** R-18 does not block names or facts. Nothing
 mechanical stops Nora repeating *"Tyler told you he was broke"* into the room Tyler
 is standing in. That is a policy question, not a mechanism one — open question 2.
-The available mitigations are a `guardrails.md` line (a request to a model), a low
+The available mitigations are a `constraints.md` line (a request to a model), a low
 `max_conclusions` (less to dump), and an adversarial eval item. None of them is a
 guard. Say so rather than implying otherwise.
 
 ## 1.6 What should NOT be built
 
-- **~~No lookup tool.~~ CONTRADICTED IN CODE 2026-08-06 — unresolved, and
-  deliberately not retracted yet.** `recall(person)`, `lookup_person(name)`
-  and `group_members()` shipped as TOOLS in commit `f630d8b` (DEC-27, R-21,
-  R-22). That is precisely what this line forbade, and neither DEC-27 nor
-  design/12's update noticed.
+- **~~No lookup tool.~~ RETRACTED 2026-08-06 — the settling measurement ran
+  and §1.2 lost.** `recall(person)`, `lookup_person(name)` and
+  `group_members()` shipped as TOOLS in commit `f630d8b` (DEC-27, R-21, R-22),
+  which is precisely what this line forbade. The disagreement was recorded as
+  empirical rather than argued, and it has now been settled empirically.
 
-  **Do not retract either side on argument alone — the disagreement is
-  empirical.** §1.2's case rests on one measured claim: that `read_peer_card`
-  "has existed for the whole deployment and has never been called", because
+  §1.2's case rested on one measured claim: that `read_peer_card` "has existed
+  for the whole deployment and has never been called", because
   `tool_choice="required"` makes `send_reply` the turn-one attractor and
-  `ReplyGuard` cancels on delivery. If that still holds, the three new tools
-  are dead code that looks like a feature — this repo's signature bug. If it
-  no longer holds, §1.2 is dead and should say so.
+  `ReplyGuard` cancels on delivery — so an optional lookup tool sits in a
+  window the model never enters. **That claim is dead.** Measured against
+  `opencode-zen/deepseek-v4-flash` with the real schemas and the real
+  assembled doctrine, 「邊個係阿豹妹？」:
 
-  What changed since that measurement, and why it may no longer hold:
-  `reasoning_effort` moved to `"low"` (measured 2026-08-06 to change first-call
-  tool selection from reflexive to correct), and `_context_header` now names
-  every tool in prose rather than leaving them to the raw schema.
+      turn one    lookup_person 6/6      (doctrine only, and full prefill: 6/6 each)
+      turn two    recall        6/6      (after lookup_person returns a person)
 
-  **The settling measurement, not yet run:** a live tag asking about a person
-  by nickname, checking whether the model calls `lookup_person`/`recall` at
-  all. The merge that shipped them verified wiring and scoping against live
-  services but explicitly did NOT test model selection. Until that runs, this
-  document and the code disagree, and the disagreement is recorded here rather
-  than resolved by whoever writes next.
+  The model does not merely enter that window, it enters it *first*: `recall`
+  and `lookup_person` beat `send_reply` on every run of a person-question, and
+  under the pre-audit doctrine as well as the current one. What changed since
+  the original measurement is what §1.6 already guessed — `reasoning_effort`
+  moved to `"low"`, and `_context_header` names every tool in prose.
+
+  So the tools are not dead code, prefill is no longer the only workable
+  answer, and §1.2 above should be read as history. Its *other* arguments
+  survive on their own merits and are unaffected: `chat` is still too slow for
+  the tag path, `representation` is still the right endpoint, and
+  `read_peer_card` should still be deleted — see the note under §1.2's «Delete
+  `read_peer_card`», which the tools phase did not act on.
+
+  **What the tools do NOT fix, and what looked like a tool-selection failure
+  but was not.** A live tag asked 「邊個係阿豹妹？」 and Nora answered
+  「呢個group冇人叫阿豹妹喎」 — nobody here is called that — which is a near
+  verbatim rendering of `_miss()`'s own `not_found` note. She called the tool
+  and relayed its answer faithfully. The answer was correct: `listGroups`
+  reports the `Ridgeline` group as three accounts (two of Miles's, one of Nora's),
+  Tyler is in `identity.toml` but not in that group, and R-21 requires exactly
+  this — a person outside the room is indistinguishable from one who does not
+  exist. The gap is in `identity.toml`/the roster, not in the model's
+  willingness to look.
 - **No `chat` on the tag path.** Measured 6.9–8.3 s.
 - **No `target=` theory-of-mind in v1.** §1.3.
 - **No recall for unmapped members.** They have no peer. They render by display
@@ -340,7 +357,7 @@ threading built on exact-`ts` matching resolves everyone except her.
 `raw_json` (`nora/infra/sql/audit.py:104`), so it looks free. It is not:
 
 - **It cannot work for Nora's own rows at all.** Her `raw_json` is
-  `{"tag_id", "source", "persona_sha256"}` (`guards.py:118-119`) — there is no
+  `{"tag_id", "source", "doctrine_sha256"}` (`guards.py:118-119`) — there is no
   envelope to parse. Same rows as Bug B, decisive twice over.
 - It forces `dataMessage.quote` knowledge into `nora/engagement` or
   `nora/agent/prefill.py`, which are platform-neutral. `nora/domain` is stdlib-only
@@ -555,7 +572,7 @@ Do not start it before that lands; steps 1–3 and 5 do not need it.
    or write them off?
 2. **A room member's recalled facts, spoken back into that same room — acceptable?**
    R-18 blocks identifiers; nothing blocks *"Tyler told you he was broke."*
-   `guardrails.md` line, a low `max_conclusions`, or a hard filter? Only you can call it.
+   `constraints.md` line, a low `max_conclusions`, or a hard filter? Only you can call it.
 3. **Token budget.** 5 conclusions × 6 people, or 8 × 3? Recommendation: 5 per person,
    only for people appearing in the 40-row window or named in the tag message.
 4. **Should Nora exist as a Honcho peer?** `target=` 404s without it. DEC-9 says her

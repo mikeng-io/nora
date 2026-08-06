@@ -7,6 +7,7 @@ from nora.obs.metrics import Metrics
 
 BASE_URL = "http://localhost:20128/v1"
 BUDGETS = ToolRegistry().budgets()
+TERMINAL = ToolRegistry().terminal_tools()
 API_KEY = "test-key"
 MODEL = "deepseek-v4-flash"
 MAX_TOKENS = 400
@@ -19,7 +20,7 @@ def _client() -> object:
 
 
 def _guard() -> ReplyGuard:
-    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, metrics=Metrics())
+    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=Metrics())
 
 
 def test_create_client_is_a_plain_constructor_not_a_memoized_singleton():
@@ -86,7 +87,7 @@ def test_create_agent_is_stateless_by_construction():
     )
     agent = factory.create_agent(
         model=model,
-        system_prompt="<nora_persona/>",
+        system_prompt="<nora_doctrine/>",
         tools=[],
         pre_fill=[{"role": "user", "content": [{"text": "ctx"}]}],
         guard=_guard(),
@@ -94,7 +95,7 @@ def test_create_agent_is_stateless_by_construction():
         retry=RETRY,
     )
     assert isinstance(agent.conversation_manager, NullConversationManager)
-    assert agent.system_prompt == "<nora_persona/>"
+    assert agent.system_prompt == "<nora_doctrine/>"
 
 
 def test_create_agent_installs_the_prefill_as_conversation_history():

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any
 
 from strands.hooks import (
@@ -17,11 +17,11 @@ from strands.hooks import (
     HookRegistry,
 )
 
+from ..doctrine.loader import Doctrine
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..domain.ports import SendResult
 from ..obs.metrics import Metrics
-from ..persona.loader import Persona
-from .egress import LeakGuard, scan_egress
+from .egress import LeakGuard, scan_reply
 
 log = logging.getLogger("nora.guards")
 
@@ -42,7 +42,7 @@ class Deliverer:
         store,
         adapter,
         target: ConversationTarget,
-        persona: Persona,
+        doctrine: Doctrine,
         canary: str,
         tag_id: str,
         nora_sender_id: str,
@@ -54,15 +54,28 @@ class Deliverer:
         self._tag_id = tag_id
         self._nora_sender_id = nora_sender_id
         self._metrics = metrics
-        self._leak = LeakGuard(persona, canary)
-        self._persona_sha256 = persona.sha256
+        self._leak = LeakGuard(doctrine, canary)
+        self._doctrine_sha256 = doctrine.sha256
         self._attempted = False
-        self._delivered = False
+        self._delivered_count = 0
         self._last_text: str | None = None
 
     @property
     def delivered(self) -> bool:
-        return self._delivered
+        return self._delivered_count > 0
+
+    @property
+    def delivered_count(self) -> int:
+        """How many messages actually reached the group this tag.
+
+        Derived from, rather than kept beside, the `delivered` flag — one
+        counter, so the two can never disagree. It is 0 or 1 today and cannot
+        be more: R-2's latch refuses a second `deliver` call. That is exactly
+        why it exists now — `nora_messages_per_tag` needs a baseline recorded
+        while the answer is still known, before multi-message (step 5) makes
+        every reading of the histogram a comparison against nothing.
+        """
+        return self._delivered_count
 
     @property
     def attempted(self) -> bool:
@@ -87,16 +100,19 @@ class Deliverer:
 
         reason = self._leak.check(text)                        # R-6
         if reason:
-            log.error("persona_leak_blocked: %s (tag=%s)", reason, self._tag_id)
+            log.error("doctrine_leak_blocked: %s (tag=%s)", reason, self._tag_id)
             self._metrics.inc("nora_leak_blocks_total")
             self._metrics.inc(
-                "nora_silent_failures_total", reason="persona_leak", platform=self._target.platform,
+                "nora_silent_failures_total", reason="doctrine_leak",
+                platform=self._target.platform,
             )
             return False
 
         # R-18 — see `nora.agent.egress` for why this exists and what it
-        # deliberately does not match.
-        kind = scan_egress(text)
+        # deliberately does not match. This is the ONE caller of `scan_reply`,
+        # the strict predicate: `text` here is addressed to the group, so the
+        # model name is a disclosure. Everywhere else uses `scan_identifiers`.
+        kind = scan_reply(text)
         if kind:
             log.error("egress_blocked: %s (tag=%s)", kind, self._tag_id)
             self._metrics.inc("nora_egress_blocks_total", kind=kind)
@@ -116,7 +132,7 @@ class Deliverer:
             timestamp=int(time.time() * 1000),
             body=text,
             raw={"tag_id": self._tag_id, "source": source,
-                 "persona_sha256": self._persona_sha256},
+                 "doctrine_sha256": self._doctrine_sha256},
         )
         try:                                                   # record-first
             row_id = await self._store.append(
@@ -146,7 +162,7 @@ class Deliverer:
             log.exception("delivery_status update failed (tag=%s)", self._tag_id)
 
         if result.ok:
-            self._delivered = True
+            self._delivered_count += 1
             self._last_text = text
             self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)
         else:
@@ -180,17 +196,29 @@ class ReplyGuard(HookProvider):
     via `nora.engagement.stages.deliver.build` — so the number a tool costs
     lives with the tool, not with the guard. R-7's OTHER half, unknown-tool
     default-deny, is unchanged: a tool absent from `budgets` is still vetoed.
+
+    `terminal` is DEC-32 and is the same argument applied to the OTHER thing
+    this guard used to hardcode: which verbs end a turn. It comes from
+    `ToolRegistry.terminal_tools()` along the same path, and it has NO DEFAULT
+    on purpose. A guard constructed without it would end no turn at all —
+    `tool_choice="required"` means the loop cannot stop by itself — which is
+    the ~25s-per-tag runaway DEC-21 fixed, and defaulting to `()` would hide
+    that behind a working-looking constructor.
     """
 
     def __init__(
-        self, *, conversation_id: str, budgets: Mapping[str, int], deliverer=None,
-        metrics: Metrics,
+        self, *, conversation_id: str, budgets: Mapping[str, int],
+        terminal: Collection[str], deliverer=None, metrics: Metrics,
     ) -> None:
         self._conversation_id = conversation_id
         self._budgets = dict(budgets)
+        self._terminal = frozenset(terminal)
         self._deliverer = deliverer
         self._metrics = metrics
         self.counts: dict[str, int] = dict.fromkeys(self._budgets, 0)
+        # Set by `_after_tool` when a terminal verb has actually RUN — not
+        # when one was merely attempted. See `_before_model`.
+        self._turn_is_over = False
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
@@ -245,8 +273,37 @@ class ReplyGuard(HookProvider):
             )
             self._metrics.inc("nora_tool_scope_violations_total", tool=tool_name)
 
+        # R-7's per-tool budget, and — for `send_reply` — **the message cap**.
+        # THIS CHECK RUNS BEFORE R-2's latch below, and that ordering is half of
+        # DEC-32. `NATIVE_TOOL_BUDGETS["send_reply"]` is 1, so a second reply is
+        # refused HERE, by a number, and never reaches `Deliverer.attempted`.
+        # Relaxing R-2 alone — which is what
+        # `design/proposed/16-multi-message-replies.md` reads like — would leave
+        # multi-message silently dead: the model would be told "you already sent
+        # your reply" by a budget nobody had edited. Raising the number in
+        # `nora.agent.tools.NATIVE_TOOLS` is therefore not optional bookkeeping,
+        # and the latch below is what refuses the second message once it is
+        # raised. Both halves are pinned in `tests/test_guards_replyguard.py`,
+        # under "the message cap lives in the budget, not in R-2's latch".
         if self.counts[tool_name] >= self._budgets[tool_name]:
             if tool_name == "send_reply":
+                # Labelled R-2 although the BUDGET is what refused it: the
+                # model-facing sentence is the same either way, and the rule an
+                # operator cares about is "one reply per tag". Anyone changing
+                # the cap must read the two branches together — this counter
+                # cannot tell them apart.
+                #
+                # DEC-33 considered splitting them and DECIDED NOT TO, for now.
+                # `rule` values are as append-only as the metric names (a new
+                # value silently splits every existing `rule="R-2"` query), and
+                # the branch a new value would name — the latch below — is
+                # UNREACHABLE while the budget is 1. Adding it today buys a
+                # series that cannot increment, which R-17 says is
+                # indistinguishable from one that was deleted. The moment the
+                # cap is raised, both branches become live at once and both
+                # have to be revised together; that is the edit where the
+                # second label is worth its cardinality, and DEC-32 (5) is
+                # already the note that forces the two to be read together.
                 return self._veto(
                     "R-2", "You already sent your reply. Do not call send_reply "
                            "again. If you still need something, use one of the "
@@ -263,6 +320,11 @@ class ReplyGuard(HookProvider):
             if not text.strip():
                 return self._veto("R-4", "Your reply text is empty. "
                                          "Send real text or end your turn.")
+            # R-2's latch, the authoritative single-shot mechanism (spec S4) —
+            # and, TODAY, UNREACHABLE FOR A SECOND `send_reply`: the budget
+            # check above has already refused it, because that budget is 1.
+            # This branch only fires if something raised the budget without
+            # revising R-2, which is precisely the ordering trap named there.
             if self._deliverer is not None and self._deliverer.attempted:
                 return self._veto(
                     "R-2", "You already sent your reply. Do not call send_reply "
@@ -277,7 +339,7 @@ class ReplyGuard(HookProvider):
         registry.add_callback(BeforeModelCallEvent, self._before_model)
 
     def _before_model(self, event: BeforeModelCallEvent) -> None:
-        """End the turn as soon as the reply is out.
+        """End the turn as soon as a TERMINAL verb has run (DEC-32).
 
         `tool_choice="required"` (see `nora.agent.factory`) is the only reason
         this model calls `send_reply` at all — but it applies to EVERY turn, so
@@ -288,11 +350,27 @@ class ReplyGuard(HookProvider):
         actually succeeded showed the group ⚠️. One cause, two symptoms, both
         observed live.
 
-        Cancelling here is the narrow fix. R-2 already refuses a second send,
-        so nothing after the first delivery can change what the group sees —
-        the remaining turns were pure cost.
+        Cancelling here is the narrow fix. The R-7 budget already refuses a
+        second `send_reply` (it is 1, and it is checked before R-2's latch), so
+        nothing after the first call can change what the group sees — the
+        remaining turns were pure cost.
+
+        **This asked `self._deliverer.delivered` until DEC-32**, which made
+        "the turn is over" a property of ONE tool's side effect rather than of
+        the tools. `design/proposed/15-gif-replies.md` §1 needs a second
+        terminal verb and proposed defining the class here; a Honcho
+        investigation on 2026-08-06 raised a third candidate (a distinct feed
+        step on the tag path). Both are now a `terminal=True` in `NATIVE_TOOLS`,
+        with no edit to this file.
+
+        The one behavioural difference is a `send_reply` the `Deliverer`
+        REFUSED (R-6 canary, R-18 egress, an audit-write or send failure).
+        `delivered` stayed False, so the loop used to keep running; it now
+        stops. The group sees the same thing either way — the tool call was
+        recorded, so the budget of 1 is spent and a retry is already refused —
+        and the difference is purely the forced turns that followed.
         """
-        if self._deliverer is not None and self._deliverer.delivered:
+        if self._turn_is_over:
             event.cancel = "Reply already sent — the turn is finished."
 
     def _before_tool(self, event) -> None:
@@ -312,7 +390,27 @@ class ReplyGuard(HookProvider):
         try:
             if getattr(event, "exception", None) is not None:
                 return                       # a failed call does not consume budget
+            # A CANCELLED CALL DID NOT RUN, so it consumes no budget and cannot
+            # have ended the turn. Strands fires this hook for a call
+            # `_before_tool` vetoed too — `cancel_tool` produces an error
+            # `ToolResult` and `exception=None`
+            # (`strands.tools.executors._executor`, verified against 1.50.2) —
+            # so `cancel_message` is the ONLY field that separates the two.
+            # `tests/test_strands_api_contract.py` asserts it against the real
+            # SDK, because that is load-bearing rather than incidental.
+            #
+            # DEC-32 applied this to the terminal latch below and NOT to
+            # `record`, which left a live bug (DEC-33): `send_reply`'s budget is
+            # 1, so a `send_reply("")` refused by R-4 spent the tag's only
+            # reply, and the model's own correction was then refused by R-7's
+            # budget check with "you already sent your reply". One recoverable
+            # mistake, and the RECOVERY was what got blocked — silently, since
+            # under R-5 the group just hears nothing.
+            if getattr(event, "cancel_message", None) is not None:
+                return
             name = (getattr(event, "tool_use", None) or {}).get("name", "")
             self.record(name)
+            if name in self._terminal:
+                self._turn_is_over = True
         except Exception:
             log.exception("ReplyGuard._after_tool raised; ignoring")

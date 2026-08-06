@@ -8,7 +8,7 @@ it stopped it in a way that read as the model choosing not to answer.
 
 The measurements, once, so the constants below are not magic:
 
-  per-call INPUT                    4,952 tokens (persona + transcript +
+  per-call INPUT                    4,952 tokens (doctrine + transcript +
                                     tool schemas), paid again on EVERY call
   a 6-call turn, end to end         32,426 - 36,748 tokens total
   single-call completions           3,993 / 3,987 / 3,974 tokens against
@@ -16,7 +16,8 @@ The measurements, once, so the constants below are not magic:
   largest legitimate completion     371 tokens
   read_buffer(200) round trip       6,592 tokens, in context for the rest
   read_buffer(40) round trip        1,368 tokens
-  recall / lookup_person            151 / 112 tokens
+  about / lookup_person    151 / 112 tokens (the first measured
+                                    before DEC-38 widened it; see tools.py)
 
 Asserted against BOTH config files. `config.toml` is what the deployment runs;
 `config.example.toml` is what a fresh install gets and what

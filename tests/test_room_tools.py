@@ -1,4 +1,4 @@
-"""`group_members`, `lookup_person`, `recall` — the three room-scoped tools.
+"""`group_members`, `lookup_person`, `about` — the three room-scoped tools.
 
 The rules under test are design/12's, and each one was paid for:
 
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from nora.agent.egress import scan_egress
+from nora.agent.egress import scan_identifiers
 from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.obs.metrics import Metrics
@@ -129,14 +129,14 @@ def test_no_room_scoped_tool_asks_the_model_for_anything_nora_already_knows(pers
     assert set(
         tools["lookup_person"].tool_spec["inputSchema"]["json"]["properties"]
     ) == {"name"}
-    assert set(tools["recall"].tool_spec["inputSchema"]["json"]["properties"]) == {"person"}
+    assert set(tools["about"].tool_spec["inputSchema"]["json"]["properties"]) == {"person"}
 
 
 def test_no_room_scoped_tool_accepts_a_platform_identifier(persons):
     tools = _build(persons=persons)
     forbidden = {"conversation_id", "conversation_type", "peer_id", "sender_id",
                  "person_id", "phone", "uuid", "search_query", "query"}
-    for name in ("group_members", "lookup_person", "recall"):
+    for name in ("group_members", "lookup_person", "about"):
         properties = set(
             tools[name].tool_spec["inputSchema"]["json"].get("properties") or {}
         )
@@ -148,7 +148,7 @@ def test_every_room_scoped_tool_has_a_selection_policy_in_its_docstring(persons)
     and design/12 puts WHEN TO REACH FOR A TOOL there rather than in another
     prose catalogue in the prompt."""
     tools = _build(persons=persons)
-    for name in ("group_members", "lookup_person", "recall"):
+    for name in ("group_members", "lookup_person", "about"):
         doc = (tools[name].__doc__ or "").lower()
         assert len(doc) > 200, f"{name}'s docstring is too thin to steer a model"
         assert "call this" in doc or "do not call" in doc, name
@@ -242,7 +242,7 @@ async def test_a_model_supplied_identifier_is_never_echoed_back(persons):
     result = await _call(tools["lookup_person"], name="+85288888888")
     assert result["status"] == "not_found"
     assert "asked_about" not in result
-    assert scan_egress(repr(result)) is None
+    assert scan_identifiers(repr(result)) is None
 
 
 async def test_lookup_person_reports_an_ambiguous_nickname_rather_than_picking(persons, tmp_path):
@@ -287,15 +287,15 @@ async def test_lookup_person_still_names_the_tagger_when_the_daemon_is_down(pers
     assert (await _call(tools["lookup_person"], name="外人"))["status"] == "unavailable"
 
 
-# ---- recall ------------------------------------------------------------------
+# ---- about ----------------------------------------------------------
 
 
 async def test_recall_returns_what_is_remembered_about_someone_in_the_room(persons):
     honcho = FakeHoncho(conclusions={"miles_novak": ["Miles is from Ridgeline", "Miles drinks espresso"]})
-    result = await _call(_build(persons=persons, honcho=honcho)["recall"], person="俊爺")
+    result = await _call(_build(persons=persons, honcho=honcho)["about"], person="俊爺")
     assert result["status"] == "ok"
     assert result["person"] == "Miles Novak"
-    assert result["recall"] == ["Miles is from Ridgeline", "Miles drinks espresso"]
+    assert result["profile"] == ["Miles is from Ridgeline", "Miles drinks espresso"]
 
 
 async def test_recall_asks_the_question_the_group_actually_asked(persons):
@@ -304,7 +304,7 @@ async def test_recall_asks_the_question_the_group_actually_asked(persons):
     has to invent (DEC-24)."""
     honcho = FakeHoncho(conclusions={"miles_novak": ["something"]})
     tools = _build(persons=persons, honcho=honcho, question="佢係咪識踢波")
-    await _call(tools["recall"], person="Miles")
+    await _call(tools["about"], person="Miles")
     assert honcho.queries == [("miles_novak", "佢係咪識踢波")]
 
 
@@ -313,7 +313,7 @@ async def test_recall_is_blind_to_someone_who_is_not_in_this_room(persons):
     could reach any peer in the workspace is an address-book dump with extra
     steps (design/11 §1.5)."""
     honcho = FakeHoncho(conclusions={"elsewhere_liu": ["a secret about her"]})
-    result = await _call(_build(persons=persons, honcho=honcho)["recall"], person="外人")
+    result = await _call(_build(persons=persons, honcho=honcho)["about"], person="外人")
     assert result["status"] == "not_found"
     assert honcho.queries == []          # her peer is never even asked about
 
@@ -325,11 +325,12 @@ async def test_nothing_known_is_distinguishable_from_could_not_ask(persons):
     the life of the deployment."""
     empty = Metrics()
     quiet = await _call(
-        _build(persons=persons, honcho=FakeHoncho(), metrics=empty)["recall"], person="Miles",
+        _build(persons=persons, honcho=FakeHoncho(), metrics=empty)["about"],
+        person="Miles",
     )
     down = Metrics()
     broken = await _call(
-        _build(persons=persons, honcho=FakeHoncho(fail=True), metrics=down)["recall"],
+        _build(persons=persons, honcho=FakeHoncho(fail=True), metrics=down)["about"],
         person="Miles",
     )
     assert quiet["status"] == "nothing_known"
@@ -345,7 +346,8 @@ async def test_a_raising_memory_store_lands_on_unavailable_not_on_empty(persons)
         async def representation(self, **kw):
             raise RuntimeError("connection reset")
 
-    result = await _call(_build(persons=persons, honcho=Exploding())["recall"], person="Miles")
+    tools = _build(persons=persons, honcho=Exploding())
+    result = await _call(tools["about"], person="Miles")
     assert result["status"] == "unavailable"
 
 
@@ -359,9 +361,45 @@ async def test_recall_withholds_a_conclusion_that_carries_an_identifier(persons)
         "Miles's number is +85290000101",
         "Miles's ACI is a1000001-0000-4000-8000-000000000001",
     ]})
-    result = await _call(_build(persons=persons, honcho=honcho)["recall"], person="Miles")
-    assert result["recall"] == ["Miles is from Ridgeline"]
+    result = await _call(_build(persons=persons, honcho=honcho)["about"], person="Miles")
+    assert result["profile"] == ["Miles is from Ridgeline"]
     assert result["withheld"] == 2
+
+
+async def test_recall_keeps_a_conclusion_that_merely_names_an_llm(persons):
+    """The bug the split fixes. `about` filtered conclusions through the REPLY
+    predicate, whose `_MODELNAME` pattern matches nine words — including
+    `claude`, `gemini`, `haiku` and `opus`. In a group of software engineers
+    that silently withheld a large share of everything Honcho had ever
+    concluded, and the only trace was a `withheld` count.
+
+    What the model she runs on is remains hers alone: that is a property of
+    the REPLY (R-6/R-18, `Deliverer`), not of a durable memory about a person.
+    A number in the same list is still dropped, because that one is unsafe
+    everywhere."""
+    honcho = FakeHoncho(conclusions={"miles_novak": [
+        "Miles ships an app that calls Claude and Gemini",
+        "Miles prefers haiku over sonnet for cheap classification",
+        "Miles's number is +85290000101",
+    ]})
+    result = await _call(_build(persons=persons, honcho=honcho)["about"], person="Miles")
+    assert result["status"] == "ok"
+    assert result["profile"] == [
+        "Miles ships an app that calls Claude and Gemini",
+        "Miles prefers haiku over sonnet for cheap classification",
+    ]
+    assert result["withheld"] == 1
+
+
+async def test_a_model_named_in_a_lookup_argument_is_still_echoed_back(persons):
+    """`asked_about` exists to tell two lookups in one turn apart, so dropping
+    it costs the model the disambiguation it was added for. A model name in a
+    model-supplied argument discloses nothing — the model wrote it, and if it
+    reaches the reply `Deliverer` blocks it there. Only identifiers are dropped
+    (see the test above this one's sibling)."""
+    result = await _call(_build(persons=persons)["lookup_person"], name="Claude")
+    assert result["status"] == "not_found"
+    assert result["asked_about"] == "Claude"
 
 
 async def test_no_room_scoped_tool_can_return_a_phone_number_or_an_aci(persons):
@@ -374,10 +412,10 @@ async def test_no_room_scoped_tool_can_return_a_phone_number_or_an_aci(persons):
         await _call(tools["group_members"]),
         await _call(tools["lookup_person"], name="阿豹"),
         await _call(tools["lookup_person"], name="+85290000102"),
-        await _call(tools["recall"], person="Miles"),
+        await _call(tools["about"], person="Miles"),
     ]
     for answer in answers:
-        assert scan_egress(repr(answer)) is None, answer
+        assert scan_identifiers(repr(answer)) is None, answer
 
 
 async def test_a_phone_number_is_not_a_name_and_resolves_nobody(persons):
@@ -387,4 +425,4 @@ async def test_a_phone_number_is_not_a_name_and_resolves_nobody(persons):
     tools = _build(persons=persons)
     for value in ("+85290000102", "a1000001-0000-4000-8000-000000000001"):
         assert (await _call(tools["lookup_person"], name=value))["status"] == "not_found"
-        assert (await _call(tools["recall"], person=value))["status"] == "not_found"
+        assert (await _call(tools["about"], person=value))["status"] == "not_found"

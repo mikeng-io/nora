@@ -25,13 +25,13 @@ async def store(tmp_path):
 
 @pytest.fixture
 async def client(aiohttp_client, store):
-    from nora.persona.loader import PersonaStore
+    from nora.doctrine.loader import DoctrineStore
 
     metrics = Metrics()
     app = build_health_app(
         adapter=SinkSender(), store=store, honcho=FakeHoncho(),
-        persona_store=PersonaStore(
-            __import__("pathlib").Path("nora/persona"), canary="C", metrics=metrics),
+        doctrine_store=DoctrineStore(
+            __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
     )
     c = await aiohttp_client(app)
@@ -43,7 +43,7 @@ async def client(aiohttp_client, store):
 async def test_health_reports_all_four_dependencies(client):
     body = await (await client.get("/health")).json()
     assert set(body) >= {"sse", "sqlite", "honcho", "omniroute", "uptime_seconds",
-                         "errors_since_restart", "persona_sha256", "strands_version"}
+                         "errors_since_restart", "doctrine_sha256", "strands_version"}
 
 
 async def test_health_returns_200_when_everything_is_reachable(client):
@@ -61,12 +61,12 @@ async def test_health_sse_key_set_is_pinned(client):
 async def test_health_returns_503_when_sqlite_is_unreachable(aiohttp_client):
     from pathlib import Path
 
-    from nora.persona.loader import PersonaStore
+    from nora.doctrine.loader import DoctrineStore
 
     metrics = Metrics()
     app = build_health_app(adapter=SinkSender(), store=_BrokenStore(),
                            honcho=FakeHoncho(), metrics=metrics,
-                           persona_store=PersonaStore(Path("nora/persona"), canary="C",
+                           doctrine_store=DoctrineStore(Path("nora/doctrine"), canary="C",
                                                        metrics=metrics),
                            started_at=0.0, llm_state=LLMState())
     c = await aiohttp_client(app)
@@ -78,9 +78,9 @@ async def test_health_returns_503_when_honcho_is_down(client):
     assert (await client.get("/health")).status == 503
 
 
-async def test_health_reports_the_persona_sha256(client):
+async def test_health_reports_the_doctrine_sha256(client):
     body = await (await client.get("/health")).json()
-    assert len(body["persona_sha256"]) == 64
+    assert len(body["doctrine_sha256"]) == 64
 
 
 async def test_health_reports_the_strands_version(client):
@@ -91,14 +91,14 @@ async def test_health_reports_the_strands_version(client):
 async def test_health_reports_the_last_omniroute_success(aiohttp_client, store):
     from pathlib import Path
 
-    from nora.persona.loader import PersonaStore
+    from nora.doctrine.loader import DoctrineStore
 
     state = LLMState()
     state.last_success_at = 1700.0
     metrics = Metrics()
     app = build_health_app(adapter=SinkSender(), store=store,
                            honcho=FakeHoncho(), metrics=metrics,
-                           persona_store=PersonaStore(Path("nora/persona"), canary="C",
+                           doctrine_store=DoctrineStore(Path("nora/doctrine"), canary="C",
                                                        metrics=metrics),
                            started_at=0.0, llm_state=state)
     c = await aiohttp_client(app)

@@ -15,7 +15,7 @@ edges:
 
 **Reuse, don't rebuild.** Everything the Strands SDK already provides is used as-is.
 Nora's own code is limited to: platform adapters (Signal), store adapters (SQLite,
-Honcho), the persona prompt, and configuration. No hand-rolled agent loop, no
+Honcho), the doctrine prompt, and configuration. No hand-rolled agent loop, no
 hand-rolled context builder, no hand-rolled session store.
 
 ## The Reuse Map
@@ -87,7 +87,7 @@ config, with auto-discovery and tool registration. Nora's skills:
 
 | Skill | Plugin contents |
 |---|---|
-| Group norms / persona behavior | system prompt fragment + prompt assembly |
+| Group norms / doctrine behavior | system prompt fragment + prompt assembly |
 | Deep recall (future) | hooks that enrich context on demand |
 | External lookup (future, e.g. maps/restaurants) | MCP server or `@tool` wrapper |
 
@@ -130,7 +130,7 @@ def invoke(agent, tag_message) -> str: ...           # wraps agent.invoke_async
 4. `honcho.py` — Honcho REST client (store adapter).
 5. `signal_send.py` — signal-cli JSON-RPC send (platform adapter).
 6. `tools.py` — the four `@tool` wrappers above (thin).
-7. `persona.py` / config — Nora's identity and configuration (content, not machinery).
+7. `doctrine.py` / config — Nora's identity and configuration (content, not machinery).
 
 Everything else — loop, context, tools registry, hooks, tracing — is Strands.
 

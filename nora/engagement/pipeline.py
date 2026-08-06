@@ -1,9 +1,9 @@
-"""`EngagementPipeline` — runs admission → context → persona → tools →
+"""`EngagementPipeline` — runs admission → context → doctrine → tools →
 invoke → deliver → feedback for a tag `nora.ingest` already decided to
 engage (spec §4.4). A readable table of contents, not a decision-maker:
 every branch belongs to the stage that owns it (`nora.engagement.stages.*`)
-or, for persona/tools, to the collaborator it delegates straight to
-(`PersonaStore.get`, `nora.agent.registry.ToolRegistry.build`) — neither is
+or, for doctrine/tools, to the collaborator it delegates straight to
+(`DoctrineStore.get`, `nora.agent.registry.ToolRegistry.build`) — neither is
 complex enough to earn its own stage module.
 
 **R-10 lock ownership is split across two modules on purpose** — documented
@@ -47,6 +47,7 @@ from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
 from nora.tag import Debounce
 
+from .mentions import MentionRenderer
 from .stages import admission, deliver, feedback, indicate, invoke
 from .stages.invoke import AgentRunner
 
@@ -61,7 +62,7 @@ class EngagementPipeline:
         audit: AuditStore,
         memory: MemoryStore,
         persons: Persons,
-        persona_store: Any,
+        doctrine_store: Any,
         context_assembler: Any,
         runner: AgentRunner,
         tool_registry: ToolRegistry,
@@ -82,7 +83,7 @@ class EngagementPipeline:
         self._audit = audit
         self._memory = memory
         self._persons = persons
-        self._persona_store = persona_store
+        self._doctrine_store = doctrine_store
         self._context = context_assembler
         self._runner = runner
         self._tool_registry = tool_registry
@@ -138,6 +139,13 @@ class EngagementPipeline:
         started = time.perf_counter()
         llm_elapsed = 0.0
         delivered = False
+        # Bound BEFORE the `try` so the `finally` can read the tag's delivery
+        # count on every exit path, including one that faults inside
+        # `context.assemble` before there is a handle at all. Reading it off
+        # the `Deliverer` rather than tracking a second local is deliberate:
+        # a local would be one more thing to remember to increment when step 5
+        # makes the count able to exceed 1.
+        handle: deliver.DeliveryHandle | None = None
         # Every log line emitted for the rest of this tag — across every stage
         # this method calls into — carries tag_id without any of them naming
         # it explicitly (nora.obs.logging's contextvar bridge).
@@ -164,20 +172,32 @@ class EngagementPipeline:
         )
         try:
             ctx = await self._context.assemble(request=request)
-            persona = self._persona_store.get(applies_to="tag")
+            # An @-mention is a placeholder plus a parallel array, so until
+            # DEC-34 every name in the transcript — including Nora's own —
+            # reached the model as U+FFFC. Rehydrated HERE rather than at
+            # ingest (the audit stores what arrived) or in the prefill (which
+            # may not import `nora.platform`), against `raw_json`, which every
+            # historical row already carries. See `nora.engagement.mentions`.
+            ctx = MentionRenderer(
+                persons=self._persons, display_name=self._display_name,
+                self_ids=frozenset(getattr(identity, "aliases", ())),
+                metrics=self._metrics,
+            ).rehydrate(ctx)
+            doctrine = self._doctrine_store.get(applies_to="tag")
             log.info(
                 "tag start (tag_id=%s conversation_id=%s sender_id=%s person_id=%s "
-                "persona_sha256=%s persona_versions=%s)",
+                "doctrine_sha256=%s doctrine_versions=%s)",
                 request.tag_id, msg.conversation_id, msg.sender_id,
                 ctx.tagger.person_id if ctx.tagger else None,
-                persona.sha256, persona.versions(),
+                doctrine.sha256, doctrine.versions(),
             )
 
             handle = deliver.build(
                 store=self._audit, adapter=self._adapter, target=msg.target(),
-                persona=persona, canary=self._canary, tag_id=request.tag_id,
+                doctrine=doctrine, canary=self._canary, tag_id=request.tag_id,
                 nora_sender_id=self._nora_sender_id, conversation_id=msg.conversation_id,
-                budgets=self._tool_registry.budgets(), metrics=self._metrics,
+                budgets=self._tool_registry.budgets(),
+                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
             )
             # One `Room` per tag, constructed here and closed over by the three
             # room-scoped tools. Nothing reads the platform roster unless one
@@ -216,7 +236,7 @@ class EngagementPipeline:
             )
 
             ok, llm_elapsed, stop_reason = await invoke.run(
-                runner=self._runner, persona=persona, tools=tools, pre_fill=pre_fill,
+                runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tag_message=tag_message, limits=self._limits, ctx=ctx,
                 timeout_seconds=self._timeout_seconds, metrics=self._metrics,
             )
@@ -234,11 +254,14 @@ class EngagementPipeline:
             if not delivered:
                 return                       # `finally` still resolves the indicator
 
-            if ctx.tagger is not None:   # step 4: exactly one exchange feed
+            # Step 4: exactly one semantic-store write, and it carries the
+            # TAGGER'S words only — never Nora's reply, which under this peer
+            # id would make her own text evidence about them (DEC-36). The
+            # stage no longer takes the deliverer or either display name, so
+            # there is nothing here it could feed even by mistake.
+            if ctx.tagger is not None:
                 self._spawn(feedback.run(
-                    memory=self._memory, ctx=ctx, tagger_name=tagger_name,
-                    display_name=self._display_name, deliverer=handle.deliverer,
-                    metrics=self._metrics,
+                    memory=self._memory, ctx=ctx, metrics=self._metrics,
                 ))
         except BaseException:
             log.exception("tag pipeline failed (tag=%s); staying silent", request.tag_id)
@@ -258,4 +281,12 @@ class EngagementPipeline:
             total = time.perf_counter() - started
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
+            # One observation per ADMITTED tag, silent turns included as 0 —
+            # see `nora.obs.metric_specs`. R-2 caps it at 1 today, so the
+            # series is flat by construction; step 5 is what makes it move,
+            # and a baseline recorded afterwards would not be one.
+            self._metrics.observe(
+                "nora_messages_per_tag",
+                float(handle.deliverer.delivered_count) if handle is not None else 0.0,
+            )
             clear_tag_id()

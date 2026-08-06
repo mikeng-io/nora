@@ -118,9 +118,9 @@ services:
       # Deny-by-default: without this Nora refuses to start rather than
       # running mute, which under R-5 would look identical to working.
       - ./policy.toml:/app/policy.toml:ro
-      # Read-only so edits on the host (persona hot-reload, mtime-based) are visible
+      # Read-only so edits on the host (doctrine hot-reload, mtime-based) are visible
       # inside the container without a rebuild or restart.
-      - ./nora/persona:/app/nora/persona:ro
+      - ./nora/doctrine:/app/nora/doctrine:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9100/health"]
       interval: 30s

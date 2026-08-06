@@ -24,14 +24,14 @@ def _sum_series(metrics, name: str) -> float:
 
 
 def build_health_app(
-    *, adapter, store, honcho, persona_store, metrics, started_at: float,
+    *, adapter, store, honcho, doctrine_store, metrics, started_at: float,
     llm_state: LLMState,
 ) -> web.Application:
     app = web.Application()
     app["adapter"] = adapter
     app["store"] = store
     app["honcho"] = honcho
-    app["persona_store"] = persona_store
+    app["doctrine_store"] = doctrine_store
     app["metrics"] = metrics
     app["started_at"] = started_at
     app["llm_state"] = llm_state
@@ -78,9 +78,9 @@ def build_health_app(
             healthy = False
 
         try:
-            persona_sha256 = a["persona_store"].get().sha256
+            doctrine_sha256 = a["doctrine_store"].get().sha256
         except Exception:                      # noqa: BLE001
-            persona_sha256 = None
+            doctrine_sha256 = None
             healthy = False
 
         body = {
@@ -90,7 +90,7 @@ def build_health_app(
             "omniroute": {"last_success_at": a["llm_state"].last_success_at},
             "errors_since_restart": _sum_series(a["metrics"], "nora_errors_total"),
             "uptime_seconds": time.time() - a["started_at"],
-            "persona_sha256": persona_sha256,
+            "doctrine_sha256": doctrine_sha256,
             "strands_version": _strands_version(),
         }
         return web.json_response(body, status=200 if healthy else 503)

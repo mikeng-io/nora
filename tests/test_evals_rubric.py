@@ -6,7 +6,7 @@ from evals.rubric import RUBRIC
 
 def test_the_rubric_has_all_six_criteria():
     names = {c.name for c in RUBRIC}
-    assert names == {"addressed_the_tag", "concise_persona_compliant",
+    assert names == {"addressed_the_tag", "concise_doctrine_compliant",
                      "no_overreach_or_fabrication", "identity_and_language_match",
                      "voice", "platform_fit"}
 

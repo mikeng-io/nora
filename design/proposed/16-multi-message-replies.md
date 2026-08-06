@@ -167,7 +167,7 @@ then enabled by a `voice.md` edit — a separate, revertable change.
 
 That is strictly better than debuting it alongside GIFs, where a fault could
 be either the new reply loop or the new byte-sending path. Ship the mechanism
-inert, turn it on in the persona, then add GIFs.
+inert, turn it on in the doctrine, then add GIFs.
 
 ## 6. What must be true before this ships
 

@@ -3,10 +3,12 @@ from nora.agent.registry import ToolRegistry
 from nora.obs.metrics import Metrics
 
 BUDGETS = ToolRegistry().budgets()
+TERMINAL = ToolRegistry().terminal_tools()
 
 
 def _guard(metrics=None) -> ReplyGuard:
-    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, metrics=metrics or Metrics())
+    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+                      metrics=metrics or Metrics())
 
 
 def _send(text="hi", **extra) -> dict:
@@ -156,3 +158,76 @@ def test_evaluate_does_not_mutate_counts():
     g.evaluate("read_buffer", {"limit": 40})
     g.evaluate("read_buffer", {"limit": 40})
     assert g.counts["read_buffer"] == 0     # only record() counts
+
+
+# ---- the message cap lives in the budget, not in R-2's latch (DEC-32) ------
+
+
+class _Deliverer:
+    """The two properties `ReplyGuard` reads off a `Deliverer`, and nothing else.
+
+    `attempted` is R-2's latch — the authoritative single-shot mechanism (spec
+    S4) — and it is a CONSTRUCTOR ARGUMENT here because these tests need both
+    answers from it: `True` is today's deliverer after a send, `False` is what
+    a future relaxation of R-2 would make it. A fake that answered the same way
+    every time could not express the question this section asks.
+    """
+
+    def __init__(self, *, attempted: bool) -> None:
+        self.attempted = attempted
+        self.delivered = attempted
+
+
+def _guard_with(*, attempted: bool, send_reply_budget: int, metrics=None) -> ReplyGuard:
+    return ReplyGuard(
+        conversation_id="g1",
+        budgets={**BUDGETS, "send_reply": send_reply_budget},
+        terminal=TERMINAL, deliverer=_Deliverer(attempted=attempted),
+        metrics=metrics or Metrics(),
+    )
+
+
+def test_relaxing_r_2_alone_does_not_buy_a_second_message():
+    """THE TRAP, made visible before step 5 walks into it.
+
+    `evaluate` checks the R-7 per-tool budget BEFORE it checks
+    `Deliverer.attempted`, and `NATIVE_TOOL_BUDGETS["send_reply"]` is 1. So a
+    change that relaxes R-2 — the latch, the thing every document calls "the
+    one-reply rule" — and touches nothing else leaves multi-message SILENTLY
+    DEAD: the second `send_reply` is refused by a number nobody edited, and the
+    veto it emits says `rule="R-2"`, which is the rule that was just relaxed.
+
+    `design/proposed/16-multi-message-replies.md` §4 caught this shape one line
+    lower down, in `Deliverer._attempted`, and missed it here.
+    """
+    m = Metrics()
+    g = _guard_with(attempted=False, send_reply_budget=1, metrics=m)
+    g.record("send_reply")
+    assert g.evaluate("send_reply", _send("and one more thing")) is not None
+    # Reported as R-2 although the BUDGET is what refused it. Asserted, not
+    # endorsed: this is why the trap is invisible to an operator reading
+    # `nora_guard_vetoes_total`.
+    assert m.get("nora_guard_vetoes_total", rule="R-2") == 1
+
+
+def test_the_budget_is_the_number_that_refused_it():
+    """The attribution. Same relaxed latch, same second call, budget of 2 —
+    and it is allowed. So the refusal above came from the budget and from
+    nothing else; when step 5 lands, THIS is the number that has to move."""
+    g = _guard_with(attempted=False, send_reply_budget=2)
+    g.record("send_reply")
+    assert g.evaluate("send_reply", _send("and one more thing")) is None
+
+
+def test_with_the_budget_raised_the_latch_is_what_refuses_the_second_message():
+    """The other half of the ordering: raise the cap and R-2 becomes reachable.
+
+    Today's deliverer latches on the first attempt, so a budget raised without
+    revising `Deliverer` moves the refusal here rather than removing it —
+    which is the failure design/16 §4 names, now with a test that fails if
+    someone raises the budget and calls multi-message done."""
+    m = Metrics()
+    g = _guard_with(attempted=True, send_reply_budget=2, metrics=m)
+    g.record("send_reply")
+    assert g.evaluate("send_reply", _send("and one more thing")) is not None
+    assert m.get("nora_guard_vetoes_total", rule="R-2") == 1

@@ -11,16 +11,16 @@ def _python_files():
     return [p for p in PKG.rglob("*.py") if "__pycache__" not in p.parts]
 
 
-def test_persona_read_boundary():
-    """Only persona/loader.py may read persona files."""
+def test_doctrine_read_boundary():
+    """Only doctrine/loader.py may read doctrine files."""
     offenders = []
     for path in _python_files():
-        if path == PKG / "persona" / "loader.py":
+        if path == PKG / "doctrine" / "loader.py":
             continue
         text = path.read_text()
         if ".md" in text and ("read_text" in text or "open(" in text):
             offenders.append(str(path.relative_to(ROOT)))
-    assert not offenders, f"persona files read outside loader.py: {offenders}"
+    assert not offenders, f"doctrine files read outside loader.py: {offenders}"
 
 
 def _imported_modules(path: Path) -> set[str]:
@@ -90,7 +90,7 @@ def test_evals_only_imports_nora_app_and_nora_testing():
     else"). `pyproject.toml`'s "evals may only reach nora.app and nora.testing"
     import-linter contract enforces the same rule but only over evals' own
     DIRECT imports (`allow_indirect_imports = "True"` — otherwise `nora.app`
-    itself legitimately importing `nora.agent`/`nora.persona`/etc. internally
+    itself legitimately importing `nora.agent`/`nora.doctrine`/etc. internally
     would falsely flag evals for transitively reaching them). This allowlist
     check is the one of the two that also survives a brand new nora subpackage
     being added later, with no edit needed here."""

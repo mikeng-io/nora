@@ -41,13 +41,13 @@ def cfg(tmp_path, monkeypatch):
     # immediately, with no network call, so build_dependencies() never needs a real
     # (or faked) signal-cli daemon reachable at the example config's placeholder URL.
     #
-    # persona.dir ("nora/persona", config.example.toml) resolves relative to the
+    # doctrine.dir ("nora/doctrine", config.example.toml) resolves relative to the
     # copied config file's directory (tmp_path here), which has no such subdirectory
-    # — point it at the real, already-valid persona files instead of copying them.
+    # — point it at the real, already-valid doctrine files instead of copying them.
     return override_config(load(dst), {
         "store.db_path": tmp_path / "messages.db",
         "platforms.signal.account": "+85290000100",
-        "persona.dir": ROOT / "nora" / "persona",
+        "doctrine.dir": ROOT / "nora" / "doctrine",
     })
 
 
@@ -63,6 +63,46 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.ingest is not None
     assert deps.engagement is not None
     assert deps.dispatcher is not None
+
+
+async def test_the_doctrine_the_root_builds_carries_the_generated_capability(cfg):
+    """DEC-29: the composition root is where the registry meets the doctrine.
+
+    Everything else about the capability section is testable in isolation and
+    means nothing if this wiring is missing — the store would assemble four
+    sections, the prompt would say nothing about what she can do, and every
+    unit test would still pass. So: the REAL graph, the REAL registry, and the
+    assembled block asserted to name every registered tool.
+    """
+    from nora.agent.registry import ToolRegistry
+
+    deps = await build_dependencies(cfg)
+    text = deps.doctrine.doctrine_text
+    assert '<section kind="capability" name="capability"' in text
+    for name in ToolRegistry().tool_names():
+        assert f"- {name} — " in text, f"{name} is registered but not in the doctrine"
+
+
+async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_path):
+    """The catalogue gate's backticked half is inert without them, and an inert
+    gate that nobody notices is worse than no gate.
+
+    It has to be a tool whose name is an ordinary English word — `now` or
+    `about`. Every other native is snake_case, which the STRUCTURAL detector
+    catches on its own, so injecting one of those would make this pass whether
+    or not `tool_names` was ever handed over. This used to inject `recall`;
+    DEC-39 renamed that tool to `about`, which is still in the same class.
+    """
+    import shutil
+
+
+    d = tmp_path / "doctrine"
+    shutil.copytree(ROOT / "nora" / "doctrine", d)
+    conduct = d / "conduct.md"
+    conduct.write_text(conduct.read_text().replace(
+        "# Honesty", "Reach for `about` when you need to.\n\n# Honesty", 1))
+    with pytest.raises(StartupError, match="may not name a tool"):
+        await build_dependencies(override_config(cfg, {"doctrine.dir": d}))
 
 
 async def test_no_enabled_platform_refuses_to_start(cfg):

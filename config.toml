@@ -60,7 +60,7 @@ timeout_seconds = 30
 # The three caps around the WHOLE agent loop for one tag — all measured
 # 2026-08-06, all three previously wrong in the same direction.
 #
-# Real per-call INPUT is 4,952 tokens (persona + transcript + tool schemas),
+# Real per-call INPUT is 4,952 tokens (doctrine + transcript + tool schemas),
 # paid again on every call in the loop, plus whatever the tool results from
 # earlier calls added to the context. A measured 6-call turn totalled
 # 32,426-36,748 tokens.
@@ -100,8 +100,8 @@ db_path = "data/messages.db"
 max_per_conversation = 500
 context_window = 40
 
-[persona]
-dir = "nora/persona"
+[doctrine]
+dir = "nora/doctrine"
 reload = "mtime"
 strict = true
 chinese_script = "traditional"

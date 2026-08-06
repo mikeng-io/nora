@@ -64,14 +64,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec("nora_guard_vetoes_total", "ReplyGuard vetoes, by rule.", ("rule",)),
     _CounterSpec(
-        "nora_leak_blocks_total", "Replies blocked by the persona/canary leak guard.",
+        "nora_leak_blocks_total", "Replies blocked by the doctrine/canary leak guard.",
     ),
     _CounterSpec(
         "nora_egress_blocks_total",
         "Replies blocked for carrying somebody's identifiers, by kind.",
         ("kind",),
     ),
-    _CounterSpec("nora_persona_reload_failures_total", "Persona hot-reload failures."),
+    _CounterSpec("nora_doctrine_reload_failures_total", "Doctrine hot-reload failures."),
     _CounterSpec("nora_store_busy_total", "SQLITE_BUSY responses from the audit store."),
     # An unmapped sender is an EXPECTED outcome (D6), so it is not an error —
     # but it was previously unobservable, and its symptom set is empty: the
@@ -159,7 +159,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "for, by platform and reason.",
         ("platform", "reason"),
     ),
-    # The three room-scoped tools (`group_members`, `lookup_person`, `recall`),
+    # The three room-scoped tools (`group_members`, `lookup_person`, `about`),
     # by how they ANSWERED. `status` is the whole point: `unavailable` means
     # Nora could not read the group's membership at all, and it must never be
     # summed together with `not_found` — one says "I could not look", the other
@@ -183,10 +183,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the HTTP layer and only the call site knows which it got. `peer_card`
     # returned `[]` for both for the entire life of the deployment and nobody
     # could see it. Alert on `ok == 0` while the series is being written at all.
+    #
+    # **The NAME keeps `recall` after the tool was renamed to `about`
+    # (DEC-39), and that is the append-only rule, not an oversight.** A metric
+    # name is a dashboard, an alert and a retention window someone else owns;
+    # renaming it does not move history, it starts a new empty series beside a
+    # frozen one, and R-17's argument is that a series which can never
+    # increment is indistinguishable from a deleted one. The tool LABEL on
+    # `nora_room_lookups_total` did move, because that one must agree with the
+    # name in `data/nora.log` or `_log_call` stops being greppable — a split
+    # there is meaningful (the tool genuinely changed) rather than a lie.
     _CounterSpec(
         "nora_recall_total",
-        "Durable-recall lookups against Honcho, by outcome "
-        "(ok / empty / unavailable).",
+        "Durable-profile lookups against Honcho by the `about` tool, "
+        "by outcome (ok / empty / unavailable). Named for that tool's former "
+        "name, `recall`; metric names are append-only.",
         ("status",),
     ),
     # R-23. HOW the agent loop ended, every turn, straight off Strands'
@@ -212,6 +223,46 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "How the agent loop terminated, by Strands stop_reason "
         "(end_turn / tool_use / limit_turns / limit_total_tokens / ...).",
         ("reason",),
+    ),
+    # The tools that had NO counter of their own — `now`, `read_buffer`,
+    # `read_peer_card`, `send_reply`, and now `calculate` (DEC-35), whose two
+    # statuses are `ok` and `refused`: a refusal counted as `ok` would make
+    # "is the model writing expressions she can actually evaluate" unanswerable
+    # from /metrics, which is this counter's own failure in a new place. Same
+    # `{tool, status}` shape as
+    # `nora_room_lookups_total`, and deliberately NOT a superset of it: names
+    # are append-only, `nora_room_lookups_total` is already on dashboards, and
+    # a second series counting the same three calls would double every sum of
+    # tool volume. The two together are every tool call Nora makes; neither
+    # alone is.
+    #
+    # This exists for the same reason DEC-28 does. On 2026-08-06
+    # `grep lookup_person data/nora.log` returned zero and that was read as
+    # "the tool was never called" — but no tool logged its own name on any
+    # success path, so the grep returned zero whether it ran every turn or
+    # never. Counters are the half of that fix an operator can alert on; the
+    # log line in `nora.agent.tools._log_call` is the half they can grep.
+    _CounterSpec(
+        "nora_tool_calls_total",
+        "Native tool calls that have no counter of their own, by tool and how "
+        "the tool answered (ok / not_found / nothing_known / unavailable / "
+        "refused). The three room-scoped tools are counted by "
+        "nora_room_lookups_total instead, never here.",
+        ("tool", "status"),
+    ),
+    # DEC-34. An @-mention Nora could not put a name to. It renders `@someone`
+    # — never the number, never the ACI — so the model's view is honest and
+    # completely uninformative, and this counter is the ONLY place the loss is
+    # visible. It reads like `nora_unmapped_senders_total`'s other half: that
+    # one says "somebody talked to her and she does not know who", this one
+    # says "somebody was TALKED ABOUT and she does not know who", and both have
+    # the same fix and the same trap — `identity.toml` is loaded once at
+    # startup, so editing it without a restart moves neither number.
+    _CounterSpec(
+        "nora_unmapped_mentions_total",
+        "@-mentions rendered as an anonymous handle because the mentioned "
+        "account resolved to no person.",
+        ("platform",),
     ),
 )
 
@@ -251,6 +302,28 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     ),
     _HistogramSpec("nora_llm_latency_seconds", "Model invocation latency."),
     _HistogramSpec("nora_overhead_seconds", "Tag latency excluding the model call."),
+    # A COUNT, not a duration, so it carries its own buckets — the default set
+    # is calibrated for seconds and would put every possible value in the first
+    # bucket.
+    #
+    # **It is flat at 1 today and that is the point.** R-2 latches after one
+    # delivery, so every admitted tag observes 0 or 1 and this histogram says
+    # nothing interesting yet. It is a prerequisite for multi-message (step 5
+    # of the grounding plan), whose predicted failure is that the cap becomes a
+    # quota always spent in full — a shape that is only legible against a
+    # BEFORE. Established now, while the answer is known, rather than after the
+    # behaviour changes and every reading is confounded.
+    #
+    # Recorded once per ADMITTED tag on every exit path (`EngagementPipeline.
+    # _run_admitted`'s `finally`), so a turn that delivered nothing observes 0
+    # rather than being absent: "how often does she say nothing at all" is the
+    # same question, and a histogram that only records successes cannot answer
+    # it.
+    _HistogramSpec(
+        "nora_messages_per_tag",
+        "Messages actually delivered to the group per admitted tag.",
+        (0, 1, 2, 3, 4, 5, 10),
+    ),
 )
 
 # The full set of declared metric names, independent of kind — what the

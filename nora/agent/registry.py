@@ -14,7 +14,7 @@ declares — `NATIVE_TOOL_BUDGETS` is the single table both this class and
 `build_tool_specs` read, so the number `ReplyGuard` enforces and the number a
 tool is declared to cost can never drift apart. That is the property DEC-10
 exists for, and adding the three room-scoped tools (`group_members`,
-`lookup_person`, `recall`) exercised it: they became callable by appearing in
+`lookup_person`, `about`) exercised it: they became callable by appearing in
 that one table, with no edit to `guards.py` at all.
 
 Deliberately NOT here: a `ToolProvider` protocol, MCP tool discovery/lifecycle,
@@ -30,7 +30,7 @@ from typing import Any
 
 from .ports import ToolSpec, adapt
 from .room import Room
-from .tools import NATIVE_TOOL_BUDGETS, build_tool_specs
+from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs
 
 
 class ToolRegistry:
@@ -39,6 +39,62 @@ class ToolRegistry:
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
         return dict(NATIVE_TOOL_BUDGETS)
+
+    def terminal_tools(self) -> frozenset[str]:
+        """The verbs that END A TURN, for `ReplyGuard`'s model-call hook (DEC-32).
+
+        Exposed exactly the way `budgets()` is, and for the same reason. Under
+        `tool_choice="required"` the model must call something on every pass, so
+        the guard's `BeforeModelCallEvent` cancellation is the ONLY thing that
+        ends a turn (DEC-21). It used to end one by asking the `Deliverer`
+        whether it had delivered — terminality expressed as a single tool's side
+        effect, which is the pre-DEC-10 hardcoded `BUDGETS` mistake wearing a
+        different hat. `design/proposed/15-gif-replies.md` §1 proposed fixing
+        that by defining the verb class *in the guard*; this defines it on the
+        tool instead, so `send_gif` — or any other verb that ends a turn —
+        becomes one `terminal=True` in `NATIVE_TOOLS`.
+
+        A `frozenset` rather than a mapping: membership is the whole question,
+        and there is no per-tool value to carry.
+        """
+        return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.terminal)
+
+    def tool_names(self) -> tuple[str, ...]:
+        """Every registered tool's name, for the doctrine loader's catalogue gate.
+
+        `nora.doctrine` sits BELOW `nora.agent` in the layer contract and cannot
+        import the tool table, so the composition root hands it these instead
+        (`nora.doctrine.loader.check_kind_boundaries`)."""
+        return tuple(NATIVE_TOOLS)
+
+    def capability(self) -> str:
+        """The capability section, GENERATED (design/17 §5).
+
+        The `kind: capability` body handed to `DoctrineStore`. There is no file
+        and there must never be one: capability's source of truth is the
+        registry, so any authored copy is a cache, and a cache with no
+        invalidation is how `soul.md` spent eight weeks telling Nora she knew
+        two things when she knew five.
+
+        **Not a schema dump, and the distinction is the whole design.** The
+        schemas are already in the request — measured at 1,222 tokens, 25% of
+        the call — and they state, verbatim, what each tool does and what it
+        takes. Repeating any of that here would be paid twice for nothing. This
+        block adds exactly the one thing a schema has no slot for: when to reach
+        for a tool *in this situation*. That is `NativeTool.when`, one clause
+        each, and nothing else.
+
+        Rendered from the same table `build_tool_specs` populates every
+        `ToolSpec.when` from, so the block and the tools cannot describe
+        different sets. `tests/unit/test_tool_registry.py` pins that in both
+        directions against real specs."""
+        lines = [f"- {name} — {spec.when}" for name, spec in NATIVE_TOOLS.items()]
+        return (
+            "These are the tools you were given. Their schemas say what each one "
+            "takes; this says when to reach for it.\n" + "\n".join(lines) + "\n"
+            "Nothing here reaches outside this conversation. When you cannot find "
+            "something out, say so in one clause and move on."
+        )
 
     def specs(
         self,

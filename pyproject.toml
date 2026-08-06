@@ -36,7 +36,7 @@ include = ["nora*"]
 
 [tool.setuptools.package-data]
 nora = [
-    "persona/*.md",
+    "doctrine/*.md",
     "py.typed",
     "infra/sql/migrations/*",
     "infra/sql/migrations/versions/*",
@@ -112,7 +112,7 @@ forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus
 [[tool.importlinter.contracts]]
 name = "layered architecture"
 type = "layers"
-# Middle rows reflect the real import order among today's packages (agent -> persona
+# Middle rows reflect the real import order among today's packages (agent -> doctrine
 # -> obs -> infra; platform is independent of the other four) so the contract does
 # not fight legitimate cross-package imports. The property this contract exists to
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
@@ -120,7 +120,7 @@ layers = [
     "nora.app",
     "nora.ingest | nora.engagement",
     "nora.agent | nora.platform",
-    "nora.persona",
+    "nora.doctrine",
     "nora.obs",
     "nora.infra | nora.testing",
     "nora.domain",
@@ -130,7 +130,7 @@ layers = [
 name = "only app and __main__ read config"
 type = "forbidden"
 source_modules = [
-    "nora.agent", "nora.obs", "nora.persona", "nora.platform",
+    "nora.agent", "nora.obs", "nora.doctrine", "nora.platform",
     "nora.domain", "nora.persons", "nora.tag",
     "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
 ]
@@ -161,16 +161,16 @@ type = "forbidden"
 # check is the allowlist-style backstop that does not need updating for that case.
 #
 # allow_indirect_imports = "True" is load-bearing, not cosmetic: `nora.app` (the
-# composition root) legitimately imports nora.agent/nora.persona/nora.tag/etc.
+# composition root) legitimately imports nora.agent/nora.doctrine/nora.tag/etc.
 # internally, so evals *transitively* reaches every package below without it —
 # ForbiddenContract's default checks the whole import chain, which would flag
-# `evals -> nora.app.eval_support -> nora.persona.loader` even though evals never
+# `evals -> nora.app.eval_support -> nora.doctrine.loader` even though evals never
 # writes that import itself. This contract is only about evals' own import
 # statements; nora.app's freedom to import whatever it needs is contract 2's concern.
 source_modules = ["evals"]
 forbidden_modules = [
     "nora.agent", "nora.config", "nora.domain", "nora.engagement",
-    "nora.infra", "nora.ingest", "nora.obs", "nora.persona", "nora.persons",
+    "nora.infra", "nora.ingest", "nora.obs", "nora.doctrine", "nora.persons",
     "nora.platform", "nora.tag", "tests",
 ]
 allow_indirect_imports = "True"

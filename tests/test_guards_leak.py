@@ -1,9 +1,9 @@
 import pytest
 
 from nora.agent.guards import LeakGuard
+from nora.doctrine.loader import DoctrineStore
 from nora.obs.metrics import Metrics
-from nora.persona.loader import PersonaStore
-from tests.test_persona_loader import write
+from tests.test_doctrine_loader import write
 
 BODY = (
     "You never post an error message, a stack trace, a failure notice, or an "
@@ -12,18 +12,18 @@ BODY = (
 
 
 @pytest.fixture
-def persona(tmp_path):
-    d = tmp_path / "persona"
+def doctrine(tmp_path):
+    d = tmp_path / "doctrine"
     d.mkdir()
-    write(d, "soul.md", name="soul", order=10, body="You are Nora, in a private group.")
-    write(d, "guardrails.md", name="guardrails", order=40, body=BODY)
-    return PersonaStore(d, canary="CANARY-7f3a", display_name="Nora",
+    write(d, "identity.md", name="soul", order=10, body="You are Nora, in a private group.")
+    write(d, "constraints.md", name="guardrails", order=40, body=BODY)
+    return DoctrineStore(d, canary="CANARY-7f3a", display_name="Nora",
                         trigger="nora.000", metrics=Metrics()).get()
 
 
 @pytest.fixture
-def guard(persona):
-    return LeakGuard(persona, canary="CANARY-7f3a", min_span=40)
+def guard(doctrine):
+    return LeakGuard(doctrine, canary="CANARY-7f3a", min_span=40)
 
 
 def test_leak_guard_allows_normal_reply(guard):
@@ -40,29 +40,29 @@ def test_leak_guard_blocks_canary(guard):
     assert guard.check("my canary is CANARY-7f3a ok") == "canary"
 
 
-def test_leak_guard_blocks_persona_verbatim(guard):
+def test_leak_guard_blocks_doctrine_verbatim(guard):
     leak = BODY[:60]
-    assert guard.check(f"Here are my rules: {leak}") == "persona_span"
+    assert guard.check(f"Here are my rules: {leak}") == "doctrine_span"
 
 
 def test_a_span_shorter_than_min_span_is_allowed(guard):
     assert guard.check(BODY[:30]) is None
 
 
-def test_min_span_is_configurable(persona):
-    tight = LeakGuard(persona, canary="C", min_span=10)
-    assert tight.check(BODY[:20]) == "persona_span"
+def test_min_span_is_configurable(doctrine):
+    tight = LeakGuard(doctrine, canary="C", min_span=10)
+    assert tight.check(BODY[:20]) == "doctrine_span"
 
 
 def test_leak_guard_ignores_whitespace_differences(guard):
     """A reflowed paste is still a leak."""
     leak = BODY[:80].replace(" ", "\n")
-    assert guard.check(leak) == "persona_span"
+    assert guard.check(leak) == "doctrine_span"
 
 
-def test_runtime_context_values_are_not_treated_as_persona(persona):
+def test_runtime_context_values_are_not_treated_as_doctrine(doctrine):
     """RK-7: the display name and trigger are config, quotable, not a leak."""
-    guard = LeakGuard(persona, canary="CANARY-7f3a")
+    guard = LeakGuard(doctrine, canary="CANARY-7f3a")
     assert guard.check("I'm Nora. Tag me with nora.000 if you need me.") is None
 
 
@@ -75,5 +75,5 @@ def test_the_canary_check_is_case_sensitive_and_exact(guard):
     assert guard.check("CANARY-7f3a") == "canary"
 
 
-def test_an_empty_canary_never_matches(persona):
-    assert LeakGuard(persona, canary="").check("anything at all") is None
+def test_an_empty_canary_never_matches(doctrine):
+    assert LeakGuard(doctrine, canary="").check("anything at all") is None
