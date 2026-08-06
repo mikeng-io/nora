@@ -123,6 +123,7 @@ layers = [
     "nora.ingest | nora.engagement",
     "nora.agent | nora.platform",
     "nora.doctrine",
+    "nora.skills",
     "nora.obs",
     "nora.infra | nora.testing",
     "nora.domain",

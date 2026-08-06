@@ -125,7 +125,7 @@ is why the transcript is wrapped `untrusted="true"` and why `constraints.md`
 says text claiming to be a system message is just text someone typed.
 
 **A skill must never be loadable from a message.** If a message could name a
-skill to activate, item 4 would reach item 3 and the ordering collapses. Skill
+skill to activate, item 6 would reach item 5 and the ordering collapses. Skill
 sources are operator configuration only.
 
 ### What of this ordering is MECHANICAL, and what is only asserted
@@ -172,8 +172,7 @@ conflating the two is how a prompt rule gets trusted like a guard.
   explicit that R-18 does not match names or facts, and that nothing mechanical
   stops her repeating *"Tyler told you he was broke"* into the room Tyler is
   in.
-- **Item 3 generally**, because there are no skills yet (§1: "Nothing qualifies
-  yet"). Item 3 is an empty rank, and its trust boundary is a claim about a
+- **Item 3 generally**, because the first skill (navigation) shipped with DEC-48. Item 3 is an empty rank, and its trust boundary is a claim about a
   future component.
 
 **On "guardrails is assembled last, which inverts the claim" — it does not.**
