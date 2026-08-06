@@ -48,10 +48,20 @@ from nora.persons import Persons
 from nora.tag import Debounce
 
 from .mentions import MentionRenderer
+from .queue import ConversationQueues
 from .stages import admission, deliver, feedback, indicate, invoke
+from .stages.admission import Admission
+from .stages.indicate import Indicator
 from .stages.invoke import AgentRunner
 
 log = logging.getLogger("nora.engagement.pipeline")
+
+# Per-conversation queue depth beyond which an arriving tag is shed as a flood
+# (R-29). Generous on purpose: it bounds runaway growth, not waiting — see
+# `nora.engagement.queue`. Wired from `engagement.queue.max_depth` by the
+# composition root; this default keeps the pipeline constructible without it
+# (the offline/retention harnesses).
+DEFAULT_QUEUE_MAX = 16
 
 
 class EngagementPipeline:
@@ -78,6 +88,7 @@ class EngagementPipeline:
         llm_state: Any = None,
         reactions: bool = True,
         roster_source: RosterSource | None = None,
+        queue_max: int = DEFAULT_QUEUE_MAX,
     ) -> None:
         self._adapter = adapter
         self._audit = audit
@@ -105,11 +116,19 @@ class EngagementPipeline:
         # wiring mistake — degrades honestly instead of answering "nobody is
         # here" (R-5).
         self._roster_source = roster_source
+        # R-10's single-in-flight lock and R-29's per-conversation FIFO queue,
+        # both keyed by (platform, conversation_id). The queue feeds the lock's
+        # one slot in order as each turn finishes — it never widens it. Both are
+        # per-CONVERSATION and self-draining: `in_flight.discard` on every exit
+        # path, and `ConversationQueues.dequeue` deletes a key once its last
+        # waiting tag is gone. Neither retains anything per-tag.
         self._in_flight: set[tuple[str, str]] = set()
+        self._queues: ConversationQueues[tuple[str, str], tuple[Any, Indicator | None]] = (
+            ConversationQueues(maxlen=queue_max)
+        )
 
     async def run(self, request: EngagementRequest) -> None:
-        """Admit, then (if admitted) run the tag. See module docstring for
-        why admission is called here, outside the lock-release `finally`.
+        """Classify the tag (admission), then run it now, queue it, or drop it.
 
         `resolve_identity()` is memoized on the adapter after its first call
         (and is already forced to succeed once, fail-fast, at startup by
@@ -117,23 +136,86 @@ class EngagementPipeline:
         again here is an in-process lookup, not a fresh network round-trip —
         R-12 (`nora.engagement.stages.admission`) needs the resolved identity,
         not the adapter itself, to check self-tag membership.
+
+        The 👀 is fired HERE, at admission, for BOTH the run-now and the queued
+        tag — before either handling or waiting begins (R-17/DEC-17 extended by
+        DEC-48). That is the whole point of moving it off the turn's start: a
+        person whose tag is queued behind two others sees they were SEEN while
+        they wait, so the silence they used to get on a dropped tag stops being
+        ambiguous. `indicate.begin` only spawns, so it adds no latency to
+        anything. A REJECTED (self-tag/debounce) or QUEUE_FULL (flood) tag gets
+        no 👀: neither is a person waiting for an answer, and a 👀 on a dropped
+        flood tag would be a progress marker that never resolves — the
+        stuck-forever bug the indicator exists to avoid.
         """
         message = request.message
         identity = await self._adapter.resolve_identity()
-        admitted = await admission.run(
+        key = (message.platform, message.conversation_id)
+        verdict = admission.run(
             message=message, identity=identity, debounce=self._debounce,
-            in_flight=self._in_flight, metrics=self._metrics,
+            in_flight=self._in_flight, queue_depth=self._queues.depth(key),
+            queue_max=self._queues.maxlen, metrics=self._metrics,
         )
-        if not admitted:
+        if verdict is Admission.REJECTED or verdict is Admission.QUEUE_FULL:
             return
-        # `identity` is threaded on rather than re-resolved: the room-scoped
-        # tools need Nora's own id forms to leave herself out of the group's
-        # member list, and `PlatformIdentity.aliases` is the same flattened set
-        # R-12 tests membership in (design/10 §5) — the one set that survives
-        # a member arriving as a phone number here and an ACI there.
-        await self._run_admitted(request, identity)
+        indicator = self._begin_indicator(request)
+        if verdict is Admission.QUEUED:
+            # No await between admission's QUEUED verdict and this enqueue, so
+            # the depth admission checked cannot change underneath it and FIFO
+            # order is exactly arrival order. `identity` is not stored: it is
+            # re-resolved (memoized, in-process) when the tag is dequeued.
+            self._queues.enqueue(key, (request, indicator))
+            return
+        # RUN_NOW. `identity` is threaded on rather than re-resolved: the
+        # room-scoped tools need Nora's own id forms to leave herself out of the
+        # group's member list, and `PlatformIdentity.aliases` is the same
+        # flattened set R-12 tests membership in (design/10 §5) — the one set
+        # that survives a member arriving as a phone number here and an ACI there.
+        await self._run_admitted(request, identity, indicator)
 
-    async def _run_admitted(self, request: EngagementRequest, identity: Any) -> None:
+    def _begin_indicator(self, request: EngagementRequest) -> Indicator | None:
+        """Spawn the 👀 on the tagging message, or None when reactions are off.
+
+        `engagement.reactions.enabled = false` leaves this None, which
+        `indicate.resolve` already treats as "nothing to replace" — so the flag
+        is one branch here and none in the pipeline's `finally`. A second branch
+        down there could drift out of step with this one and strand a 👀.
+        `begin` only spawns and cannot raise past its own guard, so the
+        `finally` that later reads this handle can never see it unbound."""
+        if not self._reactions:
+            return None
+        return indicate.begin(
+            adapter=self._adapter, message=request.message, tag_id=request.tag_id,
+            metrics=self._metrics, spawn=self._spawn,
+        )
+
+    async def _run_queued(self, request: EngagementRequest, indicator: Indicator | None) -> None:
+        """Run a tag that waited in the FIFO queue. Its context is assembled
+        fresh inside `_run_admitted`, at THIS point — so it sees the replies of
+        every tag ahead of it in line, which is the correctness reason the queue
+        serialises a conversation (see `nora.engagement.queue`). Identity is
+        re-resolved here (memoized) rather than carried through the queue."""
+        identity = await self._adapter.resolve_identity()
+        await self._run_admitted(request, identity, indicator)
+
+    def _dispatch_next(self, key: tuple[str, str]) -> None:
+        """Pop the next queued tag for `key` and start its turn. Called from
+        `_run_admitted`'s `finally`, AFTER the finishing turn released the lock,
+        so re-acquiring it here restores R-10's invariant — while the dequeued
+        turn runs, the conversation is in flight again and any newly arriving
+        tag queues behind it rather than running concurrently. Both operations
+        are synchronous with no await between them, so no incoming tag can slip
+        into the RUN_NOW path in the gap."""
+        item = self._queues.dequeue(key)
+        if item is None:
+            return
+        queued_request, indicator = item
+        self._in_flight.add(key)
+        self._spawn(self._run_queued(queued_request, indicator))
+
+    async def _run_admitted(
+        self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
+    ) -> None:
         msg = request.message
         key = (msg.platform, msg.conversation_id)
         started = time.perf_counter()
@@ -158,26 +240,11 @@ class EngagementPipeline:
         # this method calls into — carries tag_id without any of them naming
         # it explicitly (nora.obs.logging's contextvar bridge).
         bind_tag_id(request.tag_id)
-        # 👀 on the tagging message, the moment the tag is admitted. Scheduled
-        # through `spawn`, so the round-trip to the platform is never in front
-        # of the model call — see `nora.engagement.stages.indicate`'s docstring
-        # for that, for why a reaction cannot touch R-2/R-3, and for why a
-        # failed turn resolves to ⚠️ rather than a ✅ that would claim a reply
-        # nobody is going to receive. Constructed OUTSIDE the `try` so the
-        # `finally` below can never reference it unbound; `begin` only spawns,
-        # and cannot raise past its own guard.
-        # `engagement.reactions.enabled = false` leaves `indicator` None, which
-        # `indicate.resolve` already treats as "nothing to replace" — so the
-        # flag is one branch here and none in the `finally`. A second branch
-        # down there could drift out of step with this one and strand a 👀.
-        indicator = (
-            indicate.begin(
-                adapter=self._adapter, message=msg, tag_id=request.tag_id,
-                metrics=self._metrics, spawn=self._spawn,
-            )
-            if self._reactions
-            else None
-        )
+        # `indicator` (the 👀 handle) is created by `run` at ADMISSION time and
+        # passed in, so a QUEUED tag's 👀 fires the moment it takes its place in
+        # line, not when its turn finally starts — see `run`'s docstring and
+        # `_begin_indicator`. It is None when reactions are off, which
+        # `indicate.resolve` treats as "nothing to replace".
         try:
             ctx = await self._context.assemble(request=request)
             # An @-mention is a placeholder plus a parallel array, so until
@@ -291,6 +358,15 @@ class EngagementPipeline:
                 indicator=indicator, delivered=delivered, spawn=self._spawn,
             )
             self._in_flight.discard(key)     # R-10: released on EVERY exit path
+            # R-29: hand the conversation's next waiting tag into the slot this
+            # turn just vacated. `_dispatch_next` re-acquires the lock (no await
+            # between the discard above and that add, so no incoming tag can
+            # race into RUN_NOW in the gap) and spawns the next turn, whose
+            # context is assembled fresh — so it sees this turn's reply. On an
+            # empty queue it is a no-op, and a drained conversation retains
+            # nothing. This runs on EVERY exit path, so a turn that timed out or
+            # faulted still lets the people queued behind it be answered.
+            self._dispatch_next(key)
             total = time.perf_counter() - started
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))

@@ -210,6 +210,7 @@ def _build_pipeline(
     reactions: bool = True,
     roster_source=None,
     tool_registry=None,
+    queue_max: int = 16,
 ):
     audit = audit if audit is not None else FakeAuditStore()
     memory = memory if memory is not None else _FakeMemory()
@@ -239,6 +240,7 @@ def _build_pipeline(
         llm_state=llm_state,
         reactions=reactions,
         roster_source=roster_source,
+        queue_max=queue_max,
     )
     return pipeline, metrics, audit, memory, background
 
@@ -518,34 +520,154 @@ async def test_a_tag_that_faults_before_there_is_a_deliverer_still_observes_zero
 
 
 # ---------------------------------------------------------------------------
-# R-10: admission owns acquisition; a rejected admission never touches
-# another tag's lock.
+# R-10 / R-29: admission owns acquisition; a tag for a busy conversation is
+# QUEUED (not dropped) and drained one turn at a time, in arrival order, while
+# tags for OTHER conversations still run concurrently.
 # ---------------------------------------------------------------------------
 
 
-async def test_a_concurrent_tag_for_the_same_conversation_is_dropped_not_queued():
-    adapter = _FakeAdapter()
-    metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
-        adapter=adapter, metrics=metrics,
-        runner=ScriptedRunner(_reply_turns(), delay=0.2),
+class _EchoRunner:
+    """Replies through the REAL `send_reply` tool with a reply derived from the
+    tagging message, so each tag's reply is distinguishable in delivery order
+    and lands in the audit store the NEXT tag's context is assembled from.
+
+    Records the transcript bodies it was handed on every invocation, so a test
+    can prove tag 2 saw tag 1's reply — the correctness reason a conversation is
+    serialised. Not the same-answer-every-time fake CLAUDE.md forbids: the reply
+    varies with the input and the delivery genuinely exercises `Deliverer` +
+    `ReplyGuard`."""
+
+    def __init__(self, *, delay: float = 0.0) -> None:
+        self.delay = delay
+        self.seen_transcripts: list[tuple[str | None, ...]] = []
+
+    async def invoke(self, *, tools, guard, ctx, **_kwargs) -> str | None:
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        self.seen_transcripts.append(tuple(r.body for r in ctx.transcript))
+        args = {"text": f"reply-to-{ctx.message.body}"}
+        tools_by_name = {t.tool_name: t for t in tools}
+        if guard.evaluate("send_reply", args) is None:
+            result = tools_by_name["send_reply"](**args)
+            if hasattr(result, "__await__"):
+                await result
+            guard.record("send_reply")
+        return "end_turn"
+
+
+def _req(*, conversation_id: str = "g1", body: str, tag_id: str, ts: int = 1):
+    return _request(
+        NormalizedMessage(
+            platform="signal", conversation_id=conversation_id, conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=ts, body=body, raw={},
+        ),
+        tag_id=tag_id,
     )
 
-    first = asyncio.create_task(pipeline.run(_request(tag_id="first")))
-    await asyncio.sleep(0.02)   # let the first tag be admitted and start invoking
 
+async def test_three_tags_for_one_conversation_are_answered_in_fifo_order():
+    """R-29, the whole point: three people tagging at once each get a reply, in
+    arrival order — not one reply and two silences.
+
+    PROBE: restore admission's old `return Admission.REJECTED` (drop) for the
+    in-flight branch and only the first reply is delivered."""
+    adapter = _FakeAdapter()
+    runner = _EchoRunner(delay=0.2)
+    pipeline, metrics, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
+
+    first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
+    await asyncio.sleep(0.02)   # first tag admitted and mid-invoke
     assert pipeline._in_flight == {("signal", "g1")}
 
-    await pipeline.run(_request(tag_id="second"))   # dropped: still in flight
-
-    assert metrics.get("nora_tags_dropped_total", reason="in_flight") == 1
-    assert pipeline._in_flight == {("signal", "g1")}   # the FIRST tag's lock, untouched
+    await pipeline.run(_req(body="q2", tag_id="t2"))   # queued behind t1
+    await pipeline.run(_req(body="q3", tag_id="t3"))   # queued behind t2
+    assert pipeline._queues.depth(("signal", "g1")) == 2
 
     await first
     await _drain(background)
 
+    assert adapter.texts == ["reply-to-q1", "reply-to-q2", "reply-to-q3"]
     assert pipeline._in_flight == set()
-    assert adapter.texts == ["今晚七點半得"]   # exactly one reply — the first tag's
+    assert len(pipeline._queues) == 0   # drained: nothing retained per-conversation
+    assert metrics.get("nora_tags_queued_total") == 2
+    assert metrics.get("nora_tags_total", platform="signal") == 3
+
+
+async def test_a_queued_tag_sees_the_earlier_tags_reply_in_its_context():
+    """The correctness argument (not politeness) for serialising a conversation:
+    tag 2's context is assembled at DEQUEUE time, so tag 1's reply is already in
+    the transcript. Two concurrent turns would both reason from a room missing
+    the other's reply.
+
+    PROBE: make `_dispatch_next` spawn the queued turn WITHOUT waiting for the
+    in-flight one (e.g. dequeue eagerly in `run`) and tag 2's transcript no
+    longer contains tag 1's reply."""
+    adapter = _FakeAdapter()
+    runner = _EchoRunner(delay=0.2)
+    pipeline, _, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
+
+    first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
+    await asyncio.sleep(0.02)
+    await pipeline.run(_req(body="q2", tag_id="t2"))
+    await first
+    await _drain(background)
+
+    # invocation 0 is tag 1 (empty transcript), invocation 1 is tag 2 — its
+    # context contains tag 1's already-delivered reply.
+    assert runner.seen_transcripts[0] == ()
+    assert "reply-to-q1" in runner.seen_transcripts[1]
+
+
+async def test_different_conversations_still_run_concurrently():
+    """The queue is PER conversation: two DIFFERENT conversations must not
+    serialise behind each other."""
+    adapter = _FakeAdapter()
+    runner = _EchoRunner(delay=0.2)
+    pipeline, _, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
+
+    a = asyncio.create_task(pipeline.run(_req(conversation_id="g1", body="qa", tag_id="ta")))
+    b = asyncio.create_task(pipeline.run(_req(conversation_id="g2", body="qb", tag_id="tb")))
+    await asyncio.sleep(0.02)
+
+    # BOTH in flight at once — neither queued behind the other.
+    assert pipeline._in_flight == {("signal", "g1"), ("signal", "g2")}
+    assert len(pipeline._queues) == 0
+
+    await asyncio.gather(a, b)
+    await _drain(background)
+
+    assert sorted(adapter.texts) == ["reply-to-qa", "reply-to-qb"]
+    assert pipeline._in_flight == set()
+
+
+async def test_a_flood_past_the_queue_bound_is_shed_with_its_own_counter():
+    """R-29's bound guards against unbounded growth, not waiting. With a queue
+    max of 2, a fourth tag arriving while one runs and two wait is dropped and
+    counted distinctly — everything already accepted keeps its place.
+
+    PROBE: remove the `queue_depth >= queue_max` check in admission and the
+    fourth tag is queued and answered instead of shed."""
+    adapter = _FakeAdapter()
+    runner = _EchoRunner(delay=0.2)
+    pipeline, metrics, _, _, background = _build_pipeline(
+        adapter=adapter, runner=runner, queue_max=2,
+    )
+
+    first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
+    await asyncio.sleep(0.02)
+    await pipeline.run(_req(body="q2", tag_id="t2"))   # queued (depth 0 -> 1)
+    await pipeline.run(_req(body="q3", tag_id="t3"))   # queued (depth 1 -> 2)
+    await pipeline.run(_req(body="q4", tag_id="t4"))   # queue full -> shed
+
+    assert pipeline._queues.depth(("signal", "g1")) == 2
+    assert metrics.get("nora_tags_dropped_total", reason="queue_full") == 1
+
+    await first
+    await _drain(background)
+
+    assert adapter.texts == ["reply-to-q1", "reply-to-q2", "reply-to-q3"]   # not q4
+    assert pipeline._in_flight == set()
+    assert len(pipeline._queues) == 0
 
 
 async def test_a_debounced_tag_is_never_admitted_and_never_releases_a_lock():
@@ -606,7 +728,7 @@ async def test_accepting_a_tag_reacts_to_the_tagging_message_then_resolves():
     the reply is out, both aimed at the tagging message's author/timestamp.
 
     PROBE: delete the `indicate.begin(...)` call in
-    `nora/engagement/pipeline.py::_run_admitted` and this fails."""
+    `nora/engagement/pipeline.py::_begin_indicator` and this fails."""
     adapter = _ReactingAdapter()
     pipeline, metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
 
@@ -617,6 +739,38 @@ async def test_accepting_a_tag_reacts_to_the_tagging_message_then_resolves():
     assert adapter.reactions[0][1:3] == ("+852111", 1)   # tagger, tagging timestamp
     assert adapter.texts == ["今晚七點半得"]
     assert metrics.get("nora_reactions_total", phase="ack", status="sent") == 1.0
+
+
+async def test_a_queued_tag_gets_its_eyes_promptly_while_it_waits():
+    """The cheap independent win: the 👀 fires at ADMISSION, before a tag's turn
+    starts — so a person queued behind another sees they were SEEN while they
+    wait, instead of the silence a dropped tag used to give them.
+
+    PROBE: move `_begin_indicator` back inside `_run_admitted` (fire on turn
+    start, not admission) and the queued tag's 👀 does not appear until the tag
+    ahead of it finishes."""
+    adapter = _ReactingAdapter()
+    runner = ScriptedRunner(_reply_turns(), delay=0.3)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter, runner=runner,
+    )
+
+    first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1", ts=1)))
+    await asyncio.sleep(0.02)
+    await pipeline.run(_req(body="q2", tag_id="t2", ts=2))   # queued behind t1
+    # Pump the loop briefly — enough for the queued tag's spawned 👀 to land,
+    # but far short of t1's 0.3s turn, so t2 is provably STILL waiting.
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    assert pipeline._queues.depth(("signal", "g1")) == 1        # t2 still queued
+    ack_timestamps = [ts for emoji, _a, ts, remove in adapter.reactions
+                      if emoji == indicate.ACK and not remove]
+    assert 2 in ack_timestamps   # the 👀 for the QUEUED tag's message fired already
+
+    await first
+    await _drain(background)
+    assert adapter.texts == ["今晚七點半得", "今晚七點半得"]   # both eventually answered
 
 
 async def test_a_reaction_failure_never_prevents_the_reply():

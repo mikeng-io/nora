@@ -54,6 +54,12 @@ RULE_TESTS = {
     # `design/proposed/16-multi-message-replies.md` §6.7 asks for. A new key
     # would leave the old one pointing at a rule nobody enforces.
     "R-25": "test_a_turn_cut_off_between_messages_is_counted_as_partial",
+    # R-29: a second tag for a conversation already handling one is QUEUED, not
+    # dropped — three people tagging at once each get a reply, in FIFO order,
+    # while different conversations still run concurrently. Next free number
+    # after R-28 (R-26 is reserved by design/proposed/18 for the unshipped
+    # context-budget work), DEC-48. See `nora.engagement.queue`.
+    "R-29": "test_three_tags_for_one_conversation_are_answered_in_fifo_order",
 }
 
 
