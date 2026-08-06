@@ -139,6 +139,32 @@ timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never th
 enabled = false
 api_key_env = "GOOGLE_MAPS_API_KEY"
 
+# Web search (SearXNG) + page fetch (Firecrawl) for the `search`/`fetch` tools
+# (DEC-57, design/22). The WHOLE SECTION IS OPTIONAL and every key defaults — a
+# config.toml without it behaves as if search is off.
+#
+# It ships INERT (`enabled = false`) and must stay so until TWO things are true:
+# an operator turns it on, AND Firecrawl's egress is network-isolated so it
+# cannot reach Nora's own internals (Honcho, signal-cli, OmniRoute) at the packet
+# layer. That isolation is the PRIMARY SSRF control (design/22 §0) — Nora's
+# search-result URL fence and is_global precheck are only defence in depth,
+# because Firecrawl follows redirects and re-resolves DNS itself. While off, both
+# tools answer `unavailable`, never a silent empty.
+#
+# `firecrawl_api_version` is pinned to the deployed instance's scrape route —
+# verified `v1` on the running firecrawl-api container (both v1 and v2 answer
+# identically today; v1 matches design/14's measurement). The three caps bound
+# the input-token cost of retrieved text, re-sent on every subsequent model call.
+[search]
+enabled = false
+searxng_url = "http://127.0.0.1:8080"
+firecrawl_url = "http://127.0.0.1:3002"
+firecrawl_api_version = "v1"
+search_max_results = 6      # SearXNG format=json returns the whole set (measured 27)
+snippet_max_bytes = 500     # per-snippet byte clamp; truncation stated in the result
+fetch_max_chars = 10000     # a scraped page's char ceiling
+timeout_seconds = 15.0
+
 [doctrine]
 dir = "nora/doctrine"
 reload = "mtime"                      # mtime | startup

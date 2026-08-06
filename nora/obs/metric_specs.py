@@ -336,6 +336,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "outcome (stored / not_configured / no_id / not_found / unreachable / "
         "bad_payload / too_large / store_failed).",
         ("platform", "status"),    ),
+    # DEC-57 / R-32. A person's alias appearing in a `search` query — COUNTED,
+    # not blocked (design/14 §2.2: unlike a routing origin, a search query has a
+    # benign reading, and a guess encoded as a block fails closed on legitimate
+    # use). The query still reaches SearXNG; this counter is the only visibility
+    # into how often it happens, so the block-vs-count call can be revisited
+    # against real data rather than a guess. Identifiers in a query ARE blocked,
+    # and are counted as an ordinary `search`/`nothing_found` on
+    # `nora_tool_calls_total`, not here.
+    _CounterSpec(
+        "nora_search_alias_total",
+        "Search queries containing a known person's name or alias, counted (not "
+        "blocked) so the design/14 §2.2 count-vs-block call can be revisited "
+        "against real queries.",
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

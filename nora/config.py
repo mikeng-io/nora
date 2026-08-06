@@ -289,6 +289,51 @@ class RouteConfig(BaseModel):
     api_key_env: str = "GOOGLE_MAPS_API_KEY"
 
 
+class SearchConfig(BaseModel):
+    """SearXNG search + Firecrawl fetch for the `search`/`fetch` tools (DEC-57,
+    design/proposed/22, design/14 §2.1/§3).
+
+    **The whole section is optional and every field defaults**, like
+    `RouteConfig` and `MediaConfig`: a `config.toml` written before this existed
+    keeps loading, which `extra="forbid"` makes a real constraint rather than a
+    courtesy.
+
+    `enabled` defaults to **False** and it ships that way. These two verbs are
+    the only grounding whose inbound content is untrusted (a page may be written
+    to be retrieved by an agent) AND whose outbound call is an SSRF surface (a
+    self-hosted fetcher against a model-chosen URL). The registry holds no client
+    while off, so both tools answer `unavailable` — never a silent empty (R-5) —
+    and the operator turns this on ONLY once Firecrawl's egress network isolation
+    is in place (design/22 §0/§5, the primary SSRF control, a deployment change
+    this build does not and cannot provide).
+
+    The URLs point at the two co-located local services (SearXNG `:8080`,
+    Firecrawl `:3002`). `firecrawl_api_version` is PINNED to the deployed
+    instance's scrape route — verified `v1` against the running `firecrawl-api`
+    container (both `/v1/scrape` and `/v2/scrape` answer with an identical
+    `{success, data:{markdown, metadata}}` envelope; `v1` matches design/14's
+    measurement). The three caps bound the input-token cost of retrieved text,
+    which is re-sent on every subsequent model call (design/14 §4).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    searxng_url: str = "http://127.0.0.1:8080"
+    firecrawl_url: str = "http://127.0.0.1:3002"
+    # "v1" or "v2" — the scrape route on the DEPLOYED Firecrawl. Verified v1 on
+    # the running container (design/22 §2). A string, not a Literal, so a future
+    # instance on a third route needs no code change.
+    firecrawl_api_version: str = "v1"
+    # Hard caps (design/14 §4). `search_max_results` bounds the result COUNT
+    # SearXNG's format=json returns whole (measured 27); `snippet_max_bytes`
+    # clamps each returned snippet; `fetch_max_chars` clamps a scraped page.
+    search_max_results: int = Field(default=6, ge=1)
+    snippet_max_bytes: int = Field(default=500, ge=1)
+    fetch_max_chars: int = Field(default=10000, ge=1)
+    timeout_seconds: float = 15.0
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -402,6 +447,10 @@ class Config(BaseModel):
     # Optional and defaulted — see `RouteConfig`. Off unless an operator turns
     # it on; a config.toml without a `[route]` section keeps loading.
     route: RouteConfig = RouteConfig()
+    # Optional and defaulted — see `SearchConfig`. Off (inert) unless an operator
+    # turns it on AND Firecrawl's egress is isolated; a config.toml without a
+    # `[search]` section keeps loading.
+    search: SearchConfig = SearchConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     identity_file: Path
