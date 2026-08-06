@@ -343,6 +343,72 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "outcome (stored / not_configured / no_id / not_found / unreachable / "
         "bad_payload / too_large / store_failed).",
         ("platform", "status"),    ),
+    # ── the presence collector (design/19, DEC-54/DEC-55) ────────────────────
+    # A separate process (`python -m nora.presence`) with its own metrics
+    # endpoint; these names are declared in the shared registry so both the
+    # collector and Nora (which increments only the disclosure counter) speak
+    # them from one source. Append-only, like every name above.
+    #
+    # DISTINCT fixes WRITTEN. Because the collector is a change-recorder (writes
+    # only when `ts` advances), this counts DISTINCT positions, not polls — a
+    # still member polled every 90 s increments this at most when it actually
+    # moves. `wire_state` is the state that fix carried (live / stale).
+    _CounterSpec(
+        "nora_presence_fixes_total",
+        "Distinct location fixes written to presence_fixes, by circle and the "
+        "wire_state the fix carried (live / stale). A change-recorder count: a "
+        "still member does not increment it (design/19 §1).",
+        ("circle", "wire_state"),
+    ),
+    # Every circle READ, by how it resolved. `unavailable` (transport / non-200)
+    # must never be summed with `ok`; `banned` (a fresh token refused) and
+    # `challenge` (a non-JSON body) are the two the study named as the fragile
+    # paths, held apart so a rising `banned` is legible as a ban risk.
+    _CounterSpec(
+        "nora_presence_reads_total",
+        "Life360 circle reads, by circle and outcome "
+        "(ok / unavailable / challenge / banned).",
+        ("circle", "status"),
+    ),
+    # Per member per cycle, so «sharing off» is a KNOWN STATE, not a gap
+    # (design/19 §5, §7.3). A member who turned sharing off writes no fix row, so
+    # WITHOUT this series they would be indistinguishable from a member the
+    # daemon failed to read — the exact ambiguity R-5 forbids for a location.
+    _CounterSpec(
+        "nora_presence_member_states_total",
+        "Members classified per collection cycle, by wire_state "
+        "(live / stale / sharing_off / disconnected / no_fix / unavailable).",
+        ("wire_state",),
+    ),
+    # The Life360 client's auth alarms (design/19 §4.1). `banned` = a fresh token
+    # was refused (ban risk); `challenge` = a non-JSON body; `auth_403` = the
+    # token endpoint itself refused the credential. Any sustained increment is an
+    # operator alert — the client will not re-auth-loop, so this rising while
+    # reads fail is how a ban surfaces instead of a silent 0-fix daemon.
+    _CounterSpec(
+        "nora_presence_auth_alarms_total",
+        "Life360 auth/ban alarms from the client, by reason "
+        "(banned / challenge / auth_403).",
+        ("reason",),
+    ),
+    # The collector's own canary (design/19 §4): a read whose body was not JSON,
+    # or a circle that came back unexpectedly empty. Both are the app-update
+    # breakage the study named — a required UA/host/client-token changing turns
+    # 200s into challenge pages or empty envelopes.
+    _CounterSpec(
+        "nora_presence_canary_total",
+        "Presence collector canary trips, by reason (non_json / empty_circle).",
+        ("reason",),
+    ),
+    # R-21 disclosure, incremented by NORA (not the collector): a `whereis` that
+    # REFUSED because the conversation held someone outside the circle (design/19
+    # §5, the new fail-closed seam). A refusal is fail-closed and loud — this is
+    # the day-group-⊄-circle event made observable, never a silent omission.
+    _CounterSpec(
+        "nora_presence_disclosure_refusals_total",
+        "whereis disclosures refused because the conversation was not a subset "
+        "of the circle (R-21 fail-closed seam, design/19 §5).",
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -372,6 +438,27 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Distinct id forms Nora recognises as her own, by platform. 1 means "
         "enrichment produced nothing beyond the configured primary.",
         ("platform",),
+    ),
+    # Presence liveness (design/19 §4): the heartbeat. Set after every SUCCESSFUL
+    # collection to the age (seconds) of that circle's last success, so a stalled
+    # daemon shows a climbing age rather than a frozen fix count. Alert on it
+    # crossing a few cadences — that is «the collector is up but not collecting»,
+    # which R-5 would otherwise hide (a quiet circle looks identical).
+    _GaugeSpec(
+        "nora_presence_last_collection_age_seconds",
+        "Seconds since this circle's last SUCCESSFUL collection. Climbing means "
+        "the daemon is up but not collecting.",
+        ("circle",),
+    ),
+    # The R-21 startup invariant (design/19 §5): 1 when the Signal group is a
+    # SUBSET of the Life360 circle (disclosure holds by construction), 0 the day
+    # it is not — the alarm that «group ⊄ circle» is now true. Published at
+    # startup and whenever it is checked; alert on `== 0`.
+    _GaugeSpec(
+        "nora_presence_circle_subset_ok",
+        "1 when the conversation's people are a subset of the circle (R-21 holds "
+        "by construction), 0 the day someone outside the circle is in the group.",
+        ("circle",),
     ),
 )
 

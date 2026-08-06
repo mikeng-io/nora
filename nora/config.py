@@ -298,6 +298,59 @@ class RouteConfig(BaseModel):
     api_key_env: str = "GOOGLE_MAPS_API_KEY"
 
 
+class PresenceCircleConfig(BaseModel):
+    """One Life360 circle and how its members map to Nora's people (design/19).
+
+    `members` is `life360_member_id -> person_id` — the same canonical id the
+    roster uses (§3), so presence joins messages and identity on one key. The
+    VALUES of this map are the circle's roster of `person_id`s, which is what the
+    R-21 disclosure seam intersects a conversation against (§5): Nora may report
+    a member's presence only into a conversation whose people are a SUBSET of
+    this set.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    circle_id: str
+    members: dict[str, str]
+
+
+class PresenceConfig(BaseModel):
+    """The presence collector (design/19), DEC-54/DEC-55.
+
+    **The whole section is optional and every field defaults, and `enabled`
+    defaults to False**, like `[route]`: presence ships INERT. A `config.toml`
+    without a `[presence]` section loads unchanged, and while off nothing
+    constructs a collector or a Life360 client — `whereis` answers `unavailable`
+    (§7.10), exactly as `route` does keyless.
+
+    Credentials are named, never inlined (DEC-8): `client_credential_env` names
+    the env var holding the Basic client credential (the study's auth), and
+    `username_env`/`password_env` the account login. The collector reads the
+    VALUES from the environment; a committed file never carries them.
+
+    `cadence_seconds` is the per-circle poll interval - ~60-120 s, roughly what
+    the Life360 app itself does (§1). `retention_days` is the prune window
+    (§9, operator decision: 180).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    client_credential_env: str = "LIFE360_CLIENT_CREDENTIAL"
+    username_env: str = "LIFE360_USERNAME"
+    password_env: str = "LIFE360_PASSWORD"  # noqa: S105 — names an env var, not a secret
+    # ~60-120 s (§1). `ge=1` guards a zero/negative that would busy-loop; the
+    # 60-120 band is guidance in config.example.toml, not a hard clamp, so an
+    # operator can widen it deliberately without editing code.
+    cadence_seconds: float = Field(default=90.0, ge=1.0)
+    retention_days: int = Field(default=180, ge=1)
+    # The collector's own metrics/health endpoint (§4: liveness lives in the
+    # daemon). A separate process, so a separate port from `obs.metrics.port`.
+    metrics_port: int = 9101
+    circles: tuple[PresenceCircleConfig, ...] = ()
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -411,6 +464,11 @@ class Config(BaseModel):
     # Optional and defaulted — see `RouteConfig`. Off unless an operator turns
     # it on; a config.toml without a `[route]` section keeps loading.
     route: RouteConfig = RouteConfig()
+    # Optional and defaulted — see `PresenceConfig`. Off unless an operator turns
+    # it on; a config.toml without a `[presence]` section keeps loading, and the
+    # collector is a SEPARATE process (`python -m nora.presence`) that reads this
+    # same tree.
+    presence: PresenceConfig = PresenceConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     identity_file: Path

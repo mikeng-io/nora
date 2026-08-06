@@ -202,3 +202,57 @@ def test_an_unknown_media_key_is_still_a_startup_failure(toml_path):
     toml_path.write_text(toml_path.read_text() + '\n[media]\nenabledd = true\n')
     with pytest.raises(ConfigError):
         load(toml_path)
+
+
+def test_the_presence_section_is_optional_and_ships_inert(toml_path):
+    """DEC-54/55. `[presence]` deleted from the example must keep loading, and
+    the default is INERT (enabled = false): presence must never be on by a
+    missing section. The values asserted are the class defaults, so this fails
+    if a default silently changes."""
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[presence]\n")
+    assert tail, "config.example.toml no longer declares [presence]"
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
+
+    cfg = load(toml_path)
+    assert cfg.presence.enabled is False
+    assert cfg.presence.cadence_seconds == 90.0
+    assert cfg.presence.retention_days == 180
+    assert cfg.presence.circles == ()
+
+
+def test_presence_credentials_are_named_not_inlined(toml_path):
+    """DEC-8: the config names the env vars, never the secret values."""
+    cfg = load(toml_path)
+    assert cfg.presence.client_credential_env == "LIFE360_CLIENT_CREDENTIAL"
+    assert cfg.presence.username_env == "LIFE360_USERNAME"
+    assert cfg.presence.password_env == "LIFE360_PASSWORD"  # noqa: S105 — an env-var NAME
+
+
+def test_a_presence_circle_maps_members_to_person_ids(toml_path):
+    toml_path.write_text(
+        toml_path.read_text().replace("[presence]\nenabled = false", "[presence]\nenabled = true")
+        + '\n[[presence.circles]]\ncircle_id = "cir1"\n'
+          'members = { "m1" = "miles_novak", "m2" = "grant_carver" }\n'
+    )
+    cfg = load(toml_path)
+    assert cfg.presence.enabled is True
+    (circle,) = cfg.presence.circles
+    assert circle.circle_id == "cir1"
+    assert circle.members == {"m1": "miles_novak", "m2": "grant_carver"}
+
+
+def test_an_unknown_presence_key_is_still_a_startup_failure(toml_path):
+    toml_path.write_text(toml_path.read_text() + '\n[presence]\nenabledd = true\n')
+    with pytest.raises(ConfigError):
+        load(toml_path)
+
+
+def test_a_zero_cadence_is_rejected(toml_path):
+    """`ge=1` guards a busy-loop cadence nobody chose."""
+    toml_path.write_text(
+        toml_path.read_text().replace("cadence_seconds = 90", "cadence_seconds = 0")
+    )
+    with pytest.raises(ConfigError):
+        load(toml_path)

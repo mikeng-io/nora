@@ -146,6 +146,42 @@ timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never th
 enabled = false
 api_key_env = "GOOGLE_MAPS_API_KEY"
 
+# The presence collector (design/19, DEC-54/55) — a SEPARATE process,
+# `python -m nora.presence`, that records circle members' distinct location
+# fixes into the same `nora` database (PLAINTEXT). The WHOLE SECTION IS OPTIONAL
+# and every key defaults; `enabled` defaults to False, so presence ships INERT —
+# a config.toml without a `[presence]` section behaves as if it is off, and while
+# off nothing constructs a collector or a Life360 client and `whereis` answers
+# `unavailable`.
+#
+# CREDENTIALS ARE NAMED, NEVER INLINED (DEC-8). `client_credential_env` names the
+# env var holding the Basic client credential (the Life360 app's, the study's
+# auth); `username_env`/`password_env` name the account login. The collector
+# reads the VALUES from the environment.
+#
+# `cadence_seconds` is the per-circle poll interval — keep it ~60–120 s, roughly
+# what the Life360 app itself does; the collector is a CHANGE-RECORDER (it writes
+# only when a member's position advances), so polling faster buys no freshness,
+# only credential-POST risk. `retention_days` is the prune window (operator
+# decision: 180). `metrics_port` is the daemon's own /metrics + /health endpoint,
+# separate from obs.metrics.port because it is a separate process.
+#
+# Each `[[presence.circles]]` maps Life360 member ids to Nora's `person_id`s —
+# the same canonical id the roster uses. The VALUES of `members` are the circle
+# roster the R-21 disclosure seam checks a conversation against (§5).
+[presence]
+enabled = false
+client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
+username_env = "LIFE360_USERNAME"
+password_env = "LIFE360_PASSWORD"
+cadence_seconds = 90
+retention_days = 180
+metrics_port = 9101
+
+# [[presence.circles]]
+# circle_id = "your-life360-circle-id"
+# members = { "life360-member-id-1" = "miles_novak", "life360-member-id-2" = "grant_carver" }
+
 [doctrine]
 dir = "nora/doctrine"
 reload = "mtime"                      # mtime | startup
