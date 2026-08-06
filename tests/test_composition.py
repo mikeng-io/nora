@@ -221,7 +221,10 @@ def test_only_app_and_main_import_config():
     offenders = []
     for p in (ROOT / "nora").rglob("*.py"):
         rel = p.relative_to(ROOT / "nora")
-        if rel.parts[0] == "app" or str(rel) in ("__main__.py", "config.py"):
+        # `app/` and `presence/` are both composition roots — the two packages
+        # allowed to read Config (import-linter contract 3 lists neither as
+        # forbidden), same standing as `__main__.py`/`config.py` themselves.
+        if rel.parts[0] in ("app", "presence") or str(rel) in ("__main__.py", "config.py"):
             continue
         module_name = _resolved_module_name(rel)
         tree = ast.parse(p.read_text())

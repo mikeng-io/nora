@@ -65,6 +65,18 @@ RULE_TESTS = {
     # after R-28 (R-26 is reserved by design/proposed/18 for the unshipped
     # context-budget work), DEC-48. See `nora.engagement.queue`.
     "R-30": "test_three_tags_for_one_conversation_are_answered_in_fifo_order",
+    # R-31: the presence disclosure seam is fail-closed (design/19 §5, DEC-54).
+    # `whereis` refuses to disclose a circle member's position into a
+    # conversation whose people are NOT a subset of the circle — a REFUSAL, not
+    # a silent omission. This is the INVERSE of the room tools' R-21 and nothing
+    # else in Nora enforced it; the reviews were explicit that «the same rule the
+    # roster uses» was an overstatement. Next free number after R-30.
+    "R-31": "test_whereis_refuses_to_disclose_outside_the_circle",
+    # R-32: the collector is a change-recorder, not a sampler (design/19 §1,
+    # DEC-55). A row is written only when a member's `ts` advances, so two reads
+    # of an UNMOVED member produce ONE row — the property that makes presence a
+    # time-series of distinct fixes rather than a duplication of every poll.
+    "R-32": "test_an_unmoved_member_is_recorded_once",
 }
 
 

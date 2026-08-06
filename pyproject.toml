@@ -121,7 +121,7 @@ type = "layers"
 # not fight legitimate cross-package imports. The property this contract exists to
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
 layers = [
-    "nora.app",
+    "nora.app | nora.presence",
     "nora.ingest | nora.engagement",
     "nora.agent | nora.platform",
     "nora.doctrine",
@@ -177,7 +177,7 @@ source_modules = ["evals"]
 forbidden_modules = [
     "nora.agent", "nora.config", "nora.domain", "nora.engagement",
     "nora.infra", "nora.ingest", "nora.obs", "nora.doctrine", "nora.persons",
-    "nora.platform", "nora.tag", "nora.skills", "tests",
+    "nora.platform", "nora.tag", "nora.skills", "nora.presence", "tests",
 ]
 allow_indirect_imports = "True"
 
