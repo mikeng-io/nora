@@ -227,31 +227,46 @@ guard. Say so rather than implying otherwise.
 
 ## 1.6 What should NOT be built
 
-- **~~No lookup tool.~~ CONTRADICTED IN CODE 2026-08-06 — unresolved, and
-  deliberately not retracted yet.** `recall(person)`, `lookup_person(name)`
-  and `group_members()` shipped as TOOLS in commit `f630d8b` (DEC-27, R-21,
-  R-22). That is precisely what this line forbade, and neither DEC-27 nor
-  design/12's update noticed.
+- **~~No lookup tool.~~ RETRACTED 2026-08-06 — the settling measurement ran
+  and §1.2 lost.** `recall(person)`, `lookup_person(name)` and
+  `group_members()` shipped as TOOLS in commit `f630d8b` (DEC-27, R-21, R-22),
+  which is precisely what this line forbade. The disagreement was recorded as
+  empirical rather than argued, and it has now been settled empirically.
 
-  **Do not retract either side on argument alone — the disagreement is
-  empirical.** §1.2's case rests on one measured claim: that `read_peer_card`
-  "has existed for the whole deployment and has never been called", because
+  §1.2's case rested on one measured claim: that `read_peer_card` "has existed
+  for the whole deployment and has never been called", because
   `tool_choice="required"` makes `send_reply` the turn-one attractor and
-  `ReplyGuard` cancels on delivery. If that still holds, the three new tools
-  are dead code that looks like a feature — this repo's signature bug. If it
-  no longer holds, §1.2 is dead and should say so.
+  `ReplyGuard` cancels on delivery — so an optional lookup tool sits in a
+  window the model never enters. **That claim is dead.** Measured against
+  `opencode-zen/deepseek-v4-flash` with the real schemas and the real
+  assembled persona, 「邊個係阿豹妹？」:
 
-  What changed since that measurement, and why it may no longer hold:
-  `reasoning_effort` moved to `"low"` (measured 2026-08-06 to change first-call
-  tool selection from reflexive to correct), and `_context_header` now names
-  every tool in prose rather than leaving them to the raw schema.
+      turn one    lookup_person 6/6      (persona only, and full prefill: 6/6 each)
+      turn two    recall        6/6      (after lookup_person returns a person)
 
-  **The settling measurement, not yet run:** a live tag asking about a person
-  by nickname, checking whether the model calls `lookup_person`/`recall` at
-  all. The merge that shipped them verified wiring and scoping against live
-  services but explicitly did NOT test model selection. Until that runs, this
-  document and the code disagree, and the disagreement is recorded here rather
-  than resolved by whoever writes next.
+  The model does not merely enter that window, it enters it *first*: `recall`
+  and `lookup_person` beat `send_reply` on every run of a person-question, and
+  under the pre-audit persona as well as the current one. What changed since
+  the original measurement is what §1.6 already guessed — `reasoning_effort`
+  moved to `"low"`, and `_context_header` names every tool in prose.
+
+  So the tools are not dead code, prefill is no longer the only workable
+  answer, and §1.2 above should be read as history. Its *other* arguments
+  survive on their own merits and are unaffected: `chat` is still too slow for
+  the tag path, `representation` is still the right endpoint, and
+  `read_peer_card` should still be deleted — see the note under §1.2's «Delete
+  `read_peer_card`», which the tools phase did not act on.
+
+  **What the tools do NOT fix, and what looked like a tool-selection failure
+  but was not.** A live tag asked 「邊個係阿豹妹？」 and Nora answered
+  「呢個group冇人叫阿豹妹喎」 — nobody here is called that — which is a near
+  verbatim rendering of `_miss()`'s own `not_found` note. She called the tool
+  and relayed its answer faithfully. The answer was correct: `listGroups`
+  reports the `Ridgeline` group as three accounts (two of Miles's, one of Nora's),
+  Tyler is in `identity.toml` but not in that group, and R-21 requires exactly
+  this — a person outside the room is indistinguishable from one who does not
+  exist. The gap is in `identity.toml`/the roster, not in the model's
+  willingness to look.
 - **No `chat` on the tag path.** Measured 6.9–8.3 s.
 - **No `target=` theory-of-mind in v1.** §1.3.
 - **No recall for unmapped members.** They have no peer. They render by display

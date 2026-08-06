@@ -49,17 +49,78 @@ def test_voice_states_the_sound_and_the_anti_patterns():
         assert anti in text
 
 
-def test_conduct_names_the_three_tools_and_no_others():
-    text = (PERSONA_DIR / "conduct.md").read_text()
-    for tool in ("read_buffer", "read_peer_card", "send_reply"):
-        assert tool in text
-    assert "feed_honcho" not in text      # not an agent tool (audit fix #5)
+def test_no_persona_file_carries_a_tool_catalogue():
+    """The persona names CAPABILITIES; only `_context_header` names tools.
+
+    This replaces `test_conduct_names_the_three_tools_and_no_others`, whose
+    name promised the assertion it never made: it checked that three tools were
+    present and that `feed_honcho` was absent, and would have passed unchanged
+    while the catalogue rotted. It did rot. `conduct.md` listed `read_buffer`,
+    `read_peer_card` and `send_reply` and never learned about `now`,
+    `group_members`, `lookup_person` or `recall` — four of seven — beside a
+    line telling her the conversation "covers almost every call".
+
+    A prose catalogue in the persona has nothing keeping it in step with the
+    registry, and there is no reason to run two: `nora.agent.prefill.
+    _context_header` states the list once (pinned in both directions by
+    `tests/test_prefill.py`) and the schemas are derived from the callables and
+    cannot drift at all. So the rule is mechanical — no persona file may name a
+    tool, and adding an eighth tool can never again silently falsify the
+    persona.
+
+    A tool is "named" here if it appears backticked (`recall`) or as a bare
+    snake_case identifier (read_buffer) — the two forms a catalogue is written
+    in. Matching the bare word alone would be useless: `now` and `recall` are
+    also ordinary English, and `soul.md` says "I don't know" and "what you
+    remember" in prose that is exactly what this file is supposed to encourage.
+    """
+    from nora.agent.tools import NATIVE_TOOL_BUDGETS
+
+    tools = (*NATIVE_TOOL_BUDGETS, "feed_honcho")
+    for path in PERSONA_DIR.glob("*.md"):
+        text = path.read_text()
+        for tool in tools:
+            assert f"`{tool}`" not in text, (
+                f"{path.name} names the tool `{tool}`. The persona describes what she can "
+                "find out; _context_header and the tool schemas name how."
+            )
+            if "_" in tool:
+                assert tool not in text, (
+                    f"{path.name} names the tool {tool}. The persona describes what she "
+                    "can find out; _context_header and the tool schemas name how."
+                )
 
 
-def test_conduct_states_the_silence_doctrine():
-    text = (PERSONA_DIR / "conduct.md").read_text()
-    assert "say nothing" in text
-    assert "Never post an error" in text or "never post an error" in text
+def test_the_silence_doctrine_is_stated_exactly_once_in_guardrails():
+    """R-5's persona half lives in `guardrails.md` alone.
+
+    It used to be in `conduct.md` AND `guardrails.md`, and the two copies had
+    already drifted: conduct forbade "a note about your own limits or
+    configuration", which collides head-on with soul/conduct telling her to say
+    plainly when she cannot check something. Guardrails outranks conduct and is
+    assembled last, so the surviving copy is the one there — narrowed to
+    malfunction, with the collision spelled out.
+    """
+    guardrails = (PERSONA_DIR / "guardrails.md").read_text()
+    assert "say nothing" in guardrails
+    assert "never post an error" in guardrails.lower()
+    assert "not about not knowing" in guardrails      # the de-collision clause
+    assert "say nothing" not in (PERSONA_DIR / "conduct.md").read_text()
+
+
+def test_soul_does_not_fence_what_she_knows_to_two_things():
+    """`soul.md` claimed: "Two things, and only these: the recent messages of
+    this conversation, and what you durably recall about the person who called
+    you."
+
+    That was true when she had `read_buffer` and `read_peer_card`. It has been
+    false since `group_members`/`lookup_person`/`recall` shipped (DEC-27), and
+    it is the one sentence in the persona that told her not to look anyone else
+    up — while `_context_header`, in the same prompt, listed all seven tools.
+    """
+    text = (PERSONA_DIR / "soul.md").read_text()
+    assert "Two things, and only these" not in text
+    assert "who is in this conversation" in text      # the capability, positively stated
 
 
 def test_guardrails_covers_every_r14_clause():

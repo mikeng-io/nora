@@ -368,6 +368,27 @@ def test_the_header_names_every_tool_she_has():
         assert tool in header, f"{tool} is available but never mentioned to her"
 
 
+def test_the_header_names_no_tool_she_does_not_have():
+    """The other direction, which the coverage test above cannot see.
+
+    A tool DELETED from the registry but left in this prose is worse than one
+    missing from it: R-7 default-denies the call, so she spends a turn being
+    told the tool does not exist by the same prompt that told her it did. This
+    is the half `conduct.md` failed — it went on naming `read_peer_card` as one
+    of three tools long after there were seven — and the reason the catalogue
+    is allowed to exist in exactly one place.
+    """
+    import re
+
+    from nora.agent.prefill import _context_header
+    from nora.agent.tools import NATIVE_TOOL_BUDGETS
+    named = set(re.findall(r"^- ([a-z_]+) — ", _context_header(40), re.MULTILINE))
+    assert named, "the header's tool list stopped parsing — check its bullet format"
+    assert named <= set(NATIVE_TOOL_BUDGETS), (
+        f"the header offers tools that do not exist: {named - set(NATIVE_TOOL_BUDGETS)}"
+    )
+
+
 def test_the_header_explains_the_situation_not_just_the_notation():
     """Persona says who she IS; this says how she is being RUN. Without a
     situational model a model invents one."""
