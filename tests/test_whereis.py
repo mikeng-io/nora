@@ -124,6 +124,25 @@ async def test_whereis_refuses_to_disclose_outside_the_circle(persons, store):
     assert metrics.get("nora_presence_disclosure_refusals_total") == 1
 
 
+async def test_whereis_refuses_when_the_room_holds_an_unmapped_account(persons, store):
+    """Fail-closed on UNCERTAINTY, not just on a RESOLVED outsider (both #37
+    reviews, 2026-08-07). An account in the room that resolves to NO person_id — a
+    stranger not in identity.toml, design/19 §5's own trigger — is unverifiable
+    against the circle, so `view.unnamed > 0` must refuse. The resolvable subset
+    alone (miles, grant) would PASS the subset check; revert the `view.unnamed`
+    clause and presence leaks past the unmapped outsider — this goes red."""
+    await _record(store, person="miles_novak", ts=NOW)
+    metrics = Metrics()
+    unmapped = frozenset({"+85299999999"})     # NOT in identity.toml → view.unnamed
+    w = _whereis(
+        persons, store, members=(MILES, GRANT, unmapped, NORA), metrics=metrics,
+    )
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "refused"
+    assert "lat" not in out and "address" not in out
+    assert metrics.get("nora_presence_disclosure_refusals_total") == 1
+
+
 async def test_whereis_is_unavailable_and_never_null_island_without_a_fix(persons, store):
     """No stored fix → `unavailable`, never a (0,0) null-island or a guess (§7.6)."""
     w = _whereis(persons, store, members=(MILES, GRANT, NORA))

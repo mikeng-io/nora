@@ -96,8 +96,17 @@ def check_disclosure_invariant(
 
     This is the mechanical replacement for «the same rule the roster uses» —
     which the reviews called an overstatement, because nothing else in Nora
-    compares a circle to a group. Called at collector startup with the group
-    roster and the configured circle."""
+    compares a circle to a group.
+
+    **UNWIRED, pending `whereis` activation (the DEC-48 inert shape).** It needs
+    the Signal group roster, which the COLLECTOR process does not have — so it is
+    called on Nora's side the day `whereis` is wired into `NATIVE_TOOLS`, not at
+    collector startup. Until then it is a tested seam with no live call site (do
+    not read a green `nora_presence_circle_subset_ok` as live coverage). The
+    AUTHORITATIVE fail-closed check is the per-call guard in `Whereis.locate`,
+    which also refuses on `view.unnamed > 0` — an unmapped account the coarse
+    person_id subset here cannot see; this startup check is a belt-and-braces
+    pre-flight over the KNOWN person_ids."""
     ok = bool(group_person_ids) and group_person_ids <= circle.person_ids
     if metrics is not None:
         metrics.gauge(
@@ -160,12 +169,21 @@ class Whereis:
                 "where anyone is. Say so rather than guessing."
             )
         # Disclosure is checked against the WHOLE room, before any name is
-        # resolved: if anyone here is outside the circle, no member's position
-        # may be disclosed into this conversation at all (§5). A degraded view
-        # (tagger-only, roster unreadable) cannot verify the subset, so it
-        # refuses too — the guard is fail-closed on an unverifiable room.
+        # resolved: if anyone here is outside the circle, no member's position may
+        # be disclosed into this conversation at all (§5). Three ways the room
+        # fails the subset test, and ALL of them refuse — fail-closed on any
+        # uncertainty:
+        #   - a RESOLVED member whose person_id is not in the circle;
+        #   - `view.unnamed > 0` — an account in the room resolving to NO
+        #     person_id is by definition unverifiable against the circle, and it
+        #     is the LIKELIEST real trigger (a stranger not in identity.toml joins
+        #     the group, design/19 §5's own example). `view.people` is only the
+        #     RESOLVABLE subset, so checking it alone would silently disclose past
+        #     an unmapped outsider (both #37 reviews, 2026-08-07);
+        #   - a DEGRADED view (tagger-only, roster unreadable) that cannot verify
+        #     the subset at all.
         room_person_ids = frozenset(p.person_id for p in view.people)
-        if view.degraded or not self._guard.permits(room_person_ids):
+        if view.degraded or view.unnamed > 0 or not self._guard.permits(room_person_ids):
             if self._metrics is not None:
                 self._metrics.inc("nora_presence_disclosure_refusals_total")
             log.warning(
