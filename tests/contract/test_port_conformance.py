@@ -17,6 +17,7 @@ import inspect
 
 from nora.domain.ports import BlobStore, MediaSource, MemoryStore, PlatformAdapter
 from nora.infra.blobs import FilesystemBlobStore
+from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.honcho import HonchoClient
 from nora.obs.metrics import Metrics
 from nora.platform.signal.adapter import SignalAdapter
@@ -129,7 +130,7 @@ def test_the_media_ports_conform_in_both_implementations(tmp_path):
     `SqlAuditStore` does; this assertion and the contract suite are what stand
     in for it.
     """
-    assert isinstance(FilesystemBlobStore(tmp_path), BlobStore)
+    assert isinstance(FilesystemBlobStore(tmp_path, cipher=BlobCipher(bytes(range(32)))), BlobStore)
     assert isinstance(FakeBlobStore(), BlobStore)
     assert isinstance(SignalMediaSource(base_url="http://127.0.0.1:18080"), MediaSource)
     assert isinstance(FakeMediaSource(), MediaSource)

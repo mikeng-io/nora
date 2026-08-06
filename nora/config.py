@@ -219,11 +219,23 @@ class MediaConfig(BaseModel):
     until it is. Off means attachments are recorded exactly as before, with a
     placeholder and no handle, and `nora_media_custody_total{status=
     "not_configured"}` counting every one.
+
+    `encryption_key_env` NAMES the environment variable holding the AES-256 key
+    (base64 of 32 bytes), never the key itself (DEC-8, `api_key_env`-style). The
+    bytes on disk are ciphertext (DEC-47), and the key is host-injected. Custody
+    turns ON only when `enabled` is true AND that variable holds a valid key: a
+    missing or malformed key degrades to custody OFF (the same
+    `not_configured` state as `enabled = false`), never plaintext-by-accident
+    and never a startup crash — media is a bonus and must not take the daemon
+    down the way a missing LLM key does. Empty default = not configured.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = True
+    # Names the env var holding the base64-encoded 32-byte AES-256 key. Empty
+    # means no key configured, which — like `enabled = false` — is custody OFF.
+    encryption_key_env: str = ""
     # Signal's own attachment ceiling. A refusal is a policy outcome with its
     # own metric label, never a crash and never a truncated blob.
     max_bytes: int = 100 * 1024 * 1024

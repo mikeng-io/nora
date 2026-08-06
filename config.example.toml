@@ -89,8 +89,9 @@ db_path = "~/workspace/nora/data/messages.db"
 max_per_conversation = 500
 context_window = 40
 
-# Attachment byte custody (DEC-45). The WHOLE SECTION IS OPTIONAL — every key
-# below is its own default — so a config.toml without it behaves identically.
+# Attachment byte custody (DEC-43), encrypted at rest (DEC-47). The WHOLE
+# SECTION IS OPTIONAL — every key below is its own default — so a config.toml
+# without it behaves identically.
 #
 # There is no path key on purpose: media lives beside `store.db_path`, in
 # `data/media/<first2>/<rest>`, keyed by the sha256 of the content. The row and
@@ -98,8 +99,18 @@ context_window = 40
 # and deleted separately, and the first time that happened the transcript would
 # point at blobs nobody kept.
 #
+# ENCRYPTION AT REST (DEC-47). The bytes on disk are AES-256-GCM ciphertext, not
+# the picture. For IMAGES, EXIF/embedded metadata (GPS, device id) is stripped
+# BEFORE the content is hashed — so the same photo with different GPS dedups to
+# one blob, and the location PII is gone from what Nora holds. NON-IMAGES
+# (audio, video, documents) have NO metadata stripped — there is no cheap
+# universal stripper — so their embedded metadata survives inside the encrypted
+# blob. Custody turns ON only when `enabled` is true AND `encryption_key_env`
+# names an env var holding a valid key; a missing/malformed key degrades to
+# custody OFF (never plaintext-by-accident, never a crash).
+#
 # RETENTION IS NOT DECIDED. `store.max_per_conversation` prunes MESSAGES; no
-# sweep deletes blobs yet, so today this grows without bound. That is DEC-45's
+# sweep deletes blobs yet, so today this grows without bound. That is DEC-43's
 # open question and it is the operator's to answer — this is the most PII-heavy
 # data in the system. `enabled = false` is the honest off switch in the
 # meantime: attachments are then recorded exactly as before (a placeholder, no
@@ -107,6 +118,11 @@ context_window = 40
 # nora_media_custody_total{status="not_configured"}.
 [media]
 enabled = true
+# Names the env var holding the base64 of a 32-byte AES-256 key (DEC-8: name the
+# var, never inline the secret). Host-injected, like OMNIROUTE_API_KEY. Generate:
+#   python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
+# Empty (or the var unset) = custody OFF.
+encryption_key_env = "NORA_MEDIA_KEY"
 max_bytes = 104857600     # 100 MiB — Signal's own attachment ceiling
 timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never the message
 

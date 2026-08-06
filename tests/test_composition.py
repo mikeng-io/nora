@@ -2,12 +2,16 @@
 receives dependencies. This test pins that property."""
 
 import ast
+import base64
+import os
 from pathlib import Path
 
 import pytest
 
 from nora.app.composition import Dependencies, StartupError, build_dependencies
 from nora.config import load
+from nora.infra.blobs import FilesystemBlobStore
+from nora.platform.signal.media import SignalMediaSource
 from tests.builders import override_config
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -144,6 +148,41 @@ async def test_dependencies_do_not_expose_settings(cfg):
     deps = await build_dependencies(cfg)
     assert not hasattr(deps, "config")
     assert not hasattr(deps, "settings")
+
+
+async def test_media_custody_is_off_when_the_key_env_is_unset(cfg):
+    """config.example.toml ships `[media] enabled = true`, but the key env var
+    is not set in this fixture — so custody degrades to OFF (never a crash), and
+    the ingest pipeline is wired with no source and no store. That is the one
+    state `nora.ingest.stages.media` counts as `not_configured`."""
+    deps = await build_dependencies(cfg)
+    assert deps.ingest._media_source is None
+    assert deps.ingest._blobs is None
+
+
+async def test_a_valid_key_turns_media_custody_on_with_an_encrypting_store(cfg, monkeypatch):
+    """A base64 32-byte key present in the named env var is what wires the
+    SignalMediaSource + the encrypting FilesystemBlobStore into the pipeline."""
+    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    deps = await build_dependencies(cfg)
+    assert isinstance(deps.ingest._media_source, SignalMediaSource)
+    assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
+
+
+async def test_a_malformed_key_degrades_to_off_rather_than_crashing(cfg, monkeypatch):
+    """The deliberate asymmetry with the LLM key: media is a bonus, so a bad key
+    is custody OFF (warned), never a startup failure and never plaintext."""
+    monkeypatch.setenv("NORA_MEDIA_KEY", "not-a-valid-base64-32-byte-key!!")
+    deps = await build_dependencies(cfg)
+    assert deps.ingest._media_source is None
+    assert deps.ingest._blobs is None
+
+
+async def test_media_disabled_is_off_even_with_a_valid_key(cfg, monkeypatch):
+    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    deps = await build_dependencies(override_config(cfg, {"media.enabled": False}))
+    assert deps.ingest._media_source is None
+    assert deps.ingest._blobs is None
 
 
 def _resolved_module_name(rel: Path) -> str:

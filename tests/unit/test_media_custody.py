@@ -27,12 +27,19 @@ from nora.domain.media import (
 )
 from nora.domain.models import NormalizedMessage
 from nora.infra.blobs import FilesystemBlobStore
+from nora.infra.blobs.cipher import BlobCipher
 from nora.ingest.stages import media as media_stage
 from nora.obs.metrics import Metrics
 from nora.testing import FakeBlobStore, FakeMediaSource
 
 JPEG = b"\xff\xd8\xff\xe0 pretend jpeg"
 JPEG_SHA = hashlib.sha256(JPEG).hexdigest()
+# `JPEG` above is not a decodable image, so `strip_exif` no-ops on it and the
+# stored plaintext is these exact bytes — which keeps every hash/handle
+# assertion below stable. The encrypting store (DEC-47) needs a key; the
+# ciphertext-at-rest and real-EXIF-strip behaviours are proven in
+# tests/unit/test_media_encryption.py.
+_CIPHER = BlobCipher(bytes(range(32)))
 
 
 def _msg(*, body: str, refs: tuple[MediaRef, ...]) -> NormalizedMessage:
@@ -175,13 +182,17 @@ def test_media_json_records_the_four_fields_and_no_bytes():
 
 
 async def test_the_filesystem_store_shards_by_the_first_two_hex_characters(tmp_path):
-    store = FilesystemBlobStore(tmp_path)
+    store = FilesystemBlobStore(tmp_path, cipher=_CIPHER)
     key = await store.put(data=JPEG)
-    assert (tmp_path / key[:2] / key[2:]).read_bytes() == JPEG
+    # The blob exists at the sharded path, and `get` round-trips the plaintext —
+    # the on-disk bytes are ciphertext (see test_media_encryption.py), so this
+    # asserts the SHARDING via the path, not the plaintext via a raw read.
+    assert (tmp_path / key[:2] / key[2:]).is_file()
+    assert await store.get(key=key) == JPEG
 
 
 async def test_a_second_put_of_the_same_bytes_leaves_no_temp_file_behind(tmp_path):
-    store = FilesystemBlobStore(tmp_path)
+    store = FilesystemBlobStore(tmp_path, cipher=_CIPHER)
     await store.put(data=JPEG)
     await store.put(data=JPEG)
     assert [p.name for p in tmp_path.rglob("*") if p.is_file() and p.name.startswith(".")] == []
@@ -190,7 +201,7 @@ async def test_a_second_put_of_the_same_bytes_leaves_no_temp_file_behind(tmp_pat
 async def test_delete_makes_a_blob_gone_and_is_idempotent(tmp_path):
     """The mechanism the operator's retention decision will need — present so
     that making the decision costs a policy, not an implementation."""
-    store = FilesystemBlobStore(tmp_path)
+    store = FilesystemBlobStore(tmp_path, cipher=_CIPHER)
     key = await store.put(data=JPEG)
     assert await store.delete(key=key) is True
     assert await store.get(key=key) is None

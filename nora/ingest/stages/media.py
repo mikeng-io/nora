@@ -56,6 +56,7 @@ from nora.domain.media import (
 )
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import BlobStore, MediaSource
+from nora.ingest.exif import strip_exif
 
 log = logging.getLogger("nora.ingest.media")
 
@@ -144,25 +145,33 @@ async def _take(
     if not fetched.available:
         _count(metrics, platform=platform, status=fetched.reason or "unavailable")
         return None
+    # The type as RESOLVED (declared, else inferred from the filename), decided
+    # BEFORE the hash because it decides whether to strip: the stored row and
+    # the rendered label can never disagree about what this is, and the strip is
+    # driven off the registered top-level type, not a byte sniff.
+    media_type = resolve_media_type(declared=ref.media_type, filename=ref.filename)
+    # Strip EXIF/embedded metadata from images BEFORE hashing (DEC-47). The
+    # content key is the sha256 of THESE bytes, so stripping first is what makes
+    # the key the key of the PICTURE — the same photo with different GPS dedups
+    # to one blob — and removes the GPS/device-id PII from what Nora holds.
+    # Non-images pass through unchanged; see nora/ingest/exif.py.
+    plaintext = strip_exif(fetched.data, media_type)
     try:
-        key = await blobs.put(data=fetched.data)
+        key = await blobs.put(data=plaintext)
     except Exception:
         # The blob store is the disk. A full or read-only volume must cost the
         # attachment and not the message — the row still records that something
         # arrived, and this counter is what says custody is broken.
-        log.exception("blob store refused %d bytes; recording without custody", len(fetched.data))
+        log.exception("blob store refused %d bytes; recording without custody", len(plaintext))
         _count(metrics, platform=platform, status="store_failed")
         return None
     _count(metrics, platform=platform, status="stored")
     return MediaBlob(
         sha256=key,
-        # The type as RESOLVED (declared, else inferred from the filename),
-        # so the stored row and the rendered label can never disagree about
-        # what this is.
-        media_type=resolve_media_type(declared=ref.media_type, filename=ref.filename),
-        # MEASURED, not the platform's claim. The claim is what `fetch` may
-        # refuse on; what is recorded is what is held.
-        size=len(fetched.data),
+        media_type=media_type,
+        # MEASURED from what is HELD — the stripped plaintext, the same bytes
+        # `get` returns — not the platform's claim and not the pre-strip length.
+        size=len(plaintext),
         filename=ref.filename,
     )
 

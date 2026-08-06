@@ -31,14 +31,18 @@ from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.ports import (
     AuditStore,
+    BlobStore,
     ContextAssembler,
     EngagePolicy,
+    MediaSource,
     MemoryStore,
     PlatformAdapter,
     RosterSource,
 )
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
+from nora.infra.blobs import FilesystemBlobStore
+from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
 from nora.ingest.pipeline import IngestPipeline
@@ -53,6 +57,7 @@ from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
+from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
 from nora.policy import PolicyError, load_policy
 from nora.tag import Debounce
@@ -223,9 +228,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # return value rather than widening the pipeline's port to match.
         background.spawn(coro)
 
+    media_source, blobs = _build_media_custody(cfg)
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
         policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
+        media_source=media_source, blobs=blobs,
     )
 
     tier = cfg.llm
@@ -287,3 +294,61 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client,
     )
+
+
+def _build_media_custody(cfg: Config) -> tuple[MediaSource | None, BlobStore | None]:
+    """The `(source, blobs)` pair the ingest pipeline takes for byte custody, or
+    `(None, None)` when custody is OFF (DEC-43 wiring, DEC-47 encryption).
+
+    Custody turns ON only when `[media] enabled` is true AND a valid encryption
+    key is present — the bytes on disk are ciphertext, and there is deliberately
+    no plaintext-on-disk mode. Every way it can be off returns `(None, None)`,
+    which is the one wiring state `nora.ingest.stages.media` reads as
+    `not_configured`: it records every attachment exactly as before (placeholder,
+    no handle) and counts each one, so custody being off is visible in the
+    metrics rather than silent.
+
+    A MISSING or MALFORMED key is off, not fatal — warned and degraded, never a
+    crash. This is the deliberate asymmetry with the LLM key (`config.load`
+    refuses to start without that one): media is a bonus laid down beside the
+    record, and losing it must never take the daemon down or, worse, write
+    plaintext by accident. `config.load` therefore does not check this variable.
+
+    The blob root is `store.db_path`'s directory `/ media`, with no config key of
+    its own (see `MediaConfig`): the row and the blob it names are one custody
+    boundary, backed up and deleted together.
+    """
+    media = cfg.media
+    if not media.enabled:
+        return None, None
+    if not media.encryption_key_env:
+        log.warning(
+            "media.enabled is true but media.encryption_key_env is unset — media "
+            "custody is OFF (attachments recorded without custody). Set it to the "
+            "name of an env var holding a base64 32-byte key to turn custody on."
+        )
+        return None, None
+    raw = os.environ.get(media.encryption_key_env, "")
+    if not raw:
+        log.warning(
+            "media custody is OFF: %s (media.encryption_key_env) is not set in the "
+            "environment. Attachments are recorded without custody until it is.",
+            media.encryption_key_env,
+        )
+        return None, None
+    try:
+        cipher = BlobCipher.from_base64(raw)
+    except ValueError as exc:
+        log.warning(
+            "media custody is OFF: the key in %s is not a valid base64 32-byte "
+            "AES-256 key (%s). Attachments are recorded without custody until it is.",
+            media.encryption_key_env, exc,
+        )
+        return None, None
+    source = SignalMediaSource(
+        base_url=cfg.platforms.signal.base_url,
+        timeout_seconds=media.timeout_seconds,
+        max_bytes=media.max_bytes,
+    )
+    blobs = FilesystemBlobStore(cfg.store.db_path.parent / "media", cipher=cipher)
+    return source, blobs

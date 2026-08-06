@@ -48,6 +48,18 @@ Every filesystem call runs in a worker thread (`asyncio.to_thread`). This store
 sits on the ingest path, which is awaited by the SSE reader, and a 100 MiB
 video is a real thing to write; blocking the event loop for it would stall
 every other conversation, delivery and health check in the process.
+
+**Encryption at rest (DEC-47).** The bytes on disk are ciphertext, never the
+plaintext. `put` hashes the plaintext it is handed — that hash is the key, so
+dedup and verifiability are unchanged — and then seals it under a `BlobCipher`
+before writing. `get` reads and opens. Nothing on the ingest hot path decrypts:
+the text model never reads bytes, so `open` runs only for a future retrieval
+tool. See `cipher.py` for why the key is of the plaintext and how the nonce is
+handled. The cipher is REQUIRED, not optional — there is no plaintext-on-disk
+mode to fall into by accident (the operator's "never plaintext-by-accident").
+Custody being switched off is a decision made ABOVE this store (the composition
+root wires no store at all, and the ingest stage counts `not_configured`), not
+a plaintext degradation inside it.
 """
 
 from __future__ import annotations
@@ -57,12 +69,15 @@ import hashlib
 import os
 from pathlib import Path
 
+from nora.infra.blobs.cipher import BlobCipher
+
 
 class FilesystemBlobStore:
     """Satisfies `nora.domain.ports.BlobStore`."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, cipher: BlobCipher) -> None:
         self._root = Path(root)
+        self._cipher = cipher
 
     def _path_for(self, key: str) -> Path:
         """`<root>/<first2>/<rest>`, and only for a key this store could have
@@ -81,11 +96,18 @@ class FilesystemBlobStore:
     async def put(self, *, data: bytes) -> str:
         """Store `data`; return its sha256 hex digest, which is its key.
 
+        The key is the hash of the PLAINTEXT `data`, computed before any
+        encryption — that is what keeps dedup and verifiability true while the
+        bytes on disk are ciphertext (DEC-47). The sealing (a fresh nonce, then
+        AES-GCM) happens in the worker thread beside the write, so the CPU cost
+        of encrypting a 100 MiB video does not block the event loop either.
+
         Idempotent by construction: the same bytes produce the same key and the
         same path, so a meme forwarded five times is written once. An existing
         blob is left alone rather than rewritten — the content cannot differ,
-        and not rewriting means a concurrent reader can never see a truncated
-        file that was previously complete.
+        and not rewriting means both that a concurrent reader never sees a
+        truncated file that was previously complete AND that the stored nonce is
+        never reused to seal a second, different plaintext under the same key.
         """
         key = hashlib.sha256(data).hexdigest()
         await asyncio.to_thread(self._write, key, data)
@@ -95,10 +117,11 @@ class FilesystemBlobStore:
         path = self._path_for(key)
         if path.exists():
             return
+        sealed = self._cipher.seal(data)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
         try:
-            tmp.write_bytes(data)
+            tmp.write_bytes(sealed)
             os.replace(tmp, path)
         finally:
             tmp.unlink(missing_ok=True)
@@ -119,7 +142,12 @@ class FilesystemBlobStore:
         path = self._path_for(key)
         if not path.exists():
             return None
-        return path.read_bytes()
+        # Opens the ciphertext (DEC-47). A wrong key or a tampered blob RAISES
+        # (`InvalidTag`) rather than returning garbage — the same "unreadable is
+        # not absence" distinction `get`'s docstring draws for a bad disk, made
+        # here by GCM's authentication. Nothing on the ingest hot path calls
+        # this; a future retrieval tool is its only caller.
+        return self._cipher.open(path.read_bytes())
 
     async def delete(self, *, key: str) -> bool:
         """Drop one blob. True if it was there.

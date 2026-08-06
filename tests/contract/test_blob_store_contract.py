@@ -17,6 +17,7 @@ import pytest
 
 from nora.domain.ports import BlobStore
 from nora.infra.blobs import FilesystemBlobStore
+from nora.infra.blobs.cipher import BlobCipher
 from nora.testing import FakeBlobStore
 
 PAYLOAD = b"\x89PNG\r\n\x1a\n not really a png"
@@ -25,7 +26,14 @@ PAYLOAD = b"\x89PNG\r\n\x1a\n not really a png"
 @pytest.fixture(params=["filesystem", "fake"])
 def store(request, tmp_path) -> BlobStore:
     if request.param == "filesystem":
-        return FilesystemBlobStore(tmp_path / "media")
+        # The production store encrypts at rest (DEC-47), so the contract fixture
+        # gives it a key. Every port behaviour below — put returns the PLAINTEXT
+        # hash, get round-trips, dedup, empty-vs-absent — must hold THROUGH the
+        # encryption, which is exactly why these run against the encrypting store
+        # and not a plaintext variant. The at-rest-ciphertext property itself is
+        # FilesystemBlobStore-specific and lives in tests/unit/test_media_encryption.py,
+        # the same split test_media_source_contract.py draws for its Signal-only wire shapes.
+        return FilesystemBlobStore(tmp_path / "media", cipher=BlobCipher(bytes(range(32))))
     return FakeBlobStore()
 
 
