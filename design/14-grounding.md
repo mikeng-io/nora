@@ -206,8 +206,40 @@ time-series store: it is continuous surveillance of five friends persisted to
 disk, it multiplies §5.2's exposure by every second it runs, and it still would
 not know when Grant finishes work.
 
-**5.4 Car parks are ordinary.** `data.gov.hk` publishes occupancy and pricing —
-a fifth live-structured tool, not a research problem.
+**5.4 Car parks are ordinary — verified 2026-08-06.**
+`api.data.gov.hk/v1/carpark-info-vacancy` returns **560 car parks** with live
+vacancy counts. A fifth live-structured tool, not a research problem.
+
+Two measured caveats that shape the tool rather than block it:
+
+- **Pricing was NOT in the vacancy response** (`data=vacancy` returns counts and
+  timestamps only). design/14's first draft claimed occupancy *and* pricing
+  from one call; pricing appears to need the `data=info` variant and is
+  **unverified**. Do not promise pricing in the tool's `when` string until it
+  has been seen.
+- **Staleness is per-record.** Two car parks in the same response carried
+  `lastupdate` an hour apart (17:10 and 18:10). A record's age must reach the
+  model — reporting an hour-old vacancy as current is R-5's shape in miniature,
+  and the fix is a field, not a filter.
+
+### 5.5 `transit` needs the operator, not just the route number
+
+Measured the same day:
+
+    KMB  68X  data.etabus.gov.hk         177 ETA rows, real timestamps
+    KMB  K73  same endpoint              EMPTY — K73 is MTR-operated
+    MTR  K73  rt.data.gov.hk/.../mtr/bus 27 stops, next bus 112s
+
+**Three operators, three endpoints, and a route number does not say which.** I
+tried KMB first for K73 and got an empty result that looked exactly like "no
+buses running" — the same collapse of *wrong source* into *nothing found* that
+§3's three-state rule exists to prevent, reproduced by hand before the tool
+existed.
+
+So `transit` either resolves the operator itself (a lookup Nora owns, per
+DEC-24 — the model must not be asked to guess an operator) or queries the
+operators it knows and reports which answered. Either way, **an empty result
+from one operator is not `nothing_found`** until the others have been asked.
 
 ## 6. Order, cheapest and safest first
 
