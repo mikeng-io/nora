@@ -28,13 +28,36 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..infra.transit import TransitClient
 from .ports import ToolSpec, adapt
 from .room import Room
 from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs
 
 
 class ToolRegistry:
-    """Owns which native tools exist and what each costs (DEC-10)."""
+    """Owns which native tools exist and what each costs (DEC-10).
+
+    It also HOLDS the one long-lived collaborator a tool needs across tags.
+    `TransitClient` caches both operators' route catalogues — 350 KB from KMB,
+    republished at 05:00 daily — and a per-tag instance would re-pull that for
+    every bus question anybody asked. The registry is the right owner because it
+    is already the one thing the composition root builds once per process
+    (DEC-10), and because putting the cache anywhere else would mean a
+    module-level mutable singleton, which CLAUDE.md's test-seam policy forbids
+    and `tests/architecture/test_no_module_level_mutable_singletons.py`
+    enforces.
+
+    It is DEFAULT-CONSTRUCTED rather than required. `nora.app.eval_support`
+    builds three throwaway registries purely to read `budgets()`,
+    `tool_names()` and `capability()`, none of which touches a socket — and a
+    required parameter there would either force those to invent one or tempt
+    the next author into an optional `None` that silently makes `transit`
+    answer `unavailable` forever. Constructing one costs nothing: no session
+    opens and no catalogue is fetched until a tool is actually called.
+    """
+
+    def __init__(self, *, transit: TransitClient | None = None) -> None:
+        self._transit = transit if transit is not None else TransitClient()
 
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
@@ -58,6 +81,23 @@ class ToolRegistry:
         and there is no per-tool value to carry.
         """
         return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.terminal)
+
+    def live_only_tools(self) -> tuple[str, ...]:
+        """The tools whose answer describes THIS instant and nothing else (design/14 §5.1).
+
+        `time_shiftable is False`, not falsy — the field is three-valued and
+        `None` (no time dimension at all) must not land in this set. Written as
+        an identity check for that reason; `not spec.time_shiftable` would sweep
+        in `calculate` and have the model told that arithmetic goes stale.
+
+        Read by `capability()` below and nowhere else today. It is a tuple in
+        table order rather than a frozenset because the only consumer renders
+        it into a sentence, and a set would reorder that sentence between runs
+        of the same build.
+        """
+        return tuple(
+            name for name, spec in NATIVE_TOOLS.items() if spec.time_shiftable is False
+        )
 
     def tool_names(self) -> tuple[str, ...]:
         """Every registered tool's name, for the doctrine loader's catalogue gate.
@@ -89,11 +129,23 @@ class ToolRegistry:
         different sets. `tests/unit/test_tool_registry.py` pins that in both
         directions against real specs."""
         lines = [f"- {name} — {spec.when}" for name, spec in NATIVE_TOOLS.items()]
+        # One sentence for `time_shiftable is False` (design/14 §5.1). It is
+        # rendered rather than hand-written for the reason the rest of this
+        # block is: `soul.md` spent eight weeks telling Nora she knew two things
+        # when she knew five, and a hand-kept list of live-only tools would rot
+        # the same way the moment `route()` lands with `arrive_by`.
+        live_only = self.live_only_tools()
+        clock = (
+            f"{' and '.join(live_only)} describe this moment only — their answers are "
+            "already wrong for any other time, so never quote one to answer about "
+            "later.\n" if live_only else ""
+        )
         return (
             "These are the tools you were given. Their schemas say what each one "
             "takes; this says when to reach for it.\n" + "\n".join(lines) + "\n"
-            "Nothing here reaches outside this conversation. When you cannot find "
-            "something out, say so in one clause and move on."
+            + clock +
+            "The only thing here that reaches outside this conversation is live bus "
+            "data. When you cannot find something out, say so in one clause and move on."
         )
 
     def specs(
@@ -111,11 +163,17 @@ class ToolRegistry:
         context_window: int = 40,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
-        dependencies — before any Strands adaptation."""
+        dependencies — before any Strands adaptation.
+
+        `transit_source` is NOT in this signature and must not become one: it is
+        the registry's own long-lived collaborator, not something a tag brings
+        with it, so every caller of `specs()`/`build()` is unchanged by its
+        arrival."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
-            room=room, question=question, context_window=context_window,
+            room=room, transit_source=self._transit, question=question,
+            context_window=context_window,
         )
 
     def build(

@@ -60,6 +60,27 @@ class ToolSpec:
     It defaults to False — the conservative choice, since a tool wrongly marked
     terminal truncates the turn.
 
+    `time_shiftable` says whether this tool can be asked about a moment other
+    than now, and it is here for the reason `budget` and `terminal` are
+    (design/14 §5.1). It is a THREE-valued field on purpose:
+
+      * `None` — the tool has no time dimension at all. `1485/7` is the same
+        number whenever it is asked, and `lookup_person` is not about a moment.
+        This is the default because it is the answer for almost every tool, and
+        because a tool wrongly marked live-only would have Nora refusing to use
+        it for a perfectly ordinary question.
+      * `False` — LIVE ONLY. The answer describes this instant and decays. A
+        live ETA is worthless for a bus three hours out, and quoting «112
+        seconds» for a 19:30 departure is a confident wrong answer of exactly
+        the shape R-5 is about.
+      * `True` — the tool accepts a target time. Nothing sets this yet;
+        `route(origin, destination, mode, arrive_by)` (design/14 §3) is the
+        first, and `arrive_by` is the point of it.
+
+    `ToolRegistry.live_only_tools()` reads the `False` set and the generated
+    capability block names them, so the distinction reaches the model instead of
+    sitting in a table nothing renders.
+
     `when` is the one thing a schema cannot say, and it has NO DEFAULT on
     purpose (design/17 §5). The schema already states what a tool does —
     verbatim, a few hundred tokens later in the same request, measured at 1,222
@@ -81,6 +102,7 @@ class ToolSpec:
     when: str
     budget: int = 1
     terminal: bool = False
+    time_shiftable: bool | None = None
     disclose_failure: bool = False
     timeout_seconds: float | None = None
 

@@ -8,12 +8,29 @@ from nora.domain.models import ConversationTarget, NormalizedMessage, Quote
 from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from tests.fakes import FakeHoncho, SinkSender
 from tests.test_doctrine_loader import write
 
 TARGET = ConversationTarget("signal", "g1", "group")
+
+# `transit` is the one tool here with a collaborator outside the host, and
+# these fixtures are not about it. A real `TransitClient` aimed at a closed port
+# is used rather than a stand-in object: CLAUDE.md forbids a port gaining a
+# second implementation without a shared contract suite, and a one-method stub
+# here would be exactly that. Pointed at `127.0.0.1:1` it refuses immediately
+# and the tool degrades to `unavailable`, which is real behaviour rather than a
+# fake agreeing with whatever it is asked. `tests/test_transit.py` exercises it
+# against a server that behaves like the two real operators.
+UNREACHABLE_TRANSIT = TransitClient(
+    kmb_base_url="http://127.0.0.1:1",
+    mtr_schedule_url="http://127.0.0.1:1/getSchedule",
+    mtr_routes_url="http://127.0.0.1:1/mtr_bus_routes.csv",
+    timeout_seconds=0.5,
+)
+
 
 
 @pytest.fixture
@@ -52,6 +69,7 @@ async def wiring(tmp_path):
     tools = build_tools(store=store, conversation_id="g1", conversation_type="group",
                         persons=persons, honcho=honcho,
                         deliverer=deliverer, metrics=metrics, room=room,
+                        transit_source=UNREACHABLE_TRANSIT,
                         question="who is here", context_window=40)
     try:
         yield {"tools": {t.tool_name: t for t in tools}, "sink": sink,
@@ -63,7 +81,7 @@ async def wiring(tmp_path):
 def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
         "now", "read_buffer", "read_peer_card", "send_reply",
-        "group_members", "lookup_person", "about", "calculate",
+        "group_members", "lookup_person", "about", "calculate", "transit",
     }
 
 

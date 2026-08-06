@@ -59,7 +59,7 @@ def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
         "now", "read_buffer", "read_peer_card", "send_reply",
-        "group_members", "lookup_person", "about", "calculate",
+        "group_members", "lookup_person", "about", "calculate", "transit",
     }
 
 
@@ -73,6 +73,9 @@ def test_budgets_match_todays_table():
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
         "calculate": 4,
+        # One message names two routes often enough (「68X 定 K73 快啲」) and
+        # three almost never.
+        "transit": 2,
     }
 
 
@@ -115,3 +118,48 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         retry=factory.build_retry_policy(timeout_seconds=30.0),
     )
     assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS)
+
+
+# ---- time-shiftability (design/14 §5.1, DEC-40) ------------------------------
+
+def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
+    """§5.1's field, and it is three-valued: `None` means the tool has no time
+    dimension, `False` means live-only, `True` means it takes a target time.
+    `None` is a real answer rather than an omission, so what a test can hold is
+    that the SPEC carries the table's value — `_spec()` silently dropping the
+    field would give every tool the dataclass default, and a live-only tool
+    quietly declaring it never goes stale is the failure worth catching."""
+    from nora.agent.tools import NATIVE_TOOLS
+    registry = ToolRegistry()
+    specs = registry.specs(
+        store=_FakeStore(), conversation_id="g1", conversation_type="group",
+        persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
+        metrics=Metrics(), room=_room(),
+    )
+    assert {s.name: s.time_shiftable for s in specs} == {
+        name: spec.time_shiftable for name, spec in NATIVE_TOOLS.items()
+    }
+    assert {s.time_shiftable for s in specs} <= {None, False, True}
+
+
+def test_the_live_only_tools_are_the_ones_whose_answer_decays():
+    """`time_shiftable is False`, never `not time_shiftable` — the second
+    sweeps in `calculate`, whose `None` means the question has no time in it at
+    all, and would have the model told that arithmetic goes stale."""
+    assert ToolRegistry().live_only_tools() == ("now", "transit")
+
+
+def test_the_capability_block_tells_her_which_tools_only_describe_now():
+    """A declared field nothing renders is decoration. §5.1's whole point is
+    that she must not quote a 112-second bus wait for a 19:30 departure, and
+    the only place that can reach her is the prompt."""
+    block = ToolRegistry().capability()
+    assert "now and transit describe this moment only" in block
+    assert "never quote one to answer about later" in block
+
+
+def test_transit_is_declared_live_only_and_not_terminal():
+    from nora.agent.tools import NATIVE_TOOLS
+    assert NATIVE_TOOLS["transit"].time_shiftable is False
+    assert NATIVE_TOOLS["transit"].terminal is False
+    assert "transit" not in ToolRegistry().terminal_tools()

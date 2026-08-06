@@ -35,6 +35,7 @@ RULE_TESTS = {
     "R-22": "test_nothing_known_is_distinguishable_from_could_not_ask",
     "R-23": "test_a_budget_stop_is_distinguishable_from_a_silent_model",
     "R-24": "test_no_single_call_can_spend_the_whole_turn_budget",
+    "R-27": "test_an_unknown_route_is_never_reported_as_no_service",
 }
 
 

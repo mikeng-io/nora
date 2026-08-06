@@ -31,6 +31,7 @@ from nora.agent.room import Room
 from nora.agent.tools import build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget, DeliveryStatus, TranscriptRow
+from nora.infra.transit import TransitClient
 from nora.obs.logging import bind_tag_id, clear_tag_id, setup_logging
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
@@ -82,6 +83,15 @@ class _Store:
         return self.rows[-limit:]
 
 
+# `transit` is not what these tests are about — see `UNREACHABLE_TRANSIT` in
+# tests/test_tools.py for why this is a real client aimed at a closed port
+# rather than a stand-in object.
+_UNREACHABLE_TRANSIT = TransitClient(
+    kmb_base_url="http://127.0.0.1:1", mtr_schedule_url="http://127.0.0.1:1/s",
+    mtr_routes_url="http://127.0.0.1:1/r.csv", timeout_seconds=0.5,
+)
+
+
 @pytest.fixture
 def restore_logging():
     """`setup_logging` replaces the ROOT logger's handlers, so put them back —
@@ -130,7 +140,7 @@ def wiring(tmp_path, restore_logging):
         persons=persons, honcho=FakeHoncho(conclusions={"miles_novak": ["Miles is from Ridgeline"]},
                                            cards={"miles_novak": ["likes espresso"]}),
         deliverer=deliverer, metrics=metrics, room=room, question="邊個係阿豹",
-        context_window=40,
+        transit_source=_UNREACHABLE_TRANSIT, context_window=40,
     )
     return {"tools": {t.tool_name: t for t in tools}, "path": path, "metrics": metrics,
             "sink": sink}

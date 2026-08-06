@@ -21,6 +21,7 @@ import pytest
 from nora.agent.egress import scan_identifiers
 from nora.agent.room import Room
 from nora.agent.tools import build_tools
+from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeRosterSource
@@ -71,6 +72,15 @@ class _NullStore:
         return []
 
 
+
+# `transit` is not what these tests are about — see `UNREACHABLE_TRANSIT` in
+# tests/test_tools.py for why this is a real client aimed at a closed port
+# rather than a stand-in object.
+_UNREACHABLE_TRANSIT = TransitClient(
+    kmb_base_url="http://127.0.0.1:1", mtr_schedule_url="http://127.0.0.1:1/s",
+    mtr_routes_url="http://127.0.0.1:1/r.csv", timeout_seconds=0.5,
+)
+
 def _build(
     *,
     persons,
@@ -93,7 +103,8 @@ def _build(
     tools = build_tools(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
         persons=persons, honcho=honcho or FakeHoncho(), deliverer=SinkSender(),
-        metrics=metrics, room=room, question=question, context_window=40,
+        metrics=metrics, room=room, transit_source=_UNREACHABLE_TRANSIT,
+        question=question, context_window=40,
     )
     return {t.tool_name: t for t in tools}
 

@@ -82,11 +82,20 @@ class NativeTool:
     Today exactly one tool sets it: `send_reply`. The next one — `send_gif`
     (`design/proposed/15-gif-replies.md` §1), or a distinct feed step on the tag
     path — is a one-line edit here rather than an edit to `guards.py`.
+
+    `time_shiftable` is the fourth (design/14 §5.1), and it is the one field
+    here that is not a boolean: `None` means the tool has no time dimension,
+    `False` means its answer describes this instant and decays, `True` means it
+    accepts a target time. See `nora.agent.ports.ToolSpec` for the full
+    argument. It is read through `ToolRegistry.live_only_tools()` and rendered
+    into the capability block, so declaring it is not bookkeeping — a tool
+    marked `False` is one the model is told never to quote for a later moment.
     """
 
     budget: int
     when: str
     terminal: bool = False
+    time_shiftable: bool | None = None
 
 
 # ONE line per tool, in the order the capability block renders them. Keep each
@@ -96,8 +105,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # Cheap, local, and the answer changes every second, so there is no reason
     # to ration it — but a budget is still required: R-7 default-denies any
     # tool absent from this mapping, which is what stops a model inventing one.
+    #
+    # `time_shiftable=False`: this is the clock, so its answer is about this
+    # instant by definition and is stale for any other one. It is the second
+    # live-only tool and the older of the two, which is worth stating here
+    # rather than letting `transit` look like a special case.
     "now": NativeTool(2, "anything that depends on when it is — never guess the "
-                         "date or time from the transcript"),
+                         "date or time from the transcript",
+                      time_shiftable=False),
     # 4, and the only budget here NOT sized by what a call costs. This is the
     # cheapest tool in the set by a wide margin — a pure function over a
     # string, no network, no clock, no daemon, measured at well under a
@@ -116,6 +131,21 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "calculate": NativeTool(4, "any arithmetic at all — never work a number out in "
                                "your head, and never state one you did not get "
                                "from here"),
+    # 2, and sized the way `lookup_person` is — by model round trips, not by
+    # work. One message routinely names two routes (「68X 定 K73 快啲」), and two
+    # calls plus a reply still leaves half the turn. A third route in one
+    # question has stopped being a question about a bus.
+    #
+    # **`time_shiftable=False` is the load-bearing declaration here** (design/14
+    # §5.1). `rt.data.gov.hk` cannot time-travel: asked at 15:00 about a bus at
+    # 19:30 it answers about 15:00, and 「仲有 2 分鐘」 quoted for a dinner four
+    # hours away is confidently, checkably wrong. `route()`'s `arrive_by` is
+    # what answers that question, and it is not built yet — which is exactly
+    # why this field exists before it does.
+    "transit": NativeTool(2, "a Hong Kong bus or feeder route somebody named by number "
+                             "— never state a bus time you did not get from here, and "
+                             "never use it for a bus later than now",
+                          time_shiftable=False),
     "read_buffer": NativeTool(2, "something was said further back than the messages "
                                  "you were shown"),
     "read_peer_card": NativeTool(1, "durable memory addressed by a raw platform id. "
@@ -296,18 +326,21 @@ def _record_room(metrics, tool: str, status: str, **detail: object) -> None:
 def _spec(name: str, call) -> ToolSpec:
     """One `ToolSpec`, with every declared field taken from `NATIVE_TOOLS[name]`.
 
-    Written as a helper rather than seven hand-written constructor calls
+    Written as a helper rather than nine hand-written constructor calls
     because the hand-written form is how a field gets forgotten: `terminal`
-    (DEC-32) is the third field on that table, and copying `when=`/`budget=`
-    seven times to add a fourth would eventually miss one and silently give
-    that tool the dataclass default. A name absent from the table
-    raises `KeyError` here, which is R-7's default-deny arriving at build time
-    instead of at the model's first call.
+    (DEC-32) was the third field on that table and `time_shiftable` (DEC-40) is
+    the fourth, and copying `when=`/`budget=` nine times to add either would
+    eventually miss one and silently give that tool the dataclass default —
+    which for `time_shiftable` means a live-only tool quietly declaring it has
+    no time dimension. A name absent from the table raises `KeyError` here,
+    which is R-7's default-deny arriving at build time instead of at the
+    model's first call.
     """
     declared = NATIVE_TOOLS[name]
     return ToolSpec(
         name=name, description="", schema={}, call=call,
         when=declared.when, budget=declared.budget, terminal=declared.terminal,
+        time_shiftable=declared.time_shiftable,
     )
 
 
@@ -373,6 +406,7 @@ def build_tool_specs(
     deliverer,
     metrics,
     room: Room,
+    transit_source,
     question: str = "",
     context_window: int = 40,
 ) -> tuple[ToolSpec, ...]:
@@ -760,6 +794,66 @@ def build_tool_specs(
         )
         return out
 
+    async def transit(route: str) -> dict:
+        """When the next buses leave on a Hong Kong bus or feeder route.
+
+        Call this for ANY question about a bus by number — 「K73 幾時到」,
+        「68X 仲有幾耐」, whether the last bus has gone. Never state a bus time
+        you worked out yourself or remember from before; you have no way to
+        know it and the group has no way to check it.
+
+        It is LIVE ONLY. It answers about right now and nothing else, so never
+        use it for a bus later today — if somebody is asking about a trip this
+        evening, say you can only see what is running at the moment.
+
+        You give it a route number and nothing else. It works out which company
+        runs that route on its own, and it does not know which stop anybody is
+        standing at, so do not name a stop.
+
+        `status` is one of three and they are three DIFFERENT answers:
+          - `ok` — `directions` has, for each way the route runs, where it is
+            heading and when the next buses leave the START of that direction.
+            A bus reaches a stop further along later than that. `scheduled`
+            true means the time came off a timetable rather than off a bus
+            anyone can see; say so if you quote it.
+          - `nothing_found` — read `known_route`. True means the route is real
+            and nothing is running on it right now (the last bus has probably
+            gone). False means there is no such route number at all — say you
+            cannot find it and ask them to check, and do NOT say there are no
+            buses.
+          - `unavailable` — you could not check. Say that. Never report it as
+            «no buses» and never as «no such route».
+
+        Args:
+            route: The route number exactly as it was said, e.g. "68X" or "K73".
+        """
+        try:
+            out = await transit_source.arrivals(route)
+        except Exception:
+            # `TransitClient.arrivals` is documented never to raise (it turns
+            # every transport failure into `unavailable` itself). This is the
+            # belt for those braces, and it must land on `unavailable` rather
+            # than on an empty answer — `test_a_tool_never_raises_into_the_agent_loop`
+            # is the rule, and R-5 is why «I could not check» may never be
+            # served as «there is nothing».
+            log.exception("transit failed")
+            out = {"status": "unavailable",
+                   "note": "I could not check the buses just now. Say so — do not "
+                           "say there are no buses and do not guess a time."}
+        # The same hole `_asked_about` and `calculate` exist for, in the third
+        # place a MODEL-SUPPLIED string is handed straight back. `route` is
+        # already narrowed to `[A-Z0-9]{1,7}` before it reaches a URL, so
+        # nothing that looks like a phone number can survive to the echo — this
+        # is the belt for that, and it costs one regex.
+        if scan_identifiers(str(out.get("route", ""))) is not None:
+            out.pop("route", None)
+        _record(
+            metrics, "transit", out["status"],
+            known_route=out.get("known_route"),
+            directions=len(out.get("directions") or ()),
+        )
+        return out
+
     async def send_reply(text: str) -> bool:
         """Send your reply to the group. Call this exactly once, at the end of your turn.
 
@@ -782,6 +876,7 @@ def build_tool_specs(
     return (
         _spec("now", now),
         _spec("calculate", calculate),
+        _spec("transit", transit),
         _spec("read_buffer", read_buffer),
         _spec("read_peer_card", read_peer_card),
         _spec("group_members", group_members),
@@ -801,6 +896,7 @@ def build_tools(
     deliverer,
     metrics,
     room: Room,
+    transit_source,
     question: str = "",
     context_window: int = 40,
 ) -> list:
@@ -811,6 +907,7 @@ def build_tools(
     specs = build_tool_specs(
         store=store, conversation_id=conversation_id, conversation_type=conversation_type,
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
-        room=room, question=question, context_window=context_window,
+        room=room, transit_source=transit_source, question=question,
+        context_window=context_window,
     )
     return [adapt(spec) for spec in specs]
