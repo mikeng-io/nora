@@ -85,7 +85,14 @@ async def test_the_doctrine_the_root_builds_carries_the_generated_capability(cfg
 
 async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_path):
     """The catalogue gate's backticked half is inert without them, and an inert
-    gate that nobody notices is worse than no gate."""
+    gate that nobody notices is worse than no gate.
+
+    It has to be a tool whose name is an ordinary English word — `now` or
+    `about`. Every other native is snake_case, which the STRUCTURAL detector
+    catches on its own, so injecting one of those would make this pass whether
+    or not `tool_names` was ever handed over. This used to inject `recall`;
+    DEC-39 renamed that tool to `about`, which is still in the same class.
+    """
     import shutil
 
 
@@ -93,7 +100,7 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
     shutil.copytree(ROOT / "nora" / "doctrine", d)
     conduct = d / "conduct.md"
     conduct.write_text(conduct.read_text().replace(
-        "# Honesty", "Reach for `recall` when you need to.\n\n# Honesty", 1))
+        "# Honesty", "Reach for `about` when you need to.\n\n# Honesty", 1))
     with pytest.raises(StartupError, match="may not name a tool"):
         await build_dependencies(override_config(cfg, {"doctrine.dir": d}))
 

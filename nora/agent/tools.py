@@ -27,7 +27,7 @@ operator greps rather than alerts on.
 `room` and `question` are what the three room-scoped tools close over so the model
 never has to supply them: `room` is this conversation's membership (see
 `nora.agent.room` — scope is enforced where the answer is assembled, never at
-egress), and `question` is the tagging message, which `recall` uses as its search
+egress), and `question` is the tagging message, which `about` uses as its search
 query. Both are values Nora already holds, so under DEC-24 neither may appear in a
 schema.
 
@@ -119,7 +119,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "read_buffer": NativeTool(2, "something was said further back than the messages "
                                  "you were shown"),
     "read_peer_card": NativeTool(1, "durable memory addressed by a raw platform id. "
-                                    "You are never shown one, so reach for recall "
+                                    "You are never shown one, so reach for `about` "
                                     "instead and do not invent an id"),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
@@ -140,13 +140,32 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # answering from what she has.
     "lookup_person": NativeTool(2, "who a name or nickname in a message refers to"),
     # 2: same shape, but each call is also an HTTP request (~0.2 s measured).
-    # Two covers the question this exists for — "what do I remember about
-    # them" for the person who asked plus one person they asked about — and
-    # caps how much durable memory one turn can pull into context, which is
-    # the disclosure axis R-18 cannot help with (design/11 §1.5).
-    "recall": NativeTool(2, "what you durably remember about one of them. «I remember "
-                            "nothing yet» and «I could not check» are different "
-                            "answers; never report the second as the first"),
+    # Two covers the question this exists for — "what is this person like" for
+    # the person who asked plus one person they asked about — and caps how much
+    # durable memory one turn can pull into context, which is the disclosure
+    # axis R-18 cannot help with (design/11 §1.5).
+    #
+    # **`about`, not `person_profile`, and that was MEASURED rather than argued
+    # (DEC-39).** This was `recall`, which was a lie: it fetches a standing
+    # profile, not memories. `person_profile` reads better here and is
+    # snake_case, so `nora.doctrine.loader`'s structural gate would catch it for
+    # free instead of it needing a place on that module's hand-kept
+    # `tool_names` list. It was rejected anyway. With the docstring held
+    # BYTE-IDENTICAL and only the identifier changed, against the real schemas,
+    # the real assembled doctrine and `tool_choice="required"` on
+    # `deepseek-v4-flash`, first-tool selection on a question the tool exists to
+    # answer went:
+    #
+    #   recall            15/16      person_profile     0/16      about  16/16
+    #
+    # `person_profile` shares the token `person` with `lookup_person`, and
+    # person-shaped routing collapsed onto that tool — including for a question
+    # about the TRANSCRIPT, where `read_buffer` fell from 14/24 to 3/16. A name
+    # is not only documentation; it is the feature the router matches on.
+    "about": NativeTool(2, "what someone is LIKE, when the answer is not in the "
+                           "conversation. «I know nothing about them yet» and «I could "
+                           "not check» are different answers; never report the second "
+                           "as the first"),
     # THE ONLY TERMINAL TOOL, and — verified 2026-08-06 — **the number that
     # caps how many messages one tag may send.** Both facts are easy to miss
     # from the guard's side, so they are stated here, where the number is.
@@ -185,14 +204,15 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 # Round-trip cost of ONE tool result, measured 2026-08-06, and paid again on
 # EVERY subsequent call in the loop because the result stays in context:
 #
-#   read_buffer(200) -> 6,592 tokens        recall        ->   151
+#   read_buffer(200) -> 6,592 tokens        recall*       ->   151
 #   read_buffer(40)  -> 1,368 tokens        lookup_person ->   112
 #
-# `recall`'s 151 is the OLD figure and is now low. That measurement was taken
+# `recall*` is `about` under its old name; its 151 is the OLD figure
+# and is now low. That measurement was taken
 # against `miles_novak`, whose whole store is 16 explicit observations, through a
 # call shape that spent the entire budget on one channel (DEC-38). Against a
 # corpus with derived levels in it — `probe_zzz`, 102 documents — the new shape
-# returns ~1,100 characters of conclusions, which puts one `recall` in the same
+# returns ~1,100 characters of conclusions, which puts one `about` in the same
 # order as `read_buffer(40)` rather than an order below it. Stated in characters
 # because no tokenizer is available offline in this checkout; re-measure the
 # token figure the next time one is, rather than scaling it by guess.
@@ -213,7 +233,7 @@ READ_BUFFER_DEFAULT = 25
 # WHY THIS EXISTS, twice in one day. `grep lookup_person data/nora.log` returned
 # nothing, and that was read as "the tool was never called". The grep could not
 # have found anything either way: this module emitted exactly ONE log line on
-# any success path (`now`'s), and `lookup_person`, `group_members`, `recall`,
+# any success path (`now`'s), and `lookup_person`, `group_members`, `about`,
 # `read_buffer`, `read_peer_card` and `send_reply` emitted none at all. Two
 # confident architectural conclusions were drawn from that zero and both were
 # wrong; one nearly retracted a design document (DEC-28). A silence that reads
@@ -437,10 +457,10 @@ def build_tool_specs(
     # model that already knows (or guesses) another person's platform id can
     # pull their peer card across conversation boundaries.
     async def read_peer_card(sender_id: str) -> list[str]:
-        """Look up what you durably recall about a person.
+        """Look up a person's standing profile by their raw platform id.
 
-        Only call this if the recall block you were given is empty and who the person is
-        actually matters to your answer. Returns an empty list if you don't know them.
+        Only call this if the peer_card block you were given is empty and who the person
+        is actually matters to your answer. Returns an empty list if you don't know them.
 
         Args:
             sender_id: The platform id of the person, as shown in the conversation.
@@ -560,20 +580,23 @@ def build_tool_specs(
             "note": "This person is in this conversation.",
         }
 
-    async def recall(person: str) -> dict:
-        """What you durably remember about someone in this conversation.
+    async def about(person: str) -> dict:
+        """What you know about someone in this conversation — their standing profile.
 
         Call this when your answer depends on knowing somebody — what they do,
-        what they like, something they told you before — and you were not
-        already given it. What comes back is selected against the message you
+        what they like, how they usually are — and you were not already given
+        it. It is the only place that knows any of that. What comes back is
+        conclusions built up about them over time, narrowed to the message you
         were just tagged in, so ask about the person, not about the topic.
+
+        It holds no messages. For something that was actually said, read_buffer.
 
         Name the person the way the message did; a nickname is fine. It only
         knows people in THIS conversation.
 
-        Three different answers, and they mean different things: `ok` is what
-        you remember, `nothing_known` means you genuinely remember nothing
-        about them yet — which is not the same as them being a stranger — and
+        Three different answers, and they mean different things: `ok` is the
+        profile, `nothing_known` means nothing has been concluded about them
+        yet — which is not the same as them being a stranger — and
         `unavailable` means you could not check at all. Never present the last
         one as "I don't know them".
 
@@ -582,7 +605,7 @@ def build_tool_specs(
         """
         view = await room.scope()
         if not view.available:
-            _record_room(metrics, "recall", "unavailable")
+            _record_room(metrics, "about", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I can't work out who that is right now. Say you can't "
@@ -591,10 +614,10 @@ def build_tool_specs(
         matches = view.find(person)
         if not matches:
             miss = _miss(person, view)
-            _record_room(metrics, "recall", miss["status"], candidates=0)
+            _record_room(metrics, "about", miss["status"], candidates=0)
             return miss
         if len(matches) > 1:
-            _record_room(metrics, "recall", "ambiguous", candidates=len(matches))
+            _record_room(metrics, "about", "ambiguous", candidates=len(matches))
             return {
                 "status": "ambiguous", **_asked_about(person),
                 "could_be": [p.name for p in matches],
@@ -620,11 +643,11 @@ def build_tool_specs(
             # `MemoryStore` is documented never to be load-bearing, so this is
             # the belt for those braces — and it must land on `unavailable`,
             # never on an empty answer.
-            log.exception("recall failed for %s", ref.person_id)
+            log.exception("about failed for %s", ref.person_id)
             memory = Recollection(reachable=False)
         if not memory.reachable:
             metrics.inc("nora_recall_total", status="unavailable")
-            _record_room(metrics, "recall", "unavailable")
+            _record_room(metrics, "about", "unavailable")
             return {
                 "status": "unavailable", "person": ref.name,
                 "note": "My memory is not answering. Say you can't check right "
@@ -651,16 +674,16 @@ def build_tool_specs(
         # matters — a `withheld` that keeps climbing is the DEC-30 bug's shape.
         if not kept:
             metrics.inc("nora_recall_total", status="empty")
-            _record_room(metrics, "recall", "ok", conclusions=0, withheld=withheld)
+            _record_room(metrics, "about", "ok", conclusions=0, withheld=withheld)
             return {
                 "status": "nothing_known", "person": ref.name, "withheld": withheld,
                 "note": "I checked and I remember nothing about them yet. That is "
                         "not the same as not knowing who they are.",
             }
         metrics.inc("nora_recall_total", status="ok")
-        _record_room(metrics, "recall", "ok", conclusions=len(kept), withheld=withheld)
+        _record_room(metrics, "about", "ok", conclusions=len(kept), withheld=withheld)
         return {
-            "status": "ok", "person": ref.name, "recall": list(kept),
+            "status": "ok", "person": ref.name, "profile": list(kept),
             "withheld": withheld,
             "partial_view": view.degraded,
         }
@@ -763,7 +786,7 @@ def build_tool_specs(
         _spec("read_peer_card", read_peer_card),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
-        _spec("recall", recall),
+        _spec("about", about),
         _spec("send_reply", send_reply),
     )
 

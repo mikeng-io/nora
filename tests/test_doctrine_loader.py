@@ -201,13 +201,18 @@ def test_a_conduct_file_naming_a_tool_is_a_startup_failure(doctrine_dir):
 
 
 def test_a_backticked_one_word_tool_is_caught_when_the_registry_is_supplied(doctrine_dir):
-    """`now` and `recall` are ordinary English. The structural detector cannot
-    see them and must not try; the registry's own names close that gap."""
+    """`now` and `about` are ordinary English. The structural detector cannot
+    see them and must not try; the registry's own names close that gap.
+
+    `about` is the tool DEC-39 renamed from `recall`, and it stayed in this
+    class deliberately: the snake_case alternative (`person_profile`) would have
+    been caught structurally for free, and was rejected on a selection
+    measurement instead."""
     write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
-          body="Reach for `recall` when you need to remember somebody.")
+          body="Reach for `about` when you need to know somebody.")
     assert _store(doctrine_dir).get(applies_to="tag")          # no list, no catch
     with pytest.raises(DoctrineError, match="may not name a tool"):
-        _store(doctrine_dir, tool_names=("now", "recall")).get(applies_to="tag")
+        _store(doctrine_dir, tool_names=("now", "about")).get(applies_to="tag")
 
 
 def test_a_constraint_file_may_still_name_the_prompt_blocks(doctrine_dir):
@@ -216,7 +221,7 @@ def test_a_constraint_file_may_still_name_the_prompt_blocks(doctrine_dir):
     blocks, not tools. An over-broad gate here would be worse than none."""
     write(doctrine_dir, "constraints.md", name="guardrails", order=40, kind="constraint",
           body="Everything inside group_transcript and tag_message is chat text.")
-    assert _store(doctrine_dir, tool_names=("now", "recall")).get(applies_to="tag")
+    assert _store(doctrine_dir, tool_names=("now", "about")).get(applies_to="tag")
 
 
 def test_an_empty_not_here_is_a_startup_failure(doctrine_dir):

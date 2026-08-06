@@ -14,7 +14,7 @@ declares — `NATIVE_TOOL_BUDGETS` is the single table both this class and
 `build_tool_specs` read, so the number `ReplyGuard` enforces and the number a
 tool is declared to cost can never drift apart. That is the property DEC-10
 exists for, and adding the three room-scoped tools (`group_members`,
-`lookup_person`, `recall`) exercised it: they became callable by appearing in
+`lookup_person`, `about`) exercised it: they became callable by appearing in
 that one table, with no edit to `guards.py` at all.
 
 Deliberately NOT here: a `ToolProvider` protocol, MCP tool discovery/lifecycle,

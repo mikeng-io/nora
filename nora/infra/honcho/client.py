@@ -40,7 +40,8 @@ _STAMP = re.compile(r"^\[[^\]]*\]\s*")
 _ID = re.compile(r"^\[id:[^\]]*\]\s*")
 # ` **Pattern** [high]: <conclusion>` and ` **CONTRADICTION**: <content>` — the
 # two derived sections that label their conclusion inline instead of stamping
-# it. The confidence token is dropped with the label: `recall` hands the model a
+# it. The confidence token is dropped with the label: `about` hands the
+# model a
 # flat list of things Nora knows, and `high`/`medium`/`low` is a number she
 # cannot calibrate, act on, or explain to a group.
 _PATTERN = re.compile(r"^\*\*Pattern\*\*\s*\[[^\]]*\]:\s*")
@@ -183,7 +184,7 @@ class HonchoClient:
         self._card_timeout = card_timeout
         # Measured at 0.19 to 0.26 s against the live instance on 2026-08-06, so
         # 3 s is ~12x headroom rather than a guess. It is a ceiling on a call
-        # that happens INSIDE a live turn (the `recall` tool), which is why it
+        # that happens INSIDE a live turn (`about`), which is why it
         # is bounded at all: the tag already costs a model round trip per tool
         # call, and a hung memory service must not add to that.
         self._representation_timeout = representation_timeout

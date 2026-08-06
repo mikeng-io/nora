@@ -107,7 +107,7 @@ class _FakeMemory:
 
 
 class _RecordingMemory(_FakeMemory):
-    """`_FakeMemory` plus the one endpoint the `recall` tool speaks to.
+    """`_FakeMemory` plus the one endpoint the `about` tool speaks to.
 
     Unknown peers are reachable-with-nothing, exactly as the live Honcho is
     (200 and an empty string, never a 404) — a fake that 404'd instead would
@@ -937,9 +937,9 @@ async def test_a_pipeline_with_no_roster_source_degrades_instead_of_emptying_the
 
 
 async def test_recall_asks_about_the_tagging_message_without_being_told_it():
-    """DEC-24 end to end: `recall(person)` has one parameter, and the QUESTION
+    """DEC-24 end to end: `about(person)` has one parameter, and the QUESTION
     reaches Honcho anyway because the pipeline closed over the tag body."""
-    runner = _RoomRunner("recall", person="Miles")
+    runner = _RoomRunner("about", person="Miles")
     memory = _RecordingMemory()
     pipeline, _metrics, _audit, _memory2, background = _build_pipeline(
         runner=runner, memory=memory,

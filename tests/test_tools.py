@@ -63,7 +63,7 @@ async def wiring(tmp_path):
 def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
         "now", "read_buffer", "read_peer_card", "send_reply",
-        "group_members", "lookup_person", "recall", "calculate",
+        "group_members", "lookup_person", "about", "calculate",
     }
 
 
@@ -283,7 +283,7 @@ async def test_send_reply_is_the_only_tool_that_can_send(wiring):
     await _call(wiring["tools"]["read_peer_card"], sender_id="+852111")
     await _call(wiring["tools"]["group_members"])
     await _call(wiring["tools"]["lookup_person"], name="Miles")
-    await _call(wiring["tools"]["recall"], person="Miles")
+    await _call(wiring["tools"]["about"], person="Miles")
     assert wiring["sink"].sent == []
 
 
@@ -320,8 +320,8 @@ async def test_the_new_counter_never_double_counts_a_room_scoped_tool(wiring):
     tools, metrics = wiring["tools"], wiring["metrics"]
     await _call(tools["group_members"])
     await _call(tools["lookup_person"], name="Miles")
-    await _call(tools["recall"], person="Miles")
-    for tool in ("group_members", "lookup_person", "recall"):
+    await _call(tools["about"], person="Miles")
+    for tool in ("group_members", "lookup_person", "about"):
         assert metrics.get("nora_tool_calls_total", tool=tool) == 0, tool
     assert metrics.get("nora_room_lookups_total") == 3
 
@@ -357,7 +357,7 @@ async def test_read_peer_card_counts_four_different_answers_behind_one_empty_lis
     **Honestly bounded.** The live `peer_card` answers `null` rather than
     failing when it cannot help, so a transport that degrades quietly is still
     counted `nothing_known` here — that gap belongs to the endpoint and is
-    exactly why DEC-27 replaced it with `recall`/`representation`, whose
+    exactly why DEC-27 replaced it with `about`/`representation`, whose
     `Recollection.reachable` carries the bit. What this counter fixes is the
     part that was recoverable at the call site.
     """

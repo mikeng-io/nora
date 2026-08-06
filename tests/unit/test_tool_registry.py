@@ -59,7 +59,7 @@ def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
         "now", "read_buffer", "read_peer_card", "send_reply",
-        "group_members", "lookup_person", "recall", "calculate",
+        "group_members", "lookup_person", "about", "calculate",
     }
 
 
@@ -68,7 +68,7 @@ def test_budgets_match_todays_table():
         "now": 2, "read_buffer": 2, "read_peer_card": 1, "send_reply": 1,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
-        "group_members": 1, "lookup_person": 2, "recall": 2,
+        "group_members": 1, "lookup_person": 2, "about": 2,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.

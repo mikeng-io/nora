@@ -106,7 +106,7 @@ def test_no_doctrine_file_carries_a_tool_catalogue():
     present and that `feed_honcho` was absent, and would have passed unchanged
     while the catalogue rotted. It did rot. `conduct.md` listed `read_buffer`,
     `read_peer_card` and `send_reply` and never learned about `now`,
-    `group_members`, `lookup_person` or `recall` — four of seven — beside a
+    `group_members`, `lookup_person` or `about` — four of seven — beside a
     line telling her the conversation "covers almost every call".
 
     A prose catalogue in the doctrine has nothing keeping it in step with the
@@ -117,9 +117,9 @@ def test_no_doctrine_file_carries_a_tool_catalogue():
     tool, and adding an eighth tool can never again silently falsify the
     doctrine.
 
-    A tool is "named" here if it appears backticked (`recall`) or as a bare
+    A tool is "named" here if it appears backticked (`about`) or as a bare
     snake_case identifier (read_buffer) — the two forms a catalogue is written
-    in. Matching the bare word alone would be useless: `now` and `recall` are
+    in. Matching the bare word alone would be useless: `now` and `about` are
     also ordinary English, and `identity.md` says "I don't know" and "what you
     remember" in prose that is exactly what this file is supposed to encourage.
     """

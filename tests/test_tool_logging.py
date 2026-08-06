@@ -4,7 +4,7 @@
 `grep lookup_person data/nora.log` returned zero, and that was read as "the
 tool was never called". It could not have returned anything either way:
 `nora/agent/tools.py` emitted exactly one log line on any success path
-(`now`'s), and `lookup_person`, `group_members`, `recall`, `read_buffer`,
+(`now`'s), and `lookup_person`, `group_members`, `about`, `read_buffer`,
 `read_peer_card` and `send_reply` emitted none at all. Two architectural
 conclusions were drawn from that zero, both wrong, and one nearly retracted a
 design document. A silence that reads identically whether the code ran on every
@@ -186,13 +186,13 @@ async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
     await _call(tools["read_peer_card"], sender_id="+85290000101")
     await _call(tools["group_members"])
     await _call(tools["lookup_person"], name="阿豹")
-    await _call(tools["recall"], person="俊爺")
+    await _call(tools["about"], person="俊爺")
     await _call(tools["calculate"], expression="1485/7")
     await _call(tools["send_reply"], text="七點半")
     named = [record["tool"] for record in _tool_lines(wiring["path"])]
     assert sorted(named) == sorted([
         "now", "read_buffer", "read_peer_card", "group_members",
-        "lookup_person", "recall", "calculate", "send_reply",
+        "lookup_person", "about", "calculate", "send_reply",
     ])
 
 
@@ -259,7 +259,7 @@ async def test_no_tool_line_carries_a_phone_number_or_an_aci(wiring):
     await _call(tools["read_peer_card"], sender_id="+85290000101")
     await _call(tools["read_peer_card"], sender_id="+85260000000")
     await _call(tools["lookup_person"], name="+85290000102")
-    await _call(tools["recall"], person="a1000001-0000-4000-8000-000000000001")
+    await _call(tools["about"], person="a1000001-0000-4000-8000-000000000001")
     # ...and the remaining three, so the scan below covers the whole file
     # rather than the three lines that happened to be written. `now` emits an
     # ISO timestamp with a `+08:00` offset, which is the one detail in here
@@ -277,7 +277,7 @@ async def test_no_tool_line_carries_a_conclusion_or_a_transcript_body(wiring):
     actually said about a person, and a transcript body is the group's own
     words — neither becomes safe by being written to a different file."""
     tools = wiring["tools"]
-    await _call(tools["recall"], person="俊爺")
+    await _call(tools["about"], person="俊爺")
     await _call(tools["read_buffer"], limit=40)
     await _call(tools["read_peer_card"], sender_id="+85290000101")
     await _call(tools["send_reply"], text="今晚七點半得")

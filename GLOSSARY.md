@@ -50,7 +50,7 @@ Three layers, two stores, and the distinction that matters most:
 |---|---|---|---|
 | **hot** | SQLite | last 40 messages, verbatim | *(injected, no tool)* |
 | **deeper** | **same SQLite** | everything older, verbatim | `read_buffer` |
-| **derived** | Honcho | conclusions *about people* | `recall` |
+| **derived** | Honcho | conclusions *about people* | `about` |
 
 **SQLite is the RECORD. Honcho is the INTERPRETATION.** SQLite is
 authoritative and is what R-2/A9 guarantee; Honcho is best-effort and may be
@@ -58,8 +58,9 @@ absent — which is why `nora/infra`'s two clients have opposite error contracts
 
 - **`read_buffer` is misnamed.** Nothing is buffered. It reads durable rows
   from disk. Honest name: `chat_earlier`. Pending rename.
-- **`recall` is misnamed.** It fetches an accumulated *profile*, not memories.
-  Honest name: `person_profile`. Pending rename.
+- **`recall` was misnamed** — it fetched an accumulated *profile*, not
+  memories. **Renamed to `about` 2026-08-06 (DEC-39).** The metric
+  `nora_recall_total` keeps the old word: metric names are append-only.
 - **representation** — Honcho's derived profile of a peer. Measured 2026-08-06
   as ~88% *events* ("asked what time it was") rather than *traits*. Under
   review; do not build on it until settled.
@@ -67,7 +68,7 @@ absent — which is why `nora/infra`'s two clients have opposite error contracts
   (DEC-27). Not to be confused with the transcript's `<peer_card>` block, which
   is populated from elsewhere.
 - **nothing found ≠ could not ask.** `read_buffer` empty means *nothing was
-  said*. `recall` empty means *nothing was concluded* — weaker. Hence
+  said*. `about` empty means *nothing was concluded* — weaker. Hence
   `Recollection.reachable`. Collapsing the two hid a dead endpoint for the life
   of the deployment.
 

@@ -159,7 +159,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "for, by platform and reason.",
         ("platform", "reason"),
     ),
-    # The three room-scoped tools (`group_members`, `lookup_person`, `recall`),
+    # The three room-scoped tools (`group_members`, `lookup_person`, `about`),
     # by how they ANSWERED. `status` is the whole point: `unavailable` means
     # Nora could not read the group's membership at all, and it must never be
     # summed together with `not_found` — one says "I could not look", the other
@@ -183,10 +183,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the HTTP layer and only the call site knows which it got. `peer_card`
     # returned `[]` for both for the entire life of the deployment and nobody
     # could see it. Alert on `ok == 0` while the series is being written at all.
+    #
+    # **The NAME keeps `recall` after the tool was renamed to `about`
+    # (DEC-39), and that is the append-only rule, not an oversight.** A metric
+    # name is a dashboard, an alert and a retention window someone else owns;
+    # renaming it does not move history, it starts a new empty series beside a
+    # frozen one, and R-17's argument is that a series which can never
+    # increment is indistinguishable from a deleted one. The tool LABEL on
+    # `nora_room_lookups_total` did move, because that one must agree with the
+    # name in `data/nora.log` or `_log_call` stops being greppable — a split
+    # there is meaningful (the tool genuinely changed) rather than a lie.
     _CounterSpec(
         "nora_recall_total",
-        "Durable-recall lookups against Honcho, by outcome "
-        "(ok / empty / unavailable).",
+        "Durable-profile lookups against Honcho by the `about` tool, "
+        "by outcome (ok / empty / unavailable). Named for that tool's former "
+        "name, `recall`; metric names are append-only.",
         ("status",),
     ),
     # R-23. HOW the agent loop ended, every turn, straight off Strands'

@@ -16,7 +16,8 @@ They were one function until 2026-08-06, and the difference is not cosmetic.
 WHOLE reply. Applied to a reply that is correct: what she runs on is nobody's
 business. Applied anywhere else it costs a whole message or a whole memory for
 a word that was never a disclosure. Two live consequences, both measured:
-`recall` withheld every durable conclusion mentioning an LLM from a group of
+`about` (then called `recall`) withheld every durable conclusion
+mentioning an LLM from a group of
 software engineers, and 「搵首 haiku」 as a tool argument would have made her
 mute. A third name for one of the two jobs is how the wrong one gets called
 later, so there are exactly two and no alias.

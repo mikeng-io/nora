@@ -473,11 +473,35 @@ def test_the_header_names_no_tool_at_all():
     having one. `ToolRegistry.capability()` renders the list from the same table
     the schemas come from, so there is no second copy to keep in step; the only
     way to regress is to start typing tool names in here again.
+
+    **Two detectors, for the reason `nora.doctrine.loader` already has two.** A
+    raw substring is the right check for a name no English sentence contains —
+    every snake_case native — and it is the wrong check for one that is an
+    ordinary word. This header legitimately says "what you durably remember
+    ABOUT the person who called you", and since DEC-39 renamed `recall` to
+    `about` that sentence would fail a substring gate forever, which would
+    force the prose to be contorted around a test rather than the other way
+    round.
+
+    So the ordinary-English names are checked for the shape a CATALOGUE takes
+    instead: this header writes each block it describes as `- <name>:`, and a
+    hand-written tool list growing back in here would be written the same way.
+    That is narrower than a substring, and it is stated rather than quietly
+    relaxed — the cost of choosing a name a sentence can contain.
     """
     from nora.agent.prefill import _context_header
     from nora.agent.tools import NATIVE_TOOLS
+    # The same set `nora.doctrine.loader`'s `tool_names` half exists for: tools
+    # whose names are ordinary English and so invisible to a structural check.
+    ordinary_english = {"now", "about"}
     header = _context_header(40)
     for tool in NATIVE_TOOLS:
+        if tool in ordinary_english:
+            assert f"- {tool}:" not in header and f"`{tool}`" not in header, (
+                f"{tool} is catalogued in _context_header. The capability section is "
+                "generated from the registry; this block is situation, not capability."
+            )
+            continue
         assert tool not in header, (
             f"{tool} is named in _context_header. The capability section is "
             "generated from the registry; this block is situation, not capability."

@@ -239,7 +239,7 @@ async def test_a_reply_naming_the_model_she_runs_on_is_refused(store, doctrine):
     """The half of R-18 that is about the REPLY and only the reply. `_MODELNAME`
     was never covered end-to-end before the predicate split, which is precisely
     the kind of gap a split silently widens: `Deliverer` must keep using the
-    predicate that includes model names, even though `recall` and the outbound
+    predicate that includes model names, even though `about` and the outbound
     tool arguments now use the one that does not."""
     ok, sink, m = await _deliver_text("我行緊 claude opus 呀", store, doctrine)
     assert ok is False

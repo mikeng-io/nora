@@ -92,8 +92,16 @@ knowing that.
   distinct stamps, one shared by 77), and no `## Contradictions` section exists
   anywhere in the live database, so that fixture is built from the emitter's
   source rather than the wire.
-- `recall` is misnamed: it fetches a standing profile, not memories, and the
-  docstring's "what they told you before" invites her to repeat the transcript.
+- ~~`recall` is misnamed: it fetches a standing profile, not memories, and the
+  docstring's "what they told you before" invites her to repeat the
+  transcript.~~ **Done 2026-08-06, DEC-39 — renamed `about`.** The episodic
+  clause is gone and the docstring points at `read_buffer` for anything that
+  was actually said. `person_profile`, which reads better and would have been
+  caught by the doctrine gate's structural detector for free, was rejected on a
+  measurement: with the docstring byte-identical, first-tool selection on a
+  question the tool exists to answer was `recall` 15/16, `person_profile`
+  **0/16**, `about` 16/16 — it shares the token `person` with `lookup_person`
+  and person-shaped routing collapsed onto that tool.
 
 ## Rejected
 
