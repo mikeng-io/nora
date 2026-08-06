@@ -65,6 +65,14 @@ RULE_TESTS = {
     # after R-28 (R-26 is reserved by design/proposed/18 for the unshipped
     # context-budget work), DEC-48. See `nora.engagement.queue`.
     "R-30": "test_three_tags_for_one_conversation_are_answered_in_fifo_order",
+    # R-32: the defence-in-depth boundary for `fetch` (DEC-57, design/22). `fetch`
+    # may open only a URL a `search` returned this turn — a model-invented URL
+    # reaches Firecrawl through nothing. This is NOT the SSRF guarantee (that is
+    # Firecrawl's network-isolated egress, an operator deployment gate, §0/§5.1);
+    # it is the fence Nora's own code enforces, alongside the `is_global`
+    # precheck and the untrusted wrap. Numbers per the spec's §6 (provisional at
+    # write, reconciled at merge); R-31 is the next free number below it.
+    "R-32": "test_fetch_refuses_a_url_no_search_returned",
 }
 
 

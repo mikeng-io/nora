@@ -61,6 +61,7 @@ def test_the_registry_exposes_every_declared_tool():
     assert {t.tool_name for t in tools} == {
         "now", "read_buffer", "send_reply",
         "group_members", "lookup_person", "about", "calculate", "transit", "route",
+        "search", "fetch",
     }
 
 
@@ -80,6 +81,10 @@ def test_budgets_match_todays_table():
         # Sized like transit: two place lookups plus a route, paid and external,
         # so a turn may reach for it twice but not more (DEC-46).
         "route": 2,
+        # The two web verbs (DEC-57): sized by model round trips — search, read a
+        # result, refine — two of each leaving half the turn.
+        "search": 2,
+        "fetch": 2,
     }
 
 

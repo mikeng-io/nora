@@ -29,6 +29,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..infra.routes import RouteClient
+from ..infra.search import SearchClient
 from ..infra.transit import TransitClient
 from .ports import ToolSpec, adapt
 from .room import Room
@@ -61,6 +62,7 @@ class ToolRegistry:
         self, *,
         transit: TransitClient | None = None,
         route: RouteClient | None = None,
+        search: SearchClient | None = None,
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -72,6 +74,14 @@ class ToolRegistry:
         # built from the resolved `[route]` key (DEC-8); until it does, `route`
         # is present in the catalogue and refuses to leak, but cannot travel.
         self._route = route
+        # `search` (SearXNG + Firecrawl, DEC-57) is NOT default-constructed, for
+        # the same reason `route` is not: the two web verbs ship INERT behind
+        # `[search] enabled` (and the operator's Firecrawl-egress isolation), so
+        # every composition that has not wired one — offline, eval, and any
+        # deployment with `[search]` off — leaves this None, and `search`/`fetch`
+        # answer `unavailable` (the honest «not configured» state, R-5). The
+        # composition root passes one built from `[search]` only when enabled.
+        self._search = search
 
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
@@ -180,14 +190,15 @@ class ToolRegistry:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
 
-        `transit_source` and `route_source` are NOT in this signature and must
-        not become one: each is the registry's own long-lived collaborator, not
-        something a tag brings with it, so every caller of `specs()`/`build()`
-        is unchanged by their arrival."""
+        `transit_source`, `route_source` and `search_source` are NOT in this
+        signature and must not become one: each is the registry's own long-lived
+        collaborator, not something a tag brings with it, so every caller of
+        `specs()`/`build()` is unchanged by their arrival."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=self._transit, route_source=self._route,
+            search_source=self._search,
             question=question, context_window=context_window,
         )
 

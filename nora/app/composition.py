@@ -282,7 +282,25 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "route enabled but %s is unset — routing stays unavailable",
                 cfg.route.api_key_env,
             )
-    tool_registry = ToolRegistry(route=route_client)
+    # `search`/`fetch` (SearXNG + Firecrawl, DEC-57) are wired ONLY when
+    # `[search] enabled` — inert by default (design/22). Off leaves the registry
+    # without a SearchClient, so both verbs answer `unavailable` and NOTHING
+    # reaches SearXNG or Firecrawl. Enabling it is an OPERATOR decision gated on
+    # Firecrawl's egress network isolation being in place (the primary SSRF
+    # control, design/22 §0/§5) — a deployment change this build does not make.
+    search_client = None
+    if cfg.search.enabled:
+        from nora.infra.search import SearchClient
+        search_client = SearchClient(
+            searxng_url=cfg.search.searxng_url,
+            firecrawl_url=cfg.search.firecrawl_url,
+            firecrawl_api_version=cfg.search.firecrawl_api_version,
+            search_max_results=cfg.search.search_max_results,
+            snippet_max_bytes=cfg.search.snippet_max_bytes,
+            fetch_max_chars=cfg.search.fetch_max_chars,
+            timeout_seconds=cfg.search.timeout_seconds,
+        )
+    tool_registry = ToolRegistry(route=route_client, search=search_client)
     # The room-scoped tools' one platform dependency. Built here rather than
     # taken off the adapter because membership is a read-only DIRECTORY query
     # (`nora.platform.signal.directory`'s two-method allowlist), not part of the
