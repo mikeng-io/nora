@@ -3,6 +3,12 @@
 `alembic.ini` exists at the repo root for CLI use (`uv run alembic check`,
 `uv run alembic revision --autogenerate`). The application builds its Config
 here instead, so a missing or unmounted ini can never stop Nora from starting.
+
+Migrations run SYNCHRONOUSLY (Alembic is a sync tool), against a
+`postgresql+psycopg://` URL, while the application itself talks to the same
+database over `postgresql+asyncpg://`. `sync_url_for` derives the sync URL from
+whatever URL it is handed, swapping the async driver for psycopg so a single
+`DATABASE_URL` (asyncpg-shaped, what the app uses) is the one source of truth.
 """
 
 from __future__ import annotations
@@ -14,20 +20,28 @@ from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 
 _MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
 
-def sync_url_for(db_path: Path | str) -> str:
-    """The synchronous URL Alembic uses. The application itself uses the
-    aiosqlite variant — see `nora.infra.sql.engine.async_url_for`."""
-    return f"sqlite:///{Path(db_path)}"
+def sync_url_for(url: str) -> str:
+    """The synchronous (psycopg) URL Alembic uses, derived from the application
+    URL (which is asyncpg — see `nora.infra.sql.engine.create_sql_engine`).
+
+    An asyncpg driver is swapped for psycopg; a URL that already names a sync
+    driver, or a bare `postgresql://`, is normalised to `postgresql+psycopg`.
+    """
+    parsed = make_url(url)
+    return parsed.set(drivername="postgresql+psycopg").render_as_string(
+        hide_password=False
+    )
 
 
-def alembic_config(db_path: Path | str) -> Config:
+def alembic_config(url: str) -> Config:
     cfg = Config()
     cfg.set_main_option("script_location", str(_MIGRATIONS))
-    cfg.set_main_option("sqlalchemy.url", sync_url_for(db_path))
+    cfg.set_main_option("sqlalchemy.url", sync_url_for(url))
     return cfg
 
 
@@ -35,8 +49,8 @@ def head_revision() -> str:
     return ScriptDirectory(str(_MIGRATIONS)).get_current_head() or ""
 
 
-def current_revision(db_path: Path | str) -> str | None:
-    engine = create_engine(sync_url_for(db_path))
+def current_revision(url: str) -> str | None:
+    engine = create_engine(sync_url_for(url))
     try:
         with engine.connect() as conn:
             return MigrationContext.configure(conn).get_current_revision()
@@ -44,13 +58,12 @@ def current_revision(db_path: Path | str) -> str | None:
         engine.dispose()
 
 
-def run_migrations(db_path: Path | str) -> None:
-    """`alembic upgrade head`. Creates the parent directory if absent."""
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(db_path), "head")
+def run_migrations(url: str) -> None:
+    """`alembic upgrade head` against `url`."""
+    command.upgrade(alembic_config(url), "head")
 
 
-def stamp_head(db_path: Path | str) -> None:
+def stamp_head(url: str) -> None:
     """Mark an already-correct database as being at head without running any
-    migration. Used once, on the live 0-row database (Task 10)."""
-    command.stamp(alembic_config(db_path), "head")
+    migration. Used once, on the live 0-row database at cutover (design/20 §5)."""
+    command.stamp(alembic_config(url), "head")

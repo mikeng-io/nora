@@ -1,34 +1,31 @@
-"""Alembic environment.
+"""Alembic environment (Postgres).
 
 Two deliberate deviations from the generated template:
 
 - `include_object` excludes `idx_messages_conv_ts`. The index is `ts DESC` in
   production, declared with `sa.text("ts DESC")` in the metadata. Reflection
   returns a plain column, autogenerate compares the two as different, and the
-  result is a `remove_index`/`add_index` pair on EVERY check, forever —
-  verified 2026-08-05. Excluding it is the only way `alembic check` is usable
-  at all. The ordering it can no longer see is asserted by
-  `tests/infra/test_schema_parity.py` via `PRAGMA index_xinfo`.
-- `render_as_batch=True`: SQLite cannot ALTER most things in place, so any
-  future column change needs Alembic's batch table-rebuild mode.
+  result is a `remove_index`/`add_index` pair on EVERY check, forever. Excluding
+  it is the only way `alembic check` is usable at all. The ordering it can no
+  longer see is asserted by `tests/infra/test_schema_parity.py` via
+  `pg_index.indoption`.
+- **No `render_as_batch`.** That was SQLite's table-rebuild workaround for
+  ALTERs it could not do in place; Postgres alters in place, and batch mode here
+  would only obscure migrations. It is gone with the SQLite backend.
 
-This env runs SYNCHRONOUSLY, against a `sqlite://` URL, even though the
-application uses `sqlite+aiosqlite://`. Migrations are startup-time and
+This env runs SYNCHRONOUSLY, against a `postgresql+psycopg://` URL, even though
+the application uses `postgresql+asyncpg://`. Migrations are startup-time and
 single-threaded; an async env would buy nothing and cost an event loop.
 
 The metadata is read as `schema.METADATA` at configure time, NOT bound with a
 top-level `from ...schema import METADATA`. Alembic re-execs this file on every
-command, but a from-import snapshots the object, so a test that swaps the
-module attribute to simulate drift would silently compare against the original
-metadata and report no drift — a gate that passes for the wrong reason.
-Verified 2026-08-05: with the module-attribute form, the swap is picked up.
+command, but a from-import snapshots the object, so a test that swaps the module
+attribute to simulate drift would silently compare against the original metadata
+and report no drift — a gate that passes for the wrong reason.
 
-`-x db=` is wired deliberately (see `_url()`): `alembic.ini`'s static url used
-to point at `data/messages.db` while `-x db=` was accepted but ignored, so a
-command intended for a scratch copy silently ran against production. Alembic
-creates `alembic_version` as a side effect before most commands report
-anything, so it mutates before it complains — verified the hard way,
-2026-08-05.
+`-x db=` is wired deliberately (see `_url()`): it overrides the target with a
+full SQLAlchemy URL, so a command intended for a scratch database can be pointed
+away from whatever `sqlalchemy.url` the Config carries.
 """
 
 from __future__ import annotations
@@ -51,17 +48,15 @@ def include_object(
 
 
 def _url() -> str:
-    """CLI override: `alembic -x db=/path/to/copy.db`.
+    """CLI override: `alembic -x db=postgresql+psycopg://…`.
 
-    Wired deliberately. `alembic.ini`'s static url used to point at
-    `data/messages.db`, and `-x` was accepted-but-ignored, so a command
-    intended for a scratch copy silently ran against production — Alembic
-    creates `alembic_version` as a side effect before most commands report
-    anything, so it mutates before it complains.
+    Wired deliberately. The override is a full SQLAlchemy URL (a scratch
+    database), so a command meant for a copy never silently runs against the
+    URL the Config carries.
     """
     override = context.get_x_argument(as_dictionary=True).get("db")
     if override:
-        return f"sqlite:///{override}"
+        return override
     url = config.get_main_option("sqlalchemy.url")
     if url is None:
         raise RuntimeError("alembic Config has no sqlalchemy.url")
@@ -72,7 +67,6 @@ def _configure(**kw: Any) -> None:
     context.configure(
         target_metadata=schema.METADATA,
         include_object=include_object,
-        render_as_batch=True,
         compare_type=True,
         compare_server_default=True,
         **kw,
