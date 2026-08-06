@@ -116,7 +116,7 @@ class _Resolver:
     def __init__(self, mapping: dict[str, set[str]]) -> None:
         self._mapping = mapping
 
-    def addresses(self, host: str) -> frozenset[str]:
+    async def addresses(self, host: str) -> frozenset[str]:
         return frozenset(self._mapping.get(host, set()))
 
 
@@ -268,7 +268,13 @@ async def test_a_loopback_or_numeric_host_is_refused_before_any_call():
     base = str(server.make_url("/")).rstrip("/")
     # No resolver injected: the REAL system resolver, so getaddrinfo normalises.
     client = SearchClient(searxng_url=base, firecrawl_url=base, timeout_seconds=8.0)
-    for host in ("127.0.0.1", "2130706433", "0x7f000001", "localhost", "[::1]"):
+    # Numeric encodings, CGNAT, the unspecified address, IPv4-mapped IPv6 and a
+    # name — pinned so the `is_global` contract can't silently weaken under the
+    # 3.11 interpreter floor (both reviews 2026-08-07). Octal is fail-closed
+    # either way: getaddrinfo either normalises it to loopback or refuses to
+    # resolve it, and an empty address set is rejected.
+    for host in ("127.0.0.1", "2130706433", "0x7f000001", "0177.0.0.1", "0.0.0.0",
+                 "100.64.0.1", "[::1]", "[::ffff:127.0.0.1]", "localhost"):
         out = await client.fetch(f"http://{host}/rpc")
         assert out["status"] == "refused", host
     assert firecrawl.calls == []

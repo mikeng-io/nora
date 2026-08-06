@@ -36,10 +36,10 @@ test prove the `is_global` gate without real DNS.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
 import logging
-import socket
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -59,7 +59,7 @@ class HostResolver(Protocol):
     numeric encodings and does the DNS lookup the gate depends on.
     """
 
-    def addresses(self, host: str) -> frozenset[str]: ...
+    async def addresses(self, host: str) -> frozenset[str]: ...
 
 
 class _SystemResolver:
@@ -73,15 +73,18 @@ class _SystemResolver:
     design/22 §0 records.
     """
 
-    def addresses(self, host: str) -> frozenset[str]:
+    async def addresses(self, host: str) -> frozenset[str]:
+        # Off the event loop: a synchronous getaddrinfo here would block every
+        # other tag's turn while a slow or hostile DNS name resolves (Kimi review
+        # 2026-08-07). The fetch path is already async, so this costs nothing.
         try:
-            infos = socket.getaddrinfo(host, None)
+            infos = await asyncio.get_running_loop().getaddrinfo(host, None)
         except (OSError, UnicodeError):
             return frozenset()
         return frozenset(str(info[4][0]) for info in infos)
 
 
-def _all_global(host: str, resolver: HostResolver) -> bool:
+async def _all_global(host: str, resolver: HostResolver) -> bool:
     """True only if EVERY address `host` resolves to is `is_global`.
 
     An allow-check, not a denylist (design/22 §0): `ip.is_global` is False for
@@ -91,7 +94,7 @@ def _all_global(host: str, resolver: HostResolver) -> bool:
     public destination. An IPv4-mapped IPv6 address is unwrapped to the mapped
     IPv4 before the check, because `::ffff:127.0.0.1` is loopback in disguise.
     """
-    addresses = resolver.addresses(host)
+    addresses = await resolver.addresses(host)
     if not addresses:
         return False
     for address in addresses:
@@ -244,7 +247,7 @@ class SearchClient:
         # Defence in depth (design/22 §0). Revert this and a search result that
         # resolves to loopback/RFC1918 — numeric encoding or rebind DNS name —
         # reaches Firecrawl; the `firecrawl.calls == []` probe is exactly that.
-        if not _all_global(parsed.hostname, self._resolver):
+        if not await _all_global(parsed.hostname, self._resolver):
             return _REFUSED_FETCH
         # PINNED to the deployed instance (design/22 §2): verified `v1` on the
         # running `firecrawl-api` container. `POST /v1/scrape`, `formats:
