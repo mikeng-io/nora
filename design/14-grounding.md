@@ -1,252 +1,234 @@
 ---
 kind: design
-title: "Nora — grounding: how she comes to know things she was not told"
-description: "Web search and retrieval as a bounded capability: what enters the prompt, what may leave the house, and why there is no intent router."
-tags: [nora, design, grounding, search, tools, mcp, egress, injection]
+title: "Nora — grounding: four kinds, not one, and the seams they need"
+description: "Search, fetch, live structured data and routing are different capabilities with different trust, cost and time properties. What they share is a place resolver and a clock."
+tags: [nora, design, grounding, search, transit, routing, egress, injection]
 timestamp: '2026-08-06'
 status: proposed
+supersedes: "this document's own first draft, which treated grounding as one search(query) tool"
 ---
 
 # Grounding
 
-Everything Nora knows today came from inside the room: the transcript
-(`read_buffer`), the people (`identity.toml`), what Honcho concluded about
-them, and the clock. Grounding is the first capability that reaches
-**outside** — and that is the whole design problem. It is not "add a search
-tool"; it is opening two new boundaries at once, one in each direction, in a
-system whose existing guarantees all assume the room is the world.
+Everything Nora knows comes from inside the room: the transcript,
+`identity.toml`, Honcho, and the clock. Grounding is the first capability that
+reaches outside.
 
-The capability is the easy half and is largely a provider choice. The
-boundaries are the half that can leak, and they are what this document is
-mostly about.
+**This replaces its own first draft**, which was wrong in a way worth
+recording: it treated grounding as one capability called `search(query)` and
+spent its length choosing a search provider. Two operator questions broke that
+framing — 「K73 幾時到」 and 「由 A 去 B 邊條路最快」 — and neither is
+answerable by searching or scraping anything.
 
-## 1. Why there is no intent router
+## 1. Four kinds, and they do not substitute
 
-The obvious architecture is a classifier in front: read the question, decide
-whether it needs the web, the memory, the clock, or nothing, then dispatch.
-**We are not building it.** Three reasons, in order of weight:
+| kind | source | answers | trust | time |
+|---|---|---|---|---|
+| **live structured** | `rt.data.gov.hk`, KMB/MTR, car parks | facts true for seconds | typed, trusted | **now only** |
+| **routing / geo** | Google Routes, Places | how to get there, how long | typed, trusted | **any time** |
+| **web search** | SearXNG → Brave et al. | *pages about* a thing | **untrusted** | whenever indexed |
+| **page fetch** | Firecrawl | contents of a known URL | **untrusted** | whenever crawled |
 
-**It duplicates the model.** Choosing among declared capabilities from a
-natural-language request is exactly what a function-calling model does, and it
-does it with the tool schemas as its taxonomy — schemas that cannot drift from
-the tools because they are *derived from* the tools (`extract_metadata`,
-DEC-24). A router is a second taxonomy of the same thing, hand-maintained,
-with no mechanism keeping it in step. The first tool whose purpose shifts
-without a matching router edit is a silent misroute.
+Verified live, 2026-08-06:
 
-**The measured failure was not a routing failure.** On 2026-08-06,
-`reasoning_effort="none"` answered 「你係邊個」 by calling the clock. The fix
-was not a router; it was `"low"`, after which the model chose correctly 4/4
-(and the pinned upstream chose correctly 4/4 again under the tool set at the
-time). The evidence says the model routes well when it is allowed to think.
-Adding a router would have hidden that finding behind a component that
-appeared to fix it.
+    MTR bus K73 ETA   status 0, 27 stops, next bus 112s     free, no key
+    KMB ETA           same API family, valid envelope        free, no key
+    SearXNG :8080     27 results (engine: brave)             local, PROXYING
+    Firecrawl :3002   /v1/scrape -> clean markdown           local
 
-**It costs a turn.** §4 of `design/12` sizes the budget in round trips. A
-router is one more model call in front of every question, including
-「你好」 — the exact case it was supposed to make cheap.
+Two consequences the first draft missed:
 
-### What is real, and is not a router
+**The transport kinds compose rather than compete.** Google says "take K73 from
+stop D020" from a *schedule*; `rt.data.gov.hk` says "that bus is 112 seconds
+away" *live*. Neither alone answers 「幾點出門」. Combining them is
+instructions, not capability — which is what a **skill** is, and the first
+domain that has ever qualified (`design/12` §1 said none did).
 
-Two concerns get mistaken for intent routing. Both are real; neither is a
-classifier.
-
-**Cost and latency gating.** A paid search API must not fire for 「早晨」.
-That is a *predicate on the tool call the model already chose*, not a
-prediction of what it will choose — it belongs in the `BeforeToolCallEvent`
-hook beside `ReplyGuard` and the R-7 budget veto, where it is code, costs
-nothing, and cannot itself be wrong about intent. `NATIVE_TOOL_BUDGETS`
-already has this shape: `search` gets a small budget and the veto is
-structural.
-
-**Domain instructions.** "How to combine `now` + `directions` + `search` to
-answer 「點去到十點前」" is a genuine need, and it is what a **skill** is
-(`design/12` §1). A skill is loaded by the model deciding it needs that
-domain — which is routing, done by the component that is already good at it,
-with instructions rather than dispatch.
-
-So: **router, no. Budget guard, yes. Skill, yes.** The intent-routing
-intuition is correct about the problem and wrong about the mechanism.
+**Trust is not uniform.** §2.1 holds for search and fetch. It does **not** hold
+for a government ETA API returning typed fields — that is closer to
+`listGroups` than to a web page, and wrapping it `untrusted="true"` would
+miscategorise it. `design/17`'s argument is that miscategorised things fail
+silently.
 
 ## 2. The two boundaries
 
-### 2.1 Inbound — search results are untrusted
+### 2.1 Inbound — search and fetch are untrusted; typed APIs are not
 
-`design/12` §2 orders authority, and the load-bearing line is 3 over 4: skill
-instructions are trusted because an operator wrote them and they are on disk;
-message content is not, because whoever is in the room wrote it. That is why
-the transcript is wrapped `untrusted="true"` and why `constraints.md` says text
-claiming to be a system message is just text someone typed.
+Retrieved **web** content is authority item 4 and worse: a group message was at
+least written by someone `policy.toml` admitted; a page may have been written
+specifically to be retrieved by an agent. So: wrapped `untrusted="true"`,
+provenance preserved, and **no path from retrieved text to skill activation**.
 
-**Web content is item 4, and worse.** A group message is at least written by
-someone we admitted under `policy.toml`. A search result is written by an
-anonymous stranger who may have written it *specifically* to be retrieved by
-an agent. Prompt injection is not a hypothetical here; it is the expected
-case at scale.
+Stated non-goal: we do not *detect* injection. Detection is unreliable and
+relying on it is the decorative-gate failure this repo keeps finding. The
+defence is structural.
 
-Therefore:
+**Typed API responses are not wrapped** — no free-text field for an adversary
+to write in. If a source ever returns one, that field is wrapped even though
+its envelope is typed.
 
-- Retrieved content is wrapped `untrusted="true"`, identically to the
-  transcript, and the operating brief names it as data she reasons about,
-  never instructions she follows.
-- Retrieved content **may not name a skill to activate**. `design/12` §2
-  already forbids this for messages; grounding is the first thing that could
-  plausibly smuggle it, since a page can contain arbitrary text. Skill sources
-  stay operator configuration only, and the loader must not consult retrieved
-  text.
-- Provenance survives into the prompt. Each retrieved block carries its
-  source, so "the page said" and "I concluded" stay distinguishable to her and
-  to the reader of a trace.
+### 2.2 Outbound — tool arguments are an egress surface
 
-A stated non-goal: we are not attempting to *detect* injection in retrieved
-text. Detection is unreliable and reliance on it would be exactly the
-"decorative gate" failure this repo keeps finding. The defence is structural —
-untrusted content cannot reach a privileged position because there is no path
-from item 4 to item 3.
+R-18 guards *replies*, not arguments. Routing makes this concrete rather than
+theoretical: **a route query inherently contains two locations.**
+「由陳生屋企去我公司」 must never become a Google query resolving a named
+person to a home address. There is no legitimate version of that request.
 
-### 2.2 Outbound — the query is an egress point, and R-18 does not cover it
+Superseding the first draft's uniform rule:
 
-**This is the gap that would bite first.** R-18 (`nora/agent/egress.py`) guards
-*replies*: phone numbers, ACIs, key-shaped strings, model names. It runs on
-the way to the group.
+- **Identifiers** (numbers, ACIs, keys) — blocked unconditionally, every tool.
+- **A person's name or live position in a routing origin/destination** —
+  **hard block**. Unlike a search query there is no benign reading.
+- **A person's alias in a search query** — **counted, not blocked.** We do not
+  know the shape of real queries yet, and a guess encoded as a block fails
+  closed on legitimate use.
 
-A search query does not go to the group. It goes to a third party, and today
-nothing inspects it. 「Tyler 個電話幾多號」 becoming a query to a hosted
-search API sends a group member's name — and possibly their number, if the
-model helpfully includes context — to a company none of these six people
-agreed to. `identity.toml` is gitignored and bind-mounted read-only precisely
-because this data is not meant to travel; a grounding tool with an unguarded
-argument undoes that in one call.
+**`scan_egress` must be split first.** Its `_MODELNAME` pattern matches
+`gemini|haiku|sonnet|opus|claude|grok` — correct for replies (she must never
+name her model), catastrophic for queries: 「搵首 haiku」 would be refused, and
+`scan_egress` fails closed on the *whole reply*. Split into
+`scan_identifiers()` (tool arguments) and `scan_reply()` (identifiers + model
+names) so the two call sites cannot be confused.
 
-So the rule, and it is new:
+### 2.3 Corrections to the first draft, recorded
 
-> **Outbound tool arguments are an egress surface and are guarded like
-> replies.** Any tool argument that leaves the host passes the R-18 predicate
-> before the call, not after.
+- **"The query never leaves the host" was false.** SearXNG is a metasearch
+  *proxy* with no index — the same measurement that claimed locality says
+  `engine: brave`. Self-hosting buys that *Nora's client identity* does not
+  reach Brave. Real, but weaker, and §2.2 is **not** downgradable.
+- **The token argument used the wrong currency** — it reasoned against
+  `max_tokens` (per-call *output* ceiling, now 2000). Retrieved text lands in
+  the **input**, governed by `total_tokens = 64000`. See §4.
+- **R-19/R-20 were already taken.** R-20 is the forged-quote rule, registered
+  and enforced; R-19 is reserved by `design/11`. Grounding's are **R-27/R-28**.
+- **The scrape verb was never declared** — §3 required Firecrawl while the
+  tool list held only `search(query)`: a second verb living in prose with no
+  schema, no budget entry, no URL authority.
 
-Consequences worth stating plainly:
+## 3. Shape
 
-- The guard runs at `BeforeToolCallEvent`, so a blocked query never reaches
-  the network — unlike a reply guard, there is no "block it on the way out"
-  option, because by then it has been sent.
-- Blocking must be **legible to the model**: the tool returns "that query
-  cannot leave" rather than raising, so she can tell the group she will not
-  look that up. A silent block would make a refusal indistinguishable from a
-  provider outage, which is the ambiguity that hid a dead `peer_card` for the
-  life of the deployment.
-- Person names are the hard case. `miles_novak` is a real name and blocking every
-  name would break 「查下呢間餐廳」 if a member is called 陳. The predicate
-  therefore blocks the *identifiers* R-18 already knows (numbers, ACIs, keys)
-  unconditionally, and counts — rather than blocks — queries containing a
-  known alias, so we can see whether it happens before deciding how to treat
-  it. Counting first is deliberate: we do not yet know the shape of real
-  queries, and a guess encoded as a block is a guess that fails closed on
-  legitimate use.
+**`transit(route)`** — live ETA. Free, keyless, bounded typed JSON, no
+injection surface, no egress question. Ships first.
 
-This also means a self-hosted provider is not merely a preference. SearXNG and
-Firecrawl on this host make the outbound boundary *internal*, which changes
-the risk from "a third party holds this" to "it stayed home".
+**`route(origin, destination, mode, arrive_by)`** — Google. Paid, external,
+keyed. `arrive_by` is the point (§5.1).
 
-## 3. Provider
+**`search(query)`** — SearXNG. Titles, snippets and URLs only.
 
-Three candidates, evaluated against integration cost and against what they do
-to the boundaries above.
+**`fetch(url)`** — Firecrawl, and the URL comes from a **prior `search` result
+in this same turn**, never free-form from the model. That is the whole
+mitigation: SearXNG, Honcho, signal-cli (`:18080`), OmniRoute (`:20128`) and
+Firecrawl itself all listen on localhost, so a model-chosen URL makes
+self-hosted Firecrawl an SSRF pivot into Nora's own internals. Constraining it
+to a search result is what stops `http://127.0.0.1:18080/api/v1/rpc` being
+fetchable.
 
-**Perplexity agent API** — one call in, answer plus citations out. No
-synthesis burden on Nora, so no page content in the turn's token budget, and
-citations arrive structured. Cost: per-call pricing, and every query leaves
-the house to a third party.
+Each gets a `NATIVE_TOOLS` entry (budget + `when`) or R-7 default-denies it,
+and each returns **three states** — `ok` / `nothing_found` / `unavailable` —
+with a `{tool, status}` counter. "The API is down" and "there is no such bus"
+must never be one answer; that ambiguity hid a dead `peer_card` for the life of
+the deployment.
 
-**Gemini Enterprise grounding** — Google's index, managed, returns grounding
-metadata with citations. Same third-party outbound exposure, plus project and
-auth setup that is heavier than anything else in this deployment.
+## 4. Intake is bounded by constants, not a component
 
-**SearXNG + Firecrawl, self-hosted** — matches the posture of every other
-dependency here (Honcho, signal-cli, OmniRoute all local). SearXNG returns
-links; Firecrawl fetches content; **Nora synthesises**, which is the real
-cost: page text lands in a 4000-token turn, and a turn budget sized for
-transcript plus doctrine does not have room for two scraped pages. It also
-makes the outbound boundary internal, which §2.2 says is the strongest
-mitigation available.
+Retrieved text lands in the input and is **re-sent on every subsequent model
+call**, so its true cost is `tokens × calls remaining`. Measured:
+`read_buffer(200)` = 6,592; base prompt 4,952; `total_tokens` 64,000.
 
-### Recommendation — corrected 2026-08-06
+`design/18` proposes `ContextBudget` for this, and the review of that document
+argued it is a component where a constant would do — and that
+`nora_llm_stop_reason_total{reason="limit_total_tokens"}` is **already live**
+and should be read first. So grounding does not wait on it. It ships with hard
+ceilings in code: a result count and snippet-byte cap on `search`, a byte
+ceiling on `fetch` with truncation **stated in the return value**, and asserted
+bounds on the typed tools. If the counter shows real pressure once grounding is
+live, that is the evidence `design/18` needs. Not before.
 
-**SearXNG + Firecrawl. They are already running on this host.**
+## 5. What the operator's scenario demands
 
-This reverses the original recommendation in this document, which was
-Perplexity-first. That argument rested entirely on "the cheapest way to learn
-the boundary is the provider that takes least to stand up" — and it was
-written without checking. Both services are up and were verified working the
-same day:
+> 「@nora 幫每個人設計最好路線」 — dinner at Yoho Mall at 20:00, asked at 15:00.
+> Miles, Tyler and Aaron travel together from home; Grant and Blake drive
+> separately from wherever work ends; the drivers want a **car park** near the
+> destination with pricing, live availability and a fallback.
 
-    SearXNG    127.0.0.1:8080   /search?q=…&format=json → 27 results (brave)
-    Firecrawl  127.0.0.1:3002   POST /v1/scrape → clean markdown
+The four tools do not answer this, and the gap is not more sources.
 
-`format=json` is enabled on SearXNG (it is off by default, so this was a
-deliberate prior configuration), and Firecrawl runs with playwright, redis,
-rabbitmq and postgres alongside it. There is no setup cost left to avoid.
+**5.1 The question is about the future.** Every tool answers about the present.
+A live ETA is worthless for a bus three hours out. Google Routes accepts
+`arrive_by` and will answer for 19:30; `rt.data.gov.hk` cannot time-travel at
+all. **Nora must know which sources can be asked about a future moment**, or
+she will quote a 112-second bus wait for a bus leaving at 19:30. That is a
+property of each tool and belongs in `NATIVE_TOOLS` beside `when` and `budget`.
 
-With that gone, self-hosted wins on every remaining axis:
+**5.2 Nothing resolves a place or a person to a location.** 「我屋企」,
+「Yoho Mall」, 「Tyler 而家喺邊」 must become coordinates before any route call.
 
-- **§2.2 becomes internal.** The query never leaves the host, so the outbound
-  egress boundary — the one R-18 does not currently cover — stops being an
-  exposure to a third party and becomes an in-house concern. That was always
-  the strongest argument and it was being traded away for setup convenience
-  that turned out not to exist.
-- **No per-call cost**, so the budget guard in §1 stops being about money and
-  is purely about latency.
-- **It matches every other dependency here** — Honcho, signal-cli and
-  OmniRoute are all local.
+**Life360 is the right source for the PERSON half** (operator, 2026-08-06) —
+it already holds everyone's position, so nothing needs to be inferred or asked.
+That makes the resolver easy and the boundary hard, and the boundary is the
+part to design:
 
-**The real cost moves to the turn budget, and that is now the thing to
-measure.** Nora synthesises: SearXNG returns links, Firecrawl returns page
-markdown, and that markdown lands in a turn already carrying doctrine,
-transcript and tool schemas against `max_tokens = 4000`. Two scraped pages
-will not fit. So the open question is no longer "which provider" but **"how
-much retrieved text can a turn afford"** — which is an empirical question with
-a local, free, already-running way to answer it.
+- Live location is **the most sensitive data in this system**, more than phone
+  numbers. A number identifies; a position tracks. `identity.toml` is
+  gitignored and mounted read-only for less than this.
+- It is therefore subject to §2.2's **hard block**: a person's live position
+  may inform a route Nora computes, but must never appear in a query leaving
+  the host, and must never be reported to the group. 「Tyler 而家喺邊」 asked
+  by someone else is a disclosure, not a lookup — the same shape as R-21, one
+  level up.
+- **Read at decision points, never persisted.** A tool called during a turn,
+  not a background collector. That keeps it inside R-5's model, where failure
+  is visible in a turn rather than silently stale on disk.
 
-The port still stands, and still gains no second implementation without a
-shared contract suite. Perplexity remains a valid fallback if synthesis proves
-too expensive in tokens — but it should be adopted on that evidence, not on
-the setup-cost argument this section originally made.
+The resolver is thus **not** a thin wrapper over Places + Life360 — it is a
+scope boundary, and belongs beside `Room` (`design/12` §3: scope is enforced at
+assembly).
 
-The port makes that swap a composition-root change. Per the conventions, it
-does not gain a second implementation — including a test fake — without a
-shared contract suite both pass (`tests/contract/`).
+**5.3 A plan is not a lookup.** Per-person routing needs to know when each
+person leaves — a fact only that person has. Life360 gives position, not
+intent: knowing Grant is at his office does not say whether he leaves at 18:00
+or 19:30. **The cheap version is to ask.** She is in the group;
+「Grant 你幾點收工？」 is one message and beats any forecast.
 
-## 4. Shape
+This is also the argument against sampling positions every few seconds into a
+time-series store: it is continuous surveillance of five friends persisted to
+disk, it multiplies §5.2's exposure by every second it runs, and it still would
+not know when Grant finishes work.
 
-**Tools** (verbs, no instructions attached — `design/12` §1):
+**5.4 Car parks are ordinary.** `data.gov.hk` publishes occupancy and pricing —
+a fifth live-structured tool, not a research problem.
 
-- `search(query)` — the model names *what*; Nora resolves *where*, holds the
-  credential, and applies §2.2 to the argument. No provider, no result count,
-  no locale in the schema: DEC-24 says an inert parameter is worse than no
-  parameter, and every one of those is something Nora already knows.
+## 6. Order, cheapest and safest first
 
-**Skill** (Phase 10, when there is a domain to bundle): wayfinding — how to
-combine `now`, `search` and a directions tool to answer 「點去到十點前」,
-which is the question that motivated grounding in the first place. One skill,
-loaded on demand, costing the turn `design/12` §4 already budgets.
+1. **`scan_egress` split** (§2.2) — prerequisite; nothing outbound ships first.
+2. **`transit`** — free, keyless, verified, bounded, no injection surface.
+3. **`route`** + the resolver (§5.2) — the resolver is the hard part, which is
+   why routing is not second.
+4. **`search`** + **`fetch`** — last: unbounded intake, injection surface, and
+   the weakest motivating example now that 2 and 3 exist.
+5. **The wayfinding skill** — once there is something to bundle.
 
-**MCP** is transport, not architecture. An MCP-provided tool is bound exactly
-like a native one — arguments are model-supplied and therefore untrusted, the
-same guard runs before the call, and `NATIVE_TOOL_BUDGETS` gains an entry or
-R-7 vetoes it. Nothing in §2 changes because a tool arrived over MCP; the
-document says this explicitly so that "it's an MCP server" is never mistaken
-for "it's outside the boundary".
+The first draft led with search. That was backwards.
 
-## 5. What must be true before this ships
+## 7. What must be true before any of it ships
 
-1. Retrieved content is wrapped `untrusted="true"` and carries provenance.
-2. No path exists from retrieved text to skill activation.
-3. Outbound tool arguments pass the R-18 predicate before the call, and a
-   block is legible to the model rather than silent.
-4. Alias-in-query is counted, not blocked, and the counter is read before any
-   blocking policy is written.
-5. `search` has a `NATIVE_TOOL_BUDGETS` entry.
-6. The provider sits behind a port with a contract suite.
-7. R-19 (untrusted retrieved content) and R-20 (outbound argument egress) are
-   registered in `design/09-decision-index.md` and
-   `tests/test_acceptance_rules.py::RULE_TESTS`, each with a probe observed
-   failing first.
+1. `scan_identifiers()` and `scan_reply()` separate; arguments use the former,
+   `Deliverer` the latter; probed by 「搵首 haiku」 passing as a query and being
+   refused in a reply.
+2. Three states per tool with a `{tool, status}` counter; probed that
+   `unavailable` != `nothing_found`.
+3. Every tool has a `NATIVE_TOOLS` entry including §5.1 time-shiftability; one
+   without fails a test.
+4. `fetch` accepts only a URL from a `search` in the same turn; probed with
+   `http://127.0.0.1:18080/api/v1/rpc`, which must be refused.
+5. Search/fetch wrapped `untrusted="true"` with provenance; typed responses not,
+   and a free-text field inside a typed response is.
+6. A person's name or live position hard-blocked in a routing argument; an
+   alias in a search query counted. Both probed.
+7. Live location is never persisted and never reported to the group; probed.
+8. Intake ceilings are constants; truncation stated in the return value.
+9. R-27/R-28 registered in `design/09-decision-index.md` and `RULE_TESTS`,
+   probed failing first.
+10. `identity.md`/`conduct.md` say nothing about web access — under `design/17`
+    the capability block is generated, so these tools update what she believes
+    she can do with no prose edit. Verify rather than assume.
