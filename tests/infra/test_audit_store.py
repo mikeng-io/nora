@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage
-from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 
@@ -21,17 +21,19 @@ def _msg(conv="g1", body="hello", ts=1) -> NormalizedMessage:
 
 
 @pytest.fixture
-async def make_store(tmp_path):
+async def make_store(pg_url):
     """Factory, not a bare store: the retention window is construction-time
     policy, so a test that needs a small window builds a store with one rather
-    than reaching into a private attribute."""
+    than reaching into a private attribute.
+
+    Every store built here shares this test's own freshly-created Postgres
+    database (`pg_url`); the schema is migrated once, idempotently."""
+    run_migrations(pg_url)
     created = []
 
-    def _make(*, max_per_conversation=500, name="messages.db"):
-        path = tmp_path / name
-        run_migrations(path)
-        s = SqlAuditStore(
-            create_sql_engine(path), max_per_conversation=max_per_conversation
+    def _make(*, max_per_conversation=500):
+        s = SqlRecordStore(
+            create_sql_engine(pg_url), max_per_conversation=max_per_conversation
         )
         created.append(s)
         return s
@@ -118,6 +120,10 @@ async def test_append_does_not_prune(make_store):
 
 
 async def test_concurrent_appends_all_land(store):
+    """The MVCC probe (design/20 §6, criterion 8): 50 appends fired concurrently
+    all land. Under SQLite's single writer this path was the whole reason for the
+    WAL/busy apparatus that the migration deleted; under Postgres MVCC the writers
+    no longer serialise, and every row commits."""
     await asyncio.gather(
         *(store.append(message=_msg(body=f"c{i}", ts=i)) for i in range(50))
     )
@@ -143,42 +149,6 @@ async def test_aclose_is_idempotent(make_store):
     store = make_store()
     await store.aclose()
     await store.aclose()
-
-
-async def test_sqlite_busy_increments_the_metric_and_still_raises(tmp_path):
-    """The metric exists because WAL permits one writer and an N-adapter burst
-    produces SQLITE_BUSY. An untested counter is a counter that can silently
-    stop counting — the failure mode this project has shipped twice.
-
-    Provokes a genuine lock: a second engine holds BEGIN EXCLUSIVE while the
-    store attempts an insert with busy_timeout=0.
-    """
-    import sqlalchemy as sa
-    from sqlalchemy.exc import OperationalError
-
-    path = tmp_path / "busy.db"
-    run_migrations(path)
-
-    class _Recorder:
-        def __init__(self) -> None:
-            self.names: list[str] = []
-
-        def inc(self, name, **labels):
-            self.names.append(name)
-
-    holder = create_sql_engine(path, busy_timeout_ms=0)
-    conn = await holder.connect()
-    await conn.execute(sa.text("BEGIN EXCLUSIVE"))
-    recorder = _Recorder()
-    store = SqlAuditStore(create_sql_engine(path, busy_timeout_ms=0), metrics=recorder)
-    try:
-        with pytest.raises(OperationalError):
-            await store.append(message=_msg())
-        assert recorder.names == ["nora_store_busy_total"]
-    finally:
-        await conn.close()
-        await holder.dispose()
-        await store.aclose()
 
 
 async def test_an_invalid_conversation_type_is_rejected_by_the_check_constraint(store):

@@ -1,7 +1,7 @@
 """The operator control plane: `nora groups` and `nora persons pending`.
 
 Plan Task 6 / design/10 §6. Every test here drives the REAL argparse surface
-(`nora.__main__.build_parser`) against a real SQLite audit database and a fake
+(`nora.__main__.build_parser`) against a real PostgreSQL record store and a fake
 signal-cli speaking the daemon's verified wire shape, because the properties
 that matter are end-to-end ones: that two ids of one account collapse, that the
 emitted stanza parses, and that nothing is written.
@@ -20,7 +20,7 @@ from aiohttp import web
 from nora.__main__ import build_parser
 from nora.app import cli
 from nora.domain.models import NormalizedMessage
-from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
+from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.persons import load_persons
 from nora.policy import load_policy
 
@@ -83,14 +83,16 @@ POLICY_ALLOWING_GROUP = (
 
 
 @pytest.fixture
-async def env(tmp_path, aiohttp_server, monkeypatch):
+async def env(tmp_path, aiohttp_server, monkeypatch, pg_url):
     """A config.toml, an identity.toml, a policy.toml, a migrated database and
     a fake daemon — the whole 3am situation, with nothing else running.
 
     `OMNIROUTE_API_KEY` is deliberately UNSET: the key lives in `.env` and is
     injected into the container, so the operator's shell does not have it, and
     a control plane that refused to run without it would be useless exactly
-    when it is needed.
+    when it is needed. `DATABASE_URL`, by contrast, IS present: after cutover the
+    operator runs this via `docker exec` into a nora-network container, which
+    carries it. `pg_url` provides a fresh throwaway database and exports it.
     """
     monkeypatch.delenv("OMNIROUTE_API_KEY", raising=False)
     state = {"groups": [], "contacts": [], "seen": []}
@@ -108,7 +110,7 @@ async def env(tmp_path, aiohttp_server, monkeypatch):
     with (ROOT / "config.example.toml").open("rb") as f:
         cfg = tomllib.load(f)
     cfg["platforms"]["signal"]["base_url"] = str(daemon.make_url("")).rstrip("/")
-    cfg["store"]["db_path"] = str(tmp_path / "messages.db")
+    cfg["store"]["data_dir"] = str(tmp_path)
     cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
     cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
     cfg["identity_file"] = str(tmp_path / "identity.toml")
@@ -119,13 +121,13 @@ async def env(tmp_path, aiohttp_server, monkeypatch):
     with config_path.open("wb") as f:
         tomli_w.dump(cfg, f)
 
-    run_migrations(tmp_path / "messages.db")
-    state.update(path=config_path, tmp=tmp_path)
+    run_migrations(pg_url)
+    state.update(path=config_path, tmp=tmp_path, url=pg_url)
     return state
 
 
 async def audit(env, *, sender, raw, ts=1, body="hi", person_id=None):
-    store = SqlAuditStore(create_sql_engine(env["tmp"] / "messages.db"))
+    store = SqlRecordStore(create_sql_engine(env["url"]))
     try:
         return await store.append(
             message=NormalizedMessage(
@@ -398,7 +400,7 @@ async def test_noras_own_rows_are_never_offered_for_adoption(env, capsys):
     """Her account is never written to identity.toml (DEC-9), so an outbound
     row can only ever resolve to nobody — offering it would be a permanent,
     unfixable entry at the top of this list."""
-    store = SqlAuditStore(create_sql_engine(env["tmp"] / "messages.db"))
+    store = SqlRecordStore(create_sql_engine(env["url"]))
     try:
         await store.append(message=NormalizedMessage(
             platform="signal", conversation_id=GROUP_ID, conversation_type="group",
@@ -432,11 +434,15 @@ async def test_a_non_positive_limit_is_refused(env, capsys):
     assert "No unattributed audit rows" not in captured.out
 
 
-async def test_a_missing_database_is_a_sentence_not_a_traceback(env, capsys):
-    (env["tmp"] / "messages.db").unlink()
+async def test_an_unreachable_store_is_a_sentence_not_a_traceback(env, capsys, monkeypatch):
+    """`nora-db` down, or a database Nora has never run against, is one readable
+    line and an exit code — never a traceback at 3am."""
+    from sqlalchemy.engine import make_url
+    missing = make_url(env["url"]).set(database="does_not_exist")
+    monkeypatch.setenv("DATABASE_URL", missing.render_as_string(hide_password=False))
     assert await invoke(env, "persons", "pending") == 1
     err = capsys.readouterr().err
-    assert "no audit database at" in err
+    assert "could not read the record store" in err
     assert "Traceback" not in err
 
 
@@ -450,38 +456,29 @@ def _tree(path: Path) -> dict[str, str]:
 
 
 async def _rows(env):
-    store = SqlAuditStore(create_sql_engine(env["tmp"] / "messages.db"))
+    store = SqlRecordStore(create_sql_engine(env["url"]))
     try:
         return await store.recent(conversation_id=GROUP_ID, limit=1000)
     finally:
         await store.aclose()
 
 
-# SQLite's shared-memory index and write-ahead log. Reading ANY wal-mode
-# database materialises these, and a read-only connection cannot checkpoint, so
-# it cannot remove them on close either. They carry no message data. The one
-# way to avoid them — `immutable=1`, which skips the shm — asserts the file
-# cannot change, which is false whenever Nora is running, and buys a clean
-# directory listing with torn reads. So they are tolerated BY NAME: any other
-# new file, and any change to a file that already existed, still fails.
-SQLITE_SIDECARS = {"messages.db-shm", "messages.db-wal"}
-
-
 @pytest.mark.parametrize("argv", [("groups",), ("persons", "pending")])
-async def test_neither_command_writes_anything(env, capsys, argv):
+async def test_neither_command_writes_a_host_file(env, capsys, argv):
     """D6 is not negotiable: identity.toml stays authoritative and hand-edited.
     Hashing the whole tree catches a rewritten config.toml, a rewritten
-    identity.toml, a mutated database file and any file the command invented."""
+    identity.toml, and any file the command invented. The record store is now
+    Postgres, not a file in this tree — its rows are covered by
+    `test_neither_command_changes_a_single_audit_row`."""
     env["groups"] = [group_row(members=[MILES_MEMBER])]
     env["contacts"] = [{"number": MILES_PHONE, "uuid": MILES_ACI, "name": "Miles Novak"}]
     await audit(env, sender=MILES_ACI, raw=envelope(uuid=MILES_ACI))
 
     before = _tree(env["tmp"])
-    assert {"config.toml", "identity.toml", "policy.toml", "messages.db"} <= set(before)
+    assert {"config.toml", "identity.toml", "policy.toml"} <= set(before)
     assert await invoke(env, *argv) == 0
     capsys.readouterr()
-    after = {k: v for k, v in _tree(env["tmp"]).items() if k not in SQLITE_SIDECARS}
-    assert after == before
+    assert _tree(env["tmp"]) == before
 
 
 @pytest.mark.parametrize("argv", [("groups",), ("persons", "pending")])
@@ -503,15 +500,15 @@ async def test_the_store_the_cli_actually_opens_refuses_a_write(env):
     constructed engine that happens to be read-only.
 
     It is `set_person_id` rather than a raw DELETE on purpose: that is the one
-    write on the whole `AuditStore` port a pending-sender tool could plausibly
+    write on the whole `RecordStore` port a pending-sender tool could plausibly
     grow into ("adopt them for me"), and D6 says it must not. The driver
     refuses it, so no future edit can add it by accident.
     """
     row_id = await audit(env, sender=MILES_PHONE, raw=envelope(source=MILES_PHONE))
-    store = cli.readonly_store(env["tmp"] / "messages.db")
+    store = cli.readonly_store(env["url"])
     try:
         assert await store.unattributed(limit=10), "the store must still READ"
-        with pytest.raises(Exception, match=r"readonly|query_only|attempt to write"):
+        with pytest.raises(Exception, match=r"read-only transaction"):
             await store.set_person_id(row_id=row_id, person_id="miles")
     finally:
         await store.aclose()

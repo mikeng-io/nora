@@ -41,8 +41,8 @@ def test_missing_required_key_is_a_startup_failure(toml_path):
 
 def test_tilde_expands_and_paths_are_absolute(toml_path):
     cfg = load(toml_path)
-    assert cfg.store.db_path.is_absolute()
-    assert "~" not in str(cfg.store.db_path)
+    assert cfg.store.data_dir.is_absolute()
+    assert "~" not in str(cfg.store.data_dir)
     assert cfg.obs.logging.path.is_absolute()
     assert cfg.doctrine.dir.is_absolute()
 

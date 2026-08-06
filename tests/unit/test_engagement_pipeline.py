@@ -46,7 +46,7 @@ from nora.persons import Persons
 from nora.tag import Debounce
 from nora.testing import (
     FakeAgentRunner,
-    FakeAuditStore,
+    FakeRecordStore,
     FakeRosterSource,
     ScriptedTurn,
 )
@@ -212,7 +212,7 @@ def _build_pipeline(
     tool_registry=None,
     queue_max: int = 16,
 ):
-    audit = audit if audit is not None else FakeAuditStore()
+    audit = audit if audit is not None else FakeRecordStore()
     memory = memory if memory is not None else _FakeMemory()
     metrics = metrics if metrics is not None else Metrics()
     background = background if background is not None else BackgroundTasks()

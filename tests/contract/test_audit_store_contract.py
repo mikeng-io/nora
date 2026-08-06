@@ -1,5 +1,5 @@
-"""One suite, both implementations. This is what stops `FakeAuditStore`
-drifting from `SqlAuditStore` and integration tests going green against
+"""One suite, both implementations. This is what stops `FakeRecordStore`
+drifting from `SqlRecordStore` and integration tests going green against
 behaviour production does not have (DEC-12).
 
 Every test here is parametrized over both stores. Adding a behaviour to one
@@ -13,11 +13,11 @@ import json
 import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage, Quote
-from nora.domain.ports import AuditStore
-from nora.infra.sql.audit import SqlAuditStore
+from nora.domain.ports import RecordStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.testing.fakes import FakeAuditStore
+from nora.testing.fakes import FakeRecordStore
 
 
 def _msg(conv="g1", body="hello", ts=1, sender="+852111", platform="signal",
@@ -30,13 +30,13 @@ def _msg(conv="g1", body="hello", ts=1, sender="+852111", platform="signal",
 
 
 @pytest.fixture(params=["sql", "fake"])
-async def store(request, tmp_path):
+async def store(request):
     if request.param == "sql":
-        path = tmp_path / "messages.db"
-        run_migrations(path)
-        s: AuditStore = SqlAuditStore(create_sql_engine(path))
+        pg_url = request.getfixturevalue("pg_url")
+        run_migrations(pg_url)
+        s: RecordStore = SqlRecordStore(create_sql_engine(pg_url))
     else:
-        s = FakeAuditStore()
+        s = FakeRecordStore()
     yield s
     await s.aclose()
 
@@ -79,9 +79,9 @@ async def test_recent_with_a_zero_limit_is_empty(store):
 async def test_recent_with_a_negative_limit_is_empty(store):
     """The regression this guards: SQLAlchemy renders `.limit(-1)` as
     `LIMIT -1`, which SQLite treats as unbounded rather than zero, so a
-    naive `SqlAuditStore.recent(limit=-1)` would return every row in the
-    conversation instead of none. `FakeAuditStore` already returned `[]`
-    here; `SqlAuditStore` must short-circuit rather than issue that query."""
+    naive `SqlRecordStore.recent(limit=-1)` would return every row in the
+    conversation instead of none. `FakeRecordStore` already returned `[]`
+    here; `SqlRecordStore` must short-circuit rather than issue that query."""
     await store.append(message=_msg())
     assert await store.recent(conversation_id="g1", limit=-1) == []
 
@@ -272,7 +272,7 @@ async def test_unattributed_carries_the_full_envelope(store):
     """`nora persons pending` reads a sender's OTHER id forms out of
     `raw_json`: under sealed sender the same account arrives as a phone number
     on one message and as an ACI on another, and `sender_id` alone therefore
-    lists one account as two pending entries. `FakeAuditStore` used to record
+    lists one account as two pending entries. `FakeRecordStore` used to record
     `raw_json` as None, which nothing noticed while nothing read it back — it
     would have let every pending-sender test pass against a store production
     does not have."""
@@ -292,10 +292,10 @@ async def test_unattributed_spans_conversations(store):
 
 
 def test_both_implementations_satisfy_the_port():
-    """`AuditStore` is `@runtime_checkable`, so this `isinstance` check verifies
+    """`RecordStore` is `@runtime_checkable`, so this `isinstance` check verifies
     method **names only** — not signatures, not keyword-only-ness, not return
     types. Static conformance (the part that actually checks shape) is mypy's
     job on `nora.infra`. This is nonetheless the only mechanical check that
-    `FakeAuditStore` has every port method at all, since `nora.testing` sits
+    `FakeRecordStore` has every port method at all, since `nora.testing` sits
     outside mypy's gate scope."""
-    assert isinstance(FakeAuditStore(), AuditStore)
+    assert isinstance(FakeRecordStore(), RecordStore)

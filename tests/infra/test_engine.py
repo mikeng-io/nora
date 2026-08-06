@@ -1,79 +1,80 @@
-"""The PRAGMAs are per-connection, not per-database. `db.py` set them in its
-open-and-close-per-call helper; a pooled engine must set them on every new
-connection or WAL and busy_timeout silently stop applying."""
+"""The engine over `postgresql+asyncpg://…`.
+
+The SQLite era's PRAGMA/WAL/busy_timeout/parent-directory tests are gone with
+the SQLite backend (design/20). What remains to prove is that the read/write
+engine writes, and that the read-only control-plane engine is refused a write by
+the SERVER — not by a caller keeping a promise.
+"""
 
 from __future__ import annotations
 
+import pytest
 import sqlalchemy as sa
+from sqlalchemy.exc import DBAPIError
 
-from nora.infra.sql.engine import async_url_for, create_sql_engine
-
-
-def test_async_url_uses_the_aiosqlite_driver(tmp_path):
-    assert async_url_for(tmp_path / "m.db").startswith("sqlite+aiosqlite:///")
+from nora.infra.sql.engine import create_readonly_sql_engine, create_sql_engine
 
 
-async def test_wal_is_enabled(tmp_path):
-    """A state assertion, not a per-connection one: WAL is recorded in the
-    database file header and survives reconnection, so this proves the database
-    ends up in WAL mode, not that the hook runs on every connection. The
-    per-connection property is covered by
-    `test_pragmas_apply_to_every_pooled_connection`."""
-    engine = create_sql_engine(tmp_path / "m.db")
+async def test_the_readwrite_engine_can_write(pg_url):
+    engine = create_sql_engine(pg_url)
     try:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("CREATE TABLE t (id bigint)"))
+            await conn.execute(sa.text("INSERT INTO t VALUES (1)"))
         async with engine.connect() as conn:
-            mode = await conn.scalar(sa.text("PRAGMA journal_mode"))
-        assert mode == "wal"
+            assert await conn.scalar(sa.text("SELECT id FROM t")) == 1
     finally:
         await engine.dispose()
 
 
-async def test_busy_timeout_is_set_to_the_configured_value(tmp_path):
-    """Deliberately NOT 5000. Python's `sqlite3.connect()` defaults to
-    `timeout=5.0`, i.e. `PRAGMA busy_timeout=5000`, so asserting the default
-    value would pass even if the connect hook never ran — verified 2026-08-05.
-    A non-default value is what makes this test capable of failing."""
-    engine = create_sql_engine(tmp_path / "m.db", busy_timeout_ms=1234)
+async def test_a_signal_magnitude_timestamp_survives_a_bigint_column(pg_url):
+    """The overflow that was invisible on SQLite (8-byte INTEGER) and is a crash
+    on INT4. Reverting the column to `integer` here raises NumericValueOutOfRange
+    instead — which is exactly the failure design/20 §2 fixes for `ts`."""
+    engine = create_sql_engine(pg_url)
     try:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("CREATE TABLE t (ts bigint)"))
+            await conn.execute(sa.text("INSERT INTO t VALUES (1785950108283)"))
         async with engine.connect() as conn:
-            assert await conn.scalar(sa.text("PRAGMA busy_timeout")) == 1234
+            assert await conn.scalar(sa.text("SELECT ts FROM t")) == 1785950108283
     finally:
         await engine.dispose()
 
 
-async def test_foreign_keys_are_on(tmp_path):
-    engine = create_sql_engine(tmp_path / "m.db")
+async def test_the_readonly_engine_reads(pg_url):
+    write = create_sql_engine(pg_url)
     try:
-        async with engine.connect() as conn:
-            assert await conn.scalar(sa.text("PRAGMA foreign_keys")) == 1
+        async with write.begin() as conn:
+            await conn.execute(sa.text("CREATE TABLE t (id bigint)"))
+            await conn.execute(sa.text("INSERT INTO t VALUES (7)"))
     finally:
-        await engine.dispose()
+        await write.dispose()
 
-
-async def test_pragmas_apply_to_every_pooled_connection(tmp_path):
-    """The regression this guards: setting PRAGMAs once at construction rather
-    than on the `connect` event. Asserts only the two that are genuinely
-    per-connection state — `foreign_keys` (defaults to 0 on every new
-    connection) and a non-default `busy_timeout`. `journal_mode` is
-    deliberately NOT asserted here: WAL persists in the database file header,
-    so a second connection reports `wal` whether or not the hook ran, and it
-    would make this test pass against the very implementation it exists to
-    reject."""
-    engine = create_sql_engine(tmp_path / "m.db", busy_timeout_ms=1234)
+    ro = create_readonly_sql_engine(pg_url)
     try:
-        for _ in range(3):
-            async with engine.connect() as conn:
-                assert await conn.scalar(sa.text("PRAGMA foreign_keys")) == 1
-                assert await conn.scalar(sa.text("PRAGMA busy_timeout")) == 1234
+        async with ro.connect() as conn:
+            assert await conn.scalar(sa.text("SELECT id FROM t")) == 7
     finally:
-        await engine.dispose()
+        await ro.dispose()
 
 
-async def test_the_parent_directory_is_created(tmp_path):
-    engine = create_sql_engine(tmp_path / "nested" / "deeper" / "m.db")
+async def test_the_readonly_engine_refuses_a_write_at_the_server(pg_url):
+    """`default_transaction_read_only=on` is enforced by Postgres, so an INSERT
+    raises `ReadOnlySqlTransaction` ("cannot execute … in a read-only
+    transaction") — the driver-enforced replacement for SQLite's `mode=ro`. A
+    read-only guarantee the caller merely promised would not fail here."""
+    write = create_sql_engine(pg_url)
     try:
-        async with engine.connect() as conn:
-            await conn.scalar(sa.text("SELECT 1"))
-        assert (tmp_path / "nested" / "deeper").is_dir()
+        async with write.begin() as conn:
+            await conn.execute(sa.text("CREATE TABLE t (id bigint)"))
     finally:
-        await engine.dispose()
+        await write.dispose()
+
+    ro = create_readonly_sql_engine(pg_url)
+    try:
+        with pytest.raises(DBAPIError, match=r"read-only transaction"):
+            async with ro.begin() as conn:
+                await conn.execute(sa.text("INSERT INTO t VALUES (1)"))
+    finally:
+        await ro.dispose()

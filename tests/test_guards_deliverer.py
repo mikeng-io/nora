@@ -6,7 +6,7 @@ from nora.agent.guards import Deliverer
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget
-from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
@@ -18,10 +18,9 @@ GUARDRAIL_BODY = "You never post an error message, a stack trace, or a failure n
 
 
 @pytest.fixture
-async def store(tmp_path):
-    path = tmp_path / "messages.db"
-    run_migrations(path)
-    s = SqlAuditStore(create_sql_engine(path))
+async def store(pg_url):
+    run_migrations(pg_url)
+    s = SqlRecordStore(create_sql_engine(pg_url))
     yield s
     await s.aclose()
 

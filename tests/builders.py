@@ -35,7 +35,7 @@ def _with(obj: Any, path: str, value: Any) -> Any:
 def override_config(base: Any, changes: dict[str, Any]) -> Any:
     """Return a copy of `base` with dotted-path fields replaced.
 
-        override_config(cfg, {"store.db_path": p, "engagement.trigger.min_interval_seconds": 0})
+        override_config(cfg, {"store.data_dir": p, "engagement.trigger.min_interval_seconds": 0})
 
     Format-agnostic by contract: a future config change only touches `_with`,
     never a caller.

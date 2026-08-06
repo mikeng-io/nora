@@ -18,7 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
-def cfg(tmp_path, monkeypatch):
+def cfg(tmp_path, monkeypatch, pg_url):
+    # `pg_url` (tests/conftest.py) creates a fresh Postgres database and exports
+    # DATABASE_URL, which build_dependencies() reads (store.database_url_env) to
+    # run migrations and wire the store — a throwaway database, never production.
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     import shutil
     dst = tmp_path / "config.toml"
@@ -35,10 +38,9 @@ def cfg(tmp_path, monkeypatch):
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
         'id = "g1"\npersons = "*"\n'
     )
-    # config.example.toml's store.db_path ("~/workspace/nora/data/messages.db") is
-    # absolute, so it survives path resolution untouched regardless of where this
-    # copy lives — without this override, build_dependencies() below would wire a
-    # SqlAuditStore at the real production database.
+    # store.data_dir is overridden to tmp_path so media custody lands in a
+    # throwaway directory; the record store's own database is the throwaway
+    # `pg_url` (via DATABASE_URL), never production.
     #
     # platforms.signal.account overrides the empty "derive from the daemon" default
     # (config.example.toml) with a fixed value: derive_account() returns an override
@@ -49,7 +51,7 @@ def cfg(tmp_path, monkeypatch):
     # copied config file's directory (tmp_path here), which has no such subdirectory
     # — point it at the real, already-valid doctrine files instead of copying them.
     return override_config(load(dst), {
-        "store.db_path": tmp_path / "messages.db",
+        "store.data_dir": tmp_path,
         "platforms.signal.account": "+85290000100",
         "doctrine.dir": ROOT / "nora" / "doctrine",
     })
@@ -134,12 +136,14 @@ async def test_no_enabled_platform_refuses_to_start(cfg):
         await build_dependencies(disabled)
 
 
-def test_build_dependencies_never_wires_the_real_database(cfg, tmp_path):
-    """Regression guard: config.example.toml's store.db_path is absolute, so a
-    fixture that forgets to override it would build a real SqlAuditStore against
-    the production database instead of a throwaway one. tmp_path being a parent
-    of the resolved db_path is what actually proves that didn't happen here."""
-    assert tmp_path in cfg.store.db_path.parents
+def test_build_dependencies_never_wires_the_real_database(cfg, tmp_path, pg_url):
+    """Regression guard: a fixture that forgot to point the store at a throwaway
+    database would wire a real SqlRecordStore against production. The store's URL
+    comes from DATABASE_URL, which `pg_url` set to an ephemeral `t_…` database;
+    the media root is under tmp_path. Both being throwaways is what proves it."""
+    assert os.environ["DATABASE_URL"] == pg_url
+    assert "/t_" in pg_url                          # the ephemeral-database marker
+    assert cfg.store.data_dir == tmp_path
 
 
 async def test_dependencies_do_not_expose_settings(cfg):

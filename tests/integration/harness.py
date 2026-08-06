@@ -2,7 +2,7 @@
 
 Shared wiring for every M5 scenario. `build_handler` is the single entry point: it
 assembles a real `IngestPipeline` + `EngagementPipeline`, glued by a real `Dispatcher`
-(`nora.app.dispatch`), against a real (tmp) sqlite db and the real, already-validated
+(`nora.app.dispatch`), against a real (throwaway) Postgres database and the real, already-validated
 doctrine files, with only the model and the outbound sender faked. This is Task 8's
 cutover from the deleted `Handler`: the wiring below is the harness-side mirror of
 `nora.app.composition.build_dependencies`, using `nora.testing`/local fakes wherever
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import os
 import re
 import shutil
 from collections.abc import Callable
@@ -33,9 +34,9 @@ from nora.app.runtime import BackgroundTasks
 from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import DeliveryStatus
-from nora.domain.ports import AuditStore
+from nora.domain.ports import RecordStore
 from nora.engagement.pipeline import EngagementPipeline
-from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
@@ -72,7 +73,7 @@ class _StoreProxy:
 
 
 class _FailingAppendStore(_StoreProxy):
-    # Keep this signature in lockstep with `AuditStore.append`. It forwards
+    # Keep this signature in lockstep with `RecordStore.append`. It forwards
     # every argument, so a parameter added to the port and not added here is
     # not an inert omission: the ambient append raises TypeError, ingest drops
     # the message, and the tag path this fault exists to exercise never runs.
@@ -159,9 +160,9 @@ class Harness:
     metrics: Metrics
     own_account: str
     doctrine_store: DoctrineStore
-    # Port, not the concrete SqlAuditStore: under db_append_fails/context_read_fails
+    # Port, not the concrete SqlRecordStore: under db_append_fails/context_read_fails
     # this is a _StoreProxy subclass instead (see the two subclasses above).
-    store: AuditStore
+    store: RecordStore
     # Cumulative call log fed by every `FakeAgentRunner` this harness has ever used
     # (including ones `set_script` swaps in) — see `FakeAgentRunner`'s docstring for
     # why this outlives any single runner instance.
@@ -231,11 +232,11 @@ class Harness:
 
     async def simulate_restart(self, *, script=None, **kwargs) -> Harness:
         """Build a brand new Harness (fresh pipelines, fresh debounce/in-flight state)
-        that reuses the same db_path and the same Honcho double, so SQLite and Honcho
-        continuity are real — a "restart" only ever loses in-process state.
+        that reuses the same DATABASE_URL and the same Honcho double, so the record
+        store and Honcho continuity are real — a "restart" only ever loses in-process state.
 
         Closes this Harness's store engine first, mirroring a real process exit —
-        the new Harness opens its own engine against the same db_path. Passes this
+        the new Harness opens its own engine against the same database. Passes this
         Harness's own `_register` callback through, so the replacement is owned by
         whatever fixture (`harness`/`harness_factory`) built the parent, and a chain
         of restarts stays fully covered by that fixture's teardown rather than
@@ -257,7 +258,7 @@ def _build_config(
     base = load_example_config(tmp_path)
 
     changes: dict[str, object] = {
-        "store.db_path": tmp_path / "messages.db",
+        "store.data_dir": tmp_path,
         "doctrine.dir": doctrine_dir,
         "identity_file": persons_path,
         "policy_file": policy_path,
@@ -336,8 +337,9 @@ async def build_handler(
         invocation_timeout=invocation_timeout, debounce=debounce,
     )
 
-    run_migrations(cfg.store.db_path)
-    store = SqlAuditStore(create_sql_engine(cfg.store.db_path))
+    database_url = os.environ[cfg.store.database_url_env]
+    run_migrations(database_url)
+    store = SqlRecordStore(create_sql_engine(database_url))
     persons = load_persons(persons_path)
     metrics = Metrics()
     doctrine_store = DoctrineStore(

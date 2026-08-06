@@ -2,10 +2,10 @@
 from `Handler._collect_context` (task-3-brief.md), plus transcript ordering
 and port conformance.
 
-`nora.testing.FakeAuditStore` is the audit double throughout, per the same
+`nora.testing.FakeRecordStore` is the audit double throughout, per the same
 project rule `tests/unit/test_ingest_stages.py` documents: a port never
 gains a second implementation without a shared contract suite, and
-`FakeAuditStore` already has one. `MemoryStore` has no such suite yet, so
+`FakeRecordStore` already has one. `MemoryStore` has no such suite yet, so
 `FakeMemory` below stays local to this test module, matching
 `test_ingest_stages.py`'s `FakeMemory`.
 """
@@ -17,7 +17,7 @@ from nora.domain.ports import ContextAssembler, EngageDecision, EngagementReques
 from nora.engagement.context import TranscriptInjection
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.testing import FakeAuditStore
+from nora.testing import FakeRecordStore
 
 
 def _msg(sender_id: str = "+852111", conversation_id: str = "g1") -> NormalizedMessage:
@@ -66,7 +66,7 @@ _MILES = Persons(
 
 
 async def test_a_transcript_read_failure_yields_an_empty_transcript_not_an_error():
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     store.fail_on_recent = True
     assembler = TranscriptInjection(
         audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
@@ -78,7 +78,7 @@ async def test_a_transcript_read_failure_yields_an_empty_transcript_not_an_error
 
 
 async def test_a_transcript_read_failure_counts_nora_errors_total_stage_context():
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     store.fail_on_recent = True
     metrics = Metrics()
     assembler = TranscriptInjection(
@@ -93,7 +93,7 @@ async def test_a_transcript_read_failure_counts_nora_errors_total_stage_context(
 async def test_an_unmapped_tagger_yields_no_peer_card_and_no_honcho_call():
     memory = FakeMemory()
     assembler = TranscriptInjection(
-        audit=FakeAuditStore(), memory=memory,
+        audit=FakeRecordStore(), memory=memory,
         persons=Persons(by_person={}, index={}),   # nobody mapped
         context_window=10, metrics=Metrics(),
     )
@@ -106,7 +106,7 @@ async def test_an_unmapped_tagger_yields_no_peer_card_and_no_honcho_call():
 
 
 async def test_the_transcript_is_oldest_first_and_window_bounded():
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     for i in range(5):
         await store.append(message=NormalizedMessage(
             platform="signal", conversation_id="g1", conversation_type="group",
@@ -123,7 +123,7 @@ async def test_the_transcript_is_oldest_first_and_window_bounded():
 
 def test_it_satisfies_the_context_assembler_port():
     assembler: ContextAssembler = TranscriptInjection(
-        audit=FakeAuditStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
         metrics=Metrics(),
     )
     assert isinstance(assembler, ContextAssembler)

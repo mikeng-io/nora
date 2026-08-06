@@ -1,42 +1,40 @@
-"""What replaced the PRAGMA user_version migration.
+"""Alembic's baseline IS the schema (design/20 §2).
 
-The v1→v2 rebuild this file used to test is gone: `nora/store/migrate.py` was
-retired with the persistence phase. Alembic's baseline revision IS the schema,
-and the live 0-row database was stamped rather than migrated. Rolling this
-phase back is `git revert` plus `DROP TABLE alembic_version` — deliberately
-NOT clearing `PRAGMA user_version`, which is still 1, so the retired migrate()
-would short-circuit if it ever came back.
+The single Postgres-native baseline builds the schema on a fresh, empty
+database; there is no data migration (the live store was 41 rows loaded once,
+§5). Rolling this phase back is `git revert` plus `DROP TABLE messages,
+alembic_version`.
 """
 
 from __future__ import annotations
 
-import sqlite3
+import sqlalchemy as sa
 
-from nora.infra.sql.migrations_runner import current_revision, head_revision, run_migrations
+from nora.domain.models import NormalizedMessage
+from nora.infra.sql.audit import SqlRecordStore
+from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.migrations_runner import (
+    current_revision,
+    head_revision,
+    run_migrations,
+    sync_url_for,
+)
 
 
-async def test_startup_migrates_a_missing_database_into_existence(tmp_path):
-    path = tmp_path / "nested" / "messages.db"
-    run_migrations(path)
-    assert path.exists()
-    assert current_revision(path) == head_revision()
+async def test_upgrade_head_reaches_the_head_revision(pg_url):
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()
 
 
-async def test_startup_is_idempotent_across_restarts(tmp_path):
-    path = tmp_path / "messages.db"
+async def test_startup_is_idempotent_across_restarts(pg_url):
     for _ in range(3):
-        run_migrations(path)
-    assert current_revision(path) == head_revision()
+        run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()
 
 
-async def test_a_migrated_database_accepts_writes(tmp_path):
-    from nora.domain.models import NormalizedMessage
-    from nora.infra.sql.audit import SqlAuditStore
-    from nora.infra.sql.engine import create_sql_engine
-
-    path = tmp_path / "messages.db"
-    run_migrations(path)
-    store = SqlAuditStore(create_sql_engine(path))
+async def test_a_migrated_database_accepts_writes(pg_url):
+    run_migrations(pg_url)
+    store = SqlRecordStore(create_sql_engine(pg_url))
     try:
         await store.append(message=NormalizedMessage(
             "signal", "g", "group", "+1", "A", 1, "x", {}))
@@ -45,12 +43,36 @@ async def test_a_migrated_database_accepts_writes(tmp_path):
         await store.aclose()
 
 
-def test_the_alembic_version_table_is_the_only_new_object(tmp_path):
-    """Rollback depends on this: dropping one table undoes the phase."""
-    path = tmp_path / "messages.db"
-    run_migrations(path)
-    with sqlite3.connect(path) as conn:
-        names = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'")}
-    assert "alembic_version" in names
-    assert names - {"alembic_version", "sqlite_sequence"} == {"messages"}
+async def test_a_signal_magnitude_timestamp_round_trips_through_the_store(pg_url):
+    """The BLOCKER design/20 §2 names: `ts` is BigInteger, and a Signal
+    millisecond timestamp (~1.78e12) overflows INT4. This writes one through the
+    real `MESSAGES.ts` column and reads it back unchanged. Revert `schema.py`'s
+    `ts` to `sa.Integer` and the baseline builds an int4 column, so this append
+    raises NumericValueOutOfRange — the test goes red, which is the point."""
+    run_migrations(pg_url)
+    store = SqlRecordStore(create_sql_engine(pg_url))
+    magnitude = 1785950108283
+    try:
+        await store.append(message=NormalizedMessage(
+            "signal", "g", "group", "+1", "A", magnitude, "x", {}))
+        row = (await store.recent(conversation_id="g", limit=1))[0]
+        assert row.ts == magnitude
+    finally:
+        await store.aclose()
+
+
+def test_the_only_tables_are_messages_and_alembic_version(pg_url):
+    """Rollback depends on this: dropping those two undoes the phase."""
+    run_migrations(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            names = {
+                r[0]
+                for r in conn.execute(sa.text(
+                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+                ))
+            }
+    finally:
+        engine.dispose()
+    assert names == {"messages", "alembic_version"}

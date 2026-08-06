@@ -6,7 +6,11 @@ from tests.integration.harness import build_handler
 
 
 @pytest.fixture
-async def harness(tmp_path, monkeypatch):
+async def harness(tmp_path, monkeypatch, pg_url):
+    # `pg_url` (tests/conftest.py) creates a fresh Postgres database for this test
+    # and exports it as DATABASE_URL — the composition root and the harness read
+    # it from there. A "restart" (simulate_restart) reuses the same DATABASE_URL,
+    # so the record survives exactly as a real process exit would leave it.
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     built: list = []
     h = await build_handler(tmp_path, register=built.append)
@@ -16,7 +20,7 @@ async def harness(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-async def harness_factory(tmp_path, monkeypatch):
+async def harness_factory(tmp_path, monkeypatch, pg_url):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     built: list = []
 

@@ -12,7 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
-async def env(tmp_path, monkeypatch, aiohttp_server):
+async def env(tmp_path, monkeypatch, aiohttp_server, pg_url):
+    # `pg_url` creates a fresh Postgres database and exports DATABASE_URL, which
+    # the composition root reads (store.database_url_env).
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
 
     async def accounts(request):
@@ -33,7 +35,7 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
     base = str(daemon.make_url("")).rstrip("/")
     cfg["platforms"]["signal"]["base_url"] = base
     cfg["memory"]["base_url"] = base
-    cfg["store"]["db_path"] = str(tmp_path / "messages.db")
+    cfg["store"]["data_dir"] = str(tmp_path)
     cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
     cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
     cfg["identity_file"] = str(tmp_path / "identity.toml")
@@ -109,26 +111,24 @@ async def test_honcho_being_down_does_not_prevent_startup(env):
         await app.shutdown()
 
 
-async def test_a_broken_migration_refuses_to_start(env, tmp_path):
+async def test_a_broken_migration_refuses_to_start(env, monkeypatch):
     """`run_migrations` used to be the only fatal startup step not wrapped in
     `StartupError` handling: an Alembic failure exited with a raw traceback
-    instead of `startup failed: ...`. A directory where SQLite expects a
-    file is a reliable way to make `command.upgrade` fail."""
-    broken = tmp_path / "messages.db"
-    broken.mkdir()
-    cfg = tomllib.loads(env.read_text())
-    cfg["store"]["db_path"] = str(broken)
-    env.write_text(tomli_w.dumps(cfg))
+    instead of `startup failed: ...`. A DATABASE_URL pointing nowhere reachable
+    is a reliable way to make `command.upgrade` fail."""
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql+asyncpg://bad:bad@127.0.0.1:1/nope"
+    )
     with pytest.raises(StartupError, match="migration"):
         await build_app(env)
 
 
-async def test_the_database_is_migrated_at_startup(env):
+async def test_the_database_is_migrated_at_startup(env, pg_url):
     from nora.infra.sql.migrations_runner import current_revision, head_revision
 
     app = await build_app(env)
     try:
-        assert current_revision(app.cfg.store.db_path) == head_revision()
+        assert current_revision(pg_url) == head_revision()
         assert (await app.store.stats())["schema_revision"] == head_revision()
     finally:
         await app.shutdown()
@@ -141,7 +141,7 @@ async def test_shutdown_closes_the_omniroute_client(env):
     assert client.is_closed()
 
 
-async def test_the_prune_sweep_actually_prunes(tmp_path, monkeypatch):
+async def test_the_prune_sweep_actually_prunes(pg_url, monkeypatch):
     """Proves `runtime.prune_loop` — the sweep `App.run` wires in via
     `nora.app.runtime` (moved there from `__main__._prune_loop` in Task 7,
     wired into `App.run` in Task 8) — runs and calls `store.prune_all`, not
@@ -154,13 +154,12 @@ async def test_the_prune_sweep_actually_prunes(tmp_path, monkeypatch):
     import nora.__main__ as main_module
     from nora.app.runtime import prune_loop
     from nora.domain.models import NormalizedMessage
-    from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
+    from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
     from nora.obs.metrics import Metrics
 
     monkeypatch.setattr(main_module, "PRUNE_INTERVAL_SECONDS", 0.01)
-    path = tmp_path / "messages.db"
-    run_migrations(path)
-    store = SqlAuditStore(create_sql_engine(path), max_per_conversation=3)
+    run_migrations(pg_url)
+    store = SqlRecordStore(create_sql_engine(pg_url), max_per_conversation=3)
     metrics = Metrics()
     try:
         for i in range(10):

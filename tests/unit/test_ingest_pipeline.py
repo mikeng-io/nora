@@ -23,7 +23,7 @@ from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import permissive_policy
-from nora.testing import FakeAuditStore, FakeBlobStore, FakeMediaSource
+from nora.testing import FakeBlobStore, FakeMediaSource, FakeRecordStore
 
 
 def _msg(sender_id: str = "+852111", body: str = "hello") -> NormalizedMessage:
@@ -60,7 +60,7 @@ class FakeMemory:
 def _pipeline(*, memory, persons, policy, spawn, audit=None, allowlist=None,
               media_source=None, blobs=None, metrics=None):
     return IngestPipeline(
-        audit=audit if audit is not None else FakeAuditStore(),
+        audit=audit if audit is not None else FakeRecordStore(),
         memory=memory,
         persons=persons,
         policy=policy,
@@ -80,7 +80,7 @@ async def test_when_the_audit_write_fails_the_pipeline_stops_before_identity_and
     """Row 2: a failed audit write drops the message before identity,
     memory-feed or the gate ever run."""
     msg = _msg()
-    store = FakeAuditStore()
+    store = FakeRecordStore()
 
     async def _boom(**_kwargs):
         raise RuntimeError("disk full")
@@ -131,7 +131,7 @@ async def test_a_mapped_trigger_message_engages_and_feeds_memory_off_path():
     )
     spawned: list = []
     memory = FakeMemory()
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     pipeline = _pipeline(
         audit=store, memory=memory, persons=persons,
         policy=TriggerTextPolicy("nora.000"), spawn=spawned.append,
@@ -166,7 +166,7 @@ async def test_a_denied_conversation_is_never_recorded():
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
         'id = "allowed"\npersons = "*"\n'
     )
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
@@ -192,7 +192,7 @@ async def test_a_denied_sender_is_recorded_but_not_answered():
         'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
         'id = "g1"\npersons = ["someone-else"]\n'
     )
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
@@ -220,7 +220,7 @@ async def test_custody_runs_before_the_audit_write_so_one_row_carries_both():
     import hashlib
     import json
 
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     blobs = FakeBlobStore()
     msg = dataclasses.replace(
         _msg(body="睇下 [image]"),
@@ -250,7 +250,7 @@ async def test_with_custody_unwired_the_row_is_recorded_and_the_loss_is_counted(
     store yet. The message must still be audited, with the placeholder and no
     handle, and `nora_media_custody_total{status="not_configured"}` is the only
     place that loss is visible."""
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     metrics = Metrics()
     msg = dataclasses.replace(
         _msg(body="[voice note]"),

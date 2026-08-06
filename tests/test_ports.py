@@ -73,7 +73,7 @@ def test_every_port_is_enumerated():
     import that shadows `_is_protocol`) fails loudly instead of silently covering
     fewer ports than intended."""
     found = {p.__name__ for p in _all_ports()}
-    expected = {"PlatformAdapter", "AuditStore", "MemoryStore", "EngagePolicy", "ContextAssembler"}
+    expected = {"PlatformAdapter", "RecordStore", "MemoryStore", "EngagePolicy", "ContextAssembler"}
     assert expected <= found, f"expected ports missing from enumeration: {expected - found}"
 
 

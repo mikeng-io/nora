@@ -10,7 +10,7 @@ from nora.agent.tools import (
 )
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget, NormalizedMessage, Quote
-from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.transit import TransitClient
@@ -39,10 +39,9 @@ UNREACHABLE_TRANSIT = TransitClient(
 
 
 @pytest.fixture
-async def wiring(tmp_path):
-    dbp = tmp_path / "messages.db"
-    run_migrations(dbp)
-    store = SqlAuditStore(create_sql_engine(dbp))
+async def wiring(pg_url, tmp_path):
+    run_migrations(pg_url)
+    store = SqlRecordStore(create_sql_engine(pg_url))
     for i in range(3):
         await store.append(message=NormalizedMessage("signal", "g1", "group", "+852111",
                                                       "Miles", i, f"m{i}", {}))

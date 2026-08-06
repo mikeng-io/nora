@@ -1,24 +1,23 @@
 import pytest
 
-from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.health import LLMState, build_health_app
 from nora.obs.metrics import Metrics
-from nora.testing import FakeAuditStore
+from nora.testing import FakeRecordStore
 from tests.fakes import FakeHoncho, SinkSender
 
 
-class _BrokenStore(FakeAuditStore):
+class _BrokenStore(FakeRecordStore):
     async def stats(self):
         raise RuntimeError("database gone")
 
 
 @pytest.fixture
-async def store(tmp_path):
-    path = tmp_path / "messages.db"
-    run_migrations(path)
-    s = SqlAuditStore(create_sql_engine(path))
+async def store(pg_url):
+    run_migrations(pg_url)
+    s = SqlRecordStore(create_sql_engine(pg_url))
     yield s
     await s.aclose()
 
@@ -42,7 +41,7 @@ async def client(aiohttp_client, store):
 
 async def test_health_reports_all_four_dependencies(client):
     body = await (await client.get("/health")).json()
-    assert set(body) >= {"sse", "sqlite", "honcho", "omniroute", "uptime_seconds",
+    assert set(body) >= {"sse", "store", "honcho", "omniroute", "uptime_seconds",
                          "errors_since_restart", "doctrine_sha256", "strands_version"}
 
 
@@ -58,7 +57,7 @@ async def test_health_sse_key_set_is_pinned(client):
     assert set(body["sse"]) >= {"connected", "last_event_age_seconds", "account", "platform"}
 
 
-async def test_health_returns_503_when_sqlite_is_unreachable(aiohttp_client):
+async def test_health_returns_503_when_the_store_is_unreachable(aiohttp_client):
     from pathlib import Path
 
     from nora.doctrine.loader import DoctrineStore

@@ -127,7 +127,7 @@ def test_the_media_ports_conform_in_both_implementations(tmp_path):
 
     `nora.platform` is NOT inside mypy's scoped strict override, so
     `SignalMediaSource` has no static conformance proof the way
-    `SqlAuditStore` does; this assertion and the contract suite are what stand
+    `SqlRecordStore` does; this assertion and the contract suite are what stand
     in for it.
     """
     assert isinstance(FilesystemBlobStore(tmp_path, cipher=BlobCipher(bytes(range(32)))), BlobStore)

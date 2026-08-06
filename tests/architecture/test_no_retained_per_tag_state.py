@@ -40,7 +40,7 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.tag import Debounce
-from nora.testing import FakeAuditStore
+from nora.testing import FakeRecordStore
 
 
 class _FakeAdapter:
@@ -102,7 +102,7 @@ class _ReplyingRunner:
 
 
 def _build_pipeline() -> tuple[EngagementPipeline, BackgroundTasks]:
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = _FakeMemory()
     metrics = Metrics()
     background = BackgroundTasks()

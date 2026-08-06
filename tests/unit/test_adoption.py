@@ -18,7 +18,7 @@ from nora.app import adoption
 from nora.domain.models import NormalizedMessage, PersonRef
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.testing.fakes import FakeAuditStore, FakeMemoryStore
+from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 
@@ -52,7 +52,7 @@ async def _run(audit, memory, persons, metrics=None, **kw):
 
 
 async def test_a_now_mapped_sender_is_fed_and_marked():
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     # Ingested while unmapped: audited with person_id NULL, nothing fed.
     row_id = await audit.append(message=_msg(body="i like congee"), person_id=None)
@@ -72,7 +72,7 @@ async def test_a_now_mapped_sender_is_fed_and_marked():
 
 async def test_adoption_is_counted():
     metrics = Metrics()
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     await audit.append(message=_msg())
     await _run(audit, FakeMemoryStore(), _persons(), metrics)
     assert metrics.get("nora_lazy_adoptions_total", platform="signal") == 1
@@ -83,14 +83,14 @@ async def test_the_counts_are_logged_even_when_nothing_was_found(caplog):
     """R-5's shape applied to a chore: "found nothing" and "never ran" must not
     look the same in the log."""
     caplog.set_level(logging.INFO, logger="nora.app.adoption")
-    await _run(FakeAuditStore(), FakeMemoryStore(), _persons())
+    await _run(FakeRecordStore(), FakeMemoryStore(), _persons())
     assert any("lazy adoption: scanned 0" in r.getMessage() for r in caplog.records)
 
 
 async def test_the_feed_is_ordered_by_ts_not_by_insertion():
     """A peer's memory has to read chronologically. signal-cli's catch-up
     delivery means received-order and sent-order genuinely disagree."""
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     for i in (3, 1, 2):
         await audit.append(message=_msg(body=f"m{i}", ts=i))
@@ -106,7 +106,7 @@ async def test_the_feed_is_ordered_by_ts_not_by_insertion():
 
 
 async def test_a_still_unmapped_sender_is_left_alone():
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     row_id = await audit.append(message=_msg(sender="+852999"))
 
@@ -121,7 +121,7 @@ async def test_a_still_unmapped_sender_is_left_alone():
 
 async def test_an_already_attributed_row_is_never_re_fed():
     """It never enters the scan at all — `person_id` is the marker."""
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     await audit.append(message=_msg(), person_id="miles")
 
@@ -132,7 +132,7 @@ async def test_an_already_attributed_row_is_never_re_fed():
 
 
 async def test_noras_own_rows_are_never_adopted():
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     await audit.append(message=_msg(body="her reply"), is_nora=True)
 
@@ -150,7 +150,7 @@ async def test_noras_own_rows_are_never_adopted():
 async def test_a_honcho_failure_leaves_the_row_unmarked_for_the_next_start():
     """THE ordering test. Marking before feeding would retire this row from
     every future scan, making the hole permanent and silent."""
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     down = FakeMemoryStore(fail=True)
     row_id = await audit.append(message=_msg())
 
@@ -172,7 +172,7 @@ async def test_a_honcho_failure_leaves_the_row_unmarked_for_the_next_start():
 
 async def test_a_honcho_failure_is_counted():
     metrics = Metrics()
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     await audit.append(message=_msg())
     await _run(audit, FakeMemoryStore(fail=True), _persons(), metrics)
     assert metrics.get("nora_adoption_failures_total", platform="signal") == 1
@@ -188,7 +188,7 @@ async def test_a_raising_memory_store_neither_crashes_nor_marks():
         async def feed(self, *, peer_id: str, text: str) -> bool:
             raise RuntimeError("connection reset")
 
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     row_id = await audit.append(message=_msg())
 
     counts = await _run(audit, ExplodingMemory(), _persons())
@@ -204,7 +204,7 @@ async def test_one_failing_row_does_not_abort_the_rows_behind_it():
                 raise RuntimeError("connection reset")
             return await super().feed(peer_id=peer_id, text=text)
 
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FlakyMemory()
     for i in (1, 2, 3):
         await audit.append(message=_msg(body=f"m{i}", ts=i))
@@ -221,7 +221,7 @@ async def test_one_failing_row_does_not_abort_the_rows_behind_it():
 async def test_a_failing_audit_store_is_logged_and_counted_never_fatal():
     """Same discipline as `prune_loop`: the sweep dies, the process does not."""
 
-    class BrokenAudit(FakeAuditStore):
+    class BrokenAudit(FakeRecordStore):
         async def unattributed(self, *, limit: int):
             raise RuntimeError("db down")
 
@@ -235,7 +235,7 @@ async def test_a_failing_audit_store_is_logged_and_counted_never_fatal():
 async def test_partial_progress_survives_a_mid_sweep_store_failure():
     """A row already fed AND marked stays adopted when a later write blows up."""
 
-    class FailsOnSecondMark(FakeAuditStore):
+    class FailsOnSecondMark(FakeRecordStore):
         def __init__(self) -> None:
             super().__init__()
             self.marks = 0
@@ -265,7 +265,7 @@ async def test_partial_progress_survives_a_mid_sweep_store_failure():
 
 
 async def test_running_twice_does_not_double_feed_or_double_mark():
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     metrics = Metrics()
     await audit.append(message=_msg(body="once"))
@@ -288,7 +288,7 @@ async def test_running_twice_does_not_double_feed_or_double_mark():
 async def test_the_sweep_waits_before_touching_the_single_writer():
     """It must not compete with the first burst of ingest writes — SQLite's WAL
     permits exactly one writer and the ingest path DROPS on contention."""
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     await audit.append(message=_msg())
 
@@ -304,7 +304,7 @@ async def test_the_sweep_waits_before_touching_the_single_writer():
 
 
 async def test_the_scan_is_bounded_and_the_remainder_survives_to_the_next_run():
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     for i in range(5):
         await audit.append(message=_msg(body=f"m{i}", ts=i))
@@ -321,7 +321,7 @@ async def test_the_scan_is_bounded_and_the_remainder_survives_to_the_next_run():
 async def test_an_empty_body_is_marked_but_never_fed():
     """An attachment-only row has no text to replay, only a person_id to
     record. Feeding "" would write an empty turn into the peer's memory."""
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     row_id = await audit.append(message=_msg(body="   "))
 
@@ -333,15 +333,14 @@ async def test_an_empty_body_is_marked_but_never_fed():
     assert counts.marked == 1
 
 
-async def test_adoption_against_the_real_sqlite_store(tmp_path):
+async def test_adoption_against_the_real_postgres_store(pg_url):
     """The fake proves the logic; this proves the UPDATE actually lands in
     production's storage — `person_id` is the idempotence marker, and a marker
     that only works in memory is no marker at all."""
-    from nora.infra.sql import SqlAuditStore, create_sql_engine, run_migrations
+    from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 
-    path = tmp_path / "messages.db"
-    run_migrations(path)
-    store = SqlAuditStore(create_sql_engine(path))
+    run_migrations(pg_url)
+    store = SqlRecordStore(create_sql_engine(pg_url))
     memory = FakeMemoryStore()
     try:
         await store.append(message=_msg(body="older", ts=1))
@@ -368,7 +367,7 @@ async def test_a_second_platform_resolves_through_the_same_person():
         by_person={"miles": MILES},
         index={("signal", "+852111"): "miles", ("telegram", "@miles"): "miles"},
     )
-    audit = FakeAuditStore()
+    audit = FakeRecordStore()
     memory = FakeMemoryStore()
     await audit.append(message=_msg(platform="telegram", sender="@miles", body="tg"))
 

@@ -14,7 +14,7 @@ from nora.domain.models import ConversationTarget, DeliveryStatus
 from nora.domain.ports import SendResult
 from nora.engagement.stages import deliver
 from nora.obs.metrics import Metrics
-from nora.testing import FakeAuditStore
+from nora.testing import FakeRecordStore
 
 TARGET = ConversationTarget(platform="signal", conversation_id="g1", conversation_type="group")
 BUDGETS = ToolRegistry().budgets()
@@ -45,7 +45,7 @@ class _LLMState:
 
 def test_build_wires_the_guard_to_the_same_deliverer():
     handle = deliver.build(
-        store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
+        store=FakeRecordStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
         conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=Metrics(),
     )
@@ -58,7 +58,7 @@ def test_build_wires_the_guard_to_the_same_deliverer():
 async def test_check_outcome_counts_no_send_call_when_the_model_never_attempted():
     metrics = Metrics()
     handle = deliver.build(
-        store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
+        store=FakeRecordStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
         budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
     )
@@ -78,7 +78,7 @@ async def test_check_outcome_does_not_double_count_when_the_model_attempted_but_
     attempt that happened but didn't land."""
     metrics = Metrics()
     handle = deliver.build(
-        store=FakeAuditStore(), adapter=_FakeAdapter(succeed=False), target=TARGET,
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=False), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
         conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
     )
@@ -98,7 +98,7 @@ async def test_check_outcome_returns_true_and_sets_llm_state_on_a_delivered_repl
     metrics = Metrics()
     llm_state = _LLMState()
     handle = deliver.build(
-        store=FakeAuditStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
         conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
     )
@@ -118,7 +118,7 @@ async def test_check_outcome_returns_true_and_sets_llm_state_on_a_delivered_repl
 async def test_check_outcome_tolerates_no_llm_state():
     metrics = Metrics()
     handle = deliver.build(
-        store=FakeAuditStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
         conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
     )
@@ -143,7 +143,7 @@ async def test_a_turn_cut_off_by_a_budget_cap_is_not_labelled_no_send_call():
     for stop_reason in ("limit_total_tokens", "limit_turns", "limit_output_tokens"):
         metrics = Metrics()
         handle = deliver.build(
-            store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
+            store=FakeRecordStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
             canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
             budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
         )
@@ -167,7 +167,7 @@ async def test_an_ordinary_stop_reason_still_counts_no_send_call():
     for stop_reason in ("end_turn", "tool_use", "max_tokens", None):
         metrics = Metrics()
         handle = deliver.build(
-            store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
+            store=FakeRecordStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
             canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
             budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
         )
@@ -191,7 +191,7 @@ def test_check_outcome_cannot_be_called_without_a_stop_reason():
 
 
 async def test_a_delivered_reply_is_recorded_in_the_audit_store():
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     handle = deliver.build(
         store=store, adapter=_FakeAdapter(succeed=True), target=TARGET, doctrine=_doctrine(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
@@ -214,7 +214,7 @@ def test_build_takes_the_deliverers_message_cap_from_the_same_budget_table():
     would silently win whenever it was the smaller of the two and file the
     refusal under the other rule's name."""
     handle = deliver.build(
-        store=FakeAuditStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1",
         nora_sender_id="+8520000", conversation_id="g1",
         budgets={**BUDGETS, "send_reply": 4}, terminal=TERMINAL, metrics=Metrics(),

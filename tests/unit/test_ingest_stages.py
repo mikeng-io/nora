@@ -1,8 +1,8 @@
 """One test per row of spec §4.3's failure-behaviour table (task-2-brief.md).
 
-`nora.testing.FakeAuditStore` is the audit double throughout — the project
+`nora.testing.FakeRecordStore` is the audit double throughout — the project
 rule is that a port never gains a second implementation, including a test
-fake, without a shared contract suite both pass, and `FakeAuditStore` already
+fake, without a shared contract suite both pass, and `FakeRecordStore` already
 has one (`tests/contract/test_audit_store_contract.py`). `MemoryStore` has no
 such suite yet, so `FakeMemory` below stays local to this test module rather
 than joining `nora.testing`, per the brief.
@@ -15,7 +15,7 @@ from nora.domain.ports import EngageDecision, MemoryHealth
 from nora.ingest.stages import audit, gate, identity, memory_feed
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.testing import FakeAuditStore
+from nora.testing import FakeRecordStore
 
 
 def _msg(sender_id: str = "+852111", body: str = "hello") -> NormalizedMessage:
@@ -66,7 +66,7 @@ async def test_audit_failure_drops_the_message_and_never_raises(monkeypatch):
     """The listener must survive a full disk. `on_event` is awaited by the SSE
     reader, so a raise here stops ingest for every conversation on this
     adapter — which is why stage 2's documented behaviour is drop, not fail."""
-    store = FakeAuditStore()
+    store = FakeRecordStore()
 
     async def _boom(**_kwargs):
         raise RuntimeError("disk full")
@@ -81,7 +81,7 @@ async def test_audit_failure_drops_the_message_and_never_raises(monkeypatch):
 
 
 async def test_audit_failure_counts_nora_errors_total_stage_ambient(monkeypatch):
-    store = FakeAuditStore()
+    store = FakeRecordStore()
 
     async def _boom(**_kwargs):
         raise RuntimeError("disk full")
@@ -101,7 +101,7 @@ async def test_an_unmapped_sender_is_audited_but_never_fed():
     """D6: peer mapping is manual and unmapped senders are never fed to the
     semantic store. The audit row is still written — the audit record is not
     conditional on identity."""
-    store = FakeAuditStore()
+    store = FakeRecordStore()
     fake_memory = FakeMemory()
     metrics = Metrics()
     persons = Persons(by_person={}, index={})   # nobody mapped
