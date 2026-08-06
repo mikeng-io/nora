@@ -8,7 +8,7 @@ The MiMo call itself is a duck-typed collaborator here (a counting stub), exactl
 as `route_source` is in `tests/test_routes.py` — the raw call is exercised
 against a fake server in `tests/test_vision.py`. The blob store and the audit
 store are the REAL implementations (a `FilesystemBlobStore` over a tmp dir and a
-`SqlAuditStore`), because both are `nora.domain.ports` ports and a test fake of
+`SqlRecordStore`), because both are `nora.domain.ports` ports and a test fake of
 either would need the shared contract suite (CLAUDE.md); the real ones are cheap.
 """
 
@@ -27,7 +27,7 @@ from nora.domain.media import MediaBlob
 from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
-from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.vision import VisionCache, VisionResult
@@ -76,10 +76,9 @@ async def _append_image(store, *, conversation_id: str, sha256: str,
 
 
 @pytest.fixture
-async def wiring(tmp_path):
-    dbp = tmp_path / "messages.db"
-    run_migrations(dbp)
-    store = SqlAuditStore(create_sql_engine(dbp))
+async def wiring(tmp_path, pg_url):
+    run_migrations(pg_url)
+    store = SqlRecordStore(create_sql_engine(pg_url))
 
     blobs = FilesystemBlobStore(tmp_path / "media", cipher=BlobCipher.from_base64(KEY_A))
     stored_sha = await blobs.put(data=RED_PNG)
