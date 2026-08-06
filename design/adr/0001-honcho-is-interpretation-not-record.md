@@ -70,9 +70,19 @@ knowing that.
   expected to want back. See DEC-36 (4).
 - The tag path should move to `peer_card` (9 ms, typed, ~206 tokens) and prefill
   it, rather than spending a tool call on `representation`.
-- `_conclusions()` mangles the Deductive/Inductive sections it has never been
+- ~~`_conclusions()` mangles the Deductive/Inductive sections it has never been
   tested against — its fixture contains only `## Explicit Observations`, the
-  exact "fake that cannot produce the real shape" this repo keeps finding.
+  exact "fake that cannot produce the real shape" this repo keeps finding.~~
+  **Done 2026-08-06, DEC-37.** Measured before the rewrite: the live body for
+  `probe_zzz` yielded **151 "conclusions" from 25 documents**; it now yields
+  exactly 25. `POST /conclusions/query` was evaluated as the parser-free
+  alternative and rejected — it is semantic search alone, so it cannot express
+  the derived and recent channels DEC-38 restores. Two corrections to this
+  ADR's own text fall out: the stamp is `message_created_at` copied onto every
+  conclusion in a derivation batch (`probe_zzz`'s 102 documents carry six
+  distinct stamps, one shared by 77), and no `## Contradictions` section exists
+  anywhere in the live database, so that fixture is built from the emitter's
+  source rather than the wire.
 - `recall` is misnamed: it fetches a standing profile, not memories, and the
   docstring's "what they told you before" invites her to repeat the transcript.
 
