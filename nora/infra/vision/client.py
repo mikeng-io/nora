@@ -1,0 +1,176 @@
+"""The MiMo-V2.5 vision call — a raw `chat.completions.create` under its OWN
+timeout and byte ceiling (DEC-56, the READ half of media custody).
+
+This is the one place a blob's bytes reach a model. It goes through the
+process-wide OmniRoute `AsyncOpenAI` client (audit T2's single client), model
+`opencode-go/mimo-v2.5`, the image passed as a base64 `data:` URI in an
+`image_url` content block — the shape the 2026-08-07 probe verified end to end
+(a red PNG → "Red", prompt_tokens 159).
+
+**It is deliberately NOT an `OpenAIModel`.** A raw create gets none of strands'
+retry/timeout/trace machinery, which means this module owns all three itself:
+
+* **Its own timeout, PROVABLY shorter than the loop budget.** The whole agent
+  loop — every text turn and every tool call, this one included — runs inside a
+  single `asyncio.wait_for(timeout=llm.timeout_seconds)` (30 s). A MiMo
+  *reasoning* call with a generous `max_tokens` is seconds, not `about`'s ~0.2 s,
+  and two of them plus the text turns would overrun 30 s → the loop's silent
+  `invocation_timeout` (R-5). `derive_vision_timeout` below caps this call's
+  budget at a fixed fraction of the loop timeout, so a slow or hung MiMo becomes
+  THIS tool's `unavailable` inside the turn instead — the same discipline
+  `factory.build_retry_policy` applies to its backoff.
+* **A byte ceiling** (`vision_max_bytes`, config), far below `media.max_bytes`.
+  Over it, `too_large` → the tool's `unavailable`, never a nine-figure request.
+* **One bounded retry**, and it lives INSIDE the single timeout budget above, so
+  the retry cannot push the total past the loop's `wait_for`.
+
+Never raises: every failure — timeout, transport error, an answer in a shape
+this reader does not understand — becomes a `VisionResult(available=False)` with
+a `reason` for the metric label, the same `available` axis `MediaBytes` and
+`Roster` carry so "could not describe" stays distinct from "described nothing".
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import logging
+from dataclasses import dataclass
+
+from openai import AsyncOpenAI
+
+log = logging.getLogger("nora.vision")
+
+# How much of the loop's own timeout one vision call may spend. A fraction < 1
+# is what MAKES the derived budget provably shorter than the loop's
+# `asyncio.wait_for`, so a hung MiMo can never become the loop's silent
+# `invocation_timeout`. Half leaves the other half for the text turns that must
+# still run after the description comes back.
+VISION_TIMEOUT_FRACTION = 0.5
+
+# Authored, fixed, and small — never model-supplied. The description it asks for
+# is untrusted egress (design/14 §2.1), screened by the tool on every serve.
+_PROMPT = "Describe this image. If it contains text in it, transcribe that text."
+
+
+def derive_vision_timeout(*, loop_timeout_seconds: float, configured: float) -> float:
+    """The per-call vision budget: the smaller of the configured ceiling and a
+    fixed fraction of the loop timeout.
+
+    Derived from `llm.timeout_seconds` rather than configured beside it, the way
+    `factory.build_retry_policy` derives its backoff — the invariant that matters
+    (`derived < loop_timeout_seconds`) is one nobody can violate if it is never
+    written down twice. The `min` with the fraction is what guarantees it: for
+    any `configured`, however large, the result is at most
+    `loop_timeout_seconds * VISION_TIMEOUT_FRACTION`, which is strictly less than
+    the loop budget.
+    """
+    ceiling = loop_timeout_seconds * VISION_TIMEOUT_FRACTION
+    budget = min(configured, ceiling) if configured > 0 else ceiling
+    # Never non-positive (a zero budget would time out instantly and never
+    # describe anything), never above the fraction ceiling.
+    return max(0.1, min(budget, ceiling))
+
+
+@dataclass(frozen=True)
+class VisionResult:
+    """One MiMo describe attempt. `available=False` is the tool's `unavailable`.
+
+    `reason` is for the `{status}` distinction and the log line, never for a
+    caller to branch on beyond that: `too_large` (over the byte ceiling),
+    `timeout` (did not answer inside the derived budget), `error` (transport, or
+    an answer this reader could not read).
+    """
+
+    available: bool
+    description: str = ""
+    reason: str = ""
+
+
+class VisionClient:
+    """Describe one image's bytes through MiMo, under a fixed budget.
+
+    A constructed collaborator (CLAUDE.md's test-seam policy), built once by the
+    composition root over the process-wide client and threaded onto
+    `ToolRegistry` exactly like `TransitClient`/`RouteClient`. The description
+    CACHE is not here — it lives on the registry and is checked by the tool
+    before this client is ever called, so a cache hit skips the blob decrypt too.
+    """
+
+    def __init__(
+        self,
+        *,
+        client: AsyncOpenAI,
+        model: str,
+        max_tokens: int,
+        reasoning_effort: str,
+        max_bytes: int,
+        timeout_seconds: float,
+    ) -> None:
+        self._client = client
+        self._model = model
+        self._max_tokens = max_tokens
+        self._reasoning_effort = reasoning_effort
+        self._max_bytes = max_bytes
+        self._timeout = timeout_seconds
+
+    async def describe(self, *, data: bytes, media_type: str) -> VisionResult:
+        """MiMo's sentence about `data`, or an unavailable result. Never raises."""
+        if len(data) > self._max_bytes:
+            log.warning(
+                "vision blob %d bytes over the %d ceiling — not sent",
+                len(data), self._max_bytes,
+            )
+            return VisionResult(available=False, reason="too_large")
+        try:
+            # The whole retry loop is inside ONE wait_for, so even two attempts
+            # cannot push the total past the derived budget (< the loop's own).
+            text = await asyncio.wait_for(
+                self._describe_with_retry(data=data, media_type=media_type),
+                timeout=self._timeout,
+            )
+        except TimeoutError:
+            log.warning("vision call did not answer within %.1fs", self._timeout)
+            return VisionResult(available=False, reason="timeout")
+        except Exception:
+            log.exception("vision call failed")
+            return VisionResult(available=False, reason="error")
+        if not text:
+            # A 200 with an empty message is not a description — treat it as a
+            # failure to answer, never as "the image was blank".
+            log.warning("vision call returned no text")
+            return VisionResult(available=False, reason="error")
+        return VisionResult(available=True, description=text)
+
+    async def _describe_with_retry(self, *, data: bytes, media_type: str) -> str:
+        data_uri = f"data:{media_type};base64,{base64.b64encode(data).decode('ascii')}"
+        last_exc: Exception = RuntimeError("vision retry loop did not run")
+        for attempt in range(2):
+            try:
+                return await self._create(data_uri)
+            except Exception as exc:  # noqa: BLE001 — retried once, then re-raised
+                last_exc = exc
+                log.warning("vision attempt %d failed: %s", attempt + 1, exc)
+        raise last_exc
+
+    async def _create(self, data_uri: str) -> str:
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            max_tokens=self._max_tokens,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": _PROMPT},
+                        {"type": "image_url", "image_url": {"url": data_uri}},
+                    ],
+                }
+            ],
+            # MiMo reads reasoning effort as a top-level body field. Passed via
+            # extra_body rather than a typed kwarg so this call does not depend
+            # on the installed openai SDK carrying `reasoning_effort` in its
+            # signature — the gateway reads the JSON, not the Python stub.
+            extra_body={"reasoning_effort": self._reasoning_effort},
+        )
+        choice = response.choices[0]
+        return (choice.message.content or "").strip()

@@ -264,6 +264,35 @@ class MediaConfig(BaseModel):
     # same argument `SignalRoster`'s 4 s makes against `directory`'s 10 s.
     timeout_seconds: float = 8.0
 
+    # ---- reading a stored image back through MiMo-V2.5 (DEC-56) --------------
+    #
+    # The WRITE half above copies bytes into custody; these govern the READ
+    # half, `media_fetch` (`nora.agent.tools`), which decrypts a held blob and
+    # describes it via MiMo through the process-wide OmniRoute client. They are
+    # config, not literals, for DEC-8's reason: the model, the token ceiling and
+    # the effort are properties of the deployment's gateway, and the two
+    # SAFETY numbers below are the ones a slow model would otherwise turn into a
+    # silent loop timeout.
+    vision_model: str = "opencode-go/mimo-v2.5"
+    # Generous, because MiMo reasons before it answers and a transcription of a
+    # busy screenshot is long — but capped, so one description cannot eat a turn.
+    vision_max_tokens: int = 1024
+    vision_reasoning_effort: str = "low"
+    # A ceiling on the bytes sent to MiMo, DELIBERATELY far below `max_bytes`
+    # (100 MiB): a 100 MiB blob is a ~133 MiB base64 body, and no still image
+    # worth describing is that large. Above this the tool answers `unavailable`
+    # with an honest note rather than shipping a nine-figure request
+    # (downscaling is a later option, not this build). 8 MiB → ~10.7 MiB body.
+    vision_max_bytes: int = 8 * 1024 * 1024
+    # A CEILING on the per-call vision timeout, not the timeout itself: the tool
+    # derives the real budget as the smaller of this and a fixed fraction of
+    # `llm.timeout_seconds` (`nora.infra.vision.derive_vision_timeout`), so it is
+    # provably shorter than the loop's `asyncio.wait_for` budget and a hung MiMo
+    # call becomes this tool's `unavailable` rather than the loop's silent
+    # `invocation_timeout` (DEC-56, the way `factory.build_retry_policy` derives
+    # its backoff from the same timeout).
+    vision_timeout_seconds: float = 20.0
+
 
 class RouteConfig(BaseModel):
     """Google routing for the `route` tool (DEC-46, design/14 §3).

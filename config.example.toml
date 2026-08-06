@@ -125,6 +125,17 @@ enabled = true
 encryption_key_env = "NORA_MEDIA_KEY"
 max_bytes = 104857600     # 100 MiB — Signal's own attachment ceiling
 timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never the message
+# Reading a stored image back through MiMo-V2.5 (the `media_fetch` tool, DEC-56).
+# All defaulted; these are the READ half's knobs. vision_max_bytes is the ceiling
+# on bytes sent to MiMo — far below max_bytes on purpose (a 100 MiB blob is a
+# ~133 MiB base64 body). vision_timeout_seconds is a CEILING: the tool derives the
+# real per-call budget as the smaller of it and half of llm.timeout_seconds, so a
+# slow model becomes the tool's `unavailable`, never the loop's silent timeout.
+vision_model = "opencode-go/mimo-v2.5"
+vision_max_tokens = 1024
+vision_reasoning_effort = "low"
+vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
+vision_timeout_seconds = 20.0
 
 # Google routing for the `route` tool (DEC-46). The WHOLE SECTION IS OPTIONAL
 # and every key defaults — a config.toml without it behaves as if routing is
