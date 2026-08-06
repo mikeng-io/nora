@@ -136,6 +136,41 @@ the ones about *behaviour* to `conduct.md`. "Not a search engine with a
 personality layer" is a capability claim and goes away entirely — §5 covers it,
 truthfully, without anyone maintaining a sentence about it.
 
+## 4b. The name: doctrine, not persona
+
+`nora/persona/` becomes **`nora/doctrine/`**, and the wrapper `<nora_persona>`
+becomes `<nora_doctrine>`.
+
+This is not cosmetic. "Persona" names a *character*, and a directory named for
+a character invites sentences about what that character is like — which is the
+identity-framing this whole document exists to correct. Nobody writing
+`soul.md` inside `persona/` feels any structural pressure to keep a capability
+claim out of it. The name was working against the boundary.
+
+**Doctrine is what has been DECIDED** — which is exactly the authored half of
+§2's table, and exactly what these files are. It also reads correctly against
+the derived half: capability and situation are not doctrine, they are facts,
+and they live in code.
+
+| now | becomes | kind |
+|---|---|---|
+| `persona/guardrails.md` | `doctrine/constraints.md` | `constraint` |
+| `persona/soul.md` | `doctrine/identity.md` | `identity` |
+| `persona/voice.md` | `doctrine/voice.md` | `identity` |
+| `persona/conduct.md` | `doctrine/conduct.md` | `conduct` |
+| — | *(generated, no file)* | `capability` |
+
+`PersonaStore` → `DoctrineStore`, `Persona` → `Doctrine`,
+`persona_store`/`persona_sha256` follow. Mechanical, wide, and best done in one
+commit with no behaviour change in it — the assembled text must be
+byte-identical across the rename, asserted by a test, so that the behavioural
+work afterwards has a clean baseline to measure against.
+
+One thing the rename must NOT do: `applies_to: [tag]` and the `order` field
+stay. They are orthogonal to `kind` — `order` is position, `kind` is authority
+and source of truth, and collapsing them would lose the distinction §6 draws
+between what is mechanical and what is asserted.
+
 ## 5. Capability is generated, or it is wrong
 
 The capability section is built from the same `ToolSpec` tuple the model's
