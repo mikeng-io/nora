@@ -120,7 +120,8 @@ def test_the_column_order_of_a_fresh_database_matches_a_migrated_one(fresh_db, t
     assert list(_table_info(fresh_db)) == list(_table_info(migrated))
 
 
-def test_quoted_ts_is_the_last_declared_column(fresh_db):
-    """`person_id` was last; `quoted_ts` is now, and anything after it must be
-    appended in turn. Spelled out so the next column's author sees it fail."""
-    assert list(_table_info(fresh_db))[-1] == "quoted_ts"
+def test_media_json_is_the_last_declared_column(fresh_db):
+    """`person_id` was last, then `quoted_ts`; `media_json` is now, and anything
+    after it must be appended in turn. Spelled out so the next column's author
+    sees it fail — which is exactly how this one was caught."""
+    assert list(_table_info(fresh_db))[-1] == "media_json"

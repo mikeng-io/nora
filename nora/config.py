@@ -198,6 +198,40 @@ class StoreConfig(BaseModel):
         return self
 
 
+class MediaConfig(BaseModel):
+    """Byte custody for attachments (DEC-43).
+
+    **Every field is defaulted and the whole section is optional**, unlike most
+    of this file — a live `config.toml` written before this existed must keep
+    loading, and `extra="forbid"` means a required section would be a startup
+    failure on upgrade rather than a feature.
+
+    There is deliberately **no path key.** Media lives beside the audit
+    database, under `store.db_path`'s directory, because they are one custody
+    boundary: the row and the blob it names are the same record, are backed up
+    together, and are deleted together. A second configurable root would let
+    them be separated, and the first time that happened the transcript would
+    reference blobs on a volume nobody backed up.
+
+    `enabled` defaults to True because the A9 fix is the point of the feature —
+    but see DEC-43's open question: RETENTION for this data is an operator
+    decision that has not been made, and this flag is the honest off switch
+    until it is. Off means attachments are recorded exactly as before, with a
+    placeholder and no handle, and `nora_media_custody_total{status=
+    "not_configured"}` counting every one.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = True
+    # Signal's own attachment ceiling. A refusal is a policy outcome with its
+    # own metric label, never a crash and never a truncated blob.
+    max_bytes: int = 100 * 1024 * 1024
+    # Short, because this runs on the ingest path the SSE reader awaits — the
+    # same argument `SignalRoster`'s 4 s makes against `directory`'s 10 s.
+    timeout_seconds: float = 8.0
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -298,6 +332,10 @@ class Config(BaseModel):
     llm: LLMConfig
     memory: MemoryConfig
     store: StoreConfig
+    # Optional, and defaulted — see `MediaConfig`. A config.toml written before
+    # DEC-43 must keep loading, which `extra="forbid"` makes a real constraint
+    # rather than a courtesy.
+    media: MediaConfig = MediaConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     identity_file: Path

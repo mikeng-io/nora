@@ -15,7 +15,7 @@ _BARE_API_KEY_RE = re.compile(r"\bapi_key\s*=")
 def test_config_example_exists_and_parses():
     data = tomllib.loads((ROOT / "config.example.toml").read_text())
     assert set(data) == {
-        "platforms", "llm", "memory", "store", "engagement",
+        "platforms", "llm", "memory", "store", "media", "engagement",
         "doctrine", "identity_file", "policy_file", "obs", "evals",
     }
 

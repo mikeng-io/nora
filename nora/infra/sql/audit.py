@@ -18,6 +18,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.media import media_json
 from nora.domain.models import (
     DeliveryStatus,
     NormalizedMessage,
@@ -79,6 +80,14 @@ class SqlAuditStore:
             # the same reason — see this module's docstring on WAL's single
             # writer and this path's drop-on-contention behaviour.
             quoted_ts=message.quote.quoted_ts if message.quote else None,
+            # Same INSERT again, same argument (DEC-43). Custody is resolved
+            # BEFORE this write — `nora.ingest.stages.media` runs ahead of the
+            # audit stage — precisely so the row that claims a handle and the
+            # blob that backs it are committed together. An UPDATE afterwards
+            # would be a second contender for WAL's single writer AND a window
+            # in which the record says `[image a3f2c1]` while nothing can
+            # produce `a3f2c1`.
+            media_json=media_json(message.media_blobs),
         )
         try:
             async with self._engine.begin() as conn:
@@ -107,7 +116,7 @@ class SqlAuditStore:
                 MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
                 MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
                 MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
-                MESSAGES.c.quoted_ts,
+                MESSAGES.c.quoted_ts, MESSAGES.c.media_json,
             )
             .where(MESSAGES.c.conversation_id == conversation_id)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
@@ -126,6 +135,7 @@ class SqlAuditStore:
                 delivery_status=DeliveryStatus(r.delivery_status),
                 raw_json=r.raw_json,
                 quoted_ts=r.quoted_ts,
+                media_json=r.media_json,
             )
             for r in reversed(rows)
         ]

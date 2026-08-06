@@ -1,0 +1,167 @@
+"""`SignalMediaSource` — attachment bytes out of signal-cli, over the RPC it
+already answers.
+
+**Why RPC and not the filesystem.** signal-cli writes attachments into its own
+store (`$XDG_DATA_HOME/signal-cli/attachments/`, bind-mounted at
+`./state/signal-cli`), and the obvious implementation reads that directory.
+That would have meant a new read-only bind mount into Nora's container beside
+the account store she is explicitly kept out of ("she has no business reading
+Signal identity keys" — `docker-compose.yml`), and a trap under it: the
+`attachments/` directory does not exist yet, so Docker would create the mount
+point ROOT-owned, and signal-cli runs as uid 1000 — it would then be unable to
+write attachments at all. Adding a mount to fix media custody by breaking media
+delivery is the kind of outcome R-5 is about.
+
+`getAttachment` removes the whole question: it is the same daemon, the same
+`POST /api/v1/rpc`, the same loopback port Nora already uses for `send`,
+`listGroups` and `listContacts`. No mount, no ownership, no second view of
+somebody else's filesystem.
+
+**Verified against the live daemon, 2026-08-06, signal-cli 0.14.7** — with the
+negative control, because a probe without one proves nothing (CLAUDE.md's
+"fake that answers every request the same way"):
+
+    method: "noSuchMethodXyz"  -> {"code":-32601,"message":"Method not implemented"}
+    method: "getAttachment"    -> {"code":-1,
+                                   "message":"Could not find attachment with ID: …"}
+
+Two different errors. The method genuinely exists and genuinely looked, rather
+than a daemon that answers everything alike. `id` alone is accepted — the call
+reached the lookup — so no `recipient`/`groupId` is sent.
+
+**What is NOT verified, and cannot be here:** the shape of a SUCCESSFUL result.
+No attachment has ever arrived on this deployment, so there is no id to fetch.
+`_decode` therefore accepts the two shapes signal-cli plausibly returns — a
+bare base64 string, or an object carrying it under `data` — and anything else
+becomes `available=False, reason="bad_payload"` with the result's KEYS (never
+its values) in the log line, so the first real attachment either works or says
+exactly what to change in one line. Guessing one shape and silently dropping
+the other is how a decorative implementation ships green.
+
+Never raises: `nora.domain.ports.MediaSource`'s contract, for `RosterSource`'s
+reason. The caller is the ingest path, and an exception there costs the whole
+MESSAGE — the record — to save bytes that are only ever a bonus.
+"""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import logging
+from typing import Any
+
+import aiohttp
+
+from nora.domain.media import MediaBytes, MediaRef
+
+log = logging.getLogger("nora.platform.signal.media")
+
+# Lower than `directory`'s 10 s and matching `SignalRoster`'s reasoning: this
+# runs on the ingest path, which the SSE reader awaits. A wedged daemon must
+# cost seconds and an honest miss, never the message.
+DEFAULT_TIMEOUT_SECONDS = 8.0
+
+# 100 MiB — Signal's own attachment ceiling. A refusal here is a real answer
+# ("too big to hold"), counted like any other custody outcome, not a crash and
+# not a silent truncation.
+DEFAULT_MAX_BYTES = 100 * 1024 * 1024
+
+
+class SignalMediaSource:
+    """Satisfies `nora.domain.ports.MediaSource` for Signal."""
+
+    platform = "signal"
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        max_bytes: int = DEFAULT_MAX_BYTES,
+    ) -> None:
+        self._base_url = base_url
+        self._timeout = timeout_seconds
+        self._max_bytes = max_bytes
+
+    async def fetch(self, *, ref: MediaRef) -> MediaBytes:
+        """The bytes for one attachment, or an unavailable answer saying why.
+
+        `reason` is a small closed vocabulary because it becomes a metric
+        label: `no_id`, `unreachable`, `not_found`, `bad_payload`, `too_large`.
+        Each names a different thing to go fix, which is the entire reason this
+        is not a `bytes | None`.
+        """
+        if not ref.platform_id:
+            # A sticker, or an attachment signal-cli described without an id.
+            # There is nothing to ask for; saying so is not a failure of the
+            # daemon and must not be counted as one.
+            return MediaBytes(available=False, reason="no_id")
+        if ref.size is not None and ref.size > self._max_bytes:
+            # Refused on the platform's CLAIM, before transferring anything.
+            # The claim can be wrong, which is why `_decode` checks the real
+            # length too — but when it is right this saves moving 100 MiB to
+            # then throw it away.
+            return MediaBytes(available=False, reason="too_large")
+
+        url = f"{self._base_url.rstrip('/')}/api/v1/rpc"
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "getAttachment",
+            "params": {"id": ref.platform_id},
+            "id": "nora-getAttachment",
+        }
+        try:
+            async with (
+                aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self._timeout)
+                ) as session,
+                session.post(url, json=payload) as resp,
+            ):
+                if resp.status != 200:
+                    log.warning("getAttachment: HTTP %s from %s", resp.status, url)
+                    return MediaBytes(available=False, reason="unreachable")
+                body = await resp.json()
+        except Exception as exc:                                   # noqa: BLE001
+            # Blind, on purpose and narrowly scoped: every transport failure is
+            # the same answer to this caller, and the port forbids raising.
+            log.warning("getAttachment unreachable at %s: %s", url, type(exc).__name__)
+            return MediaBytes(available=False, reason="unreachable")
+
+        if not isinstance(body, dict):
+            return MediaBytes(available=False, reason="bad_payload")
+        if body.get("error"):
+            # The verified shape: `{"code": -1, "message": "Could not find
+            # attachment with ID: …"}`. The id is signal-cli's own handle, not
+            # a person's identifier, but the message is echoed at debug rather
+            # than warning because a missed attachment is already counted and
+            # the log line adds nothing an operator alerts on.
+            log.info("getAttachment: signal-cli did not produce %s", ref.platform_id)
+            return MediaBytes(available=False, reason="not_found")
+        return self._decode(body.get("result"))
+
+    def _decode(self, result: Any) -> MediaBytes:
+        """Base64 out of whichever shape the daemon used. See module docstring
+        for why two shapes are accepted and why an unknown one is loud."""
+        encoded: Any = None
+        if isinstance(result, str):
+            encoded = result
+        elif isinstance(result, dict):
+            for key in ("data", "base64", "attachment"):
+                if isinstance(result.get(key), str):
+                    encoded = result[key]
+                    break
+        if not isinstance(encoded, str) or not encoded:
+            log.warning(
+                "getAttachment returned a shape this adapter does not read: %s "
+                "(keys, never values) — see nora/platform/signal/media.py",
+                sorted(result) if isinstance(result, dict) else type(result).__name__,
+            )
+            return MediaBytes(available=False, reason="bad_payload")
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            log.warning("getAttachment returned %d chars that are not base64", len(encoded))
+            return MediaBytes(available=False, reason="bad_payload")
+        if len(data) > self._max_bytes:
+            return MediaBytes(available=False, reason="too_large")
+        return MediaBytes(available=True, data=data)

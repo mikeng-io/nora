@@ -123,6 +123,28 @@ avoid:
   asymmetry with `SendResult` is intentional, not an oversight — recorded
   here so it isn't cargo-culted into a `FeedResult` later.
 
+- `BlobStore` is `put`/`get` and NOTHING ELSE — in particular no `delete`, for
+  the same reason `AuditStore` has no `prune`. Deleting media is a retention
+  policy the operator has not made yet (DEC-43), and putting it on the port
+  would oblige every implementation, including fakes, to implement a policy
+  they do not have. `FilesystemBlobStore.delete` exists on the CONCRETE class,
+  exactly as `SqlAuditStore.prune_all` does, so the mechanism is there the day
+  the decision is.
+
+  `put` returns the KEY and takes no key argument. A content-addressed store
+  where the caller chooses the key is not content-addressed — it is a
+  filesystem with extra steps, and the verifiability that justified hashing the
+  bytes rather than the metadata would be gone.
+
+- `MediaSource` is separate from `PlatformAdapter` for the same reason
+  `RosterSource` is: fetching attachment bytes is not part of the
+  send/receive/react lifecycle every adapter must implement, and putting it
+  there would oblige every future adapter and every fake to implement a fetch
+  it may have no endpoint for. Like `RosterSource` it is bound to one platform
+  (`platform: str`, no `platform=` parameter) and **must never raise** —
+  `MediaBytes.available` carries the difference between "could not fetch" and
+  "fetched nothing", which a bare `bytes | None` would collapse.
+
 - `EngagePolicy.should_engage` is `async` even though today's trigger-text
   policy is synchronous, because the classifier that replaces it is I/O, and
   a later sync-to-async change would break the whole ingest pipeline at every
@@ -140,6 +162,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
+from nora.domain.media import MediaBytes as MediaBytes
+from nora.domain.media import MediaRef as MediaRef
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -362,6 +386,25 @@ class MemoryStore(Protocol):
     async def health(self) -> MemoryHealth: ...
 
     async def aclose(self) -> None: ...
+
+
+@runtime_checkable
+class MediaSource(Protocol):
+    """One platform's attachment bytes. Never raises — see module docstring."""
+
+    platform: str
+
+    async def fetch(self, *, ref: MediaRef) -> MediaBytes: ...
+
+
+@runtime_checkable
+class BlobStore(Protocol):
+    """Content-addressed byte custody. `put` returns the key it computed; there
+    is no `delete` on this port — see module docstring."""
+
+    async def put(self, *, data: bytes) -> str: ...
+
+    async def get(self, *, key: str) -> bytes | None: ...
 
 
 @runtime_checkable

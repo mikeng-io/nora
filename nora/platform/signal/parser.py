@@ -1,7 +1,9 @@
 """signal-cli SSE envelope → NormalizedMessage (spec C.3, design/01).
 
 Group messages only in v2; DMs and syncMessages are dropped. Attachments become
-placeholders — no download (v2.1).
+a placeholder plus a `MediaRef` — this module still downloads nothing, but it
+no longer throws away what an attachment WAS. The bytes are fetched one stage
+later (`nora.ingest.stages.media`), from the ref this produces.
 """
 
 from __future__ import annotations
@@ -9,6 +11,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from ...domain.media import MediaRef, label_for, render_placeholder
 from ...domain.models import NormalizedMessage, Quote
 
 log = logging.getLogger("nora.signal.parser")
@@ -21,10 +24,34 @@ log = logging.getLogger("nora.signal.parser")
 PLACEHOLDER = "\ufffc"
 
 
-def _attachment_placeholder(att: dict) -> str:
-    if str(att.get("contentType", "")).startswith("image/"):
-        return "[image]"
-    return f"[attachment: {att.get('filename') or att.get('id') or 'file'}]"
+def _media_ref(att: dict) -> MediaRef:
+    """One `JsonAttachment` reduced to what custody and labelling need.
+
+    Field names are signal-cli's: `id` (the handle its own store uses, and what
+    `getAttachment` takes), `contentType`, `filename`, `size`, `voiceNote`.
+
+    **`voiceNote` is the one field here not verified against a real message**,
+    because no attachment has ever arrived on this deployment — the honest
+    statement of what is and is not known, rather than a claim dressed as a
+    fact. Its failure mode was chosen to be harmless: absent or renamed, an
+    `audio/*` attachment renders `[audio]` instead of `[voice note]`, which is
+    still the fix (she can tell somebody sent sound) and is never a wrong
+    claim about who said what. `nora.domain.media.label_for` is where that
+    fallback lives.
+    """
+    return MediaRef(
+        platform_id=str(att.get("id") or ""),
+        media_type=str(att.get("contentType") or ""),
+        filename=(str(att["filename"]) if att.get("filename") else None),
+        size=(int(att["size"]) if isinstance(att.get("size"), int) else None),
+        voice_note=bool(att.get("voiceNote")),
+    )
+
+
+def _attachments(data: dict) -> tuple[MediaRef, ...]:
+    return tuple(
+        _media_ref(a) for a in (data.get("attachments") or []) if isinstance(a, dict)
+    )
 
 
 def _mentioned_ids(data: dict) -> frozenset[str]:
@@ -180,15 +207,23 @@ def _quoted(data: dict) -> Quote | None:
     return Quote(author_id=str(author_id), text=text, quoted_ts=quoted_ts)
 
 
-def _body_parts(data: dict) -> list[str]:
+def _body_parts(data: dict, refs: tuple[MediaRef, ...]) -> list[str]:
     """The renderable pieces of one dataMessage, in reading order.
+
+    The attachment placeholders come LAST and in `refs` order, and that is now
+    load-bearing rather than incidental: `nora.domain.media.body_with_handles`
+    rewrites exactly that trailing run once custody has the bytes, and it
+    checks the tail it expects before touching anything. Reordering these parts
+    without telling that function costs a handle, not a message.
 
     A sticker becomes `[sticker]` for the same reason an image becomes
     `[image]`: a sticker IS an image, and dropping it made a sticker-only
     message vanish entirely — the sender saw Nora ignore something they had
     clearly sent. Its payload carries only `packId`/`stickerId` (per
     signal-cli's sticker schema), no name or emoji, so the bare placeholder is
-    genuinely all there is to render.
+    genuinely all there is to render. It is deliberately NOT a `MediaRef`:
+    there is no attachment id to fetch and no bytes to take custody of, so
+    inventing one would create a custody failure to count on every sticker.
 
     A REACTION stays dropped, and that is a different judgement rather than an
     oversight: a reaction is metadata attached to somebody else's message, not
@@ -199,7 +234,7 @@ def _body_parts(data: dict) -> list[str]:
     text = (data.get("message") or "").strip()
     if text:
         parts.append(text)
-    parts += [_attachment_placeholder(a) for a in (data.get("attachments") or [])]
+    parts += [render_placeholder(label_for(ref)) for ref in refs]
     if not parts and isinstance(data.get("sticker"), dict):
         parts.append("[sticker]")
     return parts
@@ -269,7 +304,8 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
         if own_account and source == own_account:
             return None                       # R-12: Nora never ingests her own sends
 
-        parts = _body_parts(data)
+        refs = _attachments(data)
+        parts = _body_parts(data, refs)
         if not parts:
             return None                       # reaction / empty — no usable body
 
@@ -284,6 +320,9 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
             raw=event,
             mentions=_mentioned_ids(data),
             quote=_quoted(data),
+            # What the platform SAID. `media_blobs` — what Nora holds — is
+            # filled in one stage later; this parser still downloads nothing.
+            media=refs,
         )
     except Exception:
         log.exception("unparseable envelope, skipping")

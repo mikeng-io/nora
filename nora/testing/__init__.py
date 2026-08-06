@@ -12,9 +12,13 @@ here too.
 Every fake that is a second implementation of one of `nora/domain/ports.py`'s
 ports is bound by a contract suite in `tests/contract/` that it and the
 production implementation both pass — `FakeAuditStore` (`AuditStore`),
-`FakeMemoryStore` (`MemoryStore`) and `FakeRosterSource` (`RosterSource`,
+`FakeMemoryStore` (`MemoryStore`), `FakeRosterSource` (`RosterSource`,
 bound to `nora.platform.signal.roster.SignalRoster` by
-`tests/contract/test_roster_source_contract.py`). Adding such a fake without one is a
+`tests/contract/test_roster_source_contract.py`), `FakeMediaSource`
+(`MediaSource`, bound to `nora.platform.signal.media.SignalMediaSource` by
+`tests/contract/test_media_source_contract.py`) and `FakeBlobStore`
+(`BlobStore`, bound to `nora.infra.blobs.FilesystemBlobStore` by
+`tests/contract/test_blob_store_contract.py`). Adding such a fake without one is a
 project rule violation, not a shortcut. `FakeAdapter` is exempt *as a whole*: it keeps
 `.parse()` public and `.listen()` a no-op rather than mirroring
 `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop (nothing
@@ -33,6 +37,8 @@ ports — also exempt; see their docstrings.
 from nora.testing.fakes import (
     FakeAdapter,
     FakeAuditStore,
+    FakeBlobStore,
+    FakeMediaSource,
     FakeMemoryStore,
     FakeRosterSource,
 )
@@ -50,6 +56,8 @@ __all__ = [
     "FakeAdapter",
     "FakeAgentRunner",
     "FakeAuditStore",
+    "FakeBlobStore",
+    "FakeMediaSource",
     "FakeMemoryStore",
     "FakeRosterSource",
     "ScriptedModel",

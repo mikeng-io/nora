@@ -264,7 +264,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "account resolved to no person.",
         ("platform",),
     ),
-    # DEC-40. A turn that sent SOME of its messages and then stopped for a
+    # DEC-42. A turn that sent SOME of its messages and then stopped for a
     # reason that was not "she was finished".
     #
     # This is the failure multi-message introduces, and it is invisible to
@@ -293,6 +293,42 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "limit_output_tokens / invocation_failed / pipeline_error).",
         ("reason", "platform"),
     ),
+    # DEC-43, and the FIRST of these two is the one that can measure absence.
+    # No attachment has ever arrived on this deployment — signal-cli's store
+    # has no `attachments/` directory at all — so every claim about media here
+    # is a claim about fixtures. `nora_media_attachments_total` is what turns
+    # that from a belief into a reading: it increments on every attachment
+    # SEEN, before any custody is attempted, so `0` means "none has arrived"
+    # and a non-zero `label` cut says exactly what kind did. Without it, a
+    # custody counter sitting at zero would be indistinguishable from custody
+    # being switched off, uninstalled, or never called — the null-result trap
+    # CLAUDE.md's `lookup_person` grep fell into.
+    _CounterSpec(
+        "nora_media_attachments_total",
+        "Attachments seen on ingested messages, by platform and the label they "
+        "rendered as (image / voice note / video / audio / document / file).",
+        ("platform", "label"),
+    ),
+    # And the second says what happened to the bytes. `stored` is the only
+    # outcome that produces a handle in the transcript; every other value is a
+    # message recorded WITHOUT custody, which is honest but lossy, and each
+    # names a different thing to fix:
+    #   not_configured — the composition root wired no blob store (the state on
+    #                    the day this shipped), so nothing was even attempted.
+    #   no_id          — signal-cli described an attachment with no id to fetch.
+    #   not_found      — the daemon has no such attachment; its own retention,
+    #                    or a receive that never downloaded it.
+    #   unreachable    — the daemon did not answer. Ops.
+    #   bad_payload    — it answered in a shape this adapter does not read; a
+    #                    signal-cli upgrade changing `getAttachment`'s result.
+    #   too_large      — over the configured ceiling. A policy, not a failure.
+    #   store_failed   — the disk refused. Full, read-only, or gone.
+    _CounterSpec(
+        "nora_media_custody_total",
+        "Attachment byte-copies into Nora's own custody, by platform and "
+        "outcome (stored / not_configured / no_id / not_found / unreachable / "
+        "bad_payload / too_large / store_failed).",
+        ("platform", "status"),    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

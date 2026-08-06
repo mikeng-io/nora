@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
+from nora.domain.media import MediaBytes, MediaRef, media_json
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -79,6 +81,13 @@ class FakeAuditStore:
             # envelope. A fake that dropped it would let every pending-sender
             # test pass against a store production does not have.
             "raw_json": json.dumps(message.raw),
+            # The custody index, produced from the message exactly as
+            # `SqlAuditStore.append` produces it — NULL when Nora holds
+            # nothing, never `[]`. A fake that always stored None here would
+            # let every custody test pass against a store production does not
+            # have; `tests/contract/test_audit_store_contract.py` is what pins
+            # the two together.
+            "media_json": media_json(message.media_blobs),
         })
         return row_id
 
@@ -93,7 +102,7 @@ class FakeAuditStore:
                 id=r["id"], sender_id=r["sender_id"], sender_name=r["sender_name"],
                 ts=r["ts"], body=r["body"], is_nora=r["is_nora"],
                 delivery_status=r["delivery_status"], raw_json=r["raw_json"],
-                quoted_ts=r["quoted_ts"],
+                quoted_ts=r["quoted_ts"], media_json=r["media_json"],
             )
             for r in window
         ]
@@ -361,3 +370,83 @@ class FakeAdapter:
     @property
     def texts(self) -> list[str]:
         return [text for _, text in self.sent]
+
+
+class FakeMediaSource:
+    """In-memory `MediaSource`, bound to `SignalMediaSource` by
+    `tests/contract/test_media_source_contract.py`.
+
+    **It does not answer every request the same way, and that is the whole
+    reason it is written like this.** A fake that returned bytes for any ref
+    would let the custody stage pass while the real adapter asked signal-cli
+    for the wrong thing — the exact shape of the three no-ops CLAUDE.md
+    records. So it behaves like the daemon does: it holds a dict keyed by the
+    attachment id the platform actually issued, answers `not_found` for an id
+    it does not hold (which is what `getAttachment` returned to a live probe on
+    2026-08-06), `no_id` for a ref with no id at all, and `too_large` against
+    the same ceiling. `unavailable` is a switch, because "the daemon is down"
+    is a state the ingest stage has to degrade through and there is no id that
+    means it.
+    """
+
+    platform = "signal"
+
+    def __init__(
+        self,
+        blobs: dict[str, bytes] | None = None,
+        *,
+        unavailable: bool = False,
+        max_bytes: int = 100 * 1024 * 1024,
+    ) -> None:
+        self.blobs = dict(blobs or {})
+        self.unavailable = unavailable
+        self.fetched: list[str] = []
+        self._max_bytes = max_bytes
+
+    async def fetch(self, *, ref: MediaRef) -> MediaBytes:
+        if not ref.platform_id:
+            return MediaBytes(available=False, reason="no_id")
+        if ref.size is not None and ref.size > self._max_bytes:
+            return MediaBytes(available=False, reason="too_large")
+        self.fetched.append(ref.platform_id)
+        if self.unavailable:
+            return MediaBytes(available=False, reason="unreachable")
+        data = self.blobs.get(ref.platform_id)
+        if data is None:
+            return MediaBytes(available=False, reason="not_found")
+        if len(data) > self._max_bytes:
+            return MediaBytes(available=False, reason="too_large")
+        return MediaBytes(available=True, data=data)
+
+
+class FakeBlobStore:
+    """In-memory `BlobStore`, bound to `FilesystemBlobStore` by
+    `tests/contract/test_blob_store_contract.py`.
+
+    Content-addressed for real — it hashes the bytes rather than handing out a
+    counter — because the key is the thing every caller reasons about: dedup,
+    verifiability and the rendered handle all come out of it, and a fake that
+    invented keys would make all three untestable against production.
+
+    `fail_on_put` is the disk refusing. The custody stage must record the
+    message without a handle and count the failure, and the only way to test
+    that is a store that can fail on demand.
+    """
+
+    def __init__(self, *, fail_on_put: bool = False) -> None:
+        self.blobs: dict[str, bytes] = {}
+        self.fail_on_put = fail_on_put
+        self.puts = 0
+
+    async def put(self, *, data: bytes) -> str:
+        if self.fail_on_put:
+            raise OSError("no space left on device")
+        self.puts += 1
+        key = hashlib.sha256(data).hexdigest()
+        self.blobs.setdefault(key, data)
+        return key
+
+    async def get(self, *, key: str) -> bytes | None:
+        if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
+            raise ValueError("blob key must be a lowercase sha256 hex digest")
+        return self.blobs.get(key)
