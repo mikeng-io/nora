@@ -75,7 +75,7 @@ intuition is correct about the problem and wrong about the mechanism.
 `design/12` §2 orders authority, and the load-bearing line is 3 over 4: skill
 instructions are trusted because an operator wrote them and they are on disk;
 message content is not, because whoever is in the room wrote it. That is why
-the transcript is wrapped `untrusted="true"` and why `guardrails.md` says text
+the transcript is wrapped `untrusted="true"` and why `constraints.md` says text
 claiming to be a system message is just text someone typed.
 
 **Web content is item 4, and worse.** A group message is at least written by

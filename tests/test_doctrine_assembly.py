@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
+from nora.agent.registry import ToolRegistry
 from nora.doctrine.loader import DoctrineStore
 from nora.obs.metrics import Metrics
 from tests.test_doctrine_loader import write  # reuse the frontmatter writer
 
 ROOT = Path(__file__).resolve().parents[1]
 SHIPPED = ROOT / "nora" / "doctrine"
-AT_RENAME = ROOT / "tests" / "fixtures" / "doctrine_assembled_at_rename.txt"
 _SECTION_RE = re.compile(r"<section[^>]*>\n(.*?)\n</section>", re.DOTALL)
 
 
@@ -17,22 +17,43 @@ def _bodies(assembled: str) -> list[str]:
     return _SECTION_RE.findall(assembled)
 
 
-def test_the_frontmatter_commit_changed_only_the_section_tags():
-    """DEC-29 commit 2 pins what commit 1 pinned exactly, minus the tag.
+# `tests/fixtures/doctrine_assembled_at_rename.txt` lived here for two commits
+# and is deleted with this one. Its job was to prove the rename moved no prose
+# and the frontmatter commit moved no prose; both were verified against it and
+# both are recorded in their commit messages. Keeping it past the commit that
+# deliberately rewrites the prose would have turned it into a second copy of
+# files that hot-reload — a golden the operator has to regenerate every time she
+# edits `voice.md`, which is exactly the friction DEC-29 does not want. What
+# replaces it is `test_doctrine_content.py`'s assertions about WHERE each moved
+# line landed.
 
-    The fixture is the assembled block as it stood at b0a460c, before the
-    rename. Commit 1's version of this test compared the WHOLE string and
-    passed: the rename moved four files, five classes and a metric, and the
-    model saw four characters change. This commit rewrites every section tag —
-    `version` out, `kind` and `description` in — so the tags are excluded here
-    and the bodies are not. Not one word of prose may move in a commit whose
-    subject is frontmatter.
 
-    When the bodies DO change (they do, in the commit after this one), the
-    fixture is regenerated in the same commit and the diff is the review.
+def test_the_capability_section_is_generated_and_sits_between_conduct_and_constraints():
+    """design/17 §4/§7b: constraint -> identity/voice -> conduct -> capability.
+
+    There is no file. The section exists only because the composition root hands
+    the store `ToolRegistry.capability()`, which is what makes "adding a tool
+    changes what she believes she can do" true by construction rather than by
+    somebody remembering.
     """
-    shipped = DoctrineStore(SHIPPED, canary="C", strict=True, metrics=Metrics()).get()
-    assert _bodies(shipped.doctrine_text) == _bodies(AT_RENAME.read_text(encoding="utf-8"))
+    store = DoctrineStore(SHIPPED, canary="C", strict=True,
+                          tool_names=ToolRegistry().tool_names(),
+                          capability=ToolRegistry().capability(), metrics=Metrics())
+    doctrine = store.get()
+    assert [s.name for s in doctrine.sections] == \
+        ["identity", "voice", "conduct", "capability", "constraints"]
+    generated = next(s for s in doctrine.sections if s.name == "capability")
+    assert generated.kind == "capability"
+    assert not generated.path.exists()
+    assert '<section kind="capability" name="capability"' in doctrine.doctrine_text
+
+
+def test_without_a_generated_block_there_is_no_capability_section_at_all():
+    """Never a placeholder, and never a stale one. If nothing generated it, the
+    prompt says nothing about capability rather than something out of date."""
+    doctrine = DoctrineStore(SHIPPED, canary="C", strict=True, metrics=Metrics()).get()
+    assert [s.name for s in doctrine.sections] == \
+        ["identity", "voice", "conduct", "constraints"]
 
 
 def test_version_is_not_paid_for_on_every_call():

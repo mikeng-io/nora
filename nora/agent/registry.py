@@ -30,7 +30,7 @@ from typing import Any
 
 from .ports import ToolSpec, adapt
 from .room import Room
-from .tools import NATIVE_TOOL_BUDGETS, build_tool_specs
+from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs
 
 
 class ToolRegistry:
@@ -46,7 +46,36 @@ class ToolRegistry:
         `nora.doctrine` sits BELOW `nora.agent` in the layer contract and cannot
         import the tool table, so the composition root hands it these instead
         (`nora.doctrine.loader.check_kind_boundaries`)."""
-        return tuple(NATIVE_TOOL_BUDGETS)
+        return tuple(NATIVE_TOOLS)
+
+    def capability(self) -> str:
+        """The capability section, GENERATED (design/17 §5).
+
+        The `kind: capability` body handed to `DoctrineStore`. There is no file
+        and there must never be one: capability's source of truth is the
+        registry, so any authored copy is a cache, and a cache with no
+        invalidation is how `soul.md` spent eight weeks telling Nora she knew
+        two things when she knew five.
+
+        **Not a schema dump, and the distinction is the whole design.** The
+        schemas are already in the request — measured at 1,222 tokens, 25% of
+        the call — and they state, verbatim, what each tool does and what it
+        takes. Repeating any of that here would be paid twice for nothing. This
+        block adds exactly the one thing a schema has no slot for: when to reach
+        for a tool *in this situation*. That is `NativeTool.when`, one clause
+        each, and nothing else.
+
+        Rendered from the same table `build_tool_specs` populates every
+        `ToolSpec.when` from, so the block and the tools cannot describe
+        different sets. `tests/unit/test_tool_registry.py` pins that in both
+        directions against real specs."""
+        lines = [f"- {name} — {spec.when}" for name, spec in NATIVE_TOOLS.items()]
+        return (
+            "These are the tools you were given. Their schemas say what each one "
+            "takes; this says when to reach for it.\n" + "\n".join(lines) + "\n"
+            "Nothing here reaches outside this conversation. When you cannot find "
+            "something out, say so in one clause and move on."
+        )
 
     def specs(
         self,

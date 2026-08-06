@@ -262,3 +262,35 @@ def test_the_chain_terminals_are_nameable_without_a_matching_section(doctrine_di
           below="capability, situation, message-content, tool-output",
           body="How you behave.")
     assert _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_a_file_claiming_a_derived_kind_is_a_startup_failure(doctrine_dir):
+    """design/17 §6, third gate: capability and situation have no file.
+
+    Their source of truth is the tool registry and the running turn, so an
+    authored copy is a cache with no invalidation — which is the exact shape of
+    the failure this whole design exists to close. The loader will not load one
+    even if somebody writes it.
+    """
+    for kind in ("capability", "situation"):
+        write(doctrine_dir, f"{kind}.md", name=kind, order=75, kind=kind,
+              body="What you can find out.")
+        with pytest.raises(DoctrineError, match="DERIVED and has no"):
+            _store(doctrine_dir).get(applies_to="tag")
+        (doctrine_dir / f"{kind}.md").unlink()
+
+
+def test_the_generated_capability_section_joins_the_assembly_without_a_file(doctrine_dir):
+    doctrine = _store(doctrine_dir, capability="When to reach for each one.").get()
+    assert [s.name for s in doctrine.sections] == \
+        ["soul", "voice", "conduct", "capability", "guardrails"]
+    assert "When to reach for each one." in doctrine.doctrine_text
+    assert not any(p.stem == "capability" for p in doctrine_dir.glob("*.md"))
+
+
+def test_a_file_may_not_squat_on_the_generated_section_s_slot(doctrine_dir):
+    """One capability section, and it is the generated one. A file at order 35
+    collides with it under the existing duplicate-order rule."""
+    write(doctrine_dir, "squat.md", name="squat", order=35)
+    with pytest.raises(DoctrineError, match="duplicate order"):
+        _store(doctrine_dir, capability="generated").get(applies_to="tag")

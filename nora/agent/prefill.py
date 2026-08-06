@@ -79,25 +79,21 @@ def _context_header(context_window: int) -> str:
     turn ends. Without it she has voice and character but no situational model,
     and a model with no situational model invents one.
 
-    It is also **the only place the tool list is stated in prose**, and that is
-    now a rule rather than an accident. `conduct.md` used to carry a second
-    prose catalogue; it listed three of the seven tools, had nothing keeping it
-    in step with the registry, and was stale by four tools when it was deleted
-    on 2026-08-06. One prose catalogue, here, pinned in BOTH directions by
-    `tests/test_prefill.py::test_the_header_names_every_tool_she_has` and
-    `::test_the_header_names_no_tool_she_does_not_have`.
-
-    **Not generated from `ToolSpec`, deliberately.** Every native tool ships
+    **It no longer names a single tool, and that is the point of DEC-29.** It
+    used to carry a hand-written catalogue of all seven — the second such
+    catalogue in the repo, after the one in `conduct.md` that listed three of
+    seven and was stale by four when it was deleted. The argument for keeping
+    it was that `ToolSpec` had nothing to generate FROM: every native tool ships
     `description=""` and lets Strands derive the model-facing text from the
-    callable's docstring (`nora.agent.ports.adapt`), so there is nothing on the
-    spec to generate FROM: it would render a bare name list and lose the only
-    thing these lines contribute. What they say is not what a tool does — the
-    schema already says that, verbatim, a few hundred tokens later — it is when
-    to reach for it *in this situation*: «use it instead of guessing from the
-    transcript», «people who have not spoken are still here». Interpolating the
-    docstrings instead would duplicate the schema into the prompt at full price
-    for zero new information. The failure mode generation would fix is drift,
-    and drift is already closed by the two tests above.
+    callable's docstring, so a generated block would have been a bare name list.
+    That was a missing field, not a reason. `ToolSpec.when` is that field, and
+    the catalogue is now `ToolRegistry.capability()` — one derived section, in
+    the doctrine, from the same table the schemas come from.
+
+    What is left here is the only thing that was never derivable: what each
+    BLOCK in front of her is, and where she is. Situation, not capability.
+    `tests/test_prefill.py::test_the_header_names_no_tool_at_all` is what keeps
+    the catalogue from growing back.
     """
     return (
         "<context_header>\n"
@@ -116,24 +112,6 @@ def _context_header(context_window: int) -> str:
         "- tag_message: what they actually said to you.\n"
         "Notation: (2h ago) is how long ago a line was sent. "
         "[A ↳ B] means A was replying to B.\n"
-        "Your tools:\n"
-        "- now — the real date and time. Use it for anything time-dependent; "
-        "do not guess from the transcript.\n"
-        "- read_buffer — messages older than the window above.\n"
-        "- read_peer_card — the same durable memory, but addressed by a "
-        "person's raw platform id. You are never shown one, so reach for "
-        "recall instead and do not invent an id to put here.\n"
-        "- group_members — who is in this conversation. Use it instead of "
-        "guessing from the transcript; people who have not spoken are still "
-        "here.\n"
-        "- lookup_person — who a name or nickname in a message refers to. Only "
-        "knows people in this conversation.\n"
-        "- recall — what you durably remember about one of them. It tells you "
-        "apart «I remember nothing yet» from «I could not check»; never report "
-        "the second as the first.\n"
-        "- send_reply — this is the only way anything you write reaches the "
-        "group. Call it once, at the end. If you never call it, nothing is "
-        "sent and the group hears nothing.\n"
         "</context_header>"
     )
 

@@ -39,7 +39,8 @@ async def _now() -> str:
 
 def _tool():
     """A real Strands tool object, built the way production builds one."""
-    return adapt(ToolSpec(name="now", description="", schema={}, call=_now, budget=99))
+    return adapt(ToolSpec(name="now", description="", schema={}, call=_now,
+                          when="the stub turn needs a tool", budget=99))
 
 
 class _StubModel(Model):

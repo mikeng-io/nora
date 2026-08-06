@@ -16,7 +16,8 @@ async def _noop(**kwargs) -> str:
 
 
 def _spec(**overrides) -> ToolSpec:
-    fields = {"name": "noop", "description": "", "schema": {}, "call": _noop}
+    fields = {"name": "noop", "description": "", "schema": {}, "call": _noop,
+              "when": "the fixture needs a tool"}
     fields.update(overrides)
     return ToolSpec(**fields)
 

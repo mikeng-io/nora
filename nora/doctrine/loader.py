@@ -272,6 +272,48 @@ def check_kind_boundaries(
             )
 
 
+CAPABILITY_ORDER = 35
+CAPABILITY_DESCRIPTION = (
+    "What you can find out, and when to reach for it. Generated from the tools "
+    "you were given — never written by hand, so it cannot be out of date."
+)
+
+
+def _capability_section(
+    body: str, authored: Sequence[DoctrineSection], dir: Path
+) -> DoctrineSection:
+    """The one section with no file (design/17 §4, §5).
+
+    `order = 35` puts it after `conduct` and before `constraints`, which is
+    where design/17 §7b's chain puts it: constraint -> identity/voice -> conduct
+    -> capability -> situation. A file claiming order 35 collides and is
+    rejected by the existing duplicate-order rule, which is the behaviour we
+    want — there is only one capability section and it is this one.
+
+    `authority_above` is DERIVED — it is exactly the authored sections that
+    already say `capability` is below them — so the symmetry check in
+    `check_authority_chain` holds without anyone maintaining both ends, and it
+    stays holding when a fifth authored file is added. Deriving it rather than
+    hard-coding the four names is the difference between a declaration that
+    tracks the files and one that has to be remembered.
+    """
+    return DoctrineSection(
+        name="capability",
+        description=CAPABILITY_DESCRIPTION,
+        order=CAPABILITY_ORDER,
+        applies_to=("always",),
+        version=1,
+        kind="capability",
+        authority_above=tuple(s.name for s in authored if "capability" in s.authority_below),
+        authority_below=("situation", "message-content", "tool-output"),
+        not_here="Nothing is authored here at all — the registry is the source.",
+        change_policy="agent-may-edit",
+        body=body,
+        path=Path(dir) / "(generated)",
+        sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
+    )
+
+
 def check_authority_chain(sections: Sequence[DoctrineSection]) -> None:
     """`authority_above`/`authority_below` name real things, and agree with each other.
 
@@ -318,7 +360,7 @@ class DoctrineStore:
     def __init__(self, dir: Path, *, strict: bool = True, reload: str = "mtime",
                  canary: str = "", display_name: str = "Nora", trigger: str = "",
                  language_hint: str = "", tool_names: Sequence[str] = (),
-                 metrics: Metrics) -> None:
+                 capability: str = "", metrics: Metrics) -> None:
         # `tool_names` is what the tool-catalogue gate checks BACKTICKED text
         # against; the structural half of that gate (bare snake_case) runs
         # whether or not it is supplied, so an omitted list narrows the check
@@ -332,6 +374,13 @@ class DoctrineStore:
         self._trigger = trigger
         self._language_hint = language_hint
         self._tool_names = tuple(tool_names)
+        # The generated `kind: capability` body (`ToolRegistry.capability()`).
+        # It arrives as a STRING rather than being read off disk because that is
+        # the whole point: there is no file, so there is nothing for anyone to
+        # hand-edit and nothing to go stale. An empty value assembles no
+        # capability section at all, which is what every test that is not about
+        # capability wants.
+        self._capability = capability
         self._metrics = metrics
         self._sections: tuple[DoctrineSection, ...] = ()
         self._fingerprint: tuple | None = None
@@ -351,12 +400,21 @@ class DoctrineStore:
         for path in files:
             try:
                 section = parse_section(path)
+                if section.kind in DERIVED_KINDS:
+                    raise DoctrineError(
+                        f"{path.name}: kind {section.kind!r} is DERIVED and has no "
+                        "file. Capability is generated from the tool registry and "
+                        "situation from the running turn; an authored copy of "
+                        "either is a cache with no invalidation."
+                    )
                 check_kind_boundaries(section, self._tool_names)
                 sections.append(section)
             except DoctrineError:
                 if self._strict:
                     raise
                 log.warning("skipping invalid doctrine file %s", path.name)
+        if self._capability:
+            sections.append(_capability_section(self._capability, sections, self._dir))
         by_name: dict[str, Path] = {}
         by_order: dict[int, Path] = {}
         for s in sections:

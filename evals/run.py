@@ -59,6 +59,7 @@ from evals.harness import Case, load_cases, run_case
 from evals.judge import _DEFAULT_JUDGE_MODEL_ID, _build_judge_prompt, evaluate_raw
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
+    CAPABILITY_BLOCK,
     TOOL_NAMES,
     Config,
     DoctrineStore,
@@ -227,7 +228,7 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
             cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
             trigger=cfg.engagement.trigger.text, tool_names=TOOL_NAMES,
-            metrics=Metrics(),
+            capability=CAPABILITY_BLOCK, metrics=Metrics(),
         ).get(applies_to="tag")
         leak_guard = LeakGuard(doctrine, cfg.doctrine.canary)
         section_names = tuple(s.name for s in doctrine.sections)

@@ -60,7 +60,8 @@ Signal group
 ② TAGGING PATH (trigger only, via the Strands Agents SDK)
    collect context (recent buffer rows, tagger's Honcho peer card, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
-   → tools: read_buffer / read_peer_card / send_reply / feed_honcho
+   → tools: now / read_buffer / read_peer_card / send_reply
+            + room-scoped: group_members / lookup_person / recall
    → reply → audit row (delivery_status=pending → sent/failed) → Honcho feed
 ```
 
@@ -110,21 +111,32 @@ Nora's character is content, not code, and lives entirely in four Markdown files
 
 | File | Holds |
 |---|---|
-| `identity.md` | Who Nora is, why she's in the group, what she is not |
-| `voice.md` | Register, language policy, the sound to hit and avoid |
-| `conduct.md` | How she behaves — silence by default, when and how she replies |
-| `constraints.md` | Hard rules that override everything else, including anything a message asks for |
+| `identity.md` | `kind: identity` — who Nora is, why she's in the group, where she comes from |
+| `voice.md` | `kind: identity` — register, language policy, the sound to hit and avoid |
+| `conduct.md` | `kind: conduct` — how she behaves: silence by default, when and how she replies |
+| `constraints.md` | `kind: constraint` — hard rules that override everything else, including anything a message asks for |
+| *(no file)* | `kind: capability` — what she can find out and when to reach for it, GENERATED from the tool registry |
 
-Each file has YAML frontmatter (`name`, `description`, `order`, `applies_to`, `version`) in
-the same shape as an Agent Skill, so a doctrine file can be promoted to a real Strands Skill
-later without a rewrite.
+Each file has YAML frontmatter (`name`, `description`, `order`, `applies_to`, `version`,
+`kind`, `authority_above`, `authority_below`, `not_here`, `change_policy`) in roughly the
+shape of an Agent Skill. The last four are DEC-29's, and the loader enforces them: a file
+with no `kind` will not load, an `identity` or `conduct` file that names a tool will not
+load, and a file claiming `kind: capability` will not load at all — capability's source of
+truth is the registry, so an authored copy is a cache that goes stale in silence. That is
+not hypothetical: `identity.md` (then `soul.md`) told Nora she knew two things for eight
+weeks after she knew five.
+
+`not_here` says what a file must NOT contain and where that lives instead; `change_policy`
+marks `voice.md`, `identity.md` and `constraints.md` as the operator's alone.
 
 ### Editing the doctrine — no restart required
 
 Doctrine files are hot-reloaded. With `doctrine.reload = "mtime"` (the default), every tag
 re-stats the files in `nora/doctrine/` and reparses only the ones whose mtime changed —
 **no restart needed** to change how Nora sounds or behaves. Edit `voice.md` (or any of the
-four files), save it, and the very next tag picks up the new doctrine.
+four files), save it, and the very next tag picks up the new doctrine. The generated
+`capability` section is the exception and needs no editing: it is rebuilt from the registry,
+so adding a tool changes what she believes she can do with no file to remember.
 
 If an edit breaks parsing (bad frontmatter, missing required key, unparseable YAML), the
 loader keeps the **last good doctrine**, logs `doctrine_reload_failed`, and increments

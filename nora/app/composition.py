@@ -185,6 +185,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         trigger=cfg.engagement.trigger.text,
         tool_names=ToolRegistry().tool_names(),
+        capability=ToolRegistry().capability(),
         metrics=metrics,
     )
     try:

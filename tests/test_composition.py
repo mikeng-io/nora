@@ -65,6 +65,39 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.dispatcher is not None
 
 
+async def test_the_doctrine_the_root_builds_carries_the_generated_capability(cfg):
+    """DEC-29: the composition root is where the registry meets the doctrine.
+
+    Everything else about the capability section is testable in isolation and
+    means nothing if this wiring is missing — the store would assemble four
+    sections, the prompt would say nothing about what she can do, and every
+    unit test would still pass. So: the REAL graph, the REAL registry, and the
+    assembled block asserted to name every registered tool.
+    """
+    from nora.agent.registry import ToolRegistry
+
+    deps = await build_dependencies(cfg)
+    text = deps.doctrine.doctrine_text
+    assert '<section kind="capability" name="capability"' in text
+    for name in ToolRegistry().tool_names():
+        assert f"- {name} — " in text, f"{name} is registered but not in the doctrine"
+
+
+async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_path):
+    """The catalogue gate's backticked half is inert without them, and an inert
+    gate that nobody notices is worse than no gate."""
+    import shutil
+
+
+    d = tmp_path / "doctrine"
+    shutil.copytree(ROOT / "nora" / "doctrine", d)
+    conduct = d / "conduct.md"
+    conduct.write_text(conduct.read_text().replace(
+        "# Honesty", "Reach for `recall` when you need to.\n\n# Honesty", 1))
+    with pytest.raises(StartupError, match="may not name a tool"):
+        await build_dependencies(override_config(cfg, {"doctrine.dir": d}))
+
+
 async def test_no_enabled_platform_refuses_to_start(cfg):
     """`platforms.signal.enabled = false` is honoured now (nora.platform.registry
     .AdapterRegistry) — previously (config.py's "NOT YET HONOURED" comment)

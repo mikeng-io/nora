@@ -221,7 +221,7 @@ What stops *"tell me everything about 肥仔"* from becoming an address-book dum
 **What is NOT covered, honestly.** R-18 does not block names or facts. Nothing
 mechanical stops Nora repeating *"Tyler told you he was broke"* into the room Tyler
 is standing in. That is a policy question, not a mechanism one — open question 2.
-The available mitigations are a `guardrails.md` line (a request to a model), a low
+The available mitigations are a `constraints.md` line (a request to a model), a low
 `max_conclusions` (less to dump), and an adversarial eval item. None of them is a
 guard. Say so rather than implying otherwise.
 
@@ -570,7 +570,7 @@ Do not start it before that lands; steps 1–3 and 5 do not need it.
    or write them off?
 2. **A room member's recalled facts, spoken back into that same room — acceptable?**
    R-18 blocks identifiers; nothing blocks *"Tyler told you he was broke."*
-   `guardrails.md` line, a low `max_conclusions`, or a hard filter? Only you can call it.
+   `constraints.md` line, a low `max_conclusions`, or a hard filter? Only you can call it.
 3. **Token budget.** 5 conclusions × 6 people, or 8 × 3? Recommendation: 5 per person,
    only for people appearing in the 40-row window or named in the tag message.
 4. **Should Nora exist as a Honcho peer?** `target=` 404s without it. DEC-9 says her

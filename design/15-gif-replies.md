@@ -233,7 +233,7 @@ and per-parameter text from it), not in another prose block in the prompt.
 That keeps it from drifting away from the tool the way a prompt catalogue can.
 
 The register itself — sarcastic, teasing, loving, doubting — is already
-`soul.md` and `voice.md`'s job and needs no new mechanism. A GIF is a way of
+`identity.md` and `voice.md`'s job and needs no new mechanism. A GIF is a way of
 speaking in a register she already has, not a new register.
 
 ## 4. What no guard can see

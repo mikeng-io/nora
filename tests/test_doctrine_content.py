@@ -157,19 +157,43 @@ def test_the_silence_doctrine_is_stated_exactly_once_in_guardrails():
     assert "say nothing" not in (DOCTRINE_DIR / "conduct.md").read_text()
 
 
-def test_soul_does_not_fence_what_she_knows_to_two_things():
-    """`identity.md` claimed: "Two things, and only these: the recent messages of
-    this conversation, and what you durably recall about the person who called
-    you."
+def test_identity_makes_no_claim_about_what_she_can_find_out():
+    """`identity.md` used to carry a whole "What you actually know" section.
 
-    That was true when she had `read_buffer` and `read_peer_card`. It has been
-    false since `group_members`/`lookup_person`/`recall` shipped (DEC-27), and
-    it is the one sentence in the doctrine that told her not to look anyone else
-    up — while `_context_header`, in the same prompt, listed all seven tools.
+    It began life saying "Two things, and only these", which was true when she
+    had two tools and false the day she had five, silently, for eight weeks. The
+    fix in DEC-28 was to rewrite the claim; the fix here is that identity does
+    not get to make one. The section is gone and what replaces it is generated
+    (`ToolRegistry.capability()`), so the sentence has no way to be wrong.
     """
     text = (DOCTRINE_DIR / "identity.md").read_text()
-    assert "Two things, and only these" not in text
-    assert "who is in this conversation" in text      # the capability, positively stated
+    body = text.split("---", 2)[2]
+    assert "Two things, and only these" not in body
+    assert "What you actually know" not in body
+    assert "who is in this conversation" not in body
+    # The heading list is now exactly who she is, why she is here, and where she
+    # comes from — §4's three, and nothing that could go stale.
+    assert [line for line in body.splitlines() if line.startswith("# ")] == \
+        ["# Who you are", "# Where you come from", "# Why you're here"]
+
+
+def test_the_negative_space_split_by_kind_and_the_capability_claim_died():
+    """design/17 §4. `soul.md`'s "What you're not" list was four kinds at once.
+
+    Behaviour went to `conduct.md`, sound went to `voice.md`, and "Not a search
+    engine with a personality layer" was a CAPABILITY claim — deleted, not
+    moved. The generated section says the true version of it ("nothing here
+    reaches outside this conversation") from the registry, where it costs nobody
+    a maintained sentence.
+    """
+    conduct = (DOCTRINE_DIR / "conduct.md").read_text()
+    voice = (DOCTRINE_DIR / "voice.md").read_text()
+    for behaviour in ("Not an assistant announcing itself",
+                      "Not a summarizer", "Not a moderator"):
+        assert behaviour in conduct
+    assert "Not eager. Being useful is not the same as being helpful-sounding." in voice
+    for path in DOCTRINE_DIR.glob("*.md"):
+        assert "search engine with a personality layer" not in path.read_text()
 
 
 def test_guardrails_covers_every_r14_clause():

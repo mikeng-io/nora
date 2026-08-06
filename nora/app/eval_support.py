@@ -31,8 +31,12 @@ REPLY_GUARD_BUDGETS = ToolRegistry().budgets()
 # against, so an eval run loads the shipped doctrine under the same rule
 # production does.
 TOOL_NAMES = ToolRegistry().tool_names()
+# The generated capability section, so an eval assembles the same doctrine
+# production does rather than one silently missing a fifth of it.
+CAPABILITY_BLOCK = ToolRegistry().capability()
 
 __all__ = [
+    "CAPABILITY_BLOCK",
     "REPLY_GUARD_BUDGETS",
     "TOOL_NAMES",
     "Config",

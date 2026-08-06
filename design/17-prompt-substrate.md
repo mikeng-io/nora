@@ -4,10 +4,14 @@ title: "Nora — the prompt substrate: what is authored, what is derived, and wh
 description: "Splitting the system prompt by source of truth rather than by topic, so capability cannot go stale in prose."
 tags: [nora, design, persona, system-prompt, capability, authority, substrate]
 timestamp: '2026-08-06'
-status: proposed
+status: current
 ---
 
 # The prompt substrate
+
+**BUILT — DEC-29, 2026-08-06.** Everything below is implemented except where §5b's behavioural question is explicitly left unmeasured. The before-state this
+document argues against (`nora/persona/`, `soul.md`, `guardrails.md`, `<nora_persona>`) is
+deliberately preserved in the text: it is the evidence, not the current layout.
 
 Nora's system prompt is four markdown files concatenated in frontmatter `order`.
 It is the layer that decides what she believes she is and what she believes she

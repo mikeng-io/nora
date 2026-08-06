@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from ..domain.ports import Recollection
@@ -59,14 +60,38 @@ log = logging.getLogger("nora.tools")
 # that differs between the container and a developer machine.
 _HKT = timezone(timedelta(hours=8), "HKT")
 
-NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
+@dataclass(frozen=True)
+class NativeTool:
+    """What is declared about a tool once, in one place.
+
+    `budget` and `when` live together because they are two answers to the same
+    question — how a turn is allowed to spend itself — and because the failure
+    mode this table exists to prevent is a tool being added to one list and
+    forgotten in the other. `budget` feeds `ReplyGuard` through
+    `ToolRegistry.budgets()` (DEC-10); `when` feeds the generated capability
+    block through `ToolRegistry.capability()` (DEC-29). Both are read from here
+    and nowhere else, so a tool that exists has a ceiling AND a reason to be
+    reached for, or it does not build.
+    """
+
+    budget: int
+    when: str
+
+
+# ONE line per tool, in the order the capability block renders them. Keep each
+# `when` to a single clause: it is paid on every model call of every tag, and it
+# is not the place to restate what the schema already says.
+NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # Cheap, local, and the answer changes every second, so there is no reason
     # to ration it — but a budget is still required: R-7 default-denies any
     # tool absent from this mapping, which is what stops a model inventing one.
-    "now": 2,
-    "read_buffer": 2,
-    "read_peer_card": 1,
-    "send_reply": 1,
+    "now": NativeTool(2, "anything that depends on when it is — never guess the "
+                         "date or time from the transcript"),
+    "read_buffer": NativeTool(2, "something was said further back than the messages "
+                                 "you were shown"),
+    "read_peer_card": NativeTool(1, "durable memory addressed by a raw platform id. "
+                                    "You are never shown one, so reach for recall "
+                                    "instead and do not invent an id"),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
     # `llm.limits.turns = 8` is the real global ceiling — these numbers only
@@ -76,19 +101,34 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
     # caches the daemon read for the tag, so a second call is guaranteed to
     # return the identical answer four seconds later. Anything above 1 buys
     # nothing and can only crowd out `send_reply`.
-    "group_members": 1,
+    "group_members": NativeTool(1, "who is in this conversation. People who have not "
+                                   "spoken are still here, and people a message names "
+                                   "may not be"),
     # 2: one message routinely names two people (「阿豹同峰哥去咗邊」). The call
     # itself is a dict lookup over the cached roster — free — so the budget is
     # sized by round trips, not by work, and two lookups plus a reply still
     # leaves half the turn budget. A third name is rare enough to be worth
     # answering from what she has.
-    "lookup_person": 2,
+    "lookup_person": NativeTool(2, "who a name or nickname in a message refers to"),
     # 2: same shape, but each call is also an HTTP request (~0.2 s measured).
     # Two covers the question this exists for — "what do I remember about
     # them" for the person who asked plus one person they asked about — and
     # caps how much durable memory one turn can pull into context, which is
     # the disclosure axis R-18 cannot help with (design/11 §1.5).
-    "recall": 2,
+    "recall": NativeTool(2, "what you durably remember about one of them. «I remember "
+                            "nothing yet» and «I could not check» are different "
+                            "answers; never report the second as the first"),
+    "send_reply": NativeTool(1, "the only way anything you write reaches the group. "
+                                "Call it once, at the end; if you never call it, "
+                                "nothing is sent"),
+}
+
+# Kept as its own name because `ReplyGuard`, `ToolRegistry.budgets()` and every
+# test that reasons about R-7 read it, and because DEC-10's property is that the
+# number enforced and the number declared are the same object. Derived, so it
+# cannot fall out of step with the table above.
+NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
+    name: spec.budget for name, spec in NATIVE_TOOLS.items()
 }
 
 # `read_buffer`'s clamp, and the single source both the clamp and the
@@ -465,31 +505,38 @@ def build_tool_specs(
     return (
         ToolSpec(
             name="now", description="", schema={}, call=now,
-            budget=NATIVE_TOOL_BUDGETS["now"],
+            when=NATIVE_TOOLS["now"].when,
+            budget=NATIVE_TOOLS["now"].budget,
         ),
         ToolSpec(
             name="read_buffer", description="", schema={}, call=read_buffer,
-            budget=NATIVE_TOOL_BUDGETS["read_buffer"],
+            when=NATIVE_TOOLS["read_buffer"].when,
+            budget=NATIVE_TOOLS["read_buffer"].budget,
         ),
         ToolSpec(
             name="read_peer_card", description="", schema={}, call=read_peer_card,
-            budget=NATIVE_TOOL_BUDGETS["read_peer_card"],
+            when=NATIVE_TOOLS["read_peer_card"].when,
+            budget=NATIVE_TOOLS["read_peer_card"].budget,
         ),
         ToolSpec(
             name="group_members", description="", schema={}, call=group_members,
-            budget=NATIVE_TOOL_BUDGETS["group_members"],
+            when=NATIVE_TOOLS["group_members"].when,
+            budget=NATIVE_TOOLS["group_members"].budget,
         ),
         ToolSpec(
             name="lookup_person", description="", schema={}, call=lookup_person,
-            budget=NATIVE_TOOL_BUDGETS["lookup_person"],
+            when=NATIVE_TOOLS["lookup_person"].when,
+            budget=NATIVE_TOOLS["lookup_person"].budget,
         ),
         ToolSpec(
             name="recall", description="", schema={}, call=recall,
-            budget=NATIVE_TOOL_BUDGETS["recall"],
+            when=NATIVE_TOOLS["recall"].when,
+            budget=NATIVE_TOOLS["recall"].budget,
         ),
         ToolSpec(
             name="send_reply", description="", schema={}, call=send_reply,
-            budget=NATIVE_TOOL_BUDGETS["send_reply"],
+            when=NATIVE_TOOLS["send_reply"].when,
+            budget=NATIVE_TOOLS["send_reply"].budget,
         ),
     )
 
