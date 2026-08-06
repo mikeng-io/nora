@@ -1,14 +1,14 @@
 """Outbound content that must never reach the group, whatever the model wrote.
 
 `LeakGuard` (`nora.agent.guards`) already blocks the canary and verbatim
-persona spans — R-6, protecting Nora's *configuration*. This protects the
+doctrine spans — R-6, protecting Nora's *configuration*. This protects the
 *people*, which is a different exposure and was previously unguarded: nothing
 stopped a reply from carrying somebody's phone number or ACI.
 
 That gap matters more here than in most systems, because Nora legitimately
 holds the material. The transcript she reasons over contains real sender ids,
-and `read_peer_card` returns durable recall about a person. `guardrails.md`
-tells her not to relay any of it — but a persona instruction is a request to a
+and `read_peer_card` returns durable recall about a person. `constraints.md`
+tells her not to relay any of it — but a doctrine instruction is a request to a
 model, and this codebase has now been bitten four separate times by things
 that were true in intent and false in fact. A prompt-injected or simply sloppy
 turn should not be the only thing between a member's phone number and the
@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 import re
 
-from ..persona.loader import Persona
+from ..doctrine.loader import Doctrine
 
 # E.164 as Signal actually presents it: a leading +, country code, 7-14 more
 # digits. Requires the +, so "call me at 12345678" stays sendable while the
@@ -54,7 +54,7 @@ _UUID = re.compile(
 # Conventional secret prefixes. Cheap to check and unambiguous when they hit.
 _KEYLIKE = re.compile(r"\b(?:sk|pk|api|ghp|gho|xox[abps])[-_][A-Za-z0-9_-]{16,}\b")
 
-# What she runs on is nobody's business. `guardrails.md` already forbids
+# What she runs on is nobody's business. `constraints.md` already forbids
 # disclosing it, but that is a request to a model — and unlike the credential,
 # this one IS reachable: the gateway echoes the upstream name back in every
 # response, so it exists inside the process. `config.toml` names the gateway
@@ -90,17 +90,17 @@ def _normalize(text: str) -> str:
 
 
 class LeakGuard:
-    """R-6: no reply carries the canary or a verbatim >=min_span persona span.
+    """R-6: no reply carries the canary or a verbatim >=min_span doctrine span.
 
-    Persona sections only — runtime_context holds config values (display name,
+    Doctrine sections only — runtime_context holds config values (display name,
     trigger) that are legitimately quotable. Somebody ELSE's identifiers are a
     different exposure, guarded separately by `nora.agent.egress` (R-18).
     """
 
-    def __init__(self, persona: Persona, canary: str, min_span: int = 40) -> None:
+    def __init__(self, doctrine: Doctrine, canary: str, min_span: int = 40) -> None:
         self._canary = canary
         self._min_span = min_span
-        self._haystack = _normalize(persona.persona_text)
+        self._haystack = _normalize(doctrine.doctrine_text)
 
     def check(self, text: str) -> str | None:
         if not text:
@@ -113,6 +113,6 @@ class LeakGuard:
         for start in range(0, len(candidate) - self._min_span + 1):
             span = candidate[start:start + self._min_span]
             if span in self._haystack:
-                log.error("persona_leak_blocked: verbatim span %r", span[:60])
-                return "persona_span"
+                log.error("doctrine_leak_blocked: verbatim span %r", span[:60])
+                return "doctrine_span"
         return None

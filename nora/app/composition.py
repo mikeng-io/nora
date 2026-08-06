@@ -49,7 +49,7 @@ from nora.ingest.policy import (
 )
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
-from nora.persona.loader import Persona, PersonaError, PersonaStore
+from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
@@ -92,7 +92,7 @@ class Dependencies:
     still only ever builds one concrete adapter type, so there is nothing yet
     for the port annotation to buy here; `nora.platform.registry.
     AdapterRegistry` is where a second adapter type would actually need the
-    port. `persons`, `metrics`, `persona`, `persona_store`, `debounce`,
+    port. `persons`, `metrics`, `doctrine`, `doctrine_store`, `debounce`,
     `background`, `llm_state`, `ingest`, `engagement`, `dispatcher` stay
     concrete too: none has a port at all.
 
@@ -115,8 +115,8 @@ class Dependencies:
     dispatcher: Dispatcher
     adapter: SignalAdapter
     account: str
-    persona: Persona
-    persona_store: PersonaStore
+    doctrine: Doctrine
+    doctrine_store: DoctrineStore
     debounce: Debounce
     background: BackgroundTasks
     llm_state: LLMState
@@ -180,15 +180,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     _adapter_satisfies_platform_adapter: PlatformAdapter = adapter
     account = registry.identity_for("signal").primary
 
-    persona_store = PersonaStore(
-        cfg.persona.dir, strict=cfg.persona.strict, reload=cfg.persona.reload,
-        canary=cfg.persona.canary, display_name=cfg.persona.display_name,
+    doctrine_store = DoctrineStore(
+        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
+        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         trigger=cfg.engagement.trigger.text, metrics=metrics,
     )
     try:
-        persona = persona_store.get(applies_to="tag")
-    except PersonaError as exc:
-        raise StartupError(f"persona error: {exc}") from exc
+        doctrine = doctrine_store.get(applies_to="tag")
+    except DoctrineError as exc:
+        raise StartupError(f"doctrine error: {exc}") from exc
 
     memory = HonchoClient(cfg.memory.base_url, cfg.memory.workspace_id)
     await memory.ensure_workspace()          # best-effort, never fatal — no try/except
@@ -258,9 +258,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
     engagement = EngagementPipeline(
         adapter=adapter, audit=audit, memory=memory, persons=persons,
-        persona_store=persona_store, context_assembler=assembler, runner=runner,
+        doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
-        debounce=debounce, canary=cfg.persona.canary, display_name=cfg.persona.display_name,
+        debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
@@ -272,7 +272,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
-        dispatcher=dispatcher, adapter=adapter, account=account, persona=persona,
-        persona_store=persona_store, debounce=debounce, background=background,
+        dispatcher=dispatcher, adapter=adapter, account=account, doctrine=doctrine,
+        doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client,
     )

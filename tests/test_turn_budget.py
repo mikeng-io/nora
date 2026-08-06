@@ -8,7 +8,7 @@ it stopped it in a way that read as the model choosing not to answer.
 
 The measurements, once, so the constants below are not magic:
 
-  per-call INPUT                    4,952 tokens (persona + transcript +
+  per-call INPUT                    4,952 tokens (doctrine + transcript +
                                     tool schemas), paid again on EVERY call
   a 6-call turn, end to end         32,426 - 36,748 tokens total
   single-call completions           3,993 / 3,987 / 3,974 tokens against

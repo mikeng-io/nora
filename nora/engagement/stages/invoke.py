@@ -19,7 +19,7 @@ client and `OpenAIModel` provider (built once, at process start, never per
 tag) together with `factory.create_agent`/`factory.invoke`; this stage never
 imports `nora.agent.factory` itself.
 
-`trace_attributes` is computed here, from `ctx`/`persona`, via
+`trace_attributes` is computed here, from `ctx`/`doctrine`, via
 `nora.obs.tracing.trace_attributes` — the same call `Handler._invoke` makes
 immediately before `factory.create_agent` (`nora/handler.py:133`) — and
 handed to the runner rather than left for it to recompute.
@@ -55,7 +55,7 @@ class AgentRunner(Protocol):
     async def invoke(
         self,
         *,
-        persona: Any,
+        doctrine: Any,
         tools: list,
         pre_fill: list[dict],
         guard: Any,
@@ -69,7 +69,7 @@ class AgentRunner(Protocol):
 async def run(
     *,
     runner: AgentRunner,
-    persona: Any,
+    doctrine: Any,
     tools: list,
     pre_fill: list[dict],
     guard: Any,
@@ -98,9 +98,9 @@ async def run(
     try:
         stop_reason = await asyncio.wait_for(
             runner.invoke(
-                persona=persona, tools=tools, pre_fill=pre_fill, guard=guard,
+                doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                 tag_message=tag_message, limits=limits, ctx=ctx,
-                trace_attributes=build_trace_attributes(ctx, persona),
+                trace_attributes=build_trace_attributes(ctx, doctrine),
             ),
             timeout=timeout_seconds,
         )

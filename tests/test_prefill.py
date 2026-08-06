@@ -169,7 +169,7 @@ def _at(s: str):
 
 
 def test_the_prefill_states_the_current_time():
-    """She had no clock anywhere — not here, not in the persona — so 今晚, 琴日
+    """She had no clock anywhere — not here, not in the doctrine — so 今晚, 琴日
     and 而家 were ungrounded and "what time is it" was unanswerable.
 
     Asserted against the whole PREFILL rather than the header, because the
@@ -390,7 +390,7 @@ def test_the_header_names_no_tool_she_does_not_have():
 
 
 def test_the_header_explains_the_situation_not_just_the_notation():
-    """Persona says who she IS; this says how she is being RUN. Without a
+    """Doctrine says who she IS; this says how she is being RUN. Without a
     situational model a model invents one."""
     from nora.agent.prefill import _context_header
     header = _context_header(40)

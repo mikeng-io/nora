@@ -14,7 +14,7 @@ RULE_TESTS = {
     "R-4": "test_empty_reply_not_sent",
     "R-5": "test_silent_failure_matrix",
     "R-6": "test_leak_guard_blocks_canary",
-    "R-6b": "test_leak_guard_blocks_persona_verbatim",
+    "R-6b": "test_leak_guard_blocks_doctrine_verbatim",
     "R-6c": "test_leak_guard_allows_normal_reply",
     "R-7": "test_tool_call_budget_enforced_for_read_buffer",
     "R-8": "test_limits_passed_through",
@@ -51,6 +51,6 @@ def test_every_enforced_rule_has_a_named_test():
 
 
 def test_r14_is_covered_by_the_adversarial_corpus():
-    """R-14 is behavioural: asserted by guardrails.md, measured by the corpus."""
+    """R-14 is behavioural: asserted by constraints.md, measured by the corpus."""
     assert (ROOT / "evals" / "adversarial" / "injections.yaml").exists()
     assert (ROOT / "evals" / "adversarial" / "transcript_injection.yaml").exists()

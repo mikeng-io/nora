@@ -29,7 +29,7 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
-from nora.persona.loader import PersonaStore
+from nora.doctrine.loader import DoctrineStore
 from nora.persons import Persons
 from nora.policy import permissive_policy
 from nora.tag import Debounce
@@ -45,7 +45,7 @@ def build_offline_pipeline(
     audit: AuditStore,
     memory: MemoryStore,
     persons: Persons,
-    persona_store: PersonaStore,
+    doctrine_store: DoctrineStore,
     runner: Any,
     metrics: Metrics | None = None,
     roster_source: RosterSource | None = None,
@@ -84,9 +84,9 @@ def build_offline_pipeline(
     tool_registry = ToolRegistry()
     engagement = EngagementPipeline(
         adapter=adapter, audit=audit, memory=memory, persons=persons,
-        persona_store=persona_store, context_assembler=assembler, runner=runner,
+        doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
-        debounce=debounce, canary=cfg.persona.canary, display_name=cfg.persona.display_name,
+        debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=None,

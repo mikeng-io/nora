@@ -35,7 +35,7 @@ async def env(tmp_path, monkeypatch, aiohttp_server):
     cfg["memory"]["base_url"] = base
     cfg["store"]["db_path"] = str(tmp_path / "messages.db")
     cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
-    cfg["persona"]["dir"] = str(ROOT / "nora" / "persona")
+    cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
     cfg["identity_file"] = str(tmp_path / "identity.toml")
     cfg["policy_file"] = str(tmp_path / "policy.toml")
     cfg["obs"]["metrics"]["port"] = 0
@@ -58,7 +58,7 @@ async def test_build_app_wires_everything(env):
         assert app.deps.dispatcher is not None
         assert app.adapter.platform == "signal"
         assert app.account == "+85290000100"
-        assert app.persona.sha256
+        assert app.doctrine.sha256
     finally:
         await app.shutdown()
 
@@ -69,15 +69,15 @@ async def test_missing_secret_refuses_to_start(env, monkeypatch):
         await build_app(env)
 
 
-async def test_a_broken_persona_refuses_to_start(env, tmp_path):
-    persona_dir = tmp_path / "persona"
-    persona_dir.mkdir()
-    shutil.copy(ROOT / "nora" / "persona" / "soul.md", persona_dir / "soul.md")
-    (persona_dir / "broken.md").write_text("no frontmatter")
+async def test_a_broken_doctrine_refuses_to_start(env, tmp_path):
+    doctrine_dir = tmp_path / "doctrine"
+    doctrine_dir.mkdir()
+    shutil.copy(ROOT / "nora" / "doctrine" / "identity.md", doctrine_dir / "identity.md")
+    (doctrine_dir / "broken.md").write_text("no frontmatter")
     cfg = tomllib.loads(env.read_text())
-    cfg["persona"]["dir"] = str(persona_dir)
+    cfg["doctrine"]["dir"] = str(doctrine_dir)
     env.write_text(tomli_w.dumps(cfg))
-    with pytest.raises(StartupError, match="persona"):
+    with pytest.raises(StartupError, match="doctrine"):
         await build_app(env)
 
 

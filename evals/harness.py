@@ -33,7 +33,7 @@ from pathlib import Path
 
 import yaml
 
-from nora.app.eval_support import Metrics, PersonaStore, load_eval_config, load_persons
+from nora.app.eval_support import Metrics, DoctrineStore, load_eval_config, load_persons
 from nora.app.offline import build_offline_pipeline
 from nora.testing import (
     FakeAdapter,
@@ -45,7 +45,7 @@ from nora.testing import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PERSONA_DIR = REPO_ROOT / "nora" / "persona"
+DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
 
 # The one sender `group_event`'s default produces, mapped so the post-reply Honcho
 # feed (which requires a resolved `ctx.tagger`, `nora/engagement/stages/feedback.py`)
@@ -143,9 +143,9 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
 
     cfg = load_eval_config((REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml"))
     metrics = Metrics()
-    persona_store = PersonaStore(
-        PERSONA_DIR, strict=cfg.persona.strict, reload=cfg.persona.reload,
-        canary=cfg.persona.canary, display_name=cfg.persona.display_name,
+    doctrine_store = DoctrineStore(
+        DOCTRINE_DIR, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
+        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         trigger=cfg.engagement.trigger.text, metrics=metrics,
     )
 
@@ -161,7 +161,7 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
         try:
             dispatcher, _engagement, background = build_offline_pipeline(
                 cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
-                persona_store=persona_store, runner=runner, metrics=metrics,
+                doctrine_store=doctrine_store, runner=runner, metrics=metrics,
             )
             body = _build_body(case)
             # Mirrors tests/integration/harness.py::_HandlerView.on_event: parse the

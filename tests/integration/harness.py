@@ -3,7 +3,7 @@
 Shared wiring for every M5 scenario. `build_handler` is the single entry point: it
 assembles a real `IngestPipeline` + `EngagementPipeline`, glued by a real `Dispatcher`
 (`nora.app.dispatch`), against a real (tmp) sqlite db and the real, already-validated
-persona files, with only the model and the outbound sender faked. This is Task 8's
+doctrine files, with only the model and the outbound sender faked. This is Task 8's
 cutover from the deleted `Handler`: the wiring below is the harness-side mirror of
 `nora.app.composition.build_dependencies`, using `nora.testing`/local fakes wherever
 `build_dependencies` would use a real collaborator.
@@ -38,14 +38,14 @@ from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
-from nora.persona.loader import PersonaStore
+from nora.doctrine.loader import DoctrineStore
 from nora.persons import load_persons
 from nora.testing import FakeAgentRunner, ScriptedTurn
 from tests.builders import load_example_config, override_config
 from tests.fakes import FakeHoncho, SinkSender
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PERSONA_DIR = REPO_ROOT / "nora" / "persona"
+DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
 
 OWN_ACCOUNT = "+85290000100"
 
@@ -158,7 +158,7 @@ class Harness:
     honcho: FakeHoncho
     metrics: Metrics
     own_account: str
-    persona_store: PersonaStore
+    doctrine_store: DoctrineStore
     # Port, not the concrete SqlAuditStore: under db_append_fails/context_read_fails
     # this is a _StoreProxy subclass instead (see the two subclasses above).
     store: AuditStore
@@ -250,7 +250,7 @@ class Harness:
 
 
 def _build_config(
-    tmp_path: Path, *, persons_path: Path, policy_path: Path, persona_dir: Path,
+    tmp_path: Path, *, persons_path: Path, policy_path: Path, doctrine_dir: Path,
     invocation_timeout: float | None = None,
     debounce: float | None = None,
 ) -> Config:
@@ -258,7 +258,7 @@ def _build_config(
 
     changes: dict[str, object] = {
         "store.db_path": tmp_path / "messages.db",
-        "persona.dir": persona_dir,
+        "doctrine.dir": doctrine_dir,
         "identity_file": persons_path,
         "policy_file": policy_path,
     }
@@ -284,7 +284,7 @@ async def build_handler(
     fault: str | None = None,
     register: Callable[[Harness], None] | None = None,
 ) -> Harness:
-    """Assemble real pipelines wired to a tmp db + a tmp COPY of the real persona dir +
+    """Assemble real pipelines wired to a tmp db + a tmp COPY of the real doctrine dir +
     fakes.
 
     `register`, if given, is called with the finished `Harness` before it's returned,
@@ -308,13 +308,13 @@ async def build_handler(
     persons_path = tmp_path / "identity.toml"
     persons_path.write_text(identity_toml)
 
-    # Never point config at the real, shared nora/persona/*.md files: persona_reload_fails
-    # writes invalid content into a persona file, and that must never touch the repo's
+    # Never point config at the real, shared nora/doctrine/*.md files: doctrine_reload_fails
+    # writes invalid content into a doctrine file, and that must never touch the repo's
     # production content. The copy is byte-identical, so this has no behavior difference
     # for every other test. dirs_exist_ok=True makes a second build_handler call on the
     # same tmp_path (simulate_restart) a harmless idempotent re-copy.
-    persona_copy_dir = tmp_path / "persona"
-    shutil.copytree(PERSONA_DIR, persona_copy_dir, dirs_exist_ok=True)
+    doctrine_copy_dir = tmp_path / "doctrine"
+    shutil.copytree(DOCTRINE_DIR, doctrine_copy_dir, dirs_exist_ok=True)
 
     # The integration harness drives synthetic conversation ids, so its policy
     # admits any room; the room gate has its own unit tests. `persons = "*"`
@@ -332,7 +332,7 @@ async def build_handler(
 
     cfg = _build_config(
         tmp_path, persons_path=persons_path, policy_path=policy_path,
-        persona_dir=persona_copy_dir,
+        doctrine_dir=doctrine_copy_dir,
         invocation_timeout=invocation_timeout, debounce=debounce,
     )
 
@@ -340,12 +340,12 @@ async def build_handler(
     store = SqlAuditStore(create_sql_engine(cfg.store.db_path))
     persons = load_persons(persons_path)
     metrics = Metrics()
-    persona_store = PersonaStore(
-        cfg.persona.dir,
-        strict=cfg.persona.strict,
-        reload=cfg.persona.reload,
-        canary=cfg.persona.canary,
-        display_name=cfg.persona.display_name,
+    doctrine_store = DoctrineStore(
+        cfg.doctrine.dir,
+        strict=cfg.doctrine.strict,
+        reload=cfg.doctrine.reload,
+        canary=cfg.doctrine.canary,
+        display_name=cfg.doctrine.display_name,
         trigger=cfg.engagement.trigger.text,
         metrics=metrics,
     )
@@ -388,10 +388,10 @@ async def build_handler(
     elif fault == "no_send_call":
         runner = FakeAgentRunner([ScriptedTurn(final_text="silent")], on_call=calls.append)
     elif fault == "leak_guard_trips":
-        # A >=40-char verbatim span of nora/persona/guardrails.md's body, read live so
+        # A >=40-char verbatim span of nora/doctrine/constraints.md's body, read live so
         # this can't drift from the real file. LeakGuard normalizes whitespace before
         # matching, so we do too, to be sure the span really lands inside its haystack.
-        raw_body = (PERSONA_DIR / "guardrails.md").read_text().split("---", 2)[-1]
+        raw_body = (DOCTRINE_DIR / "constraints.md").read_text().split("---", 2)[-1]
         leak_span = re.sub(r"\s+", " ", raw_body).strip()[:60]
         runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("send_reply", {"text": leak_span})],
             final_text=leak_span)], on_call=calls.append)
@@ -407,13 +407,13 @@ async def build_handler(
         store = _FailingAppendStore(store)
     elif fault == "context_read_fails":
         store = _FailingRecentStore(store)
-    elif fault == "persona_reload_fails":
-        persona_store.get(applies_to="tag")     # warm the last-good cache before corrupting
-        (persona_copy_dir / "guardrails.md").write_text("not valid persona content\n")
+    elif fault == "doctrine_reload_fails":
+        doctrine_store.get(applies_to="tag")     # warm the last-good cache before corrupting
+        (doctrine_copy_dir / "constraints.md").write_text("not valid doctrine content\n")
 
     dispatcher, engagement, background = build_offline_pipeline(
         cfg, adapter=adapter, audit=store, memory=honcho_double, persons=persons,
-        persona_store=persona_store, runner=runner, metrics=metrics,
+        doctrine_store=doctrine_store, runner=runner, metrics=metrics,
     )
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
 
@@ -423,7 +423,7 @@ async def build_handler(
         honcho=honcho_double,
         metrics=metrics,
         own_account=getattr(adapter, "_account", own_account),
-        persona_store=persona_store,
+        doctrine_store=doctrine_store,
         store=store,
         _calls=calls,
         _engagement=engagement,

@@ -44,12 +44,12 @@ def test_tilde_expands_and_paths_are_absolute(toml_path):
     assert cfg.store.db_path.is_absolute()
     assert "~" not in str(cfg.store.db_path)
     assert cfg.obs.logging.path.is_absolute()
-    assert cfg.persona.dir.is_absolute()
+    assert cfg.doctrine.dir.is_absolute()
 
 
 def test_relative_paths_resolve_against_the_config_file_directory(toml_path):
     cfg = load(toml_path)
-    assert cfg.persona.dir == (toml_path.parent / "nora" / "persona").resolve()
+    assert cfg.doctrine.dir == (toml_path.parent / "nora" / "doctrine").resolve()
 
 
 def test_missing_env_secret_is_a_startup_failure(toml_path, monkeypatch):
@@ -64,7 +64,7 @@ def test_config_never_holds_the_secret_value(toml_path):
     assert "test-key" not in repr(cfg)
 
 
-def test_invalid_persona_reload_mode_is_a_startup_failure(toml_path):
+def test_invalid_doctrine_reload_mode_is_a_startup_failure(toml_path):
     toml_path.write_text(toml_path.read_text().replace(
         'reload = "mtime"', 'reload = "inotify"'))
     with pytest.raises(ConfigError, match="reload"):
@@ -149,8 +149,8 @@ def test_config_uses_the_target_shape(toml_path):
     # values dropped from the deleted test_loads_the_example_config, restored here
     assert cfg.llm.limits.total_tokens == 64000
     assert cfg.llm.limits.output_tokens == 12000
-    assert cfg.persona.strict is True
-    assert cfg.persona.reload == "mtime"
+    assert cfg.doctrine.strict is True
+    assert cfg.doctrine.reload == "mtime"
 
 
 def test_constructing_config_without_base_context_is_an_error():

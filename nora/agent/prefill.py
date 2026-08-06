@@ -32,7 +32,7 @@ def _message(role: str, text: str) -> dict:
 def _now_line(now: datetime | None) -> str:
     """The current local time, stated plainly.
 
-    She had no clock at all — not here, not in the persona — so 今晚, 琴日, 而家
+    She had no clock at all — not here, not in the doctrine — so 今晚, 琴日, 而家
     and 尋日 were ungrounded and «what time is it» was unanswerable. Deliberately
     NOT a tool: it is relevant to every turn, so a tool means either paying a
     round trip every time or the model deciding it does not need one, and a
@@ -75,7 +75,7 @@ def _context_header(context_window: int) -> str:
     transcript, the peer card — in the block `build_prefill` puts AFTER this
     one. Do not claim a saving from it without re-measuring first.
 
-    The persona files say who Nora IS. This says how she is being RUN — that
+    The doctrine files say who Nora IS. This says how she is being RUN — that
     she is mid-conversation in a group she has been reading all along, that
     somebody just called her, what each block in front of her means, and how a
     turn ends. Without it she has voice and character but no situational model,

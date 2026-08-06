@@ -165,7 +165,7 @@ auth setup that is heavier than anything else in this deployment.
 dependency here (Honcho, signal-cli, OmniRoute all local). SearXNG returns
 links; Firecrawl fetches content; **Nora synthesises**, which is the real
 cost: page text lands in a 4000-token turn, and a turn budget sized for
-transcript plus persona does not have room for two scraped pages. It also
+transcript plus doctrine does not have room for two scraped pages. It also
 makes the outbound boundary internal, which §2.2 says is the strongest
 mitigation available.
 
@@ -200,7 +200,7 @@ With that gone, self-hosted wins on every remaining axis:
 
 **The real cost moves to the turn budget, and that is now the thing to
 measure.** Nora synthesises: SearXNG returns links, Firecrawl returns page
-markdown, and that markdown lands in a turn already carrying persona,
+markdown, and that markdown lands in a turn already carrying doctrine,
 transcript and tool schemas against `max_tokens = 4000`. Two scraped pages
 will not fit. So the open question is no longer "which provider" but **"how
 much retrieved text can a turn afford"** — which is an empirical question with

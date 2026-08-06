@@ -1,9 +1,9 @@
-"""`EngagementPipeline` — runs admission → context → persona → tools →
+"""`EngagementPipeline` — runs admission → context → doctrine → tools →
 invoke → deliver → feedback for a tag `nora.ingest` already decided to
 engage (spec §4.4). A readable table of contents, not a decision-maker:
 every branch belongs to the stage that owns it (`nora.engagement.stages.*`)
-or, for persona/tools, to the collaborator it delegates straight to
-(`PersonaStore.get`, `nora.agent.registry.ToolRegistry.build`) — neither is
+or, for doctrine/tools, to the collaborator it delegates straight to
+(`DoctrineStore.get`, `nora.agent.registry.ToolRegistry.build`) — neither is
 complex enough to earn its own stage module.
 
 **R-10 lock ownership is split across two modules on purpose** — documented
@@ -61,7 +61,7 @@ class EngagementPipeline:
         audit: AuditStore,
         memory: MemoryStore,
         persons: Persons,
-        persona_store: Any,
+        doctrine_store: Any,
         context_assembler: Any,
         runner: AgentRunner,
         tool_registry: ToolRegistry,
@@ -82,7 +82,7 @@ class EngagementPipeline:
         self._audit = audit
         self._memory = memory
         self._persons = persons
-        self._persona_store = persona_store
+        self._doctrine_store = doctrine_store
         self._context = context_assembler
         self._runner = runner
         self._tool_registry = tool_registry
@@ -164,18 +164,18 @@ class EngagementPipeline:
         )
         try:
             ctx = await self._context.assemble(request=request)
-            persona = self._persona_store.get(applies_to="tag")
+            doctrine = self._doctrine_store.get(applies_to="tag")
             log.info(
                 "tag start (tag_id=%s conversation_id=%s sender_id=%s person_id=%s "
-                "persona_sha256=%s persona_versions=%s)",
+                "doctrine_sha256=%s doctrine_versions=%s)",
                 request.tag_id, msg.conversation_id, msg.sender_id,
                 ctx.tagger.person_id if ctx.tagger else None,
-                persona.sha256, persona.versions(),
+                doctrine.sha256, doctrine.versions(),
             )
 
             handle = deliver.build(
                 store=self._audit, adapter=self._adapter, target=msg.target(),
-                persona=persona, canary=self._canary, tag_id=request.tag_id,
+                doctrine=doctrine, canary=self._canary, tag_id=request.tag_id,
                 nora_sender_id=self._nora_sender_id, conversation_id=msg.conversation_id,
                 budgets=self._tool_registry.budgets(), metrics=self._metrics,
             )
@@ -216,7 +216,7 @@ class EngagementPipeline:
             )
 
             ok, llm_elapsed, stop_reason = await invoke.run(
-                runner=self._runner, persona=persona, tools=tools, pre_fill=pre_fill,
+                runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tag_message=tag_message, limits=self._limits, ctx=ctx,
                 timeout_seconds=self._timeout_seconds, metrics=self._metrics,
             )

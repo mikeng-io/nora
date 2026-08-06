@@ -67,7 +67,7 @@ Injection is **conversation-history pre-fill** — a Strands built-in:
 ```python
 agent = Agent(
     model=model,                    # OmniRoute via OpenAIModel(custom client)
-    system_prompt=SYSTEM_PROMPT,    # persona (04-config-identity.md / persona.py)
+    system_prompt=SYSTEM_PROMPT,    # doctrine (04-config-identity.md / doctrine.py)
     tools=[read_buffer, read_peer_card, send_reply, feed_honcho],
     messages=[...pre-filled context messages...],
 )
@@ -102,7 +102,7 @@ invoke → model reasons → wants a tool? → execute tool → feed result back
 - Observability (OTel, hooks): SDK.
 - Execution limits (max tokens, loop bounds): SDK.
 
-We write none of this. We write only the tool implementations and the persona.
+We write none of this. We write only the tool implementations and the doctrine.
 
 ## 4. Return (record-first, send-after — audit A9 fix)
 

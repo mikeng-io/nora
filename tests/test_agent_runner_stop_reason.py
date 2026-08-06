@@ -23,7 +23,7 @@ from nora.agent.registry import ToolRegistry
 from nora.app.agent_runner import LiveAgentRunner
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.obs.metrics import Metrics
-from nora.persona.loader import Persona
+from nora.doctrine.loader import Doctrine
 
 BUDGETS = ToolRegistry().budgets()
 RETRY = factory.build_retry_policy(timeout_seconds=30.0)
@@ -104,9 +104,9 @@ class _StubModel(Model):
         }
 
 
-def _persona() -> Persona:
-    return Persona(
-        sections=(), text="<nora_persona>be helpful</nora_persona>", persona_text="be helpful",
+def _doctrine() -> Doctrine:
+    return Doctrine(
+        sections=(), text="<nora_doctrine>be helpful</nora_doctrine>", doctrine_text="be helpful",
         sha256="deadbeef", runtime_context="", loaded_at=0.0,
     )
 
@@ -127,7 +127,7 @@ async def _run(
     model = _StubModel(tokens_per_call=tokens_per_call, tool_use_calls=tool_use_calls)
     runner = LiveAgentRunner(model=model, retry=RETRY)
     stop_reason = await runner.invoke(
-        persona=_persona(), tools=[_tool()], pre_fill=[],
+        doctrine=_doctrine(), tools=[_tool()], pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, metrics=Metrics()),
         tag_message="<tag_message/>", limits=limits, ctx=_ctx(), trace_attributes={},
     )

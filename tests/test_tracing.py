@@ -7,31 +7,31 @@ from tests.builders import make_tracing_config
 
 def test_trace_attributes_carry_the_provenance_fields(tmp_path):
     from nora.domain.models import NormalizedMessage, TagContext
-    from nora.persona.loader import PersonaStore
-    from tests.test_persona_loader import write
+    from nora.doctrine.loader import DoctrineStore
+    from tests.test_doctrine_loader import write
 
     d = tmp_path / "p"
     d.mkdir()
-    write(d, "soul.md", name="soul", order=10, body="x")
-    persona = PersonaStore(d, canary="C", metrics=Metrics()).get()
+    write(d, "identity.md", name="soul", order=10, body="x")
+    doctrine = DoctrineStore(d, canary="C", metrics=Metrics()).get()
     msg = NormalizedMessage("signal", "g1", "group", "+1", "Miles", 1, "hi", {})
-    attrs = trace_attributes(TagContext("t1", msg, None, (), (), 0.0), persona)
+    attrs = trace_attributes(TagContext("t1", msg, None, (), (), 0.0), doctrine)
     assert attrs["tag_id"] == "t1"
     assert attrs["conversation_id"] == "g1"
-    assert attrs["persona_sha256"] == persona.sha256
+    assert attrs["doctrine_sha256"] == doctrine.sha256
 
 
 def test_trace_attributes_never_carry_message_content(tmp_path):
     from nora.domain.models import NormalizedMessage, TagContext
-    from nora.persona.loader import PersonaStore
-    from tests.test_persona_loader import write
+    from nora.doctrine.loader import DoctrineStore
+    from tests.test_doctrine_loader import write
 
     d = tmp_path / "p"
     d.mkdir()
-    write(d, "soul.md", name="soul", order=10, body="x")
+    write(d, "identity.md", name="soul", order=10, body="x")
     msg = NormalizedMessage("signal", "g1", "group", "+1", "Miles", 1, "a private thing", {})
     attrs = trace_attributes(TagContext("t1", msg, None, (), (), 0.0),
-                             PersonaStore(d, canary="C", metrics=Metrics()).get())
+                             DoctrineStore(d, canary="C", metrics=Metrics()).get())
     assert "a private thing" not in json.dumps(attrs)
 
 

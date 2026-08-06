@@ -77,8 +77,8 @@ class App:
         return self.deps.account
 
     @property
-    def persona(self):
-        return self.deps.persona
+    def doctrine(self):
+        return self.deps.doctrine
 
     @property
     def store(self):
@@ -96,7 +96,7 @@ class App:
         deps = self.deps
         health_app = build_health_app(
             adapter=deps.adapter, store=deps.audit, honcho=deps.memory,
-            persona_store=deps.persona_store, metrics=deps.metrics,
+            doctrine_store=deps.doctrine_store, metrics=deps.metrics,
             started_at=time.time(), llm_state=deps.llm_state,
         )
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)

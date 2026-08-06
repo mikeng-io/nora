@@ -148,7 +148,7 @@ class LLMConfig(BaseModel):
     # tool call, not a runaway — was 371 tokens, so 2000 is 5.4x headroom for
     # the thing that actually happens and no longer doubles as the loop's
     # budget (`[llm.limits] output_tokens` is that, and is 6x this).
-    # Replies stay short because the persona says so, not because the ceiling
+    # Replies stay short because the doctrine says so, not because the ceiling
     # forces it.
     reasoning_effort: str = "low"
     limits: LimitsConfig
@@ -198,7 +198,7 @@ class StoreConfig(BaseModel):
         return self
 
 
-class PersonaConfig(BaseModel):
+class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     dir: Path
@@ -209,7 +209,7 @@ class PersonaConfig(BaseModel):
     display_name: str
 
     @model_validator(mode="after")
-    def _resolve_paths(self, info: ValidationInfo) -> PersonaConfig:
+    def _resolve_paths(self, info: ValidationInfo) -> DoctrineConfig:
         _resolve_context_field(self, "dir", info)
         return self
 
@@ -299,7 +299,7 @@ class Config(BaseModel):
     memory: MemoryConfig
     store: StoreConfig
     engagement: EngagementConfig
-    persona: PersonaConfig
+    doctrine: DoctrineConfig
     identity_file: Path
     policy_file: Path
     obs: ObsConfig

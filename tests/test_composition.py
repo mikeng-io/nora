@@ -41,13 +41,13 @@ def cfg(tmp_path, monkeypatch):
     # immediately, with no network call, so build_dependencies() never needs a real
     # (or faked) signal-cli daemon reachable at the example config's placeholder URL.
     #
-    # persona.dir ("nora/persona", config.example.toml) resolves relative to the
+    # doctrine.dir ("nora/doctrine", config.example.toml) resolves relative to the
     # copied config file's directory (tmp_path here), which has no such subdirectory
-    # — point it at the real, already-valid persona files instead of copying them.
+    # — point it at the real, already-valid doctrine files instead of copying them.
     return override_config(load(dst), {
         "store.db_path": tmp_path / "messages.db",
         "platforms.signal.account": "+85290000100",
-        "persona.dir": ROOT / "nora" / "persona",
+        "doctrine.dir": ROOT / "nora" / "doctrine",
     })
 
 

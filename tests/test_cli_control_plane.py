@@ -110,7 +110,7 @@ async def env(tmp_path, aiohttp_server, monkeypatch):
     cfg["platforms"]["signal"]["base_url"] = str(daemon.make_url("")).rstrip("/")
     cfg["store"]["db_path"] = str(tmp_path / "messages.db")
     cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
-    cfg["persona"]["dir"] = str(ROOT / "nora" / "persona")
+    cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
     cfg["identity_file"] = str(tmp_path / "identity.toml")
     cfg["policy_file"] = str(tmp_path / "policy.toml")
     (tmp_path / "identity.toml").write_text(IDENTITY_EMPTY)

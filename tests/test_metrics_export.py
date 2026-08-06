@@ -15,7 +15,7 @@ PRESERVED_METRIC_NAMES = frozenset({
     "nora_silent_failures_total",
     "nora_guard_vetoes_total",
     "nora_leak_blocks_total",
-    "nora_persona_reload_failures_total",
+    "nora_doctrine_reload_failures_total",
     "honcho_feed_success",
     "honcho_feed_failure",
     "nora_tag_latency_seconds",

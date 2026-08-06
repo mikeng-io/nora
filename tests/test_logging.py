@@ -59,13 +59,13 @@ def test_formatter_includes_the_tagging_path_fields(tmp_path):
         "tag start",
         extra={
             "tag_id": "t1", "conversation_id": "g1", "sender_id": "+1",
-            "person_id": "miles", "persona_sha256": "abc", "stage": "invoke",
+            "person_id": "miles", "doctrine_sha256": "abc", "stage": "invoke",
             "latency_ms": 42, "trace_id": "tr1",
         },
     )
     record = _last_line(path)
     for key in ("tag_id", "conversation_id", "sender_id", "person_id",
-                "persona_sha256", "stage", "latency_ms", "trace_id"):
+                "doctrine_sha256", "stage", "latency_ms", "trace_id"):
         assert key in record
 
 

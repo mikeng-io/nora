@@ -173,9 +173,9 @@ async def test_latency_is_recorded(harness_factory):
     assert len(h.metrics.observations("nora_tag_latency_seconds")) == 1
 
 
-async def test_persona_sha256_is_logged_for_the_tag(harness_factory, caplog):
+async def test_doctrine_sha256_is_logged_for_the_tag(harness_factory, caplog):
     caplog.set_level(logging.INFO, logger="nora.engagement.pipeline")
     h = await harness_factory(script=_reply_script())
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert any("persona_sha256" in r.getMessage() for r in caplog.records)
+    assert any("doctrine_sha256" in r.getMessage() for r in caplog.records)

@@ -2,13 +2,13 @@
 
 `Handler._prefills`/`_guards` (`nora/handler.py:41-46`, deleted alongside `Handler`
 in this commit) were appended to on every tag and never cleared — each retained
-`ReplyGuard` pinned a `Deliverer` -> persona -> adapter chain, an unbounded memory
+`ReplyGuard` pinned a `Deliverer` -> doctrine -> adapter chain, an unbounded memory
 leak. Deleting the two attributes is not proof the leak is gone: the same shape of
 bug reappears the moment anything else — production or test — starts accumulating
 `ReplyGuard` instances in a collection nothing ever drains.
 
 This test drives real tags through the real `EngagementPipeline` (fakes only at the
-adapter/memory/persona boundary — the model runner is a minimal stand-in that
+adapter/memory/doctrine boundary — the model runner is a minimal stand-in that
 still exercises the real tools and the real `ReplyGuard`) and counts *live*
 `ReplyGuard` instances via `gc.get_objects()` after each batch. It asserts that
 count for two different batch sizes rather than just once: a leak that always
@@ -37,7 +37,7 @@ from nora.domain.ports import (
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.obs.metrics import Metrics
-from nora.persona.loader import Persona
+from nora.doctrine.loader import Doctrine
 from nora.persons import Persons
 from nora.tag import Debounce
 from nora.testing import FakeAuditStore
@@ -78,11 +78,11 @@ class _FakeMemory:
         return None
 
 
-class _FakePersonaStore:
-    def get(self, *, applies_to: str = "tag") -> Persona:
-        return Persona(
-            sections=(), text="<nora_persona>be helpful</nora_persona>",
-            persona_text="be helpful", sha256="deadbeef", runtime_context="", loaded_at=0.0,
+class _FakeDoctrineStore:
+    def get(self, *, applies_to: str = "tag") -> Doctrine:
+        return Doctrine(
+            sections=(), text="<nora_doctrine>be helpful</nora_doctrine>",
+            doctrine_text="be helpful", sha256="deadbeef", runtime_context="", loaded_at=0.0,
         )
 
 
@@ -112,7 +112,7 @@ def _build_pipeline() -> tuple[EngagementPipeline, BackgroundTasks]:
     )
     pipeline = EngagementPipeline(
         adapter=_FakeAdapter(), audit=audit, memory=memory, persons=persons,
-        persona_store=_FakePersonaStore(), context_assembler=assembler,
+        doctrine_store=_FakeDoctrineStore(), context_assembler=assembler,
         runner=_ReplyingRunner(), tool_registry=ToolRegistry(),
         debounce=Debounce(0.0), canary="CANARY-XYZ",
         display_name="Nora", nora_sender_id="+8520000", context_window=10,

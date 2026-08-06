@@ -10,15 +10,15 @@ from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
-from nora.persona.loader import Persona
+from nora.doctrine.loader import Doctrine
 from tests.fakes import FakeHoncho, SinkSender
 
 TARGET = ConversationTarget("signal", "g1", "group")
 
 
-def _persona() -> Persona:
-    return Persona(
-        sections=(), text="<nora_persona>be helpful</nora_persona>", persona_text="be helpful",
+def _doctrine() -> Doctrine:
+    return Doctrine(
+        sections=(), text="<nora_doctrine>be helpful</nora_doctrine>", doctrine_text="be helpful",
         sha256="deadbeef", runtime_context="", loaded_at=0.0,
     )
 
@@ -35,7 +35,7 @@ class _FakePersons:
 
 def _deliverer() -> Deliverer:
     return Deliverer(
-        store=_FakeStore(), adapter=SinkSender(), target=TARGET, persona=_persona(),
+        store=_FakeStore(), adapter=SinkSender(), target=TARGET, doctrine=_doctrine(),
         canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics(),
     )
 

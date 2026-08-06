@@ -104,17 +104,17 @@ _DEFAULT_JUDGE_MODEL_ID = "deepseek-v4-pro"
 _CONTEXT_TOOLS = ("read_buffer", "read_peer_card")
 
 
-def _build_judge_prompt(*, tag_input: str, reply_text: str, persona_text: str) -> str:
+def _build_judge_prompt(*, tag_input: str, reply_text: str, doctrine_text: str) -> str:
     """Build the judge-facing prompt asking for all six `RUBRIC` criteria, in the
     exact JSON array shape `parse_judge_response` expects.
     """
     criteria_block = "\n".join(f"- {c.name}: {c.description}" for c in RUBRIC)
     return (
-        "You are grading one reply from Nora, a Signal-group ambient AI persona, "
+        "You are grading one reply from Nora, a Signal-group ambient AI doctrine, "
         "against a fixed rubric. Score every criterion below from 0.0 (fails "
         "completely) to 1.0 (fully satisfied), and state your confidence (0.0-1.0) "
         "in that score.\n\n"
-        f"## Persona\n{persona_text}\n\n"
+        f"## Doctrine\n{doctrine_text}\n\n"
         f"## Tagging message (what Nora was asked)\n{tag_input}\n\n"
         f"## Nora's reply (what you are grading)\n{reply_text}\n\n"
         f"## Criteria\n{criteria_block}\n\n"
@@ -141,14 +141,14 @@ class NoraOutputEvaluator(Evaluator):
         *,
         tag_input: str,
         reply_text: str,
-        persona_text: str,
+        doctrine_text: str,
         model: Model | str | None = None,
         name: str | None = None,
     ) -> None:
         super().__init__(name=name)
         self.tag_input = tag_input
         self.reply_text = reply_text
-        self.persona_text = persona_text
+        self.doctrine_text = doctrine_text
         # JUDGE_MODEL_TIER == "deep" -> deepseek-v4-pro; never grade with the tested
         # model (circular). A bare model-id string is enough here: no live judge
         # model is invoked in this task (out of scope, same boundary as Task 40).
@@ -157,7 +157,7 @@ class NoraOutputEvaluator(Evaluator):
     def build_prompt(self) -> str:
         return _build_judge_prompt(
             tag_input=self.tag_input, reply_text=self.reply_text,
-            persona_text=self.persona_text,
+            doctrine_text=self.doctrine_text,
         )
 
     def _call_judge(self, prompt: str) -> str:

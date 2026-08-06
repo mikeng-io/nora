@@ -8,10 +8,10 @@ from nora.infra.sql.audit import SqlAuditStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
-from nora.persona.loader import PersonaStore
+from nora.doctrine.loader import DoctrineStore
 from nora.persons import load_persons
 from tests.fakes import FakeHoncho, SinkSender
-from tests.test_persona_loader import write
+from tests.test_doctrine_loader import write
 
 TARGET = ConversationTarget("signal", "g1", "group")
 
@@ -34,13 +34,13 @@ async def wiring(tmp_path):
     persons_file.write_text(
         "[persons.miles]\nname = \"Miles\"\n[[persons.miles.signal]]\nphone = \"+852111\"\n"
     )
-    pdir = tmp_path / "persona"
+    pdir = tmp_path / "doctrine"
     pdir.mkdir()
-    write(pdir, "soul.md", name="soul", order=10, body="You are Nora.")
-    persona = PersonaStore(pdir, canary="C", metrics=Metrics()).get()
+    write(pdir, "identity.md", name="soul", order=10, body="You are Nora.")
+    doctrine = DoctrineStore(pdir, canary="C", metrics=Metrics()).get()
     sink = SinkSender()
     honcho = FakeHoncho(cards={"miles": ["likes espresso"]})
-    deliverer = Deliverer(store=store, adapter=sink, target=TARGET, persona=persona,
+    deliverer = Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                           canary="C", tag_id="t1", nora_sender_id="nora", metrics=Metrics())
     metrics = Metrics()
     persons = load_persons(persons_file)

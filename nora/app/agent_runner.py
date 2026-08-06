@@ -26,7 +26,7 @@ from typing import Any
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
 from nora.domain.models import TagContext
-from nora.persona.loader import Persona
+from nora.doctrine.loader import Doctrine
 
 
 class LiveAgentRunner:
@@ -42,7 +42,7 @@ class LiveAgentRunner:
     async def invoke(
         self,
         *,
-        persona: Persona,
+        doctrine: Doctrine,
         tools: list[Any],
         pre_fill: list[dict[str, Any]],
         guard: ReplyGuard,
@@ -65,7 +65,7 @@ class LiveAgentRunner:
         """
         agent = factory.create_agent(
             model=self._model,
-            system_prompt=persona.text,
+            system_prompt=doctrine.text,
             tools=tools,
             pre_fill=pre_fill,
             guard=guard,

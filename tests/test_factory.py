@@ -86,7 +86,7 @@ def test_create_agent_is_stateless_by_construction():
     )
     agent = factory.create_agent(
         model=model,
-        system_prompt="<nora_persona/>",
+        system_prompt="<nora_doctrine/>",
         tools=[],
         pre_fill=[{"role": "user", "content": [{"text": "ctx"}]}],
         guard=_guard(),
@@ -94,7 +94,7 @@ def test_create_agent_is_stateless_by_construction():
         retry=RETRY,
     )
     assert isinstance(agent.conversation_manager, NullConversationManager)
-    assert agent.system_prompt == "<nora_persona/>"
+    assert agent.system_prompt == "<nora_doctrine/>"
 
 
 def test_create_agent_installs_the_prefill_as_conversation_history():

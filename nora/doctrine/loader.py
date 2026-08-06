@@ -1,6 +1,6 @@
-"""The only module that reads persona files (spec A.3-A.5).
+"""The only module that reads doctrine files (spec A.3-A.5).
 
-Persona is content, not code (S1). Frontmatter uses the Agent Skills shape (S3) so a
+Doctrine is content, not code (S1). Frontmatter uses the Agent Skills shape (S3) so a
 file can be promoted to a real Strands Skill without a rewrite.
 """
 
@@ -19,19 +19,19 @@ import yaml
 
 from ..obs.metrics import Metrics
 
-log = logging.getLogger("nora.persona")
+log = logging.getLogger("nora.doctrine")
 
 _NAME_RE = re.compile(r"^[a-z0-9-]{1,64}$")
 _FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?(.*)\Z", re.DOTALL)
 _REQUIRED = ("name", "description", "order", "applies_to", "version")
 
 
-class PersonaError(Exception):
-    """A persona problem that must stop the process (strict) or skip a file (lenient)."""
+class DoctrineError(Exception):
+    """A doctrine problem that must stop the process (strict) or skip a file (lenient)."""
 
 
 @dataclass(frozen=True)
-class PersonaSection:
+class DoctrineSection:
     name: str
     description: str
     order: int
@@ -43,29 +43,29 @@ class PersonaSection:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-def parse_section(path: Path) -> PersonaSection:
+def parse_section(path: Path) -> DoctrineSection:
     text = Path(path).read_text(encoding="utf-8")
     match = _FRONTMATTER_RE.match(text)
     if not match:
-        raise PersonaError(f"{path.name}: missing YAML frontmatter")
+        raise DoctrineError(f"{path.name}: missing YAML frontmatter")
     try:
         meta = yaml.safe_load(match.group(1)) or {}
     except yaml.YAMLError as exc:
-        raise PersonaError(f"{path.name}: unparseable frontmatter: {exc}") from exc
+        raise DoctrineError(f"{path.name}: unparseable frontmatter: {exc}") from exc
     if not isinstance(meta, dict):
-        raise PersonaError(f"{path.name}: frontmatter must be a mapping")
+        raise DoctrineError(f"{path.name}: frontmatter must be a mapping")
     missing = [key for key in _REQUIRED if key not in meta]
     if missing:
         keys = ", ".join(repr(k) for k in missing)
-        raise PersonaError(f"{path.name}: missing required frontmatter key(s): {keys}")
+        raise DoctrineError(f"{path.name}: missing required frontmatter key(s): {keys}")
     name = str(meta.pop("name"))
     if not _NAME_RE.match(name):
-        raise PersonaError(f"{path.name}: name {name!r} must match ^[a-z0-9-]{{1,64}}$")
+        raise DoctrineError(f"{path.name}: name {name!r} must match ^[a-z0-9-]{{1,64}}$")
     applies = meta.pop("applies_to")
     if isinstance(applies, str):
         applies = [applies]
     body = match.group(2)
-    return PersonaSection(
+    return DoctrineSection(
         name=name,
         description=str(meta.pop("description")),
         order=int(meta.pop("order")),
@@ -79,15 +79,15 @@ def parse_section(path: Path) -> PersonaSection:
 
 
 @dataclass(frozen=True)
-class Persona:
-    """A filtered, ordered assembly of persona sections for one `applies_to` audience,
+class Doctrine:
+    """A filtered, ordered assembly of doctrine sections for one `applies_to` audience,
     per spec A.4.
     """
 
-    sections: tuple[PersonaSection, ...]
-    text: str                      # persona block + runtime_context — goes to system_prompt=
-    persona_text: str              # persona block only — hashed, and what LeakGuard matches
-    sha256: str                    # over persona_text (S6, audit fix #3)
+    sections: tuple[DoctrineSection, ...]
+    text: str                      # doctrine block + runtime_context — goes to system_prompt=
+    doctrine_text: str              # doctrine block only — hashed, and what LeakGuard matches
+    sha256: str                    # over doctrine_text (S6, audit fix #3)
     runtime_context: str
     loaded_at: float
 
@@ -104,17 +104,17 @@ class Persona:
         return out
 
 
-def _assemble(sections: tuple[PersonaSection, ...]) -> str:
-    parts = ["<nora_persona>"]
+def _assemble(sections: tuple[DoctrineSection, ...]) -> str:
+    parts = ["<nora_doctrine>"]
     for s in sections:
         parts.append(f'<section name="{s.name}" version="{s.version}">')
         parts.append(s.body.strip("\n"))
         parts.append("</section>")
-    parts.append("</nora_persona>")
+    parts.append("</nora_doctrine>")
     return "\n".join(parts)
 
 
-class PersonaStore:
+class DoctrineStore:
     def __init__(self, dir: Path, *, strict: bool = True, reload: str = "mtime",
                  canary: str = "", display_name: str = "Nora", trigger: str = "",
                  language_hint: str = "", metrics: Metrics) -> None:
@@ -126,10 +126,10 @@ class PersonaStore:
         self._trigger = trigger
         self._language_hint = language_hint
         self._metrics = metrics
-        self._sections: tuple[PersonaSection, ...] = ()
+        self._sections: tuple[DoctrineSection, ...] = ()
         self._fingerprint: tuple | None = None
-        self._cache: dict[str, Persona] = {}
-        self._last_good: dict[str, Persona] = {}
+        self._cache: dict[str, Doctrine] = {}
+        self._last_good: dict[str, Doctrine] = {}
         self.reload_failures = 0
 
     def _fingerprint_dir(self) -> tuple:
@@ -139,24 +139,24 @@ class PersonaStore:
     def _scan(self) -> None:
         files = sorted(self._dir.glob("*.md"), key=lambda p: p.name)
         if not files:
-            raise PersonaError(f"no persona files (*.md) in {self._dir}")
-        sections: list[PersonaSection] = []
+            raise DoctrineError(f"no doctrine files (*.md) in {self._dir}")
+        sections: list[DoctrineSection] = []
         for path in files:
             try:
                 sections.append(parse_section(path))
-            except PersonaError:
+            except DoctrineError:
                 if self._strict:
                     raise
-                log.warning("skipping invalid persona file %s", path.name)
+                log.warning("skipping invalid doctrine file %s", path.name)
         by_name: dict[str, Path] = {}
         by_order: dict[int, Path] = {}
         for s in sections:
             if s.name in by_name:
-                raise PersonaError(
+                raise DoctrineError(
                     f"duplicate name {s.name!r}: {by_name[s.name].name}, {s.path.name}"
                 )
             if s.order in by_order:
-                raise PersonaError(
+                raise DoctrineError(
                     f"duplicate order {s.order}: {by_order[s.order].name}, {s.path.name}"
                 )
             by_name[s.name], by_order[s.order] = s.path, s.path
@@ -176,21 +176,21 @@ class PersonaStore:
             return
         try:
             self._scan()
-        except PersonaError as exc:
+        except DoctrineError as exc:
             self._on_reload_failure(exc)
             return
         self._fingerprint = fingerprint
 
     def _on_reload_failure(self, exc: Exception) -> None:
         if not self._last_good:
-            raise exc if isinstance(exc, PersonaError) else PersonaError(str(exc))
+            raise exc if isinstance(exc, DoctrineError) else DoctrineError(str(exc))
         self.reload_failures += 1
-        self._metrics.inc("nora_persona_reload_failures_total")
+        self._metrics.inc("nora_doctrine_reload_failures_total")
         # Advance the fingerprint so a broken file is not re-parsed on every tag.
         with contextlib.suppress(OSError):
             self._fingerprint = self._fingerprint_dir()
         self._cache = dict(self._last_good)
-        log.error("persona_reload_failed: %s (keeping the last good persona)", exc)
+        log.error("doctrine_reload_failed: %s (keeping the last good doctrine)", exc)
 
     def _runtime_context(self) -> str:
         return (
@@ -202,7 +202,7 @@ class PersonaStore:
             "</runtime_context>"
         )
 
-    def get(self, *, applies_to: str = "tag") -> Persona:
+    def get(self, *, applies_to: str = "tag") -> Doctrine:
         self._maybe_rescan()
         cached = self._cache.get(applies_to)
         if cached is not None:
@@ -211,16 +211,16 @@ class PersonaStore:
             s for s in self._sections
             if applies_to in s.applies_to or "always" in s.applies_to
         )
-        persona_text = _assemble(selected)
+        doctrine_text = _assemble(selected)
         runtime = self._runtime_context()
-        persona = Persona(
+        doctrine = Doctrine(
             sections=selected,
-            text=f"{persona_text}\n{runtime}",
-            persona_text=persona_text,
-            sha256=hashlib.sha256(persona_text.encode("utf-8")).hexdigest(),
+            text=f"{doctrine_text}\n{runtime}",
+            doctrine_text=doctrine_text,
+            sha256=hashlib.sha256(doctrine_text.encode("utf-8")).hexdigest(),
             runtime_context=runtime,
             loaded_at=time.time(),
         )
-        self._cache[applies_to] = persona
-        self._last_good[applies_to] = persona
-        return persona
+        self._cache[applies_to] = doctrine
+        self._last_good[applies_to] = doctrine
+        return doctrine

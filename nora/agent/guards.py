@@ -20,7 +20,7 @@ from strands.hooks import (
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..domain.ports import SendResult
 from ..obs.metrics import Metrics
-from ..persona.loader import Persona
+from ..doctrine.loader import Doctrine
 from .egress import LeakGuard, scan_egress
 
 log = logging.getLogger("nora.guards")
@@ -42,7 +42,7 @@ class Deliverer:
         store,
         adapter,
         target: ConversationTarget,
-        persona: Persona,
+        doctrine: Doctrine,
         canary: str,
         tag_id: str,
         nora_sender_id: str,
@@ -54,8 +54,8 @@ class Deliverer:
         self._tag_id = tag_id
         self._nora_sender_id = nora_sender_id
         self._metrics = metrics
-        self._leak = LeakGuard(persona, canary)
-        self._persona_sha256 = persona.sha256
+        self._leak = LeakGuard(doctrine, canary)
+        self._doctrine_sha256 = doctrine.sha256
         self._attempted = False
         self._delivered = False
         self._last_text: str | None = None
@@ -87,10 +87,10 @@ class Deliverer:
 
         reason = self._leak.check(text)                        # R-6
         if reason:
-            log.error("persona_leak_blocked: %s (tag=%s)", reason, self._tag_id)
+            log.error("doctrine_leak_blocked: %s (tag=%s)", reason, self._tag_id)
             self._metrics.inc("nora_leak_blocks_total")
             self._metrics.inc(
-                "nora_silent_failures_total", reason="persona_leak", platform=self._target.platform,
+                "nora_silent_failures_total", reason="doctrine_leak", platform=self._target.platform,
             )
             return False
 
@@ -116,7 +116,7 @@ class Deliverer:
             timestamp=int(time.time() * 1000),
             body=text,
             raw={"tag_id": self._tag_id, "source": source,
-                 "persona_sha256": self._persona_sha256},
+                 "doctrine_sha256": self._doctrine_sha256},
         )
         try:                                                   # record-first
             row_id = await self._store.append(

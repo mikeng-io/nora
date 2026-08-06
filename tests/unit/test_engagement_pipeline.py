@@ -42,7 +42,7 @@ from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.stages import indicate
 from nora.obs.metrics import Metrics
-from nora.persona.loader import Persona
+from nora.doctrine.loader import Doctrine
 from nora.persons import Persons
 from nora.tag import Debounce
 from nora.testing import FakeAuditStore, FakeRosterSource, limit_stop_reason
@@ -124,11 +124,11 @@ class _RecordingMemory(_FakeMemory):
         return Recollection(reachable=True, conclusions=("Miles is from Ridgeline",))
 
 
-class _FakePersonaStore:
-    def get(self, *, applies_to: str = "tag") -> Persona:
-        return Persona(
-            sections=(), text="<nora_persona>be helpful</nora_persona>",
-            persona_text="be helpful", sha256="deadbeef", runtime_context="", loaded_at=0.0,
+class _FakeDoctrineStore:
+    def get(self, *, applies_to: str = "tag") -> Doctrine:
+        return Doctrine(
+            sections=(), text="<nora_doctrine>be helpful</nora_doctrine>",
+            doctrine_text="be helpful", sha256="deadbeef", runtime_context="", loaded_at=0.0,
         )
 
 
@@ -263,7 +263,7 @@ def _build_pipeline(
         audit=audit,
         memory=memory,
         persons=PERSONS,
-        persona_store=_FakePersonaStore(),
+        doctrine_store=_FakeDoctrineStore(),
         context_assembler=context_assembler,
         runner=runner or ScriptedRunner(_reply_turns()),
         tool_registry=ToolRegistry(),

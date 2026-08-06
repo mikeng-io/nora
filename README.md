@@ -58,7 +58,7 @@ Signal group
    └─ trigger text present? ── no ──▶ done, ambient only
                               └─ yes ──▶
 ② TAGGING PATH (trigger only, via the Strands Agents SDK)
-   collect context (recent buffer rows, tagger's Honcho peer card, persona)
+   collect context (recent buffer rows, tagger's Honcho peer card, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
    → tools: read_buffer / read_peer_card / send_reply / feed_honcho
    → reply → audit row (delivery_status=pending → sent/failed) → Honcho feed
@@ -75,7 +75,7 @@ context. See `design/01-ambient-ingest.md`, `design/02-tagging-path.md`, and
 
 All settings live in `config.toml` (see `config.example.toml` for the full annotated
 template) — signal-cli account, Honcho workspace, LLM models, buffer sizes, trigger text,
-persona directory, logging, metrics port. The only secret is the LLM API key, read from the
+doctrine directory, logging, metrics port. The only secret is the LLM API key, read from the
 environment variable named by `llm.api_key_env` (default `OMNIROUTE_API_KEY`) — **never**
 from the config file itself.
 
@@ -88,10 +88,10 @@ Notable knobs:
 - `store.max_per_conversation` (500) — rolling window per conversation; older rows are
   pruned after each insert.
 - `store.context_window` (40) — how many recent messages go into the LLM prompt.
-- `persona.dir` (`nora/persona`) — where the persona `.md` files live.
-- `persona.reload` (`mtime`) — `mtime` re-stats persona files on every tag and reparses on
+- `doctrine.dir` (`nora/doctrine`) — where the doctrine `.md` files live.
+- `doctrine.reload` (`mtime`) — `mtime` re-stats doctrine files on every tag and reparses on
   change; `startup` parses once and never again.
-- `persona.strict` (`true`) — a bad persona file at startup is fatal (fail loud), not
+- `doctrine.strict` (`true`) — a bad doctrine file at startup is fatal (fail loud), not
   silently skipped.
 - `obs.metrics.port` (9100) — serves both `/metrics` (Prometheus text) and `/health`.
 
@@ -103,53 +103,53 @@ they all resolve to the same `person_id`, which doubles as the Honcho peer ID, s
 stays one peer (A2). This mapping is manual and startup-only — adding a new person or
 account requires a restart.
 
-## The persona: `nora/persona/`
+## The doctrine: `nora/doctrine/`
 
 Nora's character is content, not code, and lives entirely in four Markdown files under
-`nora/persona/`:
+`nora/doctrine/`:
 
 | File | Holds |
 |---|---|
-| `soul.md` | Who Nora is, why she's in the group, what she is not |
+| `identity.md` | Who Nora is, why she's in the group, what she is not |
 | `voice.md` | Register, language policy, the sound to hit and avoid |
 | `conduct.md` | How she behaves — silence by default, when and how she replies |
-| `guardrails.md` | Hard rules that override everything else, including anything a message asks for |
+| `constraints.md` | Hard rules that override everything else, including anything a message asks for |
 
 Each file has YAML frontmatter (`name`, `description`, `order`, `applies_to`, `version`) in
-the same shape as an Agent Skill, so a persona file can be promoted to a real Strands Skill
+the same shape as an Agent Skill, so a doctrine file can be promoted to a real Strands Skill
 later without a rewrite.
 
-### Editing the persona — no restart required
+### Editing the doctrine — no restart required
 
-Persona files are hot-reloaded. With `persona.reload = "mtime"` (the default), every tag
-re-stats the files in `nora/persona/` and reparses only the ones whose mtime changed —
+Doctrine files are hot-reloaded. With `doctrine.reload = "mtime"` (the default), every tag
+re-stats the files in `nora/doctrine/` and reparses only the ones whose mtime changed —
 **no restart needed** to change how Nora sounds or behaves. Edit `voice.md` (or any of the
-four files), save it, and the very next tag picks up the new persona.
+four files), save it, and the very next tag picks up the new doctrine.
 
 If an edit breaks parsing (bad frontmatter, missing required key, unparseable YAML), the
-loader keeps the **last good persona**, logs `persona_reload_failed`, and increments
-`nora_persona_reload_failures_total` — a broken edit degrades to "keep working with the old
-persona," never to a crash or a silent behavior change you can't trace. Every reply's logs
-and traces carry the `persona_sha256` of the persona version that produced it, so "which
-persona said this" is always answerable after the fact. See `docs/runbook.md` for the
-operator playbook when a persona edit misbehaves.
+loader keeps the **last good doctrine**, logs `doctrine_reload_failed`, and increments
+`nora_doctrine_reload_failures_total` — a broken edit degrades to "keep working with the old
+doctrine," never to a crash or a silent behavior change you can't trace. Every reply's logs
+and traces carry the `doctrine_sha256` of the doctrine version that produced it, so "which
+doctrine said this" is always answerable after the fact. See `docs/runbook.md` for the
+operator playbook when a doctrine edit misbehaves.
 
 ## Observability
 
 - `GET /health` — JSON with `sse`, `sqlite`, `honcho`, `omniroute` status, error counts
-  since restart, uptime, `persona_sha256`, and `strands_version`. Returns `200` when
+  since restart, uptime, `doctrine_sha256`, and `strands_version`. Returns `200` when
   healthy, `503` when degraded.
 - `GET /metrics` — Prometheus text format: `nora_messages_total`, `nora_tags_total`,
   `nora_tags_debounced_total`, `nora_tags_dropped_total`, `nora_replies_total`,
   `nora_errors_total`, `nora_silent_failures_total`, `nora_guard_vetoes_total`,
-  `nora_leak_blocks_total`, `nora_persona_reload_failures_total`,
+  `nora_leak_blocks_total`, `nora_doctrine_reload_failures_total`,
   `honcho_feed_success`/`honcho_feed_failure`, and latency histograms
   (`nora_tag_latency_seconds`, `nora_llm_latency_seconds`, `nora_overhead_seconds`).
 - Structured JSON logs (`obs.logging.format = "json"`) at `obs.logging.path`, one object per
-  line, carrying `tag_id`, `conversation_id`, `sender_id`, `person_id`, `persona_sha256`,
+  line, carrying `tag_id`, `conversation_id`, `sender_id`, `person_id`, `doctrine_sha256`,
   `stage`, `latency_ms`, and `trace_id`.
 - OpenTelemetry tracing, enabled by default (`obs.tracing.enabled`), with
-  `tag_id` / `conversation_id` / `persona_sha256` as span attributes.
+  `tag_id` / `conversation_id` / `doctrine_sha256` as span attributes.
 
 ## Operating notes
 
@@ -172,7 +172,7 @@ sqlite3 data/messages.db "SELECT sender_name, body FROM messages WHERE is_nora=1
 
 ## Operator runbook
 
-See `docs/runbook.md` for what to do when Nora goes quiet, a persona edit breaks her, the
+See `docs/runbook.md` for what to do when Nora goes quiet, a doctrine edit breaks her, the
 watchdog alerts, or you need to roll back to v1.
 
 ## Deployment
@@ -206,14 +206,14 @@ The container uses `network_mode: host` — Nora is a purely localhost agent (si
 honest than reproducing three port-forwards. `GET http://127.0.0.1:9100/health` and
 `/metrics` are reachable directly on the host, no port mapping needed.
 
-`config.toml`, `identity.toml`, and `nora/persona/` are bind-mounted **read-only** into
+`config.toml`, `identity.toml`, and `nora/doctrine/` are bind-mounted **read-only** into
 the container from the repo — they are never baked into the image. `./data` is mounted
 read-write for `messages.db` and `nora.log`.
 
-### Editing the persona in the container
+### Editing the doctrine in the container
 
-Same workflow as bare-metal: edit `nora/persona/*.md` on the host and save. Because
-`nora/persona/` is a live bind mount and `persona.reload = "mtime"` re-stats on every tag,
+Same workflow as bare-metal: edit `nora/doctrine/*.md` on the host and save. Because
+`nora/doctrine/` is a live bind mount and `doctrine.reload = "mtime"` re-stats on every tag,
 the running container picks up the change on the next tag — **no rebuild, no
 restart**.
 
