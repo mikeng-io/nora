@@ -126,6 +126,19 @@ encryption_key_env = "NORA_MEDIA_KEY"
 max_bytes = 104857600     # 100 MiB — Signal's own attachment ceiling
 timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never the message
 
+# Google routing for the `route` tool (DEC-46). The WHOLE SECTION IS OPTIONAL
+# and every key defaults — a config.toml without it behaves as if routing is
+# off. `route` is the one grounding tool that costs money and reaches a third
+# party (Google Maps Platform), so it is OFF by default; while off the tool
+# answers `unavailable`, never a silent empty.
+#
+# `api_key_env` names the env var holding the key — the VALUE is never in config
+# (DEC-8), exactly like `llm.api_key_env`. Restrict the key at Google to
+# Routes + Places + Geocoding, and set a budget alert.
+[route]
+enabled = false
+api_key_env = "GOOGLE_MAPS_API_KEY"
+
 [doctrine]
 dir = "nora/doctrine"
 reload = "mtime"                      # mtime | startup

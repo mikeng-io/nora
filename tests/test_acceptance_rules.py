@@ -39,9 +39,15 @@ RULE_TESTS = {
     # R-27's own rule on the place axis, not a new rule: «that place is not in
     # the stop data» and «that place exists but this route does not go there»
     # are different claims, and collapsing them is the same wrong-source-read-
-    # as-nothing-found trap R-27 was registered for. R-28 stays reserved for
-    # search/fetch (design/14 §2.3).
+    # as-nothing-found trap R-27 was registered for.
     "R-27b": "test_a_place_the_route_does_not_serve_is_never_no_such_place",
+    # R-28: the OUTBOUND egress boundary for routing. A route query contains two
+    # locations that leave the host to Google; a person's name or a resolved
+    # position in origin/destination is a hard block, refused before any HTTP
+    # call (design/14 §2.2, DEC-46). design/14 §2.3 reserved R-27/R-28 for
+    # grounding; R-27 went to transit, so this is R-28 — search/fetch, when they
+    # ship, take the next free number.
+    "R-28": "test_a_route_naming_a_person_is_refused_before_egress",
     # R-2/R-2b keep their entries rather than gaining new ones: DEC-40 revised
     # the RULE (one message became `send_reply`'s budget) and both named tests
     # were rewritten in place to assert the revised invariant, which is what

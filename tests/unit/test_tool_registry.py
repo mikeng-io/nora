@@ -60,7 +60,7 @@ def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
         "now", "read_buffer", "send_reply",
-        "group_members", "lookup_person", "about", "calculate", "transit",
+        "group_members", "lookup_person", "about", "calculate", "transit", "route",
     }
 
 
@@ -77,6 +77,9 @@ def test_budgets_match_todays_table():
         # One message names two routes often enough (「68X 定 K73 快啲」) and
         # three almost never.
         "transit": 2,
+        # Sized like transit: two place lookups plus a route, paid and external,
+        # so a turn may reach for it twice but not more (DEC-46).
+        "route": 2,
     }
 
 

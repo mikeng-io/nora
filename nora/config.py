@@ -244,6 +244,30 @@ class MediaConfig(BaseModel):
     timeout_seconds: float = 8.0
 
 
+class RouteConfig(BaseModel):
+    """Google routing for the `route` tool (DEC-46, design/14 §3).
+
+    **The whole section is optional and every field defaults**, like
+    `MediaConfig`: a `config.toml` written before this existed keeps loading,
+    which `extra="forbid"` makes a real constraint rather than a courtesy.
+
+    `enabled` defaults to **False** because `route` is the one grounding tool
+    that costs money and reaches a third party — it is off until an operator
+    turns it on, and while off the tool answers `unavailable` (the registry
+    holds no `RouteClient`), never silently empty.
+
+    `api_key_env` NAMES the environment variable holding the Google Maps
+    Platform key; the value is never in config (DEC-8), exactly as
+    `llm.api_key_env` names but never inlines the LLM key. The key must be
+    restricted at Google to Routes + Places + Geocoding.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    api_key_env: str = "GOOGLE_MAPS_API_KEY"
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -354,6 +378,9 @@ class Config(BaseModel):
     # DEC-43 must keep loading, which `extra="forbid"` makes a real constraint
     # rather than a courtesy.
     media: MediaConfig = MediaConfig()
+    # Optional and defaulted — see `RouteConfig`. Off unless an operator turns
+    # it on; a config.toml without a `[route]` section keeps loading.
+    route: RouteConfig = RouteConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     identity_file: Path

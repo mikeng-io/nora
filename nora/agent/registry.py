@@ -28,6 +28,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..infra.routes import RouteClient
 from ..infra.transit import TransitClient
 from .ports import ToolSpec, adapt
 from .room import Room
@@ -56,8 +57,21 @@ class ToolRegistry:
     opens and no catalogue is fetched until a tool is actually called.
     """
 
-    def __init__(self, *, transit: TransitClient | None = None) -> None:
+    def __init__(
+        self, *,
+        transit: TransitClient | None = None,
+        route: RouteClient | None = None,
+    ) -> None:
         self._transit = transit if transit is not None else TransitClient()
+        # `route` is NOT default-constructed: unlike `TransitClient`, a
+        # `RouteClient` needs a Google API key, and there is no keyless default
+        # to fall back to. When it is None — every composition that has not
+        # wired a key, including `nora.app.offline` and the eval registries —
+        # the `route` tool answers `unavailable`, which is the honest state for
+        # "routing is not configured" (R-5). The composition root passes one
+        # built from the resolved `[route]` key (DEC-8); until it does, `route`
+        # is present in the catalogue and refuses to leak, but cannot travel.
+        self._route = route
 
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
@@ -144,8 +158,9 @@ class ToolRegistry:
             "These are the tools you were given. Their schemas say what each one "
             "takes; this says when to reach for it.\n" + "\n".join(lines) + "\n"
             + clock +
-            "The only thing here that reaches outside this conversation is live bus "
-            "data. When you cannot find something out, say so in one clause and move on."
+            "The things here that reach outside this conversation are live bus data "
+            "and routing (a paid map service). When you cannot find something out, say "
+            "so in one clause and move on."
         )
 
     def specs(
@@ -165,15 +180,15 @@ class ToolRegistry:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
 
-        `transit_source` is NOT in this signature and must not become one: it is
-        the registry's own long-lived collaborator, not something a tag brings
-        with it, so every caller of `specs()`/`build()` is unchanged by its
-        arrival."""
+        `transit_source` and `route_source` are NOT in this signature and must
+        not become one: each is the registry's own long-lived collaborator, not
+        something a tag brings with it, so every caller of `specs()`/`build()`
+        is unchanged by their arrival."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
-            room=room, transit_source=self._transit, question=question,
-            context_window=context_window,
+            room=room, transit_source=self._transit, route_source=self._route,
+            question=question, context_window=context_window,
         )
 
     def build(

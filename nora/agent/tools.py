@@ -53,7 +53,7 @@ from ..domain.ports import Recollection
 from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers
 from .ports import ToolSpec, adapt
-from .room import Room, RoomView
+from .room import Room, RoomView, _key, _names_of
 
 log = logging.getLogger("nora.tools")
 
@@ -146,6 +146,21 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                              "— never state a bus time you did not get from here, and "
                              "never use it for a bus later than now",
                           time_shiftable=False),
+    # 2, sized like `transit`: one message can name a route to plan for two
+    # people leaving from two places, and two calls plus a reply still leave
+    # half the turn. Each call is one or two Google Places lookups plus one
+    # Routes call — paid, external, and the reason the budget is not higher.
+    #
+    # **`time_shiftable=True` is the load-bearing declaration, and `route` is
+    # the FIRST tool to set it** (design/14 §5.1, DEC-40 reserved it). Google
+    # Routes accepts `arrivalTime`, so unlike `transit` this tool CAN answer
+    # about a departure hours from now — 「夜晚八點去到」 asked at three in the
+    # afternoon. `terminal=False`: a route is the middle of an answer, not the
+    # end of one; she still has to say it.
+    "route": NativeTool(2, "how to travel between two places, or how long a journey "
+                           "takes — the only tool that can answer about a trip at a "
+                           "later time",
+                        time_shiftable=True),
     "read_buffer": NativeTool(2, "something was said further back than the messages "
                                  "you were shown"),
     # The three room-scoped tools. Every budget here is chosen against ONE
@@ -393,6 +408,50 @@ def _miss(name: str, view: RoomView) -> dict:
     }
 
 
+# ---- R-28: the outbound egress boundary for routing (design/14 §2.2) ---------
+#
+# A route query inherently contains TWO locations, and they LEAVE THE HOST to
+# Google. R-18 guards REPLIES; this guards ARGUMENTS, which R-18 never saw. Two
+# things are hard-blocked in an origin or a destination, BEFORE any HTTP call:
+#
+#   * an IDENTIFIER (phone / ACI / key) — `scan_identifiers`, the floor every
+#     tool shares; a number has no business in a place name and none may leave.
+#   * a PERSON'S NAME OR NICKNAME — the routing-specific block. 「陳生屋企」 must
+#     never be turned into a home address and sent, and design/14 §2.2 is
+#     explicit that there is no benign reading of a person in a route argument.
+#     A blocked query returns a legible refusal and NEVER reaches the client —
+#     revert this check and the person's name reaches Google.
+#
+# The name set is EVERY person Nora can name (`persons`), not only this room's
+# members: 陳生 in 「由陳生屋企去我公司」 need not be in the group for the leak
+# to be real. Matching is substring after the SAME normalisation `Room` uses (so
+# 「阿豹」's wrappers and casefolding line up), and names shorter than two
+# characters are skipped — a one-character alias would block every query, the
+# same floor `nora.infra.transit.places` puts on its substring pass.
+#
+# This is the UPPER half of §2.2's guarantee; the lower half is that the resolver
+# (`nora.infra.routes.places`) consults no human store and so cannot turn a name
+# into a location even if one slipped past. Neither half is sufficient alone.
+
+
+def _known_names(persons) -> frozenset[str]:
+    """Every name and alias Nora can put to a person, normalised, ≥2 chars.
+
+    Built once per tag from the whole address book, not from this room — the
+    person a route must not name need not be a member of it."""
+    names: set[str] = set()
+    for ref in getattr(persons, "by_person", {}).values():
+        names |= {key for key in _names_of(ref) if len(key) >= 2}
+    return frozenset(names)
+
+
+def _names_a_person(text: str, names: frozenset[str]) -> bool:
+    """Whether a route argument names a known person. Substring, because a home
+    address is phrased AROUND a name (「陳生屋企」), not as one."""
+    key = _key(text)
+    return any(name in key for name in names)
+
+
 def build_tool_specs(
     *,
     store,
@@ -404,6 +463,7 @@ def build_tool_specs(
     metrics,
     room: Room,
     transit_source,
+    route_source=None,
     question: str = "",
     context_window: int = 40,
 ) -> tuple[ToolSpec, ...]:
@@ -840,6 +900,109 @@ def build_tool_specs(
         )
         return out
 
+    # The person-name set for R-28, built once per tag rather than per call.
+    _route_person_names = _known_names(persons)
+
+    async def route(
+        origin: str, destination: str, mode: str = "TRANSIT", arrive_by: str = "",
+    ) -> dict:
+        """How to get from one place to another, and how long it takes.
+
+        Call this for ANY «how do I get from A to B», «which way is fastest»,
+        «how long to get there» — by bus and rail (the default), by car, or on
+        foot. Unlike the live bus times, this one CAN answer about a later
+        moment: if the trip is for tonight or tomorrow, give `arrive_by` and it
+        plans for that arrival instead of for now.
+
+        Give it PLACES, the way the person named them — a mall, a building, a
+        station, a restaurant («Yoho Mall», «黃大仙祠», «天水圍站»). It looks
+        each place up itself; you do not give it coordinates or a stop code.
+
+        NEVER put a person where a place goes. «從陳生屋企» is not a place, and
+        this tool will refuse a route that names someone rather than somewhere —
+        ask for the actual place instead.
+
+        `status` is one of four and they mean different things:
+          - `ok` — `duration_seconds` is the whole trip. For transit, `legs` is
+            each vehicle to board in order (`line`, `vehicle`, `departure_stop`,
+            `departure_time`, `headsign`). Times are Google's schedule — say
+            «about» when you quote one.
+          - `no_route` — read the note. Either Google found no way between the
+            two places by that mode, or a place could not be pinned to ONE spot
+            (`origin_could_be` / `destination_could_be` list the possibilities;
+            ask which they mean rather than guessing).
+          - `unavailable` — you could not check. Say so; never report it as «no
+            route».
+          - `refused` — the query named a person, not a place. Ask for the place.
+
+        Args:
+            origin: Where the trip STARTS, as a place name the way it was said.
+            destination: Where the trip ENDS, as a place name.
+            mode: TRANSIT (default), DRIVE, or WALK.
+            arrive_by: Optional. When they need to ARRIVE, as a full timestamp
+                (e.g. "2026-08-07T20:00:00+08:00"). Only used for transit; get
+                it from the clock, never invent one.
+        """
+        # R-28, BEFORE anything leaves the host. Identifiers first (the shared
+        # floor), then the routing-specific person block. Neither the offending
+        # argument nor which one it was is echoed back — the refusal says what
+        # to do without reflecting the model's own string at it.
+        for place in (origin, destination):
+            if scan_identifiers(place) is not None:
+                _record(metrics, "route", "refused", reason="identifier")
+                return {
+                    "status": "refused",
+                    "note": "That looks like an identifier, not a place. Give me a "
+                            "place name — a building, a stop, a mall.",
+                }
+            if _names_a_person(place, _route_person_names):
+                _record(metrics, "route", "refused", reason="person")
+                return {
+                    "status": "refused",
+                    "note": "I can't look up a route from or to a person — tell me "
+                            "the actual place (a building, a mall, a stop), not who "
+                            "is there.",
+                }
+        if route_source is None:
+            # No client wired (offline/eval compositions, or a deployment with
+            # no Google key). `unavailable`, never a silent empty — a wiring gap
+            # must look like «I could not check», not «there is no route» (R-5).
+            _record(metrics, "route", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't work out routes right now. Say you couldn't check — "
+                        "do not say there is no way to get there.",
+            }
+        try:
+            out = await route_source.route(
+                origin, destination, mode=mode, arrive_by=arrive_by,
+            )
+        except Exception:
+            # `RouteClient.route` is documented never to raise; this is the belt
+            # for those braces, landing on `unavailable` rather than an empty
+            # answer (`test_a_tool_never_raises_into_the_agent_loop`, R-5).
+            log.exception("route failed")
+            out = {
+                "status": "unavailable", "origin": origin, "destination": destination,
+                "note": "I could not reach the routing service just now. Say so — do "
+                        "not say there is no route and do not guess a time.",
+            }
+        # The echoed origin/destination are the model's own words, already past
+        # the R-28 identifier screen above, so this is belt-and-braces; the
+        # candidate lists are Google-authored place names rendered on their way
+        # to a reply, screened for the same reason `transit` screens `near`.
+        for key in ("origin", "destination"):
+            if scan_identifiers(str(out.get(key, ""))) is not None:
+                out.pop(key, None)
+        for key in ("origin_could_be", "destination_could_be"):
+            if isinstance(out.get(key), list):
+                out[key] = [c for c in out[key] if scan_identifiers(str(c)) is None]
+        _record(
+            metrics, "route", out["status"],
+            mode=out.get("mode"), legs=len(out.get("legs") or ()),
+        )
+        return out
+
     async def send_reply(text: str) -> bool:
         """Send your reply to the group. Call this exactly once, at the end of your turn.
 
@@ -863,6 +1026,7 @@ def build_tool_specs(
         _spec("now", now),
         _spec("calculate", calculate),
         _spec("transit", transit),
+        _spec("route", route),
         _spec("read_buffer", read_buffer),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
@@ -882,6 +1046,7 @@ def build_tools(
     metrics,
     room: Room,
     transit_source,
+    route_source=None,
     question: str = "",
     context_window: int = 40,
 ) -> list:
@@ -892,7 +1057,7 @@ def build_tools(
     specs = build_tool_specs(
         store=store, conversation_id=conversation_id, conversation_type=conversation_type,
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
-        room=room, transit_source=transit_source, question=question,
-        context_window=context_window,
+        room=room, transit_source=transit_source, route_source=route_source,
+        question=question, context_window=context_window,
     )
     return [adapt(spec) for spec in specs]
