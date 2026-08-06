@@ -80,7 +80,8 @@ R-27 registered + `RULE_TESTS`.
 
 ## Step 4 — `ToolSpec.terminal` + `send_reply` budget reconciliation
 
-Two prerequisites for multi-message that the design docs did not declare.
+**SHIPPED 2026-08-06 (DEC-32).** Two prerequisites for multi-message that the
+design docs did not declare.
 
 **4a.** `ToolSpec` gains `terminal: bool`; `ReplyGuard` reads it from the
 registry instead of hardcoding a verb class. design/15 §1 proposed hardcoding
@@ -93,6 +94,31 @@ must be ONE number — the budget table or config, never both.
 
 Probe for 4b: with R-2 relaxed but the budget still 1, a second `send_reply` is
 refused by R-7. Red before the fix.
+
+### Where the message cap lives — decided, for step 5
+
+**`NATIVE_TOOL_BUDGETS["send_reply"]` IS the cap. There is no second number.**
+
+design/16 §2.2 asks for `llm.limits.messages` "(new)". Read literally — a
+config key the guard checks *beside* the budget — that is two numbers for one
+question, and the R-7-before-R-2 ordering guarantees the smaller one wins
+silently: a `messages = 4` in `config.toml` sitting above a budget of 1 caps
+her at one message and reports the refusal as R-2. Two numbers whose
+disagreement is invisible is precisely the drift `nora/agent/registry.py`
+exists to prevent (DEC-10: "the number `ReplyGuard` enforces and the number a
+tool is declared to cost can never drift apart").
+
+So step 5 raises the number in `NATIVE_TOOLS["send_reply"].budget` and revises
+`Deliverer`'s latch to match — both, or multi-message stays dead in one of the
+two ways this step made testable.
+
+**If the cap must become operator-tunable**, config supplies it *to the
+registry* — `ToolRegistry(message_cap=cfg.llm.limits.messages)` overriding that
+one table entry, with the table's value as the default — so `budgets()` still
+hands `ReplyGuard` exactly one number and `ToolRegistry.specs()` declares that
+same number to the model. Never a `limits.messages` read directly by the guard
+or by `Deliverer`. **Not implemented in step 4**: there is no measured need for
+a tunable cap yet, and a config key with no reader is how the last one rotted.
 
 ## Step 5 — per-tag `OpenAIModel`, then multi-message
 
@@ -112,6 +138,12 @@ reports `delivered=True`, shows ✅ and feeds Honcho. R-23 only relabels
 **5d. One Honcho feed per tag**, messages joined — not one per message, which
 would feed the tagger's question four times and teach Honcho a conversation
 that did not happen. Audit rows stay per-message.
+
+**5e. The cap is `NATIVE_TOOLS["send_reply"].budget`** — see step 4's decision
+above. Raising it is not optional bookkeeping: leave it at 1 and R-7 refuses
+the second message before R-2 is consulted, so every other part of 5 can be
+correct and the feature still ship dead
+(`tests/test_guards_replyguard.py::test_relaxing_r_2_alone_does_not_buy_a_second_message`).
 
 Ships inert: neutral doctrine gives 1 message 6/6.
 

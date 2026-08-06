@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any
 
 from strands.hooks import (
@@ -196,17 +196,29 @@ class ReplyGuard(HookProvider):
     via `nora.engagement.stages.deliver.build` — so the number a tool costs
     lives with the tool, not with the guard. R-7's OTHER half, unknown-tool
     default-deny, is unchanged: a tool absent from `budgets` is still vetoed.
+
+    `terminal` is DEC-32 and is the same argument applied to the OTHER thing
+    this guard used to hardcode: which verbs end a turn. It comes from
+    `ToolRegistry.terminal_tools()` along the same path, and it has NO DEFAULT
+    on purpose. A guard constructed without it would end no turn at all —
+    `tool_choice="required"` means the loop cannot stop by itself — which is
+    the ~25s-per-tag runaway DEC-21 fixed, and defaulting to `()` would hide
+    that behind a working-looking constructor.
     """
 
     def __init__(
-        self, *, conversation_id: str, budgets: Mapping[str, int], deliverer=None,
-        metrics: Metrics,
+        self, *, conversation_id: str, budgets: Mapping[str, int],
+        terminal: Collection[str], deliverer=None, metrics: Metrics,
     ) -> None:
         self._conversation_id = conversation_id
         self._budgets = dict(budgets)
+        self._terminal = frozenset(terminal)
         self._deliverer = deliverer
         self._metrics = metrics
         self.counts: dict[str, int] = dict.fromkeys(self._budgets, 0)
+        # Set by `_after_tool` when a terminal verb has actually RUN — not
+        # when one was merely attempted. See `_before_model`.
+        self._turn_is_over = False
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
@@ -261,8 +273,25 @@ class ReplyGuard(HookProvider):
             )
             self._metrics.inc("nora_tool_scope_violations_total", tool=tool_name)
 
+        # R-7's per-tool budget, and — for `send_reply` — **the message cap**.
+        # THIS CHECK RUNS BEFORE R-2's latch below, and that ordering is half of
+        # DEC-32. `NATIVE_TOOL_BUDGETS["send_reply"]` is 1, so a second reply is
+        # refused HERE, by a number, and never reaches `Deliverer.attempted`.
+        # Relaxing R-2 alone — which is what
+        # `design/proposed/16-multi-message-replies.md` reads like — would leave
+        # multi-message silently dead: the model would be told "you already sent
+        # your reply" by a budget nobody had edited. Raising the number in
+        # `nora.agent.tools.NATIVE_TOOLS` is therefore not optional bookkeeping,
+        # and the latch below is what refuses the second message once it is
+        # raised. Both halves are pinned in `tests/test_guards_replyguard.py`,
+        # under "the message cap lives in the budget, not in R-2's latch".
         if self.counts[tool_name] >= self._budgets[tool_name]:
             if tool_name == "send_reply":
+                # Labelled R-2 although the BUDGET is what refused it: the
+                # model-facing sentence is the same either way, and the rule an
+                # operator cares about is "one reply per tag". Anyone changing
+                # the cap must read the two branches together — this counter
+                # cannot tell them apart.
                 return self._veto(
                     "R-2", "You already sent your reply. Do not call send_reply "
                            "again. If you still need something, use one of the "
@@ -279,6 +308,11 @@ class ReplyGuard(HookProvider):
             if not text.strip():
                 return self._veto("R-4", "Your reply text is empty. "
                                          "Send real text or end your turn.")
+            # R-2's latch, the authoritative single-shot mechanism (spec S4) —
+            # and, TODAY, UNREACHABLE FOR A SECOND `send_reply`: the budget
+            # check above has already refused it, because that budget is 1.
+            # This branch only fires if something raised the budget without
+            # revising R-2, which is precisely the ordering trap named there.
             if self._deliverer is not None and self._deliverer.attempted:
                 return self._veto(
                     "R-2", "You already sent your reply. Do not call send_reply "
@@ -293,7 +327,7 @@ class ReplyGuard(HookProvider):
         registry.add_callback(BeforeModelCallEvent, self._before_model)
 
     def _before_model(self, event: BeforeModelCallEvent) -> None:
-        """End the turn as soon as the reply is out.
+        """End the turn as soon as a TERMINAL verb has run (DEC-32).
 
         `tool_choice="required"` (see `nora.agent.factory`) is the only reason
         this model calls `send_reply` at all — but it applies to EVERY turn, so
@@ -304,11 +338,27 @@ class ReplyGuard(HookProvider):
         actually succeeded showed the group ⚠️. One cause, two symptoms, both
         observed live.
 
-        Cancelling here is the narrow fix. R-2 already refuses a second send,
-        so nothing after the first delivery can change what the group sees —
-        the remaining turns were pure cost.
+        Cancelling here is the narrow fix. The R-7 budget already refuses a
+        second `send_reply` (it is 1, and it is checked before R-2's latch), so
+        nothing after the first call can change what the group sees — the
+        remaining turns were pure cost.
+
+        **This asked `self._deliverer.delivered` until DEC-32**, which made
+        "the turn is over" a property of ONE tool's side effect rather than of
+        the tools. `design/proposed/15-gif-replies.md` §1 needs a second
+        terminal verb and proposed defining the class here; a Honcho
+        investigation on 2026-08-06 raised a third candidate (a distinct feed
+        step on the tag path). Both are now a `terminal=True` in `NATIVE_TOOLS`,
+        with no edit to this file.
+
+        The one behavioural difference is a `send_reply` the `Deliverer`
+        REFUSED (R-6 canary, R-18 egress, an audit-write or send failure).
+        `delivered` stayed False, so the loop used to keep running; it now
+        stops. The group sees the same thing either way — the tool call was
+        recorded, so the budget of 1 is spent and a retry is already refused —
+        and the difference is purely the forced turns that followed.
         """
-        if self._deliverer is not None and self._deliverer.delivered:
+        if self._turn_is_over:
             event.cancel = "Reply already sent — the turn is finished."
 
     def _before_tool(self, event) -> None:
@@ -330,5 +380,15 @@ class ReplyGuard(HookProvider):
                 return                       # a failed call does not consume budget
             name = (getattr(event, "tool_use", None) or {}).get("name", "")
             self.record(name)
+            # A CANCELLED call did not run, so it cannot have ended the turn.
+            # Strands fires this hook for a call `_before_tool` vetoed too —
+            # `cancel_tool` produces an error `ToolResult` and `exception=None`
+            # (`strands.tools.executors._executor`, verified against 1.50.2) —
+            # so without this check an empty-text `send_reply` refused by R-4
+            # would end the turn instead of letting the model correct itself.
+            # `cancel_message` is asserted by `tests/test_strands_api_contract.py`
+            # because that is now load-bearing rather than incidental.
+            if name in self._terminal and getattr(event, "cancel_message", None) is None:
+                self._turn_is_over = True
         except Exception:
             log.exception("ReplyGuard._after_tool raised; ignoring")

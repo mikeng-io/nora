@@ -46,6 +46,20 @@ class ToolSpec:
     `call` (for example a future MCP-sourced tool, out of scope this phase —
     spec §7/§11) would set both explicitly.
 
+    `terminal` says whether calling this tool ENDS THE TURN, and it lives here
+    for exactly the reason `budget` does (DEC-32). `ReplyGuard`'s
+    `BeforeModelCallEvent` hook is the only thing that stops the agent loop —
+    under `tool_choice="required"` the model is forced to call something on
+    every pass, so it cannot stop by choosing not to (DEC-21). That hook used
+    to decide "she has replied" by asking the DELIVERER whether it had
+    delivered, which is terminality expressed as one specific tool's side
+    effect: a second terminal verb (`design/proposed/15-gif-replies.md` §1's
+    `send_gif`, or a distinct feed step on the tag path) could not be added
+    without editing the guard. It is now declared here, read through
+    `ToolRegistry.terminal_tools()`, so the next terminal verb is a table edit.
+    It defaults to False — the conservative choice, since a tool wrongly marked
+    terminal truncates the turn.
+
     `when` is the one thing a schema cannot say, and it has NO DEFAULT on
     purpose (design/17 §5). The schema already states what a tool does —
     verbatim, a few hundred tokens later in the same request, measured at 1,222
@@ -66,6 +80,7 @@ class ToolSpec:
     call: Callable[..., Awaitable[Any]]
     when: str
     budget: int = 1
+    terminal: bool = False
     disclose_failure: bool = False
     timeout_seconds: float | None = None
 

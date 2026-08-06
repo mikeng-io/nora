@@ -98,7 +98,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=ToolRegistry().budgets(),
-                        metrics=Metrics()),
+                        terminal=ToolRegistry().terminal_tools(), metrics=Metrics()),
         trace_attributes={},
         retry=factory.build_retry_policy(timeout_seconds=30.0),
     )

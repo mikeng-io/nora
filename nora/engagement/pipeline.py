@@ -184,7 +184,8 @@ class EngagementPipeline:
                 store=self._audit, adapter=self._adapter, target=msg.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=request.tag_id,
                 nora_sender_id=self._nora_sender_id, conversation_id=msg.conversation_id,
-                budgets=self._tool_registry.budgets(), metrics=self._metrics,
+                budgets=self._tool_registry.budgets(),
+                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
             )
             # One `Room` per tag, constructed here and closed over by the three
             # room-scoped tools. Nothing reads the platform roster unless one

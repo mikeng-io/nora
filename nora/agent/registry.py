@@ -40,6 +40,25 @@ class ToolRegistry:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
         return dict(NATIVE_TOOL_BUDGETS)
 
+    def terminal_tools(self) -> frozenset[str]:
+        """The verbs that END A TURN, for `ReplyGuard`'s model-call hook (DEC-32).
+
+        Exposed exactly the way `budgets()` is, and for the same reason. Under
+        `tool_choice="required"` the model must call something on every pass, so
+        the guard's `BeforeModelCallEvent` cancellation is the ONLY thing that
+        ends a turn (DEC-21). It used to end one by asking the `Deliverer`
+        whether it had delivered — terminality expressed as a single tool's side
+        effect, which is the pre-DEC-10 hardcoded `BUDGETS` mistake wearing a
+        different hat. `design/proposed/15-gif-replies.md` §1 proposed fixing
+        that by defining the verb class *in the guard*; this defines it on the
+        tool instead, so `send_gif` — or any other verb that ends a turn —
+        becomes one `terminal=True` in `NATIVE_TOOLS`.
+
+        A `frozenset` rather than a mapping: membership is the whole question,
+        and there is no per-tool value to carry.
+        """
+        return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.terminal)
+
     def tool_names(self) -> tuple[str, ...]:
         """Every registered tool's name, for the doctrine loader's catalogue gate.
 

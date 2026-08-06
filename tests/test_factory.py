@@ -7,6 +7,7 @@ from nora.obs.metrics import Metrics
 
 BASE_URL = "http://localhost:20128/v1"
 BUDGETS = ToolRegistry().budgets()
+TERMINAL = ToolRegistry().terminal_tools()
 API_KEY = "test-key"
 MODEL = "deepseek-v4-flash"
 MAX_TOKENS = 400
@@ -19,7 +20,7 @@ def _client() -> object:
 
 
 def _guard() -> ReplyGuard:
-    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, metrics=Metrics())
+    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=Metrics())
 
 
 def test_create_client_is_a_plain_constructor_not_a_memoized_singleton():

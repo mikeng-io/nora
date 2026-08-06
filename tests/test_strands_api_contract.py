@@ -51,6 +51,15 @@ def test_obligation_3_hook_events_expose_cancel_tool_and_retry():
         or set(dir(AfterToolCallEvent))
     for attr in ("result", "exception", "retry"):
         assert attr in after, f"DRIFT: AfterToolCallEvent.{attr} is gone"
+    # Load-bearing since DEC-32: this hook fires for a call `_before_tool`
+    # CANCELLED as well as for one that ran (`exception` stays None for a
+    # cancellation), and `cancel_message` is the only thing that tells them
+    # apart. Without it a `send_reply` vetoed for empty text would set
+    # `ReplyGuard._turn_is_over` and end the turn in silence.
+    assert "cancel_message" in after, (
+        "DRIFT: AfterToolCallEvent.cancel_message is gone — ReplyGuard can no "
+        "longer tell a cancelled terminal call from one that ran (DEC-32)"
+    )
 
 
 def test_obligation_4_openai_model_accepts_a_custom_client():

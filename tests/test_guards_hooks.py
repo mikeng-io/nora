@@ -5,6 +5,7 @@ from nora.agent.registry import ToolRegistry
 from nora.obs.metrics import Metrics
 
 BUDGETS = ToolRegistry().budgets()
+TERMINAL = ToolRegistry().terminal_tools()
 
 
 class FakeBeforeEvent:
@@ -21,7 +22,8 @@ class FakeAfterEvent:
 
 
 def _guard(metrics=None):
-    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, metrics=metrics or Metrics())
+    return ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+                      metrics=metrics or Metrics())
 
 
 def test_before_tool_allows_a_valid_call():

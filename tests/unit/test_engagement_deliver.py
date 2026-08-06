@@ -18,6 +18,7 @@ from nora.testing import FakeAuditStore
 
 TARGET = ConversationTarget(platform="signal", conversation_id="g1", conversation_type="group")
 BUDGETS = ToolRegistry().budgets()
+TERMINAL = ToolRegistry().terminal_tools()
 
 
 def _doctrine(text: str = "be helpful") -> Doctrine:
@@ -46,7 +47,7 @@ def test_build_wires_the_guard_to_the_same_deliverer():
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1", budgets=BUDGETS, metrics=Metrics(),
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=Metrics(),
     )
 
     assert isinstance(handle.deliverer, Deliverer)
@@ -59,7 +60,7 @@ async def test_check_outcome_counts_no_send_call_when_the_model_never_attempted(
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
-        budgets=BUDGETS, metrics=metrics,
+        budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
     )
 
     delivered = deliver.check_outcome(
@@ -79,7 +80,7 @@ async def test_check_outcome_does_not_double_count_when_the_model_attempted_but_
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(succeed=False), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1", budgets=BUDGETS, metrics=metrics,
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
     )
     await handle.deliverer.deliver("hello")
 
@@ -99,7 +100,7 @@ async def test_check_outcome_returns_true_and_sets_llm_state_on_a_delivered_repl
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1", budgets=BUDGETS, metrics=metrics,
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
     )
     await handle.deliverer.deliver("hello")
     before = time.time()
@@ -119,7 +120,7 @@ async def test_check_outcome_tolerates_no_llm_state():
     handle = deliver.build(
         store=FakeAuditStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
-        conversation_id="g1", budgets=BUDGETS, metrics=metrics,
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
     )
     await handle.deliverer.deliver("hello")
 
@@ -144,7 +145,7 @@ async def test_a_turn_cut_off_by_a_budget_cap_is_not_labelled_no_send_call():
         handle = deliver.build(
             store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
             canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
-            budgets=BUDGETS, metrics=metrics,
+            budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
         )
 
         delivered = deliver.check_outcome(
@@ -168,7 +169,7 @@ async def test_an_ordinary_stop_reason_still_counts_no_send_call():
         handle = deliver.build(
             store=FakeAuditStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
             canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
-            budgets=BUDGETS, metrics=metrics,
+            budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
         )
 
         deliver.check_outcome(
@@ -194,7 +195,7 @@ async def test_a_delivered_reply_is_recorded_in_the_audit_store():
     handle = deliver.build(
         store=store, adapter=_FakeAdapter(succeed=True), target=TARGET, doctrine=_doctrine(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
-        budgets=BUDGETS, metrics=Metrics(),
+        budgets=BUDGETS, terminal=TERMINAL, metrics=Metrics(),
     )
 
     await handle.deliverer.deliver("hello")

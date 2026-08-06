@@ -65,18 +65,27 @@ _HKT = timezone(timedelta(hours=8), "HKT")
 class NativeTool:
     """What is declared about a tool once, in one place.
 
-    `budget` and `when` live together because they are two answers to the same
-    question — how a turn is allowed to spend itself — and because the failure
-    mode this table exists to prevent is a tool being added to one list and
-    forgotten in the other. `budget` feeds `ReplyGuard` through
+    `budget`, `when` and `terminal` live together because they are three
+    answers to the same question — how a turn is allowed to spend itself — and
+    because the failure mode this table exists to prevent is a tool being added
+    to one list and forgotten in the other. `budget` feeds `ReplyGuard` through
     `ToolRegistry.budgets()` (DEC-10); `when` feeds the generated capability
-    block through `ToolRegistry.capability()` (DEC-29). Both are read from here
-    and nowhere else, so a tool that exists has a ceiling AND a reason to be
-    reached for, or it does not build.
+    block through `ToolRegistry.capability()` (DEC-29); `terminal` feeds the
+    guard's turn-ending hook through `ToolRegistry.terminal_tools()` (DEC-32).
+    All three are read from here and nowhere else, so a tool that exists has a
+    ceiling AND a reason to be reached for AND a stated answer to "does calling
+    this end the turn", or it does not build.
+
+    `terminal` defaults to False because almost nothing is terminal and because
+    the wrong default truncates a turn rather than merely lengthening one.
+    Today exactly one tool sets it: `send_reply`. The next one — `send_gif`
+    (`design/proposed/15-gif-replies.md` §1), or a distinct feed step on the tag
+    path — is a one-line edit here rather than an edit to `guards.py`.
     """
 
     budget: int
     when: str
+    terminal: bool = False
 
 
 # ONE line per tool, in the order the capability block renders them. Keep each
@@ -119,9 +128,23 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "recall": NativeTool(2, "what you durably remember about one of them. «I remember "
                             "nothing yet» and «I could not check» are different "
                             "answers; never report the second as the first"),
+    # THE ONLY TERMINAL TOOL, and — verified 2026-08-06 — **the number that
+    # caps how many messages one tag may send.** Both facts are easy to miss
+    # from the guard's side, so they are stated here, where the number is.
+    #
+    # `ReplyGuard.evaluate` checks this budget (R-7) BEFORE it checks
+    # `Deliverer.attempted` (R-2): a second `send_reply` is refused by the
+    # budget and never reaches the latch. So relaxing R-2 alone — the obvious
+    # reading of `design/proposed/16-multi-message-replies.md` — leaves
+    # multi-message SILENTLY DEAD, refused by a number nobody edited. When
+    # step 5 lands, **this budget IS the message cap** (DEC-32): if the cap
+    # becomes operator-tunable it must arrive here, through the registry, so
+    # `ReplyGuard` still reads exactly one number. Never a second cap checked
+    # beside this one — that is the drift DEC-10 exists to prevent.
     "send_reply": NativeTool(1, "the only way anything you write reaches the group. "
                                 "Call it once, at the end; if you never call it, "
-                                "nothing is sent"),
+                                "nothing is sent",
+                             terminal=True),
 }
 
 # Kept as its own name because `ReplyGuard`, `ToolRegistry.budgets()` and every
@@ -220,6 +243,24 @@ def _record_room(metrics, tool: str, status: str, **detail: object) -> None:
     """
     metrics.inc("nora_room_lookups_total", tool=tool, status=status)
     _log_call(tool, status, **detail)
+
+
+def _spec(name: str, call) -> ToolSpec:
+    """One `ToolSpec`, with every declared field taken from `NATIVE_TOOLS[name]`.
+
+    Written as a helper rather than seven hand-written constructor calls
+    because the hand-written form is how a field gets forgotten: `terminal`
+    (DEC-32) is the third field on that table, and copying `when=`/`budget=`
+    seven times to add a fourth would eventually miss one and silently give
+    that tool the dataclass default. A name absent from the table
+    raises `KeyError` here, which is R-7's default-deny arriving at build time
+    instead of at the model's first call.
+    """
+    declared = NATIVE_TOOLS[name]
+    return ToolSpec(
+        name=name, description="", schema={}, call=call,
+        when=declared.when, budget=declared.budget, terminal=declared.terminal,
+    )
 
 
 def _asked_about(name: str) -> dict:
@@ -628,41 +669,13 @@ def build_tool_specs(
         return sent
 
     return (
-        ToolSpec(
-            name="now", description="", schema={}, call=now,
-            when=NATIVE_TOOLS["now"].when,
-            budget=NATIVE_TOOLS["now"].budget,
-        ),
-        ToolSpec(
-            name="read_buffer", description="", schema={}, call=read_buffer,
-            when=NATIVE_TOOLS["read_buffer"].when,
-            budget=NATIVE_TOOLS["read_buffer"].budget,
-        ),
-        ToolSpec(
-            name="read_peer_card", description="", schema={}, call=read_peer_card,
-            when=NATIVE_TOOLS["read_peer_card"].when,
-            budget=NATIVE_TOOLS["read_peer_card"].budget,
-        ),
-        ToolSpec(
-            name="group_members", description="", schema={}, call=group_members,
-            when=NATIVE_TOOLS["group_members"].when,
-            budget=NATIVE_TOOLS["group_members"].budget,
-        ),
-        ToolSpec(
-            name="lookup_person", description="", schema={}, call=lookup_person,
-            when=NATIVE_TOOLS["lookup_person"].when,
-            budget=NATIVE_TOOLS["lookup_person"].budget,
-        ),
-        ToolSpec(
-            name="recall", description="", schema={}, call=recall,
-            when=NATIVE_TOOLS["recall"].when,
-            budget=NATIVE_TOOLS["recall"].budget,
-        ),
-        ToolSpec(
-            name="send_reply", description="", schema={}, call=send_reply,
-            when=NATIVE_TOOLS["send_reply"].when,
-            budget=NATIVE_TOOLS["send_reply"].budget,
-        ),
+        _spec("now", now),
+        _spec("read_buffer", read_buffer),
+        _spec("read_peer_card", read_peer_card),
+        _spec("group_members", group_members),
+        _spec("lookup_person", lookup_person),
+        _spec("recall", recall),
+        _spec("send_reply", send_reply),
     )
 
 

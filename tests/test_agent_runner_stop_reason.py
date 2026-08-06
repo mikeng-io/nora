@@ -26,6 +26,7 @@ from nora.domain.models import NormalizedMessage, TagContext
 from nora.obs.metrics import Metrics
 
 BUDGETS = ToolRegistry().budgets()
+TERMINAL = ToolRegistry().terminal_tools()
 RETRY = factory.build_retry_policy(timeout_seconds=30.0)
 
 
@@ -129,7 +130,8 @@ async def _run(
     runner = LiveAgentRunner(model=model, retry=RETRY)
     stop_reason = await runner.invoke(
         doctrine=_doctrine(), tools=[_tool()], pre_fill=[],
-        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, metrics=Metrics()),
+        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+                         metrics=Metrics()),
         tag_message="<tag_message/>", limits=limits, ctx=_ctx(), trace_attributes={},
     )
     return stop_reason, model

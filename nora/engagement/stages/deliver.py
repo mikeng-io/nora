@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -54,14 +54,19 @@ def build(
     nora_sender_id: str,
     conversation_id: str,
     budgets: Mapping[str, int],
+    terminal: Collection[str],
     metrics: Any,
 ) -> DeliveryHandle:
     deliverer = Deliverer(
         store=store, adapter=adapter, target=target, doctrine=doctrine, canary=canary,
         tag_id=tag_id, nora_sender_id=nora_sender_id, metrics=metrics,
     )
+    # `budgets` and `terminal` travel together and come from the same place
+    # (`ToolRegistry`) — what a tool costs and whether calling it ends the turn
+    # are both properties of the tool, never of the guard (DEC-10, DEC-32).
     guard = ReplyGuard(
-        conversation_id=conversation_id, budgets=budgets, deliverer=deliverer, metrics=metrics,
+        conversation_id=conversation_id, budgets=budgets, terminal=terminal,
+        deliverer=deliverer, metrics=metrics,
     )
     return DeliveryHandle(deliverer=deliverer, guard=guard)
 
