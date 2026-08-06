@@ -30,6 +30,7 @@ which builds the source, ever names the SDK type.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from nora.agent import factory
@@ -41,12 +42,21 @@ from nora.domain.models import TagContext
 class LiveAgentRunner:
     """Satisfies `nora.engagement.stages.invoke.AgentRunner`."""
 
-    def __init__(self, *, models: Any, retry: factory.RetryPolicy) -> None:
+    def __init__(
+        self, *, models: Any, retry: factory.RetryPolicy,
+        skills_dir: Path | None = None,
+    ) -> None:
         self._models = models
         # Resolved once, from the tier's invocation timeout, and reused for
         # every tag — the numbers are immutable, the strategy built from them
         # is not (see `factory.RetryPolicy`).
         self._retry = retry
+        # The on-demand skill layer (DEC-50, activating DEC-48). None leaves it
+        # INERT — the offline/eval runners never set it. When the composition
+        # root wires it, `factory.create_agent` builds one `AgentSkills` plugin
+        # per tag over this operator directory. Held as the resolved path so the
+        # per-tag construction stays a pure hand-off, no config object below.
+        self._skills_dir = skills_dir
 
     async def invoke(
         self,
@@ -82,6 +92,7 @@ class LiveAgentRunner:
             guard=guard,
             trace_attributes=trace_attributes,
             retry=self._retry,
+            skills_dir=self._skills_dir,
         )
         result = await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)
         # `isinstance`, not a cast: `factory.invoke` is typed `Any` to keep

@@ -27,12 +27,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
 from strands import Agent, ModelRetryStrategy
 from strands.agent.conversation_manager import NullConversationManager
 from strands.models.openai import OpenAIModel
+from strands.plugins import Plugin
+from strands.vended_plugins.skills import AgentSkills
 
 from .guards import ReplyGuard
 from .tool_choice import FIRST_CALL
@@ -281,9 +284,46 @@ def create_agent(
     guard: ReplyGuard,
     trace_attributes: dict,
     retry: RetryPolicy,
+    skills_dir: str | Path | None = None,
 ) -> Agent:
+    """`skills_dir` turns the on-demand skill layer ON (DEC-50, activating DEC-48).
+
+    When set, one `AgentSkills` plugin is built over that directory. The plugin
+    does two things and NEITHER is doctrine: it injects an `<available_skills>`
+    block (each skill's NAME and when-to-load line — NOT its body — progressive
+    disclosure, design/12 §1) into the system prompt before each invocation, and
+    it registers the model-facing `skills(skill_name)` activation tool that loads
+    a skill's full instructions on demand. R-7 admits that tool because
+    `nora.agent.tools.NATIVE_TOOLS` now carries a `skills` budget; without it
+    `ReplyGuard` would veto every activation call.
+
+    **One plugin PER TAG, like the model and the guard.** This is the ONLY module
+    that constructs Strands objects, and `AgentSkills` is one; built here it gets
+    the same per-tag isolation the model (`ModelSource`) and `ReplyGuard` already
+    have — its per-agent skill state (a `WeakKeyDictionary` keyed by agent) never
+    spans two tags. Construction does no I/O: a directory source is read through
+    the agent's sandbox at first invocation, not now.
+
+    **R-29 survives activation.** The `skills` tool resolves a name by pure dict
+    lookup against the operator-loaded set (`AgentSkills._skills_for`), exactly as
+    restrictive as `nora.skills.loader.SkillStore.resolve`: filesystem/URL loading
+    happens only from THIS `skills_dir` (operator config), never from the
+    `skill_name` a message supplies — a message naming a path, a URL or an inline
+    blob is a dict miss, so item 6 can name a shipped skill but never introduce a
+    new source. `strict=False` so a malformed operator skill warns and is skipped
+    rather than crashing a tag (R-5); the shipped `navigation` skill is valid and
+    `tests/test_skill_content.py` holds it so.
+
+    `skills_dir=None` leaves the layer INERT (offline/eval compositions, and any
+    deployment that has not wired it): no plugin, no `<available_skills>` block,
+    no activation tool — the pre-DEC-50 prompt, byte-identical.
+    """
+    plugins: list[Plugin] = (
+        [AgentSkills(str(skills_dir), strict=False)] if skills_dir is not None else []
+    )
     return Agent(
         model=model,
+        plugins=plugins,
         # Identity, so a trace can be found. `name` becomes the span name;
         # `agent_id` is stable rather than per-tag because the tag is already
         # carried as a trace attribute (`nora.obs.tracing.trace_attributes`) and

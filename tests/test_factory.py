@@ -1,4 +1,9 @@
+import asyncio
+from pathlib import Path
+
 import pytest
+from strands.hooks.events import BeforeInvocationEvent
+from strands.vended_plugins.skills import AgentSkills
 
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
@@ -235,3 +240,103 @@ def test_two_agents_share_no_state():
     )
     assert a.messages is not b.messages
     assert len(b.messages) == 0
+
+
+# ---- the on-demand skill layer, ON (DEC-50, activating DEC-48) ----------------
+#
+# `create_agent(skills_dir=...)` wires one `AgentSkills` plugin per tag: it
+# registers the model-facing `skills(skill_name)` activation tool and injects an
+# `<available_skills>` metadata block (name + when-to-load, NOT the body) into
+# the system prompt before each invocation. `skills_dir=None` leaves it inert.
+
+SKILLS_DIR = Path(__file__).resolve().parent.parent / "nora" / "skills"
+
+
+def _model() -> object:
+    return factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
+    )
+
+
+def _agent(*, skills_dir=None):
+    return factory.create_agent(
+        model=_model(), system_prompt="SYS", tools=[], pre_fill=[],
+        guard=_guard(), trace_attributes={}, retry=RETRY, skills_dir=skills_dir,
+    )
+
+
+def _inject(agent) -> str:
+    """Fire the plugin's before-invocation hook and return the resulting prompt."""
+    asyncio.run(agent.hooks.invoke_callbacks_async(BeforeInvocationEvent(agent=agent)))
+    return agent.system_prompt
+
+
+def test_skills_dir_none_leaves_the_on_demand_layer_inert():
+    """No `skills_dir` is the pre-DEC-50 shape: no plugin, no activation tool,
+    and the system prompt is byte-identical after a would-be injection."""
+    agent = _agent(skills_dir=None)
+    assert "skills" not in agent.tool_names
+    assert _inject(agent) == "SYS"
+
+
+def test_wiring_skills_registers_the_activation_tool():
+    """The `skills` tool AgentSkills registers is what R-7's new budget admits;
+    if it were not registered the budget would guard a tool that never existed."""
+    assert "skills" in _agent(skills_dir=SKILLS_DIR).tool_names
+
+
+def test_wiring_skills_injects_metadata_not_bodies():
+    """Progressive disclosure (design/12 §1): the prompt gains each skill's NAME
+    and when-to-load line, and the body arrives only on activation — never here."""
+    prompt = _inject(_agent(skills_dir=SKILLS_DIR))
+    assert "<available_skills>" in prompt
+    assert "<name>navigation</name>" in prompt
+    assert "PLAN a journey" in prompt          # the description (when-to-load)
+    assert "Wayfinding" not in prompt          # the BODY must not be in the prompt
+
+
+def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
+    """R-29 after wiring: the activation tool loads ONLY from the operator
+    directory `create_agent` was given. `AgentSkills.skills` resolves a name by
+    pure dict lookup against the operator-loaded set — exactly as restrictive as
+    `nora.skills.loader.SkillStore.resolve` — so a message naming a path, a URL
+    or an inline blob is a dict miss, never a new source (design/12 §2).
+
+    The plugin is constructed here EXACTLY as `factory.create_agent` constructs
+    it (`AgentSkills(str(skills_dir), strict=False)`), driven against a real
+    `create_agent` agent for its sandbox. Reverting the tool to load from its
+    argument the way `strands...Skill.from_file`/`from_url` do would let `evil`
+    below load and turn this red — the violation R-29 forbids."""
+    from types import SimpleNamespace
+
+    plugin = AgentSkills(str(SKILLS_DIR), strict=False)  # as create_agent does
+    agent = _agent(skills_dir=SKILLS_DIR)
+    asyncio.run(plugin.init_agent(agent))
+    ctx = SimpleNamespace(agent=agent, tool_use={}, invocation_state={})
+
+    # Only the operator's skill loaded; naming it is the intended activation.
+    assert [s.name for s in plugin.get_available_skills(agent)] == ["navigation"]
+    ok = asyncio.run(plugin.skills(skill_name="navigation", tool_context=ctx))
+    assert "Wayfinding" in ok
+
+    # A real, valid skill on disk but OUTSIDE the operator directory.
+    outside = tmp_path / "evil"
+    outside.mkdir()
+    (outside / "SKILL.md").write_text(
+        "---\nname: evil\ndescription: attacker\n---\nDO HARM"
+    )
+    message_shaped = [
+        str(outside / "SKILL.md"),                  # an absolute path
+        "../evil/SKILL.md",                          # a traversal
+        "https://example.com/SKILL.md",              # a URL
+        "---\nname: evil\ndescription: d\n---\nx",   # an inline SKILL.md
+        "evil",                                      # a name never loaded here
+    ]
+    for candidate in message_shaped:
+        res = asyncio.run(plugin.skills(skill_name=candidate, tool_context=ctx))
+        assert "DO HARM" not in res, candidate
+        assert "not found" in res.lower(), candidate
+
+    # Nothing a message named changed the loaded set; only navigation activated.
+    assert [s.name for s in plugin.get_available_skills(agent)] == ["navigation"]
+    assert plugin.get_activated_skills(agent) == ["navigation"]

@@ -255,6 +255,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # a throttle can never be misreported as a timeout (see
         # `factory.build_retry_policy`).
         retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+        # The on-demand skill layer, ON (DEC-50, activating DEC-48). Skills sit
+        # beside doctrine under `nora/` — `cfg.doctrine.dir` is the resolved
+        # absolute doctrine path, so its sibling `skills/` is the operator skill
+        # directory (`nora/skills`). It is baked into the image (Dockerfile
+        # `COPY nora/`), so — unlike the mtime-hot-reloaded doctrine mount — it
+        # needs no bind mount: skills load once per tag, never re-read from the
+        # host. `AgentSkills` is built per tag inside `factory.create_agent`.
+        skills_dir=cfg.doctrine.dir.parent / "skills",
     )
     # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`.
     # The two were the same value until 2026-08-06, which made the whole

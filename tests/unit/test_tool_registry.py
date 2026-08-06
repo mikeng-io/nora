@@ -80,6 +80,12 @@ def test_budgets_match_todays_table():
         # Sized like transit: two place lookups plus a route, paid and external,
         # so a turn may reach for it twice but not more (DEC-46).
         "route": 2,
+        # The plugin-provided activation tool (DEC-50, activating DEC-48). It is
+        # in `budgets()` ONLY so R-7 admits the `AgentSkills` activation call;
+        # the registry does not BUILD it (see the tests below). Sized 1 like
+        # `group_members`: re-activating a skill re-injects a body already in
+        # context and cannot improve the answer.
+        "skills": 1,
     }
 
 
@@ -99,13 +105,22 @@ def test_budgets_do_not_require_runtime_dependencies():
 
 
 def test_specs_carry_the_same_budgets_as_budgets():
+    from nora.agent.tools import NATIVE_TOOLS
+
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(),
     )
-    assert {s.name: s.budget for s in specs} == dict(registry.budgets())
+    # Every BUILT spec's budget matches `budgets()`. `budgets()` is a superset:
+    # it also carries the plugin-provided `skills` budget (DEC-50), which R-7
+    # admits but `build_tool_specs` does not build — so compare against the
+    # non-plugin budgets, which are exactly the specs.
+    non_plugin_budgets = {
+        name: spec.budget for name, spec in NATIVE_TOOLS.items() if not spec.plugin
+    }
+    assert {s.name: s.budget for s in specs} == non_plugin_budgets
 
 
 def test_adapting_produces_objects_the_agent_factory_accepts():
@@ -121,7 +136,14 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         trace_attributes={},
         retry=factory.build_retry_policy(timeout_seconds=30.0),
     )
-    assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS)
+    # The registry BUILDS exactly its native tools — `tool_names()` excludes the
+    # plugin-provided `skills` (DEC-50), which this agent (no `skills_dir`) does
+    # not have. `NATIVE_TOOL_BUDGETS` is a SUPERSET now: it also carries the
+    # `skills` budget so R-7 can admit the plugin's activation tool where it is
+    # wired — but that budget is not a built tool here.
+    assert set(agent.tool_names) == set(ToolRegistry().tool_names())
+    assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {"skills"}
+    assert "skills" in NATIVE_TOOL_BUDGETS
 
 
 # ---- time-shiftability (design/14 §5.1, DEC-40) ------------------------------
@@ -141,7 +163,9 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
         metrics=Metrics(), room=_room(),
     )
     assert {s.name: s.time_shiftable for s in specs} == {
-        name: spec.time_shiftable for name, spec in NATIVE_TOOLS.items()
+        name: spec.time_shiftable
+        for name, spec in NATIVE_TOOLS.items()
+        if not spec.plugin  # `skills` is not built as a spec (DEC-50)
     }
     assert {s.time_shiftable for s in specs} <= {None, False, True}
 
@@ -167,3 +191,34 @@ def test_transit_is_declared_live_only_and_not_terminal():
     assert NATIVE_TOOLS["transit"].time_shiftable is False
     assert NATIVE_TOOLS["transit"].terminal is False
     assert "transit" not in ToolRegistry().terminal_tools()
+
+
+# ---- the plugin-provided activation tool (DEC-50, activating DEC-48) ----------
+
+def test_skills_is_budgeted_so_r7_admits_it_but_the_registry_does_not_build_it():
+    """The `skills` activation tool is registered by `AgentSkills`
+    (`nora.agent.factory`), not by `build_tool_specs`. It needs exactly ONE
+    thing from this table — a budget, so R-7's default-deny lets `ReplyGuard`
+    admit the activation call — and must appear in NOTHING the registry BUILDS
+    or RENDERS, or the offline/eval compositions (which build the capability
+    block but never wire the plugin) would promise a tool they do not have."""
+    registry = ToolRegistry()
+    # Admitted by R-7.
+    assert "skills" in registry.budgets()
+    assert registry.budgets()["skills"] == 1
+    # Not built, not advertised, not in the catalogue gate.
+    built = {t.tool_name for t in _built_tools(registry)}
+    assert "skills" not in built
+    assert "skills" not in registry.tool_names()
+    assert "skills" not in registry.capability()
+    # Neither terminal nor live-only — the honest fields.
+    assert "skills" not in registry.terminal_tools()
+    assert "skills" not in registry.live_only_tools()
+
+
+def test_skills_declares_terminal_false_and_no_time_dimension():
+    from nora.agent.tools import NATIVE_TOOLS
+    spec = NATIVE_TOOLS["skills"]
+    assert spec.plugin is True
+    assert spec.terminal is False
+    assert spec.time_shiftable is None
