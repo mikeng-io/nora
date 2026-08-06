@@ -133,3 +133,12 @@ headers_env = "LANGFUSE_OTLP_HEADERS"                      # env var NAME holdin
 enabled = true
 host = "http://127.0.0.1:3100"
 headers_env = "LANGFUSE_OTLP_HEADERS"
+
+[media]
+# Attachment byte custody (DEC-43/47): copy attachment bytes into Nora's own
+# content-addressed store, EXIF-stripped and AES-256-GCM encrypted at rest.
+# OFF by default and explicitly so — the field defaults to true in code, which
+# reads as "on" when it is only off by a missing key. Turned on deliberately:
+# set enabled = true AND put a base64 32-byte key in the env var below.
+enabled = false
+encryption_key_env = "MEDIA_ENCRYPTION_KEY"
