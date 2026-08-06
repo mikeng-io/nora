@@ -45,7 +45,8 @@ def test_before_tool_allows_a_valid_call():
 
 def test_before_tool_sets_cancel_tool_with_the_corrective_message():
     g = _guard()
-    g.record("send_reply")
+    for _ in range(3):                      # spend the cap of 3 (DEC-42)
+        g.record("send_reply")
     event = FakeBeforeEvent("send_reply", {"text": "hi"})
     g._before_tool(event)
     assert "already sent your reply" in event.cancel_tool

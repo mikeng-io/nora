@@ -46,15 +46,19 @@ async def test_model_never_calls_send_reply_means_strict_silence(harness_factory
     assert [r for r in await h.store.recent(conversation_id="g1", limit=10) if r.is_nora] == []
 
 
-async def test_second_send_reply_is_cancelled(harness_factory):
-    """R-2 end-to-end: one send, one veto."""
+async def test_send_reply_is_capped_at_three_end_to_end(harness_factory):
+    """Multi-message end-to-end (DEC-42): the first three distinct sends reach the
+    group; the fourth is refused by the cap (one R-2 veto). Was
+    `test_second_send_reply_is_cancelled`, which pinned the cap-of-1 behaviour."""
     h = await harness_factory(script=[ScriptedTurn(
         tool_calls=[("send_reply", {"text": "first"}),
-                    ("send_reply", {"text": "second"})],
+                    ("send_reply", {"text": "second"}),
+                    ("send_reply", {"text": "third"}),
+                    ("send_reply", {"text": "fourth"})],
         final_text="first")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert h.sink.texts == ["first"]
+    assert h.sink.texts == ["first", "second", "third"]
     assert h.metrics.get("nora_guard_vetoes_total", rule="R-2") == 1
 
 

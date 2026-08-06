@@ -66,7 +66,11 @@ def test_the_registry_exposes_every_declared_tool():
 
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
-        "now": 2, "read_buffer": 2, "send_reply": 1,
+        "now": 2, "read_buffer": 2,
+        # 3 — multi-message active (DEC-42): the cap on how many messages one
+        # tag may send, raised 1→3 as the whole activation (the delivery path
+        # already read this one number as the cap).
+        "send_reply": 3,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 2, "about": 2,

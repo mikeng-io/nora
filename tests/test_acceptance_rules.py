@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # The named test the spec's B.1 table assigns to each rule.
 RULE_TESTS = {
     "R-1": "test_ambient_never_constructs_agent",
-    "R-2": "test_second_send_reply_is_cancelled",
+    "R-2": "test_send_reply_past_the_cap_is_cancelled",
     "R-2b": "test_deliverer_latch_is_single_shot",
     "R-3": "test_send_to_other_group_cannot_escape_the_tagged_conversation",
     "R-4": "test_empty_reply_not_sent",

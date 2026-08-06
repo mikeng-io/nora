@@ -810,26 +810,28 @@ async def test_a_platform_that_cannot_react_still_replies_normally():
     assert metrics.get("nora_silent_failures_total") == 0.0
 
 
-async def test_reactions_do_not_consume_the_reply_budget_so_r2_still_allows_one_reply():
-    """R-2/R-2b with reactions live: two `send_reply` calls, still exactly one
-    text delivered, and the reaction lifecycle unaffected by the veto.
+async def test_reactions_do_not_consume_the_reply_budget():
+    """R-2/R-2b with reactions live: reactions are not tools and never touch
+    `Deliverer`, so they neither consume nor re-arm the reply budget.
 
-    A reaction is not a tool and never touches `Deliverer`, so the attempt
-    latch is neither consumed nor re-armed by it — the second call is vetoed by
-    `ReplyGuard` exactly as it was before this feature existed."""
+    With the cap at 3 (DEC-42), four `send_reply` calls still deliver exactly
+    three and the fourth is vetoed — the reaction lifecycle is untouched by any
+    of it. (Was `..._so_r2_still_allows_one_reply`, from the cap-of-1 era.)"""
     adapter = _ReactingAdapter()
     pipeline, metrics, _audit, _memory, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(tool_calls=[
             ("send_reply", {"text": "first"}),
             ("send_reply", {"text": "second"}),
+            ("send_reply", {"text": "third"}),
+            ("send_reply", {"text": "fourth"}),
         ])]),
     )
 
     await pipeline.run(_request())
     await _drain(background)
 
-    assert adapter.texts == ["first"]
+    assert adapter.texts == ["first", "second", "third"]
     assert metrics.get("nora_guard_vetoes_total", rule="R-2") == 1
     assert adapter.emojis == [indicate.ACK, indicate.DONE]
 
@@ -1098,14 +1100,12 @@ def _multi_turns(*texts: str) -> list[ScriptedTurn]:
     ]
 
 
-async def test_under_todays_doctrine_a_tag_still_produces_exactly_one_message():
-    """SHIPS INERT — asserted, not assumed (design/16 §5, §6.6).
-
-    The mechanism is in place and the shipped `send_reply` budget is still 1,
-    so a model that tries to send three messages sends ONE. This is the test
-    that has to stay green through the whole of DEC-42: the behaviour change
-    is an operator's `NATIVE_TOOLS` edit plus a `voice.md` edit, never a side
-    effect of the machinery landing.
+async def test_multi_message_is_active_and_the_default_cap_is_three():
+    """DEC-42 ACTIVATED (was `..._still_produces_exactly_one_message`, the inert
+    proof). The shipped `send_reply` budget is now 3, and the machinery that was
+    already in place delivers up to three distinct messages with no other edit.
+    This runs the REAL default registry — not an override — so it pins the actual
+    shipped number, and it is the test that has to track any future change to it.
     """
     adapter = _FakeAdapter()
     metrics = Metrics()
@@ -1116,29 +1116,28 @@ async def test_under_todays_doctrine_a_tag_still_produces_exactly_one_message():
     await pipeline.run(_request())
     await _drain(background)
 
-    assert adapter.texts == ["一"]
-    assert metrics.observations("nora_messages_per_tag") == [1.0]
+    assert adapter.texts == ["一", "二", "三"]
+    assert metrics.observations("nora_messages_per_tag") == [3.0]
 
 
-async def test_raising_the_send_reply_budget_is_all_it_takes():
-    """The other side of the same coin, and the proof the mechanism is live.
-
-    Identical script, identical pipeline, one number. If this needed anything
-    else — a config key, a guard edit, a second latch — the feature would be
-    shipping half-wired and `test_under_todays_doctrine_...` above would be
-    passing for the wrong reason.
+async def test_the_cap_tracks_the_send_reply_budget_and_nothing_else():
+    """The cap is driven by ONE number. Override it to 2 — distinct from the
+    shipped default of 3 — and the same three-message script now delivers exactly
+    two. If this needed anything else (a config key, a guard edit, a second
+    latch), the cap would not track the number, and the default test above would
+    be passing for the wrong reason.
     """
     adapter = _FakeAdapter()
     metrics = Metrics()
     pipeline, _, _, _, background = _build_pipeline(
-        adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(3),
+        adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(2),
         runner=ScriptedRunner(_multi_turns("一", "二", "三")),
     )
     await pipeline.run(_request())
     await _drain(background)
 
-    assert adapter.texts == ["一", "二", "三"]
-    assert metrics.observations("nora_messages_per_tag") == [3.0]
+    assert adapter.texts == ["一", "二"]
+    assert metrics.observations("nora_messages_per_tag") == [2.0]
     assert metrics.get("nora_partial_replies_total", reason="limit_turns") == 0
 
 

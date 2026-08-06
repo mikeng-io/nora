@@ -147,22 +147,31 @@ def test_a_terminal_call_that_raised_does_not_end_the_turn():
     assert event.cancel is False
 
 
-def test_a_reply_the_deliverer_refused_still_ends_the_turn():
-    """The one behavioural difference DEC-32 accepts, pinned deliberately.
+def test_replies_end_the_turn_at_the_cap_not_before():
+    """Multi-message (DEC-42): the turn ends when `send_reply`'s BUDGET (3) is
+    spent, not on the first reply.
 
-    Under the old rule (`deliverer.delivered`) an R-18-blocked reply left the
-    loop running. It no longer does — and the group sees the same silence
-    either way, because the call was RECORDED, `send_reply`'s budget is 1, and
-    the retry is therefore already refused. That equivalence is asserted here
-    rather than assumed: if the budget ever stops refusing the retry, this
-    turn-ending becomes a real loss and this test is where it surfaces.
+    A reply the deliverer REFUSED still spends one of the three — it was
+    RECORDED — so the group sees the same silence either way; but a refused
+    FIRST reply no longer ends the turn, because messages remain. Once all three
+    are spent the turn is over and the 4th `send_reply` is already refused by the
+    budget. If the budget ever stops refusing the (cap+1)th call, this is where
+    the loss surfaces. (Was `test_a_reply_the_deliverer_refused_still_ends_the_turn`,
+    which pinned the cap-of-1 behaviour DEC-32 shipped.)
     """
     guard = ReplyGuard(
         conversation_id="g1", budgets=ToolRegistry().budgets(),
         terminal=ToolRegistry().terminal_tools(), deliverer=_NeverLatches(),
         metrics=Metrics(),
     )
-    guard._after_tool(_AfterToolCall("send_reply"))       # ran, delivered nothing
+    # The first two recorded replies (delivered nothing) do NOT end the turn.
+    for _ in range(2):
+        guard._after_tool(_AfterToolCall("send_reply"))
+        event = _BeforeModelCall()
+        guard._before_model(event)
+        assert event.cancel is False
+    # The third spends the last message; the turn is now over.
+    guard._after_tool(_AfterToolCall("send_reply"))
     event = _BeforeModelCall()
     guard._before_model(event)
     assert event.cancel == "Reply already sent — the turn is finished."
