@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 from .directions import Journey, candidates_note, describe, read_journey
@@ -74,7 +75,6 @@ DEFAULT_MODE = "TRANSIT"
 _TRANSIT_MODES: Mapping[str, list[str]] = {
     "bus": ["BUS"],
     "mtr": ["SUBWAY", "TRAIN"],
-    "subway": ["SUBWAY", "TRAIN"],
     "light_rail": ["LIGHT_RAIL"],
     "tram": ["LIGHT_RAIL"],
     "train": ["TRAIN"],
@@ -86,6 +86,21 @@ _ROUTING_PREFERENCES: Mapping[str, str] = {
     "less_walking": "LESS_WALKING",
     "fewer_transfers": "FEWER_TRANSFERS",
 }
+
+
+def _rfc3339(value: str) -> str:
+    """`value` iff it parses as an RFC 3339 instant, else "" — the unknown→omitted
+    discipline the enums use, applied to time. A malformed or model-invented
+    timestamp is dropped at THIS boundary rather than POSTed to Google (the
+    docstring already tells the model to take it from the clock, never invent
+    one). `datetime.fromisoformat` accepts the `+08:00`-offset form Nora emits."""
+    if not value:
+        return ""
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return ""
+    return value
 
 # ONLY what `directions.describe` renders — every field here is billed. Duration
 # and distance are the spine of any answer; the `transitDetails` subtree is what
@@ -232,12 +247,14 @@ class RouteClient:
             "languageCode": self._language_code,
             "regionCode": self._region_code,
         }
-        # `transitPreferences`, `arrivalTime` and `departureTime` are all
-        # transit-only on this API; applying any to a DRIVE/WALK request is
-        # rejected, so they are set ONLY under TRANSIT (§5.1). Every sub-field is
-        # a CLOSED enum resolved through a table (unknown → omitted), so nothing
-        # free-text reaches Google here — origin/destination remain the only free
-        # text, and R-28 has already screened them upstream. No new egress hole.
+        # `transitPreferences`, `arrivalTime` and `departureTime` are all set
+        # ONLY under TRANSIT (§5.1) — the tool's one conservative rule, rather
+        # than tracking Google's per-field acceptance (arrivalTime is IGNORED off
+        # TRANSIT; departureTime is future-only). Every sub-field is validated at
+        # THIS boundary — the enums through a table (unknown → omitted), the
+        # timestamps as RFC 3339 (malformed → omitted) — so nothing free-text or
+        # model-invented reaches Google. origin/destination are the only free
+        # text and R-28 screened them upstream. No new egress hole.
         if mode == "TRANSIT":
             prefs: dict[str, Any] = {}
             allowed = _TRANSIT_MODES.get(by.strip().lower())
@@ -250,12 +267,13 @@ class RouteClient:
                 body["transitPreferences"] = prefs
             # depart-at and arrive-by are mutually exclusive on this API. A
             # person distinguishes 「八點出發」 from 「八點到」, so both are exposed;
-            # arrive-by wins when both slip through (the more specific intent),
-            # and depart-after is dropped rather than sent alongside it.
-            if arrive_by:
-                body["arrivalTime"] = arrive_by
-            elif depart_after:
-                body["departureTime"] = depart_after
+            # arrive-by wins when both are given (the more specific intent), and
+            # depart-after is dropped rather than sent alongside it.
+            arrive, depart = _rfc3339(arrive_by), _rfc3339(depart_after)
+            if arrive:
+                body["arrivalTime"] = arrive
+            elif depart:
+                body["departureTime"] = depart
         payload = await post_json(
             self._routes_url, api_key=self._api_key,
             field_mask=ROUTES_FIELD_MASK, body=body,

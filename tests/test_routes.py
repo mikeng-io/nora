@@ -339,6 +339,15 @@ async def test_arrive_by_wins_when_both_times_are_given(google):
     assert "departureTime" not in google.last_routes_body
 
 
+async def test_a_malformed_time_is_dropped_not_sent(google):
+    """RFC 3339 validated at the boundary — a malformed or model-invented
+    timestamp is omitted, never POSTed to Google (Kimi review, finding 1)."""
+    await google.client.route("天水圍站", "Yoho Mall", depart_after="whenever")
+    assert "departureTime" not in google.last_routes_body
+    await google.client.route("天水圍站", "Yoho Mall", arrive_by="8pm-ish")
+    assert "arrivalTime" not in google.last_routes_body
+
+
 # ---- the resolver: ambiguity is an answer, not a guess -----------------------
 
 async def test_resolver_returns_one_place_for_a_specific_name(google):
@@ -446,9 +455,11 @@ class _RecordingClient:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.kwargs: list[dict] = []
 
-    async def route(self, origin, destination, mode="TRANSIT", arrive_by="", **_kw):
+    async def route(self, origin, destination, mode="TRANSIT", arrive_by="", **kw):
         self.calls.append((origin, destination))
+        self.kwargs.append(kw)
         return {"status": "ok", "origin": origin, "destination": destination,
                 "mode": mode, "duration_seconds": 100, "distance_meters": 500,
                 "legs": [], "note": "ok"}
@@ -486,6 +497,23 @@ async def test_an_identifier_in_a_route_argument_is_refused_before_egress():
     out = await _call(wiring["route"], origin="+85290000101", destination="Yoho Mall")
     assert out["status"] == "refused"
     assert client.calls == []
+
+
+async def test_the_tool_forwards_the_transit_preferences_to_the_client():
+    """The tool wrapper must FORWARD by/prefer/depart_after to the client. Revert
+    the pass-through in `nora.agent.tools.route` and this goes red — without it
+    the feature ships inert while every body-assertion test (which calls the
+    client directly) stays green (Kimi review 2026-08-07, finding 2)."""
+    client = _RecordingClient()
+    wiring = _tool_wiring(client)
+    await _call(
+        wiring["route"], origin="天水圍站", destination="Yoho Mall",
+        by="mtr", prefer="less_walking", depart_after="2026-08-07T18:00:00+08:00",
+    )
+    assert client.kwargs[-1] == {
+        "by": "mtr", "prefer": "less_walking",
+        "depart_after": "2026-08-07T18:00:00+08:00",
+    }
 
 
 async def test_the_tool_counts_the_states_apart(google):
