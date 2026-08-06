@@ -138,6 +138,13 @@ class EngagementPipeline:
         started = time.perf_counter()
         llm_elapsed = 0.0
         delivered = False
+        # Bound BEFORE the `try` so the `finally` can read the tag's delivery
+        # count on every exit path, including one that faults inside
+        # `context.assemble` before there is a handle at all. Reading it off
+        # the `Deliverer` rather than tracking a second local is deliberate:
+        # a local would be one more thing to remember to increment when step 5
+        # makes the count able to exceed 1.
+        handle: deliver.DeliveryHandle | None = None
         # Every log line emitted for the rest of this tag — across every stage
         # this method calls into — carries tag_id without any of them naming
         # it explicitly (nora.obs.logging's contextvar bridge).
@@ -258,4 +265,12 @@ class EngagementPipeline:
             total = time.perf_counter() - started
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
+            # One observation per ADMITTED tag, silent turns included as 0 —
+            # see `nora.obs.metric_specs`. R-2 caps it at 1 today, so the
+            # series is flat by construction; step 5 is what makes it move,
+            # and a baseline recorded afterwards would not be one.
+            self._metrics.observe(
+                "nora_messages_per_tag",
+                float(handle.deliverer.delivered_count) if handle is not None else 0.0,
+            )
             clear_tag_id()

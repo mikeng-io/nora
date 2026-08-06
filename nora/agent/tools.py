@@ -16,12 +16,13 @@ feed_honcho is deliberately NOT a tool: the handler owns the single post-reply f
 `conversation_type` and `context_window` are injected but unread. They stay on the
 builder because `ToolRegistry` passes the same set to every tool it will ever
 register, not because anything here uses them. `metrics` WAS in that list — DEC-24
-moved the scope counter to `ReplyGuard` — and is read again by the three room-scoped
-tools, where the counter cannot live anywhere else: Honcho answers 200-with-an-empty-
-string for a peer it has never heard of, so "asked and nothing known" and "could not
-ask" are indistinguishable at the transport and only the call site knows which it
-got. That exact ambiguity is what hid a dead `peer_card` endpoint for the whole life
-of the deployment.
+moved the scope counter to `ReplyGuard` — and is now read by EVERY tool, where the
+counter cannot live anywhere else: Honcho answers 200-with-an-empty-string for a
+peer it has never heard of, so "asked and nothing known" and "could not ask" are
+indistinguishable at the transport and only the call site knows which it got. That
+exact ambiguity is what hid a dead `peer_card` endpoint for the whole life of the
+deployment. See `_log_call` for the other half of the same argument — the one an
+operator greps rather than alerts on.
 
 `room` and `question` are what the three room-scoped tools close over so the model
 never has to supply them: `room` is this conversation's membership (see
@@ -156,6 +157,71 @@ READ_BUFFER_MAX = 60
 READ_BUFFER_DEFAULT = 25
 
 
+# ---- one line and one counter per tool call ---------------------------------
+#
+# WHY THIS EXISTS, twice in one day. `grep lookup_person data/nora.log` returned
+# nothing, and that was read as "the tool was never called". The grep could not
+# have found anything either way: this module emitted exactly ONE log line on
+# any success path (`now`'s), and `lookup_person`, `group_members`, `recall`,
+# `read_buffer`, `read_peer_card` and `send_reply` emitted none at all. Two
+# confident architectural conclusions were drawn from that zero and both were
+# wrong; one nearly retracted a design document (DEC-28). A silence that reads
+# identically whether the code ran on every turn or never is not evidence, and
+# the fix is not "grep something else" — it is that a tool says it ran.
+#
+# WHAT MAY GO IN THE LINE. `data/nora.log` is a file on disk and this repo
+# treats an identifier as unsafe at every exit (`nora.agent.egress.
+# scan_identifiers`). So: the tool's name, one status, and COUNTS. Never a
+# conclusion, never a transcript body, never a phone number or an ACI, and
+# never the model's own argument — `_asked_about` exists precisely because a
+# model will put a phone number in a `name` parameter, and a log file is a
+# worse place for one than a tool result, because nothing scans it on the way
+# out.
+
+
+def _log_call(tool: str, status: str, **detail: object) -> None:
+    """One INFO line naming the tool and how it answered.
+
+    `tag_id` is deliberately NOT an argument and must not become one.
+    `nora.obs.logging` binds it to a `structlog.contextvars` context variable
+    for the lifetime of the tag (`EngagementPipeline._run_admitted`), and
+    `merge_contextvars` copies it onto every record emitted while it is bound.
+    A tool closure runs downstream of that binding — Strands dispatches each
+    call through `asyncio.create_task`, which copies the current context — so
+    the line carries `tag_id` without any tool naming it.
+    `tests/test_tool_logging.py` asserts that end-to-end through the real
+    structlog pipeline rather than assuming it.
+
+    `detail` is for counts and for facts about Nora's own host (`now`'s clock).
+    Anything derived from what the group said belongs in the counter's label at
+    most.
+    """
+    log.info(
+        "tool %s status=%s%s", tool, status,
+        "".join(f" {key}={value}" for key, value in detail.items()),
+        extra={"tool": tool, "status": status, **detail},
+    )
+
+
+def _record(metrics, tool: str, status: str, **detail: object) -> None:
+    """Count and log a call to a tool that had no counter before."""
+    metrics.inc("nora_tool_calls_total", tool=tool, status=status)
+    _log_call(tool, status, **detail)
+
+
+def _record_room(metrics, tool: str, status: str, **detail: object) -> None:
+    """The same, for the three room-scoped tools.
+
+    They keep `nora_room_lookups_total{tool,status}`, which predates this and
+    is already alerted on (R-22). Metric names are append-only and a second
+    series counting the same calls would silently double any dashboard summing
+    tool volume, so the counters stay split and only the log line is uniform.
+    Paired in one function so a status can never reach one and not the other.
+    """
+    metrics.inc("nora_room_lookups_total", tool=tool, status=status)
+    _log_call(tool, status, **detail)
+
+
 def _asked_about(name: str) -> dict:
     """Echo the model's own word back, unless the word is an identifier.
 
@@ -244,19 +310,21 @@ def build_tool_specs(
         # (`FunctionToolMetadata.extract_metadata`), which is the whole
         # contract this module's own docstring describes. The pair is kept in
         # step by a test instead, not by the interpreter.
+        # Clamp both ends. `limit` is MODEL-SUPPLIED, so this clamp is the
+        # only bound on it — see `READ_BUFFER_MAX` above for the measured
+        # cost of getting it wrong at the top end. At the bottom end a
+        # non-positive value must never reach the store: SQLite renders
+        # `LIMIT -1` as unbounded, so an unclamped negative limit would
+        # dump the entire conversation into context.
+        asked = READ_BUFFER_DEFAULT
         try:
-            # Clamp both ends. `limit` is MODEL-SUPPLIED, so this clamp is the
-            # only bound on it — see `READ_BUFFER_MAX` above for the measured
-            # cost of getting it wrong at the top end. At the bottom end a
-            # non-positive value must never reach the store: SQLite renders
-            # `LIMIT -1` as unbounded, so an unclamped negative limit would
-            # dump the entire conversation into context.
+            asked = max(1, min(int(limit), READ_BUFFER_MAX))
             rows = await store.recent(
-                conversation_id=bound_conversation_id,
-                limit=max(1, min(int(limit), READ_BUFFER_MAX)),
+                conversation_id=bound_conversation_id, limit=asked,
             )
         except Exception:
             log.exception("read_buffer failed")
+            _record(metrics, "read_buffer", "unavailable")
             return []
         # `reply_to` keeps this tool structurally consistent with the prefilled
         # transcript, and that consistency is the point. If the prefill teaches
@@ -274,12 +342,18 @@ def build_tool_specs(
 
         by_ts = {r.ts: r for r in rows}
         out = []
+        threaded = 0
         for r in rows:
             item = {"sender": who(r), "body": r.body, "ts": r.ts}
             parent = by_ts.get(r.quoted_ts) if r.quoted_ts is not None else None
             if parent is not None and parent.id != r.id:
                 item["reply_to"] = who(parent)
+                threaded += 1
             out.append(item)
+        # `rows=0` is an ordinary `ok` — a conversation with nothing older in
+        # it — so the count is the discriminator, not the status. Bodies are
+        # never logged: this is the group's transcript.
+        _record(metrics, "read_buffer", "ok", limit=asked, rows=len(out), threaded=threaded)
         return out
 
     # Reviewed for the same shadowing shape as read_buffer (Task 1): `sender_id`
@@ -305,11 +379,23 @@ def build_tool_specs(
         try:
             ref = persons.resolve("signal", sender_id)
             if ref is None:
+                # The id itself is never logged — it is a phone number or an
+                # ACI, which is exactly what R-18 keeps off every wire.
+                _record(metrics, "read_peer_card", "not_found")
                 return []
-            return await honcho.peer_card(peer_id=ref.honcho_peer_id)
+            # `or []` because the docstring above promises the model a list and
+            # this endpoint is documented to answer `null` (DEC-27) — without
+            # it the `len()` below would raise out of a tool, which
+            # `test_a_tool_never_raises_into_the_agent_loop` forbids.
+            card = await honcho.peer_card(peer_id=ref.honcho_peer_id) or []
         except Exception:
             log.exception("read_peer_card failed")
+            _record(metrics, "read_peer_card", "unavailable")
             return []
+        _record(
+            metrics, "read_peer_card", "ok" if card else "nothing_known", facts=len(card),
+        )
+        return card
 
     # ---- the three room-scoped tools -------------------------------------
     #
@@ -340,13 +426,16 @@ def build_tool_specs(
         """
         view = await room.members()
         if not view.available:
-            metrics.inc("nora_room_lookups_total", tool="group_members", status="unavailable")
+            _record_room(metrics, "group_members", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I can't check who is in this group right now. Say so — "
                         "do not guess from the conversation.",
             }
-        metrics.inc("nora_room_lookups_total", tool="group_members", status="ok")
+        _record_room(
+            metrics, "group_members", "ok",
+            members=len(view.people), unnamed=view.unnamed,
+        )
         return {
             "status": "ok",
             "members": [p.name for p in view.people],
@@ -373,26 +462,29 @@ def build_tool_specs(
         """
         view = await room.scope()
         if not view.available:
-            metrics.inc("nora_room_lookups_total", tool="lookup_person", status="unavailable")
+            _record_room(metrics, "lookup_person", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I can't check who is in this group right now, so I can't "
                         "tell you who that is. Say so rather than guessing.",
             }
         matches = view.find(name)
+        # `name` is never in the line. It is the one MODEL-SUPPLIED string
+        # these tools take, and `_asked_about` exists because a model does put
+        # phone numbers in it.
         if not matches:
             miss = _miss(name, view)
-            metrics.inc("nora_room_lookups_total", tool="lookup_person", status=miss["status"])
+            _record_room(metrics, "lookup_person", miss["status"], candidates=0)
             return miss
         if len(matches) > 1:
-            metrics.inc("nora_room_lookups_total", tool="lookup_person", status="ambiguous")
+            _record_room(metrics, "lookup_person", "ambiguous", candidates=len(matches))
             return {
                 "status": "ambiguous", **_asked_about(name),
                 "could_be": [p.name for p in matches],
                 "note": "More than one person here goes by that. Ask which one.",
             }
         person = matches[0]
-        metrics.inc("nora_room_lookups_total", tool="lookup_person", status="ok")
+        _record_room(metrics, "lookup_person", "ok", candidates=1)
         return {
             "status": "ok", **_asked_about(name), "name": person.name,
             "also_called": list(person.aliases),
@@ -421,7 +513,7 @@ def build_tool_specs(
         """
         view = await room.scope()
         if not view.available:
-            metrics.inc("nora_room_lookups_total", tool="recall", status="unavailable")
+            _record_room(metrics, "recall", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I can't work out who that is right now. Say you can't "
@@ -430,10 +522,10 @@ def build_tool_specs(
         matches = view.find(person)
         if not matches:
             miss = _miss(person, view)
-            metrics.inc("nora_room_lookups_total", tool="recall", status=miss["status"])
+            _record_room(metrics, "recall", miss["status"], candidates=0)
             return miss
         if len(matches) > 1:
-            metrics.inc("nora_room_lookups_total", tool="recall", status="ambiguous")
+            _record_room(metrics, "recall", "ambiguous", candidates=len(matches))
             return {
                 "status": "ambiguous", **_asked_about(person),
                 "could_be": [p.name for p in matches],
@@ -458,7 +550,7 @@ def build_tool_specs(
             memory = Recollection(reachable=False)
         if not memory.reachable:
             metrics.inc("nora_recall_total", status="unavailable")
-            metrics.inc("nora_room_lookups_total", tool="recall", status="unavailable")
+            _record_room(metrics, "recall", "unavailable")
             return {
                 "status": "unavailable", "person": ref.name,
                 "note": "My memory is not answering. Say you can't check right "
@@ -479,16 +571,20 @@ def build_tool_specs(
         # what other people said.
         kept = tuple(c for c in memory.conclusions if scan_identifiers(c) is None)
         withheld = len(memory.conclusions) - len(kept)
+        # COUNTS, never the conclusions themselves. A conclusion is distilled
+        # from what somebody actually said about a person; `data/nora.log` is
+        # not where that belongs, and `withheld` is already the signal that
+        # matters — a `withheld` that keeps climbing is the DEC-30 bug's shape.
         if not kept:
             metrics.inc("nora_recall_total", status="empty")
-            metrics.inc("nora_room_lookups_total", tool="recall", status="ok")
+            _record_room(metrics, "recall", "ok", conclusions=0, withheld=withheld)
             return {
                 "status": "nothing_known", "person": ref.name, "withheld": withheld,
                 "note": "I checked and I remember nothing about them yet. That is "
                         "not the same as not knowing who they are.",
             }
         metrics.inc("nora_recall_total", status="ok")
-        metrics.inc("nora_room_lookups_total", tool="recall", status="ok")
+        _record_room(metrics, "recall", "ok", conclusions=len(kept), withheld=withheld)
         return {
             "status": "ok", "person": ref.name, "recall": list(kept),
             "withheld": withheld,
@@ -505,7 +601,11 @@ def build_tool_specs(
         Returns: the weekday, date, time and timezone.
         """
         moment = datetime.now(_HKT)
-        log.info("now -> %s", moment.isoformat(timespec="seconds"))
+        # The clock reading stays in the line — it is a fact about Nora's own
+        # host, not about the group, and it is the one thing that tells an
+        # operator the container's timezone is what they think it is. It was
+        # this module's only pre-existing log line.
+        _record(metrics, "now", "ok", at=moment.isoformat(timespec="seconds"))
         return moment.strftime("%A %-d %B %Y, %H:%M (%Z)")
 
     async def send_reply(text: str) -> bool:
@@ -518,7 +618,14 @@ def build_tool_specs(
         Args:
             text: Your reply, in your own voice.
         """
-        return await deliverer.deliver(text, source="tool")
+        sent = await deliverer.deliver(text, source="tool")
+        # A LENGTH, never the reply. `Deliverer` already logs the specific
+        # reason behind every refusal (R-2 latch, R-4 empty, R-6 leak, R-18
+        # egress, audit failure, send failure); this line exists so that the
+        # call itself is visible in the same grep as every other tool, which is
+        # what was missing.
+        _record(metrics, "send_reply", "ok" if sent else "refused", chars=len(text or ""))
+        return sent
 
     return (
         ToolSpec(

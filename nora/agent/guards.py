@@ -57,12 +57,25 @@ class Deliverer:
         self._leak = LeakGuard(doctrine, canary)
         self._doctrine_sha256 = doctrine.sha256
         self._attempted = False
-        self._delivered = False
+        self._delivered_count = 0
         self._last_text: str | None = None
 
     @property
     def delivered(self) -> bool:
-        return self._delivered
+        return self._delivered_count > 0
+
+    @property
+    def delivered_count(self) -> int:
+        """How many messages actually reached the group this tag.
+
+        Derived from, rather than kept beside, the `delivered` flag — one
+        counter, so the two can never disagree. It is 0 or 1 today and cannot
+        be more: R-2's latch refuses a second `deliver` call. That is exactly
+        why it exists now — `nora_messages_per_tag` needs a baseline recorded
+        while the answer is still known, before multi-message (step 5) makes
+        every reading of the histogram a comparison against nothing.
+        """
+        return self._delivered_count
 
     @property
     def attempted(self) -> bool:
@@ -149,7 +162,7 @@ class Deliverer:
             log.exception("delivery_status update failed (tag=%s)", self._tag_id)
 
         if result.ok:
-            self._delivered = True
+            self._delivered_count += 1
             self._last_text = text
             self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)
         else:

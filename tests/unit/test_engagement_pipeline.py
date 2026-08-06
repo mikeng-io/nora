@@ -488,6 +488,73 @@ async def test_latency_and_overhead_are_observed_on_every_path():
 
 
 # ---------------------------------------------------------------------------
+# nora_messages_per_tag — the baseline for multi-message
+# ---------------------------------------------------------------------------
+
+
+async def test_a_delivered_tag_observes_one_message():
+    """Flat at 1 by construction today: R-2 latches after the first delivery.
+
+    That is what makes it worth recording NOW. Multi-message's predicted
+    failure is that the cap becomes a quota always spent in full, and a
+    histogram first written after the behaviour changes has nothing to be a
+    change from.
+    """
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(metrics=metrics)
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.observations("nora_messages_per_tag") == [1.0]
+
+
+async def test_a_silent_tag_observes_zero_rather_than_nothing_at_all():
+    """A histogram that only records successes cannot answer "how often does
+    she say nothing", which is the same question. Every admitted tag
+    contributes exactly one observation."""
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        metrics=metrics,
+        runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.observations("nora_messages_per_tag") == [0.0]
+
+
+async def test_a_failed_send_observes_zero_not_one():
+    """The count is `Deliverer.delivered_count`, which counts what the ADAPTER
+    accepted — R-2's latch counts attempts, and reading the latch instead would
+    report a message the group never received."""
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        metrics=metrics, adapter=_FakeAdapter(succeed=False),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.observations("nora_messages_per_tag") == [0.0]
+
+
+async def test_a_tag_that_faults_before_there_is_a_deliverer_still_observes_zero():
+    """The `finally` runs on a fault raised inside `context.assemble`, before
+    the pipeline has built a `DeliveryHandle` at all. A histogram silently
+    missing its most interesting exit path is R-5's failure mode again."""
+    metrics = Metrics()
+    pipeline, _, _, _, _background = _build_pipeline(
+        metrics=metrics, context_assembler=_FaultingContextAssembler(),
+    )
+
+    await pipeline.run(_request())
+
+    assert metrics.observations("nora_messages_per_tag") == [0.0]
+
+
+# ---------------------------------------------------------------------------
 # R-10: admission owns acquisition; a rejected admission never touches
 # another tag's lock.
 # ---------------------------------------------------------------------------

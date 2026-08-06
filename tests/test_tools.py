@@ -295,6 +295,101 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
     assert await _call(wiring["tools"]["read_buffer"], limit=40) == []
 
 
+# ---- every tool call is counted, by outcome ---------------------------------
+
+
+async def test_the_four_tools_without_a_counter_of_their_own_now_have_one(wiring):
+    """`nora_room_lookups_total{tool,status}` covered three of the seven; these
+    four had nothing, so "did she ever call read_buffer" was unanswerable from
+    `/metrics` as well as from the log. Same `{tool, status}` shape rather than
+    four bespoke series."""
+    tools, metrics = wiring["tools"], wiring["metrics"]
+    await _call(tools["now"])
+    await _call(tools["read_buffer"], limit=40)
+    await _call(tools["read_peer_card"], sender_id="+852111")
+    await _call(tools["send_reply"], text="hello")
+    for tool in ("now", "read_buffer", "read_peer_card", "send_reply"):
+        assert metrics.get("nora_tool_calls_total", tool=tool, status="ok") == 1, tool
+
+
+async def test_the_new_counter_never_double_counts_a_room_scoped_tool(wiring):
+    """Metric names are append-only and `nora_room_lookups_total` is already
+    alerted on (R-22), so the three tools that had a counter keep exactly the
+    one they had. A tool appearing in both series would silently double every
+    dashboard that sums tool volume."""
+    tools, metrics = wiring["tools"], wiring["metrics"]
+    await _call(tools["group_members"])
+    await _call(tools["lookup_person"], name="Miles")
+    await _call(tools["recall"], person="Miles")
+    for tool in ("group_members", "lookup_person", "recall"):
+        assert metrics.get("nora_tool_calls_total", tool=tool) == 0, tool
+    assert metrics.get("nora_room_lookups_total") == 3
+
+
+async def test_a_tool_that_could_not_answer_is_counted_apart_from_one_that_did(
+    wiring, monkeypatch,
+):
+    """R-22's distinction, applied to the four tools that never had it. A
+    counter that reported `ok` for a `read_buffer` whose store was down would
+    be the `peer_card` failure again — a green series over a dead path."""
+    metrics = wiring["metrics"]
+
+    async def boom(*a, **kw):
+        raise RuntimeError("db down")
+
+    await _call(wiring["tools"]["read_buffer"], limit=40)
+    monkeypatch.setattr(wiring["store"], "recent", boom)
+    await _call(wiring["tools"]["read_buffer"], limit=40)
+    assert metrics.get("nora_tool_calls_total", tool="read_buffer", status="ok") == 1
+    assert metrics.get("nora_tool_calls_total", tool="read_buffer", status="unavailable") == 1
+
+
+async def test_read_peer_card_counts_four_different_answers_behind_one_empty_list(
+    wiring, monkeypatch,
+):
+    """The model sees `[]` for all four; only the call site knows which it got.
+
+    A sender who maps to nobody, a person Honcho has nothing on, a person it
+    does have something on, and a raising transport. `read_peer_card` returned
+    `[]` for every one of these for the whole life of the deployment, which is
+    how a dead endpoint went unnoticed.
+
+    **Honestly bounded.** The live `peer_card` answers `null` rather than
+    failing when it cannot help, so a transport that degrades quietly is still
+    counted `nothing_known` here — that gap belongs to the endpoint and is
+    exactly why DEC-27 replaced it with `recall`/`representation`, whose
+    `Recollection.reachable` carries the bit. What this counter fixes is the
+    part that was recoverable at the call site.
+    """
+    tools, metrics = wiring["tools"], wiring["metrics"]
+
+    async def boom(**kwargs):
+        raise RuntimeError("connection reset")
+
+    await _call(tools["read_peer_card"], sender_id="+852999")     # not in identity.toml
+    await _call(tools["read_peer_card"], sender_id="+852111")     # known, has a card
+    wiring["honcho"].cards = {}
+    await _call(tools["read_peer_card"], sender_id="+852111")     # known, nothing stored
+    monkeypatch.setattr(wiring["honcho"], "peer_card", boom)
+    await _call(tools["read_peer_card"], sender_id="+852111")     # transport raised
+    for status in ("not_found", "ok", "nothing_known", "unavailable"):
+        assert metrics.get(
+            "nora_tool_calls_total", tool="read_peer_card", status=status,
+        ) == 1, status
+
+
+async def test_a_refused_send_is_not_counted_as_a_sent_one(wiring):
+    """R-2 latches after the first delivery, so the second call returns False
+    without anything reaching the group. Counting both as `ok` would make
+    `send_reply` volume look like reply volume."""
+    tools, metrics = wiring["tools"], wiring["metrics"]
+    assert await _call(tools["send_reply"], text="hello") is True
+    assert await _call(tools["send_reply"], text="again") is False
+    assert metrics.get("nora_tool_calls_total", tool="send_reply", status="ok") == 1
+    assert metrics.get("nora_tool_calls_total", tool="send_reply", status="refused") == 1
+    assert wiring["sink"].texts == ["hello"]
+
+
 async def _call(tool, **kwargs):
     """Invoke the underlying function of a @tool-decorated closure."""
     return await tool._tool_func(**kwargs)

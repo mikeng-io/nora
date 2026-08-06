@@ -213,6 +213,28 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(end_turn / tool_use / limit_turns / limit_total_tokens / ...).",
         ("reason",),
     ),
+    # The tools that had NO counter of their own — `now`, `read_buffer`,
+    # `read_peer_card`, `send_reply`. Same `{tool, status}` shape as
+    # `nora_room_lookups_total`, and deliberately NOT a superset of it: names
+    # are append-only, `nora_room_lookups_total` is already on dashboards, and
+    # a second series counting the same three calls would double every sum of
+    # tool volume. The two together are every tool call Nora makes; neither
+    # alone is.
+    #
+    # This exists for the same reason DEC-28 does. On 2026-08-06
+    # `grep lookup_person data/nora.log` returned zero and that was read as
+    # "the tool was never called" — but no tool logged its own name on any
+    # success path, so the grep returned zero whether it ran every turn or
+    # never. Counters are the half of that fix an operator can alert on; the
+    # log line in `nora.agent.tools._log_call` is the half they can grep.
+    _CounterSpec(
+        "nora_tool_calls_total",
+        "Native tool calls that have no counter of their own, by tool and how "
+        "the tool answered (ok / not_found / nothing_known / unavailable / "
+        "refused). The three room-scoped tools are counted by "
+        "nora_room_lookups_total instead, never here.",
+        ("tool", "status"),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -251,6 +273,28 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     ),
     _HistogramSpec("nora_llm_latency_seconds", "Model invocation latency."),
     _HistogramSpec("nora_overhead_seconds", "Tag latency excluding the model call."),
+    # A COUNT, not a duration, so it carries its own buckets — the default set
+    # is calibrated for seconds and would put every possible value in the first
+    # bucket.
+    #
+    # **It is flat at 1 today and that is the point.** R-2 latches after one
+    # delivery, so every admitted tag observes 0 or 1 and this histogram says
+    # nothing interesting yet. It is a prerequisite for multi-message (step 5
+    # of the grounding plan), whose predicted failure is that the cap becomes a
+    # quota always spent in full — a shape that is only legible against a
+    # BEFORE. Established now, while the answer is known, rather than after the
+    # behaviour changes and every reading is confounded.
+    #
+    # Recorded once per ADMITTED tag on every exit path (`EngagementPipeline.
+    # _run_admitted`'s `finally`), so a turn that delivered nothing observes 0
+    # rather than being absent: "how often does she say nothing at all" is the
+    # same question, and a histogram that only records successes cannot answer
+    # it.
+    _HistogramSpec(
+        "nora_messages_per_tag",
+        "Messages actually delivered to the group per admitted tag.",
+        (0, 1, 2, 3, 4, 5, 10),
+    ),
 )
 
 # The full set of declared metric names, independent of kind — what the
