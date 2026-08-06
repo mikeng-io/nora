@@ -950,6 +950,7 @@ def build_tool_specs(
 
     async def route(
         origin: str, destination: str, mode: str = "TRANSIT", arrive_by: str = "",
+        by: str = "", prefer: str = "", depart_after: str = "",
     ) -> dict:
         """How to get from one place to another, and how long it takes.
 
@@ -987,6 +988,14 @@ def build_tool_specs(
             arrive_by: Optional. When they need to ARRIVE, as a full timestamp
                 (e.g. "2026-08-07T20:00:00+08:00"). Only used for transit; get
                 it from the clock, never invent one.
+            depart_after: Optional. When they want to LEAVE («八點出發»), as a full
+                timestamp. Transit only; get it from the clock, never invent one.
+                Do not give both this and arrive_by — pick the one they meant.
+            by: Optional, and ONLY if the person named a way to travel: "bus",
+                "mtr", "light_rail", "tram", or "train". Leave it out when they
+                just want the best route. Transit only.
+            prefer: Optional. "less_walking" («唔想行咁遠») or "fewer_transfers"
+                («唔想轉車»), only if they said so. Transit only.
         """
         # R-28, BEFORE anything leaves the host. Identifiers first (the shared
         # floor), then the routing-specific person block. Neither the offending
@@ -1021,6 +1030,7 @@ def build_tool_specs(
         try:
             out = await route_source.route(
                 origin, destination, mode=mode, arrive_by=arrive_by,
+                by=by, prefer=prefer, depart_after=depart_after,
             )
         except Exception:
             # `RouteClient.route` is documented never to raise; this is the belt

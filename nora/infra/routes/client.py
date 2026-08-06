@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from .directions import Journey, candidates_note, describe, read_journey
@@ -58,6 +59,33 @@ TIMEOUT_SECONDS = 8.0
 # mode or it does not.
 _MODES = ("TRANSIT", "DRIVE", "WALK")
 DEFAULT_MODE = "TRANSIT"
+
+# The transit SUB-mode a person NAMES (「搭巴士」「by MTR」「坐輕鐵」), mapped to Google
+# Routes `transitPreferences.allowedTravelModes`. Verified against the live docs
+# 2026-08-07 (developers.google.com/maps/documentation/routes/reference/rest/v2/
+# TransitPreferences): the enum is BUS / SUBWAY / TRAIN / LIGHT_RAIL / RAIL —
+# there is NO TRAM value, and LIGHT_RAIL is documented "light rail or tram", so
+# 電車/叮叮 and 輕鐵 both map there (Google cannot separate them at request time;
+# in HK they are geographically disjoint, so the restriction resolves per area).
+# RAIL is deliberately NOT used for MTR: the docs define it as SUBWAY+TRAIN+
+# LIGHT_RAIL combined, which would pull 輕鐵 into a「港鐵」request. An unknown
+# keyword maps to nothing and the request stays all-modes — the same fallback
+# shape `_MODES` has: the person names a mode or they do not.
+_TRANSIT_MODES: Mapping[str, list[str]] = {
+    "bus": ["BUS"],
+    "mtr": ["SUBWAY", "TRAIN"],
+    "subway": ["SUBWAY", "TRAIN"],
+    "light_rail": ["LIGHT_RAIL"],
+    "tram": ["LIGHT_RAIL"],
+    "train": ["TRAIN"],
+}
+
+# `transitPreferences.routingPreference` — what a person asks FOR (「唔想行咁遠」/
+# 「唔想轉車」), not plumbing. Same closed-enum, unknown-omitted discipline.
+_ROUTING_PREFERENCES: Mapping[str, str] = {
+    "less_walking": "LESS_WALKING",
+    "fewer_transfers": "FEWER_TRANSFERS",
+}
 
 # ONLY what `directions.describe` renders — every field here is billed. Duration
 # and distance are the spine of any answer; the `transitDetails` subtree is what
@@ -110,20 +138,30 @@ class RouteClient:
     async def route(
         self, origin: str, destination: str,
         mode: str = DEFAULT_MODE, arrive_by: str = "",
+        by: str = "", prefer: str = "", depart_after: str = "",
     ) -> dict[str, Any]:
         """A journey from `origin` to `destination`, or why there is none. NEVER raises.
 
         Both are place NAMES; the resolver turns each into a coordinate before
         anything is asked of the Routes API, and those coordinates never appear
         in the return value (DEC-24). `mode` is one of TRANSIT / DRIVE / WALK;
-        `arrive_by`, when given, is an RFC 3339 instant that only TRANSIT
-        honours (§5.1).
+        `arrive_by`/`depart_after`, when given, are RFC 3339 instants that only
+        TRANSIT honours (§5.1), and they are mutually exclusive (arrive-by wins).
+
+        The three TRANSIT sub-preferences are intent a person states, not
+        plumbing (audit 2026-08-07): `by` names a sub-mode (bus/mtr/light_rail/
+        tram/train → `transitPreferences.allowedTravelModes`), `prefer` names a
+        routing preference (less_walking/fewer_transfers). Each is a closed enum
+        validated in `_compute`; an unknown value is dropped, never sent.
         """
         chosen = str(mode or "").strip().upper()
         if chosen not in _MODES:
             chosen = DEFAULT_MODE
         try:
-            return await self._route(origin, destination, chosen, arrive_by)
+            return await self._route(
+                origin, destination, chosen, arrive_by,
+                by=by, prefer=prefer, depart_after=depart_after,
+            )
         except Exception:
             # The never-raises contract's backstop. Every collaborator here is
             # documented not to raise (`PlaceResolver.resolve` and `post_json`
@@ -135,6 +173,7 @@ class RouteClient:
 
     async def _route(
         self, origin: str, destination: str, chosen: str, arrive_by: str,
+        by: str = "", prefer: str = "", depart_after: str = "",
     ) -> dict[str, Any]:
         origin_res, dest_res = await asyncio.gather(
             self._resolver.resolve(origin),
@@ -161,7 +200,10 @@ class RouteClient:
         # `unavailable` instead of tripping an assertion inside a turn.
         if origin_res.place is None or dest_res.place is None:
             return describe(origin, destination, chosen, None, reachable=False)
-        journey = await self._compute(origin_res.place, dest_res.place, chosen, arrive_by)
+        journey = await self._compute(
+            origin_res.place, dest_res.place, chosen, arrive_by,
+            by=by, prefer=prefer, depart_after=depart_after,
+        )
         if journey is _FAILED:
             return describe(origin, destination, chosen, None, reachable=False)
         result = describe(
@@ -178,6 +220,7 @@ class RouteClient:
 
     async def _compute(
         self, origin: Place, destination: Place, mode: str, arrive_by: str,
+        by: str = "", prefer: str = "", depart_after: str = "",
     ) -> Journey | object | None:
         """The Routes call for two resolved points. Returns a `Journey`, `None`
         (Google answered but there is no route), or the `_FAILED` sentinel (the
@@ -189,11 +232,30 @@ class RouteClient:
             "languageCode": self._language_code,
             "regionCode": self._region_code,
         }
-        # `arrivalTime` is a transit-only field on this API; applying it to a
-        # DRIVE request would be rejected, so it is set only where it means
-        # something (§5.1).
-        if arrive_by and mode == "TRANSIT":
-            body["arrivalTime"] = arrive_by
+        # `transitPreferences`, `arrivalTime` and `departureTime` are all
+        # transit-only on this API; applying any to a DRIVE/WALK request is
+        # rejected, so they are set ONLY under TRANSIT (§5.1). Every sub-field is
+        # a CLOSED enum resolved through a table (unknown → omitted), so nothing
+        # free-text reaches Google here — origin/destination remain the only free
+        # text, and R-28 has already screened them upstream. No new egress hole.
+        if mode == "TRANSIT":
+            prefs: dict[str, Any] = {}
+            allowed = _TRANSIT_MODES.get(by.strip().lower())
+            if allowed:
+                prefs["allowedTravelModes"] = allowed
+            preference = _ROUTING_PREFERENCES.get(prefer.strip().lower())
+            if preference:
+                prefs["routingPreference"] = preference
+            if prefs:
+                body["transitPreferences"] = prefs
+            # depart-at and arrive-by are mutually exclusive on this API. A
+            # person distinguishes 「八點出發」 from 「八點到」, so both are exposed;
+            # arrive-by wins when both slip through (the more specific intent),
+            # and depart-after is dropped rather than sent alongside it.
+            if arrive_by:
+                body["arrivalTime"] = arrive_by
+            elif depart_after:
+                body["departureTime"] = depart_after
         payload = await post_json(
             self._routes_url, api_key=self._api_key,
             field_mask=ROUTES_FIELD_MASK, body=body,

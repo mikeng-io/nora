@@ -272,6 +272,73 @@ async def test_arrive_by_is_ignored_for_driving(google):
     assert google.last_routes_body["travelMode"] == "DRIVE"
 
 
+# ---- transit sub-preferences: the intent a person names (audit 2026-08-07) ---
+
+async def test_a_named_transit_sub_mode_becomes_allowed_travel_modes(google):
+    """「by MTR」 restricts to heavy rail — SUBWAY+TRAIN, NOT `RAIL` (which the
+    docs define as SUBWAY+TRAIN+LIGHT_RAIL, and would pull 輕鐵 into an MTR
+    request). Revert the `transitPreferences` block in `_compute` and this goes
+    red."""
+    await google.client.route("天水圍站", "Yoho Mall", by="mtr")
+    assert google.last_routes_body["transitPreferences"]["allowedTravelModes"] == [
+        "SUBWAY", "TRAIN",
+    ]
+
+
+async def test_tram_and_light_rail_both_map_to_light_rail(google):
+    """Google's own grouping: `LIGHT_RAIL` is documented "light rail or tram",
+    and there is no TRAM enum. 電車/叮叮 and 輕鐵 both land here; HK keeps them
+    geographically disjoint so the restriction resolves per area."""
+    await google.client.route("天水圍站", "Yoho Mall", by="tram")
+    assert google.last_routes_body["transitPreferences"]["allowedTravelModes"] == ["LIGHT_RAIL"]
+    await google.client.route("天水圍站", "Yoho Mall", by="light_rail")
+    assert google.last_routes_body["transitPreferences"]["allowedTravelModes"] == ["LIGHT_RAIL"]
+
+
+async def test_an_unknown_sub_mode_is_dropped_not_sent(google):
+    """The `_MODES` fallback shape: an out-of-set keyword maps to nothing and the
+    request stays all-modes, never an error and never a bad enum reaching Google."""
+    await google.client.route("天水圍站", "Yoho Mall", by="hovercraft")
+    assert "transitPreferences" not in google.last_routes_body
+
+
+async def test_a_routing_preference_maps(google):
+    await google.client.route("天水圍站", "Yoho Mall", prefer="less_walking")
+    assert google.last_routes_body["transitPreferences"]["routingPreference"] == "LESS_WALKING"
+    await google.client.route("天水圍站", "Yoho Mall", prefer="fewer_transfers")
+    assert google.last_routes_body["transitPreferences"]["routingPreference"] == "FEWER_TRANSFERS"
+
+
+async def test_transit_preferences_are_omitted_for_driving(google):
+    """`transitPreferences` is transit-only; Google rejects it on DRIVE. Even with
+    both sub-fields named, a DRIVE request carries none."""
+    await google.client.route(
+        "天水圍站", "Yoho Mall", mode="DRIVE", by="mtr", prefer="less_walking",
+    )
+    assert "transitPreferences" not in google.last_routes_body
+
+
+async def test_depart_after_is_sent_as_departure_time(google):
+    """「八點出發」 is a different question from 「八點到」 — it sets `departureTime`,
+    not `arrivalTime`."""
+    await google.client.route(
+        "天水圍站", "Yoho Mall", depart_after="2026-08-07T18:00:00+08:00",
+    )
+    assert google.last_routes_body["departureTime"] == "2026-08-07T18:00:00+08:00"
+    assert "arrivalTime" not in google.last_routes_body
+
+
+async def test_arrive_by_wins_when_both_times_are_given(google):
+    """They are mutually exclusive on this API; arrive-by is the more specific
+    intent, so depart-after is dropped rather than sent alongside it."""
+    await google.client.route(
+        "天水圍站", "Yoho Mall",
+        arrive_by="2026-08-07T20:00:00+08:00", depart_after="2026-08-07T18:00:00+08:00",
+    )
+    assert google.last_routes_body["arrivalTime"] == "2026-08-07T20:00:00+08:00"
+    assert "departureTime" not in google.last_routes_body
+
+
 # ---- the resolver: ambiguity is an answer, not a guess -----------------------
 
 async def test_resolver_returns_one_place_for_a_specific_name(google):
@@ -380,7 +447,7 @@ class _RecordingClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
 
-    async def route(self, origin, destination, mode="TRANSIT", arrive_by=""):
+    async def route(self, origin, destination, mode="TRANSIT", arrive_by="", **_kw):
         self.calls.append((origin, destination))
         return {"status": "ok", "origin": origin, "destination": destination,
                 "mode": mode, "duration_seconds": 100, "distance_meters": 500,
@@ -453,7 +520,7 @@ async def test_the_tool_is_unavailable_when_no_client_is_wired():
 
 async def test_the_tool_never_raises_into_the_agent_loop():
     class _Exploding:
-        async def route(self, origin, destination, mode="TRANSIT", arrive_by=""):
+        async def route(self, origin, destination, mode="TRANSIT", arrive_by="", **_kw):
             raise RuntimeError("route is on fire")
 
     wiring = _tool_wiring(_Exploding())
@@ -466,7 +533,7 @@ async def test_the_tool_screens_an_identifier_out_of_a_candidate_list():
     reply; an identifier among them is dropped, the same screen `transit`
     applies to `near.could_be`."""
     class _Candidates:
-        async def route(self, origin, destination, mode="TRANSIT", arrive_by=""):
+        async def route(self, origin, destination, mode="TRANSIT", arrive_by="", **_kw):
             return {"status": "no_route", "origin": origin, "destination": destination,
                     "destination_could_be": ["元朗打邊爐", "+85290000101"], "note": "n"}
 
