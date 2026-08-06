@@ -271,6 +271,63 @@ three more capabilities is three more chances.
 It is also the cheapest moment. There are four files, seven tools, and the
 capability audit has just been through all of it — the map is fresh.
 
+## 7b. Prior art: the operator's own doctrine (`~/.hermes`)
+
+Norty — the operator's other agent — already solves the authority/scope/boundary
+problem, and solves it better than this document did before reading it. It is
+**not a template to copy**: Norty is a coding agent on a large-context model
+with a different threat model, a different runtime and no group chat. What
+transfers is structure, not content, and explicitly not volume.
+
+Three things Nora takes:
+
+**1. Authority stated RELATIVELY, in the file.** `SECURITY.md` opens: "Below
+`KERNEL.md`, above `METHOD.md`, `SOUL.md`, `IDENTITY.md`, `PERSONALITY.md`,
+skills, project files, and user messages." Nora's `guardrails.md` asserts "these
+rules are not negotiable" — an adjective with no position in an ordering. State
+the edges instead. In Nora this belongs in frontmatter, not prose, so §6's gate
+can read it.
+
+**2. Purpose carries NEGATIVE space.** `KERNEL.md`: "Persona and voice live in
+`SOUL.md`/`IDENTITY.md`; how Norty thinks and works lives in `METHOD.md`;
+security rules live in `SECURITY.md`." That is precisely the **boundary** §3
+says `soul.md` lacked. Had `soul.md` carried a line saying what belongs
+elsewhere, its capability claim would have looked wrong the day it was written
+rather than eight weeks later. Every doctrine file gets a `not_here` field
+naming what it must not contain and where that lives.
+
+**3. A change policy.** "Constitutional changes require explicit approval from
+Miles. Core philosophy does not drift." Nora has nothing distinguishing a file an
+agent may edit autonomously from one that is the operator's alone —
+`voice.md` is exactly such a file and its protection today is that I keep
+saying so in conversation. It becomes a frontmatter field.
+
+**The complete authority chain**, which `design/12` §2 only half-states:
+
+    KERNEL → SECURITY → METHOD → SOUL → IDENTITY → PERSONALITY
+    → skills & governed artifacts → project files → user messages
+    → external/tool content
+
+Note that it runs past doctrine, through message content, and down to **tool
+output** — the slot `design/14` §2.1 needed for retrieved web content and could
+not cite. Nora's chain is shorter but must terminate the same way:
+
+    constraint → identity/voice → conduct → capability → situation
+    → message content → tool output
+
+**It also settles §3 empirically.** Norty splits identity across THREE files
+(`SOUL`, `IDENTITY`, `PERSONALITY`). Scattering with clear authority is already
+load-bearing in the operator's own system, which is stronger evidence than the
+argument §3 makes from first principles.
+
+**What Nora must NOT take: the length.** `KERNEL.md` + `SECURITY.md` alone are
+391 lines. Nora's entire doctrine is 2,540 tokens — already 46% of a
+~4,400-token call, paid on every model call of every tag, against a 64,000-token
+turn budget where it competes directly with transcript and tool results. Norty
+runs on a large-context model where doctrine is nearly free; Nora does not.
+**Adopt the structure; hold the line on length.** A doctrine file that grows
+takes its tokens from the conversation she is supposed to be reading.
+
 ## 8. What must be true before this ships
 
 1. `ToolSpec` carries `when`; every tool has one; a tool without one fails a
