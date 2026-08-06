@@ -36,6 +36,12 @@ RULE_TESTS = {
     "R-23": "test_a_budget_stop_is_distinguishable_from_a_silent_model",
     "R-24": "test_no_single_call_can_spend_the_whole_turn_budget",
     "R-27": "test_an_unknown_route_is_never_reported_as_no_service",
+    # R-27's own rule on the place axis, not a new rule: «that place is not in
+    # the stop data» and «that place exists but this route does not go there»
+    # are different claims, and collapsing them is the same wrong-source-read-
+    # as-nothing-found trap R-27 was registered for. R-28 stays reserved for
+    # search/fetch (design/14 §2.3).
+    "R-27b": "test_a_place_the_route_does_not_serve_is_never_no_such_place",
 }
 
 

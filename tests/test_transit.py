@@ -46,6 +46,10 @@ KMB_ROUTES = [
     # nothing running" case that must not read as "no such route".
     {"route": "N48", "bound": "I", "service_type": "1",
      "orig_en": "TSUEN WAN", "dest_en": "YU CHUI COURT"},
+    # The route the co-location case rides on: calls at two poles of the
+    # 天恆邨總站 terminus, one per bound (see KMB_ROUTE_STOPS).
+    {"route": "265M", "bound": "O", "service_type": "1",
+     "orig_en": "TIN HENG ESTATE", "dest_en": "KWAI CHUNG (LAI YIU ESTATE)"},
 ]
 
 KMB_68X_ETA = {
@@ -92,6 +96,114 @@ MTR_ROUTES_CSV = (
     "K74_POH_CIR,,K74\n"
 )
 
+# ---- the stop datasets the place resolver reads (DEC-41) ---------------------
+
+# Trimmed copies of the live KMB stop list (probed 2026-08-06, 6,740 rows).
+# Names, ids and coordinates verbatim from the wire, including the two shapes
+# that make matching interesting: every KMB name carries a "(TN970)"-style stop
+# code — so 「天恆」 can never EXACT-match a KMB stop — and the three 天恆邨總站
+# poles are the same terminus, metres apart, while the three 大學-suffixed
+# campuses are in three different districts.
+KMB_STOPS = [
+    {"stop": "105E0AF98899CAEE", "name_en": "TIN HENG ESTATE BUS TERMINUS (TN970)",
+     "name_tc": "天恆邨總站 (TN970)", "name_sc": "天恒邨总站 (TN970)",
+     "lat": "22.469374", "long": "113.999642"},
+    {"stop": "A22733425D08E68A", "name_en": "TIN HENG ESTATE BUS TERMINUS (TN971)",
+     "name_tc": "天恆邨總站 (TN971)", "name_sc": "天恒邨总站 (TN971)",
+     "lat": "22.469439", "long": "113.999680"},
+    {"stop": "223DAE7E925E3BB9", "name_en": "TIN HENG ESTATE BUS TERMINUS (TN972)",
+     "name_tc": "天恆邨總站 (TN972)", "name_sc": "天恒邨总站 (TN972)",
+     "lat": "22.469471", "long": "113.999708"},
+    {"stop": "6D66CBA494DECB08", "name_en": "HUNG SHUI KIU (HUNG FUK ESTATE) BUS TERMINUS",
+     "name_tc": "洪水橋(洪福邨)總站 (YL900)", "name_sc": "洪水桥(洪福邨)总站 (YL900)",
+     "lat": "22.436706", "long": "113.998677"},
+    {"stop": "147D513A708AA741", "name_en": "FUI SHA WAI (YL353)",
+     "name_tc": "灰沙圍 (YL353)", "name_sc": "灰沙围 (YL353)",
+     "lat": "22.438957", "long": "114.005297"},
+    {"stop": "EC19750840FFEDDC", "name_en": "MONG KOK (PARK AVENUE) BUS TERMINUS (MK912)",
+     "name_tc": "旺角(柏景灣)總站 (MK912)", "name_sc": "旺角(柏景湾)总站 (MK912)",
+     "lat": "22.315830", "long": "114.163112"},
+    {"stop": "548DB838B4673D93", "name_en": "UNIVERSITY STATION (ST903)",
+     "name_tc": "大學站 (ST903)", "name_sc": "大学站 (ST903)",
+     "lat": "22.412578", "long": "114.210303"},
+    {"stop": "AA5DA45828958EAE", "name_en": "LINGNAN UNIVERSITY (TM290)",
+     "name_tc": "嶺南大學 (TM290)", "name_sc": "岭南大学 (TM290)",
+     "lat": "22.409975", "long": "113.982404"},
+    {"stop": "558599642E78BB9B", "name_en": "H.K. POLYTECHNIC UNIVERSITY (YT620)",
+     "name_tc": "香港理工大學 (YT620)", "name_sc": "香港理工大学 (YT620)",
+     "lat": "22.410600", "long": "114.124500"},
+]
+
+# Route-stop rows: `seq` is a STRING on the live wire ("1") where the spec's own
+# sample shows an int (spec v1.05 §7) — the same intra-spec divergence the route
+# list has for `service_type`, kept verbatim so the parser is tested against
+# what the host actually sends.
+KMB_ROUTE_STOPS = {
+    ("68X", "outbound"): [
+        {"route": "68X", "bound": "O", "service_type": "1", "seq": "1",
+         "stop": "6D66CBA494DECB08"},
+        {"route": "68X", "bound": "O", "service_type": "1", "seq": "7",
+         "stop": "147D513A708AA741"},
+    ],
+    ("68X", "inbound"): [
+        {"route": "68X", "bound": "I", "service_type": "1", "seq": "1",
+         "stop": "EC19750840FFEDDC"},
+    ],
+    # 265M calls at TWO poles of the same terminus — TN972 outbound, TN970
+    # inbound — which is the co-location case: one place, two stop ids.
+    ("265M", "outbound"): [
+        {"route": "265M", "bound": "O", "service_type": "1", "seq": "1",
+         "stop": "223DAE7E925E3BB9"},
+    ],
+    ("265M", "inbound"): [
+        {"route": "265M", "bound": "I", "service_type": "1", "seq": "20",
+         "stop": "105E0AF98899CAEE"},
+    ],
+}
+
+# Per-stop ETA (`GET /v1/transport/kmb/eta/{stop_id}/{route}/{service_type}`,
+# spec v1.05 §8, verified live 2026-08-06 23:58 HKT). Same row shape as
+# route-eta; every row is already at the asked-for stop.
+KMB_STOP_ETA = {
+    ("147D513A708AA741", "68X"): [
+        # The very row the origin logic must EXCLUDE (seq 7, 23:31) is the
+        # answer when somebody says they are at 灰沙圍.
+        {"co": "KMB", "route": "68X", "dir": "O", "service_type": 1, "seq": 7,
+         "dest_tc": "旺角(柏景灣)", "dest_en": "MONG KOK (PARK AVENUE)", "eta_seq": 1,
+         "eta": "2026-08-06T23:31:00+08:00", "rmk_en": "",
+         "data_timestamp": "2026-08-06T23:16:16+08:00"},
+    ],
+    ("223DAE7E925E3BB9", "265M"): [
+        {"co": "KMB", "route": "265M", "dir": "O", "service_type": 1, "seq": 1,
+         "dest_tc": "葵涌(麗瑤邨)", "dest_en": "KWAI CHUNG (LAI YIU ESTATE)", "eta_seq": 1,
+         "eta": "2026-08-06T23:30:00+08:00", "rmk_en": "Scheduled Bus",
+         "data_timestamp": "2026-08-06T23:16:16+08:00"},
+    ],
+    ("105E0AF98899CAEE", "265M"): [
+        {"co": "KMB", "route": "265M", "dir": "I", "service_type": 1, "seq": 20,
+         "dest_tc": "天恆邨", "dest_en": "TIN HENG ESTATE", "eta_seq": 1,
+         "eta": "2026-08-06T23:26:00+08:00", "rmk_en": "",
+         "data_timestamp": "2026-08-06T23:16:16+08:00"},
+    ],
+}
+
+# Trimmed copy of opendata.mtr.com.hk/data/mtr_bus_stops.csv (probed
+# 2026-08-06): BOM, quoted names carrying commas, and STATION_ID in exactly the
+# format `getSchedule` uses for `busStopId` — that equality is the join key the
+# resolver stands on. 輕鐵 appears in two stops ~2.2 km apart, BOTH on K73: the
+# honest on-route ambiguity case.
+MTR_STOPS_CSV = (
+    "﻿ROUTE_ID,DIRECTION,STATION_SEQNO,STATION_ID,STATION_LATITUDE,"
+    "STATION_LONGITUDE,STATION_NAME_CHI,STATION_NAME_ENG,REFERENCE_ID\n"
+    "K73,O,1,K73-U010,22.469006,113.999661,天恆,Tin Heng,K73\n"
+    'K73,O,2,K73-U020,22.468098,113.999163,天逸邨逸潭樓,"Yat Tam House, Tin Yat Estate",K73\n'
+    "K73,I,1,K73-D010,22.445181,114.024919,元朗西 (輕鐵豐年路站),"
+    "Yuen Long West (LR Ftpf Nqi Road Stop),K73\n"
+    "K73,I,9,K73-D090,22.453358,114.00589,輕鐵天慈站,LR Tin Tsz Stop,K73\n"
+    "K73,I,16,K73-D160,22.469006,113.999661,天恆,Tin Heng,K73\n"
+    "K74,O,1,K74-U010,22.4619,114.0049,天水圍市中心,Tin Shui Chi Town Centre,K74\n"
+)
+
 
 def _mtr_bus(*, arrival: str, departure: str, scheduled: str, text: str, line: str) -> dict:
     return {
@@ -126,6 +238,17 @@ MTR_K73 = {
                  _mtr_bus(arrival="108000", departure="-103", scheduled="0", text="",
                           line="K73_YLW")],
          "busIcon": None, "busStopId": "K73-U010", "busStopRemark": None,
+         "busStopStatus": None, "busStopStatusRemarkContent": None,
+         "busStopStatusRemarkTitle": None, "busStopStatusTime": None, "isSuspended": "0"},
+        # 天恆 as the inbound TERMINUS (K73-D160): here `arrivalTimeInSecond`
+        # is real — the live probe at 23:58 showed a bus at the stop (arrival
+        # "0", departure already negative) and a tracked one 527 s out — so at
+        # a named stop the ARRIVAL is the answer, not the departure.
+        {"bus": [_mtr_bus(arrival="0", departure="-59", scheduled="1", text="",
+                          line="K73_TH"),
+                 _mtr_bus(arrival="527", departure="527", scheduled="0",
+                          text="9 minutes", line="K73_TH")],
+         "busIcon": None, "busStopId": "K73-D160", "busStopRemark": None,
          "busStopStatus": None, "busStopStatusRemarkContent": None,
          "busStopStatusRemarkTitle": None, "busStopStatusTime": None, "isSuspended": "0"},
     ],
@@ -170,6 +293,8 @@ class _Operators:
         self.kmb_status = 200
         self.mtr_status = 200
         self.csv_status = 200
+        self.stops_status = 200      # the two STOP datasets fail together, like csv_status
+        self.stop_eta_empty = False  # a resolved stop with nothing showing at it
         self.delay = 0.0
 
     async def kmb_route_list(self, request: web.Request) -> web.Response:
@@ -202,6 +327,45 @@ class _Operators:
         await asyncio.sleep(self.delay)
         return web.Response(text=MTR_ROUTES_CSV, content_type="text/csv")
 
+    async def kmb_stop_list(self, request: web.Request) -> web.Response:
+        self.calls.append("kmb:stops")
+        if self.stops_status != 200:
+            return web.Response(status=self.stops_status)
+        return web.json_response({
+            "type": "StopList", "version": "1.0",
+            "generated_timestamp": "2026-08-06T23:16:16+08:00", "data": KMB_STOPS,
+        })
+
+    async def kmb_route_stop(self, request: web.Request) -> web.Response:
+        route = request.match_info["route"]
+        bound = request.match_info["bound"]
+        self.calls.append(f"kmb:route-stop:{route}/{bound}")
+        # The live host answers 200 with an empty list for a route it does not
+        # know, exactly like route-eta — never a 404.
+        return web.json_response({
+            "type": "RouteStop", "version": "1.0",
+            "generated_timestamp": "2026-08-06T23:16:16+08:00",
+            "data": KMB_ROUTE_STOPS.get((route, bound), []),
+        })
+
+    async def kmb_stop_specific_eta(self, request: web.Request) -> web.Response:
+        stop = request.match_info["stop_id"]
+        route = request.match_info["route"]
+        self.calls.append(f"kmb:stopeta:{stop}/{route}")
+        if self.kmb_status != 200:
+            return web.Response(status=self.kmb_status)
+        rows = [] if self.stop_eta_empty else KMB_STOP_ETA.get((stop, route), [])
+        return web.json_response({
+            "type": "ETA", "version": "1.0",
+            "generated_timestamp": "2026-08-06T23:16:39+08:00", "data": rows,
+        })
+
+    async def mtr_stops_csv(self, request: web.Request) -> web.Response:
+        self.calls.append("mtr:stops")
+        if self.stops_status != 200:
+            return web.Response(status=self.stops_status)
+        return web.Response(text=MTR_STOPS_CSV, content_type="text/csv")
+
     async def mtr_schedule(self, request: web.Request) -> web.Response:
         # The real endpoint is POST-only and reads a JSON body. A GET here is a
         # 405, which is what makes "asked the wrong operator" a visible failure.
@@ -227,6 +391,14 @@ async def operators():
     )
     app.router.add_get("/data/mtr_bus_routes.csv", ops.mtr_routes_csv)
     app.router.add_route("*", "/v1/transport/mtr/bus/getSchedule", ops.mtr_schedule)
+    app.router.add_get("/v1/transport/kmb/stop", ops.kmb_stop_list)
+    app.router.add_get(
+        "/v1/transport/kmb/route-stop/{route}/{bound}/{service_type}", ops.kmb_route_stop,
+    )
+    app.router.add_get(
+        "/v1/transport/kmb/eta/{stop_id}/{route}/{service_type}", ops.kmb_stop_specific_eta,
+    )
+    app.router.add_get("/data/mtr_bus_stops.csv", ops.mtr_stops_csv)
     server = TestServer(app)
     await server.start_server()
     base = str(server.make_url("/")).rstrip("/")
@@ -234,6 +406,7 @@ async def operators():
         kmb_base_url=base,
         mtr_schedule_url=f"{base}/v1/transport/mtr/bus/getSchedule",
         mtr_routes_url=f"{base}/data/mtr_bus_routes.csv",
+        mtr_stops_url=f"{base}/data/mtr_bus_stops.csv",
     )
     yield ops
     await server.close()
@@ -375,6 +548,108 @@ async def test_the_answer_is_bounded_and_says_so_when_it_truncates(operators):
     assert out["truncated"] is False
 
 
+# ---- the place resolver: `near` (DEC-41, R-27b) ------------------------------
+
+async def test_near_times_come_from_the_named_stop_not_the_origin(operators):
+    """「K73 幾時到天恆」. The resolver joins the MTR stops CSV to the schedule
+    on STATION_ID == busStopId, so the departures are AT 天恆 — U010's 245 s
+    outbound, and the inbound terminus D160 read from its ARRIVAL seconds —
+    not the 545 s the origin (元朗西, D010) shows."""
+    out = await operators.client.arrivals("K73", near="「天恆」")
+    assert out["status"] == "ok"
+    assert out["near"]["status"] == "ok"
+    assert out["near"]["stop"] == "天恆"
+    minutes = {d["towards"]: [dep["in_minutes"] for dep in d["departures"]]
+               for d in out["directions"]}
+    assert minutes["Yuen Long West"] == [4]      # U010, departure 245 s
+    assert minutes["Tin Heng"] == [0, 9]         # D160, arrivals 0 s and 527 s
+    assert "9" not in str(minutes["Yuen Long West"])  # D010's 545 s never shown
+
+
+async def test_kmb_near_asks_the_per_stop_eta_endpoint(operators):
+    """The KMB half: stop list -> route-stop intersection -> `eta/{stop}/{route}/
+    {service_type}`, all verified live 2026-08-06. 「灰沙圍」 exact-matches only
+    after the "(YL353)" code is set aside, and the 23:31 row the origin logic
+    must exclude (seq 7) is exactly the answer here."""
+    out = await operators.client.arrivals("68X", near="灰沙圍")
+    assert out["status"] == "ok"
+    assert out["near"]["status"] == "ok"
+    assert any(c == "kmb:stopeta:147D513A708AA741/68X" for c in operators.calls)
+    (direction,) = out["directions"]
+    assert direction["departures"][0]["at"] == "2026-08-06T23:31:00+08:00"
+
+
+async def test_a_place_the_route_does_not_serve_is_never_no_such_place(operators):
+    """R-27b — R-27's rule on the place axis. 大學站 exists (KMB, Sha Tin) but
+    K73 does not go there; 銀河站 exists nowhere in either dataset. Collapsing
+    the two repeats the exact trap R-27 exists for: 「K73 唔經大學站」 is a
+    useful, checkable sentence, and «no such stop» said about a real place is
+    a confident lie."""
+    not_on_route = await operators.client.arrivals("K73", near="大學站")
+    nowhere = await operators.client.arrivals("K73", near="銀河站")
+
+    assert not_on_route["near"]["status"] == "not_on_route"
+    assert nowhere["near"]["status"] == "not_found"
+    assert not_on_route["note"] != nowhere["note"]
+    # Neither failure costs the route answer: both fall back to the origin
+    # departures the tool already knew how to give.
+    assert not_on_route["status"] == "ok"
+    assert nowhere["status"] == "ok"
+
+
+async def test_an_ambiguous_place_is_an_answer_not_a_guess(operators):
+    """輕鐵 matches two K73 stops 2.2 km apart (元朗西 輕鐵豐年路站 and 輕鐵天慈站).
+    Picking one would be wrong-confident-stop — this feature's version of
+    wrong-confident-answer — so the candidates come back and she asks."""
+    out = await operators.client.arrivals("K73", near="輕鐵")
+    assert out["near"]["status"] == "ambiguous"
+    assert len(out["near"]["could_be"]) == 2
+    assert set(out["near"]["could_be"]) == {"元朗西 (輕鐵豐年路站)", "輕鐵天慈站"}
+    # And no stop-scoped times were invented for either candidate: the
+    # directions are the origin ones the route answer always had.
+    assert out["status"] == "ok"
+
+
+async def test_colocated_terminus_poles_are_one_place_not_an_ambiguity(operators):
+    """The three 天恆邨總站 poles are metres apart — one terminus, not three
+    places. 265M calls at two of them, one per bound; both are queried, the
+    third (TN971, off this route) is not."""
+    out = await operators.client.arrivals("265M", near="天恆")
+    assert out["near"]["status"] == "ok"
+    assert any(c == "kmb:stopeta:223DAE7E925E3BB9/265M" for c in operators.calls)
+    assert any(c == "kmb:stopeta:105E0AF98899CAEE/265M" for c in operators.calls)
+    assert not any("A22733425D08E68A" in c for c in operators.calls)
+    towards = {d["towards"] for d in out["directions"]}
+    assert towards == {"KWAI CHUNG (LAI YIU ESTATE)", "TIN HENG ESTATE"}
+
+
+async def test_unreadable_stop_data_is_unavailable_not_place_not_found(operators):
+    """R-27's hinge, on the place axis: a directory that never loaded is not an
+    empty directory, so «no stop by that name» is not a claim anyone is
+    entitled to make."""
+    operators.stops_status = 503
+    out = await operators.client.arrivals("K73", near="天恆")
+    assert out["near"]["status"] == "unavailable"
+    assert out["status"] == "ok"        # the route answer itself still stands
+    assert "no stop" not in out["note"].lower()
+
+
+async def test_a_resolved_stop_with_nothing_showing_is_its_own_sentence(operators):
+    """«That stop is real and on this route, and nothing is showing there» is a
+    third sentence — not «no such stop» and not «no such route»."""
+    operators.stop_eta_empty = True
+    out = await operators.client.arrivals("68X", near="灰沙圍")
+    assert out["status"] == "nothing_found"
+    assert out["known_route"] is True
+    assert out["near"]["status"] == "ok"
+    assert out["note"] != (await operators.client.arrivals("ZZZ999"))["note"]
+
+
+async def test_a_near_answer_is_still_bounded(operators):
+    out = await operators.client.arrivals("K73", near="天恆")
+    assert len(json.dumps(out, ensure_ascii=False)) < 1400
+
+
 # ---- the tool, as the model sees it -----------------------------------------
 
 def _tool_wiring(client: TransitClient) -> dict:
@@ -443,10 +718,37 @@ async def test_the_tool_does_not_echo_an_identifier_back_at_the_model(operators)
     the whole reply at R-18, which fails closed on the message rather than on
     the field."""
     class _Parroting:
-        async def arrivals(self, route: str) -> dict:
+        async def arrivals(self, route: str, near: str = "") -> dict:
             return {"status": "nothing_found", "route": route, "known_route": False,
                     "note": "no such route"}
 
     wiring = _tool_wiring(_Parroting())          # type: ignore[arg-type]
     assert "route" not in await _call(wiring["transit"], route="+85290000101")
     assert (await _call(wiring["transit"], route="68X"))["route"] == "68X"
+
+
+async def test_the_tool_passes_near_through_to_the_resolver(operators):
+    """`near` is a real model decision — the user named a place — so it is in
+    the schema (DEC-24) and reaches the resolver as said."""
+    wiring = _tool_wiring(operators.client)
+    out = await _call(wiring["transit"], route="K73", near="天恆")
+    assert out["status"] == "ok"
+    assert out["near"]["status"] == "ok"
+    assert out["near"]["asked"] == "天恆"
+
+
+async def test_the_tool_never_echoes_an_identifier_from_the_near_argument(operators):
+    """`near` is the fourth MODEL-SUPPLIED string handed back inside a tool
+    result (after `lookup_person`'s name, `calculate`'s expression and
+    `route`). Same hole, same fix: an identifier is dropped from the echo, and
+    the resolution outcome survives without it."""
+    class _Parroting:
+        async def arrivals(self, route: str, near: str = "") -> dict:
+            return {"status": "ok", "route": route, "known_route": True,
+                    "near": {"status": "not_found", "asked": near},
+                    "directions": [], "note": "n"}
+
+    wiring = _tool_wiring(_Parroting())          # type: ignore[arg-type]
+    out = await _call(wiring["transit"], route="68X", near="+85290000101")
+    assert "asked" not in out["near"]
+    assert out["near"]["status"] == "not_found"

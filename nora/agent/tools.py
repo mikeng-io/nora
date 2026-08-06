@@ -794,7 +794,7 @@ def build_tool_specs(
         )
         return out
 
-    async def transit(route: str) -> dict:
+    async def transit(route: str, near: str = "") -> dict:
         """When the next buses leave on a Hong Kong bus or feeder route.
 
         Call this for ANY question about a bus by number — 「K73 幾時到」,
@@ -806,29 +806,40 @@ def build_tool_specs(
         use it for a bus later today — if somebody is asking about a trip this
         evening, say you can only see what is running at the moment.
 
-        You give it a route number and nothing else. It works out which company
-        runs that route on its own, and it does not know which stop anybody is
-        standing at, so do not name a stop.
+        You give it a route number. It works out which company runs that
+        route on its own, and it does not know which stop anybody is standing
+        at, so do not name a stop — unless the person themselves NAMED a
+        place, in which case pass that name as `near` exactly as they said it
+        (「K73 幾時到天恆」 is route "K73", near "天恆") and the times come
+        back AT that stop.
 
         `status` is one of three and they are three DIFFERENT answers:
           - `ok` — `directions` has, for each way the route runs, where it is
-            heading and when the next buses leave the START of that direction.
-            A bus reaches a stop further along later than that. `scheduled`
+            heading and the next times. With a resolved `near` these are AT
+            that stop; otherwise they are from the start of the direction and
+            a bus reaches a stop further along later than that. `scheduled`
             true means the time came off a timetable rather than off a bus
             anyone can see; say so if you quote it.
           - `nothing_found` — read `known_route`. True means the route is real
-            and nothing is running on it right now (the last bus has probably
+            and nothing is showing right now (the last bus has probably
             gone). False means there is no such route number at all — say you
             cannot find it and ask them to check, and do NOT say there are no
             buses.
           - `unavailable` — you could not check. Say that. Never report it as
             «no buses» and never as «no such route».
 
+        If you passed `near`, read `near.status` too — `ok`, `not_on_route`
+        (a real stop this route does not serve — worth saying), `not_found`,
+        `ambiguous` (`near.could_be` lists candidates; ask which), or
+        `unavailable` — and phrase each the way `note` says.
+
         Args:
             route: The route number exactly as it was said, e.g. "68X" or "K73".
+            near: The stop or place name exactly as the person said it, e.g.
+                "天恆". Leave it out unless they named one.
         """
         try:
-            out = await transit_source.arrivals(route)
+            out = await transit_source.arrivals(route, near=near)
         except Exception:
             # `TransitClient.arrivals` is documented never to raise (it turns
             # every transport failure into `unavailable` itself). This is the
@@ -847,10 +858,29 @@ def build_tool_specs(
         # is the belt for that, and it costs one regex.
         if scan_identifiers(str(out.get("route", ""))) is not None:
             out.pop("route", None)
+        # And the fourth: `near` is free text, echoed back as `near.asked` for
+        # the same two-calls-one-turn disambiguation `_asked_about` buys, and
+        # screened HERE because `nora.infra` sits below the scanner and cannot
+        # reach it. The stop names beside it (`stop`, `could_be`) are
+        # dataset-authored, but they are rendered text on their way to a
+        # reply, so they go through the same regex — it costs microseconds and
+        # means nothing in this result is unscanned.
+        near_info = out.get("near")
+        if isinstance(near_info, dict):
+            for key in ("asked", "stop"):
+                if scan_identifiers(str(near_info.get(key, ""))) is not None:
+                    near_info.pop(key, None)
+            if isinstance(near_info.get("could_be"), list):
+                near_info["could_be"] = [
+                    name for name in near_info["could_be"]
+                    if scan_identifiers(str(name)) is None
+                ]
         _record(
             metrics, "transit", out["status"],
             known_route=out.get("known_route"),
             directions=len(out.get("directions") or ()),
+            **({"near": near_info["status"]}
+               if isinstance(near_info, dict) and "status" in near_info else {}),
         )
         return out
 

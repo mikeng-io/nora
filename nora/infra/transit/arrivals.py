@@ -41,15 +41,17 @@ defines `"1" = normal` and `"0" = error or alert`; the live endpoint returns
 `"0"` for a route with 27 stops of good data AND for a route that does not
 exist. It carries no information in either direction.
 
-WHAT COMES BACK, and why it is departures from the START of a route. `transit`
-takes a route number and nothing else — there is no stop argument, because
-resolving 「我喺天恆」 to a stop id is the place resolver, which `design/14` §5.2
-puts behind a scope boundary and `design/14` §6 schedules after this. Neither
-operator's ETA response names its stops in a way a person could use either: KMB
-gives `seq: 7` and MTR gives `busStopId: "K73-D070"`. So the one quantity that
-is both well defined and sayable out loud is when the next buses leave the top
-of each direction, and the note says so rather than letting her imply she knows
-where anybody is standing.
+WHAT COMES BACK. Without a place named, departures from the START of each
+direction — neither ETA response names its stops in a way a person could use
+(KMB gives `seq: 7`, MTR gives `busStopId: "K73-D070"`), so the top of the
+route is the one quantity that is well defined without knowing where anybody
+stands, and the note says so. WITH a place named, `nora.infra.transit.places`
+resolves it to the operator's own stop ids (that module is the scope boundary
+design/14 §5.2 demanded — places only, never people) and the departures are AT
+that stop: KMB via the per-stop ETA endpoint, MTR by joining `busStopId`
+against the stops CSV's `STATION_ID` — where the `arrivalTimeInSecond` that is
+a `108000` sentinel at an origin is REAL at every later stop, and is the
+number a person waiting there needs (`_stop_seconds` below).
 """
 
 from __future__ import annotations
@@ -60,6 +62,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from nora.domain.prompt import escape
+
+from .places import PlaceResolution
 
 # Fixed offset, for the reason `nora.agent.tools` gives: Hong Kong has observed
 # no DST since 1979, and a tz database lookup would differ between the container
@@ -241,15 +245,43 @@ def read_kmb(payload: Any) -> Answer:
     )
 
 
-def read_mtr(payload: Any, towards: Mapping[str, str]) -> Answer:
+def _stop_seconds(bus: Mapping[str, Any]) -> int | None:
+    """How many seconds until this bus is AT a named stop.
+
+    The ARRIVAL, when it is real: at every stop past the origin
+    `arrivalTimeInSecond` is the number a person standing there needs, and at
+    a terminus it is the only number there is (`departureTimeInSecond` reads
+    `"0"` for a bus that ends its run). At an origin the arrival is the
+    thirty-hour `108000` sentinel, which the horizon check screens out, and
+    the departure is the answer — exactly as it is in origin mode.
+    """
+    arrival = _seconds(bus.get("arrivalTimeInSecond"))
+    if arrival is not None and arrival <= MAX_HORIZON_SECONDS:
+        return arrival
+    return _seconds(bus.get("departureTimeInSecond"))
+
+
+def read_mtr(
+    payload: Any,
+    towards: Mapping[str, str],
+    at_stops: frozenset[str] | None = None,
+) -> Answer:
     """A `getSchedule` envelope -> one `Direction` per `lineRef`.
 
     `towards` comes from the route CSV (`nora.infra.transit.catalogue`): the
     response itself names no destination, only `lineRef: "K73_YLW"`.
 
-    The origin of a direction is the FIRST `busStop` in document order carrying
-    that `lineRef`, and its `departureTimeInSecond` is the only usable number
-    there — its `arrivalTimeInSecond` is the `108000` sentinel.
+    In origin mode (`at_stops=None`) the origin of a direction is the FIRST
+    `busStop` in document order carrying that `lineRef`, and its
+    `departureTimeInSecond` is the only usable number there — its
+    `arrivalTimeInSecond` is the `108000` sentinel. With `at_stops` given (the
+    place resolver's `STATION_ID`s, which are the same strings as
+    `busStopId` — the join the resolver stands on), the stop read per
+    direction is the NAMED one instead, and `_stop_seconds` picks arrival
+    over departure. A resolved stop absent from the envelope contributes no
+    direction — the response only carries stops with something to report,
+    verified live at 23:58 when K73-U010 had gone quiet — and that absence
+    lands as `nothing_found` at the stop, never as an invented time.
     """
     if not isinstance(payload, dict):
         return Answer(operator="MTR", reachable=False)
@@ -260,6 +292,8 @@ def read_mtr(payload: Any, towards: Mapping[str, str]) -> Answer:
 
     origins: dict[str, dict[str, Any]] = {}
     for stop in stops:
+        if at_stops is not None and _text(stop.get("busStopId")) not in at_stops:
+            continue
         for bus in stop.get("bus") or []:
             if not isinstance(bus, dict):
                 continue
@@ -274,7 +308,10 @@ def read_mtr(payload: Any, towards: Mapping[str, str]) -> Answer:
         for bus in stop.get("bus") or []:
             if not isinstance(bus, dict) or _text(bus.get("lineRef")) != line_ref:
                 continue
-            seconds = _seconds(bus.get("departureTimeInSecond"))
+            seconds = (
+                _stop_seconds(bus) if at_stops is not None
+                else _seconds(bus.get("departureTimeInSecond"))
+            )
             if seconds is None:
                 continue
             departure = _departure(
@@ -311,16 +348,59 @@ def _pick_remark(remarks: Iterable[str]) -> str:
 
 # ---- the one public entry point ---------------------------------------------
 
-# The three sentences. They are written out here, side by side, because the
-# defect this tool exists to avoid is exactly their collapse into one: 「而家冇
-# 車」 said about a route that has never existed is confident, wrong, and reads
-# identically to a true answer.
-_NOTE_OK = (
+# The sentences. They are written out here, side by side, because the defect
+# this tool exists to avoid is exactly their collapse into one: 「而家冇車」
+# said about a route that has never existed is confident, wrong, and reads
+# identically to a true answer — and with a place in play the same collapse has
+# a second axis, which the `_NEAR_*` suffixes keep apart (R-27b).
+_NOTE_OK_BASE = (
     "These are departures from the START of each direction — a bus reaching a stop "
-    "further along takes longer, and I do not know which stop anyone is at, so do "
-    "not name one. `scheduled` true means this came off the timetable, not off a "
-    "bus anybody can see; say so if you quote it."
+    "further along takes longer. `scheduled` true means this came off the "
+    "timetable, not off a bus anybody can see; say so if you quote it."
 )
+_NOTE_OK = (
+    _NOTE_OK_BASE +
+    " I do not know which stop anyone is at, so do not name one — but if they "
+    "NAMED a place, call this tool again with it as `near` to get times at that "
+    "stop."
+)
+_NOTE_AT_STOP = (
+    "These are the next buses AT the stop named in `near`, one entry per "
+    "direction that calls there. `scheduled` true means this came off the "
+    "timetable, not off a bus anybody can see; say so if you quote it."
+)
+_NOTE_STOP_NO_SERVICE = (
+    "That route is real and it does stop at the place named in `near`, but "
+    "nothing is showing there right now — the last buses have most likely gone. "
+    "Say that. Do not say the route does not stop there, and do not invent a "
+    "time."
+)
+# The place-axis outcomes, appended to whichever base note the route answer
+# earned. Each is a DIFFERENT claim, and «no stop by that name» said about a
+# place the route merely skips is the same wrong-confident collapse R-27
+# exists for, one level down.
+_NEAR_SUFFIX = {
+    "not_on_route": (
+        " About the place they named: it is a real stop, but this route does "
+        "not go there — say exactly that, it is a useful answer. Do not say "
+        "the place does not exist."
+    ),
+    "not_found": (
+        " About the place they named: no bus stop in either operator's data "
+        "goes by that name. Say you do not know that stop and ask them to "
+        "check the name — do not guess one."
+    ),
+    "ambiguous": (
+        " About the place they named: it matches stops in more than one "
+        "different place — `near.could_be` lists them. Ask which one they "
+        "mean rather than picking."
+    ),
+    "unavailable": (
+        " About the place they named: I could not read the stop data just "
+        "now, so I cannot say anything about that stop either way — not even "
+        "whether this route goes there. Say so if it matters."
+    ),
+}
 _NOTE_NO_SUCH_ROUTE = (
     "Neither KMB nor MTR lists a route with that number. Say you cannot find that "
     "route and ask them to check it — do NOT say there are no buses, which is a "
@@ -343,6 +423,7 @@ def describe(
     facts_complete: bool,
     known_operators: Sequence[str],
     answers: Sequence[Answer],
+    near: PlaceResolution | None = None,
 ) -> dict[str, Any]:
     """One bounded, model-facing answer. NEVER raises.
 
@@ -363,10 +444,19 @@ def describe(
     `operator_note` is the exception the same paragraph names: it is an
     operator-authored sentence, so it is escaped and wrapped even though its
     envelope is typed.
+
+    `near`, when a place was asked about, adds one more dimension WITHOUT
+    adding states: the three route statuses stay what they were, the place
+    outcome rides in a `near` object plus a sentence on the note, and the two
+    axes never blur — `nothing_found` at a resolved stop says the STOP is
+    quiet, not that the place or the route is unreal (R-27b).
     """
     # `route` is echoed only when it IS one; `nora.infra.transit.client` passes
     # an empty string for a value that never matched a route number, and this
     # drops the key rather than reflecting the model's own string back at it.
+    # `near.asked` is the model's word too — rendered here, SCREENED at the
+    # tool layer (`nora.agent.tools`), which drops it if it is an identifier;
+    # this module sits below `nora.agent` and cannot reach the scanner.
     echo: dict[str, Any] = {"route": route} if route else {}
     if not known_operators:
         if not facts_complete:
@@ -375,10 +465,11 @@ def describe(
         return {"status": "nothing_found", **echo, "known_route": False,
                 "note": _NOTE_NO_SUCH_ROUTE}
 
+    at_stop = near is not None and near.status == "ok"
     answered = [a for a in answers if a.reachable]
     if not answered:
         return {"status": "unavailable", **echo, "known_route": True,
-                "note": _NOTE_UNAVAILABLE}
+                **_near_fields(near), "note": _with_near(_NOTE_UNAVAILABLE, near)}
 
     with_service = [a for a in answered if a.directions]
     remark = _pick_remark(a.remark for a in answered)
@@ -386,7 +477,9 @@ def describe(
         out: dict[str, Any] = {
             "status": "nothing_found", **echo, "known_route": True,
             "operator": "/".join(a.operator for a in answered),
-            "note": _NOTE_NO_SERVICE,
+            **_near_fields(near),
+            "note": (_NOTE_STOP_NO_SERVICE if at_stop
+                     else _with_near(_NOTE_NO_SERVICE, near)),
         }
         if remark:
             out["operator_note"] = _wrap(answered[0].operator, remark)
@@ -411,17 +504,46 @@ def describe(
                 rendered["operator"] = answer.operator
             directions.append(rendered)
 
+    if near is None:
+        note = _NOTE_OK
+    elif at_stop:
+        note = _NOTE_AT_STOP
+    else:
+        note = _with_near(_NOTE_OK_BASE, near)
     result: dict[str, Any] = {
         "status": "ok", **echo, "known_route": True,
         "operator": "/".join(a.operator for a in with_service),
         "as_of": stamps[0] if stamps else None,
+        **_near_fields(near),
         "directions": directions[:MAX_DIRECTIONS],
         "truncated": any(a.truncated for a in with_service) or len(directions) > MAX_DIRECTIONS,
-        "note": _NOTE_OK,
+        "note": note,
     }
     if remark:
         result["operator_note"] = _wrap(with_service[0].operator, remark)
     return result
+
+
+def _near_fields(near: PlaceResolution | None) -> dict[str, Any]:
+    """The `near` object: outcome, echo, and — only when they exist — the
+    resolved name or the candidates. Stop IDS never appear: they are Nora's
+    working state, not something a person can stand at by name (DEC-24)."""
+    if near is None:
+        return {}
+    rendered: dict[str, Any] = {"status": near.status, "asked": near.asked}
+    if near.place:
+        rendered["stop"] = near.place
+    if near.could_be:
+        rendered["could_be"] = list(near.could_be)
+    return {"near": rendered}
+
+
+def _with_near(note: str, near: PlaceResolution | None) -> str:
+    """The route note, plus the place-axis sentence when the place did not
+    resolve. A resolved place needs no suffix — its notes are whole."""
+    if near is None or near.status == "ok":
+        return note
+    return note + _NEAR_SUFFIX.get(near.status, "")
 
 
 def _wrap(operator: str, remark: str) -> str:
