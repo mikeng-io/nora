@@ -18,9 +18,11 @@ async def test_happy_tag_produces_one_reply_one_row_one_feed(harness_factory, tm
     nora_rows = [r for r in await h.store.recent(conversation_id="g1", limit=10) if r.is_nora]
     assert len(nora_rows) == 1
     assert nora_rows[0].delivery_status is DeliveryStatus.SENT
-    exchange = [f for f in h.honcho.fed if "[Nora]" in f[1]]
-    assert len(exchange) == 1
-    assert exchange[0][0] == "miles"
+    # DEC-36, end to end: every text Honcho was handed for this tag is the
+    # TAGGER's, under the tagger's peer. Nora's reply — which the group
+    # demonstrably received, one assertion above — is in none of them.
+    assert h.honcho.fed == [("miles", "nora.000 幾點食飯"), ("miles", "nora.000 幾點食飯")]
+    assert not any("今晚七點半得" in text for _, text in h.honcho.fed)
 
 
 async def test_context_is_collected_before_the_model_runs(harness_factory):
@@ -152,18 +154,32 @@ async def test_unmapped_sender_tags_produces_a_reply_with_no_honcho_side_effects
     assert h.honcho.peers == []
 
 
-async def test_the_exchange_feed_happens_exactly_once_per_delivered_reply(harness_factory):
+async def test_the_tag_path_feed_happens_exactly_once_per_delivered_reply(harness_factory):
+    """TWO feeds, not one, and the second is the ambient one.
+
+    `nora.ingest.stages.memory_feed` runs for EVERY message before the engage
+    gate, so it has already fed this exact body under this exact peer by the
+    time `feedback.run` fires. Since DEC-36 removed the `[Nora]:` half, the two
+    writes are byte-identical and the tag path's is a pure duplicate — a
+    RECORDED redundancy, not an accident (DEC-36 (4)); it costs the deriver a
+    second pass over one message and is left in place because removing it
+    deletes a pipeline stage that session-per-conversation is expected to want
+    back. Pinned as an equality so the day somebody removes it, this test says
+    so rather than silently passing.
+    """
     h = await harness_factory(script=_reply_script())
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert len([f for f in h.honcho.fed if "[Nora]" in f[1]]) == 1
+    assert h.honcho.fed == [("miles", "nora.000 ?"), ("miles", "nora.000 ?")]
 
 
-async def test_no_exchange_feed_when_nothing_was_delivered(harness_factory):
+async def test_an_undelivered_tag_adds_no_second_feed(harness_factory):
+    """Only the ambient write survives: `feedback.run` is reached from behind
+    `deliver.check_outcome`, so a turn that said nothing writes once, not twice."""
     h = await harness_factory(script=[ScriptedTurn(final_text="silent")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert [f for f in h.honcho.fed if "[Nora]" in f[1]] == []
+    assert h.honcho.fed == [("miles", "nora.000 ?")]
 
 
 async def test_latency_is_recorded(harness_factory):

@@ -57,9 +57,17 @@ knowing that.
 
 **Follow-on work this forces**, each with a cost:
 
-- `feedback.py` feeds a **two-speaker** transcript under one `peer_id`, so
+- ~~`feedback.py` feeds a **two-speaker** transcript under one `peer_id`, so
   Nora's own words land inside a person's message stream. Corrupting, and not
-  repairable by backfill.
+  repairable by backfill.~~ **Done 2026-08-06, DEC-36.** Her reply is now fed
+  nowhere; the stage feeds the tagger's body only. Fixing it surfaced a
+  second, smaller thing this ADR did not know: `ingest/stages/memory_feed`
+  runs for every message *before* the engage gate, so the tagging message's
+  body was already fed under the same peer into the same session — with the
+  `[Nora]:` half gone the tag-path write is a byte-identical **duplicate**. Not
+  corrupting, so it is recorded and pinned by a test rather than removed here;
+  deleting it removes a pipeline stage that session-per-conversation is
+  expected to want back. See DEC-36 (4).
 - The tag path should move to `peer_card` (9 ms, typed, ~206 tokens) and prefill
   it, rather than spending a tool call on `representation`.
 - `_conclusions()` mangles the Deductive/Inductive sections it has never been

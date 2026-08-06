@@ -319,7 +319,10 @@ async def test_a_successful_tag_delivers_releases_the_lock_and_feeds_the_exchang
     assert adapter.texts == ["今晚七點半得"]
     assert pipeline._in_flight == set()
     assert llm_state.last_success_at is not None
-    assert len([f for f in memory.fed if "[Nora]" in f[1]]) == 1
+    # DEC-36: the tagger's own words, under the tagger's peer, and nothing
+    # else. This used to look for `"[Nora]"` in the fed text — the marker of
+    # the two-speaker transcript that made her replies evidence about him.
+    assert memory.fed == [("miles", "nora.000 幾點食飯")]
     assert len(metrics.observations("nora_tag_latency_seconds")) == 1
     assert len(metrics.observations("nora_overhead_seconds")) == 1
 
@@ -670,7 +673,7 @@ async def test_a_reaction_failure_never_prevents_the_reply():
     await _drain(background)
 
     assert adapter.texts == ["今晚七點半得"]
-    assert len([f for f in memory.fed if "[Nora]" in f[1]]) == 1
+    assert memory.fed == [("miles", "nora.000 幾點食飯")]
     assert metrics.get("nora_reactions_total", status="failed") == 3.0
     assert metrics.get("nora_silent_failures_total") == 0.0
     assert pipeline._in_flight == set()

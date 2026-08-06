@@ -254,11 +254,14 @@ class EngagementPipeline:
             if not delivered:
                 return                       # `finally` still resolves the indicator
 
-            if ctx.tagger is not None:   # step 4: exactly one exchange feed
+            # Step 4: exactly one semantic-store write, and it carries the
+            # TAGGER'S words only — never Nora's reply, which under this peer
+            # id would make her own text evidence about them (DEC-36). The
+            # stage no longer takes the deliverer or either display name, so
+            # there is nothing here it could feed even by mistake.
+            if ctx.tagger is not None:
                 self._spawn(feedback.run(
-                    memory=self._memory, ctx=ctx, tagger_name=tagger_name,
-                    display_name=self._display_name, deliverer=handle.deliverer,
-                    metrics=self._metrics,
+                    memory=self._memory, ctx=ctx, metrics=self._metrics,
                 ))
         except BaseException:
             log.exception("tag pipeline failed (tag=%s); staying silent", request.tag_id)
