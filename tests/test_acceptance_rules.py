@@ -54,6 +54,11 @@ RULE_TESTS = {
     # `design/proposed/16-multi-message-replies.md` §6.7 asks for. A new key
     # would leave the old one pointing at a rule nobody enforces.
     "R-25": "test_a_turn_cut_off_between_messages_is_counted_as_partial",
+    # R-29: a skill source is operator configuration only. `SkillStore.resolve`
+    # is a pure name lookup, so a message can name a skill the operator shipped
+    # (the intended activation) but can never introduce a new source — item 6
+    # can never reach item 5 (design/12 §2, DEC-48).
+    "R-29": "test_a_message_can_name_a_skill_but_never_load_one",
 }
 
 

@@ -135,6 +135,7 @@ source_modules = [
     "nora.agent", "nora.obs", "nora.doctrine", "nora.platform",
     "nora.domain", "nora.persons", "nora.tag",
     "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
+    "nora.skills",
 ]
 forbidden_modules = ["nora.config"]
 
@@ -173,7 +174,7 @@ source_modules = ["evals"]
 forbidden_modules = [
     "nora.agent", "nora.config", "nora.domain", "nora.engagement",
     "nora.infra", "nora.ingest", "nora.obs", "nora.doctrine", "nora.persons",
-    "nora.platform", "nora.tag", "tests",
+    "nora.platform", "nora.tag", "nora.skills", "tests",
 ]
 allow_indirect_imports = "True"
 

@@ -12,10 +12,17 @@ def _python_files():
 
 
 def test_doctrine_read_boundary():
-    """Only doctrine/loader.py may read doctrine files."""
+    """Only doctrine/loader.py may read doctrine files.
+
+    `skills/loader.py` is exempt: a SKILL.md is NOT a doctrine file — it is the
+    parallel on-demand layer (design/12 §1, DEC-48), with its own loader for the
+    same structural reason doctrine has one, and it reads only its own directory.
+    The boundary this test protects (doctrine files have a single reader) is
+    untouched by that."""
+    allowed = {PKG / "doctrine" / "loader.py", PKG / "skills" / "loader.py"}
     offenders = []
     for path in _python_files():
-        if path == PKG / "doctrine" / "loader.py":
+        if path in allowed:
             continue
         text = path.read_text()
         if ".md" in text and ("read_text" in text or "open(" in text):

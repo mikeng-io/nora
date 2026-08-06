@@ -85,10 +85,15 @@ already in the request (measured: 1,222 tokens, 25% of the call) and state what
 each tool does verbatim. The block adds the one thing a schema has no slot for:
 when to reach for it in this situation.
 
-**Skills: domain instruction bundles, absent until needed.** Nothing qualifies
-yet — no domain, and the seven tools each stand alone. They earn their place in
-Phase 10, when wayfinding (`now` + `directions` + how to combine them) and
-search arrive. A skill is a chapter of a manual.
+**Skills: domain instruction bundles, absent until needed.** ~~Nothing qualifies
+yet~~ — **the first skill landed 2026-08-07 (DEC-48): `navigation`.** route +
+transit (DEC-46, R-27) made wayfinding the first domain where combining tools is
+*instructions, not capability* (design/14 §1), which is what a skill is. The
+loader is `nora.skills.loader.SkillStore` — a separate, framework-free module,
+NOT the doctrine loader (a skill's body must not sit in the prompt on every
+turn; only its name and when-to-load line do). It ships INERT: activation needs
+a model-facing tool with an R-7 budget in `NATIVE_TOOLS`, the DEC-42 shape. The
+rest of the tools each still stand alone. A skill is a chapter of a manual.
 
 The rule: **if it is needed on every turn it is a prompt; if it is a capability
 it is a tool; if it is instructions for a domain that is usually irrelevant it
