@@ -90,12 +90,28 @@ class NativeTool:
     argument. It is read through `ToolRegistry.live_only_tools()` and rendered
     into the capability block, so declaring it is not bookkeeping — a tool
     marked `False` is one the model is told never to quote for a later moment.
+
+    `plugin` is the fifth (DEC-50, the activation of DEC-48). It marks a tool
+    this table gives a BUDGET but does NOT itself build or describe: the
+    `skills` activation tool is registered by
+    `strands.vended_plugins.skills.AgentSkills` (wired in `nora.agent.factory`),
+    not by `build_tool_specs`, and it advertises itself through the plugin's own
+    `<available_skills>` block, not through the generated capability block. So a
+    `plugin=True` entry is present ONLY so R-7's default-deny admits the tool
+    (`ReplyGuard` reads `NATIVE_TOOL_BUDGETS`); it is filtered out of everything
+    the registry BUILDS or RENDERS — `ToolRegistry.capability()` and
+    `tool_names()` — because a capability line naming `skills` would promise a
+    tool to the offline/eval compositions that never wire the plugin (they build
+    the capability block from this same table but supply their own runner). The
+    budget is the one thing that MUST be shared; the description is the one thing
+    that must not.
     """
 
     budget: int
     when: str
     terminal: bool = False
     time_shiftable: bool | None = None
+    plugin: bool = False
 
 
 # ONE line per tool, in the order the capability block renders them. Keep each
@@ -225,6 +241,35 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 "Call it once, at the end; if you never call it, "
                                 "nothing is sent",
                              terminal=True),
+    # THE ACTIVATION TOOL (DEC-50, activating DEC-48). It is `plugin=True`, so
+    # this entry exists for ONE reason: R-7 default-denies any tool absent from
+    # `budgets()` (`guards.py`), and the `skills(skill_name)` tool is registered
+    # by `AgentSkills` (`nora.agent.factory`), not by `build_tool_specs`. Without
+    # a budget here `ReplyGuard` VETOES the activation call on every turn and the
+    # skill can never load — the same DEC-42 inert shape multi-message shipped in.
+    #
+    # **budget 1, sized like `group_members`, not like `lookup_person`.** Every
+    # budget here is one currency — a model round trip (~4 s), against
+    # `llm.limits.turns = 8`. A second `skills(navigation)` in one turn re-injects
+    # a body ALREADY in context — the exact context-cost `read_buffer`'s clamp
+    # exists to bound — and cannot improve the answer, the same reason
+    # `group_members` is 1 ("a second call returns the identical answer"). At 1,
+    # R-7's repeat veto ("you already called skills and have that context, answer
+    # from what you have") is precisely the right thing to tell a model that
+    # tries. Today exactly one skill exists, so a turn never needs two; the day a
+    # second domain ships and one message legitimately spans both, this is a
+    # one-line raise (DEC-10's property), which is where `lookup_person`'s 2 would
+    # come from — the argument VARIES then. It does not yet.
+    #
+    # `terminal=False`: activating a skill is the START of using its judgement —
+    # she still has to route, or reply — never the end of a turn. `time_shiftable`
+    # has no meaning here in either direction, like `calculate`: the same skill
+    # body comes back whenever it is asked. Both are stated rather than left to
+    # the defaults so the fifth field (`plugin`) is not the only one this entry
+    # sets on purpose.
+    "skills": NativeTool(1, "activate a skill named in <available_skills> to load its "
+                            "full instructions before you plan",
+                         terminal=False, time_shiftable=None, plugin=True),
 }
 
 # Kept as its own name because `ReplyGuard`, `ToolRegistry.budgets()` and every

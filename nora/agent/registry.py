@@ -118,8 +118,14 @@ class ToolRegistry:
 
         `nora.doctrine` sits BELOW `nora.agent` in the layer contract and cannot
         import the tool table, so the composition root hands it these instead
-        (`nora.doctrine.loader.check_kind_boundaries`)."""
-        return tuple(NATIVE_TOOLS)
+        (`nora.doctrine.loader.check_kind_boundaries`).
+
+        Plugin tools (`spec.plugin`, DEC-50) are EXCLUDED: `skills` is not a tool
+        this registry builds, and the catalogue gate exists to stop an authored
+        `identity`/`conduct` file naming a tool the registry generates the
+        capability copy for. `skills` is not in that capability copy (see
+        `capability()`), so it does not belong in the gate's list either."""
+        return tuple(name for name, spec in NATIVE_TOOLS.items() if not spec.plugin)
 
     def capability(self) -> str:
         """The capability section, GENERATED (design/17 §5).
@@ -141,8 +147,20 @@ class ToolRegistry:
         Rendered from the same table `build_tool_specs` populates every
         `ToolSpec.when` from, so the block and the tools cannot describe
         different sets. `tests/unit/test_tool_registry.py` pins that in both
-        directions against real specs."""
-        lines = [f"- {name} — {spec.when}" for name, spec in NATIVE_TOOLS.items()]
+        directions against real specs.
+
+        Plugin tools (`spec.plugin`, DEC-50) are EXCLUDED. `skills` is provided
+        by `AgentSkills` and describes itself through the plugin's own
+        `<available_skills>` block, injected only where the plugin is wired
+        (`nora.agent.factory`). This method also feeds the offline/eval
+        compositions, which build the capability block but supply their own
+        runner and never wire the plugin — a `- skills — ...` line there would
+        promise a tool that composition does not have."""
+        lines = [
+            f"- {name} — {spec.when}"
+            for name, spec in NATIVE_TOOLS.items()
+            if not spec.plugin
+        ]
         # One sentence for `time_shiftable is False` (design/14 §5.1). It is
         # rendered rather than hand-written for the reason the rest of this
         # block is: `soul.md` spent eight weeks telling Nora she knew two things
