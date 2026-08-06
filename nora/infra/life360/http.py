@@ -70,13 +70,21 @@ async def request(
             aiohttp.ClientSession(timeout=timeout_config) as session,
             session.request(method, url, headers=headers, data=data) as response,
         ):
-            text = (await response.text())[:_MAX_BODY]
+            raw = await response.text()
             body: Any | None
             try:
-                body = json.loads(text)
+                # Parse the FULL body. `_MAX_BODY` bounds only the copy kept for
+                # the log line and the canary's non-JSON detection (below) — a
+                # real Life360 members response is well over 2 KB, so parsing a
+                # truncated slice would shred every genuine response mid-document
+                # and misread it as the challenge PAGE, shipping green while
+                # recording nothing (Kimi review 2026-08-07, the 61-day shape).
+                body = json.loads(raw)
             except ValueError:
                 body = None
-            return HttpResult(ok=True, status=response.status, json=body, text=text)
+            return HttpResult(
+                ok=True, status=response.status, json=body, text=raw[:_MAX_BODY],
+            )
     except Exception as exc:  # noqa: BLE001
         # Broad and never re-raised, for the reason every outbound helper here
         # gives: this runs inside the collector loop, and a transport exception

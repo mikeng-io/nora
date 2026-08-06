@@ -145,6 +145,22 @@ async def test_a_healthy_read_authenticates_then_returns_classified_members(life
     assert fake.requests == ["token", "members"]
 
 
+async def test_a_members_body_over_the_log_cap_still_parses(life360):
+    """A real /members response is well over the http log cap (`_MAX_BODY`, 2 KB) —
+    each member carries dozens of location/communications fields the client
+    ignores. The FULL body must parse; only the LOGGED copy is bounded. Parse a
+    truncated slice instead and every genuine response is shredded mid-document
+    and misread as the challenge PAGE — green in tests, zero fixes in production
+    (Kimi review 2026-08-07, the 61-day shape). Reverting `http.py` to parse
+    `text[:_MAX_BODY]` turns this red."""
+    fake, base = life360
+    for m in fake.members_body["members"]:
+        m["padding"] = "x" * 1500          # push the serialised body well past 2 KB
+    read = await _client(base).read_circle(circle_id="c1", now_ms=NOW_MS)
+    assert read.status is ReadStatus.OK
+    assert len(read.members) == 3          # parsed in full, not truncated to a canary
+
+
 async def test_the_token_is_cached_across_reads(life360):
     fake, base = life360
     client = _client(base)
