@@ -235,6 +235,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_room_lookups_total instead, never here.",
         ("tool", "status"),
     ),
+    # DEC-34. An @-mention Nora could not put a name to. It renders `@someone`
+    # — never the number, never the ACI — so the model's view is honest and
+    # completely uninformative, and this counter is the ONLY place the loss is
+    # visible. It reads like `nora_unmapped_senders_total`'s other half: that
+    # one says "somebody talked to her and she does not know who", this one
+    # says "somebody was TALKED ABOUT and she does not know who", and both have
+    # the same fix and the same trap — `identity.toml` is loaded once at
+    # startup, so editing it without a restart moves neither number.
+    _CounterSpec(
+        "nora_unmapped_mentions_total",
+        "@-mentions rendered as an anonymous handle because the mentioned "
+        "account resolved to no person.",
+        ("platform",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

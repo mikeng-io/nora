@@ -22,10 +22,21 @@ from collections.abc import Callable
 
 
 def group_event(*, body: str, sender: str = "+852111", conv: str = "g1",
-                 name: str = "Miles", ts: int = 1) -> dict:
+                 name: str = "Miles", ts: int = 1,
+                 mentions: list[dict] | None = None) -> dict:
+    """The signal-cli-shaped raw event every scripted scenario feeds a pipeline.
+
+    `mentions` is the parallel array a Signal @-mention really travels in —
+    `{name, number, uuid, start, length}` per mention, with `body` carrying
+    U+FFFC at each `start`. Omitted by default because most scenarios have no
+    mention; there is no way to express one WITHOUT it, which is why a scenario
+    could not reproduce DEC-34's live bug before this parameter existed.
+    """
+    data: dict = {"message": body, "groupInfo": {"groupId": conv}, "timestamp": ts}
+    if mentions:
+        data["mentions"] = mentions
     return {"method": "receive", "params": {"envelope": {
-        "source": sender, "sourceName": name, "timestamp": ts,
-        "dataMessage": {"message": body, "groupInfo": {"groupId": conv}, "timestamp": ts}}}}
+        "source": sender, "sourceName": name, "timestamp": ts, "dataMessage": data}}}
 
 
 @dataclasses.dataclass

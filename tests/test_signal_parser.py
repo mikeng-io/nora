@@ -346,3 +346,77 @@ def test_a_quote_with_a_non_integer_id_is_dropped_rather_than_raising():
     msg = parse_event(envelope(quote={"id": "not-a-number", "text": "早晨"}), OWN)
     assert msg is not None
     assert msg.quote is None
+
+
+# ---- mention_spans (DEC-34) ------------------------------------------------
+
+
+def _mention(**over) -> dict:
+    m = {"name": "+852222", "number": "+852222",
+         "uuid": "a1000000-0000-4000-8000-000000000000", "start": 0, "length": 1}
+    m.update(over)
+    return m
+
+
+def test_mention_spans_reads_the_identity_the_body_does_not_carry():
+    from nora.platform.signal.parser import MentionSpan, mention_spans
+
+    event = envelope(message="￼ who are u", mentions=[_mention()])
+    assert mention_spans(event) == (
+        MentionSpan(start=0, length=1,
+                    ids=("a1000000-0000-4000-8000-000000000000", "+852222")),
+    )
+
+
+def test_mention_spans_never_offers_the_name_field():
+    """`name` is the sender's PHONE NUMBER on every row in `data/messages.db`.
+
+    `_mentioned_ids` keeps it — a superset costs nothing when the question is
+    "was Nora tagged" — and this must not, because its output is rendered.
+    """
+    from nora.platform.signal.parser import mention_spans
+
+    spans = mention_spans(envelope(
+        message="￼ hi", mentions=[_mention(name="+85288888888")]))
+    assert "+85288888888" not in spans[0].ids
+
+
+def test_mention_offsets_are_rebased_onto_the_body_that_was_stored():
+    """`start` indexes `dataMessage.message`; the stored body is that string
+    STRIPPED. Two leading spaces and the raw offset lands two characters late,
+    which the renderer then refuses (it is not on a placeholder) and the
+    mention silently stays a void."""
+    from nora.platform.signal.parser import mention_spans
+
+    raw = "  ￼ hello"
+    spans = mention_spans(envelope(message=raw, mentions=[_mention(start=2)]))
+    assert spans[0].start == 0
+    assert raw.strip()[spans[0].start] == "￼"
+
+
+def test_mention_spans_reads_an_edited_message_from_the_same_place_its_body_came_from():
+    from nora.platform.signal.parser import mention_spans
+
+    event = {"envelope": {"source": "+852111", "timestamp": 1, "editMessage": {
+        "targetSentTimestamp": 1,
+        "dataMessage": {"message": "￼ fixed", "groupInfo": {"groupId": "g1"},
+                        "timestamp": 2, "mentions": [_mention()]}}}}
+    assert len(mention_spans(event)) == 1
+
+
+@pytest.mark.parametrize("event", [
+    {},
+    {"method": "typing"},
+    envelope(message="no mentions here"),
+    envelope(message="￼ hi", mentions=["not a dict"]),
+    envelope(message="￼ hi", mentions=[_mention(start="x")]),
+    envelope(message="", attachments=[{"contentType": "image/png"}],
+             mentions=[_mention()]),
+])
+def test_mention_spans_is_total(event):
+    """A caller must never have to ask whether this platform's convention
+    applies — the last case is a body with no text part at all, whose offsets
+    would index an attachment placeholder."""
+    from nora.platform.signal.parser import mention_spans
+
+    assert mention_spans(event) == ()

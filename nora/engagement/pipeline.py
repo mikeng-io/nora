@@ -47,6 +47,7 @@ from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
 from nora.tag import Debounce
 
+from .mentions import MentionRenderer
 from .stages import admission, deliver, feedback, indicate, invoke
 from .stages.invoke import AgentRunner
 
@@ -171,6 +172,17 @@ class EngagementPipeline:
         )
         try:
             ctx = await self._context.assemble(request=request)
+            # An @-mention is a placeholder plus a parallel array, so until
+            # DEC-34 every name in the transcript — including Nora's own —
+            # reached the model as U+FFFC. Rehydrated HERE rather than at
+            # ingest (the audit stores what arrived) or in the prefill (which
+            # may not import `nora.platform`), against `raw_json`, which every
+            # historical row already carries. See `nora.engagement.mentions`.
+            ctx = MentionRenderer(
+                persons=self._persons, display_name=self._display_name,
+                self_ids=frozenset(getattr(identity, "aliases", ())),
+                metrics=self._metrics,
+            ).rehydrate(ctx)
             doctrine = self._doctrine_store.get(applies_to="tag")
             log.info(
                 "tag start (tag_id=%s conversation_id=%s sender_id=%s person_id=%s "

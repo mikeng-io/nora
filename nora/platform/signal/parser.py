@@ -7,10 +7,18 @@ placeholders — no download (v2.1).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from ...domain.models import NormalizedMessage, Quote
 
 log = logging.getLogger("nora.signal.parser")
+
+# OBJECT REPLACEMENT CHARACTER — what Signal puts in the body where an
+# @-mention's name appears. It is the ONLY thing the body carries about a
+# mention; the identity lives in the parallel `mentions` array. Written as an
+# escape, not as the literal character: ￼ renders as a box or as nothing at all
+# depending on the font, so a reader cannot verify a literal one by eye.
+PLACEHOLDER = "\ufffc"
 
 
 def _attachment_placeholder(att: dict) -> str:
@@ -38,6 +46,108 @@ def _mentioned_ids(data: dict) -> frozenset[str]:
             if isinstance(value, str) and value:
                 out.add(value)
     return frozenset(out)
+
+
+@dataclass(frozen=True)
+class MentionSpan:
+    """One @-mention, positioned in the body Nora actually stored.
+
+    `start`/`length` on the wire index into `dataMessage.message`, but the body
+    that reaches `messages.body` is `" ".join(_body_parts(data))` — whose first
+    part is that string **stripped**. `mention_spans` therefore rebases `start`
+    by the leading whitespace it removed, so these offsets are usable against a
+    stored row with no further arithmetic and no second copy of `_body_parts`'
+    rules living at the call site.
+
+    `ids` is ordered `(uuid, number)` and **deliberately excludes `name`**,
+    which `_mentioned_ids` does keep. That difference is the whole safety
+    story of this type: `_mentioned_ids` answers "was Nora tagged", where a
+    superset costs nothing, whereas this one feeds a RENDERED line — and on
+    every real stored row `name` is the sender's E.164 phone number, not a
+    display name at all (verified against `data/messages.db`, ids 3-28). A
+    renderer that reached for the first non-empty field would put a phone
+    number in the prompt, which is exactly what R-18 exists to prevent.
+    """
+
+    start: int
+    length: int
+    ids: tuple[str, ...]
+
+
+def _data_message(env: dict) -> dict | None:
+    """The `dataMessage` of an envelope, in either of the two framings it has.
+
+    An EDITED message is not a `dataMessage` — signal-cli nests it as
+    `editMessage.dataMessage` alongside a `targetSentTimestamp`
+    (JsonEditMessage). Reading only the top-level key made every edit silently
+    invisible: not ingested, not audited, indistinguishable from a typing
+    notification. Someone correcting a typo would watch Nora act on the text
+    they had just replaced.
+
+    The edit is ingested as its own row rather than amending the original. The
+    transcript is an append-only audit (A9), `recent` tie-breaks on `id`, and
+    the prefill wants the LATEST text — which a new row gives, in order,
+    without a second write on the ingest path. It does mean both versions
+    appear in context; that is the honest record, and it is what the operator
+    would see in Signal.
+
+    Extracted from `parse_event` so `mention_spans` unwraps the SAME two
+    framings: a mention has to be looked up in the dataMessage the body came
+    from, or an edited message renders its placeholders against the wrong
+    array.
+    """
+    data = env.get("dataMessage")
+    if isinstance(data, dict):
+        return data
+    edit = env.get("editMessage")
+    data = edit.get("dataMessage") if isinstance(edit, dict) else None
+    return data if isinstance(data, dict) else None
+
+
+def mention_spans(event: dict) -> tuple[MentionSpan, ...]:
+    """Where each @-mention sits in the stored body, and who it names.
+
+    PUBLIC and taking a whole raw event, because that is the shape both callers
+    hold: `NormalizedMessage.raw` on the tag path and `TranscriptRow.raw_json`
+    (parsed) for a historical row. `raw_json` carries the full envelope for
+    every row ever audited, so rehydrating a mention works retroactively —
+    which is the only reason the fix does not need a backfill.
+
+    Total by construction: an envelope of any other shape, a malformed
+    `mentions` entry, or a body with no text part yields `()`. A caller must
+    never have to ask whether this platform's convention applies.
+    """
+    try:
+        env = extract_envelope(event or {})
+        data = _data_message(env) if isinstance(env, dict) else None
+        if data is None:
+            return ()
+        raw_text = data.get("message") or ""
+        if not raw_text.strip():
+            # No text part, so the stored body starts with an attachment
+            # placeholder and these offsets index nothing that survives. A
+            # mention always puts its placeholder in the text, so this is the
+            # malformed case rather than a real one.
+            return ()
+        lead = len(raw_text) - len(raw_text.lstrip())
+        spans = []
+        for m in data.get("mentions") or []:
+            if not isinstance(m, dict):
+                continue
+            try:
+                start = int(m["start"]) - lead
+                length = int(m["length"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            ids = tuple(
+                value for key in ("uuid", "number")
+                if isinstance(value := m.get(key), str) and value
+            )
+            spans.append(MentionSpan(start=start, length=length, ids=ids))
+        return tuple(spans)
+    except Exception:
+        log.exception("unreadable mentions array, rendering none")
+        return ()
 
 
 def _quoted(data: dict) -> Quote | None:
@@ -139,25 +249,12 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
         env = extract_envelope(event or {})
         if env is None:
             return None
-        data = env.get("dataMessage")
-        if not isinstance(data, dict):
-            # An EDITED message is not a `dataMessage` — signal-cli nests it as
-            # `editMessage.dataMessage` alongside a `targetSentTimestamp`
-            # (JsonEditMessage). Reading only the top-level key made every edit
-            # silently invisible: not ingested, not audited, indistinguishable
-            # from a typing notification. Someone correcting a typo would watch
-            # Nora act on the text they had just replaced.
-            #
-            # The edit is ingested as its own row rather than amending the
-            # original. The transcript is an append-only audit (A9), `recent`
-            # tie-breaks on `id`, and the prefill wants the LATEST text — which
-            # a new row gives, in order, without a second write on the ingest
-            # path. It does mean both versions appear in context; that is the
-            # honest record, and it is what the operator would see in Signal.
-            edit = env.get("editMessage")
-            data = edit.get("dataMessage") if isinstance(edit, dict) else None
-            if not isinstance(data, dict):
-                return None                   # syncMessage / typing / receipt / malformed
+        # An EDITED message is not a `dataMessage` — `_data_message` is what
+        # unwraps both framings, and `mention_spans` shares it so a rehydrated
+        # mention is looked up in the same place the body came from.
+        data = _data_message(env)
+        if data is None:
+            return None                       # syncMessage / typing / receipt / malformed
 
         group_id = (data.get("groupInfo") or {}).get("groupId")
         if not group_id:
