@@ -238,7 +238,13 @@ class DoctrineConfig(BaseModel):
     dir: Path
     reload: Literal["mtime", "startup"]
     strict: bool
-    chinese_script: Literal["traditional", "simplified"]
+    # BCP 47 language tag (RFC 5646) — the deployment's language as a deployment
+    # fact, rendered into every tag's runtime_context so the model is told from
+    # OUTSIDE what to speak. Replaces the invented `chinese_script` string, which
+    # nothing ever read: a free-form tag (`yue-Hant-HK`) carries script AND
+    # region a two-value enum could not, and reuses a standard rather than a
+    # convention only this repo understands.
+    language_hint: str
     canary: str
     display_name: str
 

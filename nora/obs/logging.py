@@ -77,7 +77,12 @@ def _shared_processors(secrets: list[str]) -> list[_Processor]:
         structlog.stdlib.add_log_level,
         _uppercase_level,
         structlog.stdlib.ExtraAdder(),
-        structlog.processors.TimeStamper(fmt="%Y-%m-%dT%H:%M:%S", key="ts"),
+        # RFC 3339: `ts` is machine-read (a log store windows and sorts on it),
+        # so it must carry a UTC offset, not a naive `2026-08-06T17:03:34` whose
+        # zone a reader has to assume. `utc=True` (the default, stated) means the
+        # value IS UTC, so the literal `Z` in the format is the correct offset
+        # marker — second precision is preserved, only the ambiguity is removed.
+        structlog.processors.TimeStamper(fmt="%Y-%m-%dT%H:%M:%SZ", utc=True, key="ts"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         _make_redactor(secrets),

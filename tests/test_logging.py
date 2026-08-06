@@ -53,6 +53,24 @@ def test_formatter_includes_level_logger_and_timestamp(tmp_path):
     assert record["ts"]
 
 
+def test_the_ts_is_an_rfc_3339_instant_not_a_naive_local_string(tmp_path):
+    """`ts` is machine-read — the JSON lines are ingested by a log store that
+    sorts and windows on it — so it must be RFC 3339: an instant that carries a
+    UTC offset, not a naive `2026-08-07T15:06:42` a reader has to guess the zone
+    of. `fromisoformat` parses the value and it MUST come back timezone-aware.
+    Drop the `Z` from the TimeStamper format and `tzinfo` is None, so this is
+    red. (This is a LOG timestamp; the prose clock in `prefill._now_line` and
+    the operator report in `nora.app.report` are human-facing and stay prose.)
+    """
+    from datetime import datetime
+
+    path = _configure(tmp_path)
+    logging.getLogger("nora.test").info("x")
+    ts = _last_line(path)["ts"]
+    parsed = datetime.fromisoformat(ts)
+    assert parsed.tzinfo is not None, f"ts {ts!r} carries no UTC offset — not RFC 3339"
+
+
 def test_formatter_includes_the_tagging_path_fields(tmp_path):
     path = _configure(tmp_path)
     logging.getLogger("nora.test").info(
