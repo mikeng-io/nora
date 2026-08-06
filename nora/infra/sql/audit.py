@@ -8,11 +8,14 @@ ingest path's documented failure behaviour is to drop the message. Pruning was
 split into a periodic sweep (`prune_all`) for that reason and stays split.
 
 The store is Postgres since the 2026-08-07 migration (design/20). MVCC lets
-writers proceed concurrently, so the whole SQLite WAL apparatus — the
-`OperationalError` "database is locked" handling, `_note_busy`, and the
-`nora_store_busy_total` metric — is gone; there is no single-writer contention
-left to count. The one real driver break the swap forced is here in `append`:
-asyncpg has no `lastrowid`, so the new id comes back via `RETURNING`.
+writers proceed concurrently, so the SQLite WAL apparatus — the
+`OperationalError` "database is locked" handling and `_note_busy` — is gone;
+there is no single-writer contention left to count. The `nora_store_busy_total`
+metric NAME is RETAINED (frozen at 0) by the append-only metric-name policy
+(`PRESERVED_METRIC_NAMES`), but nothing increments it any more — it counted a
+SQLite condition MVCC cannot produce. The one real driver break the swap forced
+is here in `append`: asyncpg has no `lastrowid`, so the new id comes back via
+`RETURNING`.
 """
 
 from __future__ import annotations

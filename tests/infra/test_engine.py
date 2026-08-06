@@ -27,19 +27,12 @@ async def test_the_readwrite_engine_can_write(pg_url):
         await engine.dispose()
 
 
-async def test_a_signal_magnitude_timestamp_survives_a_bigint_column(pg_url):
-    """The overflow that was invisible on SQLite (8-byte INTEGER) and is a crash
-    on INT4. Reverting the column to `integer` here raises NumericValueOutOfRange
-    instead — which is exactly the failure design/20 §2 fixes for `ts`."""
-    engine = create_sql_engine(pg_url)
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(sa.text("CREATE TABLE t (ts bigint)"))
-            await conn.execute(sa.text("INSERT INTO t VALUES (1785950108283)"))
-        async with engine.connect() as conn:
-            assert await conn.scalar(sa.text("SELECT ts FROM t")) == 1785950108283
-    finally:
-        await engine.dispose()
+# The ts→BigInteger blocker's real guard is
+# tests/test_migration.py::test_a_signal_magnitude_timestamp_round_trips_through_the_store,
+# which inserts 1785950108283 through the MIGRATED `messages` table — reverting
+# the baseline's column to Integer turns it red. A local `CREATE TABLE t (ts
+# bigint)` here would prove only that Postgres knows what bigint is (decorative,
+# both reviews 2026-08-07), so it is not repeated.
 
 
 async def test_the_readonly_engine_reads(pg_url):

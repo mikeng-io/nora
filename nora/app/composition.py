@@ -1,6 +1,6 @@
 """The ONE place that reads Settings. Everything else receives dependencies.
 
-A stage never sees Config; it receives an RecordStore, a MemoryStore, a Persons.
+A stage never sees Config; it receives a RecordStore, a MemoryStore, a Persons.
 That is what makes stages testable in isolation and what stops the god object
 from reforming. Enforced by import-linter (DEC-12).
 

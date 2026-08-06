@@ -79,7 +79,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("kind",),
     ),
     _CounterSpec("nora_doctrine_reload_failures_total", "Doctrine hot-reload failures."),
-    _CounterSpec("nora_store_busy_total", "SQLITE_BUSY responses from the audit store."),
+    # RETAINED frozen at 0 by the append-only metric-name policy
+    # (PRESERVED_METRIC_NAMES), not deleted — a dropped name breaks any dashboard
+    # summing it. It counted SQLite WAL SQLITE_BUSY, which MVCC cannot produce,
+    # so nothing has incremented it since the 2026-08-07 Postgres migration.
+    _CounterSpec(
+        "nora_store_busy_total",
+        "SQLite-era store-contention counter (frozen; MVCC cannot produce it).",
+    ),
     # An unmapped sender is an EXPECTED outcome (D6), so it is not an error —
     # but it was previously unobservable, and its symptom set is empty: the
     # message is still audited, the gate still runs, the prefill still shows
