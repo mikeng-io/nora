@@ -62,6 +62,7 @@ def test_the_registry_exposes_every_declared_tool():
         "now", "read_buffer", "send_reply",
         "group_members", "lookup_person", "about", "calculate", "transit", "route",
         "media_fetch",
+        "search", "fetch",
     }
 
 
@@ -91,6 +92,10 @@ def test_budgets_match_todays_table():
         # per-call vision timeout, not this number, is what keeps two describe
         # calls inside the loop budget (DEC-56).
         "media_fetch": 2,
+        # The two web verbs (DEC-57): sized by model round trips — search, read a
+        # result, refine — two of each leaving half the turn.
+        "search": 2,
+        "fetch": 2,
     }
 
 

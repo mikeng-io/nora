@@ -30,6 +30,7 @@ from typing import Any
 
 from ..domain.ports import BlobStore
 from ..infra.routes import RouteClient
+from ..infra.search import SearchClient
 from ..infra.transit import TransitClient
 from ..infra.vision import VisionCache, VisionClient
 from .ports import ToolSpec, adapt
@@ -65,6 +66,7 @@ class ToolRegistry:
         route: RouteClient | None = None,
         vision: VisionClient | None = None,
         blobs: BlobStore | None = None,
+        search: SearchClient | None = None,
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -90,6 +92,14 @@ class ToolRegistry:
         # forbids. Held even when `media_fetch` is inert — it costs an empty
         # dict and means turning custody on wires nothing new here.
         self._vision_cache = VisionCache()
+        # `search` (SearXNG + Firecrawl, DEC-57) is NOT default-constructed, for
+        # the same reason `route` is not: the two web verbs ship INERT behind
+        # `[search] enabled` (and the operator's Firecrawl-egress isolation), so
+        # every composition that has not wired one — offline, eval, and any
+        # deployment with `[search]` off — leaves this None, and `search`/`fetch`
+        # answer `unavailable` (the honest «not configured» state, R-5). The
+        # composition root passes one built from `[search]` only when enabled.
+        self._search = search
 
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
@@ -217,16 +227,18 @@ class ToolRegistry:
         dependencies — before any Strands adaptation.
 
         `transit_source`/`route_source`/`vision_source`/`blob_store`/
-        `vision_cache` are NOT in this signature and must not become one: each is
-        the registry's own long-lived collaborator (or, for the cache, its own
-        per-process state), not something a tag brings with it, so every caller
-        of `specs()`/`build()` is unchanged by their arrival."""
+        `vision_cache`/`search_source` are NOT in this signature and must not
+        become one: each is the registry's own long-lived collaborator (or, for
+        the cache, its own per-process state), not something a tag brings with
+        it, so every caller of `specs()`/`build()` is unchanged by their
+        arrival."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=self._transit, route_source=self._route,
             vision_source=self._vision, blob_store=self._blobs,
             vision_cache=self._vision_cache,
+            search_source=self._search,
             question=question, context_window=context_window,
         )
 

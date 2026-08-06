@@ -16,6 +16,7 @@ def test_config_example_exists_and_parses():
     data = tomllib.loads((ROOT / "config.example.toml").read_text())
     assert set(data) == {
         "platforms", "llm", "memory", "store", "media", "route", "presence",
+        "search",
         "engagement", "doctrine", "identity_file", "policy_file", "obs", "evals",
     }
 
