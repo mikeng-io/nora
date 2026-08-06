@@ -20,7 +20,7 @@ Two concrete costs, on top of that:
   to fail that has nothing to do with either.
 * Its headline feature for this problem — lifecycle rules that expire objects —
   is one Nora does not need. She already runs a retention sweep for messages
-  (`SqlAuditStore.prune_all`, called periodically by the runtime). Media expiry
+  (`SqlRecordStore.prune_all`, called periodically by the runtime). Media expiry
   is that same loop plus one path: read the surviving rows' `media_json`,
   delete every blob no longer named. Buying a daemon for a feature that is a
   `for` loop over a directory is not a trade.
@@ -154,7 +154,7 @@ class FilesystemBlobStore:
 
         NOT on the `BlobStore` port, deliberately — `nora.domain.ports`'
         docstring says why, and it is the same argument that keeps `prune`
-        off `AuditStore` while `SqlAuditStore.prune_all` exists. Retention for
+        off `RecordStore` while `SqlRecordStore.prune_all` exists. Retention for
         media is an OPERATOR DECISION that has not been made (DEC-43's open
         question); this is the mechanism that decision will need, present so
         that making it costs a policy and not an implementation.

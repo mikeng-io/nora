@@ -1,7 +1,7 @@
 ---
 kind: plan
-title: "Nora Phase 2 — Persistence: SQLAlchemy Core + Alembic behind AuditStore"
-description: "Replace nora/store/db.py's module-level functions and PRAGMA user_version migration with a SQLAlchemy Core schema, an Alembic baseline, and an injected SqlAuditStore satisfying the AuditStore port — plus the schema-parity test that is the real schema gate (DEC-11)."
+title: "Nora Phase 2 — Persistence: SQLAlchemy Core + Alembic behind RecordStore"
+description: "Replace nora/store/db.py's module-level functions and PRAGMA user_version migration with a SQLAlchemy Core schema, an Alembic baseline, and an injected SqlRecordStore satisfying the RecordStore port — plus the schema-parity test that is the real schema gate (DEC-11)."
 tags: [nora, plan, persistence, sqlalchemy, alembic, phase2]
 timestamp: '2026-08-05'
 edges:
@@ -12,7 +12,7 @@ edges:
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace `nora/store/db.py`'s module-level functions and `nora/store/migrate.py`'s `PRAGMA user_version` migration with a SQLAlchemy Core schema, an Alembic baseline stamped onto the live database, and an injected `SqlAuditStore` that satisfies the `AuditStore` port — closing two pre-existing concurrency defects on the way.
+**Goal:** Replace `nora/store/db.py`'s module-level functions and `nora/store/migrate.py`'s `PRAGMA user_version` migration with a SQLAlchemy Core schema, an Alembic baseline stamped onto the live database, and an injected `SqlRecordStore` that satisfies the `RecordStore` port — closing two pre-existing concurrency defects on the way.
 
 **Architecture:** `nora/infra/sql/schema.py` becomes the single source of truth for the `messages` table. `nora/infra/sql/engine.py` builds one long-lived `AsyncEngine` with a PRAGMA connect hook (replacing today's open-and-close-per-call). `nora/infra/sql/audit.py` implements the port as an object holding that engine, so `db_path` stops being threaded through the handler, guards, tools and health endpoint as a de-facto connection handle. Alembic owns schema evolution; a dedicated **schema-parity test** — not `alembic check` — is the guarantee that the schema matches production.
 
@@ -79,10 +79,10 @@ Reason: §5.1 *also* lists "base-relative path resolution — relative paths res
 | Path | Responsibility |
 |---|---|
 | `nora/infra/__init__.py` | Package docstring naming the boundary and its allowed dependencies. |
-| `nora/infra/sql/__init__.py` | Re-exports `MESSAGES`, `METADATA`, `create_sql_engine`, `SqlAuditStore`, `run_migrations`. |
+| `nora/infra/sql/__init__.py` | Re-exports `MESSAGES`, `METADATA`, `create_sql_engine`, `SqlRecordStore`, `run_migrations`. |
 | `nora/infra/sql/schema.py` | `METADATA`, the `messages` `Table`, the two indexes. Source of truth for the schema. |
 | `nora/infra/sql/engine.py` | `create_sql_engine(db_path) -> AsyncEngine` + PRAGMA connect hook; `sync_url_for`/`async_url_for`. |
-| `nora/infra/sql/audit.py` | `SqlAuditStore` — the `AuditStore` port implementation. |
+| `nora/infra/sql/audit.py` | `SqlRecordStore` — the `RecordStore` port implementation. |
 | `nora/infra/sql/migrations_runner.py` | `run_migrations(db_path)`, `current_revision(db_path)`, `head_revision()` — programmatic Alembic, no `alembic.ini` needed at runtime. |
 | `nora/infra/sql/migrations/env.py` | Alembic environment; `include_object` excluding `idx_messages_conv_ts`; `render_as_batch=True`. |
 | `nora/infra/sql/migrations/script.py.mako` | Alembic revision template. |
@@ -93,9 +93,9 @@ Reason: §5.1 *also* lists "base-relative path resolution — relative paths res
 | `tests/infra/test_schema_parity.py` | **The schema gate (DEC-11).** |
 | `tests/infra/test_alembic.py` | `alembic upgrade head` and `alembic check` against a copy of production. |
 | `tests/infra/test_engine.py` | PRAGMAs actually applied. |
-| `tests/infra/test_audit_store.py` | `SqlAuditStore` unit tests. |
-| `tests/contract/test_audit_store_contract.py` | Shared contract suite over `SqlAuditStore` **and** `FakeAuditStore`. |
-| `nora/testing/__init__.py`, `nora/testing/fakes.py` | Shipped fakes, so `tests/` and `evals/` share one source (spec §4.1). This phase seeds it with `FakeAuditStore` only. |
+| `tests/infra/test_audit_store.py` | `SqlRecordStore` unit tests. |
+| `tests/contract/test_audit_store_contract.py` | Shared contract suite over `SqlRecordStore` **and** `FakeRecordStore`. |
+| `nora/testing/__init__.py`, `nora/testing/fakes.py` | Shipped fakes, so `tests/` and `evals/` share one source (spec §4.1). This phase seeds it with `FakeRecordStore` only. |
 
 **Modified:** `pyproject.toml`, `Dockerfile`, `nora/agent/guards.py`, `nora/agent/tools.py`, `nora/agent/prefill.py`, `nora/obs/health.py`, `nora/obs/metrics.py`, `nora/handler.py`, `nora/__main__.py`, `nora/app/composition.py`, `nora/domain/ports.py` (docstring only), `tests/integration/harness.py`, `tests/test_health.py`, `tests/test_tools.py`, `tests/test_guards_deliverer.py`, `tests/test_main.py`, `tests/test_boundaries.py`, `tests/test_composition.py`, `ARCHITECTURE.md`, `CLAUDE.md`, `design/09-decision-index.md`.
 
@@ -337,7 +337,7 @@ Create `nora/infra/sql/__init__.py`:
 ```python
 """SQLite persistence: schema, engine, audit store, migrations.
 
-Public surface: `METADATA`, `MESSAGES`, `create_sql_engine`, `SqlAuditStore`,
+Public surface: `METADATA`, `MESSAGES`, `create_sql_engine`, `SqlRecordStore`,
 `run_migrations`. Import from this package root, never from a submodule.
 """
 
@@ -398,7 +398,7 @@ the **"layered architecture"** contract sharing `nora.store`'s row:
 ```
 
 The layer position is load-bearing: it puts `nora.infra` below `nora.obs`, which is what
-forces Task 4's `SqlAuditStore` to take `metrics` by injection rather than importing
+forces Task 4's `SqlRecordStore` to take `metrics` by injection rather than importing
 `nora.obs.metrics`. Making it real now means Task 4 hits a gate instead of relying on
 memory. Observe both failing before committing: append `from nora.config import Config` to
 `schema.py` → contract 3 BROKEN; append `from nora.obs.metrics import METRICS` →
@@ -1114,7 +1114,7 @@ failing with the hook body removed."
 
 ---
 
-## Task 4: `SqlAuditStore` — append and recent
+## Task 4: `SqlRecordStore` — append and recent
 
 **Files:**
 - Create: `nora/infra/sql/audit.py`
@@ -1123,7 +1123,7 @@ failing with the hook body removed."
 
 **Interfaces:**
 - Consumes: `create_sql_engine` (Task 3), `MESSAGES` (Task 1), `run_migrations` (Task 2), and from `nora.domain.models`: `NormalizedMessage`, `TranscriptRow`, `DeliveryStatus`.
-- Produces: `SqlAuditStore(engine: AsyncEngine, *, max_per_conversation: int = 500, metrics: Any = None)`, with `async append(*, message, is_nora=False, delivery_status=DeliveryStatus.PENDING) -> int`, `async recent(*, conversation_id: str, limit: int) -> list[TranscriptRow]`, and `async aclose() -> None`.
+- Produces: `SqlRecordStore(engine: AsyncEngine, *, max_per_conversation: int = 500, metrics: Any = None)`, with `async append(*, message, is_nora=False, delivery_status=DeliveryStatus.PENDING) -> int`, `async recent(*, conversation_id: str, limit: int) -> list[TranscriptRow]`, and `async aclose() -> None`.
 
 **`aclose` lands here, not in Task 5**, because this task's own `make_store` fixture
 disposes each store in teardown — a fixture cannot clean up a method that does not exist
@@ -1143,7 +1143,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage
-from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 
@@ -1166,7 +1166,7 @@ async def make_store(tmp_path):
     def _make(*, max_per_conversation=500, name="messages.db"):
         path = tmp_path / name
         run_migrations(path)
-        s = SqlAuditStore(
+        s = SqlRecordStore(
             create_sql_engine(path), max_per_conversation=max_per_conversation
         )
         created.append(s)
@@ -1284,7 +1284,7 @@ Expected: collection error — `ModuleNotFoundError: No module named 'nora.infra
 Create `nora/infra/sql/audit.py`:
 
 ```python
-"""`AuditStore` over SQLAlchemy Core. Role: audit record + the tagging path's
+"""`RecordStore` over SQLAlchemy Core. Role: audit record + the tagging path's
 context source. No semantics live here.
 
 `append` is a bare INSERT. It used to run the INSERT and a correlated-subquery
@@ -1310,8 +1310,8 @@ from nora.infra.sql.schema import MESSAGES
 DEFAULT_MAX_PER_CONVERSATION = 500
 
 
-class SqlAuditStore:
-    """Satisfies `nora.domain.ports.AuditStore`."""
+class SqlRecordStore:
+    """Satisfies `nora.domain.ports.RecordStore`."""
 
     def __init__(
         self,
@@ -1403,10 +1403,10 @@ class SqlAuditStore:
 Add to `nora/infra/sql/__init__.py`:
 
 ```python
-from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.audit import SqlRecordStore
 ```
 
-and `"SqlAuditStore"` to `__all__`.
+and `"SqlRecordStore"` to `__all__`.
 
 - [ ] **Step 4: Declare the new metric**
 
@@ -1419,17 +1419,17 @@ Expected: 11 passed.
 
 - [ ] **Step 6: Update the ports docstring**
 
-`nora/domain/ports.py`'s `AuditStore` note says `recent`/`stats` return the port's "target shape, not a claim about the current implementation — the persistence phase adapts `db.py` onto it." That is now done. Replace those two bullets with:
+`nora/domain/ports.py`'s `RecordStore` note says `recent`/`stats` return the port's "target shape, not a claim about the current implementation — the persistence phase adapts `db.py` onto it." That is now done. Replace those two bullets with:
 
 ```
-- `AuditStore.recent` returns `TranscriptRow`, not the `dict[str, Any]` row
+- `RecordStore.recent` returns `TranscriptRow`, not the `dict[str, Any]` row
   blobs the old `nora/store/db.py` returned, and `delivery_status` is
-  `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlAuditStore`
+  `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlRecordStore`
   implements this; the conformance is checked statically (it is inside mypy's
   strict scope) and behaviourally by `tests/contract/test_audit_store_contract.py`.
 
-- `AuditStore` still deliberately has **no `prune`**, even though a caller now
-  exists. `SqlAuditStore.prune_all` is a retention sweep owned by the runtime,
+- `RecordStore` still deliberately has **no `prune`**, even though a caller now
+  exists. `SqlRecordStore.prune_all` is a retention sweep owned by the runtime,
   not something any stage programs against through the port. Putting it on the
   port would oblige every future implementation — including fakes — to
   implement a retention policy they do not have.
@@ -1441,7 +1441,7 @@ Expected: 11 passed.
 uv run pytest -q && uv run ruff check nora/ evals/ tests/ \
   && uv run mypy nora/domain nora/config.py nora/app nora/infra && uv run lint-imports
 git add nora/infra/ nora/obs/metrics.py nora/domain/ports.py tests/infra/
-git commit -m "feat(persistence): SqlAuditStore append/recent, returning typed TranscriptRows
+git commit -m "feat(persistence): SqlRecordStore append/recent, returning typed TranscriptRows
 
 append is a bare INSERT. The old db.append ran an INSERT plus a
 correlated-subquery prune in one transaction per message; under WAL with N
@@ -1451,7 +1451,7 @@ failed append — silent audit loss. Pruning becomes a periodic sweep."
 
 ---
 
-## Task 5: `SqlAuditStore` — set_delivery_status, stats, prune_all, aclose
+## Task 5: `SqlRecordStore` — set_delivery_status, stats, prune_all, aclose
 
 **Files:**
 - Modify: `nora/infra/sql/audit.py`
@@ -1516,11 +1516,11 @@ async def test_prune_all_is_a_no_op_below_the_window(store):
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `uv run pytest tests/infra/test_audit_store.py -q`
-Expected: 5 failures, all `AttributeError: 'SqlAuditStore' object has no attribute 'set_delivery_status'` / `'stats'` / `'prune_all'`.
+Expected: 5 failures, all `AttributeError: 'SqlRecordStore' object has no attribute 'set_delivery_status'` / `'stats'` / `'prune_all'`.
 
 - [ ] **Step 3: Implement the four methods**
 
-Add to `SqlAuditStore` in `nora/infra/sql/audit.py`:
+Add to `SqlRecordStore` in `nora/infra/sql/audit.py`:
 
 ```python
     async def set_delivery_status(
@@ -1608,14 +1608,14 @@ retention window in one statement, off the write path."
 
 ---
 
-## Task 6: The `AuditStore` contract suite and a shipped fake
+## Task 6: The `RecordStore` contract suite and a shipped fake
 
 **Files:**
 - Create: `nora/testing/__init__.py`, `nora/testing/fakes.py`, `tests/contract/test_audit_store_contract.py`
 - Test: as above
 
 **Interfaces:**
-- Produces: `nora.testing.fakes.FakeAuditStore` — in-memory, same signatures as `SqlAuditStore`, plus `fail_on_nora: bool = False` and `fail_on_recent: bool = False` switches used by the integration harness in Task 8.
+- Produces: `nora.testing.fakes.FakeRecordStore` — in-memory, same signatures as `SqlRecordStore`, plus `fail_on_nora: bool = False` and `fail_on_recent: bool = False` switches used by the integration harness in Task 8.
 
 **Why this task exists:** `CLAUDE.md` — "A port never gains a second implementation — including a test fake — without a shared contract suite both pass." Task 8 needs a fake to inject audit failures (replacing `monkeypatch.setattr(db, "append")`, which stops working the moment the store is injected). The fake is the second implementation, so the contract suite is mandatory, and it must land before the fake is used.
 
@@ -1624,8 +1624,8 @@ retention window in one statement, off the write path."
 Create `tests/contract/test_audit_store_contract.py`:
 
 ```python
-"""One suite, both implementations. This is what stops `FakeAuditStore`
-drifting from `SqlAuditStore` and integration tests going green against
+"""One suite, both implementations. This is what stops `FakeRecordStore`
+drifting from `SqlRecordStore` and integration tests going green against
 behaviour production does not have (DEC-12).
 
 Every test here is parametrized over both stores. Adding a behaviour to one
@@ -1637,11 +1637,11 @@ from __future__ import annotations
 import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage
-from nora.domain.ports import AuditStore
-from nora.infra.sql.audit import SqlAuditStore
+from nora.domain.ports import RecordStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.testing.fakes import FakeAuditStore
+from nora.testing.fakes import FakeRecordStore
 
 
 def _msg(conv="g1", body="hello", ts=1) -> NormalizedMessage:
@@ -1656,9 +1656,9 @@ async def store(request, tmp_path):
     if request.param == "sql":
         path = tmp_path / "messages.db"
         run_migrations(path)
-        s: AuditStore = SqlAuditStore(create_sql_engine(path))
+        s: RecordStore = SqlRecordStore(create_sql_engine(path))
     else:
-        s = FakeAuditStore()
+        s = FakeRecordStore()
     yield s
     await s.aclose()
 
@@ -1732,7 +1732,7 @@ async def test_recent_rows_are_transcript_rows_not_dicts(store):
 def test_both_implementations_satisfy_the_port():
     """Static conformance is checked by mypy on nora.infra; this is the runtime
     half, and it covers the fake, which mypy's scope does not include."""
-    assert isinstance(FakeAuditStore(), AuditStore)
+    assert isinstance(FakeRecordStore(), RecordStore)
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -1757,9 +1757,9 @@ the production implementation both pass. Adding a fake without one is a
 project rule violation, not a shortcut.
 """
 
-from nora.testing.fakes import FakeAuditStore
+from nora.testing.fakes import FakeRecordStore
 
-__all__ = ["FakeAuditStore"]
+__all__ = ["FakeRecordStore"]
 ```
 
 Create `nora/testing/fakes.py`:
@@ -1774,8 +1774,8 @@ from typing import Any
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 
 
-class FakeAuditStore:
-    """In-memory `AuditStore`.
+class FakeRecordStore:
+    """In-memory `RecordStore`.
 
     The two failure switches exist because the integration harness must inject
     audit failures, and the old mechanism — `monkeypatch.setattr(db, "append")`
@@ -1796,7 +1796,7 @@ class FakeAuditStore:
         is_nora: bool = False,
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
     ) -> int:
-        # Deliberately does NOT raise when closed. `SqlAuditStore.aclose`
+        # Deliberately does NOT raise when closed. `SqlRecordStore.aclose`
         # delegates to `AsyncEngine.dispose()`, which releases the pool but
         # leaves the engine usable — verified 2026-08-05. A fake that raised
         # here would be stricter than production, which is precisely the
@@ -1863,7 +1863,7 @@ Expected: 21 passed (10 parametrized × 2 + 1 unparametrized).
 
 The contract suite's whole value is catching fake/production drift. Prove it does.
 
-Change `FakeAuditStore.recent`'s sort key from `(r["ts"], r["id"])` to `(r["id"],)` and its window slice to `matching[:limit]`.
+Change `FakeRecordStore.recent`'s sort key from `(r["ts"], r["id"])` to `(r["id"],)` and its window slice to `matching[:limit]`.
 Run: `uv run pytest tests/contract/test_audit_store_contract.py -q`
 Expected: `test_recent_limit_takes_the_newest[fake]` FAILS while `[sql]` passes — exactly the drift this suite exists to catch. Restore.
 
@@ -1881,7 +1881,7 @@ uv run python -c "import nora.testing; print(nora.testing.__file__)"
 uv run pytest -q && uv run ruff check nora/ evals/ tests/ \
   && uv run mypy nora/domain nora/config.py nora/app nora/infra && uv run lint-imports
 git add nora/testing/ tests/contract/
-git commit -m "test(persistence): one contract suite over SqlAuditStore and FakeAuditStore
+git commit -m "test(persistence): one contract suite over SqlRecordStore and FakeRecordStore
 
 nora/testing/ ships inside the package so tests/ and evals/ share one
 definition of each fake. Observed failing: fake's recent() ordering broken,
@@ -1897,19 +1897,19 @@ contract caught it on the fake while production stayed green."
 - Test: `tests/test_guards_deliverer.py`, `tests/test_tools.py`, `tests/test_health.py`
 
 **Interfaces:**
-- Consumes: `SqlAuditStore` / `FakeAuditStore` via the `AuditStore` port.
+- Consumes: `SqlRecordStore` / `FakeRecordStore` via the `RecordStore` port.
 - Produces: `Deliverer(*, store, adapter, target, persona, canary, tag_id, nora_sender_id, metrics=METRICS)` — note `db_path` and `max_per_conversation` are **gone** (retention is the store's construction-time policy). `build_tools(*, store, conversation_id, conversation_type, persons, honcho, deliverer, context_window=40)`. `build_health_app(*, adapter, store, honcho, persona_store, metrics, started_at, llm_state)`.
 
 `nora/handler.py` and `nora/__main__.py` are **not** touched in this task — they keep calling `db.append` for the ambient path, and pass a store to the three collaborators below. `nora/store/db.py` still exists at the end of this task. That is what keeps this task independently green.
 
 - [ ] **Step 1: Update the Deliverer tests first**
 
-In `tests/test_guards_deliverer.py`, replace the `db.init` fixture and `db_path=` construction with a real `SqlAuditStore`, and every `db.recent(dbp, "g1", n)` assertion with `store.recent(conversation_id="g1", limit=n)` on typed rows. The row assertions change from `row["sender_id"]` to `row.sender_id`. Concretely, the fixture becomes:
+In `tests/test_guards_deliverer.py`, replace the `db.init` fixture and `db_path=` construction with a real `SqlRecordStore`, and every `db.recent(dbp, "g1", n)` assertion with `store.recent(conversation_id="g1", limit=n)` on typed rows. The row assertions change from `row["sender_id"]` to `row.sender_id`. Concretely, the fixture becomes:
 
 ```python
 import pytest
 
-from nora.infra.sql.audit import SqlAuditStore
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 
@@ -1918,7 +1918,7 @@ from nora.infra.sql.migrations_runner import run_migrations
 async def store(tmp_path):
     path = tmp_path / "messages.db"
     run_migrations(path)
-    s = SqlAuditStore(create_sql_engine(path))
+    s = SqlRecordStore(create_sql_engine(path))
     yield s
     await s.aclose()
 ```
@@ -2017,7 +2017,7 @@ In `nora/agent/tools.py`, delete `from ..store import db`, change the signature'
         ]
 ```
 
-Update `tests/test_tools.py` the same way as Task 7 Step 1: build a real `SqlAuditStore`, seed it with `store.append(message=NormalizedMessage(...))`, and pass `store=store` to both `Deliverer` and `build_tools`.
+Update `tests/test_tools.py` the same way as Task 7 Step 1: build a real `SqlRecordStore`, seed it with `store.append(message=NormalizedMessage(...))`, and pass `store=store` to both `Deliverer` and `build_tools`.
 
 Run: `uv run pytest tests/test_tools.py -q`
 Expected: all pass.
@@ -2037,10 +2037,10 @@ In `nora/obs/health.py`, delete `from ..store import db`, rename the `db_path` p
 
 The `/health` JSON body is unchanged — `sqlite.reachable`, `sqlite.rows` and the top-level `sse` key all keep their names and positions. This is an internal rewiring, not a contract change.
 
-Update `tests/test_health.py:12,17,43,73-74` to build a `SqlAuditStore` and pass `store=`. For `:43`'s unreachable-database case, pass a store whose engine points at an unwritable path — replace it with a `FakeAuditStore` subclass whose `stats()` raises, which is honest about what is being tested:
+Update `tests/test_health.py:12,17,43,73-74` to build a `SqlRecordStore` and pass `store=`. For `:43`'s unreachable-database case, pass a store whose engine points at an unwritable path — replace it with a `FakeRecordStore` subclass whose `stats()` raises, which is honest about what is being tested:
 
 ```python
-class _BrokenStore(FakeAuditStore):
+class _BrokenStore(FakeRecordStore):
     async def stats(self):
         raise RuntimeError("database gone")
 ```
@@ -2053,7 +2053,7 @@ Expected: all pass.
 Then the caller in `nora/__main__.py:97` must pass `store=` instead of `db_path=`. Since `__main__` has no store yet, construct one there now — this is the first half of Task 8's rewiring and is needed to keep `__main__` importable:
 
 ```python
-        self.store = SqlAuditStore(
+        self.store = SqlRecordStore(
             create_sql_engine(cfg.store.db_path),
             max_per_conversation=cfg.store.max_per_conversation,
             metrics=self.metrics,
@@ -2073,7 +2073,7 @@ Expected: all green.
 
 ```bash
 git add nora/agent/guards.py nora/agent/tools.py nora/obs/health.py nora/__main__.py tests/
-git commit -m "refactor(persistence): Deliverer, tools and /health take an AuditStore
+git commit -m "refactor(persistence): Deliverer, tools and /health take an RecordStore
 
 db_path stops being threaded as a de-facto connection handle through the
 engagement path. /health's JSON body is unchanged: sqlite.reachable,
@@ -2090,7 +2090,7 @@ sqlite.rows and the top-level sse key keep their names."
 
 **Interfaces:**
 - Consumes: everything from Tasks 4–7.
-- Produces: `Handler(*, cfg, adapter, persons, honcho, store, persona_store, metrics, invoke_fn, create_agent_fn)` — `store` is new; `cfg.store.db_path` is no longer read by the handler. `build_dependencies(cfg) -> Dependencies` gains an `audit: AuditStore` field.
+- Produces: `Handler(*, cfg, adapter, persons, honcho, store, persona_store, metrics, invoke_fn, create_agent_fn)` — `store` is new; `cfg.store.db_path` is no longer read by the handler. `build_dependencies(cfg) -> Dependencies` gains an `audit: RecordStore` field.
 
 - [ ] **Step 1: Rewrite `tests/test_migration.py` as a startup-migration test**
 
@@ -2130,12 +2130,12 @@ async def test_startup_is_idempotent_across_restarts(tmp_path):
 
 async def test_a_migrated_database_accepts_writes(tmp_path):
     from nora.domain.models import NormalizedMessage
-    from nora.infra.sql.audit import SqlAuditStore
+    from nora.infra.sql.audit import SqlRecordStore
     from nora.infra.sql.engine import create_sql_engine
 
     path = tmp_path / "messages.db"
     run_migrations(path)
-    store = SqlAuditStore(create_sql_engine(path))
+    store = SqlRecordStore(create_sql_engine(path))
     try:
         await store.append(message=NormalizedMessage(
             "signal", "g", "group", "+1", "A", 1, "x", {}))
@@ -2230,7 +2230,7 @@ def _transcript_block(ctx: TagContext, display_name: str) -> str:
 In `nora/__main__.py`: delete `from .store import db`; replace `await db.init(cfg.store.db_path)` with `run_migrations(cfg.store.db_path)`; pass `store=self.store` to `Handler`; and add the periodic prune the write path no longer does.
 
 ```python
-from .infra.sql import SqlAuditStore, create_sql_engine, run_migrations
+from .infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 
 PRUNE_INTERVAL_SECONDS = 300.0
 
@@ -2256,14 +2256,14 @@ Spawn it alongside the other background tasks in the existing startup path, and 
 In `nora/app/composition.py`, add the `audit` field and build it. Note the import moves to `nora.infra.sql`:
 
 ```python
-from nora.domain.ports import AuditStore, MemoryStore
-from nora.infra.sql import SqlAuditStore, create_sql_engine
+from nora.domain.ports import RecordStore, MemoryStore
+from nora.infra.sql import SqlRecordStore, create_sql_engine
 ```
 
 ```python
 @dataclass(frozen=True)
 class Dependencies:
-    audit: AuditStore
+    audit: RecordStore
     memory: MemoryStore
     persons: Persons
     metrics: Metrics
@@ -2272,7 +2272,7 @@ class Dependencies:
 ```python
 def build_dependencies(cfg: Config) -> Dependencies:
     return Dependencies(
-        audit=SqlAuditStore(
+        audit=SqlRecordStore(
             create_sql_engine(cfg.store.db_path),
             max_per_conversation=cfg.store.max_per_conversation,
             metrics=METRICS,
@@ -2283,7 +2283,7 @@ def build_dependencies(cfg: Config) -> Dependencies:
     )
 ```
 
-`audit` is annotated with the port, not `SqlAuditStore` — `nora.app.*` is inside mypy's strict scope, so this is a permanent, statically-checked proof of conformance, exactly as the `memory` field's docstring already explains. Extend that docstring to say so for `audit` too.
+`audit` is annotated with the port, not `SqlRecordStore` — `nora.app.*` is inside mypy's strict scope, so this is a permanent, statically-checked proof of conformance, exactly as the `memory` field's docstring already explains. Extend that docstring to say so for `audit` too.
 
 - [ ] **Step 7: Rewire the integration harness's fault injection**
 
@@ -2292,7 +2292,7 @@ def build_dependencies(cfg: Config) -> Dependencies:
 In `tests/integration/harness.py`: delete `from nora.store import db`; replace `await db.init(cfg.store.db_path)` with `run_migrations(cfg.store.db_path)`; construct the store; and replace both fault branches:
 
 ```python
-    store = SqlAuditStore(
+    store = SqlRecordStore(
         create_sql_engine(cfg.store.db_path),
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
@@ -2364,7 +2364,7 @@ git rm nora/store/db.py nora/store/migrate.py
 
 `nora/store/honcho.py` and `nora/store/__init__.py` stay until Task 9.
 
-Update `tests/test_boundaries.py:85`, whose comment cites `from nora.store import db` as an example that slipped through an earlier boundary check — change the example to `from nora.infra.sql import SqlAuditStore` so the comment still describes something that exists.
+Update `tests/test_boundaries.py:85`, whose comment cites `from nora.store import db` as an example that slipped through an earlier boundary check — change the example to `from nora.infra.sql import SqlRecordStore` so the comment still describes something that exists.
 
 - [ ] **Step 10: Run the full gate**
 
@@ -2390,7 +2390,7 @@ git add -A
 git commit -m "refactor(persistence): dissolve db_path threading; retire store/migrate.py
 
 The ambient path, the composition root and the integration harness all take an
-injected AuditStore. Alembic replaces the PRAGMA user_version migration; the
+injected RecordStore. Alembic replaces the PRAGMA user_version migration; the
 v1->v2 rebuild is retired and its test file rewritten around what replaced it.
 
 Harness fault injection moves from monkeypatch.setattr(db, 'append') — which
@@ -2516,7 +2516,7 @@ checks nothing.
 
 `nora.infra` keeps `nora.store`'s **exact position** in the layers list — below
 `nora.obs`, above `nora.domain`. That ordering is load-bearing, not incidental:
-it is why `SqlAuditStore` takes `metrics` through `__init__` instead of
+it is why `SqlRecordStore` takes `metrics` through `__init__` instead of
 importing `nora.obs.metrics` (Task 4). Confirmed before the rename that nothing
 under `nora/store/` imports `nora.obs`, so the move introduces no new edge.
 
@@ -2701,9 +2701,9 @@ Add to the **Never** list:
   revision that touches it must be hand-written.
 ```
 
-**`ARCHITECTURE.md`** — update the Phase status line; replace the `store/` row in the package table with `infra/` (`infra/sql/`: `schema.py`, `engine.py`, `audit.py`, `migrations_runner.py`, `migrations/`; `infra/honcho/`: `client.py`) and add `testing/`; update the ports table so `AuditStore` reads `nora/infra/sql/audit.py::SqlAuditStore` with no known gap, and `MemoryStore`'s gap closes to "per-peer lock landed in the persistence phase"; update the file-by-file walk (steps 4, 8, 14) to name the store's methods instead of `db.append`/`db.recent`; update the "add a persisted column" row of §5 from **(target)** to the live path `nora/infra/sql/schema.py` + `uv run alembic revision --autogenerate` (with the `idx_messages_conv_ts` caveat); and drop `nora/store/db.py::SCHEMA` from the same table.
+**`ARCHITECTURE.md`** — update the Phase status line; replace the `store/` row in the package table with `infra/` (`infra/sql/`: `schema.py`, `engine.py`, `audit.py`, `migrations_runner.py`, `migrations/`; `infra/honcho/`: `client.py`) and add `testing/`; update the ports table so `RecordStore` reads `nora/infra/sql/audit.py::SqlRecordStore` with no known gap, and `MemoryStore`'s gap closes to "per-peer lock landed in the persistence phase"; update the file-by-file walk (steps 4, 8, 14) to name the store's methods instead of `db.append`/`db.recent`; update the "add a persisted column" row of §5 from **(target)** to the live path `nora/infra/sql/schema.py` + `uv run alembic revision --autogenerate` (with the `idx_messages_conv_ts` caveat); and drop `nora/store/db.py::SCHEMA` from the same table.
 
-**`design/09-decision-index.md`** — DEC-7's enforcing test changes from "not built (persistence phase)" to `tests/infra/test_alembic.py`, `tests/infra/test_audit_store.py`, `tests/contract/test_audit_store_contract.py`. DEC-11's changes from "not built" to `tests/infra/test_schema_parity.py`. DEC-12's contract-test parenthetical updates: `AuditStore` now has a real contract suite covering two implementations.
+**`design/09-decision-index.md`** — DEC-7's enforcing test changes from "not built (persistence phase)" to `tests/infra/test_alembic.py`, `tests/infra/test_audit_store.py`, `tests/contract/test_audit_store_contract.py`. DEC-11's changes from "not built" to `tests/infra/test_schema_parity.py`. DEC-12's contract-test parenthetical updates: `RecordStore` now has a real contract suite covering two implementations.
 
 **Correct DEC-11's false claim** in both `design/09-decision-index.md` and the spec (`docs/superpowers/specs/2026-08-04-nora-architecture-design.md` §DEC-11 item 3). The spec currently says removing the CHECK constraint, dropping `DESC`, **or changing the `created_at` server default** each produced "no diff at all". The third is false. Amend item 3 in place, marking the correction and its date, to:
 
@@ -2772,9 +2772,9 @@ Verified against a copy of the production database, 2026-08-05."
 
 **Deliberate scope decisions, stated rather than hidden:**
 - `store.db_path` is kept over spec §5.1's `url` — reasoned above, because §5.1's own preserved-behaviour list requires base-relative path resolution that a URL cannot express.
-- `nora/testing/` is seeded with `FakeAuditStore` only. Migrating `tests/fakes.py` wholesale and making `evals/` stop importing `tests/` is spec §8 **phase 3** work; this phase creates the package because the contract rule forces a fake into existence here.
-- `AuditStore.prune` stays off the port; `prune_all` is concrete-only. The ports docstring is updated to record why.
+- `nora/testing/` is seeded with `FakeRecordStore` only. Migrating `tests/fakes.py` wholesale and making `evals/` stop importing `tests/` is spec §8 **phase 3** work; this phase creates the package because the contract rule forces a fake into existence here.
+- `RecordStore.prune` stays off the port; `prune_all` is concrete-only. The ports docstring is updated to record why.
 
-**Type consistency check:** `SqlAuditStore` and `FakeAuditStore` expose identical signatures, verified by the parametrized contract suite in Task 6 — `append(*, message, is_nora, delivery_status)`, `recent(*, conversation_id, limit)`, `set_delivery_status(*, row_id, status)`, `stats()`, `aclose()`. `stats()` returns `schema_revision` (not `schema_version`) in Tasks 5, 6 and 8 consistently. `run_migrations`, `current_revision`, `head_revision`, `stamp_head`, `alembic_config` are defined in Task 2 and used with those exact names in Tasks 3–10. `create_sql_engine` and `async_url_for` are defined in Task 3 and used unchanged thereafter. `Deliverer` and `build_tools` both take `store=` from Task 7 onward, and `Deliverer` loses `max_per_conversation` in the same task that moves retention onto the store's constructor.
+**Type consistency check:** `SqlRecordStore` and `FakeRecordStore` expose identical signatures, verified by the parametrized contract suite in Task 6 — `append(*, message, is_nora, delivery_status)`, `recent(*, conversation_id, limit)`, `set_delivery_status(*, row_id, status)`, `stats()`, `aclose()`. `stats()` returns `schema_revision` (not `schema_version`) in Tasks 5, 6 and 8 consistently. `run_migrations`, `current_revision`, `head_revision`, `stamp_head`, `alembic_config` are defined in Task 2 and used with those exact names in Tasks 3–10. `create_sql_engine` and `async_url_for` are defined in Task 3 and used unchanged thereafter. `Deliverer` and `build_tools` both take `store=` from Task 7 onward, and `Deliverer` loses `max_per_conversation` in the same task that moves retention onto the store's constructor.
 
 **Risk note for the executor:** Task 8 is the largest and the only one that cannot be partially landed — the handler, `__main__`, composition root and integration harness must move together or the R-5 matrix breaks. If it needs splitting mid-flight, the seam is Step 7 (harness) versus Steps 3–6 (production code); production can land green first only if the harness is updated in the same commit, so prefer finishing it whole.

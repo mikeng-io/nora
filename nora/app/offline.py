@@ -9,7 +9,7 @@ one: `evals/` may import `nora.app` and `nora.testing` and nothing else from
 `nora/` — this module is the `nora.app` side of that boundary.
 
 Deliberately builds NO collaborator itself — no `PlatformAdapter`,
-`MemoryStore`, `AgentRunner`, or `AuditStore` is constructed here. The caller
+`MemoryStore`, `AgentRunner`, or `RecordStore` is constructed here. The caller
 always supplies those (real for `nora.app.composition.build_dependencies`'s
 production path; fakes from `nora.testing` everywhere else), which is what
 keeps this module free of any network concern.
@@ -24,7 +24,7 @@ from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.ports import AuditStore, MemoryStore, RosterSource
+from nora.domain.ports import MemoryStore, RecordStore, RosterSource
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.ingest.pipeline import IngestPipeline
@@ -42,7 +42,7 @@ def build_offline_pipeline(
     cfg: Config,
     *,
     adapter: Any,
-    audit: AuditStore,
+    audit: RecordStore,
     memory: MemoryStore,
     persons: Persons,
     doctrine_store: DoctrineStore,

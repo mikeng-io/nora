@@ -25,8 +25,8 @@ from nora.domain.ports import (
 )
 
 
-class FakeAuditStore:
-    """In-memory `AuditStore`.
+class FakeRecordStore:
+    """In-memory `RecordStore`.
 
     The two failure switches exist because the integration harness must inject
     audit failures, and the old mechanism — `monkeypatch.setattr(db, "append")`
@@ -48,7 +48,7 @@ class FakeAuditStore:
         delivery_status: DeliveryStatus = DeliveryStatus.PENDING,
         person_id: str | None = None,
     ) -> int:
-        # Deliberately does NOT raise when closed. `SqlAuditStore.aclose`
+        # Deliberately does NOT raise when closed. `SqlRecordStore.aclose`
         # delegates to `AsyncEngine.dispose()`, which releases the pool but
         # leaves the engine usable — verified 2026-08-05. A fake that raised
         # here would be stricter than production, which is precisely the
@@ -72,7 +72,7 @@ class FakeAuditStore:
             "is_nora": is_nora,
             "delivery_status": delivery_status,
             # The parent pointer rides the message, exactly as it does in
-            # `SqlAuditStore.append` — no extra parameter on either store.
+            # `SqlRecordStore.append` — no extra parameter on either store.
             "quoted_ts": message.quote.quoted_ts if message.quote else None,
             # `json.dumps`, not `None`. It used to be `None`, which was only
             # invisible while nothing read it back: `unattributed` now returns
@@ -82,7 +82,7 @@ class FakeAuditStore:
             # test pass against a store production does not have.
             "raw_json": json.dumps(message.raw),
             # The custody index, produced from the message exactly as
-            # `SqlAuditStore.append` produces it — NULL when Nora holds
+            # `SqlRecordStore.append` produces it — NULL when Nora holds
             # nothing, never `[]`. A fake that always stored None here would
             # let every custody test pass against a store production does not
             # have; `tests/contract/test_audit_store_contract.py` is what pins
@@ -110,7 +110,7 @@ class FakeAuditStore:
     async def set_delivery_outcome(
         self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
     ) -> None:
-        """Mirrors `SqlAuditStore.set_delivery_outcome`, `ts=None` included:
+        """Mirrors `SqlRecordStore.set_delivery_outcome`, `ts=None` included:
         a platform that returned no timestamp must leave the row's own alone,
         not blank it. Both halves are pinned for both stores by
         `tests/contract/test_audit_store_contract.py`."""
@@ -122,7 +122,7 @@ class FakeAuditStore:
                 return
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]:
-        """Mirrors `SqlAuditStore.unattributed`: person_id IS NULL, never
+        """Mirrors `SqlRecordStore.unattributed`: person_id IS NULL, never
         Nora's own rows, oldest first with `id` only as a tie-break, and `[]`
         for a non-positive limit. Every one of those is pinned for BOTH stores
         by `tests/contract/test_audit_store_contract.py`."""

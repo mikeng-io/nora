@@ -23,7 +23,7 @@ import time
 from typing import Any
 
 from nora.domain.models import TagContext, TranscriptRow
-from nora.domain.ports import AuditStore, EngagementRequest, MemoryStore
+from nora.domain.ports import EngagementRequest, MemoryStore, RecordStore
 from nora.persons import Persons
 
 log = logging.getLogger("nora.engagement.context")
@@ -35,7 +35,7 @@ class TranscriptInjection:
     def __init__(
         self,
         *,
-        audit: AuditStore,
+        audit: RecordStore,
         memory: MemoryStore,
         persons: Persons,
         context_window: int,

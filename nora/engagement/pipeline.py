@@ -42,7 +42,7 @@ from typing import Any
 from nora.agent.prefill import build_prefill, build_tag_message
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.domain.ports import AuditStore, EngagementRequest, MemoryStore, RosterSource
+from nora.domain.ports import EngagementRequest, MemoryStore, RecordStore, RosterSource
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
 from nora.tag import Debounce
@@ -69,7 +69,7 @@ class EngagementPipeline:
         self,
         *,
         adapter: Any,
-        audit: AuditStore,
+        audit: RecordStore,
         memory: MemoryStore,
         persons: Persons,
         doctrine_store: Any,

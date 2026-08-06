@@ -33,7 +33,7 @@ Four things about how it does that are the design, not incidental:
    `prune_loop`, and it starts after a delay so it is not competing with the
    first burst of ingest writes. The awaited Honcho feed between rows (200-800ms
    in production) is itself the throttle that keeps the single writer free;
-   `SqlAuditStore.set_person_id` writes one row per statement for the same
+   `SqlRecordStore.set_person_id` writes one row per statement for the same
    reason.
 
 3. **Best-effort, like everything Honcho-facing.** `HonchoClient` is documented
@@ -54,7 +54,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
-from nora.domain.ports import AuditStore, MemoryStore
+from nora.domain.ports import MemoryStore, RecordStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 
@@ -86,7 +86,7 @@ class AdoptionCounts:
 
 async def backfill(
     *,
-    audit: AuditStore,
+    audit: RecordStore,
     memory: MemoryStore,
     persons: Persons,
     metrics: Metrics,

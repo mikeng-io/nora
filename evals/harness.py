@@ -16,7 +16,7 @@ does NOT reach out to a real model. Wiring an actual live-model code path (for t
 M7 stage's `--suite all` network-requiring verification command) is out of scope for
 this task and is left for later work.
 
-`FakeAuditStore`/`FakeMemoryStore` replace `run_case`'s earlier real (tmp) SQLite
+`FakeRecordStore`/`FakeMemoryStore` replace `run_case`'s earlier real (tmp) SQLite
 audit store: nothing here is pytest-gated (see the module note above), and the
 evaluators only ever read the returned `Trajectory` — not persisted rows — so an
 in-memory double is equivalent for this harness's purpose and drops the tmp-dir/
@@ -45,8 +45,8 @@ from nora.app.offline import build_offline_pipeline
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
-    FakeAuditStore,
     FakeMemoryStore,
+    FakeRecordStore,
     ScriptedTurn,
     group_event,
 )
@@ -162,7 +162,7 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
         identity_path.write_text(_IDENTITY_TOML)
         persons = load_persons(identity_path)
 
-        audit = FakeAuditStore()
+        audit = FakeRecordStore()
         memory = FakeMemoryStore()
         adapter = FakeAdapter()
         runner = FakeAgentRunner(turns)

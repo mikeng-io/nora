@@ -25,7 +25,7 @@ Copied verbatim from the spec and `CLAUDE.md`. Every task's requirements implici
 
 - **Dependencies via `uv add`, never raw pip.** A bare `uv sync` silently drops the `evals` extra; restore with `uv sync --frozen --group dev --extra evals`.
 - **`nora/domain/` imports only the standard library** plus `nora.domain.models`. Mechanically enforced.
-- **`nora.infra` and `nora.testing` may import neither `nora.obs` nor `nora.config`** — both sit below `nora.obs` in the layers contract. This is why `SqlAuditStore` takes `metrics` by injection.
+- **`nora.infra` and `nora.testing` may import neither `nora.obs` nor `nora.config`** — both sit below `nora.obs` in the layers contract. This is why `SqlRecordStore` takes `metrics` by injection.
 - **Only `nora.agent.**` may import `strands`** (`tests/test_boundaries.py::test_strands_import_boundary`).
 - **The signal-cli daemon is neutral and shared — never touched.**
 - **Honcho health is `GET /health`**, never `GET /v3/workspaces`.
@@ -94,7 +94,7 @@ Paid for already; do not rediscover.
 | `nora/ingest/pipeline.py` | `IngestPipeline` — a readable table of contents over the five stages. |
 | `nora/ingest/policy.py` | `TriggerTextPolicy` — the `EngagePolicy` port implementation. |
 | `nora/ingest/stages/parse.py` | Raw transport event → `NormalizedMessage \| None`. |
-| `nora/ingest/stages/audit.py` | Append to `AuditStore`; on failure count and drop, never re-raise. |
+| `nora/ingest/stages/audit.py` | Append to `RecordStore`; on failure count and drop, never re-raise. |
 | `nora/ingest/stages/identity.py` | `Persons.resolve` → `PersonRef \| None`. |
 | `nora/ingest/stages/memory_feed.py` | Mapped senders only; off-path; never blocks ingest. |
 | `nora/ingest/stages/gate.py` | Runs the `EngagePolicy`; a policy error becomes `EngageDecision(engage=False, reason="policy_error")`. |
@@ -294,7 +294,7 @@ a naive substring check before landing."
 - Test: `tests/unit/test_ingest_stages.py`, `tests/unit/test_ingest_pipeline.py`
 
 **Interfaces:**
-- Consumes: `TriggerTextPolicy` (Task 1); ports `AuditStore`, `MemoryStore`, `EngagePolicy`; `nora.persons.Persons`.
+- Consumes: `TriggerTextPolicy` (Task 1); ports `RecordStore`, `MemoryStore`, `EngagePolicy`; `nora.persons.Persons`.
 - Produces: `IngestPipeline(*, adapter, audit, memory, persons, policy, metrics, spawn)` with `async def run(self, *, raw_event: dict) -> IngestResult`, where `IngestResult` is a frozen dataclass `(message: NormalizedMessage | None, decision: EngageDecision | None)`. `spawn` is a `Callable[[Coroutine], None]` supplied by the runtime so off-path work never blocks the listener.
 
 **Failure behaviour is the specification here** (spec §4.3). Each stage's behaviour on failure is a rule, not an implementation detail:
@@ -309,7 +309,7 @@ a naive substring check before landing."
 
 - [ ] **Step 1: Write the failing stage tests**
 
-Create `tests/unit/test_ingest_stages.py`. Each test asserts one row of that table. Use `nora.testing.FakeAuditStore` for the store and a local `FakeMemory` double for Honcho.
+Create `tests/unit/test_ingest_stages.py`. Each test asserts one row of that table. Use `nora.testing.FakeRecordStore` for the store and a local `FakeMemory` double for Honcho.
 
 ```python
 async def test_audit_failure_drops_the_message_and_never_raises(...):
@@ -362,12 +362,12 @@ import logging
 from typing import Any
 
 from nora.domain.models import NormalizedMessage
-from nora.domain.ports import AuditStore
+from nora.domain.ports import RecordStore
 
 log = logging.getLogger("nora.ingest.audit")
 
 
-async def run(*, message: NormalizedMessage, audit: AuditStore, metrics: Any) -> bool:
+async def run(*, message: NormalizedMessage, audit: RecordStore, metrics: Any) -> bool:
     """Return True if the message was recorded and ingest should continue."""
     try:
         await audit.append(message=message)
@@ -405,7 +405,7 @@ Paste both outputs. These two are the stages whose failure behaviour is load-bea
 - Test: `tests/unit/test_engagement_context.py`
 
 **Interfaces:**
-- Produces: `TranscriptInjection(*, audit: AuditStore, memory: MemoryStore, persons: Persons, context_window: int)` satisfying `ContextAssembler` — `async def assemble(self, *, request: EngagementRequest) -> TagContext`.
+- Produces: `TranscriptInjection(*, audit: RecordStore, memory: MemoryStore, persons: Persons, context_window: int)` satisfying `ContextAssembler` — `async def assemble(self, *, request: EngagementRequest) -> TagContext`.
 
 This replaces `Handler._collect_context`. Preserve its two behaviours exactly:
 - A transcript read failure logs, counts `nora_errors_total{stage="context"}`, and **continues with an empty transcript** — a thinner reply beats no reply.

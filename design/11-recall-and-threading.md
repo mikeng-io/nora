@@ -284,7 +284,7 @@ guard. Say so rather than implying otherwise.
 |---|---|
 | `nora/infra/honcho/client.py` (201 L) | `+ async def representation(*, peer_id, search_query, max_conclusions=5) -> list[str]` — split the returned prose on newlines, strip `[date]` prefixes and `-*` bullets exactly as `peer_card` does (`:189`). ~25 lines, lands ≈226. |
 | `nora/domain/ports.py` (288 L, cap 300) | `MemoryStore` gains `async def representation(...) -> list[str]`. Two lines. **Tight** — if any other port change lands in the same phase, split `MemoryStore` out first. |
-| `nora/engagement/recall.py` (**new**) | One responsibility: given a roster and a query, return `Mapping[person_id, tuple[str, ...]]` under one deadline, counting outcomes. ~70 lines. New module rather than growing `context.py`, so the deadline/fan-out logic is unit-testable without an `AuditStore`. |
+| `nora/engagement/recall.py` (**new**) | One responsibility: given a roster and a query, return `Mapping[person_id, tuple[str, ...]]` under one deadline, counting outcomes. ~70 lines. New module rather than growing `context.py`, so the deadline/fan-out logic is unit-testable without an `RecordStore`. |
 | `nora/engagement/context.py` (74 L) | Call `recall.gather(...)`; put the result on `TagContext`. ~8 lines. |
 | `nora/domain/models.py` (146 L) | `TagContext.recall: Mapping[str, tuple[str, ...]] = MappingProxyType({})`. stdlib only. |
 | `nora/agent/prefill.py` (131 L) | `_recall_block(ctx, roster)` — see §1.8. Drop the `read_peer_card` line from `_context_header` (`:31-40`). ~20 lines. |
@@ -353,7 +353,7 @@ threading built on exact-`ts` matching resolves everyone except her.
 
 ## 2.2 Where threading lives — one column
 
-**Rejected: parse `raw_json` on read.** `AuditStore.recent` already returns
+**Rejected: parse `raw_json` on read.** `RecordStore.recent` already returns
 `raw_json` (`nora/infra/sql/audit.py:104`), so it looks free. It is not:
 
 - **It cannot work for Nora's own rows at all.** Her `raw_json` is
@@ -470,7 +470,7 @@ the author comes from a row Nora stored, not from an absent `authorName`.
 1. **In window** — build `{ts: row}` from the rows already in hand, O(n), free. Render
    `↳ Name`, and for `<replying_to>` the parent's body.
 2. **Outside the window** — one bounded lookup:
-   `AuditStore.by_timestamps(conversation_id, ts_values, limit=10)`, covered exactly
+   `RecordStore.by_timestamps(conversation_id, ts_values, limit=10)`, covered exactly
    by `idx_messages_conv_ts` (`conversation_id`, `ts DESC`) as an index seek. One
    extra SELECT per tag, on the reply path, against a table capped at 500 rows per
    conversation (`config.toml:46`).
@@ -527,12 +527,12 @@ A full graph is not warranted. Do **not** build:
 | `nora/infra/sql/schema.py:61` | `quoted_ts` column, declared LAST. Update the "future column" comment. |
 | `nora/infra/sql/migrations/versions/0003_quoted_ts.py` (**new**) | Hand-written `op.add_column`. Docstring mirrors `0002`'s. |
 | `nora/infra/sql/audit.py` | `append` writes `quoted_ts` (same INSERT, `:65-77`); `recent` selects it (`:100-124`); `set_delivery_status` → `set_delivery_outcome(..., ts=None)` (`:129-141`); new `by_timestamps(...)` (~20 lines; file is 268 L — **watch the cap**, split `by_timestamps` into a sibling module if it lands with anything else). |
-| `nora/domain/ports.py` (288 L) | `AuditStore.by_timestamps`; `SendResult.timestamp: int \| None = None`. **At the cap** — this plus §1.7's `MemoryStore.representation` is ~6 lines and puts the file at ~294. Plan a split. |
+| `nora/domain/ports.py` (288 L) | `RecordStore.by_timestamps`; `SendResult.timestamp: int \| None = None`. **At the cap** — this plus §1.7's `MemoryStore.representation` is ~6 lines and puts the file at ~294. Plan a split. |
 | `nora/platform/signal/send.py:80-85` | Read `timestamp` off the JSON-RPC result into `SendResult`. |
 | `nora/agent/guards.py:110-145` (295 L, **at cap**) | Pass `result.timestamp` into `set_delivery_outcome`. Two lines — anything larger must move out first. |
 | `nora/agent/prefill.py` (131 L) | `_transcript_block` renders `↳`; `_context_header` gains the legend; `build_tag_message` renders the *resolved* parent, never the envelope copy. ~25 lines. |
 | `nora/agent/tools.py` | `read_buffer` adds `"reply_to"`. |
-| `nora/testing/fakes.py` (281 L, near cap) | `FakeAuditStore` matches — `quoted_ts`, `by_timestamps`, `set_delivery_outcome`. |
+| `nora/testing/fakes.py` (281 L, near cap) | `FakeRecordStore` matches — `quoted_ts`, `by_timestamps`, `set_delivery_outcome`. |
 | `tests/contract/test_audit_store_contract.py` | A `by_timestamps` / `quoted_ts` block across both stores (CLAUDE.md: a port never gains a second implementation without a shared contract suite). |
 | `tests/infra/test_schema_parity.py` | Column set + append position. |
 | `design/09-decision-index.md` | DEC-23; R-20. |

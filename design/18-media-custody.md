@@ -76,7 +76,7 @@ Two costs on top of that:
 * An object store is a **container, on the ingest write path, that can be
   down.** Today recording a message can fail two ways: SQLite, and the disk.
 * Its headline feature here — lifecycle rules that expire objects — is one Nora
-  does not need. She already runs a retention sweep (`SqlAuditStore.prune_all`,
+  does not need. She already runs a retention sweep (`SqlRecordStore.prune_all`,
   called periodically by the runtime). **Media expiry is that loop plus one
   path**: read the surviving rows' `media_json`, delete every blob no longer
   named. Content addressing means no reference counting — two rows naming the
@@ -194,7 +194,7 @@ for somebody else's family photographs. What has been built instead is
 everything the decision needs:
 
 * `FilesystemBlobStore.delete(key)` exists (on the concrete class, not the port
-  — the same split as `SqlAuditStore.prune_all`).
+  — the same split as `SqlRecordStore.prune_all`).
 * The sweep is **one path added to the loop that already runs**: collect the
   hashes named by surviving rows' `media_json`, delete every blob under the root
   that is not in that set. No reference counting, because content addressing

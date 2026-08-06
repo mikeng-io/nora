@@ -18,7 +18,7 @@ Phase 1b (domain layer, ports, mechanical enforcement).
 Baseline: 483 passed / 1 deselected / 1 xfailed.
 
 REMAINING, in order — spec §8:
-  2  Persistence: SQLAlchemy Core + Alembic behind AuditStore, baseline stamp,
+  2  Persistence: SQLAlchemy Core + Alembic behind RecordStore, baseline stamp,
      retire store/migrate.py, rewrite test_migration.py.   RISK: HIGH
   3  Pipelines: ingest/ + engagement/, Handler dissolved, evals stop importing
      tests/.                                                RISK: HIGHEST

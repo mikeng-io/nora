@@ -82,7 +82,7 @@ class NormalizedMessage:
     # produced by `nora.ingest.stages.media`, never by the parser, and empty on
     # every message that carried none or whose bytes could not be fetched.
     #
-    # It rides the message rather than being a parameter on `AuditStore.append`
+    # It rides the message rather than being a parameter on `RecordStore.append`
     # for exactly the reason `quote.quoted_ts` does (DEC-23, and DEC-15 before
     # it): WAL permits one writer, the ingest path drops a message on
     # contention, and a second write to attach custody to an already-inserted
@@ -113,7 +113,7 @@ class DeliveryStatus(Enum):
     """A transcript row's send state. Mirrors `nora.domain.errors.FailureClass`'s
     reasoning: this was stringly-typed over `"pending"`/`"sent"`/`"failed"`
     (the retired `nora/store/db.py::_VALID_STATUS`) in the same phase that typed
-    the adjacent failure taxonomy as an enum. `nora/infra/sql/audit.py::SqlAuditStore`
+    the adjacent failure taxonomy as an enum. `nora/infra/sql/audit.py::SqlRecordStore`
     is the persistence phase's adapter onto this type: it stores `.value` and
     round-trips through `DeliveryStatus(...)`, which raises `ValueError` on an
     unrecognized string on the way back out.
@@ -126,9 +126,9 @@ class DeliveryStatus(Enum):
 
 @dataclass(frozen=True)
 class TranscriptRow:
-    """One row as returned by `AuditStore.recent`. Replaces the untyped
+    """One row as returned by `RecordStore.recent`. Replaces the untyped
     `dict[str, Any]` rows the retired `nora/store/db.py::recent` used to
-    return; `nora.infra.sql.audit.SqlAuditStore` is what produces this shape
+    return; `nora.infra.sql.audit.SqlRecordStore` is what produces this shape
     at runtime now.
     """
 
@@ -161,7 +161,7 @@ class UnattributedRow:
     """One audited message that carries no `person_id` — its sender resolved to
     nobody at the moment of ingest (D6).
 
-    Returned by `AuditStore.unattributed`, which is what the startup
+    Returned by `RecordStore.unattributed`, which is what the startup
     lazy-adoption backfill (`nora.app.adoption`) re-resolves against a freshly
     loaded `identity.toml`. It carries `platform` — which `TranscriptRow`
     deliberately does not, being scoped to one conversation already — because
@@ -189,7 +189,7 @@ class UnattributedRow:
     audit table already bounded by retention, and a Signal envelope is a
     couple of kilobytes. A second port method returning the same rows plus
     one column would have been the alternative, and it would oblige every
-    future `AuditStore` to implement two near-identical scans.
+    future `RecordStore` to implement two near-identical scans.
     """
 
     id: int

@@ -210,7 +210,7 @@ The seams every later phase plugs into. **These are declarations only** — no i
 - Create: `tests/test_ports.py`
 
 **Interfaces:**
-- Produces: `PlatformAdapter`, `AuditStore`, `MemoryStore`, `EngagePolicy`, `ContextAssembler`, plus the value types `PlatformIdentity`, `SendResult`, `AdapterHealth`, `EngageDecision`, `EngagementRequest`, `ModelTier`.
+- Produces: `PlatformAdapter`, `RecordStore`, `MemoryStore`, `EngagePolicy`, `ContextAssembler`, plus the value types `PlatformIdentity`, `SendResult`, `AdapterHealth`, `EngageDecision`, `EngagementRequest`, `ModelTier`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -225,7 +225,7 @@ import pytest
 
 from nora.domain.ports import (
     AdapterHealth,
-    AuditStore,
+    RecordStore,
     ContextAssembler,
     EngageDecision,
     EngagePolicy,
@@ -268,7 +268,7 @@ def test_engage_decision_carries_the_rationale_and_threshold():
 
 
 def test_ports_are_runtime_checkable_protocols():
-    for port in (PlatformAdapter, AuditStore, MemoryStore, EngagePolicy, ContextAssembler):
+    for port in (PlatformAdapter, RecordStore, MemoryStore, EngagePolicy, ContextAssembler):
         assert getattr(port, "_is_protocol", False), f"{port.__name__} is not a Protocol"
 
 
@@ -276,7 +276,7 @@ def test_port_methods_are_keyword_only_after_self():
     """Convention from spec §4.2: free extensibility forever. A positional parameter
     added to a port later is a breaking change at every call site."""
     offenders = []
-    for port in (PlatformAdapter, AuditStore, MemoryStore, EngagePolicy, ContextAssembler):
+    for port in (PlatformAdapter, RecordStore, MemoryStore, EngagePolicy, ContextAssembler):
         for name, member in vars(port).items():
             if name.startswith("_") or not callable(member):
                 continue
@@ -364,7 +364,7 @@ class PlatformAdapter(Protocol):
 
 
 @runtime_checkable
-class AuditStore(Protocol):
+class RecordStore(Protocol):
     async def append(self, *, message: NormalizedMessage, is_nora: bool = False,
                      delivery_status: str = "pending", max_per_conversation: int = 500) -> int: ...
     async def recent(self, *, conversation_id: str, limit: int) -> list[dict[str, Any]]: ...
@@ -394,7 +394,7 @@ class ContextAssembler(Protocol):
 Notes that belong in the module docstring, because each encodes a decision that cost something to reach:
 - `PlatformAdapter` has **no `parse()`** — that would force every adapter to pretend its transport is dict-shaped, which Discord's gateway and Telegram's update batches are not. Parsers stay per-adapter modules, tested directly.
 - `MemoryStore.ensure_*` is **idempotent under concurrency** — today's `HonchoClient.ensure_session` is check-then-act, and person-centric identity means the same peer id can be hit from two platforms at once. Phase 6 adds the lock; the invariant is declared here.
-- `AuditStore` has no `prune` — `db.prune` is dead code today (the real prune is inline in `append`). It is left off the port deliberately rather than carried forward.
+- `RecordStore` has no `prune` — `db.prune` is dead code today (the real prune is inline in `append`). It is left off the port deliberately rather than carried forward.
 - `EngagePolicy` is **async now** even though `TriggerTextPolicy` is synchronous, because `ClassifierPolicy` is I/O and sync→async later is a breaking change through the whole ingest pipeline.
 
 - [ ] **Step 4: Verify**
@@ -575,7 +575,7 @@ If that last test fails against today's code, **do not weaken it** — report wh
 ```python
 """The ONE place that reads Settings. Everything else receives dependencies.
 
-A stage never sees Config; it receives an AuditStore, a MemoryStore, a Persons.
+A stage never sees Config; it receives an RecordStore, a MemoryStore, a Persons.
 That is what makes stages testable in isolation and what stops the god object
 from reforming. Enforced by import-linter (DEC-12).
 """

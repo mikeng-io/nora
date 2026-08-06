@@ -33,12 +33,12 @@ from typing import Any
 
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import (
-    AuditStore,
     BlobStore,
     EngageDecision,
     EngagePolicy,
     MediaSource,
     MemoryStore,
+    RecordStore,
 )
 from nora.persons import Persons
 from nora.policy import Policy
@@ -63,7 +63,7 @@ class IngestPipeline:
     def __init__(
         self,
         *,
-        audit: AuditStore,
+        audit: RecordStore,
         memory: MemoryStore,
         persons: Persons,
         policy: EngagePolicy,

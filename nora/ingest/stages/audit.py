@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from nora.domain.models import NormalizedMessage, PersonRef
-from nora.domain.ports import AuditStore
+from nora.domain.ports import RecordStore
 
 log = logging.getLogger("nora.ingest.audit")
 
@@ -19,7 +19,7 @@ log = logging.getLogger("nora.ingest.audit")
 async def run(
     *,
     message: NormalizedMessage,
-    audit: AuditStore,
+    audit: RecordStore,
     metrics: Any,
     person: PersonRef | None = None,
 ) -> bool:

@@ -52,29 +52,29 @@ avoid:
   `ConversationTarget`; Signal's `targetAuthor`/`targetTimestamp` are
   translated in `nora.platform.signal.react` with every other wire name.
 
-- `AuditStore.recent` returns `TranscriptRow`, not the `dict[str, Any]` row
+- `RecordStore.recent` returns `TranscriptRow`, not the `dict[str, Any]` row
   blobs the old `nora/store/db.py` returned, and `delivery_status` is
-  `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlAuditStore`
+  `DeliveryStatus`, not a bare string. `nora.infra.sql.audit.SqlRecordStore`
   implements this. Static conformance is checked by mypy (`nora.infra` is
   inside the strict override); the behavioural half is
   `tests/contract/test_audit_store_contract.py`, one suite parametrized over
-  `SqlAuditStore` and `nora.testing.FakeAuditStore` so the fake cannot drift
+  `SqlRecordStore` and `nora.testing.FakeRecordStore` so the fake cannot drift
   from production unnoticed.
 
-- `AuditStore` still deliberately has **no `prune`**, even though a caller now
-  exists. `SqlAuditStore.prune_all` is a retention sweep owned by the runtime,
+- `RecordStore` still deliberately has **no `prune`**, even though a caller now
+  exists. `SqlRecordStore.prune_all` is a retention sweep owned by the runtime,
   not something any stage programs against through the port. Putting it on the
   port would oblige every future implementation — including fakes — to
   implement a retention policy they do not have.
 
-- `AuditStore` DOES carry `unattributed`/`set_person_id`, which looks like the
+- `RecordStore` DOES carry `unattributed`/`set_person_id`, which looks like the
   same "retention chore" shape `prune` was refused for above, and is not. The
   distinction is who programs against it: `prune_all` is a policy the store
   decides for itself and no caller reasons about, whereas lazy adoption
   (`nora.app.adoption`) is a caller with a question only the store can answer —
   "which audited messages are still attributed to nobody?" — followed by a
   decision that same caller makes. A `MemoryStore`-backed or Postgres-backed
-  `AuditStore` would have to answer that question too, so it belongs on the
+  `RecordStore` would have to answer that question too, so it belongs on the
   port. `set_person_id` mirrors `set_delivery_outcome` exactly: one row, by id,
   unknown id is a silent no-op.
 
@@ -83,11 +83,11 @@ avoid:
   platform's timestamp must land on this already-existing update. `ts=None`
   leaves the row's timestamp alone.
 
-- `AuditStore.append` has **no `max_per_conversation` parameter**. Retention
+- `RecordStore.append` has **no `max_per_conversation` parameter**. Retention
   window size is a policy decided at the store's construction, not a value
   every caller re-specifies per call — `Protocol` methods don't inherit
   defaults, so a per-call default is already duplicated wherever it is
-  threaded today (`nora/infra/sql/audit.py:35`, `SqlAuditStore.__init__`'s
+  threaded today (`nora/infra/sql/audit.py:35`, `SqlRecordStore.__init__`'s
   `max_per_conversation` parameter).
 
 - `MemoryStore.ensure_*` is declared **idempotent under concurrency**.
@@ -124,11 +124,11 @@ avoid:
   here so it isn't cargo-culted into a `FeedResult` later.
 
 - `BlobStore` is `put`/`get` and NOTHING ELSE — in particular no `delete`, for
-  the same reason `AuditStore` has no `prune`. Deleting media is a retention
+  the same reason `RecordStore` has no `prune`. Deleting media is a retention
   policy the operator has not made yet (DEC-43), and putting it on the port
   would oblige every implementation, including fakes, to implement a policy
   they do not have. `FilesystemBlobStore.delete` exists on the CONCRETE class,
-  exactly as `SqlAuditStore.prune_all` does, so the mechanism is there the day
+  exactly as `SqlRecordStore.prune_all` does, so the mechanism is there the day
   the decision is.
 
   `put` returns the KEY and takes no key argument. A content-addressed store
@@ -340,7 +340,7 @@ class PlatformAdapter(Protocol):
 
 
 @runtime_checkable
-class AuditStore(Protocol):
+class RecordStore(Protocol):
     """No `prune`, no per-call `max_per_conversation` — see module docstring."""
 
     async def append(

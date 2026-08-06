@@ -48,13 +48,23 @@ Three layers, two stores, and the distinction that matters most:
 
 | layer | store | holds | tool |
 |---|---|---|---|
-| **hot** | SQLite | last 40 messages, verbatim | *(injected, no tool)* |
-| **deeper** | **same SQLite** | everything older, verbatim | `read_buffer` |
+| **hot** | PostgreSQL | last 40 messages, verbatim | *(injected, no tool)* |
+| **deeper** | **same PostgreSQL** | everything older, verbatim | `read_buffer` |
 | **derived** | Honcho | conclusions *about people* | `about` |
 
-**SQLite is the RECORD. Honcho is the INTERPRETATION.** SQLite is
-authoritative and is what R-2/A9 guarantee; Honcho is best-effort and may be
-absent — which is why `nora/infra`'s two clients have opposite error contracts.
+**The record store is the RECORD. Honcho is the INTERPRETATION.** The record
+store is authoritative and is what R-2/A9 guarantee; Honcho is best-effort and
+may be absent — which is why `nora/infra`'s two clients have opposite error
+contracts.
+
+- **`RecordStore`** (port) / **`SqlRecordStore`** (its one concrete, over
+  `postgresql+asyncpg://`) — the record store's read/write seam. **Renamed from
+  `AuditStore`/`SqlAuditStore` in the 2026-08-07 PostgreSQL migration**
+  (design/20): "audit" read as a compliance log, but this store IS the record
+  (hot + deeper above), not a side-channel of it. `FakeRecordStore`
+  (`nora.testing`) is its contract-bound double. Was SQLite until that
+  migration; the store is now one `nora` PostgreSQL database that presence
+  (design/19) will share.
 
 - **`read_buffer` is misnamed.** Nothing is buffered. It reads durable rows
   from disk. Honest name: `chat_earlier`. Pending rename.

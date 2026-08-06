@@ -90,11 +90,11 @@ class BackgroundTasks:
 
 
 class _PrunableStore(Protocol):
-    """The one method `prune_loop` needs. `AuditStore` (the domain port)
+    """The one method `prune_loop` needs. `RecordStore` (the domain port)
     deliberately has no `prune` — see `nora/domain/ports.py`'s module docstring:
     retention policy is owned by the runtime, not something a stage programs
     against through the port. This narrow local shape mirrors that call-out
-    (same pattern as `nora.ingest.stages.audit`'s narrow use of `AuditStore`)."""
+    (same pattern as `nora.ingest.stages.audit`'s narrow use of `RecordStore`)."""
 
     async def prune_all(self) -> int: ...
 

@@ -381,7 +381,7 @@ class PlatformAdapter(Protocol):
     async def send(self, *, target: ConversationTarget, text: str) -> SendResult: ...
     async def health(self) -> AdapterHealth: ...
 
-class AuditStore(Protocol):      # append / recent / set_delivery_status / prune / stats
+class RecordStore(Protocol):      # append / recent / set_delivery_status / prune / stats
 class MemoryStore(Protocol):     # ensure_workspace / ensure_peer / feed / peer_card / health
 class EngagePolicy(Protocol):
     async def should_engage(self, *, msg: NormalizedMessage) -> EngageDecision: ...
@@ -499,18 +499,18 @@ its hardcoded table becomes injected (DEC-10).
   `db.stats()` and is asserted by `tests/test_main.py:104`; Alembic subsumes it and the
   `stats()` contract changes.
 - `db.prune` is **dead code** — nothing calls it; the real prune is inline in `append`.
-  It is kept on `AuditStore` only if a caller appears.
+  It is kept on `RecordStore` only if a caller appears.
 
 ### 4.6 Composition root
 
 Components receive **dependencies, not config**. A stage never sees `Settings`; it
-receives an `AuditStore`. Enforced by import-linter (DEC-12), not by convention.
+receives an `RecordStore`. Enforced by import-linter (DEC-12), not by convention.
 
 ```python
 # app/composition.py — the ONLY place that reads Settings
 async def build_app(settings: Settings) -> App:
     engine   = create_async_engine(settings.store.url)   # a local, not a global
-    audit    = SqlAuditStore(engine, settings.store)
+    audit    = SqlRecordStore(engine, settings.store)
     memory   = HonchoStore(settings.memory)
     tools    = ToolRegistry.from_config(settings.tools, audit=audit, memory=memory)
     adapters = AdapterRegistry.from_config(settings.platforms)
@@ -682,7 +682,7 @@ later commit with its own verification.
 | Failure policy | enum + counters | `REQUESTED_TOOL` disclosure |
 
 **Not built in stage 1:** `Episode`/`EpisodeStore` in any form (DEC-3), MCP providers,
-the `deep` tier, `AuditStore.upsert`, `platform_message_id`/`edited_at`. On the last:
+the `deep` tier, `RecordStore.upsert`, `platform_message_id`/`edited_at`. On the last:
 a schema column is not a port, and the whole point of adopting Alembic is that adding one
 later is a cheap versioned migration.
 
@@ -700,7 +700,7 @@ catches a regressed Honcho probe, a config that won't boot, or missing migration
 |---|---|
 | **0** | **Prep, landed against current code, tests green.** Dev deps into `pyproject.toml` `[dependency-groups]` (ruff, mypy, import-linter, alembic, pytest) + `uv.lock`; delete `requirements-dev.txt`; add CI. **Honcho `GET /health` assertion test** (F4). `nora/domain` import-direction test. Config-construction seams: replace `harness._build_config`'s `dataclasses.replace` chain with a format-agnostic `_config_overrides(**kw)`; move direct `*Config` construction in `test_factory`/`test_logging`/`test_tracing` behind fixtures; make `evals/run.py`'s config load injectable. Back up `config.yaml`, `persons.yaml`, `data/messages.db`. Tag `nora:p0`. |
 | 1 | Foundation: `domain/`, `config/` pydantic, value-for-value `config.toml` + `identity.toml`, composition-root skeleton. Rewrites `test_config.py`, `test_env_template.py`, config half of `test_main.py` (**format tests, not behaviour tests — they cannot be the oracle**). Rewrites `test_boundaries.py` to allowlist by package prefix. Includes `docker-compose.yml`, `Dockerfile`, `.dockerignore`, `.env.example`, README, **runbook rewritten for Docker** (`runbook.md:64` says `systemctl`; Nora runs in a container, and `test_docs.py` passes it because it only greps the word "rollback"). `ARCHITECTURE.md` + `CLAUDE.md` created. |
-| 2 | Persistence. `nullable=True` on `id`; `sqlite_autoincrement=True`; `include_object` excluding `idx_messages_conv_ts`; **schema-parity test**; `alembic.ini` into `COPY` and `infra/sql/migrations/**` into `package-data` (a `versions/` dir has no `__init__.py`, so `packages.find` will not install it — the image would ship without its migrations). Rewrites `test_migration`, `test_db`, `test_health`, `test_tools`, `test_guards_deliverer`, and the harness fault injection (`monkeypatch.setattr(db, "append")` becomes a no-op once `AuditStore` is injected — 10 parametrized R-5 cases). **Risk: high.** |
+| 2 | Persistence. `nullable=True` on `id`; `sqlite_autoincrement=True`; `include_object` excluding `idx_messages_conv_ts`; **schema-parity test**; `alembic.ini` into `COPY` and `infra/sql/migrations/**` into `package-data` (a `versions/` dir has no `__init__.py`, so `packages.find` will not install it — the image would ship without its migrations). Rewrites `test_migration`, `test_db`, `test_health`, `test_tools`, `test_guards_deliverer`, and the harness fault injection (`monkeypatch.setattr(db, "append")` becomes a no-op once `RecordStore` is injected — 10 parametrized R-5 cases). **Risk: high.** |
 | 3 | Pipelines; `Handler` dissolved; **evals composition-root reuse moved here from P7** — otherwise `evals/` and two test files stay broken for four consecutive phases. Update `test_acceptance_rules.RULE_TESTS` deliberately (9 of its 21 named tests live in `tests/integration/`). **Risk: highest.** |
 | 4 | Platforms: registry, `resolve_identity()`, `PlatformIdentity.aliases`, `SendResult`. Optionally adopt `account = ""`. |
 | 5 | Agent: tool registry, `ToolSpec`, DEC-10 budgets. Update the boundary allowlist for the `tools/` package. **Risk: medium.** |
@@ -791,7 +791,7 @@ Normative. These are what keep the shape as the project grows.
   | add a behavioural rule | the decision index + a named test in `RULE_TESTS` |
 
 - **Naming:** ports are role nouns (`…Store` / `Adapter` / `Policy` / `Provider` /
-  `Assembler`); implementations are technology- or strategy-prefixed (`SqlAuditStore`,
+  `Assembler`); implementations are technology- or strategy-prefixed (`SqlRecordStore`,
   `TriggerTextPolicy`); all durations end `_seconds`; secrets are referenced by `*_env`.
 - **Test-seam policy:** production classes take collaborators through `__init__` only —
   no `*_fn` hooks, no `_for_test` params, no module-level mutable singletons. Faking the
@@ -831,7 +831,7 @@ Normative. These are what keep the shape as the project grows.
 - `PlatformAdapter.list_contacts()` + a `nora persons suggest` CLI emitting `identity.toml`
   stubs for operator confirmation. Does not violate D6. Not built unless asked.
 - Episodes (DEC-3) — accepted, not implemented.
-- MCP providers, the `deep` tier, `AuditStore.upsert`, `platform_message_id`/`edited_at`.
+- MCP providers, the `deep` tier, `RecordStore.upsert`, `platform_message_id`/`edited_at`.
 - Group-episode continuation semantics (`continue_when`) — undefined until episodes exist,
   and an open product question: continuing an episode on untagged messages would have Nora
   replying untagged, which presses on D1.

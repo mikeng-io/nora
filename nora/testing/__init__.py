@@ -3,15 +3,15 @@
 This is the package `tests/` and `evals/` are meant to share, so there is
 exactly one definition of each fake. `evals/harness.py` and
 `tests/integration/harness.py` both build their pipeline from
-`FakeAuditStore`/`FakeMemoryStore`/`FakeAdapter` plus `ScriptedTurn`/
+`FakeRecordStore`/`FakeMemoryStore`/`FakeAdapter` plus `ScriptedTurn`/
 `FakeAgentRunner`/`group_event` from here — the rewiring `evals/` needing
 `tests/` used to force. On the `tests/` side it is already used beyond
-`tests/contract/` — `tests/test_health.py` imports `FakeAuditStore` from
+`tests/contract/` — `tests/test_health.py` imports `FakeRecordStore` from
 here too.
 
 Every fake that is a second implementation of one of `nora/domain/ports.py`'s
 ports is bound by a contract suite in `tests/contract/` that it and the
-production implementation both pass — `FakeAuditStore` (`AuditStore`),
+production implementation both pass — `FakeRecordStore` (`RecordStore`),
 `FakeMemoryStore` (`MemoryStore`), `FakeRosterSource` (`RosterSource`,
 bound to `nora.platform.signal.roster.SignalRoster` by
 `tests/contract/test_roster_source_contract.py`), `FakeMediaSource`
@@ -36,10 +36,10 @@ ports — also exempt; see their docstrings.
 
 from nora.testing.fakes import (
     FakeAdapter,
-    FakeAuditStore,
     FakeBlobStore,
     FakeMediaSource,
     FakeMemoryStore,
+    FakeRecordStore,
     FakeRosterSource,
 )
 from nora.testing.scripted_agent import (
@@ -55,10 +55,10 @@ __all__ = [
     "TOOL_CHOICE_FIRST_CALL",
     "FakeAdapter",
     "FakeAgentRunner",
-    "FakeAuditStore",
     "FakeBlobStore",
     "FakeMediaSource",
     "FakeMemoryStore",
+    "FakeRecordStore",
     "FakeRosterSource",
     "ScriptedModel",
     "ScriptedTurn",

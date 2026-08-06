@@ -246,8 +246,8 @@ def media_json(blobs: tuple[MediaBlob, ...]) -> str | None:
     """The `messages.media_json` text for one message, or None when Nora holds
     nothing for it.
 
-    It lives HERE, in the domain, rather than in `SqlAuditStore` where it is
-    written, because `FakeAuditStore` has to produce the identical string —
+    It lives HERE, in the domain, rather than in `SqlRecordStore` where it is
+    written, because `FakeRecordStore` has to produce the identical string —
     they are in the same import-linter layer and cannot reach each other, so a
     private copy in each is the only alternative, and two copies of a
     serialization format is how a fake starts answering differently from
