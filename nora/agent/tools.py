@@ -148,9 +148,6 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                           time_shiftable=False),
     "read_buffer": NativeTool(2, "something was said further back than the messages "
                                  "you were shown"),
-    "read_peer_card": NativeTool(1, "durable memory addressed by a raw platform id. "
-                                    "You are never shown one, so reach for `about` "
-                                    "instead and do not invent an id"),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
     # `llm.limits.turns = 8` is the real global ceiling — these numbers only
@@ -264,7 +261,7 @@ READ_BUFFER_DEFAULT = 25
 # nothing, and that was read as "the tool was never called". The grep could not
 # have found anything either way: this module emitted exactly ONE log line on
 # any success path (`now`'s), and `lookup_person`, `group_members`, `about`,
-# `read_buffer`, `read_peer_card` and `send_reply` emitted none at all. Two
+# `read_buffer` and `send_reply` emitted none at all. Two
 # confident architectural conclusions were drawn from that zero and both were
 # wrong; one nearly retracted a design document (DEC-28). A silence that reads
 # identically whether the code ran on every turn or never is not evidence, and
@@ -478,47 +475,6 @@ def build_tool_specs(
         # never logged: this is the group's transcript.
         _record(metrics, "read_buffer", "ok", limit=asked, rows=len(out), threaded=threaded)
         return out
-
-    # Reviewed for the same shadowing shape as read_buffer (Task 1): `sender_id`
-    # here is also model-supplied and unscoped, hardcoded to "signal". This is
-    # NOT fixed in this task — see task-1-brief.md and the phase-8 notes for the
-    # judgement — but it is not a silent gap either: it reads a durable,
-    # per-PERSON Honcho card (not raw messages), and any sender_id valid enough
-    # to resolve already had to be a real platform id someone confirmed into
-    # identity.toml, so the disclosure is "what Nora recalls about a known
-    # person" rather than another group's live transcript. Still a real gap:
-    # nothing here checks that sender_id belongs to *this* conversation, so a
-    # model that already knows (or guesses) another person's platform id can
-    # pull their peer card across conversation boundaries.
-    async def read_peer_card(sender_id: str) -> list[str]:
-        """Look up a person's standing profile by their raw platform id.
-
-        Only call this if the peer_card block you were given is empty and who the person
-        is actually matters to your answer. Returns an empty list if you don't know them.
-
-        Args:
-            sender_id: The platform id of the person, as shown in the conversation.
-        """
-        try:
-            ref = persons.resolve("signal", sender_id)
-            if ref is None:
-                # The id itself is never logged — it is a phone number or an
-                # ACI, which is exactly what R-18 keeps off every wire.
-                _record(metrics, "read_peer_card", "not_found")
-                return []
-            # `or []` because the docstring above promises the model a list and
-            # this endpoint is documented to answer `null` (DEC-27) — without
-            # it the `len()` below would raise out of a tool, which
-            # `test_a_tool_never_raises_into_the_agent_loop` forbids.
-            card = await honcho.peer_card(peer_id=ref.honcho_peer_id) or []
-        except Exception:
-            log.exception("read_peer_card failed")
-            _record(metrics, "read_peer_card", "unavailable")
-            return []
-        _record(
-            metrics, "read_peer_card", "ok" if card else "nothing_known", facts=len(card),
-        )
-        return card
 
     # ---- the three room-scoped tools -------------------------------------
     #
@@ -908,7 +864,6 @@ def build_tool_specs(
         _spec("calculate", calculate),
         _spec("transit", transit),
         _spec("read_buffer", read_buffer),
-        _spec("read_peer_card", read_peer_card),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
         _spec("about", about),

@@ -78,11 +78,11 @@ def test_tool_call_budget_enforced_for_read_buffer():
     assert m.get("nora_guard_vetoes_total", rule="R-7") == 1
 
 
-def test_tool_call_budget_enforced_for_read_peer_card():
+def test_tool_call_budget_enforced_for_group_members():
     g = _guard()
-    assert g.evaluate("read_peer_card", {"sender_id": "+1"}) is None
-    g.record("read_peer_card")
-    assert g.evaluate("read_peer_card", {"sender_id": "+1"}) is not None
+    assert g.evaluate("group_members", {}) is None
+    g.record("group_members")
+    assert g.evaluate("group_members", {}) is not None
 
 
 def test_the_correction_names_what_the_model_already_has():
@@ -115,9 +115,8 @@ def test_the_scope_counter_fires_for_any_tool_not_just_the_two_scoped_ones():
     at. Counting only `send_reply`/`read_buffer` would silently miss it on
     `now` or on any tool added later."""
     m = Metrics()
-    assert _guard(m).evaluate("read_peer_card", {"sender_id": "+1",
-                                                 "conversation_id": "g2"}) is None
-    assert m.get("nora_tool_scope_violations_total", tool="read_peer_card") == 1
+    assert _guard(m).evaluate("now", {"conversation_id": "g2"}) is None
+    assert m.get("nora_tool_scope_violations_total", tool="now") == 1
 
 
 def test_a_well_formed_call_never_touches_the_scope_counter():

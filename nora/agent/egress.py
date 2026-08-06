@@ -29,7 +29,7 @@ stopped a reply from carrying somebody's phone number or ACI.
 
 That gap matters more here than in most systems, because Nora legitimately
 holds the material. The transcript she reasons over contains real sender ids,
-and `read_peer_card` returns durable recall about a person. `constraints.md`
+and `about` returns durable recall about a person. `constraints.md`
 tells her not to relay any of it — but a doctrine instruction is a request to a
 model, and this codebase has now been bitten four separate times by things
 that were true in intent and false in fact. A prompt-injected or simply sloppy

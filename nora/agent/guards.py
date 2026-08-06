@@ -210,9 +210,8 @@ class Deliverer:
 
 
 def _list_tool_names(names: Any) -> str:
-    """`"read_buffer, read_peer_card or send_reply"` — sorted so the R-7
-    unknown-tool message is deterministic and, incidentally, matches the
-    natural reading order of today's three native tools."""
+    """`"now, read_buffer or send_reply"` — sorted so the R-7 unknown-tool
+    message is deterministic and reads in a natural order."""
     ordered = sorted(names)
     if len(ordered) <= 1:
         return ", ".join(ordered)

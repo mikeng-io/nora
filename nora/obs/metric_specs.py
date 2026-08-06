@@ -225,7 +225,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("reason",),
     ),
     # The tools that had NO counter of their own — `now`, `read_buffer`,
-    # `read_peer_card`, `send_reply`, and now `calculate` (DEC-35), whose two
+    # `send_reply`, and now `calculate` (DEC-35), whose two
     # statuses are `ok` and `refused`: a refusal counted as `ok` would make
     # "is the model writing expressions she can actually evaluate" unanswerable
     # from /metrics, which is this counter's own failure in a new place. Same

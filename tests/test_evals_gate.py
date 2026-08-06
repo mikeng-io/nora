@@ -44,7 +44,7 @@ def test_tool_budget_enforces_the_r7_limits():
     assert ToolBudget().evaluate(_t(["read_buffer", "read_buffer", "send_reply"])).passed
     assert not ToolBudget().evaluate(
         _t(["read_buffer", "read_buffer", "read_buffer", "send_reply"])).passed
-    assert not ToolBudget().evaluate(_t(["read_peer_card", "read_peer_card"])).passed
+    assert not ToolBudget().evaluate(_t(["group_members", "group_members"])).passed
 
 
 def test_no_redundant_read_fails_when_prefill_was_sufficient():

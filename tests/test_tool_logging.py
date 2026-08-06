@@ -4,8 +4,8 @@
 `grep lookup_person data/nora.log` returned zero, and that was read as "the
 tool was never called". It could not have returned anything either way:
 `nora/agent/tools.py` emitted exactly one log line on any success path
-(`now`'s), and `lookup_person`, `group_members`, `about`, `read_buffer`,
-`read_peer_card` and `send_reply` emitted none at all. Two architectural
+(`now`'s), and `lookup_person`, `group_members`, `about`, `read_buffer`
+and `send_reply` emitted none at all. Two architectural
 conclusions were drawn from that zero, both wrong, and one nearly retracted a
 design document. A silence that reads identically whether the code ran on every
 turn or never is not evidence.
@@ -194,7 +194,6 @@ async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
     tools = wiring["tools"]
     await _call(tools["now"])
     await _call(tools["read_buffer"], limit=40)
-    await _call(tools["read_peer_card"], sender_id="+85290000101")
     await _call(tools["group_members"])
     await _call(tools["lookup_person"], name="阿豹")
     await _call(tools["about"], person="俊爺")
@@ -202,7 +201,7 @@ async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
     await _call(tools["send_reply"], text="七點半")
     named = [record["tool"] for record in _tool_lines(wiring["path"])]
     assert sorted(named) == sorted([
-        "now", "read_buffer", "read_peer_card", "group_members",
+        "now", "read_buffer", "group_members",
         "lookup_person", "about", "calculate", "send_reply",
     ])
 
@@ -263,12 +262,12 @@ async def test_a_clamped_limit_is_reported_as_the_clamped_value(wiring):
 
 async def test_no_tool_line_carries_a_phone_number_or_an_aci(wiring):
     """`data/nora.log` is a file on disk and nothing scans it on the way out.
-    `read_peer_card` takes a raw platform id and `lookup_person` takes a
-    model-supplied string that has arrived as a phone number before
-    (`_asked_about` exists for that) — so both are called here with one."""
+    `lookup_person` and `about` take a model-supplied string that has arrived
+    as a phone number or an ACI before (`_asked_about` exists for that) — so
+    both are called here with one."""
     tools = wiring["tools"]
-    await _call(tools["read_peer_card"], sender_id="+85290000101")
-    await _call(tools["read_peer_card"], sender_id="+85260000000")
+    await _call(tools["lookup_person"], name="+85290000101")
+    await _call(tools["lookup_person"], name="+85260000000")
     await _call(tools["lookup_person"], name="+85290000102")
     await _call(tools["about"], person="a1000001-0000-4000-8000-000000000001")
     # ...and the remaining three, so the scan below covers the whole file
@@ -290,7 +289,6 @@ async def test_no_tool_line_carries_a_conclusion_or_a_transcript_body(wiring):
     tools = wiring["tools"]
     await _call(tools["about"], person="俊爺")
     await _call(tools["read_buffer"], limit=40)
-    await _call(tools["read_peer_card"], sender_id="+85290000101")
     await _call(tools["send_reply"], text="今晚七點半得")
     text = wiring["path"].read_text()
     for secret in ("Miles is from Ridgeline", "likes espresso", "去邊食", "你屋企",

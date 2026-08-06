@@ -87,9 +87,25 @@ async def wiring(tmp_path):
 
 def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
-        "now", "read_buffer", "read_peer_card", "send_reply",
+        "now", "read_buffer", "send_reply",
         "group_members", "lookup_person", "about", "calculate", "transit",
     }
+
+
+def test_read_peer_card_is_gone_from_the_table_and_the_capability_block():
+    """DEC-44: `read_peer_card` was R-21's last structural violation — its only
+    parameter was a raw platform id the model is never shown, and it was not
+    room-scoped, so a model that guessed another person's id pulled their card
+    across conversation boundaries. It is deleted. This pins the deletion in
+    both places a tool can exist: `NATIVE_TOOLS` (what makes a tool callable at
+    all — R-7 default-denies anything absent) and the generated capability
+    block the doctrine carries. Re-adding the tool turns this red."""
+    from nora.agent.registry import ToolRegistry
+    from nora.agent.tools import NATIVE_TOOLS
+
+    assert "read_peer_card" not in NATIVE_TOOLS
+    assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
+    assert "read_peer_card" not in ToolRegistry().capability()
 
 
 def test_feed_honcho_is_not_a_tool(wiring):
@@ -282,21 +298,6 @@ async def test_read_buffer_defaults_to_less_than_the_ceiling(wiring, monkeypatch
     assert READ_BUFFER_DEFAULT < READ_BUFFER_MAX
 
 
-async def test_read_peer_card_resolves_the_sender_to_a_person(wiring):
-    assert await _call(wiring["tools"]["read_peer_card"], sender_id="+852111") == \
-        ["likes espresso"]
-
-
-async def test_read_peer_card_returns_empty_for_an_unmapped_sender(wiring):
-    assert await _call(wiring["tools"]["read_peer_card"], sender_id="+852999") == []
-    assert wiring["honcho"].peers == []      # no peer is ever created for an unmapped sender
-
-
-async def test_read_peer_card_returns_empty_when_honcho_is_down(wiring):
-    wiring["honcho"].fail = True
-    assert await _call(wiring["tools"]["read_peer_card"], sender_id="+852111") == []
-
-
 async def test_send_reply_delegates_to_the_deliverer(wiring):
     assert await _call(wiring["tools"]["send_reply"], text="hello") is True
     assert wiring["sink"].texts == ["hello"]
@@ -305,7 +306,6 @@ async def test_send_reply_delegates_to_the_deliverer(wiring):
 
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):
     await _call(wiring["tools"]["read_buffer"], limit=40)
-    await _call(wiring["tools"]["read_peer_card"], sender_id="+852111")
     await _call(wiring["tools"]["group_members"])
     await _call(wiring["tools"]["lookup_person"], name="Miles")
     await _call(wiring["tools"]["about"], person="Miles")
@@ -323,17 +323,16 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
 # ---- every tool call is counted, by outcome ---------------------------------
 
 
-async def test_the_four_tools_without_a_counter_of_their_own_now_have_one(wiring):
-    """`nora_room_lookups_total{tool,status}` covered three of the seven; these
-    four had nothing, so "did she ever call read_buffer" was unanswerable from
+async def test_the_tools_without_a_counter_of_their_own_now_have_one(wiring):
+    """`nora_room_lookups_total{tool,status}` covered three of them; these had
+    nothing, so "did she ever call read_buffer" was unanswerable from
     `/metrics` as well as from the log. Same `{tool, status}` shape rather than
-    four bespoke series."""
+    bespoke series."""
     tools, metrics = wiring["tools"], wiring["metrics"]
     await _call(tools["now"])
     await _call(tools["read_buffer"], limit=40)
-    await _call(tools["read_peer_card"], sender_id="+852111")
     await _call(tools["send_reply"], text="hello")
-    for tool in ("now", "read_buffer", "read_peer_card", "send_reply"):
+    for tool in ("now", "read_buffer", "send_reply"):
         assert metrics.get("nora_tool_calls_total", tool=tool, status="ok") == 1, tool
 
 
@@ -367,40 +366,6 @@ async def test_a_tool_that_could_not_answer_is_counted_apart_from_one_that_did(
     await _call(wiring["tools"]["read_buffer"], limit=40)
     assert metrics.get("nora_tool_calls_total", tool="read_buffer", status="ok") == 1
     assert metrics.get("nora_tool_calls_total", tool="read_buffer", status="unavailable") == 1
-
-
-async def test_read_peer_card_counts_four_different_answers_behind_one_empty_list(
-    wiring, monkeypatch,
-):
-    """The model sees `[]` for all four; only the call site knows which it got.
-
-    A sender who maps to nobody, a person Honcho has nothing on, a person it
-    does have something on, and a raising transport. `read_peer_card` returned
-    `[]` for every one of these for the whole life of the deployment, which is
-    how a dead endpoint went unnoticed.
-
-    **Honestly bounded.** The live `peer_card` answers `null` rather than
-    failing when it cannot help, so a transport that degrades quietly is still
-    counted `nothing_known` here — that gap belongs to the endpoint and is
-    exactly why DEC-27 replaced it with `about`/`representation`, whose
-    `Recollection.reachable` carries the bit. What this counter fixes is the
-    part that was recoverable at the call site.
-    """
-    tools, metrics = wiring["tools"], wiring["metrics"]
-
-    async def boom(**kwargs):
-        raise RuntimeError("connection reset")
-
-    await _call(tools["read_peer_card"], sender_id="+852999")     # not in identity.toml
-    await _call(tools["read_peer_card"], sender_id="+852111")     # known, has a card
-    wiring["honcho"].cards = {}
-    await _call(tools["read_peer_card"], sender_id="+852111")     # known, nothing stored
-    monkeypatch.setattr(wiring["honcho"], "peer_card", boom)
-    await _call(tools["read_peer_card"], sender_id="+852111")     # transport raised
-    for status in ("not_found", "ok", "nothing_known", "unavailable"):
-        assert metrics.get(
-            "nora_tool_calls_total", tool="read_peer_card", status=status,
-        ) == 1, status
 
 
 async def test_a_refused_send_is_not_counted_as_a_sent_one(wiring):

@@ -60,7 +60,7 @@ Signal group
 ② TAGGING PATH (trigger only, via the Strands Agents SDK)
    collect context (recent buffer rows, tagger's Honcho peer card, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
-   → tools: now / read_buffer / read_peer_card / send_reply
+   → tools: now / read_buffer / send_reply
             + room-scoped: group_members / lookup_person / about
    → reply → audit row (delivery_status=pending → sent/failed) → Honcho feed
 ```
