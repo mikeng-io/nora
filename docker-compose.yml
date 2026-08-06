@@ -97,6 +97,18 @@ services:
       # and not `:?`. config.toml's obs.tracing.headers_env names this variable; the
       # value never appears in config (DEC-8).
       - LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}
+      # Grounding + presence keys, all OPTIONAL (`:-` not `:?`): each names a
+      # capability that stays `unavailable` (never a crash, never a leak) when
+      # its key is absent — config.toml's `enabled` flag plus a present key is
+      # what turns each on. Values live in the host `.env`, which compose reads
+      # for substitution; they never appear in the image or this file (DEC-8).
+      #   GOOGLE_MAPS_API_KEY   — the `route` tool (Routes+Places+Geocoding)
+      #   MEDIA_ENCRYPTION_KEY  — AES-256-GCM at rest for attachment custody
+      #   LIFE360_USERNAME/PASSWORD — the presence collector's observer account
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      - MEDIA_ENCRYPTION_KEY=${MEDIA_ENCRYPTION_KEY:-}
+      - LIFE360_USERNAME=${LIFE360_USERNAME:-}
+      - LIFE360_PASSWORD=${LIFE360_PASSWORD:-}
       # The group is in Hong Kong. Without this the container runs UTC, and
       # `nora.agent.prefill._now_line` — which calls `datetime.now().astimezone()`
       # — tells her it is 07:05 when the group's clock says 15:05.
