@@ -24,6 +24,15 @@ Measured on 2026-08-06 against the live instance:
   RELATIONSHIP: / INSTRUCTION:` — in **9 ms**, versus 198 ms for
   `representation`.
 
+**Corrected 2026-08-06 (DEC-38).** One measurement recorded during the
+follow-through does not survive re-testing: "`{}` returns Explicit + Deductive,
+our call shape returns Explicit ONLY". That was taken against `miles_novak`, whose
+16 documents are *all* `level='explicit'`, so the sections it saw were an
+artefact of that peer rather than of the request. Against `probe_zzz` the old
+shape returns all three sections. The defect it was pointing at is real, but it
+is the channel arithmetic (semantic 5 / derived 0 / recent 0) and it is not
+diagnosable from which headings come back.
+
 ## Decision
 
 **SQLite is the RECORD. Honcho is the INTERPRETATION.**

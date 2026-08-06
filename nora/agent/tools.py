@@ -188,6 +188,15 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 #   read_buffer(200) -> 6,592 tokens        recall        ->   151
 #   read_buffer(40)  -> 1,368 tokens        lookup_person ->   112
 #
+# `recall`'s 151 is the OLD figure and is now low. That measurement was taken
+# against `miles_novak`, whose whole store is 16 explicit observations, through a
+# call shape that spent the entire budget on one channel (DEC-38). Against a
+# corpus with derived levels in it — `probe_zzz`, 102 documents — the new shape
+# returns ~1,100 characters of conclusions, which puts one `recall` in the same
+# order as `read_buffer(40)` rather than an order below it. Stated in characters
+# because no tokenizer is available offline in this checkout; re-measure the
+# token figure the next time one is, rather than scaling it by guess.
+#
 # `read_buffer` has `budget: 2` (R-7/DEC-10), so at the old ceiling of 200 two
 # calls were 13,184 tokens — a fifth of `total_tokens = 64000` on their own,
 # and more than half of the 24,000 that cap used to be. 60 caps the pair at
@@ -600,7 +609,12 @@ def build_tool_specs(
                 # more value to invent per call. Truncated because it is a
                 # search query, not a prompt.
                 search_query=(question or ref.name)[:500],
-                max_conclusions=5,
+                # `max_conclusions` is DELIBERATELY not passed. It is not a row
+                # limit — Honcho spends it across three independent queries
+                # (semantic / most-derived / recent), and the arithmetic that
+                # divides it lives with the call that sends it
+                # (`HonchoClient.representation`). Restating a number here that
+                # only means something there is how the two drift apart.
             )
         except Exception:
             # `MemoryStore` is documented never to be load-bearing, so this is

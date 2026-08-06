@@ -46,6 +46,26 @@ _ID = re.compile(r"^\[id:[^\]]*\]\s*")
 _PATTERN = re.compile(r"^\*\*Pattern\*\*\s*\[[^\]]*\]:\s*")
 _CONTRADICTION = re.compile(r"^\*\*CONTRADICTION\*\*:\s*")
 
+# Cosine distance above which a semantic hit is discarded rather than returned.
+#
+# BRACKETED ON BOTH SIDES against the live instance and the `probe_zzz` corpus
+# on 2026-08-06, because a threshold justified from one direction only is a
+# guess:
+#
+#   d       "how does he get to work"      "quantum chromodynamics lattice…"
+#   none    5 hits, correct                5 hits — the VW Golf, the rusty
+#   0.8     5 hits, correct                Chinese: pure nearest-neighbour noise
+#   0.5     5 hits, correct                0 hits
+#   0.3     0 hits — kills the real one    0 hits
+#
+# Without a floor the semantic channel ALWAYS returns `top_k` rows: pgvector
+# ranks, it does not judge, so a question about nothing in the corpus comes back
+# with the nearest unrelated facts and Nora reads them out as though they were
+# an answer. 0.5 is the widest value that rejects that cleanly while keeping
+# every real hit. Calibrated against the embedding model, not the deployment,
+# which is why it lives here and not in `config.toml`.
+_MAX_DISTANCE = 0.5
+
 
 def _conclusions(representation: Any) -> tuple[str, ...]:
     """One markdown blob → one conclusion per OBSERVATION. Never one per line.
@@ -325,7 +345,7 @@ class HonchoClient:
         return [str(line).lstrip("-* ").strip() for line in card if str(line).strip()]
 
     async def representation(
-        self, *, peer_id: str, search_query: str, max_conclusions: int = 5
+        self, *, peer_id: str, search_query: str, max_conclusions: int = 9
     ) -> Recollection:
         """What Honcho concludes about one peer, curated to one question.
 
@@ -354,13 +374,50 @@ class HonchoClient:
         (`ensure_session` builds `nora-<peer_id>`), so scoping to one would
         return a subset of what the unscoped call already returns for that
         same peer.
+
+        ## `max_conclusions` is a budget split THREE ways, not a row limit
+
+        Read out of `src/crud/representation.py::
+        _get_working_representation_internal` (honcho 3.0.11), which spends it
+        across three independent queries::
+
+            semantic = min(search_top_k or total // 3, total)   # pgvector rank
+            derived  = min(total // 3, total - semantic)        # times_derived DESC
+            recent   = total - semantic - derived               # created_at DESC
+
+        This used to send `search_top_k = max_conclusions` and no
+        `include_most_frequent`, which computes to `semantic = 5, derived = 0,
+        recent = 0`: **the semantic channel ate the entire budget and the other
+        two were structurally unreachable.** The derived channel is the one
+        ADR 0001 says Honcho exists for — `times_derived` counts how often the
+        deduplicator has re-derived the same conclusion, so it ranks the durable
+        core of what is known about a person above whatever one question happens
+        to embed near.
+
+        `search_top_k = max_conclusions // 3` restores an even three-way blend.
+        That is also Honcho's own default when `search_top_k` is omitted, and it
+        is sent explicitly anyway: an upstream default is a value that can change
+        underneath us without a diff, and the one thing this endpoint has proven
+        is that its behaviour is worth pinning from this side. `max(1, …)` keeps
+        it inside the API's `ge=1` bound for small budgets.
+
+        `max_conclusions` rose from 5 to 9 in the same change, because the split
+        turns it into three budgets rather than one. At 5 the semantic channel
+        was **one row**, and measured against `probe_zzz` — a corpus that
+        demonstrably contains the answer — one row was not enough to answer «how
+        does he get to work»: the nearest hit is *does the morning school run*
+        and *drives to work instead of taking the train* is third. 9 gives 3/3/3
+        and costs roughly 1,100 characters of tool result, in the same order as
+        `read_buffer`'s default and well inside `llm.limits`.
         """
         result = await self._post(
             self._url(f"/peers/{peer_id}/representation"),
             {
                 "search_query": search_query,
                 "max_conclusions": max_conclusions,
-                "search_top_k": max_conclusions,
+                "search_top_k": max(1, max_conclusions // 3),
+                "include_most_frequent": True,
+                "search_max_distance": _MAX_DISTANCE,
             },
             self._representation_timeout,
         )
