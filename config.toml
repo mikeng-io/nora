@@ -104,7 +104,7 @@ context_window = 40
 dir = "nora/doctrine"
 reload = "mtime"
 strict = true
-chinese_script = "traditional"
+language_hint = "yue-Hant-HK"          # BCP 47 (RFC 5646): Cantonese, Traditional Han, Hong Kong
 canary = "NORA-CANARY-00000000"
 display_name = "Nora"
 

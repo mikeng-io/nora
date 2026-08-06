@@ -86,6 +86,32 @@ CHANGE_POLICIES = ("operator-only", "agent-may-edit")
 # module's side the snake_case name looks strictly better, and it is not.
 _SNAKE_CASE_RE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
 
+# design/17 §4's kind taxonomy, read through RFC 2119. A `constraint` is a MUST,
+# a `conduct` line is a SHOULD, and `identity`/`voice` describe and carry
+# neither — so a file whose normative keyword contradicts its kind (a hard rule
+# that merely SHOULD hold, a habit written as an absolute MUST, or any normative
+# keyword in a file that only describes) is a category error the loader can see.
+#
+# Scoped to UPPERCASE keywords on purpose, which is RFC 2119 §8's own rule:
+# force lives in the capitalisation, so an ordinary sentence's lowercase "should"
+# or "must" never trips this — only a deliberate normative keyword in the wrong
+# file does. It does NOT require any file to USE these keywords: today's doctrine
+# speaks in natural imperatives ("Never reveal…", "Don't state as fact…") and
+# passes untouched. The two-word forms lead the alternation so `SHOULD NOT`
+# matches ahead of `SHOULD`. `MAY`/`OPTIONAL` are omitted — permission is not a
+# claim any kind's register contradicts.
+_RFC2119_ABSOLUTE = ("MUST NOT", "MUST", "SHALL NOT", "SHALL", "REQUIRED")
+_RFC2119_ADVISORY = ("SHOULD NOT", "SHOULD", "RECOMMENDED")
+_RFC2119_RE = re.compile(r"\b(" + "|".join((*_RFC2119_ABSOLUTE, *_RFC2119_ADVISORY)) + r")\b")
+# What each AUTHORED kind may not contain (derived kinds have no authored file):
+# a constraint that only SHOULD holds is not a MUST; a conduct habit written as
+# an absolute MUST is over-stated; identity/voice describe and carry neither.
+_FORBIDDEN_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "constraint": _RFC2119_ADVISORY,
+    "conduct": _RFC2119_ABSOLUTE,
+    "identity": (*_RFC2119_ABSOLUTE, *_RFC2119_ADVISORY),
+}
+
 
 class DoctrineError(Exception):
     """A doctrine problem that must stop the process (strict) or skip a file (lenient)."""
@@ -278,6 +304,33 @@ def check_kind_boundaries(
             )
 
 
+def check_normative_register(section: DoctrineSection) -> None:
+    """design/17 §4's kind taxonomy, enforced as RFC 2119 register.
+
+    A `constraint` speaks in MUST, a `conduct` line in SHOULD, and
+    `identity`/`voice` describe and use neither. This refuses the specific
+    contradiction — an advisory keyword weakening a hard rule, an absolute one
+    hardening a habit, or any normative keyword at all in a file that only
+    describes — and nothing else. It is UPPERCASE-scoped (RFC 2119 §8), so it
+    cannot be tripped by the word "should" in prose, and it requires no file to
+    USE these keywords: the shipped doctrine uses natural imperatives and is
+    untouched by it. The mechanical companion to `check_kind_boundaries` — kind
+    is the one part of design/12 §2's authority model that can be mechanised, so
+    this mechanises another edge of it.
+    """
+    forbidden = _FORBIDDEN_KEYWORDS.get(section.kind)
+    if not forbidden:
+        return
+    for match in _RFC2119_RE.finditer(section.body):
+        if match.group(1) in forbidden:
+            raise DoctrineError(
+                f"{section.path.name}: a {section.kind} file may not use the "
+                f"RFC 2119 keyword {match.group(1)!r}. A constraint is a MUST, a "
+                "conduct line is a SHOULD, and identity/voice describe and use "
+                "neither — the keyword contradicts the file's kind."
+            )
+
+
 CAPABILITY_ORDER = 35
 CAPABILITY_DESCRIPTION = (
     "What you can find out, and when to reach for it. Generated from the tools "
@@ -414,6 +467,7 @@ class DoctrineStore:
                         "either is a cache with no invalidation."
                     )
                 check_kind_boundaries(section, self._tool_names)
+                check_normative_register(section)
                 sections.append(section)
             except DoctrineError:
                 if self._strict:

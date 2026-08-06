@@ -83,6 +83,20 @@ async def test_the_doctrine_the_root_builds_carries_the_generated_capability(cfg
         assert f"- {name} — " in text, f"{name} is registered but not in the doctrine"
 
 
+async def test_the_runtime_context_carries_the_configured_language_tag(cfg):
+    """The composition root must hand the loader `doctrine.language_hint`, or
+    every tag's runtime_context ships a blank `language:` line — the model is
+    then never told, from outside, what to speak. This was a live defect: the
+    DoctrineStore had the parameter and defaulted it to "", and the root never
+    passed it. The value is a BCP 47 tag (RFC 5646), asserted here against the
+    real assembled runtime_context. Drop `language_hint=` from the root and the
+    line reads `language:` with nothing after it, and this goes red.
+    """
+    deps = await build_dependencies(cfg)
+    assert "language: yue-Hant-HK" in deps.doctrine.runtime_context
+    assert "language: \n" not in deps.doctrine.runtime_context
+
+
 async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_path):
     """The catalogue gate's backticked half is inert without them, and an inert
     gate that nobody notices is worse than no gate.

@@ -114,7 +114,7 @@ timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never th
 dir = "nora/doctrine"
 reload = "mtime"                      # mtime | startup
 strict = true
-chinese_script = "traditional"        # traditional | simplified
+language_hint = "yue-Hant-HK"         # BCP 47 (RFC 5646): Cantonese, Traditional Han, Hong Kong
 canary = "CHANGE-ME-PER-DEPLOYMENT"   # fixed string; R-6 leak sentinel
 display_name = "Nora"
 

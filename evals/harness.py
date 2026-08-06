@@ -153,8 +153,8 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
     doctrine_store = DoctrineStore(
         DOCTRINE_DIR, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        trigger=cfg.engagement.trigger.text, tool_names=TOOL_NAMES,
-        capability=CAPABILITY_BLOCK, metrics=metrics,
+        trigger=cfg.engagement.trigger.text, language_hint=cfg.doctrine.language_hint,
+        tool_names=TOOL_NAMES, capability=CAPABILITY_BLOCK, metrics=metrics,
     )
 
     with tempfile.TemporaryDirectory(prefix="nora-eval-") as tmp:
