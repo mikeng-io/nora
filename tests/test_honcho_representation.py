@@ -26,10 +26,12 @@ from nora.infra.honcho.client import _conclusions
 
 # The exact body the live instance returned for peer `miles_novak` on 2026-08-06.
 #
-# ONE SECTION, and that is the trap this file used to be. `miles_novak` has 16
-# documents and every one of them is `level='explicit'` (counted in Postgres),
-# so this body cannot exercise three of the four shapes `format_as_markdown`
-# emits — and for months the parser was "passing" against the only shape it
+# ONE SECTION, and that is the trap this file used to be. EVERY `miles_novak`
+# document is `level='explicit'` (counted in Postgres; 16 of them when this was
+# written, 20 a few hours later — that peer is a live deployment and the count
+# keeps moving, which is why the claim here is the LEVEL and not the number).
+# So this body cannot exercise three of the four shapes `format_as_markdown`
+# emits, and for months the parser was "passing" against the only shape it
 # happened to handle. Keep it, because it is real; never treat it as coverage.
 LIVE_BODY = (
     "## Explicit Observations\n\n"
