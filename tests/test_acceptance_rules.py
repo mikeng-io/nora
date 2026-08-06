@@ -65,6 +65,17 @@ RULE_TESTS = {
     # after R-28 (R-26 is reserved by design/proposed/18 for the unshipped
     # context-budget work), DEC-48. See `nora.engagement.queue`.
     "R-30": "test_three_tags_for_one_conversation_are_answered_in_fifo_order",
+    # R-31: media_fetch reads a stored image back through MiMo-V2.5, scoped to
+    # THIS conversation's custody over a bounded window, cached by content hash
+    # and screened on every serve, under its own vision timeout (derived from
+    # llm.timeout_seconds, provably < the loop budget) and byte ceiling. The
+    # MiMo description is untrusted egress — identifier-screened like `about`,
+    # with the honest caveat that a bare local number is a residual risk equal
+    # to R-18's. Image only; `not_an_image` for the rest; inert-by-config behind
+    # [media] enabled. design/14 §2.3 reserved R-27/R-28 for grounding and said
+    # search/fetch take the next free number when they ship — this is fetch, so
+    # R-31 (R-26 is still reserved by design/proposed/18). See DEC-56.
+    "R-31": "test_a_stored_image_is_read_only_within_scope_and_screened_on_serve",
 }
 
 
