@@ -16,9 +16,19 @@ class FakeBeforeEvent:
 
 
 class FakeAfterEvent:
-    def __init__(self, name):
+    """The shape Strands really passes — including `cancel_message`.
+
+    `exception` is None for a call that RAN and for one `_before_tool`
+    cancelled alike: `cancel_tool` produces an error `ToolResult`, not a raised
+    exception (`strands.tools.executors._executor`, verified against 1.50.2).
+    `cancel_message` is the only field that tells them apart, which is why this
+    double carries it and defaults it to "the call ran".
+    """
+
+    def __init__(self, name, cancel_message=None):
         self.tool_use = {"name": name, "input": {}}
         self.exception = None
+        self.cancel_message = cancel_message
 
 
 def _guard(metrics=None):
@@ -71,6 +81,35 @@ def test_after_tool_does_not_count_a_failed_call():
     event.exception = RuntimeError("boom")
     g._after_tool(event)
     assert g.counts["read_buffer"] == 0
+
+
+def test_after_tool_does_not_count_a_call_the_guard_cancelled():
+    """DEC-33, and a LIVE bug until it was written.
+
+    A vetoed call never ran, so it can have consumed nothing — but Strands
+    fires this hook for it anyway with `exception=None`, so the pre-DEC-33
+    `exception`-only check recorded it. With
+    `NATIVE_TOOLS["send_reply"].budget == 1` that made a `send_reply("")`
+    refused by R-4 spend the only reply the tag had: the model's own
+    correction then met R-7's budget check and was told "you already sent your
+    reply", and the group heard nothing at all.
+    """
+    g = _guard()
+    g._after_tool(FakeAfterEvent("read_buffer", cancel_message="You already called it."))
+    assert g.counts["read_buffer"] == 0
+
+
+def test_the_budget_a_vetoed_call_leaves_is_the_one_the_correction_uses():
+    """The rule stated as the model experiences it: veto, correct, succeed.
+
+    `send_reply`'s budget is 1. The first call is refused by R-4 and the second
+    must still be allowed — the assertion is on `evaluate`, i.e. on what the
+    model is told, not on the counter that feeds it.
+    """
+    g = _guard()
+    assert g.evaluate("send_reply", {"text": ""}) is not None          # R-4
+    g._after_tool(FakeAfterEvent("send_reply", cancel_message="Your reply text is empty."))
+    assert g.evaluate("send_reply", {"text": "今晚七點"}) is None
 
 
 def test_register_hooks_subscribes_to_both_events():

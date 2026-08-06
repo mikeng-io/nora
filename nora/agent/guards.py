@@ -292,6 +292,18 @@ class ReplyGuard(HookProvider):
                 # operator cares about is "one reply per tag". Anyone changing
                 # the cap must read the two branches together — this counter
                 # cannot tell them apart.
+                #
+                # DEC-33 considered splitting them and DECIDED NOT TO, for now.
+                # `rule` values are as append-only as the metric names (a new
+                # value silently splits every existing `rule="R-2"` query), and
+                # the branch a new value would name — the latch below — is
+                # UNREACHABLE while the budget is 1. Adding it today buys a
+                # series that cannot increment, which R-17 says is
+                # indistinguishable from one that was deleted. The moment the
+                # cap is raised, both branches become live at once and both
+                # have to be revised together; that is the edit where the
+                # second label is worth its cardinality, and DEC-32 (5) is
+                # already the note that forces the two to be read together.
                 return self._veto(
                     "R-2", "You already sent your reply. Do not call send_reply "
                            "again. If you still need something, use one of the "
@@ -378,17 +390,27 @@ class ReplyGuard(HookProvider):
         try:
             if getattr(event, "exception", None) is not None:
                 return                       # a failed call does not consume budget
+            # A CANCELLED CALL DID NOT RUN, so it consumes no budget and cannot
+            # have ended the turn. Strands fires this hook for a call
+            # `_before_tool` vetoed too — `cancel_tool` produces an error
+            # `ToolResult` and `exception=None`
+            # (`strands.tools.executors._executor`, verified against 1.50.2) —
+            # so `cancel_message` is the ONLY field that separates the two.
+            # `tests/test_strands_api_contract.py` asserts it against the real
+            # SDK, because that is load-bearing rather than incidental.
+            #
+            # DEC-32 applied this to the terminal latch below and NOT to
+            # `record`, which left a live bug (DEC-33): `send_reply`'s budget is
+            # 1, so a `send_reply("")` refused by R-4 spent the tag's only
+            # reply, and the model's own correction was then refused by R-7's
+            # budget check with "you already sent your reply". One recoverable
+            # mistake, and the RECOVERY was what got blocked — silently, since
+            # under R-5 the group just hears nothing.
+            if getattr(event, "cancel_message", None) is not None:
+                return
             name = (getattr(event, "tool_use", None) or {}).get("name", "")
             self.record(name)
-            # A CANCELLED call did not run, so it cannot have ended the turn.
-            # Strands fires this hook for a call `_before_tool` vetoed too —
-            # `cancel_tool` produces an error `ToolResult` and `exception=None`
-            # (`strands.tools.executors._executor`, verified against 1.50.2) —
-            # so without this check an empty-text `send_reply` refused by R-4
-            # would end the turn instead of letting the model correct itself.
-            # `cancel_message` is asserted by `tests/test_strands_api_contract.py`
-            # because that is now load-bearing rather than incidental.
-            if name in self._terminal and getattr(event, "cancel_message", None) is None:
+            if name in self._terminal:
                 self._turn_is_over = True
         except Exception:
             log.exception("ReplyGuard._after_tool raised; ignoring")

@@ -128,6 +128,86 @@ async def _invoke_tool(tool, **kwargs):
     return result
 
 
+# ---- the SDK's hook dispatch, as this double performs it ------------------
+#
+# The guard is a `strands.hooks.HookProvider`. Production NEVER calls
+# `evaluate`/`record` — it hands the provider to a `HookRegistry` and the SDK
+# dispatches events at three points. This double used to call the two methods
+# by hand instead, and the hand-written version DIVERGED: on a veto it skipped
+# `record` entirely, so a vetoed call cost no budget here and did cost one in
+# production. That is the exact shape CLAUDE.md's "make the fake behave like
+# the real server" rule exists to forbid — a regression test written against
+# the old replay could not fail, whatever the guard did, because the guard's
+# after-tool decision was never consulted.
+#
+# So the replay now goes through `register_hooks` and dispatches the same three
+# events Strands does, with the same field values (see `tests/
+# test_strands_api_contract.py`, which asserts those fields against the real
+# SDK). What a hook DECIDES is then the guard's business, not this module's.
+#
+# Keyed by class NAME rather than by the event class itself: `nora.testing` must
+# not import `strands` (`tests/test_boundaries.py::test_strands_import_boundary`),
+# and `add_callback` is handed the real class object, whose `__name__` needs no
+# import to read.
+
+
+class _HookRegistry:
+    """The `strands.hooks.HookRegistry` surface a `HookProvider` actually uses."""
+
+    def __init__(self) -> None:
+        self.callbacks: dict[str, list] = {}
+
+    def add_callback(self, event_type, callback) -> None:
+        self.callbacks.setdefault(event_type.__name__, []).append(callback)
+
+    def dispatch(self, event):
+        for callback in self.callbacks.get(event.sdk_event, ()):
+            callback(event)
+        return event
+
+
+class _BeforeToolCall:
+    """`cancel_tool` starts False and is a `bool | str`, exactly as the SDK declares."""
+
+    sdk_event = "BeforeToolCallEvent"
+
+    def __init__(self, name: str, tool_input: dict) -> None:
+        self.tool_use = {"name": name, "input": tool_input, "toolUseId": "t1"}
+        self.cancel_tool: bool | str = False
+
+
+class _AfterToolCall:
+    """Fired for a call that RAN **and for one `_before_tool` cancelled**.
+
+    `exception` is None in both cases — `cancel_tool` produces an error
+    `ToolResult`, not a raised exception (`strands.tools.executors._executor`,
+    verified against 1.50.2) — so `cancel_message` is the only field that tells
+    the two apart. Carrying it is the whole point of this class.
+    """
+
+    sdk_event = "AfterToolCallEvent"
+
+    def __init__(self, name: str, tool_input: dict, *,
+                 cancel_message: str | None = None) -> None:
+        self.tool_use = {"name": name, "input": tool_input, "toolUseId": "t1"}
+        self.exception = None
+        self.cancel_message = cancel_message
+        self.result = (
+            {"toolUseId": "t1", "status": "error", "content": [{"text": cancel_message}]}
+            if cancel_message is not None
+            else {"toolUseId": "t1", "status": "success", "content": [{"text": "True"}]}
+        )
+
+
+class _BeforeModelCall:
+    """`cancel` starts False and is a `bool | str`, exactly as the SDK declares."""
+
+    sdk_event = "BeforeModelCallEvent"
+
+    def __init__(self) -> None:
+        self.cancel: bool | str = False
+
+
 class FakeAgentRunner:
     """Replays a scripted turn sequence against the real tools and the real guards.
 
@@ -137,6 +217,12 @@ class FakeAgentRunner:
     `nora.app.agent_runner.LiveAgentRunner`: what a scripted scenario must prove is
     *our* orchestration, not Strands' agent loop (a separate contract test covers
     that).
+
+    **The guard is driven through its HOOKS, never by calling `evaluate`/`record`
+    directly** — see the `_HookRegistry` block above for the divergence that
+    cost. `register_hooks` is the SDK's own entry point, so what a vetoed call
+    costs, and what ends a turn, are decided by `ReplyGuard` here exactly as they
+    are in production; this module only supplies the events.
 
     `on_call`, if given, is invoked with this call's kwargs before anything else —
     the hook callers use to keep a cumulative call log that survives swapping the
@@ -175,15 +261,26 @@ class FakeAgentRunner:
         tools_by_name = {t.tool_name: t for t in kwargs["tools"]}
         guard = kwargs["guard"]
         limits = kwargs.get("limits")
+        hooks = _HookRegistry()
+        guard.register_hooks(hooks)
         cycles = total_tokens = output_tokens = 0
         for turn in self.turns:
+            if hooks.dispatch(_BeforeModelCall()).cancel:
+                # A terminal verb has run and the guard ended the turn, so the
+                # SDK never makes this model call. A script with turns after
+                # that point is describing something production cannot do.
+                return "end_turn"
             for name, args in turn.tool_calls:
                 if not turn.bypass_guard:
-                    veto = guard.evaluate(name, args)
+                    veto = hooks.dispatch(_BeforeToolCall(name, args)).cancel_tool
                     if veto:
-                        continue                   # the model sees the correction and moves on
+                        # The model sees the correction and moves on — but the
+                        # SDK still fires the after-tool hook for the cancelled
+                        # call, so the guard still gets to decide what it costs.
+                        hooks.dispatch(_AfterToolCall(name, args, cancel_message=veto))
+                        continue
                 await _invoke_tool(tools_by_name[name], **args)
-                guard.record(name)
+                hooks.dispatch(_AfterToolCall(name, args))
             cycles += 1
             total_tokens += turn.total_tokens
             output_tokens += turn.output_tokens

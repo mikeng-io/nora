@@ -179,3 +179,33 @@ async def test_doctrine_sha256_is_logged_for_the_tag(harness_factory, caplog):
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
     assert any("doctrine_sha256" in r.getMessage() for r in caplog.records)
+
+
+async def test_a_vetoed_send_reply_leaves_the_budget_for_the_correction(harness_factory):
+    """DEC-33. The recovery from a recoverable mistake must not be what gets blocked.
+
+    The model calls `send_reply("")`, R-4 refuses it, and the model corrects
+    itself in the same turn. `NATIVE_TOOLS["send_reply"].budget` is 1, so if a
+    cancelled call is recorded the correction meets R-7's budget check and is
+    told "you already sent your reply" — and the group hears nothing at all,
+    which under R-5 is indistinguishable from a quiet Nora.
+
+    This is an END-TO-END probe on purpose: the divergence that hid this bug
+    for the life of the deployment was in `nora.testing.FakeAgentRunner`, which
+    skipped the guard's after-tool hook on a veto and so could not reproduce it
+    at any layer. Revert `_after_tool`'s `cancel_message` check and this goes
+    red; revert the fake's hook dispatch and it goes green again while the live
+    bug is still there.
+    """
+    h = await harness_factory(script=[ScriptedTurn(
+        tool_calls=[("send_reply", {"text": ""}),
+                    ("send_reply", {"text": "今晚七點"})],
+        final_text="今晚七點")])
+    await h.handler.on_event(group_event(body="nora.000 幾點?"))
+    await h.drain()
+
+    assert h.sink.texts == ["今晚七點"]
+    assert h.metrics.get("nora_guard_vetoes_total", rule="R-4") == 1
+    # The correction was never refused: no R-2 veto, and no silent failure.
+    assert h.metrics.get("nora_guard_vetoes_total", rule="R-2") == 0
+    assert h.metrics.get("nora_silent_failures_total", reason="no_send_call") == 0
