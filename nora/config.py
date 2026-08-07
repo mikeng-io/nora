@@ -418,6 +418,16 @@ class SearchConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
+    # `web_fetch` (Firecrawl) split from `web_search` (SearXNG) — 2026-08-07.
+    # SearXNG queries fixed engines and fetches no model-chosen page, so
+    # `web_search` is safe to run once the query egress is screened; Firecrawl
+    # fetches a model-chosen URL and is the SSRF surface that needs the egress
+    # deny-rule (design/22 §0). So `web_search` rides `enabled`, and `web_fetch`
+    # ALSO needs `fetch_enabled` — letting an operator turn search on before the
+    # Firecrawl egress isolation is in place, with `web_fetch` still `unavailable`.
+    # Defaults True so `enabled=true` alone keeps the original both-on semantics
+    # for a deployment that HAS done the egress work.
+    fetch_enabled: bool = True
     searxng_url: str = "http://127.0.0.1:8080"
     firecrawl_url: str = "http://127.0.0.1:3002"
     # "v1" or "v2" — the scrape route on the DEPLOYED Firecrawl. Verified v1 on

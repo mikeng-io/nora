@@ -146,6 +146,7 @@ class SearchClient:
         snippet_max_bytes: int = 500,
         fetch_max_chars: int = 10000,
         timeout_seconds: float = 15.0,
+        fetch_enabled: bool = True,
         resolver: HostResolver | None = None,
     ) -> None:
         self._searxng_url = searxng_url.rstrip("/")
@@ -155,6 +156,10 @@ class SearchClient:
         self._snippet_max_bytes = snippet_max_bytes
         self._fetch_max_chars = fetch_max_chars
         self._timeout_seconds = timeout_seconds
+        # `web_fetch` (Firecrawl) can be held off while `web_search` (SearXNG) is
+        # on — the SSRF surface is the page fetch, not the search (2026-08-07,
+        # design/22 §0). When False, `fetch` never reaches Firecrawl.
+        self._fetch_enabled = fetch_enabled
         self._resolver: HostResolver = resolver if resolver is not None else _SystemResolver()
 
     # ---- search -------------------------------------------------------------
@@ -241,6 +246,11 @@ class SearchClient:
             return _UNAVAILABLE_FETCH
 
     async def _fetch(self, url: str) -> dict[str, Any]:
+        # Held off while the Firecrawl egress deny-rule is not in place (the
+        # DEC-57 ship gate): nothing reaches Firecrawl, and the model is told it
+        # cannot open pages — the honest `unavailable`, never a silent empty.
+        if not self._fetch_enabled:
+            return _UNAVAILABLE_FETCH
         parsed = urlsplit(url)
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
             return _REFUSED_FETCH
@@ -275,6 +285,22 @@ class SearchClient:
             # check», never a silent empty (R-5).
             return _UNAVAILABLE_FETCH
         data = payload.get("data")
+        # Post-redirect re-validation (Hermes study 2026-08-07): Firecrawl
+        # follows redirects on ITS network, so a URL that passed `_all_global`
+        # can still land on a private host after a 302. The pre-check cannot see
+        # that; the returned `metadata.sourceURL` is the FINAL url Firecrawl
+        # actually read, so re-check it and refuse to return the body if it
+        # resolved somewhere non-global. Detection-after-fetch (Firecrawl already
+        # fetched it), but it stops an internal service's CONTENT reaching the
+        # model or the group — the exact gap Hermes documents in the
+        # third-party-reader model.
+        meta = data.get("metadata") if isinstance(data, dict) else None
+        final_url = meta.get("sourceURL") if isinstance(meta, dict) else None
+        if isinstance(final_url, str) and final_url:
+            final_host = urlsplit(final_url).hostname
+            if final_host is None or not await _all_global(final_host, self._resolver):
+                log.warning("fetch redirected off-global; refusing the body")
+                return _REFUSED_FETCH
         markdown = data.get("markdown") if isinstance(data, dict) else None
         if not isinstance(markdown, str) or not markdown.strip():
             return {"status": "nothing_found", "url": url}

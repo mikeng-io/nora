@@ -209,3 +209,20 @@ api_key_env = "GOOGLE_MAPS_API_KEY"
 enabled = true
 cadence_seconds = 90
 retention_days = 180
+
+[search]
+# SearXNG web_search + Firecrawl web_fetch (DEC-57, design/22). Turned ON
+# 2026-08-07 in the SPLIT shape: web_search is live (SearXNG queries fixed
+# engines, fetches no model-chosen page; the query egress is coordinate- and
+# identifier-screened). web_fetch stays OFF (`fetch_enabled = false`) until the
+# Firecrawl egress deny-rule lands — Firecrawl fetches a model-chosen URL and is
+# the SSRF surface (design/22 §0). Nora's code-side guards are already strong:
+# is_global pre-check + post-redirect sourceURL re-validation (Hermes study) +
+# the per-tag allowed_urls fence + the untrusted wrap; the packet-layer egress
+# floor is the remaining gate. URLs point at the co-located local services.
+enabled = true
+fetch_enabled = false
+# Container names on the joined external networks (see docker-compose.yml) —
+# these services publish only on host 127.0.0.1, unreachable via the gateway.
+searxng_url = "http://searxng-core:8080"
+firecrawl_url = "http://firecrawl-api-1:3002"

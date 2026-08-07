@@ -86,6 +86,10 @@ class _Firecrawl:
         self.calls: list[str] = []
         self.fail = False
         self.empty = False
+        # The FINAL url Firecrawl reports after following redirects on ITS
+        # network. None → echo the requested url (no redirect). Set it to an
+        # internal host to model a public→private 302 the pre-check can't see.
+        self.redirect_to: str | None = None
         self.markdown = "# Example\n\nThe page body, in markdown."
 
     async def scrape(self, request: web.Request) -> web.Response:
@@ -103,7 +107,11 @@ class _Firecrawl:
             "success": True,
             "data": {
                 "markdown": markdown,
-                "metadata": {"url": url, "sourceURL": url, "statusCode": 200},
+                "metadata": {
+                    "url": url,
+                    "sourceURL": self.redirect_to or url,
+                    "statusCode": 200,
+                },
             },
         })
 
@@ -229,6 +237,36 @@ async def test_a_real_fetch_is_ok_wrapped_and_provenanced(services):
     assert out["content"].startswith('<untrusted source="https://example.com/weather">')
     assert "The page body" in out["content"]
     assert firecrawl.calls == ["https://example.com/weather"]
+
+
+async def test_a_redirect_to_an_internal_host_refuses_the_body(services):
+    """Post-redirect re-validation (Hermes study 2026-08-07): the pre-check
+    passes a public URL, but Firecrawl follows a 302 to an internal host on ITS
+    network. The returned `metadata.sourceURL` is that final host, so re-checking
+    it with `is_global` refuses the body — an internal service's content never
+    reaches the model. Reverting the sourceURL check returns the page."""
+    _, firecrawl, client = services
+    firecrawl.redirect_to = "http://rebind.internal/admin"   # resolves to 127.0.0.1
+    out = await client.fetch("https://example.com/weather")
+    assert out["status"] == "refused"
+    # Firecrawl WAS asked (the fetch already happened on its network) — the guard
+    # is on returning the BODY, which is the honest boundary for a hosted reader.
+    assert firecrawl.calls == ["https://example.com/weather"]
+    assert "page body" not in json.dumps(out, ensure_ascii=False)
+
+
+async def test_web_fetch_held_off_never_reaches_firecrawl(services):
+    """The split (2026-08-07): `web_search` on, `web_fetch` off until the
+    Firecrawl egress deny-rule. A disabled fetch answers `unavailable` and
+    NOTHING reaches Firecrawl — the search half is unaffected."""
+    searxng, firecrawl, _ = services
+    held = SearchClient(
+        searxng_url=searxng._base if hasattr(searxng, "_base") else "http://x",
+        firecrawl_url="http://unused", fetch_enabled=False, resolver=_RESOLVER,
+    )
+    out = await held.fetch("https://example.com/weather")
+    assert out["status"] == "unavailable"
+    assert firecrawl.calls == []
 
 
 async def test_an_empty_page_is_nothing_found(services):

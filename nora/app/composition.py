@@ -349,6 +349,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             snippet_max_bytes=cfg.search.snippet_max_bytes,
             fetch_max_chars=cfg.search.fetch_max_chars,
             timeout_seconds=cfg.search.timeout_seconds,
+            fetch_enabled=cfg.search.fetch_enabled,
         )
     # `whereis` (DEC-59, activating DEC-54's inert seam) is wired ONLY when
     # `[presence] enabled` AND identity.toml yields at least one circle — the
