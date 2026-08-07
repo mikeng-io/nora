@@ -4,11 +4,17 @@ contract suite both pass."""
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from nora.domain.reminders import Reminder, ReminderState, ReminderStore
+from nora.domain.reminders import (
+    DuplicateReminderError,
+    NaiveDatetimeError,
+    Reminder,
+    ReminderState,
+    ReminderStore,
+)
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.reminders import SqlReminderStore
@@ -16,6 +22,10 @@ from nora.testing.reminders import FakeReminderStore
 
 T0 = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
 LATER = T0 + timedelta(days=1)
+
+# The repo's own downstream clock is +08:00 (`nora.agent.tools._HKT`), so an
+# offset that is NOT UTC is the realistic input, not an exotic one.
+HKT = timezone(timedelta(hours=8), "HKT")
 
 
 def _row(**kw) -> Reminder:
@@ -119,3 +129,142 @@ async def test_sweep_resolves_firing_rows_to_failed(store):
     assert swept.state is ReminderState.FAILED
     assert swept.outcome == "failed_error"
     assert (await store.get(ok.id)).state is ReminderState.PENDING
+
+
+# --------------------------------------------------------------------------
+# The four divergences the original eight tests could not see. Each one below
+# failed on at least one implementation before its fix; between them they pin
+# the timezone contract, the `limit` contract, the ordering tiebreak, and what
+# a duplicate id does.
+# --------------------------------------------------------------------------
+
+
+async def test_stored_datetimes_come_back_utc_aware(store):
+    """UTC-AWARE IS THE CONTRACT, on the way in and on the way out.
+
+    A `timestamptz` column normalises to UTC and asyncpg hands the value back
+    with `tzinfo=UTC`; an in-memory dict hands back exactly the object it was
+    given. Both are "correct" instants, so `==` compares equal and cannot see
+    the difference — `utcoffset()` is what differs, and it is what downstream
+    formatting reads. Feed a +08:00 aware row (this repo's own clock, `_HKT`)
+    and the two stores previously disagreed by eight hours' worth of printed
+    digits for the same instant.
+    """
+    due_hkt = datetime(2026, 8, 9, 17, 0, tzinfo=HKT)
+    created_hkt = datetime(2026, 8, 8, 20, 0, tzinfo=HKT)
+    r = _row(created_at=created_hkt, due_at=due_hkt)
+    await store.create(r)
+
+    got = await store.get(r.id)
+    assert got is not None
+    for label, value in (("due_at", got.due_at), ("created_at", got.created_at)):
+        assert value.utcoffset() == timedelta(0), f"{label} is not UTC-normalised"
+    # Same instant, and the digits a downstream formatter would print are UTC's.
+    assert got.due_at == due_hkt
+    assert got.due_at.hour == 9
+
+    # Every read path, not just get(): due(), pending_for(), and the fired_at
+    # stamp a mark() writes.
+    (via_due,) = await store.due(now=LATER, limit=10)
+    assert via_due.due_at.utcoffset() == timedelta(0)
+    (via_pending,) = await store.pending_for("conv-1")
+    assert via_pending.due_at.utcoffset() == timedelta(0)
+
+    await store.mark(r.id, ReminderState.DONE,
+                     fired_at=datetime(2026, 8, 9, 17, 5, tzinfo=HKT), outcome="sent")
+    marked = await store.get(r.id)
+    assert marked is not None
+    assert marked.fired_at is not None
+    assert marked.fired_at.utcoffset() == timedelta(0)
+    assert marked.fired_at.hour == 9
+
+
+async def test_naive_datetimes_are_refused_rather_than_guessed(store):
+    """A naive datetime has no answer, so neither store may invent one.
+
+    asyncpg would read it in the CLIENT HOST's zone (a deployment fact, not a
+    domain one) and the fake would store it as-is and then raise `TypeError`
+    from `naive <= aware` inside `due()`. Both are guesses dressed as answers;
+    `NaiveDatetimeError` is the contract instead, on every datetime that
+    crosses the port.
+    """
+    naive = datetime(2026, 8, 9, 9, 0)
+    assert naive.tzinfo is None
+
+    with pytest.raises(NaiveDatetimeError):
+        await store.create(_row(due_at=naive))
+    with pytest.raises(NaiveDatetimeError):
+        await store.create(_row(created_at=naive))
+
+    ok = _row()
+    await store.create(ok)
+    with pytest.raises(NaiveDatetimeError):
+        await store.due(now=naive, limit=10)
+    with pytest.raises(NaiveDatetimeError):
+        await store.mark(ok.id, ReminderState.DONE, fired_at=naive)
+
+
+async def test_due_refuses_a_non_positive_limit(store):
+    """`limit` is a batch size; a non-positive one is a caller bug.
+
+    Postgres raises `InvalidRowCountInLimitClauseError` on `LIMIT -1` while
+    Python's `[:-1]` cheerfully returns everything-except-the-last — the two
+    stores answered a bad call two different ways, and one of them answered it
+    with plausible-looking data. One rule now: `limit >= 1` or `ValueError`.
+    """
+    await store.create(_row(due_at=T0))
+    await store.create(_row(due_at=T0))
+
+    for bad in (-1, 0):
+        with pytest.raises(ValueError):
+            await store.due(now=LATER, limit=bad)
+
+    assert len(await store.due(now=LATER, limit=1)) == 1
+
+
+async def test_equal_due_at_is_broken_deterministically_by_id(store):
+    """Two reminders for "9am" is ordinary, not exotic.
+
+    `ORDER BY due_at` alone leaves ties to the heap's physical order, which an
+    ordinary `mark()` UPDATE reshuffles by moving a tuple; the fake leant on
+    Python's stable sort over dict insertion order. Same rows, two orders. With
+    `limit`, a tie straddling the batch boundary makes the BATCH's composition
+    unspecified too — which is why the third assertion takes `limit=2`.
+
+    `id` is the tiebreak: Postgres compares `uuid` bytewise and Python's
+    `UUID.__lt__` compares `.int` (the same 16 bytes, big-endian), so the two
+    orderings are the same ordering.
+    """
+    same = T0 + timedelta(minutes=40)
+    ids = sorted(uuid.uuid4() for _ in range(3))
+    # Insert in an order that is neither id order nor its reverse.
+    for rid in (ids[1], ids[2], ids[0]):
+        await store.create(_row(id=rid, due_at=same))
+
+    # An ordinary state move, then a move back: enough to relocate a heap tuple
+    # in Postgres, and the exact operation that reordered a real batch.
+    await store.mark(ids[1], ReminderState.FIRING)
+    await store.mark(ids[1], ReminderState.PENDING)
+
+    assert [x.id for x in await store.due(now=LATER, limit=10)] == ids
+    assert [x.id for x in await store.pending_for("conv-1")] == ids
+    assert [x.id for x in await store.due(now=LATER, limit=2)] == ids[:2]
+
+
+async def test_create_refuses_a_duplicate_id(store):
+    """The same id twice is a collision, and a collision must be loud.
+
+    Postgres raised `UniqueViolationError` off the primary key; the fake
+    silently OVERWROTE the row, so a test that exercised the fake would show a
+    clobbered reminder as success and the real store as a 500. `create` is
+    insert-only in both now, and the first row is left untouched.
+    """
+    first = _row(text="洗衫")
+    await store.create(first)
+
+    with pytest.raises(DuplicateReminderError):
+        await store.create(_row(id=first.id, text="買餸"))
+
+    survivor = await store.get(first.id)
+    assert survivor is not None
+    assert survivor.text == "洗衫"

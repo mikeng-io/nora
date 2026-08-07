@@ -38,25 +38,48 @@ from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Row
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.reminders import Reminder, ReminderState
+from nora.domain.reminders import (
+    DuplicateReminderError,
+    Reminder,
+    ReminderState,
+    check_limit,
+    ensure_utc,
+    normalise_reminder,
+)
 from nora.infra.sql.schema import REMINDERS
+
+# PostgreSQL SQLSTATE 23505, unique_violation. Matched EXACTLY rather than
+# treating every `IntegrityError` as a duplicate: this table also carries
+# `ck_reminders_state`, and a bad state value arrives as an `IntegrityError`
+# too — reporting that as "duplicate id" would name the wrong defect.
+_PG_UNIQUE_VIOLATION = "23505"
 
 
 def _row_to_reminder(r: Row[Any]) -> Reminder:
-    return Reminder(
-        id=r.id,
-        requester_person_id=r.requester_person_id,
-        platform=r.platform,
-        conversation_id=r.conversation_id,
-        conversation_type=r.conversation_type,
-        text=r.text,
-        created_at=r.created_at,
-        due_at=r.due_at,
-        state=ReminderState(r.state),
-        fired_at=r.fired_at,
-        outcome=r.outcome,
+    """A row, normalised on the way OUT.
+
+    `timestamptz` already comes back UTC-aware from asyncpg, so
+    `normalise_reminder` changes nothing today — it is here so the port's rule
+    has one enforcement point per direction per store rather than resting on a
+    driver behaviour stated nowhere in this module.
+    """
+    return normalise_reminder(
+        Reminder(
+            id=r.id,
+            requester_person_id=r.requester_person_id,
+            platform=r.platform,
+            conversation_id=r.conversation_id,
+            conversation_type=r.conversation_type,
+            text=r.text,
+            created_at=r.created_at,
+            due_at=r.due_at,
+            state=ReminderState(r.state),
+            fired_at=r.fired_at,
+            outcome=r.outcome,
+        )
     )
 
 
@@ -67,21 +90,30 @@ class SqlReminderStore:
         self._engine = engine
 
     async def create(self, reminder: Reminder) -> None:
+        """Insert-only, with the primary key's own unique violation translated
+        to `DuplicateReminderError` so the in-memory store can be held to the
+        same observable behaviour (it used to overwrite silently)."""
+        row = normalise_reminder(reminder)
         stmt = sa.insert(REMINDERS).values(
-            id=reminder.id,
-            requester_person_id=reminder.requester_person_id,
-            platform=reminder.platform,
-            conversation_id=reminder.conversation_id,
-            conversation_type=reminder.conversation_type,
-            text=reminder.text,
-            created_at=reminder.created_at,
-            due_at=reminder.due_at,
-            state=reminder.state.value,
-            fired_at=reminder.fired_at,
-            outcome=reminder.outcome,
+            id=row.id,
+            requester_person_id=row.requester_person_id,
+            platform=row.platform,
+            conversation_id=row.conversation_id,
+            conversation_type=row.conversation_type,
+            text=row.text,
+            created_at=row.created_at,
+            due_at=row.due_at,
+            state=row.state.value,
+            fired_at=row.fired_at,
+            outcome=row.outcome,
         )
-        async with self._engine.begin() as conn:
-            await conn.execute(stmt)
+        try:
+            async with self._engine.begin() as conn:
+                await conn.execute(stmt)
+        except IntegrityError as exc:
+            if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
+                raise
+            raise DuplicateReminderError(row.id) from exc
 
     async def get(self, reminder_id: UUID) -> Reminder | None:
         stmt = sa.select(REMINDERS).where(REMINDERS.c.id == reminder_id)
@@ -90,21 +122,29 @@ class SqlReminderStore:
         return None if row is None else _row_to_reminder(row)
 
     async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
-        """PENDING rows whose `due_at` has passed, oldest first.
+        """PENDING rows whose `due_at` has passed, `due_at` then `id` ascending.
 
-        `limit` is the tick's batch size and is always positive in production;
-        no short-circuit is spelled out here on purpose, because the fake does
-        not have one either and a guard on one side only is exactly the drift
-        the contract suite exists to catch.
+        `limit` is the tick's batch size and is always positive in production,
+        but the guard is not optional: unguarded, `LIMIT -1` raised
+        `InvalidRowCountInLimitClauseError` here while the fake's `[:-1]`
+        returned everything-except-the-last. `check_limit` is the ONE rule both
+        stores call — a guard on one side only is exactly the drift the contract
+        suite exists to catch.
+
+        `id` breaks ties on `due_at`. Without it, equal `due_at` rows come back
+        in whatever heap order the last UPDATE left behind, and a tie across the
+        `limit` boundary makes the batch's membership — not merely its order —
+        unspecified. Postgres compares `uuid` bytewise, which is the same order
+        Python's `UUID.__lt__` produces, so the fake's key matches exactly.
         """
         stmt = (
             sa.select(REMINDERS)
             .where(
                 REMINDERS.c.state == ReminderState.PENDING.value,
-                REMINDERS.c.due_at <= now,
+                REMINDERS.c.due_at <= ensure_utc(now, field="now"),
             )
-            .order_by(REMINDERS.c.due_at.asc())
-            .limit(limit)
+            .order_by(REMINDERS.c.due_at.asc(), REMINDERS.c.id.asc())
+            .limit(check_limit(limit))
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
@@ -117,7 +157,7 @@ class SqlReminderStore:
                 REMINDERS.c.conversation_id == conversation_id,
                 REMINDERS.c.state == ReminderState.PENDING.value,
             )
-            .order_by(REMINDERS.c.due_at.asc())
+            .order_by(REMINDERS.c.due_at.asc(), REMINDERS.c.id.asc())
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
@@ -148,7 +188,7 @@ class SqlReminderStore:
         """
         values: dict[str, Any] = {"state": state.value}
         if fired_at is not None:
-            values["fired_at"] = fired_at
+            values["fired_at"] = ensure_utc(fired_at, field="fired_at")
         if outcome is not None:
             values["outcome"] = outcome
         stmt = sa.update(REMINDERS).where(REMINDERS.c.id == reminder_id).values(**values)
