@@ -210,7 +210,7 @@ class Deliverer:
 
 
 def _list_tool_names(names: Any) -> str:
-    """`"now, read_buffer or send_reply"` — sorted so the R-7 unknown-tool
+    """`"now, chat_earlier or send_reply"` — sorted so the R-7 unknown-tool
     message is deterministic and reads in a natural order."""
     ordered = sorted(names)
     if len(ordered) <= 1:
@@ -274,7 +274,7 @@ class ReplyGuard(HookProvider):
 
         # R-3 — scope, held BY CONSTRUCTION rather than by veto (DEC-21) and,
         # since DEC-24, not even expressible: no tool declares a conversation
-        # parameter, so `read_buffer` reads the closure value (Task 1's
+        # parameter, so `chat_earlier` reads the closure value (Task 1's
         # cross-group leak fix) and `send_reply` calls `deliverer.deliver(text)`
         # against a target its `Deliverer` bound at construction. Vetoing on a
         # value that changes nothing protected nothing while making a weak model

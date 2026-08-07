@@ -66,8 +66,12 @@ contracts.
   migration; the store is now one `nora` PostgreSQL database that presence
   (design/19) will share.
 
-- **`read_buffer` is misnamed.** Nothing is buffered. It reads durable rows
-  from disk. Honest name: `chat_earlier`. Pending rename.
+- **`read_buffer` was misnamed** — nothing is buffered; it reads durable rows
+  from disk. **Renamed to `chat_earlier` 2026-08-07 (DEC-58)**, the honest name,
+  after the MEASURED selection harness confirmed no regression (16/16 on its own
+  question, no collision onto other tools). The `nora_tool_calls_total{tool}`
+  label moves with it (it must agree with the `_log_call` grep); the metric NAME
+  is unchanged (append-only).
 - **`recall` was misnamed** — it fetched an accumulated *profile*, not
   memories. **Renamed to `about` 2026-08-06 (DEC-39).** The metric
   `nora_recall_total` keeps the old word: metric names are append-only.

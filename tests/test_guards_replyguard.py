@@ -71,14 +71,14 @@ def test_empty_reply_is_cancelled_before_the_tool_runs():
     assert m.get("nora_guard_vetoes_total", rule="R-4") == 1
 
 
-def test_tool_call_budget_enforced_for_read_buffer():
+def test_tool_call_budget_enforced_for_chat_earlier():
     m = Metrics()
     g = _guard(m)
     for _ in range(2):
-        assert g.evaluate("read_buffer", {"limit": 40}) is None
-        g.record("read_buffer")
-    msg = g.evaluate("read_buffer", {"limit": 40})
-    assert msg is not None and "read_buffer" in msg
+        assert g.evaluate("chat_earlier", {"limit": 40}) is None
+        g.record("chat_earlier")
+    msg = g.evaluate("chat_earlier", {"limit": 40})
+    assert msg is not None and "chat_earlier" in msg
     assert m.get("nora_guard_vetoes_total", rule="R-7") == 1
 
 
@@ -91,9 +91,9 @@ def test_tool_call_budget_enforced_for_group_members():
 
 def test_the_correction_names_what_the_model_already_has():
     g = _guard()
-    g.record("read_buffer")
-    g.record("read_buffer")
-    msg = g.evaluate("read_buffer", {"limit": 40})
+    g.record("chat_earlier")
+    g.record("chat_earlier")
+    msg = g.evaluate("chat_earlier", {"limit": 40})
     assert "already" in msg
 
 
@@ -101,22 +101,22 @@ def test_an_unknown_tool_is_cancelled():
     assert _guard().evaluate("rm_rf", {}) is not None
 
 
-def test_read_buffer_to_another_conversation_is_counted_not_cancelled():
-    """Same construction argument as send_reply: `read_buffer` reads the
+def test_chat_earlier_to_another_conversation_is_counted_not_cancelled():
+    """Same construction argument as send_reply: `chat_earlier` reads the
     closure's bound conversation (Phase 8 Task 1, which closed a real
     cross-group READ leak) and, since DEC-24, does not declare one at all. The
     rows it returns are scoped whatever the model asks for, so the probe is
     counted rather than vetoed."""
     m = Metrics()
-    assert _guard(m).evaluate("read_buffer", {"conversation_id": "g2", "limit": 40}) is None
-    assert m.get("nora_tool_scope_violations_total", tool="read_buffer") == 1
+    assert _guard(m).evaluate("chat_earlier", {"conversation_id": "g2", "limit": 40}) is None
+    assert m.get("nora_tool_scope_violations_total", tool="chat_earlier") == 1
     assert m.get("nora_guard_vetoes_total", rule="R-3") == 0
 
 
 def test_the_scope_counter_fires_for_any_tool_not_just_the_two_scoped_ones():
     """No tool declares a conversation any more, so "the model named a
     conversation" is a signal about the MODEL, not about which tool it aimed
-    at. Counting only `send_reply`/`read_buffer` would silently miss it on
+    at. Counting only `send_reply`/`chat_earlier` would silently miss it on
     `now` or on any tool added later."""
     m = Metrics()
     assert _guard(m).evaluate("now", {"conversation_id": "g2"}) is None
@@ -131,9 +131,9 @@ def test_a_well_formed_call_never_touches_the_scope_counter():
     m = Metrics()
     g = _guard(m)
     g.evaluate("send_reply", _send())
-    g.evaluate("read_buffer", {"limit": 40})
+    g.evaluate("chat_earlier", {"limit": 40})
     g.evaluate("now", {})
-    for tool in ("send_reply", "read_buffer", "now"):
+    for tool in ("send_reply", "chat_earlier", "now"):
         assert m.get("nora_tool_scope_violations_total", tool=tool) == 0
 
 
@@ -158,10 +158,10 @@ def test_a_missing_conversation_id_no_longer_blocks_the_reply():
 
 def test_evaluate_does_not_mutate_counts():
     g = _guard()
-    g.evaluate("read_buffer", {"limit": 40})
-    g.evaluate("read_buffer", {"limit": 40})
-    g.evaluate("read_buffer", {"limit": 40})
-    assert g.counts["read_buffer"] == 0     # only record() counts
+    g.evaluate("chat_earlier", {"limit": 40})
+    g.evaluate("chat_earlier", {"limit": 40})
+    g.evaluate("chat_earlier", {"limit": 40})
+    assert g.counts["chat_earlier"] == 0     # only record() counts
 
 
 # ---- the message cap lives in the budget, not in R-2's latch (DEC-32) ------

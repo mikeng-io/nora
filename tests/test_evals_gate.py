@@ -44,9 +44,9 @@ def test_no_send_without_trigger_fails_on_any_send():
 
 
 def test_tool_budget_enforces_the_r7_limits():
-    assert ToolBudget().evaluate(_t(["read_buffer", "read_buffer", "send_reply"])).passed
+    assert ToolBudget().evaluate(_t(["chat_earlier", "chat_earlier", "send_reply"])).passed
     assert not ToolBudget().evaluate(
-        _t(["read_buffer", "read_buffer", "read_buffer", "send_reply"])).passed
+        _t(["chat_earlier", "chat_earlier", "chat_earlier", "send_reply"])).passed
     assert not ToolBudget().evaluate(_t(["group_members", "group_members"])).passed
     # send_reply's own upper bound (the cap of 3) is ToolBudget's job now that
     # RepliesAtLeastOnce owns only the lower bound (DEC-42).
@@ -57,12 +57,12 @@ def test_tool_budget_enforces_the_r7_limits():
 
 def test_no_redundant_read_fails_when_prefill_was_sufficient():
     assert not NoRedundantRead().evaluate(
-        _t(["read_buffer", "send_reply"], prefill_sufficient=True)).passed
+        _t(["chat_earlier", "send_reply"], prefill_sufficient=True)).passed
 
 
 def test_no_redundant_read_allows_a_read_when_prefill_was_thin():
     assert NoRedundantRead().evaluate(
-        _t(["read_buffer", "send_reply"], prefill_sufficient=False)).passed
+        _t(["chat_earlier", "send_reply"], prefill_sufficient=False)).passed
 
 
 def test_honcho_fed_once_per_delivered_reply():

@@ -104,7 +104,7 @@ def test_no_doctrine_file_carries_a_tool_catalogue():
     This replaces `test_conduct_names_the_three_tools_and_no_others`, whose
     name promised the assertion it never made: it checked that three tools were
     present and that `feed_honcho` was absent, and would have passed unchanged
-    while the catalogue rotted. It did rot. `conduct.md` listed `read_buffer`,
+    while the catalogue rotted. It did rot. `conduct.md` listed `chat_earlier`,
     `read_peer_card` and `send_reply` and never learned about `now`,
     `group_members`, `lookup_person` or `about` — four of seven — beside a
     line telling her the conversation "covers almost every call".
@@ -118,7 +118,7 @@ def test_no_doctrine_file_carries_a_tool_catalogue():
     doctrine.
 
     A tool is "named" here if it appears backticked (`about`) or as a bare
-    snake_case identifier (read_buffer) — the two forms a catalogue is written
+    snake_case identifier (chat_earlier) — the two forms a catalogue is written
     in. Matching the bare word alone would be useless: `now` and `about` are
     also ordinary English, and `identity.md` says "I don't know" and "what you
     remember" in prose that is exactly what this file is supposed to encourage.

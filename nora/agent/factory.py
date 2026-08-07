@@ -83,7 +83,7 @@ def create_model_provider(
     it made her structurally mute.
 
     This constrains the model to call SOME tool, not `send_reply` specifically,
-    so `read_buffer`/`about` remain reachable and R-7's default-deny
+    so `chat_earlier`/`about` remain reachable and R-7's default-deny
     is untouched.
 
     **It is the FIRST value of a sequence, not a constant, since step 5b**:
