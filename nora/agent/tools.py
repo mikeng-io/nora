@@ -207,6 +207,12 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "place_info": NativeTool(2, "how good or how pricey a place is — a shop, a "
                                 "restaurant, a clinic — its rating and whether it's "
                                 "open; never guess a rating you did not get from here"),
+    # 1, like `group_members`: it lists a small fixed set for THIS room, and
+    # calling it twice in a turn returns the same list. `time_shiftable=None`:
+    # the household's saved names don't decay. Not terminal.
+    "saved_places": NativeTool(1, "the names this household has saved for places "
+                                  "(«Home», «Miles Home») — check before routing to a "
+                                  "place someone calls by a personal name"),
     # **`chat_earlier`, not `read_buffer`, and that was MEASURED, not argued
     # (DEC-58, same harness as DEC-39).** The old name was a lie — nothing is
     # buffered; it reads durable rows off disk (GLOSSARY). With the docstring
@@ -1137,9 +1143,15 @@ def build_tool_specs(
         plans for that arrival instead of for now.
 
         Give it PLACES, the way the person named them — a mall, a building, a
-        station, a restaurant («Yoho Mall», «黃大仙祠», «天水圍站»), or a name
-        this household uses for a place («Home»). It looks each place up
-        itself; you do not give it coordinates or a stop code.
+        station, a restaurant («Yoho Mall», «黃大仙祠», «天水圍站»). It looks
+        each place up itself; you do not give it coordinates or a stop code.
+
+        If they name a place by a PERSONAL name — «屋企», «home», «阿媽屋企»,
+        «Tyler 屋企», «公司» — call `saved_places` FIRST, match their words to
+        one of the saved names, and pass that saved name here. That routes from
+        the exact spot this household saved. Never guess a home or a personal
+        place from earlier messages — check `saved_places`, and if nothing fits,
+        ask where they mean.
 
         NEVER put a person where a place goes. «從陳生屋企» is not a place, and
         this tool will refuse a route that names someone rather than somewhere —
@@ -1364,6 +1376,44 @@ def build_tool_specs(
             out["maps_url"] = maps_url
         _record(metrics, "place_info", out["status"], rating=out.get("rating"))
         return out
+
+    async def saved_places() -> dict:
+        """The names this household has saved for places, for THIS conversation.
+
+        Call this the moment someone routes to — or asks about — a place by a
+        PERSONAL name rather than a public one: «屋企», «home», «我屋企», «阿媽
+        屋企», «Tyler 屋企», «公司». Google doesn't know those; this household
+        does. You get a list of `names` («Home», «Miles Home», «阿媽屋企») — pick
+        the one they meant and pass THAT as the origin or destination to `route`
+        (or the place to `place_info`), and the exact saved spot is used.
+
+        `status`:
+          - `ok` — `names` is the list (may be empty if nothing is saved). Match
+            their words to a name; if none fits, don't force it — ask «邊度?» or
+            use a public place name, but NEVER lift a place out of old messages.
+          - `unavailable` — you can't see saved places here (nobody in this
+            conversation shares location with you, or none is configured). Don't
+            invent one; ask where they mean.
+
+        These are just NAMES — the actual spot stays private machinery you never
+        see. Use a name only for THIS conversation; don't carry it elsewhere.
+        """
+        if presence_source is None or not presence_circles:
+            _record(metrics, "saved_places", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't see any saved places in this conversation.",
+            }
+        places = await resolvable_places(
+            room=room, circles=presence_circles, presence=presence_source,
+        )
+        # Names only — the coordinate is never model-facing (DEC-24/60). Empty
+        # in a non-subset room (resolvable_places fell through), which is the
+        # R-35 shape: the model simply has no household names to offer, and a
+        # guarded name stays indistinguishable from an unsaved one.
+        names = sorted({p.name for p in places})
+        _record(metrics, "saved_places", "ok", count=len(names))
+        return {"status": "ok", "names": names}
 
     async def where_is(person: str) -> dict:
         """Where somebody in this conversation was last seen.
@@ -1828,6 +1878,7 @@ def build_tool_specs(
         _spec("transit", transit),
         _spec("route", route),
         _spec("place_info", place_info),
+        _spec("saved_places", saved_places),
         _spec("where_is", where_is),
         _spec("chat_earlier", chat_earlier),
         _spec("group_members", group_members),

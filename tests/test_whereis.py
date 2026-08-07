@@ -14,6 +14,8 @@ production reads them.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from nora.agent.room import Room
@@ -489,3 +491,53 @@ async def test_a_non_subset_room_hands_the_route_client_no_map(persons, store):
     out = await tool._tool_func(origin="home", destination="Yoho Mall")
     assert out["status"] == "ok"
     assert rec.local_places is None
+
+
+# ── saved_places tool: list names, model picks (2026-08-07, replaces the
+#    brittle casefold filter — the model matches «屋企»→"Home" semantically) ──
+
+def _saved_places_tool(persons, store, *, members):
+    tools = build_tools(
+        store=None, conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=members),
+        transit_source=None,
+        presence_source=store, presence_circles=(CIRCLE,),
+        question="", context_window=40,
+    )
+    return {t.tool_name: t for t in tools}["saved_places"]
+
+
+async def test_saved_places_lists_names_for_a_subset_room(persons, store):
+    """The model gets NAMES (never coordinates) and picks the match itself."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[
+        _saved("Home"), _saved("Miles Home"), _saved("Acme Tower"),
+    ])
+    tool = _saved_places_tool(persons, store, members=(MILES, GRANT, NORA))
+    out = await tool._tool_func()
+    assert out["status"] == "ok"
+    assert out["names"] == ["Acme Tower", "Home", "Miles Home"]
+    # No coordinate anywhere in the payload.
+    assert "lat" not in json.dumps(out) and "22.4" not in json.dumps(out)
+
+
+async def test_saved_places_is_empty_for_a_non_subset_room(persons, store):
+    """R-35 fall-through: an outsider in the room means NO names surface —
+    silently, so the guarded names' existence is never confirmed."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    tool = _saved_places_tool(persons, store, members=(MILES, GRANT, STRANGER, NORA))
+    out = await tool._tool_func()
+    assert out["status"] == "ok"
+    assert out["names"] == []
+
+
+async def test_saved_places_unavailable_when_presence_not_wired(persons):
+    tools = build_tools(
+        store=None, conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=(MILES, NORA)),
+        transit_source=None, question="", context_window=40,
+    )
+    tool = {t.tool_name: t for t in tools}["saved_places"]
+    out = await tool._tool_func()
+    assert out["status"] == "unavailable"
