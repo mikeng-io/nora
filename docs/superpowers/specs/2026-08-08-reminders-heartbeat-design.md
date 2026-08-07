@@ -194,6 +194,8 @@ ones that do not. Being explicit about the second list is the design:
 | `admission.run` (R-9 / R-12 / R-30) | **not used** | §5.3 |
 | conversation serialisation | **used**, via a hoisted collaborator | §5.3 |
 | context assembly | **own `TagContext`**, not `ContextAssembler.assemble` | §6.4 |
+| `MentionRenderer.rehydrate` | **used** — it rewrites U+FFFC mention placeholders in the message *and every transcript row* (`pipeline.py:259-263`); skipping it renders raw placeholders wherever anyone was @-mentioned |
+| `feedback.run` | **used** — Nora's own reply fed to Honcho under the aiPeer. A fire turn is still something she said, and omitting it makes her memory of her own speech incomplete |
 | doctrine + prefill | `build_prefill` with a header parameter | §6.3 |
 | `invoke.run` | **not used** — it increments `nora_silent_failures_total` | §6.2 |
 | `runner.invoke` + own `wait_for` | **used**, own timeout and error accounting | §5.4, §6.2 |
@@ -339,21 +341,40 @@ was behaviourally wrong.
 ### 6.2 Outcome accounting is the fire path's own
 
 `nora_silent_failures_total` is targeted at <1% (A8) and is the alarm this
-feature depends on, so the fire path must not move it. **Two** call sites would:
+feature depends on.
 
-- `deliver.check_outcome`'s `no_send_call` branch, and
-- **`invoke.run` itself**, which increments it unconditionally with
-  `reason="invocation_timeout"` / `"llm_error"`
-  (`nora/engagement/stages/invoke.py:109-112`, `:116-118`).
+**Two earlier drafts tried to isolate the fire path from it by not calling
+things, and both undercounted.** Draft one excluded `deliver.check_outcome`.
+Draft two also excluded `invoke.run` (`:109-112`, `:116-118`). But `Deliverer`
+— which the fire path **does** use, and must, because it is the only caller of
+`adapter.send` — increments the same series on **five more** branches:
+`empty_reply`, `doctrine_leak`, `egress_block`, `audit_write_failed`,
+`send_failed` (`nora/agent/guards.py:146, 155, 169, 193, 220`).
+`check_outcome`'s own docstring says so (`deliver.py:135-137`).
 
-An earlier draft closed the first and left the second open while §4 named a
-`failed_timeout` outcome — i.e. it expected exactly the branch it had not
-excluded.
+**So isolation-by-omission is abandoned. The series is shared, and the label
+carries the distinction.**
 
-So the fire path uses **neither**. It calls `runner.invoke` inside its own
-`asyncio.wait_for` with `[heartbeat] timeout_seconds`, catches its own errors,
-records `outcome` on the row (§4) and its own metrics (§13), and reimplements the
-`llm_state.last_success_at` touch that `check_outcome` performs.
+Add an `audience` label (`tag` / `heartbeat`) to `nora_silent_failures_total`.
+This is precedented, not novel: `metric_specs.py:41-44` records `platform` being
+**added** to four pre-existing series. Metric *names* are append-only; labels are
+not (§13).
+
+Consequences to carry into implementation:
+
+- Every increment site must pass it — the five in `Deliverer`, plus
+  `invoke.run`'s two and `check_outcome`'s one. Missing one produces an
+  unlabelled series, which is worse than no label.
+- **The A8 alarm must filter to `audience="tag"`**, or fire-path failures silently
+  consume a <1% budget sized for conversation.
+- A fire-path alarm on `audience="heartbeat"` is then a separate expression, which
+  is what §13's liveness argument wants anyway.
+
+The fire path still calls `runner.invoke` inside its own `asyncio.wait_for` with
+`[heartbeat] timeout_seconds` rather than `invoke.run` — not for metric isolation
+now, but because it needs its own timeout and its own `outcome` mapping (§8.1) —
+and it reimplements the `llm_state.last_success_at` touch `check_outcome`
+performs.
 
 ### 6.3 The header is not doctrine — parameterise, don't duplicate
 
@@ -393,15 +414,35 @@ resolves to `None`, and then:
 So the fire path **assembles `TagContext` directly** rather than calling
 `ContextAssembler.assemble`:
 
-| field | source |
+| `TagContext` field | source |
 |---|---|
-| `message` | the synthetic `NormalizedMessage` above |
-| `tagger` | the requester's `PersonRef`, resolved from `reminders.requester_person_id` |
-| `transcript` | `RecordStore.recent(conversation_id, limit)` |
-| `peer_card` | `MemoryStore.peer_card(...)` for the requester |
+| `message` | the synthetic `NormalizedMessage` below |
+| `tagger` | the requester's `PersonRef`, via `Persons.by_person[requester_person_id]` (`nora/persons.py:59`) |
+| `transcript` | `RecordStore.recent(conversation_id, limit)`, **then `MentionRenderer.rehydrate`** — see §5's table |
+| `peer_card` | `MemoryStore.peer_card(peer_id=ref.honcho_peer_id)` |
 | `tag_id`, `started_at` | minted by the fire path |
 
+And the synthetic `NormalizedMessage` — every field, because they are all
+required with no defaults (`nora/domain/models.py:62-65`):
+
+| field | value |
+|---|---|
+| `platform`, `conversation_id`, `conversation_type` | from the row |
+| **`body`** | **the reminder sentence.** This is what `build_tag_message` escapes into `<tag_message>` (`prefill.py:322-342`) and what the tag path passes as `question=` to `ToolRegistry.build`. It is how she receives the request at all. |
+| `sender_name` | the requester's display name — **not** `Persons.display_name(msg)`, which reads `msg.sender_id` (`persons.py:69-73`) and returns `""` here. Take it from the `PersonRef` above. |
+| `sender_id`, `timestamp` | **blank**, which is what makes §5.5's "no reactions" hold (`indicate.begin` returns `None` when either is falsy) |
+| `raw` | `{}` |
+
+**The set-at and due-at facts go in the header**, not the body — §6.3 already
+parameterises `_context_header`, and the body must stay the requester's own
+sentence or §2's whole premise breaks. Nothing else has a slot for them:
+`build_prefill` and `build_tag_message` render fixed shapes.
+
 This is the context step §5's table omitted. It is listed there now.
+
+*(The `sender_name` line is the same trap as the blocker this section was written
+to fix: blanking `sender_id` is correct for reactions and wrong for everything
+that reads it. Two fields now depend on that, so both are named.)*
 
 *(Earlier drafts said only "sender_id blank" and left the rest implied. Under
 that reading an implementer gets a fire turn with no requester at all, and §15's
@@ -562,10 +603,23 @@ and would have shrunk `LeakGuard`'s verbatim-leak corpus, since `Deliverer` buil
 
 So: all four become `[tag, heartbeat]`, minus the extraction below.
 
-**The extraction.** `# Silence is the default` contradicts a fire turn outright
-(*"the only reason you ever speak"*, *"you never follow up on your own reply"*).
-Extract it to its own `[tag]`-only file, `order` in 21–29 so it sorts before
-`conduct.md` and holds position.
+**The extraction — and it is smaller than the section.** `# Silence is the
+default` is not homogeneous. Only its *first three sentences* contradict a fire
+turn (`conduct.md:20-22`: *"You're only reading this because someone called
+you… That's the only reason you ever speak… you never follow up on your own
+reply"*).
+
+Its **last two sentences are a multi-message rule, not a silence rule**
+(`conduct.md:22-24`): *"Within a single call you usually say one thing; you may
+send a separate message when that one call genuinely addresses more than one
+person — but you never split one answer across several."* That is DEC-40, it is
+true on a fire turn, and moving the whole section to a `[tag]`-only file would
+**delete it from the heartbeat audience**.
+
+So: extract the first three sentences into `silence.md` (`[tag]`, `order` 21–29,
+sorting before `conduct.md`); **leave the multi-message sentences in
+`conduct.md`** under a heading of their own. Splitting on the section boundary
+would have been the obvious move and the wrong one.
 
 A second candidate, flagged by review and **left in for v1**: `conduct.md:32`,
 *"One reply, then stop. If they want more, they'll call you again."* It reads
@@ -713,6 +767,7 @@ by a gate — worth knowing, since §14 exists to list what *does* catch mistake
 |---|---|
 | **`design/09-decision-index.md` — R-1** | *"Only the tagging path may cause a send"*. A fire turn is a send not caused by a tag. **This is the rule the design changes.** Its named test (`test_ambient_never_constructs_agent`, `tests/integration/test_ambient.py:13-19`) asserts both clauses — but only over *ambient input*, so a reminders fire path never enters its harness and it stays green untouched. Amending the row alone therefore deletes the only written brake on a third send path without anything going red. **A replacement named test is required**: the tag path and the fire path are the only two senders. |
 | hand-written alembic migration + `tests/infra/test_schema_parity.py` | new table, CHECK constraint, named index |
+| `tests/contract/test_reminder_store_contract.py` | **required, not conditional.** The `ReminderStore` port gets a SQL adapter *and* a test fake, and CLAUDE.md forbids a second implementation of a port — including a fake — without a shared contract suite both pass (§16 step 1) |
 | `tests/test_acceptance_rules.py::RULE_TESTS` | mapped-identity guard, never-early, fires-once |
 | `tests/test_guards_terminal.py` | must stay green — §6.1 adds no terminal verb |
 | doctrine tests | tag-audience body-identity **and** heartbeat-audience non-degeneracy (§10.1) |
@@ -775,15 +830,34 @@ from this repo.)*
    step 1** — but it lands first and alone regardless, because it is the only
    live-path change in the design and should not share a review with new
    behaviour.
-1. **Table + migration + store + boot sweep + `nora reminders list`.** No model,
-   fake-clock testable end to end. The §8.2 sweep (`firing` → `failed`) belongs
-   here — earlier drafts specified it and then named it in no step.
-2. **Tick + policy re-check + outcome recording**, with a stub turn returning the
+1. **Table + migration + `ReminderStore` + boot sweep + `nora reminders list`.**
+   No model, fake-clock testable end to end. The §8.2 sweep (`firing` → `failed`)
+   belongs here — earlier drafts specified it and named it in no step.
+
+   **The store needs a port decision before a line is written.** Under the layers
+   contract a store is a **port in `nora.domain`** with an **adapter in
+   `nora.infra`** — and the moment a test fake exists, CLAUDE.md requires a shared
+   contract suite both pass. §8.2 already invokes that rule for `RecordStore` and
+   then never applied it here. So step 1 owns: the port, the SQL adapter, the
+   fake, and `tests/contract/test_reminder_store_contract.py`. §14's gate table
+   lists the contract suite for exactly this reason.
+
+2. **Doctrine audience** — the `heartbeat` audience, the §16.1 extraction, and
+   the `applies_to` call sites. **Moved ahead of the fire turn deliberately:**
+   today `get(applies_to="heartbeat")` returns only the generated capability
+   section, so a fire turn built before this ships would deliver messages with no
+   identity, no voice, no conduct and no constraints — and would hand that
+   near-empty doctrine to `LeakGuard` (`guards.py:83`), gutting R-6's
+   verbatim-leak corpus on the very step that first sends. An earlier draft had
+   this as step 4, after delivery. That ordering was wrong.
+3. **Tick + policy re-check + outcome recording**, with a stub turn returning the
    §8.1 outcome enum. Still no model.
-3. **The fire turn** — own `TagContext` (§6.4), header parameter, own
-   `wait_for` and error accounting (§6.2), `required`, deliver.
-4. **Tools + doctrine audience + the `conduct.md` extraction** (§16.1), plus the
-   `Room.tagger` accessor (§12) and the `fire_turn` keyword (§7.1).
+4. **The fire turn** — own `TagContext` and synthetic message (§6.4), header
+   parameter (§6.3), own `wait_for` and error accounting (§6.2), the `audience`
+   label on `nora_silent_failures_total`, `required`, deliver.
+5. **Tools** — `remind` / `list_reminders` / `cancel_reminder`, plus the
+   `Room.tagger` accessor (§12) and the `fire_turn` keyword threaded through
+   `build_tool_specs` / `specs()` / `build()` (§7.1).
 
 ### 16.1 The doctrine edits, exactly
 
@@ -797,8 +871,10 @@ from this repo.)*
   `authority_below: [capability, situation, message-content, tool-output]`.
 - **Add `silence` to `authority_below`** in `identity.md`, `voice.md`,
   `constraints.md` (symmetry, `loader.py:402-415`).
-- **`conduct.md`** — body loses `# Silence is the default`; `version: 5` → 6. No
-  chain edit needed if `silence` names it in neither direction.
+- **`conduct.md`** — body loses only the first three sentences of
+  `# Silence is the default`; **the multi-message rule (DEC-40) stays**, under its
+  own heading. `version: 5` → 6. No chain edit needed if `silence` names it in
+  neither direction.
 - **All four** — `applies_to: [tag]` → `[tag, heartbeat]`.
 - **No edit to the capability section** — its `authority_above` is derived
   (`loader.py:369`) from whoever lists `capability` in `authority_below`, so it
