@@ -72,16 +72,16 @@ def test_before_tool_counts_an_out_of_schema_conversation_and_still_allows_the_c
 
 def test_after_tool_records_a_successful_call():
     g = _guard()
-    g._after_tool(FakeAfterEvent("chat_earlier"))
-    assert g.counts["chat_earlier"] == 1
+    g._after_tool(FakeAfterEvent("load_transcript"))
+    assert g.counts["load_transcript"] == 1
 
 
 def test_after_tool_does_not_count_a_failed_call():
     g = _guard()
-    event = FakeAfterEvent("chat_earlier")
+    event = FakeAfterEvent("load_transcript")
     event.exception = RuntimeError("boom")
     g._after_tool(event)
-    assert g.counts["chat_earlier"] == 0
+    assert g.counts["load_transcript"] == 0
 
 
 def test_after_tool_does_not_count_a_call_the_guard_cancelled():
@@ -96,8 +96,8 @@ def test_after_tool_does_not_count_a_call_the_guard_cancelled():
     reply", and the group heard nothing at all.
     """
     g = _guard()
-    g._after_tool(FakeAfterEvent("chat_earlier", cancel_message="You already called it."))
-    assert g.counts["chat_earlier"] == 0
+    g._after_tool(FakeAfterEvent("load_transcript", cancel_message="You already called it."))
+    assert g.counts["load_transcript"] == 0
 
 
 def test_the_budget_a_vetoed_call_leaves_is_the_one_the_correction_uses():

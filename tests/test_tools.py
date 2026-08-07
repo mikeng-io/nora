@@ -3,8 +3,8 @@ import pytest
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
 from nora.agent.tools import (
-    CHAT_EARLIER_DEFAULT,
-    CHAT_EARLIER_MAX,
+    LOAD_TRANSCRIPT_DEFAULT,
+    LOAD_TRANSCRIPT_MAX,
     NATIVE_TOOL_BUDGETS,
     build_tools,
 )
@@ -46,7 +46,7 @@ async def wiring(pg_url, tmp_path):
         await store.append(message=NormalizedMessage("signal", "g1", "group", "+852111",
                                                       "Miles", i, f"m{i}", {}))
     # A second, unrelated conversation with its own rows — the cross-group
-    # leak probe (Task 1) needs a real second group to prove chat_earlier
+    # leak probe (Task 1) needs a real second group to prove load_transcript
     # cannot be steered into it by a model-supplied conversation_id.
     for i in range(3):
         await store.append(message=NormalizedMessage("signal", "g2", "group", "+852222",
@@ -86,7 +86,7 @@ async def wiring(pg_url, tmp_path):
 
 def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
-        "now", "chat_earlier", "send_reply",
+        "now", "load_transcript", "send_reply",
         "group_members", "lookup_person", "about", "ask_memory",
         "calculate", "transit", "route",
         "place_info", "saved_places",
@@ -122,8 +122,8 @@ def test_every_tool_has_a_model_facing_docstring(wiring):
         assert len(doc.strip()) > 40, f"{name} needs a docstring written for the model"
 
 
-async def test_chat_earlier_returns_rows_oldest_first(wiring):
-    rows = await _call(wiring["tools"]["chat_earlier"], limit=40)
+async def test_load_transcript_returns_rows_oldest_first(wiring):
+    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
     assert [r["body"] for r in rows] == ["m0", "m1", "m2"]
 
 
@@ -143,7 +143,7 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
             f"{name} makes the model invent a conversation nothing reads"
         )
     assert set(
-        wiring["tools"]["chat_earlier"].tool_spec["inputSchema"]["json"]["properties"]
+        wiring["tools"]["load_transcript"].tool_spec["inputSchema"]["json"]["properties"]
     ) == {"limit"}
     assert set(
         wiring["tools"]["send_reply"].tool_spec["inputSchema"]["json"]["properties"]
@@ -164,12 +164,12 @@ def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(w
     for name, supplied, expected in (
         ("send_reply", {"conversation_id": "gEVIL", "conversation_type": "group",
                         "text": "hi"}, {"text": "hi"}),
-        ("chat_earlier", {"conversation_id": "gEVIL", "limit": 5}, {"limit": 5}),
+        ("load_transcript", {"conversation_id": "gEVIL", "limit": 5}, {"limit": 5}),
     ):
         assert wiring["tools"][name]._metadata.validate_input(supplied) == expected
 
 
-async def test_chat_earlier_reads_the_bound_conversation_and_nothing_else(wiring):
+async def test_load_transcript_reads_the_bound_conversation_and_nothing_else(wiring):
     """Task 1's PROBE, now unrepresentable as an argument.
 
     The tools are bound to `g1` and `g2` holds another group's rows. There is
@@ -178,22 +178,22 @@ async def test_chat_earlier_reads_the_bound_conversation_and_nothing_else(wiring
     closed by construction. This still asserts on the returned rows rather than
     on the signature: what matters is that g2's messages never come back.
     """
-    rows = await _call(wiring["tools"]["chat_earlier"], limit=40)
+    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
     bodies = [r["body"] for r in rows]
     assert bodies == ["m0", "m1", "m2"]
     assert not any(b.startswith("secret") for b in bodies)
 
 
-async def test_chat_earlier_returns_only_model_relevant_fields(wiring):
-    rows = await _call(wiring["tools"]["chat_earlier"], limit=40)
+async def test_load_transcript_returns_only_model_relevant_fields(wiring):
+    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
     # No raw_json, no ids. `reply_to` is absent rather than null on an
-    # unthreaded row — see test_chat_earlier_omits_reply_to_* below.
+    # unthreaded row — see test_load_transcript_omits_reply_to_* below.
     assert set(rows[0]) == {"sender", "body", "ts"}
 
 
-async def test_chat_earlier_marks_a_reply_with_the_name_it_answers(wiring):
+async def test_load_transcript_marks_a_reply_with_the_name_it_answers(wiring):
     """design/11 §2.6: if the prefilled transcript teaches `[A ↳ B]` and
-    `chat_earlier` returns un-threaded rows, the older messages look
+    `load_transcript` returns un-threaded rows, the older messages look
     structurally different and the model reads a missing arrow as «not a
     reply». JSON, not the arrow — a tool returns data; the arrow is prompt
     syntax."""
@@ -202,11 +202,11 @@ async def test_chat_earlier_marks_a_reply_with_the_name_it_answers(wiring):
         "signal", "g1", "group", "+852333", "Tyler", 9, "你屋企", {},
         quote=Quote(author_id="+852111", text="whatever", quoted_ts=1),
     ))
-    rows = await _call(wiring["tools"]["chat_earlier"], limit=40)
+    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
     assert rows[-1] == {"sender": "Tyler", "body": "你屋企", "ts": 9, "reply_to": "Miles"}
 
 
-async def test_chat_earlier_omits_reply_to_when_the_parent_is_not_in_the_rows(wiring):
+async def test_load_transcript_omits_reply_to_when_the_parent_is_not_in_the_rows(wiring):
     """Resolution happens ONLY within the rows this call already returns — no
     extra query from inside a tool. An unresolved parent drops the key rather
     than reporting a null the model would have to interpret."""
@@ -215,11 +215,11 @@ async def test_chat_earlier_omits_reply_to_when_the_parent_is_not_in_the_rows(wi
         "signal", "g1", "group", "+852333", "Tyler", 9, "你屋企", {},
         quote=Quote(author_id="+852111", text="whatever", quoted_ts=999_999),
     ))
-    rows = await _call(wiring["tools"]["chat_earlier"], limit=40)
+    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
     assert "reply_to" not in rows[-1]
 
 
-async def test_chat_earlier_names_nora_the_same_way_in_reply_to_as_in_sender(wiring):
+async def test_load_transcript_names_nora_the_same_way_in_reply_to_as_in_sender(wiring):
     store = wiring["store"]
     await store.append(
         message=NormalizedMessage("signal", "g1", "group", "nora", None, 8, "七點半", {}),
@@ -229,17 +229,17 @@ async def test_chat_earlier_names_nora_the_same_way_in_reply_to_as_in_sender(wir
         "signal", "g1", "group", "+852333", "Tyler", 9, "得", {},
         quote=Quote(author_id="nora", text="whatever", quoted_ts=8),
     ))
-    rows = await _call(wiring["tools"]["chat_earlier"], limit=40)
+    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
     assert rows[-2]["sender"] == "Nora"
     assert rows[-1]["reply_to"] == "Nora"
 
 
-async def test_chat_earlier_clamps_a_hostile_limit_before_it_reaches_the_store(wiring, monkeypatch):
+async def test_load_transcript_clamps_a_hostile_limit(wiring, monkeypatch):
     """`limit` is a model-supplied argument. The old SQLite backend rendered
     `LIMIT -1` as unbounded rather than zero — a full-conversation dump into
     context — and Postgres rejects a negative LIMIT outright; either way the
     clamp owns the bound, and `limit=0` is equally meaningless. This
-    asserts what `chat_earlier` actually sends downstream — independent of
+    asserts what `load_transcript` actually sends downstream — independent of
     whatever the store itself does with a non-positive limit — so it fails if
     the tool-level clamp regresses even though the store has its own guard."""
     seen: list[int] = []
@@ -251,16 +251,16 @@ async def test_chat_earlier_clamps_a_hostile_limit_before_it_reaches_the_store(w
 
     monkeypatch.setattr(wiring["store"], "recent", spy)
     for hostile in (-1, 0):
-        rows = await _call(wiring["tools"]["chat_earlier"], limit=hostile)
+        rows = await _call(wiring["tools"]["load_transcript"], limit=hostile)
         assert len(rows) <= 1
     assert seen == [1, 1]
 
 
-async def test_chat_earlier_clamps_the_top_end_to_the_declared_ceiling(wiring, monkeypatch):
+async def test_load_transcript_clamps_the_top_end_to_the_declared_ceiling(wiring, monkeypatch):
     """The other end of the same clamp, and the expensive one (R-24).
 
     `limit` is MODEL-supplied and nothing downstream bounds it — `store.recent`
-    serves whatever it is handed. Measured 2026-08-06, `chat_earlier(200)` cost
+    serves whatever it is handed. Measured 2026-08-06, `load_transcript(200)` cost
     6,592 tokens per call and stayed in context for every later call of the
     loop; at `budget: 2` that was 13,184 tokens, more than half the
     `total_tokens = 24000` in force at the time. This asserts what actually
@@ -275,16 +275,16 @@ async def test_chat_earlier_clamps_the_top_end_to_the_declared_ceiling(wiring, m
         return await real_recent(conversation_id=conversation_id, limit=limit)
 
     monkeypatch.setattr(wiring["store"], "recent", spy)
-    for greedy in (CHAT_EARLIER_MAX + 1, 200, 10_000):
-        await _call(wiring["tools"]["chat_earlier"], limit=greedy)
-    assert seen == [CHAT_EARLIER_MAX, CHAT_EARLIER_MAX, CHAT_EARLIER_MAX]
+    for greedy in (LOAD_TRANSCRIPT_MAX + 1, 200, 10_000):
+        await _call(wiring["tools"]["load_transcript"], limit=greedy)
+    assert seen == [LOAD_TRANSCRIPT_MAX, LOAD_TRANSCRIPT_MAX, LOAD_TRANSCRIPT_MAX]
     # Spelled out, not just compared to the constant: an assertion written only
-    # against `CHAT_EARLIER_MAX` asserts the implementation back to itself and
+    # against `LOAD_TRANSCRIPT_MAX` asserts the implementation back to itself and
     # would stay green if the ceiling went back to 200.
     assert seen == [60, 60, 60]
 
 
-async def test_chat_earlier_defaults_to_less_than_the_ceiling(wiring, monkeypatch):
+async def test_load_transcript_defaults_to_less_than_the_ceiling(wiring, monkeypatch):
     """A model that does not name a `limit` is asking for a little more than
     the prefill already gave it, not for the whole room — so the default is
     not the maximum. Strands fills an omitted argument from the signature's
@@ -297,10 +297,10 @@ async def test_chat_earlier_defaults_to_less_than_the_ceiling(wiring, monkeypatc
         return await real_recent(conversation_id=conversation_id, limit=limit)
 
     monkeypatch.setattr(wiring["store"], "recent", spy)
-    await _call(wiring["tools"]["chat_earlier"])
-    assert seen == [CHAT_EARLIER_DEFAULT]
+    await _call(wiring["tools"]["load_transcript"])
+    assert seen == [LOAD_TRANSCRIPT_DEFAULT]
     assert seen == [25]                       # the literal, for the same reason as above
-    assert CHAT_EARLIER_DEFAULT < CHAT_EARLIER_MAX
+    assert LOAD_TRANSCRIPT_DEFAULT < LOAD_TRANSCRIPT_MAX
 
 
 async def test_send_reply_delegates_to_the_deliverer(wiring):
@@ -310,7 +310,7 @@ async def test_send_reply_delegates_to_the_deliverer(wiring):
 
 
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):
-    await _call(wiring["tools"]["chat_earlier"], limit=40)
+    await _call(wiring["tools"]["load_transcript"], limit=40)
     await _call(wiring["tools"]["group_members"])
     await _call(wiring["tools"]["lookup_person"], name="Miles")
     await _call(wiring["tools"]["about"], person="Miles")
@@ -322,7 +322,7 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(wiring["store"], "recent", boom)
-    assert await _call(wiring["tools"]["chat_earlier"], limit=40) == []
+    assert await _call(wiring["tools"]["load_transcript"], limit=40) == []
 
 
 # ---- every tool call is counted, by outcome ---------------------------------
@@ -330,14 +330,14 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
 
 async def test_the_tools_without_a_counter_of_their_own_now_have_one(wiring):
     """`nora_room_lookups_total{tool,status}` covered three of them; these had
-    nothing, so "did she ever call chat_earlier" was unanswerable from
+    nothing, so "did she ever call load_transcript" was unanswerable from
     `/metrics` as well as from the log. Same `{tool, status}` shape rather than
     bespoke series."""
     tools, metrics = wiring["tools"], wiring["metrics"]
     await _call(tools["now"])
-    await _call(tools["chat_earlier"], limit=40)
+    await _call(tools["load_transcript"], limit=40)
     await _call(tools["send_reply"], text="hello")
-    for tool in ("now", "chat_earlier", "send_reply"):
+    for tool in ("now", "load_transcript", "send_reply"):
         assert metrics.get("nora_tool_calls_total", tool=tool, status="ok") == 1, tool
 
 
@@ -359,18 +359,18 @@ async def test_a_tool_that_could_not_answer_is_counted_apart_from_one_that_did(
     wiring, monkeypatch,
 ):
     """R-22's distinction, applied to the four tools that never had it. A
-    counter that reported `ok` for a `chat_earlier` whose store was down would
+    counter that reported `ok` for a `load_transcript` whose store was down would
     be the `peer_card` failure again — a green series over a dead path."""
     metrics = wiring["metrics"]
 
     async def boom(*a, **kw):
         raise RuntimeError("db down")
 
-    await _call(wiring["tools"]["chat_earlier"], limit=40)
+    await _call(wiring["tools"]["load_transcript"], limit=40)
     monkeypatch.setattr(wiring["store"], "recent", boom)
-    await _call(wiring["tools"]["chat_earlier"], limit=40)
-    assert metrics.get("nora_tool_calls_total", tool="chat_earlier", status="ok") == 1
-    assert metrics.get("nora_tool_calls_total", tool="chat_earlier", status="unavailable") == 1
+    await _call(wiring["tools"]["load_transcript"], limit=40)
+    assert metrics.get("nora_tool_calls_total", tool="load_transcript", status="ok") == 1
+    assert metrics.get("nora_tool_calls_total", tool="load_transcript", status="unavailable") == 1
 
 
 async def test_a_refused_send_is_not_counted_as_a_sent_one(wiring):

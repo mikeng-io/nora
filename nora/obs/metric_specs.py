@@ -150,7 +150,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_tool_scope_violations_total",
         "A model-supplied tool argument disagreed with the scope the tool was "
-        "bound to (e.g. chat_earlier asked for a conversation_id other than the "
+        "bound to (e.g. load_transcript asked for a conversation_id other than the "
         "tagged one) and was ignored rather than honoured, by tool.",
         ("tool",),
     ),
@@ -238,7 +238,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(end_turn / tool_use / limit_turns / limit_total_tokens / ...).",
         ("reason",),
     ),
-    # The tools that had NO counter of their own — `now`, `chat_earlier`,
+    # The tools that had NO counter of their own — `now`, `load_transcript`,
     # `send_reply`, and now `calculate` (DEC-35), whose two
     # statuses are `ok` and `refused`: a refusal counted as `ok` would make
     # "is the model writing expressions she can actually evaluate" unanswerable

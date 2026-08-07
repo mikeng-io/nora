@@ -224,7 +224,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "saved_places": NativeTool(1, "the names this household has saved for places "
                                   "(«Home», «Miles Home») — check before routing to a "
                                   "place someone calls by a personal name"),
-    # **`chat_earlier`, not `read_buffer`, and that was MEASURED, not argued
+    # **`load_transcript`, not `read_buffer`, and that was MEASURED, not argued
     # (DEC-58, same harness as DEC-39).** The old name was a lie — nothing is
     # buffered; it reads durable rows off disk (GLOSSARY). With the docstring
     # held BYTE-IDENTICAL and only the identifier changed (schema name + this
@@ -232,7 +232,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # doctrine and `tool_choice="required"` on `deepseek-v4-flash`,
     # reasoning_effort=low, first-tool selection went:
     #
-    #   read_buffer 16/16  ->  chat_earlier 16/16   (its own «頭先講咗啲咩»)
+    #   read_buffer 16/16  ->  load_transcript 16/16   (its own «頭先講咗啲咩»)
     #
     # and it pulled NOTHING off the other tools: «邊個喺度» stayed group_members
     # 16/16 and «阿豹係邊個» stayed lookup_person 16/16 under the new name. The
@@ -241,7 +241,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # room_members 7/48 where group_members took 0/48 (z≈2.75, DEC-39's own
     # threshold). A name is not documentation; it is the feature the router
     # matches on.
-    "chat_earlier": NativeTool(4, "something was said further back than the messages "
+    "load_transcript": NativeTool(4, "something was said further back than the messages "
                                  "you were shown"),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
@@ -282,7 +282,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     #
     # `person_profile` shares the token `person` with `lookup_person`, and
     # person-shaped routing collapsed onto that tool — including for a question
-    # about the TRANSCRIPT, where `chat_earlier` fell from 14/24 to 3/16. A name
+    # about the TRANSCRIPT, where `load_transcript` fell from 14/24 to 3/16. A name
     # is not only documentation; it is the feature the router matches on.
     "about": NativeTool(4, "what someone is LIKE, when the answer is not in the "
                            "conversation. «I know nothing about them yet» and «I could "
@@ -364,7 +364,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # **budget 1, sized like `group_members`, not like `lookup_person`.** Every
     # budget here is one currency — a model round trip (~4 s), against
     # `llm.limits.turns = 8`. A second `skills(navigation)` in one turn re-injects
-    # a body ALREADY in context — the exact context-cost `chat_earlier`'s clamp
+    # a body ALREADY in context — the exact context-cost `load_transcript`'s clamp
     # exists to bound — and cannot improve the answer, the same reason
     # `group_members` is 1 ("a second call returns the identical answer"). At 1,
     # R-7's repeat veto ("you already called skills and have that context, answer
@@ -393,7 +393,7 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
     name: spec.budget for name, spec in NATIVE_TOOLS.items()
 }
 
-# `chat_earlier`'s clamp, and the single source both the clamp and the
+# `load_transcript`'s clamp, and the single source both the clamp and the
 # model-facing docstring below read from — `tests/test_tools.py::
 # test_the_model_is_told_the_same_ceiling_the_clamp_enforces` fails if they
 # drift, which matters because the docstring IS the schema the model sees.
@@ -404,8 +404,8 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 # Round-trip cost of ONE tool result, measured 2026-08-06, and paid again on
 # EVERY subsequent call in the loop because the result stays in context:
 #
-#   chat_earlier(200) -> 6,592 tokens        recall*       ->   151
-#   chat_earlier(40)  -> 1,368 tokens        lookup_person ->   112
+#   load_transcript(200) -> 6,592 tokens        recall*       ->   151
+#   load_transcript(40)  -> 1,368 tokens        lookup_person ->   112
 #
 # `recall*` is `about` under its old name; its 151 is the OLD figure
 # and is now low. That measurement was taken
@@ -413,19 +413,19 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 # call shape that spent the entire budget on one channel (DEC-38). Against a
 # corpus with derived levels in it — `probe_zzz`, 102 documents — the new shape
 # returns ~1,100 characters of conclusions, which puts one `about` in the same
-# order as `chat_earlier(40)` rather than an order below it. Stated in characters
+# order as `load_transcript(40)` rather than an order below it. Stated in characters
 # because no tokenizer is available offline in this checkout; re-measure the
 # token figure the next time one is, rather than scaling it by guess.
 #
-# `chat_earlier` has `budget: 2` (R-7/DEC-10), so at the old ceiling of 200 two
+# `load_transcript` has `budget: 2` (R-7/DEC-10), so at the old ceiling of 200 two
 # calls were 13,184 tokens — a fifth of `total_tokens = 64000` on their own,
 # and more than half of the 24,000 that cap used to be. 60 caps the pair at
 # roughly 4,000, in the same order as the three cheap tools rather than an
 # order above them. 25 is the default because the prefill already carries the
 # last `store.context_window` (40) messages: a call that does not say how far
 # back it wants is looking for a little more, not for the whole room.
-CHAT_EARLIER_MAX = 60
-CHAT_EARLIER_DEFAULT = 25
+LOAD_TRANSCRIPT_MAX = 60
+LOAD_TRANSCRIPT_DEFAULT = 25
 
 # Honcho's dialectic reasoning levels (DialecticOptions.reasoning_level), from
 # the live schema. `ask_memory` lets the model pick; anything off-list falls back
@@ -439,7 +439,7 @@ _REASONING_LEVELS = frozenset({"minimal", "low", "medium", "high", "max"})
 # nothing, and that was read as "the tool was never called". The grep could not
 # have found anything either way: this module emitted exactly ONE log line on
 # any success path (`now`'s), and `lookup_person`, `group_members`, `about`,
-# `chat_earlier` and `send_reply` emitted none at all. Two
+# `load_transcript` and `send_reply` emitted none at all. Two
 # confident architectural conclusions were drawn from that zero and both were
 # wrong; one nearly retracted a design document (DEC-28). A silence that reads
 # identically whether the code ran on every turn or never is not evidence, and
@@ -720,13 +720,13 @@ def build_tool_specs(
     ai_peer: str = "nora",
 ) -> tuple[ToolSpec, ...]:
     # The tag's conversation, captured once. It is the ONLY thing that decides
-    # which rows `chat_earlier` returns — see DEC-24 for why the model is no
+    # which rows `load_transcript` returns — see DEC-24 for why the model is no
     # longer asked for it. Task 1's cross-group read leak was this value being
     # shadowed by a same-named model-supplied parameter; deleting the parameter
     # removes the shadow along with the shape of that bug.
     bound_conversation_id = conversation_id
 
-    async def chat_earlier(limit: int = CHAT_EARLIER_DEFAULT) -> list[dict]:
+    async def load_transcript(limit: int = LOAD_TRANSCRIPT_DEFAULT) -> list[dict]:
         """Read older messages from this conversation.
 
         You already have the most recent messages in front of you. Only call this if you
@@ -736,32 +736,32 @@ def build_tool_specs(
             limit: How many recent messages to fetch (max 60).
         """
         # The `60` above is deliberately a LITERAL, not an f-string
-        # interpolation of CHAT_EARLIER_MAX: an f-string here would not be a
+        # interpolation of LOAD_TRANSCRIPT_MAX: an f-string here would not be a
         # docstring at all — `__doc__` would be None and Strands would derive
         # an EMPTY model-facing description and parameter schema from it
         # (`FunctionToolMetadata.extract_metadata`), which is the whole
         # contract this module's own docstring describes. The pair is kept in
         # step by a test instead, not by the interpreter.
         # Clamp both ends. `limit` is MODEL-SUPPLIED, so this clamp is the
-        # only bound on it — see `CHAT_EARLIER_MAX` above for the measured
+        # only bound on it — see `LOAD_TRANSCRIPT_MAX` above for the measured
         # cost of getting it wrong at the top end. At the bottom end a
         # non-positive value must never reach the store: under the old SQLite
         # backend `LIMIT -1` meant unbounded (the whole conversation into
         # context); Postgres rejects a negative LIMIT outright. Either way the
         # clamp, not the backend, owns the bound.
-        asked = CHAT_EARLIER_DEFAULT
+        asked = LOAD_TRANSCRIPT_DEFAULT
         try:
-            asked = max(1, min(int(limit), CHAT_EARLIER_MAX))
+            asked = max(1, min(int(limit), LOAD_TRANSCRIPT_MAX))
             rows = await store.recent(
                 conversation_id=bound_conversation_id, limit=asked,
             )
         except Exception:
-            log.exception("chat_earlier failed")
-            _record(metrics, "chat_earlier", "unavailable")
+            log.exception("load_transcript failed")
+            _record(metrics, "load_transcript", "unavailable")
             return []
         # `reply_to` keeps this tool structurally consistent with the prefilled
         # transcript, and that consistency is the point. If the prefill teaches
-        # `[A ↳ B]` and chat_earlier then hands back un-threaded rows, the older
+        # `[A ↳ B]` and load_transcript then hands back un-threaded rows, the older
         # messages look STRUCTURALLY different and the model reads a missing
         # arrow as "not a reply". JSON, not the arrow — a tool returns data,
         # the arrow is prompt syntax.
@@ -786,7 +786,7 @@ def build_tool_specs(
         # `rows=0` is an ordinary `ok` — a conversation with nothing older in
         # it — so the count is the discriminator, not the status. Bodies are
         # never logged: this is the group's transcript.
-        _record(metrics, "chat_earlier", "ok", limit=asked, rows=len(out), threaded=threaded)
+        _record(metrics, "load_transcript", "ok", limit=asked, rows=len(out), threaded=threaded)
         return out
 
     # ---- the three room-scoped tools -------------------------------------
@@ -892,7 +892,7 @@ def build_tool_specs(
         conclusions built up about them over time, narrowed to the message you
         were just tagged in, so ask about the person, not about the topic.
 
-        It holds no messages. For something that was actually said, chat_earlier.
+        It holds no messages. For something that was actually said, load_transcript.
 
         Name the person the way the message did; a nickname is fine. It only
         knows people in THIS conversation.
@@ -1620,12 +1620,12 @@ def build_tool_specs(
     # ---- media_fetch: read a stored image back through MiMo (DEC-56) ---------
     #
     # The window scanned for the handle. It must be at least as deep as the
-    # prefill (`context_window`) PLUS `chat_earlier`'s reach (`CHAT_EARLIER_MAX`),
+    # prefill (`context_window`) PLUS `load_transcript`'s reach (`LOAD_TRANSCRIPT_MAX`),
     # so any image the group can still see — whether it is in front of the model
-    # or reachable by scrolling `chat_earlier` back — resolves; a blob older than
+    # or reachable by scrolling `load_transcript` back — resolves; a blob older than
     # that is honestly `nothing_found`, because she cannot see it either. It is a
     # sum rather than a max so the bound stays correct if either half moves.
-    _media_window = context_window + CHAT_EARLIER_MAX
+    _media_window = context_window + LOAD_TRANSCRIPT_MAX
 
     async def media_fetch(handle: str) -> dict:
         """Look at an image somebody sent in this conversation and say what it shows.
@@ -1681,7 +1681,7 @@ def build_tool_specs(
             }
 
         # Resolve WITHIN this conversation's own media_json (R-21, DEC-24), the
-        # closure-scope `chat_earlier` uses — a handle from another conversation
+        # closure-scope `load_transcript` uses — a handle from another conversation
         # is un-resolvable here, not resolved-then-refused. Wrapped, because a
         # tool never raises into the loop (`test_a_tool_never_raises_...`).
         try:
@@ -2014,7 +2014,7 @@ def build_tool_specs(
         _spec("place_info", place_info),
         _spec("saved_places", saved_places),
         _spec("where_is", where_is),
-        _spec("chat_earlier", chat_earlier),
+        _spec("load_transcript", load_transcript),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
         _spec("about", about),

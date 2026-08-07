@@ -16,7 +16,7 @@ RULE_TESTS = {
     "R-6": "test_leak_guard_blocks_canary",
     "R-6b": "test_leak_guard_blocks_doctrine_verbatim",
     "R-6c": "test_leak_guard_allows_normal_reply",
-    "R-7": "test_tool_call_budget_enforced_for_chat_earlier",
+    "R-7": "test_tool_call_budget_enforced_for_load_transcript",
     "R-8": "test_limits_passed_through",
     "R-9": "test_debounce_window",
     "R-10": "test_concurrent_tags_same_conversation",

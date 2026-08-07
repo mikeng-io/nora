@@ -565,7 +565,7 @@ class HonchoClient:
         does he get to work»: the nearest hit is *does the morning school run*
         and *drives to work instead of taking the train* is third. 9 gives 3/3/3
         and costs roughly 1,100 characters of tool result, in the same order as
-        `chat_earlier`'s default and well inside `llm.limits`.
+        `load_transcript`'s default and well inside `llm.limits`.
         """
         payload: dict[str, object] = {
             "search_query": search_query,

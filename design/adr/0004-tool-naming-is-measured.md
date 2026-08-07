@@ -73,6 +73,13 @@ name and in DEC-39; they are **not a test** — they need a live gateway and cos
   GLOSSARY calls it misnamed and proposes `chat_earlier`. It stays because the
   `earlier` case above is precisely a `read_buffer`-vs-`about` decision —
   renaming both at once makes the measurement unreadable in both directions.
+
+> **Update 2026-08-08:** `chat_earlier` was later renamed to `load_transcript`
+> (operator, for consistency with the memory verbs `about`/`ask_memory`). The
+> history above is preserved as the measurement it records; the tool is now
+> `load_transcript`. A routing eval should confirm the new name routes as well —
+> this ADR's whole point is that the name is a measured feature, so the rename
+> carries the same re-measure obligation.
 - **`group_members`.** `Room`/`RoomView` (`nora/agent/room.py`) is the object
   that backs it and the concept the whole R-21 scoping rule is written in terms
   of; the tool's name says "group", which is a platform word for a Signal

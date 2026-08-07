@@ -14,8 +14,8 @@ The measurements, once, so the constants below are not magic:
   single-call completions           3,993 / 3,987 / 3,974 tokens against
                                     `max_tokens = 4000`
   largest legitimate completion     371 tokens
-  chat_earlier(200) round trip       6,592 tokens, in context for the rest
-  chat_earlier(40) round trip        1,368 tokens
+  load_transcript(200) round trip       6,592 tokens, in context for the rest
+  load_transcript(40) round trip        1,368 tokens
   about / lookup_person    151 / 112 tokens (the first measured
                                     before DEC-38 widened it; see tools.py)
 
@@ -33,7 +33,7 @@ from pathlib import Path
 import pytest
 
 from nora.agent import tools
-from nora.agent.tools import CHAT_EARLIER_DEFAULT, CHAT_EARLIER_MAX, NATIVE_TOOL_BUDGETS
+from nora.agent.tools import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX, NATIVE_TOOL_BUDGETS
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = ("config.toml", "config.example.toml")
@@ -46,7 +46,7 @@ MEASURED_TOKENS_PER_CALL = 36_748 // 6         # 6,124
 # One tool result is charged again on every later call in the loop, so its
 # cost is multiplied by the calls that follow it. A single tool result must
 # stay well under a third of the turn.
-MEASURED_TOKENS_PER_CHAT_EARLIER_ROW = 6_592 / 200      # ~33
+MEASURED_TOKENS_PER_LOAD_TRANSCRIPT_ROW = 6_592 / 200      # ~33
 
 
 def _llm(name: str) -> dict:
@@ -80,14 +80,14 @@ def test_no_single_call_can_spend_the_whole_turn_budget(config_name):
     #    without being so large that one call could swallow the loop budget.
     assert llm["max_tokens"] >= 4 * 371, config_name
 
-    # 4. One `chat_earlier` result — the only tool whose size the MODEL picks —
+    # 4. One `load_transcript` result — the only tool whose size the MODEL picks —
     #    cannot be a third of the turn. At the old ceiling of 200, two calls
     #    (its R-7 budget) were 13,184 tokens.
-    worst_chat_earlier = (
-        CHAT_EARLIER_MAX * MEASURED_TOKENS_PER_CHAT_EARLIER_ROW
-        * NATIVE_TOOL_BUDGETS["chat_earlier"]
+    worst_load_transcript = (
+        LOAD_TRANSCRIPT_MAX * MEASURED_TOKENS_PER_LOAD_TRANSCRIPT_ROW
+        * NATIVE_TOOL_BUDGETS["load_transcript"]
     )
-    assert worst_chat_earlier < limits["total_tokens"] / 3, config_name
+    assert worst_load_transcript < limits["total_tokens"] / 3, config_name
 
 
 @pytest.mark.parametrize("config_name", CONFIGS)
@@ -109,26 +109,26 @@ def test_all_three_caps_are_declared(config_name):
     assert set(_llm(config_name)["limits"]) == {"turns", "total_tokens", "output_tokens"}
 
 
-def test_the_chat_earlier_clamp_is_the_only_bound_on_a_model_supplied_size():
+def test_the_load_transcript_clamp_is_the_only_bound_on_a_model_supplied_size():
     """`limit` is the one argument in `nora.agent.tools` a model invents on
     every call, and nothing downstream bounds it — `store.recent` will happily
     serve whatever it is given. 200 was 6,592 tokens per call, paid again on
     every subsequent call of the loop."""
-    assert CHAT_EARLIER_MAX <= 60
-    assert CHAT_EARLIER_DEFAULT <= CHAT_EARLIER_MAX
+    assert LOAD_TRANSCRIPT_MAX <= 60
+    assert LOAD_TRANSCRIPT_DEFAULT <= LOAD_TRANSCRIPT_MAX
     # STRICTLY below the prefill's own context window (`store.context_window`
     # = 40, which the model already has in front of it): a call that does not
     # say how far back it wants is asking for a little more, not for the whole
     # room. `<=` would be satisfied by the old default of exactly 40.
-    assert CHAT_EARLIER_DEFAULT < 40
+    assert LOAD_TRANSCRIPT_DEFAULT < 40
 
 
 def test_the_model_is_told_the_same_ceiling_the_clamp_enforces():
     """The docstring IS the model-facing schema (Strands derives `description`
     and `inputSchema` from the callable), and it cannot interpolate
-    `CHAT_EARLIER_MAX` — an f-string would not be a docstring at all and
+    `LOAD_TRANSCRIPT_MAX` — an f-string would not be a docstring at all and
     `__doc__` would be None. So the literal is checked here instead. A clamp
     the model is not told about produces a silently truncated answer it thinks
     is complete."""
     source = (Path(tools.__file__)).read_text()
-    assert f"limit: How many recent messages to fetch (max {CHAT_EARLIER_MAX})." in source
+    assert f"limit: How many recent messages to fetch (max {LOAD_TRANSCRIPT_MAX})." in source

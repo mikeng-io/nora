@@ -48,9 +48,9 @@ def test_tool_budget_enforces_the_r7_limits():
     # budget change cannot silently un-test the R-7 ceiling: exactly the budget
     # is allowed, one more is refused.
     from nora.agent.tools import NATIVE_TOOL_BUDGETS as B
-    ce, gm, sr = B["chat_earlier"], B["group_members"], B["send_reply"]
-    assert ToolBudget().evaluate(_t(["chat_earlier"] * ce + ["send_reply"])).passed
-    assert not ToolBudget().evaluate(_t(["chat_earlier"] * (ce + 1) + ["send_reply"])).passed
+    ce, gm, sr = B["load_transcript"], B["group_members"], B["send_reply"]
+    assert ToolBudget().evaluate(_t(["load_transcript"] * ce + ["send_reply"])).passed
+    assert not ToolBudget().evaluate(_t(["load_transcript"] * (ce + 1) + ["send_reply"])).passed
     assert not ToolBudget().evaluate(_t(["group_members"] * (gm + 1))).passed
     # send_reply's own upper bound (the cap) is ToolBudget's job now that
     # RepliesAtLeastOnce owns only the lower bound (DEC-42).
@@ -60,12 +60,12 @@ def test_tool_budget_enforces_the_r7_limits():
 
 def test_no_redundant_read_fails_when_prefill_was_sufficient():
     assert not NoRedundantRead().evaluate(
-        _t(["chat_earlier", "send_reply"], prefill_sufficient=True)).passed
+        _t(["load_transcript", "send_reply"], prefill_sufficient=True)).passed
 
 
 def test_no_redundant_read_allows_a_read_when_prefill_was_thin():
     assert NoRedundantRead().evaluate(
-        _t(["chat_earlier", "send_reply"], prefill_sufficient=False)).passed
+        _t(["load_transcript", "send_reply"], prefill_sufficient=False)).passed
 
 
 def test_honcho_fed_once_per_delivered_reply():

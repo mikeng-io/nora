@@ -101,7 +101,7 @@ _DEFAULT_JUDGE_MODEL_ID = "deepseek-v4-pro"
 
 # Context tools that gather information before a reply — anything else is either
 # the terminal side-effect tool (`send_reply`) or unknown to this evaluator.
-_CONTEXT_TOOLS = ("chat_earlier",)
+_CONTEXT_TOOLS = ("load_transcript",)
 
 
 def _build_judge_prompt(*, tag_input: str, reply_text: str, doctrine_text: str) -> str:
@@ -208,13 +208,13 @@ class NoraTrajectoryEvaluator(Evaluator):
     tests don't exercise this class at all.
 
     Checks:
-    - any context tool (`chat_earlier`) occurs before `send_reply`;
+    - any context tool (`load_transcript`) occurs before `send_reply`;
     - `send_reply`, if called at all, is the LAST tool call;
     - no tool is called more times than `budgets` allows (defaults mirror R-7:
-      `chat_earlier` <=2, `send_reply` <=1).
+      `load_transcript` <=2, `send_reply` <=1).
     """
 
-    _DEFAULT_BUDGETS: ClassVar[dict[str, int]] = {"chat_earlier": 2, "send_reply": 1}
+    _DEFAULT_BUDGETS: ClassVar[dict[str, int]] = {"load_transcript": 2, "send_reply": 1}
 
     def __init__(self, *, budgets: dict[str, int] | None = None, name: str | None = None) -> None:
         super().__init__(name=name)

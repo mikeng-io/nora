@@ -188,7 +188,7 @@ def test_an_identity_file_naming_a_tool_is_a_startup_failure(doctrine_dir):
     written, and an authored file has no other reason to carry one. Needs no
     list of today's tools, so it cannot rot."""
     write(doctrine_dir, "identity.md", name="soul", order=10, kind="identity",
-          body="When it matters, call chat_earlier for older messages.")
+          body="When it matters, call load_transcript for older messages.")
     with pytest.raises(DoctrineError, match="may not name a tool"):
         _store(doctrine_dir).get(applies_to="tag")
 

@@ -4,7 +4,7 @@
 `grep lookup_person data/nora.log` returned zero, and that was read as "the
 tool was never called". It could not have returned anything either way:
 `nora/agent/tools.py` emitted exactly one log line on any success path
-(`now`'s), and `lookup_person`, `group_members`, `about`, `chat_earlier`
+(`now`'s), and `lookup_person`, `group_members`, `about`, `load_transcript`
 and `send_reply` emitted none at all. Two architectural
 conclusions were drawn from that zero, both wrong, and one nearly retracted a
 design document. A silence that reads identically whether the code ran on every
@@ -63,7 +63,7 @@ phone = "+85290000102"
 
 
 class _Store:
-    """Two rows, one of them a reply — so `chat_earlier`'s `rows` and `threaded`
+    """Two rows, one of them a reply — so `load_transcript`'s `rows` and `threaded`
     counts are different numbers and a line that reported one as the other
     would be visible. A store that answered every call with `[]` would let the
     counts be anything at all."""
@@ -193,7 +193,7 @@ async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
     """
     tools = wiring["tools"]
     await _call(tools["now"])
-    await _call(tools["chat_earlier"], limit=40)
+    await _call(tools["load_transcript"], limit=40)
     await _call(tools["group_members"])
     await _call(tools["lookup_person"], name="阿豹")
     await _call(tools["about"], person="俊爺")
@@ -201,7 +201,7 @@ async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
     await _call(tools["send_reply"], text="七點半")
     named = [record["tool"] for record in _tool_lines(wiring["path"])]
     assert sorted(named) == sorted([
-        "now", "chat_earlier", "group_members",
+        "now", "load_transcript", "group_members",
         "lookup_person", "about", "calculate", "send_reply",
     ])
 
@@ -244,7 +244,7 @@ async def test_a_line_says_how_the_tool_answered_not_just_that_it_ran(wiring):
 async def test_the_counts_in_a_line_are_the_real_ones(wiring):
     """A line reporting a constant would be as useless as no line. The fixture's
     store holds two rows, exactly one of which is a reply."""
-    await _call(wiring["tools"]["chat_earlier"], limit=40)
+    await _call(wiring["tools"]["load_transcript"], limit=40)
     line = _tool_lines(wiring["path"])[-1]
     assert (line["rows"], line["threaded"], line["limit"]) == (2, 1, 40)
 
@@ -253,7 +253,7 @@ async def test_a_clamped_limit_is_reported_as_the_clamped_value(wiring):
     """`limit` is the one model-supplied number in this module and the clamp is
     the only bound on it — a line reporting what the model ASKED for rather
     than what was served would hide the clamp working."""
-    await _call(wiring["tools"]["chat_earlier"], limit=10_000)
+    await _call(wiring["tools"]["load_transcript"], limit=10_000)
     assert _tool_lines(wiring["path"])[-1]["limit"] == 60
 
 
@@ -275,7 +275,7 @@ async def test_no_tool_line_carries_a_phone_number_or_an_aci(wiring):
     # ISO timestamp with a `+08:00` offset, which is the one detail in here
     # shaped anything like a phone number.
     await _call(tools["now"])
-    await _call(tools["chat_earlier"], limit=40)
+    await _call(tools["load_transcript"], limit=40)
     await _call(tools["group_members"])
     text = wiring["path"].read_text()
     assert scan_identifiers(text) is None, text
@@ -288,7 +288,7 @@ async def test_no_tool_line_carries_a_conclusion_or_a_transcript_body(wiring):
     words — neither becomes safe by being written to a different file."""
     tools = wiring["tools"]
     await _call(tools["about"], person="俊爺")
-    await _call(tools["chat_earlier"], limit=40)
+    await _call(tools["load_transcript"], limit=40)
     await _call(tools["send_reply"], text="今晚七點半得")
     text = wiring["path"].read_text()
     for secret in ("Miles is from Ridgeline", "likes espresso", "去邊食", "你屋企",

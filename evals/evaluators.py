@@ -44,8 +44,8 @@ class ToolBudget:
 
 class NoRedundantRead:
     def evaluate(self, t) -> Result:
-        if t.prefill_sufficient and "chat_earlier" in t.tool_calls:
-            return Result(False, "chat_earlier called despite a sufficient pre-fill (R-15)")
+        if t.prefill_sufficient and "load_transcript" in t.tool_calls:
+            return Result(False, "load_transcript called despite a sufficient pre-fill (R-15)")
         return Result(True)
 
 

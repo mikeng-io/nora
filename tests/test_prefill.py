@@ -48,7 +48,7 @@ def test_message_shape_matches_strands():
 def test_header_states_what_is_already_present(R15=None):
     """R-15: the model must not go looking for context it already has.
 
-    The header used to prove this by naming `chat_earlier` and telling her not to
+    The header used to prove this by naming `load_transcript` and telling her not to
     call it. It names no tool at all now (DEC-29) — the capability section says
     when to reach for one, and this block's job is to say what she is already
     holding, with the window size in it so "further back than you were shown"

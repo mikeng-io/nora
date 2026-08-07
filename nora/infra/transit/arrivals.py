@@ -77,7 +77,7 @@ HKT = timezone(timedelta(hours=8), "HKT")
 # are sized against the two shapes actually on the wire: 68X has 2 directions,
 # K73 has 2, and a KMB trunk route with peak variants has at most 2 per service
 # type. Four directions x three departures is roughly 700 characters of JSON —
-# the same order as `lookup_person`, an order below `chat_earlier(25)`.
+# the same order as `lookup_person`, an order below `load_transcript(25)`.
 MAX_DIRECTIONS = 4
 MAX_DEPARTURES = 3
 # One operator sentence, long enough for the longest `rmk_en` seen in KMB's own

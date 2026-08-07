@@ -59,7 +59,7 @@ def _built_tools(registry: ToolRegistry) -> list:
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
-        "now", "chat_earlier", "send_reply",
+        "now", "load_transcript", "send_reply",
         "group_members", "lookup_person", "about", "ask_memory",
         "calculate", "transit", "route",
         "place_info", "saved_places",
@@ -71,7 +71,7 @@ def test_the_registry_exposes_every_declared_tool():
 
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
-        "now": 4, "chat_earlier": 4,
+        "now": 4, "load_transcript": 4,
         # 3 — multi-message active (DEC-42): the cap on how many messages one
         # tag may send, raised 1→3 as the whole activation (the delivery path
         # already read this one number as the cap).

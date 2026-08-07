@@ -36,7 +36,7 @@ from one observed message; empty without the observe-config.
 
 ### S.3 The four recall verbs (2 stores)
 
-- `load_transcript` — Postgres, verbatim this-channel (rename of `chat_earlier`, NOT YET DONE).
+- `load_transcript` — Postgres, verbatim this-channel (renamed from `chat_earlier` 2026-08-08).
 - `about(person)` — Honcho `representation`, retrieve Nora's model. Fast.
 - `ask_memory(person, depth)` — Honcho `chat`/dialectic, REASON; `depth` model-chosen (minimal→max), slow (~14-19s), budget 1.
 - `search_memory(query)` — Honcho `search` over raw messages. NOT BUILT. Workspace-scoped is SAFE under S.1 (one social unit); raw is higher-fidelity than the distilled verbs, so roster-speaker filter + R-18 per message when built.

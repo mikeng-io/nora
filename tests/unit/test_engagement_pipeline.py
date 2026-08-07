@@ -1181,7 +1181,7 @@ async def test_the_canary_and_r18_run_on_every_message_not_just_the_first():
 
 async def test_every_message_gets_its_own_audit_row():
     """A9 record-first, per message. Recording a three-message reply as one
-    row would leave the audit — and therefore `chat_earlier`, and therefore the
+    row would leave the audit — and therefore `load_transcript`, and therefore the
     next turn's transcript — holding a conversation that did not happen."""
     adapter = _FakeAdapter()
     pipeline, _, audit, _, background = _build_pipeline(
