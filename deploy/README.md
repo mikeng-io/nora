@@ -10,7 +10,7 @@ rollback option if the container approach ever needs to be abandoned; the comman
 ## Install
 
     sudo ./deploy/install.sh
-    sudo ./deploy/egress.sh
+    sudo ./deploy/egress.sh apply     # Firecrawl SSRF egress policy (see Egress below)
     sudo systemctl start nora
 
 ## Rollback
@@ -31,16 +31,32 @@ this bare-metal path predates that and would need its own database decision if r
 
 ## Egress
 
-`deploy/egress.sh` is the BARE-METAL egress floor: iptables `uid-owner nora` rules for
-the pre-container deployment, restricting a host `nora` user to the three loopback
-service ports. **It does not constrain the container deployment at all** — container
-traffic traverses the `DOCKER-USER`/FORWARD chains under different uids, and the live
-outbound set has since grown (Google Routes/Geocoding, Life360 via Cloudflare, Langfuse
-OTLP; SearXNG/Firecrawl when `[search]` is enabled). A container-era egress floor is an
-OPEN operator decision (audit hygiene, 2026-08-07): the shape would be `DOCKER-USER`
-rules or an egress proxy scoped per service — `db` needs no egress at all, `presence`
-needs exactly Life360 + the Geocoding API, `nora` needs its named externals. Nothing
-enforces that today; do not read this file as evidence that it does.
+`deploy/egress.sh` is the versioned egress governance (container-era, 2026-08-07). It
+takes a subcommand:
+
+    sudo ./deploy/egress.sh apply     # install the Firecrawl SSRF egress policy
+    sudo ./deploy/egress.sh verify    # print the three checks to confirm it
+    sudo ./deploy/egress.sh down      # remove it
+
+**What it closes.** `web_fetch`'s scraper (Firecrawl) fetches a model-chosen URL, so a
+page that redirects or DNS-rebinds to an internal address would make Firecrawl fetch
+Nora's own internals and hand the body back to the group (SSRF). Measured 2026-08-07:
+from inside `firecrawl-api`, OmniRoute (`172.17.0.1:20128`) answered 307 and Honcho
+(`:8000`) answered 404 — real, sensitive, reachable. Nora's code blocks the direct and
+post-redirect paths; this script is the airtight closure — `DOCKER-USER` rules that deny
+the Firecrawl surface containers (`firecrawl-api`, `playwright`) all private/host ranges
+while preserving their own backend subnet and the public internet. **It is the gate
+`config.toml [search] fetch_enabled = true` waits on.** Re-run after any Firecrawl or
+Nora `compose up` (container IPs can change; the hooks match by IP).
+
+**Still open (not this script):** a general per-service egress floor for the rest — `db`
+needs no egress, `presence` needs exactly Life360 + Geocoding, `nora` needs its named
+externals. This script scopes only the Firecrawl SSRF surface, which is the one with a
+live untrusted-input path.
+
+The old BARE-METAL floor (iptables `uid-owner nora` OUTPUT rules for the pre-container
+systemd deployment) is preserved in git history; it did not constrain containers and is
+superseded here.
 
 ## Watchdog
 
