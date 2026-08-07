@@ -383,6 +383,12 @@ class PresenceConfig(BaseModel):
     # The collector's own metrics/health endpoint (§4: liveness lives in the
     # daemon). A separate process, so a separate port from `obs.metrics.port`.
     metrics_port: int = 9101
+    # Names the env var holding the Google Maps key used to reverse-geocode a fix
+    # Life360 returned WITHOUT an address (§5) — the same key the `route` tool
+    # uses. OPTIONAL like everything else here: unset means no geocoder, and an
+    # address-less fix stores the coordinate as before (never a crash). The value
+    # lives in the env, never in this file (DEC-8).
+    geocode_api_key_env: str = "GOOGLE_MAPS_API_KEY"
     circles: tuple[PresenceCircleConfig, ...] = ()
 
 

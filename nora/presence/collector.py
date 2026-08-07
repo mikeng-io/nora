@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nora.domain.presence import PresenceFix
+from nora.infra.geocode import ReverseGeocoder
 from nora.infra.life360 import CircleRead, Life360Client, Member, ReadStatus
 from nora.infra.sql.presence import PresenceStore
 
@@ -75,12 +76,17 @@ class PresenceCollector:
         store: PresenceStore,
         circles: Sequence[CircleSpec],
         cadence_seconds: float,
+        geocoder: ReverseGeocoder | None = None,
         metrics: Any = None,
     ) -> None:
         self._client = client
         self._store = store
         self._circles = tuple(circles)
         self._cadence_seconds = cadence_seconds
+        # Optional (None when no Google key): fills a place name on a fix Life360
+        # returned without an address (§5). Never load-bearing — a miss stores
+        # the coordinate as before.
+        self._geocoder = geocoder
         self._metrics = metrics
         self._last_success_ms: dict[str, int] = {}
         # When each circle was FIRST attempted. The liveness age falls back to
@@ -147,6 +153,14 @@ class PresenceCollector:
         ts_ms, lat, lng = member.ts_ms, member.lat, member.lng
         if ts_ms is None or lat is None or lng is None:
             return
+        # Life360 attaches an address to most fixes; reverse-geocode the ones it
+        # does not so whereis can name a place, not raw coordinates (§5). Only the
+        # WRITTEN-worthy address-less fix reaches here often, and the geocoder
+        # memoises by location, so a stationary member is not re-billed. Fail-soft:
+        # a miss leaves address None and the fix stores the coordinate, as before.
+        address = member.address
+        if address is None and self._geocoder is not None:
+            address = await self._geocoder.address_for(lat, lng)
         fix = PresenceFix(
             circle_id=circle.circle_id,
             person_id=person_id,
@@ -158,7 +172,7 @@ class PresenceCollector:
             accuracy_m=member.accuracy_m,
             is_driving=member.is_driving,
             battery=member.battery,
-            address=member.address,
+            address=address,
         )
         try:
             written = await self._store.record_fix(fix=fix)

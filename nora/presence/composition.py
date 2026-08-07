@@ -24,6 +24,7 @@ import os
 from dataclasses import dataclass
 
 from nora.config import Config, PresenceCircleConfig
+from nora.infra.geocode import ReverseGeocoder
 from nora.infra.life360 import Life360Client
 from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.presence import PresenceStore
@@ -139,6 +140,18 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         password=password,
         metrics=metrics,
     )
+    # Optional reverse geocoder for the fixes Life360 returns without an address
+    # (§5). Built only when the Maps key is present — the same key `route` uses;
+    # unset means address-less fixes store coordinates, never a startup failure
+    # (an address is a nice-to-have, DEC-54's inert-by-default spirit).
+    maps_key = os.environ.get(presence.geocode_api_key_env, "")
+    geocoder = ReverseGeocoder(api_key=maps_key) if maps_key else None
+    if geocoder is None:
+        log.info(
+            "presence geocoder disabled (%s unset) — a fix without a Life360 "
+            "address stores its coordinate only",
+            presence.geocode_api_key_env,
+        )
     try:
         persons = load_persons(cfg.identity_file)
     except PersonsError as exc:
@@ -149,6 +162,7 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         store=store,
         circles=circles,
         cadence_seconds=presence.cadence_seconds,
+        geocoder=geocoder,
         metrics=metrics,
     )
     log.info(
