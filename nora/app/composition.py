@@ -299,6 +299,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # needs no bind mount: skills load once per tag, never re-read from the
         # host. `AgentSkills` is built per tag inside `factory.create_agent`.
         skills_dir=cfg.doctrine.dir.parent / "skills",
+        agent_name=cfg.agent.name,
     )
     # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`.
     # The two were the same value until 2026-08-06, which made the whole

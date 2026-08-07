@@ -7,6 +7,14 @@
 identity_file = "identity.toml"
 policy_file = "policy.toml"
 
+[agent]
+# The agent's MACHINE name — its Strands agent_id and Langfuse trace span
+# (`invoke_agent <name>`). Lowercase and stable; a rename starts a new trace
+# lineage. The human-facing name is [doctrine].display_name and the wake word
+# is [engagement].trigger.text — a clone (e.g. "delia") sets all three plus its
+# own doctrine files, ai_peer, and workspace_id.
+name = "nora"
+
 [platforms.signal]
 base_url = "http://signal-cli:18080"
 account = "+85290000100"         # Nora's Signal number (the linked account)

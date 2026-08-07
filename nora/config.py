@@ -559,9 +559,32 @@ class EvalsConfig(BaseModel):
     langfuse: LangfuseEvalConfig
 
 
+class AgentConfig(BaseModel):
+    """The agent's own identity (2026-08-08), so a clone — a second agent called
+    "Delia" — is a config + doctrine-file change, not a code change.
+
+    `name` is the MACHINE name: the Strands `agent_id` and the Langfuse trace
+    span (`invoke_agent <name>`). Lowercase and STABLE — changing it starts a new
+    trace lineage (orphans saved Langfuse views), which is what a genuinely new
+    agent wants. The HUMAN-facing name is `[doctrine].display_name` and the wake
+    word is `[engagement].trigger.text`; a clone sets all three (plus its own
+    doctrine files and its own Honcho `ai_peer`/`workspace_id`).
+
+    Optional and defaulted like `[media]`/`[route]`: a config.toml written before
+    this section keeps loading, and the default reproduces today's identity
+    exactly (`nora`), so no existing trace is orphaned by the section's arrival.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = "nora"
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    # Optional and defaulted — see `AgentConfig`; the default is today's identity.
+    agent: AgentConfig = AgentConfig()
     platforms: PlatformsConfig
     llm: LLMConfig
     memory: MemoryConfig

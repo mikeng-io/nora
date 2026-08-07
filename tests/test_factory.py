@@ -103,6 +103,25 @@ def test_create_agent_is_stateless_by_construction():
     assert agent.system_prompt == "<nora_doctrine/>"
 
 
+def test_agent_name_defaults_to_nora_and_flows_to_the_trace_identity():
+    """`cfg.agent.name` becomes BOTH the Strands span name and the agent_id, so a
+    cloned agent ("delia") traces under its own lineage. The default reproduces
+    today's "nora" span exactly — no saved Langfuse view is orphaned by the
+    section's arrival (2026-08-08)."""
+    model = factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
+    )
+    common = {
+        "model": model, "system_prompt": "<d/>", "tools": [],
+        "pre_fill": [{"role": "user", "content": [{"text": "c"}]}],
+        "guard": _guard(), "trace_attributes": {"tag_id": "t1"}, "retry": RETRY,
+    }
+    default = factory.create_agent(**common)
+    assert default.name == "nora" and default.agent_id == "nora"
+    delia = factory.create_agent(**common, agent_name="delia")
+    assert delia.name == "delia" and delia.agent_id == "delia"
+
+
 def test_create_agent_installs_the_prefill_as_conversation_history():
     model = factory.create_model_provider(
         model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()

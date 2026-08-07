@@ -42,15 +42,15 @@ from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
 
-# Nora's name in a trace, and the thing that makes a Langfuse span readable.
+# The agent's name in a trace, and the thing that makes a Langfuse span readable.
 # Strands names the agent span `f"invoke_agent {agent.name}"` and defaults
 # `name` to "Strands Agents" / `agent_id` to "default", so every trace this
 # process ever produced was called `invoke_agent Strands Agents` — correct,
-# and useless for finding anything. Kept as constants because the span name
-# is what a saved Langfuse view filters on: changing it silently orphans
-# whatever the operator has already saved.
-AGENT_NAME = "nora"
-AGENT_ID = "nora"
+# and useless for finding anything. This is the DEFAULT; the composition root
+# passes `cfg.agent.name` (2026-08-08), so a cloned agent gets its own span.
+# The span name is what a saved Langfuse view filters on, so the default holds
+# "nora" exactly — a rename is a deliberate new-agent act, not a casual edit.
+DEFAULT_AGENT_NAME = "nora"
 
 # How much of one invocation's wall clock may be spent sleeping between retries.
 # The rest has to cover the model calls themselves, of which there may be
@@ -285,6 +285,7 @@ def create_agent(
     trace_attributes: dict,
     retry: RetryPolicy,
     skills_dir: str | Path | None = None,
+    agent_name: str = DEFAULT_AGENT_NAME,
 ) -> Agent:
     """`skills_dir` turns the on-demand skill layer ON (DEC-50, activating DEC-48).
 
@@ -328,8 +329,8 @@ def create_agent(
         # `agent_id` is stable rather than per-tag because the tag is already
         # carried as a trace attribute (`nora.obs.tracing.trace_attributes`) and
         # a per-tag agent_id would make every trace its own agent.
-        name=AGENT_NAME,
-        agent_id=AGENT_ID,
+        name=agent_name,
+        agent_id=agent_name,
         # Fresh per agent — see RetryPolicy's docstring for why this is not a
         # shared instance.
         retry_strategy=ModelRetryStrategy(

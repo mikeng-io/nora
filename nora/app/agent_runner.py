@@ -45,8 +45,13 @@ class LiveAgentRunner:
     def __init__(
         self, *, models: Any, retry: factory.RetryPolicy,
         skills_dir: Path | None = None,
+        agent_name: str = factory.DEFAULT_AGENT_NAME,
     ) -> None:
         self._models = models
+        # The agent's machine name (cfg.agent.name) — its Strands agent_id and
+        # Langfuse trace span. Held per-runner so a cloned agent traces under its
+        # own name; the default reproduces today's "nora" span.
+        self._agent_name = agent_name
         # Resolved once, from the tier's invocation timeout, and reused for
         # every tag — the numbers are immutable, the strategy built from them
         # is not (see `factory.RetryPolicy`).
@@ -93,6 +98,7 @@ class LiveAgentRunner:
             trace_attributes=trace_attributes,
             retry=self._retry,
             skills_dir=self._skills_dir,
+            agent_name=self._agent_name,
         )
         result = await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)
         # `isinstance`, not a cast: `factory.invoke` is typed `Any` to keep
