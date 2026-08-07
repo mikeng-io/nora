@@ -160,7 +160,13 @@ class PresenceStore:
                     sa.insert(PRESENCE_PLACES),
                     [
                         {
-                            "circle_id": p.circle_id,
+                            # The kwarg, not `p.circle_id` (council 2026-08-07
+                            # LOW): the delete above is scoped to `circle_id`, so
+                            # an insert keyed on a row's own differing circle_id
+                            # would write into a circle this call did not clear.
+                            # The only caller pins them equal; this makes the
+                            # isolation true by construction.
+                            "circle_id": circle_id,
                             "place_id": p.place_id,
                             "name": p.name,
                             "lat": p.lat,

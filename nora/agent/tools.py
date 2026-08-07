@@ -1617,6 +1617,18 @@ def build_tool_specs(
                 "note": "I won't put something that looks like a phone number or ID "
                         "into a web search. Ask in plain words.",
             }
+        # A raw coordinate must not egress either (council 2026-08-07 MEDIUM):
+        # `scan_identifiers` does NOT catch a bare «22.31,114.16», so a `where_is`
+        # fallback coordinate the model just received could otherwise ride a
+        # search query to SearXNG's upstreams. The R-28 barrier screened this for
+        # `route` only; the web query is the other free-text egress and needs the
+        # same screen. `nothing_found`, and the coordinate is not echoed back.
+        if _looks_like_coordinate(query):
+            _record(metrics, "web_search", "nothing_found", reason="coordinate")
+            return {
+                "status": "nothing_found",
+                "note": "I won't search a raw coordinate. Say the place by name.",
+            }
         # A person's alias is COUNTED, not blocked (design/14 §2.2): we do not yet
         # know the shape of real queries, and a block would fail closed on
         # legitimate use. The query proceeds; only the counter moves.

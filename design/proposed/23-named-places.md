@@ -138,12 +138,18 @@ person's, live, and nobody asked for it to travel.
 
 Guards that come with it:
 
-- **Subset-guarded resolution** (the R-31 shape, reused): a saved place NAME
-  resolves only when the conversation is a verified subset of the place's
-  circle — same `DisclosureGuard`, same refusal-not-omission. A stranger in
-  the group asking «route to Home» gets the same refusal `whereis` gives,
-  because answering would disclose the household's landmark to the room *and*
-  to Google on a stranger's initiative.
+- **Subset-guarded resolution — FALL-THROUGH, not refusal** (superseded 2026-08-07,
+  council finding: this bullet first said "same refusal `whereis` gives", which
+  §4.1 and R-35 and the built code all contradict, and which would itself leak).
+  A saved place NAME resolves only when the conversation is a verified subset of
+  the place's circle — same `DisclosureGuard` — but a NON-subset room does **not
+  refuse**: the resolver silently declines and the name goes to Google's public
+  lookup as an ordinary string. A hard refusal here would CONFIRM to an outsider
+  that the household has a place by that name; silent fall-through makes a
+  guarded name indistinguishable from an unsaved one (R-21's «not being here ≡
+  not existing»). This is the deliberate INVERSE of `whereis`, which refuses
+  loudly — there the subject is a person's live position and silence would be a
+  lie; here the dictionary entry's existence is itself the secret. See §4.1.
 - **Names in replies, never ids or raw coordinates.** The reply says «由屋企
   出發…»; the coordinate stays in the tool internals.
 - **The barrier stays.** A model-written coordinate still refuses (R-28); only

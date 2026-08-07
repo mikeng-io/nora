@@ -74,8 +74,14 @@ class _Life360:
     async def token(self, request: web.Request) -> web.Response:
         self.requests.append("token")
         auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Basic ") or "User-Agent" not in request.headers:
-            # The real endpoint refuses a client that does not look like the app.
+        # The real endpoint refuses a client that does not look like the app: it
+        # needs the Basic client credential AND the KOKO app User-Agent (the
+        # study's load-bearing ingredient). Assert the UA VALUE, not just its
+        # presence (council 2026-08-07 MEDIUM): aiohttp sends a default UA on
+        # every request, so `"User-Agent" not in headers` was vacuous — dropping
+        # the KOKO UA plumbing entirely would have kept every test green while
+        # the real host started 403ing.
+        if not auth.startswith("Basic ") or request.headers.get("User-Agent") != UA:
             return web.json_response({"errorMessage": "not authorized"}, status=403)
         form = await request.post()
         if form.get("grant_type") != "password":
@@ -365,11 +371,18 @@ async def test_a_places_read_types_the_wire_and_trusts_the_asked_circle(life360)
 async def test_a_persistent_places_403_is_banned_and_never_loops(life360):
     fake, base = life360
     fake.places_mode = "403"
-    read = await _client(base).read_places(circle_id="c1", now_ms=NOW_MS)
+    metrics = Metrics()
+    client = _client(base, metrics=metrics)
+    read = await client.read_places(circle_id="c1", now_ms=NOW_MS)
     assert read.status is ReadStatus.BANNED
     # One places GET, one re-auth, one retry — never a loop.
     assert fake.requests.count("places") == 2
     assert fake.requests.count("token") == 2
+    # Council 2026-08-07 HIGH: the ban MUST alarm and increment auth_failures —
+    # the inline `PlacesRead(BANNED)` did neither, so a places-only 403 hammered
+    # the credential silently. Reverting `_places_banned` to inline reds this.
+    assert metrics.get("nora_presence_auth_alarms_total", reason="banned") == 1.0
+    assert client.auth_failures >= 1
 
 
 async def test_a_places_challenge_page_is_its_own_status(life360):

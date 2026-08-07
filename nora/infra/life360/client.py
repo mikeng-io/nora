@@ -207,22 +207,18 @@ class Life360Client:
         if token is None:
             token = await self._authenticate()
             if token is None:
-                return PlacesRead(
-                    ReadStatus.BANNED, detail="initial authentication failed"
-                )
+                return self._places_banned("initial authentication failed")
         result = await self._get(self._places_url.format(circle_id=circle_id), token)
         if result.status == 403:
             self._token = None
             token = await self._authenticate()
             if token is None:
-                return PlacesRead(ReadStatus.BANNED, detail="re-auth after 403 failed")
+                return self._places_banned("re-auth after 403 failed")
             result = await self._get(
                 self._places_url.format(circle_id=circle_id), token
             )
             if result.status == 403:
-                return PlacesRead(
-                    ReadStatus.BANNED, detail="fresh token still 403 — ban risk"
-                )
+                return self._places_banned("fresh token still 403 — ban risk")
         if not result.ok:
             return PlacesRead(ReadStatus.UNAVAILABLE, detail="transport failed")
         if result.status != 200:
@@ -359,6 +355,22 @@ class Life360Client:
             return None
         self._token = token
         return token
+
+    def _places_banned(self, detail: str) -> PlacesRead:
+        """The places-read twin of `_banned` — council 2026-08-07 HIGH. The
+        three ban-class places outcomes MUST go through here, not construct
+        `PlacesRead(BANNED)` inline: inline construction skipped the
+        `_auth_failures` increment and the `banned` alarm, so a places-endpoint
+        403 re-POSTed the credential every cycle, silently, with the collector's
+        back-off structurally unable to engage — the exact hammering DEC-55
+        exists to prevent. The collector ALSO backs its places fetch off on
+        non-OK (`_refresh_places`), so this is the visibility half; that is the
+        rate half."""
+        self._auth_failures += 1
+        self._alarm("banned")
+        log.warning("life360 places banned/refused: %s (failures=%d)",
+                    detail, self._auth_failures)
+        return PlacesRead(ReadStatus.BANNED, detail=detail)
 
     def _banned(self, detail: str) -> CircleRead:
         self._auth_failures += 1

@@ -429,3 +429,63 @@ async def test_inside_a_place_the_containment_wins_over_movement(persons, store)
     assert out["status"] == "ok"
     assert out["place"] == "Home"
     assert "moving" not in out and "towards" not in out
+
+
+# ── the route tool's saved-place GLUE (council 2026-08-07 HIGH: was untested) ──
+#
+# The seam (`resolvable_places`) and the client (`local_places`) were each
+# tested, but NOTHING wired presence into the `route` TOOL — so the glue at
+# tools.py that turns resolvable_places into the client's map could be reverted
+# to `local_places = None` with a green suite, shipping R-35's end-to-end path
+# inert. These two tests close that: subset room → the client receives the Home
+# map under the casefolded key; non-subset room → it receives None.
+
+from nora.agent.tools import build_tools  # noqa: E402
+
+
+class _RecordingRoute:
+    """Records the `local_places` it was handed, then answers a fixed ok."""
+
+    def __init__(self):
+        self.local_places = "unset"
+
+    async def route(self, origin, destination, *, mode="TRANSIT", arrive_by="",
+                    by="", prefer="", depart_after="", local_places=None):
+        self.local_places = local_places
+        return {"status": "ok", "origin": origin, "destination": destination,
+                "mode": "TRANSIT", "duration_seconds": 60, "legs": []}
+
+
+def _route_tool(persons, store, *, members):
+    rec = _RecordingRoute()
+    tools = build_tools(
+        store=None, conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=members),
+        transit_source=None, route_source=rec,
+        presence_source=store, presence_circles=(CIRCLE,),
+        question="點去", context_window=40,
+    )
+    return {t.tool_name: t for t in tools}["route"], rec
+
+
+async def test_a_subset_room_hands_the_route_client_the_saved_place_map(persons, store):
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    tool, rec = _route_tool(persons, store, members=(MILES, GRANT, NORA))
+    out = await tool._tool_func(origin="home", destination="Yoho Mall")
+    assert out["status"] == "ok"
+    assert rec.local_places is not None
+    # Casefolded key, and it resolves to the stored Home coordinate.
+    assert "home" in rec.local_places
+    assert rec.local_places["home"].name == "Home"
+
+
+async def test_a_non_subset_room_hands_the_route_client_no_map(persons, store):
+    """R-35 end-to-end through the tool: an outsider in the room means the glue
+    passes None, so «Home» falls through to Google's public lookup — the guarded
+    name is never resolved locally."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    tool, rec = _route_tool(persons, store, members=(MILES, GRANT, STRANGER, NORA))
+    out = await tool._tool_func(origin="home", destination="Yoho Mall")
+    assert out["status"] == "ok"
+    assert rec.local_places is None

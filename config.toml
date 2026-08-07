@@ -79,8 +79,20 @@ timeout_seconds = 60
 # `turns` be the cap that actually binds — which is the one an operator can
 # reason about, because a turn is a round trip and a token is not.
 [llm.limits]
-turns = 8
-total_tokens = 64000
+# 8 → 20 (operator, 2026-08-07): with more tools live (where_is, media_fetch,
+# the web pair on the way), a turn that legitimately chains reads — locate a
+# person, read a place, describe an image, then reply — can want more than 8
+# round trips. `total_tokens` (below) is still the real ceiling and binds
+# first on a heavy turn; this just stops the round-trip count from cutting a
+# genuinely-working multi-tool turn short before the token budget does.
+turns = 20
+# 64000 → 128000 (operator, 2026-08-07): R-24 requires `turns` to be REACHABLE
+# — `total_tokens >= turns * ~6124 worst-case-per-call`, else the token cap
+# binds first and the turn count is dead config (the exact trap this budget was
+# tuned out of at turns=8). 20 reachable turns needs ~122k, so 128k. This is a
+# real ~2x ceiling on a heavy multi-tool turn; most turns are 1–2 calls and
+# never approach it, but a genuinely long chain now can run to 20.
+total_tokens = 128000
 # The loop's OUTPUT budget across every call of the turn, deliberately not
 # `llm.max_tokens` (which is one call's ceiling). It was literally that number
 # until 2026-08-06, so the whole loop could emit what one call could — and

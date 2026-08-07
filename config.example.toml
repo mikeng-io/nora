@@ -68,8 +68,8 @@ timeout_seconds = 30
 # `turns` be the cap that actually binds — which is the one an operator can
 # reason about, because a turn is a round trip and a token is not.
 [llm.limits]
-turns = 8
-total_tokens = 64000
+turns = 20
+total_tokens = 128000
 # The loop's OUTPUT budget across every call of the turn, deliberately not
 # `llm.max_tokens` (which is one call's ceiling). It was literally that number
 # until 2026-08-06, so the whole loop could emit what one call could — and

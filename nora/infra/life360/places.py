@@ -17,6 +17,7 @@ prove and the next fetch heals the rest.
 from __future__ import annotations
 
 import logging
+import math
 
 from nora.domain.presence import SavedPlace
 
@@ -32,6 +33,7 @@ def parse_places(body: object, *, circle_id: str, now_ms: int) -> list[SavedPlac
     if not isinstance(body, dict) or not isinstance(body.get("places"), list):
         return []
     out: list[SavedPlace] = []
+    seen: set[str] = set()
     for raw in body["places"]:
         if not isinstance(raw, dict):
             continue
@@ -43,6 +45,13 @@ def parse_places(body: object, *, circle_id: str, now_ms: int) -> list[SavedPlac
             log.debug("skipping unparseable place (id=%r present=%s)",
                       bool(place_id), lat is not None and lng is not None)
             continue
+        # Dedup on place_id (council 2026-08-07 LOW): two rows sharing an id
+        # would violate the `(circle_id, place_id)` PK in `replace_places`,
+        # failing the whole wholesale write and freezing the circle's places at
+        # the last good fetch forever. First wins; a repeat is skipped.
+        if place_id in seen:
+            continue
+        seen.add(place_id)
         out.append(
             SavedPlace(
                 circle_id=circle_id,
@@ -58,7 +67,12 @@ def parse_places(body: object, *, circle_id: str, now_ms: int) -> list[SavedPlac
 
 
 def _to_float(value: object) -> float | None:
+    """Parse a stringly-typed wire number, rejecting non-finite values (council
+    2026-08-07 LOW): a wire `radius: "Infinity"` would otherwise store `inf`,
+    and `_within_place`'s `d <= radius_m` then reports EVERY fix on Earth as
+    inside that place. `nan`/`inf`/`-inf` all become None."""
     try:
-        return float(str(value))
+        parsed = float(str(value))
     except (TypeError, ValueError):
         return None
+    return parsed if math.isfinite(parsed) else None

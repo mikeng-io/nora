@@ -31,7 +31,7 @@ from nora.testing import ScriptedTurn, group_event
 
 # Comfortably past `[llm.limits] total_tokens` (64,000). A real 6-call turn was
 # measured at 32,426-36,748 tokens, so this is a turn roughly twice that long.
-_OVER_BUDGET = 70_000
+_OVER_BUDGET = 130_000
 
 
 def _spent_the_budget_without_replying():
@@ -124,12 +124,12 @@ async def test_the_cap_that_binds_is_the_one_that_gets_the_blame(harness_factory
     that names the wrong cap is DEC-25's mistake again: it aims the next
     investigation at the token budget when the fix is the turn count.
 
-    8 cycles x 8,000 tokens lands exactly on both caps (`turns = 8`,
-    `total_tokens = 64000`) at the same cycle, which is the only arrangement
+    20 cycles x 6,400 tokens lands exactly on both caps (`turns = 20`,
+    `total_tokens = 128000`) at the same cycle, which is the only arrangement
     that tests the ORDER rather than one cap or the other.
     """
     h = await harness_factory(script=[
-        ScriptedTurn(tool_calls=[("now", {})], total_tokens=8_000) for _ in range(8)
+        ScriptedTurn(tool_calls=[("now", {})], total_tokens=6_400) for _ in range(20)
     ])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()

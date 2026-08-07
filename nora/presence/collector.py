@@ -100,12 +100,18 @@ class PresenceCollector:
         # instead of no series at all — «not running» and «up but never
         # collecting» must not look identical (council #8, §4).
         self._first_seen_ms: dict[str, int] = {}
-        # When each circle's saved PLACES were last fetched (design/23 §3).
-        # Places change rarely, so they refresh at most every
-        # `PLACES_REFRESH_SECONDS` — piggybacked on the member cycle rather than
-        # a second loop, so places share the cadence back-off and can never
-        # out-poll the account's fragility budget.
+        # The saved-places refresh schedule (design/23 §3), per circle. Three
+        # maps rather than one because success and failure pace differently
+        # (council 2026-08-07 HIGH): `_places_fetched_ms` is the NEXT-eligible
+        # instant after a success (now + `PLACES_REFRESH_SECONDS` — places are
+        # static); `_places_retry_ms` is the next-eligible instant after a
+        # FAILURE, set by an exponential back-off so a places-endpoint 403 does
+        # not re-POST the credential every member cycle; `_places_failures`
+        # counts consecutive failures to grow that back-off. A success clears
+        # the failure pair.
         self._places_fetched_ms: dict[str, int] = {}
+        self._places_retry_ms: dict[str, int] = {}
+        self._places_failures: dict[str, int] = {}
 
     async def collect_once(self, circle: CircleSpec, *, now_ms: int) -> CircleRead:
         """One collection cycle for one circle. NEVER raises.
@@ -153,29 +159,42 @@ class PresenceCollector:
         return read
 
     async def _refresh_places(self, circle: CircleSpec, *, now_ms: int) -> None:
-        """Fetch the circle's saved places if due (first cycle, then at most
-        every `PLACES_REFRESH_SECONDS`). NEVER raises; a failed fetch leaves the
-        stored places as they were and retries next due cycle."""
-        last = self._places_fetched_ms.get(circle.circle_id)
-        if last is not None and (now_ms - last) < PLACES_REFRESH_SECONDS * 1000:
+        """Fetch the circle's saved places if due. NEVER raises.
+
+        Two gates, not one (council 2026-08-07 HIGH): a SUCCESS waits the full
+        `PLACES_REFRESH_SECONDS` (places are static), and a FAILURE backs off
+        exponentially — `cadence * 2^failures`, capped hourly — instead of
+        retrying every member cycle. Without the failure gate a places-endpoint
+        403 re-POSTed the credential every 90 s indefinitely (`read_places`'s
+        403 path drops the token and re-auths), because the member read resets
+        the client's shared `auth_failures` before each places fetch, so its own
+        back-off could never see the places failure. This gate is the rate half;
+        `Life360Client._places_banned` is the alarm half."""
+        cid = circle.circle_id
+        next_ok = self._places_fetched_ms.get(cid)
+        next_retry = self._places_retry_ms.get(cid)
+        due_after = max(x for x in (next_ok, next_retry) if x is not None) if (
+            next_ok is not None or next_retry is not None
+        ) else None
+        if due_after is not None and now_ms < due_after:
             return
-        read = await self._client.read_places(circle_id=circle.circle_id, now_ms=now_ms)
+        read = await self._client.read_places(circle_id=cid, now_ms=now_ms)
         self._count(
-            "nora_presence_place_reads_total",
-            circle=circle.circle_id, status=read.status.value,
+            "nora_presence_place_reads_total", circle=cid, status=read.status.value,
         )
         if read.status is not ReadStatus.OK:
-            # Not stamped: the next member cycle retries. The read already
-            # counted; auth-class failures alarmed inside the client.
+            self._places_failures[cid] = failures = self._places_failures.get(cid, 0) + 1
+            backoff = min(self._cadence_seconds * (2**failures), MAX_BACKOFF_SECONDS)
+            self._places_retry_ms[cid] = now_ms + int(backoff * 1000)
             return
         try:
-            await self._store.replace_places(
-                circle_id=circle.circle_id, places=list(read.places)
-            )
+            await self._store.replace_places(circle_id=cid, places=list(read.places))
         except Exception:
             log.exception("places store failed for circle")
             return
-        self._places_fetched_ms[circle.circle_id] = now_ms
+        self._places_failures.pop(cid, None)
+        self._places_retry_ms.pop(cid, None)
+        self._places_fetched_ms[cid] = now_ms + int(PLACES_REFRESH_SECONDS * 1000)
         log.info("places refreshed: %d for circle", len(read.places))
 
     async def _record(self, circle: CircleSpec, member: Member, *, now_ms: int) -> None:

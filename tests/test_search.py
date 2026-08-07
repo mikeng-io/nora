@@ -424,6 +424,20 @@ async def test_an_identifier_in_a_query_is_blocked_before_searxng():
     assert "+85290000101" not in json.dumps(out, ensure_ascii=False)
 
 
+async def test_a_raw_coordinate_in_a_query_is_blocked_before_egress():
+    """council 2026-08-07 MEDIUM: a `where_is` fallback coordinate must not ride
+    a search query out. `scan_identifiers` does NOT catch «22.31,114.16», so the
+    web_search closure screens it with `_looks_like_coordinate` too — the same
+    barrier R-28 gives `route`. Revert that screen and the coordinate reaches
+    SearXNG's upstreams; `source.searched == []` is the probe."""
+    source = _RecordingSearch(results=[{"url": "https://example.com/a", "content": "c"}])
+    wiring = _tool_wiring(source)
+    out = await _call(wiring["search"], query="22.4106,114.1245 咩地方")
+    assert out["status"] == "nothing_found"
+    assert source.searched == []
+    assert "22.4106" not in json.dumps(out, ensure_ascii=False)
+
+
 async def test_a_model_name_in_a_query_is_allowed():
     """`scan_identifiers`, NOT `scan_reply`: 「搵首 haiku」 must reach the search
     proxy. Under the reply predicate it would be refused (the DEC-30 split)."""

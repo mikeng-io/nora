@@ -133,7 +133,7 @@ def test_config_uses_the_target_shape(toml_path):
     # tiers replace default/deep, and carry their own timeout
     assert cfg.llm.model == "opencode-zen/deepseek-v4-flash"
     assert cfg.llm.timeout_seconds == 30
-    assert cfg.llm.limits.turns == 8
+    assert cfg.llm.limits.turns == 20
     assert cfg.llm.max_tokens == 2000
     # engagement owns the trigger; policy is declared even though only one exists
     assert cfg.engagement.policy == "trigger_text"
@@ -147,7 +147,7 @@ def test_config_uses_the_target_shape(toml_path):
     # identity_file replaces persons_file
     assert cfg.identity_file.name == "identity.toml"
     # values dropped from the deleted test_loads_the_example_config, restored here
-    assert cfg.llm.limits.total_tokens == 64000
+    assert cfg.llm.limits.total_tokens == 128000
     assert cfg.llm.limits.output_tokens == 12000
     assert cfg.doctrine.strict is True
     assert cfg.doctrine.reload == "mtime"
