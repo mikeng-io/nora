@@ -499,6 +499,27 @@ async def test_an_identifier_in_a_route_argument_is_refused_before_egress():
     assert client.calls == []
 
 
+async def test_a_raw_coordinate_in_a_route_argument_is_refused_before_egress():
+    """R-28 / design/19 §5, council #4: a raw lat,lng — the shape a stored Life360
+    position has — must never leave in a route argument. Refused before any HTTP
+    call; revert `_looks_like_coordinate` in `nora.agent.tools.route` and the
+    coordinate reaches the client (the empty `client.calls` is the probe). A real
+    place name with no decimal pair still routes."""
+    client = _RecordingClient()
+    wiring = _tool_wiring(client)
+    out = await _call(wiring["route"], origin="22.4106,114.0289", destination="Yoho Mall")
+    assert out["status"] == "refused"
+    assert client.calls == []                       # it reached NOTHING
+    # a spaced pair is caught too
+    out2 = await _call(wiring["route"], origin="天水圍站", destination="22.4106, 114.1245")
+    assert out2["status"] == "refused"
+    assert client.calls == []
+    # a street address (integers, not a decimal pair) is a real place and routes
+    ok = await _call(wiring["route"], origin="12 Larkspur Rd", destination="Yoho Mall")
+    assert ok["status"] == "ok"
+    assert client.calls == [("12 Larkspur Rd", "Yoho Mall")]
+
+
 async def test_the_tool_forwards_the_transit_preferences_to_the_client():
     """The tool wrapper must FORWARD by/prefer/depart_after to the client. Revert
     the pass-through in `nora.agent.tools.route` and this goes red — without it

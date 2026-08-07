@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -548,6 +549,11 @@ def _miss(name: str, view: RoomView) -> dict:
 #
 #   * an IDENTIFIER (phone / ACI / key) — `scan_identifiers`, the floor every
 #     tool shares; a number has no business in a place name and none may leave.
+#   * a RAW COORDINATE (a decimal lat,lng pair) — `_looks_like_coordinate`, the
+#     presence-specific block (design/19 §5). A stored Life360 position must never
+#     leave in a route argument; a person names a place, never types a lat/lng.
+#     Added 2026-08-07 (council #4) BEFORE `whereis` is wired, so the barrier is
+#     in place when a coordinate could first reach here.
 #   * a PERSON'S NAME OR NICKNAME — the routing-specific block. 「陳生屋企」 must
 #     never be turned into a home address and sent, and design/14 §2.2 is
 #     explicit that there is no benign reading of a person in a route argument.
@@ -582,6 +588,27 @@ def _names_a_person(text: str, names: frozenset[str]) -> bool:
     address is phrased AROUND a name (「陳生屋企」), not as one."""
     key = _key(text)
     return any(name in key for name in names)
+
+
+# A decimal lat,lng pair — «22.31,114.16» / «22.4106, 114.1245». BOTH numbers
+# carry a decimal point, which is what tells a coordinate apart from a street
+# address («12 Larkspur Rd» is integers): no legitimate place NAME is written this
+# way, so a coordinate in a route argument is a leaked machine position, not
+# somewhere a person typed. See `_looks_like_coordinate`.
+_COORD_RE = re.compile(r"-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+")
+
+
+def _looks_like_coordinate(text: str) -> bool:
+    """Whether a route argument is a raw coordinate (design/19 §5, R-28).
+
+    This is the outbound barrier for presence: a stored position (from Life360,
+    once `whereis` is wired) must never leave in a tool ARGUMENT to Google. A
+    person names a place — «沙田廣場», «Yoho Mall» — they do not type a decimal
+    lat/lng pair, so blocking the pair costs no real query and closes the one
+    exfil shape `scan_identifiers`/`_names_a_person` do not see (council #4,
+    2026-08-07). Range is NOT checked: an out-of-range pair is still a leaked
+    coordinate, and blocking it too is the safe direction."""
+    return _COORD_RE.search(text) is not None
 
 
 def _count_known_names(text: str, names: frozenset[str]) -> int:
@@ -1126,6 +1153,16 @@ def build_tool_specs(
                     "status": "refused",
                     "note": "That looks like an identifier, not a place. Give me a "
                             "place name — a building, a stop, a mall.",
+                }
+            if _looks_like_coordinate(place):
+                # A stored presence position must never leave in a tool argument
+                # (design/19 §5, R-28). Revert this and a Life360 coordinate
+                # reaches Google once `whereis` is wired.
+                _record(metrics, "route", "refused", reason="coordinate")
+                return {
+                    "status": "refused",
+                    "note": "That's a raw coordinate, not a place I can route from. "
+                            "Give me the place by name — a building, a stop, a mall.",
                 }
             if _names_a_person(place, _route_person_names):
                 _record(metrics, "route", "refused", reason="person")
