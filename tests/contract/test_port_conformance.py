@@ -135,3 +135,18 @@ def test_the_media_ports_conform_in_both_implementations(tmp_path):
     assert isinstance(FakeBlobStore(), BlobStore)
     assert isinstance(SignalMediaSource(base_url="http://127.0.0.1:18080"), MediaSource)
     assert isinstance(FakeMediaSource(), MediaSource)
+
+
+def test_the_reverse_geocoder_backends_conform_to_the_port():
+    """Both `ReverseGeocoder` backends satisfy the port at the name level (the
+    shape is mypy's, the behaviour is `tests/contract/test_geocoder_contract.py`
+    over both). The floor every other port gets — Google and HK-gov each."""
+    from nora.domain.ports import ReverseGeocoder
+    from nora.infra.geocode import GoogleGeocoder
+    from nora.infra.geocode_hkgov import HKGovGeocoder
+
+    assert isinstance(GoogleGeocoder(api_key="k"), ReverseGeocoder)
+    assert isinstance(
+        HKGovGeocoder(service_url="http://x/rev", token="t"),  # noqa: S106
+        ReverseGeocoder,
+    )

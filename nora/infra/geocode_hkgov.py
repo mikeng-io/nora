@@ -11,7 +11,7 @@ deployment config because the portal issues it per account.
 
 Standard Esri `reverseGeocode` contract (what this parses):
 
-    GET {service_url}?location={lng},{lat}&f=json&token={token}&langCode={lang}
+    GET {service_url}?location={lng},{lat}&f=json&token={token}&langCode={lang}&outSR=4326
     -> {"address": {"LongLabel": "...", "Match_addr": "...", ...}, "location": …}
     (a failure arrives as a 200 with an {"error": …} object, never a 4xx)
 
