@@ -23,7 +23,7 @@ import logging
 import os
 from dataclasses import dataclass
 
-from nora.config import Config, PresenceCircleConfig
+from nora.config import Config
 from nora.infra.geocode import ReverseGeocoder
 from nora.infra.life360 import Life360Client
 from nora.infra.sql import create_sql_engine, run_migrations
@@ -40,34 +40,40 @@ class PresenceStartupError(Exception):
     readable message, the same shape `nora.app.composition.StartupError` uses."""
 
 
-def _resolve_circle(circle: PresenceCircleConfig, persons: Persons) -> CircleSpec:
-    """Bind a circle's configured Life360 member ids to `person_id`s through
-    identity.toml, building the map `collector.CircleSpec` expects.
+def _circles_from_identity(persons: Persons) -> list[CircleSpec]:
+    """Build the circles to collect from identity.toml's `[[persons.<id>.life360]]`
+    blocks (design/19 §3), grouping members by their `circle_id`. config.toml
+    carries no ids — the mapping lives in one place, gitignored.
 
-    Fail-closed (R-5, design/19 §3): a member id with no `[[persons.<id>.life360]]`
-    block, or a circle that resolves to nobody, refuses to start — recording
-    presence for a person Nora cannot name is a silent gap.
-    """
-    resolved: dict[str, str] = {}
-    unresolved: list[str] = []
-    for member_id in circle.members:
-        ref = persons.resolve("life360", member_id)
-        if ref is None:
-            unresolved.append(member_id)
-        else:
-            resolved[member_id] = ref.person_id
-    if unresolved:
-        raise PresenceStartupError(
-            f"circle {circle.circle_id!r} lists Life360 member id(s) {unresolved} "
-            "with no matching [[persons.<id>.life360]] block in identity.toml — a "
-            "circle member Nora cannot name would record nothing; refusing to "
-            "start (design/19 §3)"
+    Fail-closed (R-5): a life360 block with no `circle_id` cannot be placed in a
+    circle, and presence-enabled-but-no-collectable-members is a silent no-op —
+    both refuse to start. The resolved `person_id`s per circle ARE the R-21
+    disclosure roster (§5)."""
+    by_circle: dict[str, dict[str, str]] = {}
+    unplaced: list[str] = []
+    for membership in persons.life360:
+        if membership.circle_id is None:
+            unplaced.append(membership.member_id)
+            continue
+        by_circle.setdefault(membership.circle_id, {})[membership.member_id] = (
+            membership.person_id
         )
-    if not resolved:
+    if unplaced:
         raise PresenceStartupError(
-            f"circle {circle.circle_id!r} lists no members; refusing to start"
+            f"Life360 member id(s) {unplaced} have a [[persons.<id>.life360]] block "
+            "with no circle_id in identity.toml — they cannot be placed in a circle "
+            "to collect; add circle_id or remove the block (design/19 §3)"
         )
-    return CircleSpec(circle_id=circle.circle_id, members=resolved)
+    if not by_circle:
+        raise PresenceStartupError(
+            "presence.enabled is true but no [[persons.<id>.life360]] block with a "
+            "circle_id exists in identity.toml — there is nothing to collect; "
+            "refusing to start"
+        )
+    return [
+        CircleSpec(circle_id=circle_id, members=members)
+        for circle_id, members in by_circle.items()
+    ]
 
 
 @dataclass(frozen=True)
@@ -91,11 +97,11 @@ def build_collector(cfg: Config) -> PresenceDependencies:
             collector=None, store=None, metrics=metrics, metrics_port=presence.metrics_port
         )
 
-    if not presence.circles:
-        raise PresenceStartupError(
-            "presence.enabled is true but no [[presence.circles]] are configured — "
-            "there is nothing to collect; refusing to start"
-        )
+    try:
+        persons = load_persons(cfg.identity_file)
+    except PersonsError as exc:
+        raise PresenceStartupError(f"identity.toml error: {exc}") from exc
+    circles = _circles_from_identity(persons)  # raises if none / any unplaced
 
     credential = os.environ.get(presence.client_credential_env, "")
     username = os.environ.get(presence.username_env, "")
@@ -152,11 +158,6 @@ def build_collector(cfg: Config) -> PresenceDependencies:
             "address stores its coordinate only",
             presence.geocode_api_key_env,
         )
-    try:
-        persons = load_persons(cfg.identity_file)
-    except PersonsError as exc:
-        raise PresenceStartupError(f"identity.toml error: {exc}") from exc
-    circles = [_resolve_circle(c, persons) for c in presence.circles]
     collector = PresenceCollector(
         client=client,
         store=store,

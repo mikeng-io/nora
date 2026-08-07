@@ -177,12 +177,13 @@ api_key_env = "GOOGLE_MAPS_API_KEY"
 # decision: 180). `metrics_port` is the daemon's own /metrics + /health endpoint,
 # separate from obs.metrics.port because it is a separate process.
 #
-# Each `[[presence.circles]]` LISTS the Life360 member ids that belong to it.
-# The member_id -> person_id binding lives in identity.toml (a
-# `[[persons.<id>.life360]]` block with `member_id = "…"`), so "who someone is"
-# stays in one file; the collector resolves each id there at startup and refuses
-# to start on one it cannot name. The resolved person_ids are the circle roster
-# the R-21 disclosure seam checks a conversation against (§5).
+# This section carries NO ids. Circle membership lives entirely in identity.toml:
+# each person gets a `[[persons.<id>.life360]]` block with `member_id = "…"` and
+# `circle_id = "…"` (run `nora presence members` to print both). The collector
+# derives its circles by grouping those blocks by circle_id, so who-is-in-which-
+# circle stays in one gitignored file and never lands in this tracked config. The
+# person_ids in a circle are the R-21 disclosure roster (§5). Refuses to start if
+# enabled with no life360 block, or a life360 block that has no circle_id.
 [presence]
 enabled = false
 client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
@@ -191,10 +192,6 @@ password_env = "LIFE360_PASSWORD"
 cadence_seconds = 90
 retention_days = 180
 metrics_port = 9101
-
-# [[presence.circles]]
-# circle_id = "your-life360-circle-id"
-# members = { "life360-member-id-1" = "miles_novak", "life360-member-id-2" = "grant_carver" }
 
 # Web search (SearXNG) + page fetch (Firecrawl) for the `search`/`fetch` tools
 # (DEC-57, design/22). The WHOLE SECTION IS OPTIONAL and every key defaults — a

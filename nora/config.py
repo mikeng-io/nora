@@ -327,29 +327,6 @@ class RouteConfig(BaseModel):
     api_key_env: str = "GOOGLE_MAPS_API_KEY"
 
 
-class PresenceCircleConfig(BaseModel):
-    """One Life360 circle: its id and the Life360 member ids that belong to it.
-
-    `members` is a LIST of `life360_member_id`s — deliberately NOT a
-    `member_id -> person_id` map. The binding to a `person_id` lives in
-    identity.toml (a `[[persons.<id>.life360]]` block, design/19 §3, DEC-14), so
-    "who someone is" stays in one file across every platform rather than being
-    half-declared here. `nora.presence.composition` resolves each member id
-    through `Persons` at startup and REFUSES to start on one it cannot resolve
-    (R-5: a circle member with no person would silently record nothing, a gap
-    invisible until someone asked where they were).
-
-    The resolved `person_id`s ARE the R-21 disclosure roster (§5): Nora may
-    report a member's presence only into a conversation whose people are a
-    SUBSET of that set.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    circle_id: str
-    members: tuple[str, ...]
-
-
 class PresenceConfig(BaseModel):
     """The presence collector (design/19), DEC-54/DEC-55.
 
@@ -389,7 +366,6 @@ class PresenceConfig(BaseModel):
     # address-less fix stores the coordinate as before (never a crash). The value
     # lives in the env, never in this file (DEC-8).
     geocode_api_key_env: str = "GOOGLE_MAPS_API_KEY"
-    circles: tuple[PresenceCircleConfig, ...] = ()
 
 
 class SearchConfig(BaseModel):

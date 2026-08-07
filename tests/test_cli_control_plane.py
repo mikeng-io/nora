@@ -572,8 +572,9 @@ def test_run_turns_a_cli_error_into_an_exit_code(capsys):
 
 
 def test_render_presence_members_is_paste_ready():
-    """`nora presence members` output carries the member_id for each person's
-    identity.toml block and the circle's members = [...] list for config.toml."""
+    """`nora presence members` output carries, per member, a paste-ready
+    [[persons.<id>.life360]] block with BOTH member_id and circle_id — all ids in
+    identity.toml, none in config.toml."""
     from nora.app.report import render_presence_members
     from nora.infra.life360 import DiscoveredCircle, DiscoveredMember
     out = "\n".join(render_presence_members([
@@ -583,11 +584,13 @@ def test_render_presence_members_is_paste_ready():
                      DiscoveredMember("m-gab", "Grant")),
         )
     ]))
-    assert 'circle_id = "cir-1"' in out
     assert "# Miles Novak" in out
-    assert 'member_id = "m-miles"' in out
     assert "[[persons.CHANGEME.life360]]" in out
-    assert 'members = ["m-miles", "m-gab"]' in out
+    assert 'member_id = "m-miles"' in out
+    assert 'circle_id = "cir-1"' in out
+    # no config.toml id block anymore
+    assert "[[presence.circles]]" not in out
+    assert "config.toml carries no ids" in out
 
 
 def test_render_presence_members_notes_an_empty_result():

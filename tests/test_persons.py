@@ -63,6 +63,28 @@ def test_a_life360_member_id_resolves_to_the_same_person(persons):
     assert persons.resolve("signal", "+85212345678").person_id == ref.person_id
 
 
+def test_a_life360_circle_id_is_captured_metadata_not_a_matchable_id(persons):
+    """circle_id names WHICH circle a member is in (presence reads it) but is NOT
+    matchable — you never see a circle_id on an inbound message. It is captured as
+    a membership, and resolving it as an id returns nobody."""
+    # (the shared fixture's miles block has member_id but no circle_id)
+    members = {(m.person_id, m.member_id) for m in persons.life360}
+    assert ("miles", "life360-miles-uuid") in members
+
+
+def test_a_life360_circle_id_does_not_resolve_a_sender(tmp_path):
+    p = tmp_path / "identity.toml"
+    p.write_text(
+        '[persons.miles]\nname = "Miles"\n'
+        '[[persons.miles.life360]]\nmember_id = "m-1"\ncircle_id = "cir-1"\n'
+    )
+    persons = load_persons(p)
+    assert persons.resolve("life360", "m-1").person_id == "miles"   # member_id matches
+    assert persons.resolve("life360", "cir-1") is None             # circle_id does NOT
+    (m,) = persons.life360
+    assert (m.member_id, m.circle_id) == ("m-1", "cir-1")
+
+
 def test_a_bad_life360_id_kind_is_a_startup_failure(tmp_path):
     """life360's only matchable kind is `member_id`; a typo'd kind must be a
     startup error, not a key that silently resolves no one (R-5)."""

@@ -131,27 +131,22 @@ def render_groups(
 
 def render_presence_members(circles: list[DiscoveredCircle]) -> list[str]:
     """Every Life360 circle and member (id + name) this account can see, in a
-    paste-ready shape: the `member_id` for each person's `[[persons.<id>.life360]]`
-    block in identity.toml, and the `members = [...]` list for the circle's
-    `[[presence.circles]]` block in config.toml (design/19 §3)."""
+    paste-ready shape: a `[[persons.<id>.life360]]` block per member carrying BOTH
+    `member_id` and `circle_id`, for identity.toml. All the ids live there (design
+    /19 §3); config.toml needs none — just `[presence] enabled = true`."""
     lines: list[str] = ["Life360 circles for this account:", ""]
     for circle in circles:
-        lines.append(f"Circle: {circle.name or '(no name)'}")
-        lines.append(f"  circle_id = {circle.circle_id!r}")
-        lines.append("")
-        lines.append("  identity.toml — add a life360 block to each matching person:")
+        lines.append(f"Circle: {circle.name or '(no name)'}  (circle_id {circle.circle_id})")
+        lines.append("  identity.toml — add to each matching person (edit CHANGEME):")
         for member in circle.members:
             lines.append(f"    # {member.name}")
             lines.append("    [[persons.CHANGEME.life360]]")
             lines.append(f'    member_id = "{member.member_id}"')
+            lines.append(f'    circle_id = "{circle.circle_id}"')
         lines.append("")
-        ids = ", ".join(f'"{m.member_id}"' for m in circle.members)
-        lines.append("  config.toml — the circle's [[presence.circles]] block:")
-        lines.append("    [[presence.circles]]")
-        lines.append(f'    circle_id = "{circle.circle_id}"')
-        lines.append(f"    members = [{ids}]")
-        lines.append("")
-    if not circles:
+    if circles:
+        lines.append("config.toml carries no ids — set [presence] enabled = true to turn it on.")
+    else:
         lines.append(
             "No circles returned. If you expect some, check the account is the one "
             "sharing location, and that LIFE360_CLIENT_CREDENTIAL is the app's."

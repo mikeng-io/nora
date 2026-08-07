@@ -24,13 +24,26 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .domain.identity import ACCOUNT_LABEL_KEY
+from .domain.identity import ACCOUNT_LABEL_KEY, metadata_keys
 from .domain.models import NormalizedMessage, PersonRef
 from .persons_file import PLATFORM_FIELDS, _PersonsFile
 
 
 class PersonsError(Exception):
     """A person mapping problem that must stop the process at startup."""
+
+
+@dataclass(frozen=True)
+class Life360Membership:
+    """A person's Life360 account as the presence collector needs it: the
+    `member_id` (the matchable id) and the `circle_id` it belongs to (metadata,
+    optional at parse — a life360 block with no circle_id is valid identity but
+    uncollectable, and presence composition refuses to start on one). This is
+    what lets circle membership live in identity.toml, not the tracked config."""
+
+    person_id: str
+    member_id: str
+    circle_id: str | None
 
 
 def sanitize_unmapped(sender_id: str) -> str:
@@ -45,6 +58,9 @@ def sanitize_unmapped(sender_id: str) -> str:
 class Persons:
     by_person: dict[str, PersonRef]
     index: dict[tuple[str, str], str] = field(repr=False)   # (platform, id_value) → person_id
+    # Every person's Life360 membership(s), the source the presence collector
+    # derives its circles from (design/19 §3) — so config.toml carries no ids.
+    life360: tuple[Life360Membership, ...] = ()
 
     def resolve(self, platform: str, sender_id: str) -> PersonRef | None:
         person_id = self.index.get((platform, sender_id))
@@ -73,6 +89,7 @@ def load_persons(path: Path) -> Persons:
 
     by_person: dict[str, PersonRef] = {}
     index: dict[tuple[str, str], str] = {}
+    life360: list[Life360Membership] = []
     for person_id, entry in parsed.persons.items():
         # `name` is what Nora calls them out loud. Fall back through the
         # structured parts before the person_id, so a file that gives only
@@ -92,10 +109,22 @@ def load_persons(path: Path) -> Persons:
             # (platform, value) → the index of the account block that claimed
             # it, so the two duplicate cases can be told apart below.
             claimed_by: dict[tuple[str, str], int] = {}
+            metadata = metadata_keys(platform)
             for account_no, account in enumerate(getattr(entry, platform) or ()):
+                if platform == "life360" and "member_id" in account:
+                    # Retain the membership so presence can derive its circles
+                    # from identity (design/19 §3). circle_id is optional at
+                    # parse; composition refuses to start on a tracked one that
+                    # lacks it.
+                    circle = account.get("circle_id")
+                    life360.append(Life360Membership(
+                        person_id=person_id,
+                        member_id=str(account["member_id"]),
+                        circle_id=str(circle) if circle is not None else None,
+                    ))
                 for kind, id_value in account.items():
-                    if kind == ACCOUNT_LABEL_KEY:
-                        continue          # human-only, never matched (§1.3)
+                    if kind == ACCOUNT_LABEL_KEY or kind in metadata:
+                        continue          # non-matchable: label / life360 circle_id
                     key = (platform, str(id_value))
 
                     # Same id in two of ONE person's blocks: the
@@ -124,4 +153,4 @@ def load_persons(path: Path) -> Persons:
                             "would silently misattribute Honcho memory"
                         )
                     index[key] = person_id
-    return Persons(by_person=by_person, index=index)
+    return Persons(by_person=by_person, index=index, life360=tuple(life360))

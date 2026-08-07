@@ -22,7 +22,12 @@ from pydantic import (
     model_validator,
 )
 
-from .domain.identity import ACCOUNT_LABEL_KEY, DISPLAY_NAME_KIND, id_kinds
+from .domain.identity import (
+    ACCOUNT_LABEL_KEY,
+    DISPLAY_NAME_KIND,
+    id_kinds,
+    metadata_keys,
+)
 
 # Honcho requires ^[a-zA-Z0-9_-]+$ for peer ids, and honcho_peer_id == person_id.
 _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -43,10 +48,11 @@ def _check_account(platform: str, account: dict[str, str | int]) -> None:
     `str | None`, which would need an `assert` and trip ruff S101).
     """
     allowed = id_kinds(platform)
+    metadata = metadata_keys(platform)
     matchable = 0
     for kind in account:
-        if kind == ACCOUNT_LABEL_KEY:
-            continue                      # human-only, never matched (§1.3)
+        if kind == ACCOUNT_LABEL_KEY or kind in metadata:
+            continue                      # non-matchable: label, or life360 circle_id
         if kind == DISPLAY_NAME_KIND:
             raise ValueError(
                 f"{platform}.{DISPLAY_NAME_KIND} is never matchable "

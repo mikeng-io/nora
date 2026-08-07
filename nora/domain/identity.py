@@ -63,6 +63,25 @@ def id_kinds(platform: str) -> frozenset[str]:
     return _ID_KINDS.get(platform, frozenset())
 
 
+# Non-matchable metadata an account block may carry beyond `label`. life360's
+# `circle_id` names WHICH circle a member is in — you never see a circle_id on an
+# inbound message, so it resolves no sender and is excluded from the reverse
+# index exactly like `label`. It is not decoration: the presence collector reads
+# it to group members into circles (design/19 §3), which is what keeps circle
+# membership in identity.toml (gitignored) instead of the tracked config.
+_METADATA_KEYS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
+    {"life360": frozenset({"circle_id"})}
+)
+
+
+def metadata_keys(platform: str) -> frozenset[str]:
+    """Non-matchable keys a `platform` account block may carry (beyond `label`).
+
+    Accepted at parse and excluded from the reverse index, like `label`; read by
+    the feature that needs them (presence reads life360's `circle_id`)."""
+    return _METADATA_KEYS.get(platform, frozenset())
+
+
 class UnmatchableIdentifierError(ValueError):
     """Raised by `Identifier` when asked to carry a kind that can never be
     matched on: `display_name` on any platform, or a kind outside the
