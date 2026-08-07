@@ -240,14 +240,21 @@ class PresenceCollector:
         ts_ms, lat, lng = member.ts_ms, member.lat, member.lng
         if ts_ms is None or lat is None or lng is None:
             return
-        # Life360 attaches an address to most fixes; reverse-geocode the ones it
-        # does not so whereis can name a place, not raw coordinates (§5). Only the
-        # WRITTEN-worthy address-less fix reaches here often, and the geocoder
-        # memoises by location, so a stationary member is not re-billed. Fail-soft:
-        # a miss leaves address None and the fix stores the coordinate, as before.
-        address = member.address
-        if address is None and self._geocoder is not None:
+        # PREFER Google's reverse-geocode of the GPS coordinate over Life360's own
+        # address label (§5, operator report 2026-08-08). Life360's label is
+        # COARSE and often wrong: a real fix (22.410600, 114.124500) it labelled
+        # «麗靜徑 Tin Sgak Path» reverse-geocodes via Google to «澤星樓» (Chak Sing
+        # House) — ~1 km off, and Google's is the accurate one (live-verified). So
+        # the GPS is trustworthy but Life360's naming is not; geocode the
+        # coordinate when a geocoder exists and fall back to Life360's address only
+        # when there is none or the geocode misses (fail-soft, never a crash). The
+        # geocoder memoises by location, so a stationary member is geocoded ONCE,
+        # not re-billed every cycle.
+        address = None
+        if self._geocoder is not None:
             address = await self._geocoder.address_for(lat, lng)
+        if address is None:
+            address = member.address
         fix = PresenceFix(
             circle_id=circle.circle_id,
             person_id=person_id,
