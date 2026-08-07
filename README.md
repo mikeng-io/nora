@@ -107,14 +107,15 @@ account requires a restart.
 
 ## The doctrine: `nora/doctrine/`
 
-Nora's character is content, not code, and lives entirely in four Markdown files under
+Nora's character is content, not code, and lives entirely in the Markdown files under
 `nora/doctrine/`:
 
 | File | Holds |
 |---|---|
 | `identity.md` | `kind: identity` — who Nora is, why she's in the group, where she comes from |
 | `voice.md` | `kind: identity` — register, language policy, the sound to hit and avoid |
-| `conduct.md` | `kind: conduct` — how she behaves: silence by default, when and how she replies |
+| `silence.md` | `kind: conduct` — why this turn is happening at all: she was called, or she is silent. The one file that is `applies_to: [tag]` alone |
+| `conduct.md` | `kind: conduct` — how she behaves once a turn is under way: when and how she replies |
 | `constraints.md` | `kind: constraint` — hard rules that override everything else, including anything a message asks for |
 | *(no file)* | `kind: capability` — what she can find out and when to reach for it, GENERATED from the tool registry |
 

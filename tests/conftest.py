@@ -16,12 +16,49 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 
 import psycopg
 import pytest
 from testcontainers.postgres import PostgresContainer
 
+from nora.agent.registry import ToolRegistry
+from nora.doctrine.loader import DoctrineStore
+from nora.obs.metrics import Metrics
+
 PG_IMAGE = "postgres:16-alpine"
+
+# The runtime_context values the shipped doctrine is read with in tests. They
+# are module constants rather than inline literals because
+# `tests/fixtures/tag_doctrine_bodies.txt` was captured from this same builder —
+# `Doctrine.text` appends a `<runtime_context>` block built from exactly these
+# three, so a mismatch would fail a body comparison for a reason that has
+# nothing to do with doctrine.
+DOCTRINE_CANARY = "test-canary"
+DOCTRINE_DISPLAY_NAME = "Nora"
+DOCTRINE_TRIGGER = "nora.000"
+
+
+def build_test_doctrine_store() -> DoctrineStore:
+    """The shipped doctrine, assembled the way the composition root assembles it.
+
+    Module-level, not fixture-only, so a one-off script can build the identical
+    store outside a pytest run — that is how
+    `tests/fixtures/tag_doctrine_bodies.txt` was captured.
+    """
+    return DoctrineStore(
+        Path("nora/doctrine"), strict=True, reload="startup",
+        canary=DOCTRINE_CANARY, display_name=DOCTRINE_DISPLAY_NAME,
+        trigger=DOCTRINE_TRIGGER, language_hint="zh-HK",
+        tool_names=ToolRegistry().tool_names(),
+        capability=ToolRegistry().capability(),
+        metrics=Metrics(),
+    )
+
+
+@pytest.fixture
+def doctrine_store() -> DoctrineStore:
+    return build_test_doctrine_store()
 
 
 @pytest.fixture

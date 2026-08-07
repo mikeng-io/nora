@@ -41,7 +41,7 @@ def test_the_capability_section_is_generated_and_sits_between_conduct_and_constr
                           capability=ToolRegistry().capability(), metrics=Metrics())
     doctrine = store.get()
     assert [s.name for s in doctrine.sections] == \
-        ["identity", "voice", "conduct", "capability", "constraints"]
+        ["identity", "voice", "silence", "conduct", "capability", "constraints"]
     generated = next(s for s in doctrine.sections if s.name == "capability")
     assert generated.kind == "capability"
     assert not generated.path.exists()
@@ -53,7 +53,7 @@ def test_without_a_generated_block_there_is_no_capability_section_at_all():
     prompt says nothing about capability rather than something out of date."""
     doctrine = DoctrineStore(SHIPPED, canary="C", strict=True, metrics=Metrics()).get()
     assert [s.name for s in doctrine.sections] == \
-        ["identity", "voice", "conduct", "constraints"]
+        ["identity", "voice", "silence", "conduct", "constraints"]
 
 
 def test_version_is_not_paid_for_on_every_call():
