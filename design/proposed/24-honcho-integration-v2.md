@@ -1,12 +1,60 @@
 # 24 — Honcho integration v2: session-per-conversation, Nora as a peer
 
-Date: 2026-08-07. Status: PROPOSED — design only, no code. Operator directed
-the direction (heavy/aggressive Honcho integration, not Honcho-as-optional-tool;
-and Nora's own messages feeding a NORA peer card). This document locks the
-architecture and, deliberately, leaves the load-bearing granularity decisions as
-**OPEN DECISIONS** for the operator, because they are hard to migrate later
-(§7) — the corpus keeps *conclusions, not text*, so a wrong granularity cannot
-be fully undone.
+Date: 2026-08-07. **Status: IMPLEMENTED 2026-08-08** (commits `3933bef` bedrock,
+`52a6adf` review remediation, `4c9f107` session-id fix). Original proposal below
+§S is unchanged as the rationale; the OPEN DECISIONS of §7 are resolved in §S.
+
+---
+
+## S. Settled (2026-08-08): the clean topology + what shipped
+
+### S.1 The clean boundary / authority / scope — "group" was overloaded
+
+The word **group** did double duty and caused a session's worth of confusion.
+Named properly:
+
+| layer | what it IS | authority / scope |
+|---|---|---|
+| **workspace** | a **group of PEOPLE** — a social unit (my-friends, my-family, a team) | the MEMORY authority for that unit: everything those people say, across every app they use |
+| **session** | a **channel** that same unit uses — their Signal group, Discord group, WhatsApp group | one conversation stream (same people, different app); `conversation_id = platform group id` |
+| **peer** | a **person** (all their accounts → one person_id via identity.toml) | one identity |
+| **room / roster** | who is actually IN a given channel | the DISCLOSURE authority: what Nora may SAY here |
+
+- "group of people" = social unit = **workspace**. "platform group-chat" = channel = **session**. Never mix them.
+- You never put two social units (work team + family) in one workspace — different people, different workspaces. So cross-session blend WITHIN a workspace is safe **by construction**: it's the same humans on different apps, one social context. That resolves the only real disclosure worry.
+- **Two orthogonal scopes:** workspace = what Nora may *know together*; roster = whom she may *speak about*. Knowledge is workspace-wide; disclosure is channel-local (R-21/R-31).
+
+### S.2 Recall is Nora's own model — observer/observed (resolves §7 A1)
+
+Honcho keys memory by **(observer, observed)** peer pairs. Nora is a peer, and
+joins every session with `observe_others=True` (humans get `observe_me=True`),
+so the deriver builds `(nora → each person)` — NORA's model of someone from
+messages she witnessed, distinct from their self-model. All recall reads
+`(observer=ai_peer, observed=person)`, workspace-wide (no session scope);
+the roster gates the *subject*. Proven live: a probe peer's job+hobby came back
+from one observed message; empty without the observe-config.
+
+### S.3 The four recall verbs (2 stores)
+
+- `load_transcript` — Postgres, verbatim this-channel (rename of `chat_earlier`, NOT YET DONE).
+- `about(person)` — Honcho `representation`, retrieve Nora's model. Fast.
+- `ask_memory(person, depth)` — Honcho `chat`/dialectic, REASON; `depth` model-chosen (minimal→max), slow (~14-19s), budget 1.
+- `search_memory(query)` — Honcho `search` over raw messages. NOT BUILT. Workspace-scoped is SAFE under S.1 (one social unit); raw is higher-fidelity than the distilled verbs, so roster-speaker filter + R-18 per message when built.
+
+### S.4 Resolved OPEN DECISIONS (§7)
+
+- **Granularity:** ONE workspace `cfg.memory.workspace_id="nora"`, one social unit — acceptable for alpha. **Future:** each distinct social unit gets its own `workspace_id`, declared per-group in identity.toml (which already binds people→groups/circles), graduating to a dedicated `workspaces.toml`. The code hook is a conversation→workspace mapping. This is the REAL "phase 1".
+- **N4 (subagent review):** non-identifier content blends across a unit's channels — accepted, because a workspace IS one social unit, so there is no cross-context to leak.
+
+### S.5 The base64 session-id trap (live-caught, `4c9f107`)
+
+Honcho constrains session ids to `^[a-zA-Z0-9_-]+$`. A Signal group id is
+standard base64 (`+` `/` `=`) → 422 on session-create → the WHOLE feed/recall
+path was silently dead on every real group (offline tests used clean ids and
+never saw it — the case for verifying live). `_safe_conversation_key` maps
+base64→url-safe with a hash fallback. `session_id = nora-conv-<safe-key>`.
+
+---
 
 ## 0. Why now, and the one thing that blocks everything
 
