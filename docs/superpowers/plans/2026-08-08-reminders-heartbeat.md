@@ -312,6 +312,7 @@ def run(
 Delete `self._in_flight` and `self._queues` from `__init__`; take `slots: ConversationSlots` instead of `queue_max: int`. Delete `_dispatch_next` entirely. Then three call sites:
 
 ```python
+# EDIT FRAGMENTS — not a whole file; `...` marks unchanged code.
 # run(): the admission call
 verdict = admission.run(
     message=message, identity=identity, debounce=self._debounce,
@@ -332,7 +333,8 @@ The `finally` is the load-bearing edit: release and dispatch were two statements
 - [ ] **Step 7: Update the four constructors**
 
 ```python
-# nora/app/composition.py:474 — build the slots once, pass to the pipeline
+# EDIT FRAGMENT — not a whole file.
+# nora/app/composition.py — build the slots once, pass to the pipeline
 slots = ConversationSlots(maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn)
 pipeline = EngagementPipeline(..., slots=slots, ...)   # was queue_max=...
 ```
@@ -529,6 +531,167 @@ Run: `cd /tmp/nora-reminders && uv run pytest tests/contract/test_reminder_store
 Expected: FAIL at collection — `ModuleNotFoundError: No module named 'nora.domain.reminders'`
 
 - [ ] **Step 3: Write the port**
+
+```python
+# nora/domain/reminders.py
+"""The reminders port. A reminder is a DEFERRED REQUEST: the row stores the
+requester's own sentence, and at fire time it is put to Nora as a request."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
+from typing import Protocol
+from uuid import UUID
+
+
+class ReminderState(StrEnum):
+    PENDING = "pending"
+    FIRING = "firing"
+    DONE = "done"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class Reminder:
+    id: UUID
+    requester_person_id: str
+    platform: str
+    conversation_id: str
+    conversation_type: str
+    text: str
+    created_at: datetime
+    due_at: datetime
+    state: ReminderState
+    fired_at: datetime | None
+    outcome: str | None
+
+
+class ReminderStore(Protocol):
+    async def create(self, reminder: Reminder) -> None: ...
+
+    async def get(self, reminder_id: UUID) -> Reminder | None:
+        """Read one row by id. Exists so the contract suite can assert the
+        TERMINAL STATE of a swept or cancelled row — without it no test can
+        distinguish `FIRING -> FAILED` from `FIRING -> anything else`, because
+        `due()` excludes both, and the at-most-once decision rests on exactly
+        that distinction."""
+        ...
+
+    async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
+        """PENDING rows whose `due_at` has passed, oldest first."""
+        ...
+
+    async def pending_for(self, conversation_id: str) -> Sequence[Reminder]: ...
+
+    async def count_pending(self, requester_person_id: str) -> int: ...
+
+    async def mark(
+        self, reminder_id: UUID, state: ReminderState, *,
+        fired_at: datetime | None = None, outcome: str | None = None,
+    ) -> bool:
+        """True if a row changed. False means it was already resolved."""
+        ...
+
+    async def cancel(self, reminder_id: UUID, *, conversation_id: str) -> bool:
+        """Scoped on purpose: a uuid carries none of its own."""
+        ...
+
+    async def sweep_firing(self) -> int:
+        """Boot recovery. FIRING rows resolve to FAILED and are never re-fired
+        (at-most-once). Returns how many."""
+        ...
+
+    async def aclose(self) -> None: ...
+```
+
+- [ ] **Step 4: Write the fake**
+
+```python
+# nora/testing/reminders.py
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import replace
+from datetime import datetime
+from uuid import UUID
+
+from nora.domain.reminders import Reminder, ReminderState
+
+
+class FakeReminderStore:
+    """In-memory ReminderStore. Passes tests/contract/test_reminder_store_contract.py."""
+
+    def __init__(self) -> None:
+        self._rows: dict[UUID, Reminder] = {}
+
+    async def create(self, reminder: Reminder) -> None:
+        self._rows[reminder.id] = reminder
+
+    async def get(self, reminder_id: UUID) -> Reminder | None:
+        return self._rows.get(reminder_id)
+
+    async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
+        rows = [r for r in self._rows.values()
+                if r.state is ReminderState.PENDING and r.due_at <= now]
+        return sorted(rows, key=lambda r: r.due_at)[:limit]
+
+    async def pending_for(self, conversation_id: str) -> Sequence[Reminder]:
+        return sorted(
+            (r for r in self._rows.values()
+             if r.conversation_id == conversation_id
+             and r.state is ReminderState.PENDING),
+            key=lambda r: r.due_at,
+        )
+
+    async def count_pending(self, requester_person_id: str) -> int:
+        return sum(1 for r in self._rows.values()
+                   if r.requester_person_id == requester_person_id
+                   and r.state is ReminderState.PENDING)
+
+    async def mark(
+        self, reminder_id: UUID, state: ReminderState, *,
+        fired_at: datetime | None = None, outcome: str | None = None,
+    ) -> bool:
+        row = self._rows.get(reminder_id)
+        if row is None:
+            return False
+        self._rows[reminder_id] = replace(
+            row, state=state,
+            fired_at=fired_at if fired_at is not None else row.fired_at,
+            outcome=outcome if outcome is not None else row.outcome,
+        )
+        return True
+
+    async def cancel(self, reminder_id: UUID, *, conversation_id: str) -> bool:
+        row = self._rows.get(reminder_id)
+        if row is None or row.conversation_id != conversation_id:
+            return False
+        if row.state is not ReminderState.PENDING:
+            return False
+        self._rows[reminder_id] = replace(row, state=ReminderState.CANCELLED)
+        return True
+
+    async def sweep_firing(self) -> int:
+        stuck = [r for r in self._rows.values() if r.state is ReminderState.FIRING]
+        for r in stuck:
+            self._rows[r.id] = replace(r, state=ReminderState.FAILED,
+                                       outcome="failed_error")
+        return len(stuck)
+
+    async def aclose(self) -> None:
+        return None
+```
+
+- [ ] **Step 5: Run the contract suite against the fake**
+
+Run: `uv run pytest tests/contract/test_reminder_store_contract.py -v`
+Expected: **8 passed** — one parameter (`fake`). This checkpoint is the point of
+the fake-first ordering: the suite is proven to hold before a database is
+involved, so any failure in Step 7 is unambiguously the adapter's.
 
 - [ ] **Step 6: Add the table to `schema.py` and hand-write the migration**
 
@@ -1082,8 +1245,14 @@ Same `slots` instance as the pipeline. Two things an earlier draft got wrong:
 # (`cfg.database.url` does not exist; Config has `store: StoreConfig`.)
 reminders = SqlReminderStore(engine)
 await reminders.sweep_firing()          # §8.2 boot recovery — ALWAYS, not gated
+# `allowlist`, NOT `policy`. At composition.py:269 the name `policy` is a
+# CompositePolicy (the TRIGGER policy) with no is_allowed at all. The
+# policy.toml object with is_allowed(*, platform, conversation_id, person_id)
+# is bound to `allowlist` (composition.py:162) — and §5.1's revocation check is
+# the entire point of this parameter. Also import datetime/timezone into
+# composition.py, and place this AFTER `slots` exists (~:474), not at :188.
 if cfg.heartbeat.enabled:
-    heartbeat = HeartbeatLoop(store=reminders, slots=slots, policy=policy,
+    heartbeat = HeartbeatLoop(store=reminders, slots=slots, policy=allowlist,
                               clock=lambda: datetime.now(timezone.utc),
                               metrics=metrics, tick_seconds=cfg.heartbeat.tick_seconds,
                               fire=_stub_fire)   # Task 5 replaces this with FirePath.run
@@ -1098,7 +1267,7 @@ if cfg.heartbeat.enabled:
 
 **Files:**
 - Create: `nora/app/fire.py`
-- Modify: `nora/agent/prefill.py` (header parameter), `nora/agent/registry.py` + `nora/agent/tools.py` (the `fire_turn` keyword — **Task 5 owns it, not Task 6**, because Task 5 is the first caller), `nora/obs/metric_specs.py` (`audience` label), `nora/engagement/stages/{deliver,invoke}.py` + `nora/engagement/pipeline.py` + `nora/agent/guards.py` (pass `audience`), `tests/test_metrics_export.py`, `tests/test_metrics_stub.py`, `docs/runbook.md`
+- Modify: `nora/app/composition.py` (**replace Task 4's `_stub_fire` — Step 8**), `nora/agent/prefill.py` (header parameter), `nora/agent/registry.py` + `nora/agent/tools.py` (the `fire_turn` keyword — **Task 5 owns it, not Task 6**, because Task 5 is the first caller), `nora/obs/metric_specs.py` (`audience` label), `nora/engagement/stages/{deliver,invoke}.py` + `nora/engagement/pipeline.py` + `nora/agent/guards.py` (pass `audience`), `tests/test_metrics_export.py`, `tests/test_metrics_stub.py`, `docs/runbook.md`
 - Test: `tests/unit/test_fire_path.py`
 
 - [ ] **Step 1: Enumerate the call sites with AST, not grep**
@@ -1190,13 +1359,38 @@ without a model:
 - `async run(rows: Sequence[Reminder]) -> str` — returns the §8.1 outcome, and
   is what Task 4's `fire` parameter is typed against (`Awaitable[str]`) — build `TagContext`, `MentionRenderer.rehydrate`, doctrine at `applies_to="heartbeat"`, `ToolRegistry.build(..., fire_turn=True)`, `runner.invoke` inside its own `asyncio.wait_for` with `[heartbeat] timeout_seconds`, `deliver.build` + `Deliverer`, `feedback.run`. Do **not** call `invoke.run` or `deliver.check_outcome` — both own metric branches the fire path must account for itself.
 
-- [ ] **Step 8: Run, gates, commit.**
+- [ ] **Step 8: Replace Task 4's stub in `composition.py` — Task 5 owns this**
+
+Task 4 wired `fire=_stub_fire`. **No other task replaces it**, so without this
+step every gate stays green and the heartbeat delivers a stubbed `"sent"`
+forever — the feature ships inert and looks finished.
+
+```python
+fire_path = FirePath(...)                 # collaborators as in Step 7
+heartbeat = HeartbeatLoop(..., fire=fire_path.run)
+```
+
+Delete `_stub_fire` in the same commit.
+
+- [ ] **Step 9: Run, gates, commit.**
 
 ---
 
 ### Task 6: The tools
 
-**Files:** Modify `nora/agent/tools.py`, `nora/agent/registry.py`, `nora/app/cli.py`, `ARCHITECTURE.md`; Test: `tests/test_reminder_tools.py`
+**Files:** Modify `nora/agent/tools.py`, `nora/agent/registry.py`, **`nora/app/composition.py`**, `nora/app/cli.py`, `ARCHITECTURE.md`; Test: `tests/test_reminder_tools.py`
+
+**`composition.py` is not optional.** The live `ToolRegistry` is constructed at
+`nora/app/composition.py:443`; without `reminders=reminders` there it keeps
+`None` and `remind` answers `unavailable` in production while every test passes
+against a registry built with the fake. Pass the same `SqlReminderStore`
+instance Task 4 created.
+
+**The caps and the clock reach the closure the same way.** Four of the six
+refusal conditions need `cfg.reminders.*` and a "now": add
+`reminder_caps: RemindersConfig | None = None` and reuse the registry's existing
+clock convention alongside `reminders=` on `ToolRegistry.__init__` — they are
+process-lifetime values, which is what that constructor is for (`registry.py:44-66`).
 
 - [ ] **Step 1: Failing tests**
 
@@ -1209,7 +1403,7 @@ async def test_remind_refuses_on_a_fire_turn():
     assert result["status"] == "refused"
 
 
-# The remaining six follow the same shape: build the tool through
+# The remaining seven follow the same shape: build the tool through
 # ToolRegistry.build(...), call it, assert status == "refused" and that a note
 # is present. Each names the ONE condition it exercises:
 #   test_remind_refuses_an_unmapped_requester         -> room.tagger is None
@@ -1274,4 +1468,4 @@ would break `_terminal_budget_spent`'s AND and the pinned
 
 **Type consistency.** `ReminderState` is a `StrEnum` used identically in Tasks 2, 4, 6. `ConversationSlots`'s key is `tuple[str, str]` in Tasks 1 and 4. `fire: Callable[[Sequence[Reminder]], Awaitable[str]]` in Task 4 matches `FirePath.run(rows) -> str` in Task 5. `mark()` returns `bool` everywhere.
 
-**One known gap, called out rather than hidden:** Task 5's steps 7–8 and Task 6's steps 2–3 describe implementations by their interfaces and constraints rather than showing every line. They are the two tasks whose exact code depends on shapes the implementer will read in the files they are editing (`deliver.build`'s eleven arguments, `build_tool_specs`'s closure body). Every *decision* is specified — what to call, what not to call, what must not be duplicated and why — but an implementer will write more original code in these two than in Tasks 1–4.
+**One known gap, called out rather than hidden:** Task 5's step 7 and Task 6's steps 2–3 describe implementations by their interfaces and constraints rather than showing every line. They are the two tasks whose exact code depends on shapes the implementer will read in the files they are editing (`deliver.build`'s eleven arguments, `build_tool_specs`'s closure body). Every *decision* is specified — what to call, what not to call, what must not be duplicated and why — but an implementer will write more original code in these two than in Tasks 1–4.
