@@ -256,6 +256,39 @@ class RouteClient:
                 result["destination_info"] = dining
         return result
 
+    async def place_info(self, name: str) -> dict[str, Any]:
+        """Google's structured facts about ONE named place — rating, price band,
+        open-now — reusing the Places resolver the route path already uses. NEVER
+        raises. This is the reliable answer to «好唔好味»: a 4.2★ from Google is
+        structured truth, unlike a scraped page.
+
+        Four statuses mirror the resolver (design/14 §5.2): `ok` (with whatever
+        dining fields Google returned — a place may have none), `ambiguous` (the
+        name matches several distinct places; ask which), `not_found`, and
+        `unavailable`. The place's COORDINATE is resolved internally and never
+        returned — same as route (DEC-24); only the name, address and the typed
+        rating/price/open-now fields, none of which is a coordinate."""
+        try:
+            res = await self._resolver.resolve(name)
+        except Exception:
+            log.exception("place_info resolve failed")
+            return {"status": "unavailable"}
+        if res.status == "ambiguous":
+            return {"status": "ambiguous", "could_be": list(res.could_be)}
+        if res.status == "not_found":
+            return {"status": "not_found"}
+        if res.status != "ok" or res.place is None:
+            return {"status": "unavailable"}
+        place = res.place
+        out: dict[str, Any] = {"status": "ok", "name": place.name}
+        if place.address:
+            out["address"] = place.address
+        # The typed dining fields (rating/price_level/open_now) — numbers, an
+        # enum and a bool, not free text, so not `untrusted`-wrapped (design/14
+        # §2.1). Empty for a bus stop or a street corner, which is honest.
+        out.update(place.dining())
+        return out
+
     async def _compute(
         self, origin: Place, destination: Place, mode: str, arrive_by: str,
         by: str = "", prefer: str = "", depart_after: str = "",

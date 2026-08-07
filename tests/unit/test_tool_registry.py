@@ -60,7 +60,7 @@ def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
         "now", "chat_earlier", "send_reply",
-        "group_members", "lookup_person", "about", "calculate", "transit", "route",
+        "group_members", "lookup_person", "about", "calculate", "transit", "route", "place_info",
         "where_is",
         "media_fetch",
         "web_search", "web_fetch",
@@ -87,6 +87,9 @@ def test_budgets_match_todays_table():
         # Sized like transit: two place lookups plus a route, paid and external,
         # so a turn may reach for it twice but not more (DEC-46).
         "route": 2,
+        # Sized like route: one Places lookup per call, a turn may ask after two
+        # spots.
+        "place_info": 2,
         # One message can ask after two people; each call is one local table
         # read, so like `calculate` this is sized by the question (DEC-59).
         "where_is": 2,

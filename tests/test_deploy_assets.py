@@ -38,11 +38,22 @@ def test_the_unit_restricts_egress_to_localhost():
     assert "IPAddressAllow=localhost" in unit
 
 
-def test_the_egress_script_allowlists_exactly_the_three_ports():
+def test_the_egress_script_governs_firecrawls_ssrf_surface():
+    """egress.sh evolved from the bare-metal uid-owner floor into container-era
+    governance (2026-08-07): it denies the Firecrawl fetch-surface containers
+    the private/host ranges while keeping their own backend + the public
+    internet. Pins the load-bearing shape so a revert to the port-allowlist —
+    or dropping a blocked range — turns red."""
     text = (DEPLOY / "egress.sh").read_text()
-    for port in ("18080", "8000", "20128"):
-        assert port in text
-    assert "owner --uid-owner nora" in text or "--uid-owner nora" in text
+    assert "DOCKER-USER" in text
+    assert "firecrawl-api-1" in text
+    # The host/private ranges it must deny (172.16/12 covers the docker gateway
+    # → OmniRoute/Honcho; 169.254 is link-local + cloud metadata).
+    for net in ("172.16.0.0/12", "169.254.0.0/16", "127.0.0.0/8", "100.64.0.0/10"):
+        assert net in text, net
+    # Reversible + verifiable — the governance contract.
+    for sub in ("apply", "down", "verify"):
+        assert sub in text
 
 
 def test_the_watchdog_uses_the_300_second_threshold():

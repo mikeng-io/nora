@@ -443,7 +443,9 @@ def _tool_wiring(route_source, *, shortener=None):
         transit_source=None, route_source=route_source, shortener=shortener,
         question="點去 Yoho", context_window=40,
     )
-    return {"route": {t.tool_name: t for t in tools}["route"], "metrics": metrics}
+    by_name = {t.tool_name: t for t in tools}
+    return {"route": by_name["route"], "place_info": by_name["place_info"],
+            "metrics": metrics}
 
 
 async def _call(tool, **kwargs):
@@ -685,3 +687,52 @@ async def test_a_failed_mint_keeps_the_long_url(google):
     wiring = _tool_wiring(google.client, shortener=_FakeShortener(None))
     out = await _call(wiring["route"], origin="天水圍站", destination="Yoho Mall")
     assert out["maps_url"].startswith("https://www.google.com/maps/dir/")
+
+
+# ── place_info: Google's structured rating, no scrape (2026-08-07) ────────────
+
+async def test_place_info_returns_the_google_rating(google):
+    """The reliable «好唔好味» answer: Google's own rating/price/open-now for a
+    resolved place, and the COORDINATE never in the payload (DEC-24)."""
+    out = await google.client.place_info("Yoho Mall")
+    assert out["status"] == "ok"
+    assert out["name"] == "YOHO Mall"
+    assert out["rating"] == 4.2
+    assert out["price_level"] == "PRICE_LEVEL_MODERATE"
+    assert out["open_now"] is True
+    assert "lat" not in json.dumps(out) and "22.44" not in json.dumps(out)
+
+
+async def test_place_info_ambiguous_asks_which(google):
+    """A category name (several distinct places) is `ambiguous` with candidates —
+    never a guessed pick (design/14 §5.2)."""
+    out = await google.client.place_info("打邊爐")
+    assert out["status"] == "ambiguous"
+    assert len(out["could_be"]) >= 2
+
+
+async def test_place_info_not_found_is_distinct_from_unavailable(google):
+    out = await google.client.place_info("no-such-place-anywhere-xyz")
+    assert out["status"] == "not_found"
+
+
+async def test_place_info_unavailable_when_places_is_down(google):
+    google.places_status = 500
+    out = await google.client.place_info("Yoho Mall")
+    assert out["status"] == "unavailable"
+
+
+async def test_place_info_tool_refuses_a_person(google):
+    """R-28 at place_info's egress: a person's name must not go to Google as a
+    place. `陳生` (alias of the wired Tyler) is refused before any call."""
+    wiring = _tool_wiring(google.client)
+    out = await _call(wiring["place_info"], name="陳生")
+    assert out["status"] == "refused"
+    assert google.calls == []
+
+
+async def test_place_info_tool_answers_a_real_place(google):
+    wiring = _tool_wiring(google.client)
+    out = await _call(wiring["place_info"], name="Yoho Mall")
+    assert out["status"] == "ok"
+    assert out["rating"] == 4.2
