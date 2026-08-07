@@ -81,6 +81,8 @@ class PresenceCollector:
         store: PresenceStore,
         circles: Sequence[CircleSpec],
         cadence_seconds: float,
+        cadence_moving_seconds: float | None = None,
+        cadence_still_seconds: float | None = None,
         geocoder: ReverseGeocoder | None = None,
         metrics: Any = None,
     ) -> None:
@@ -88,6 +90,14 @@ class PresenceCollector:
         self._store = store
         self._circles = tuple(circles)
         self._cadence_seconds = cadence_seconds
+        # Adaptive band (§4.1). Default to the fixed cadence at both ends when a
+        # caller omits them, so an old construction keeps its constant interval.
+        self._cadence_moving_seconds = (
+            cadence_moving_seconds if cadence_moving_seconds is not None else cadence_seconds
+        )
+        self._cadence_still_seconds = (
+            cadence_still_seconds if cadence_still_seconds is not None else cadence_seconds
+        )
         # Optional (None when no Google key): fills a place name on a fix Life360
         # returned without an address (§5). Never load-bearing — a miss stores
         # the coordinate as before.
@@ -112,6 +122,11 @@ class PresenceCollector:
         self._places_fetched_ms: dict[str, int] = {}
         self._places_retry_ms: dict[str, int] = {}
         self._places_failures: dict[str, int] = {}
+        # Consecutive still cycles per circle — how many OK reads in a row saw
+        # NOBODY driving. 0 means the last read had a driver (poll fast); it
+        # grows while the circle sits, and `sleep_seconds` reads it to ramp the
+        # interval from the moving floor toward the still ceiling (§4.1).
+        self._still_cycles: dict[str, int] = {}
 
     async def collect_once(self, circle: CircleSpec, *, now_ms: int) -> CircleRead:
         """One collection cycle for one circle. NEVER raises.
@@ -145,9 +160,20 @@ class PresenceCollector:
             self._publish_liveness(circle.circle_id, now_ms)
             return read
 
+        moving = False
         for member in read.members:
             self._count("nora_presence_member_states_total", wire_state=member.wire_state.value)
+            if member.is_driving:
+                moving = True
             await self._record(circle, member, now_ms=now_ms)
+        # Adaptive cadence signal (§4.1): a circle with any driver polls at the
+        # moving floor next cycle; one where all fixes are stationary lets the
+        # still-counter grow so the interval ramps toward the ceiling. Driving is
+        # the movement flag, not «a fix was written» — Life360 pushes a fresh ts
+        # for a PARKED phone too, so a written fix does not mean anyone moved.
+        self._still_cycles[circle.circle_id] = (
+            0 if moving else self._still_cycles.get(circle.circle_id, 0) + 1
+        )
 
         # Places refresh AFTER a clean member read on purpose: a cycle that
         # could not even read members has no business spending a second call on
@@ -248,16 +274,38 @@ class PresenceCollector:
                 wire_state=member.wire_state.value,
             )
 
-    def sleep_seconds(self) -> float:
-        """The next inter-cycle sleep. The cadence when healthy, grown
-        exponentially by the client's consecutive auth failures — the ban-safe
-        back-off (§4.1), capped so a wedged account is still retried hourly."""
-        failures = self._client.auth_failures
-        if failures <= 0:
-            return self._cadence_seconds
+    def sleep_seconds(self, circle_id: str) -> float:
+        """The next inter-cycle sleep for one circle. The larger of two floors,
+        so whichever demands MORE waiting wins (§4.1):
+
+        - the adaptive cadence: the moving floor while a driver is present,
+          ramped toward the still ceiling by consecutive stationary cycles;
+        - the ban-safe back-off: the base cadence grown `* 2^failures` by the
+          client's consecutive auth failures, capped so a wedged account is
+          still retried hourly.
+
+        `max` of the two means a 429 (failures > 0) always lengthens the sleep
+        regardless of who is driving — ban safety is never traded for freshness —
+        while a healthy moving circle polls at the floor.
+        """
         # float() because typeshed types `int ** int` as Any (a negative
         # exponent would make it a float), and this module is mypy-strict.
-        return min(self._cadence_seconds * float(2**failures), MAX_BACKOFF_SECONDS)
+        failures = self._client.auth_failures
+        backoff = (
+            min(self._cadence_seconds * float(2**failures), MAX_BACKOFF_SECONDS)
+            if failures > 0
+            else 0.0
+        )
+        still = self._still_cycles.get(circle_id, 0)
+        adaptive = (
+            self._cadence_moving_seconds
+            if still <= 0
+            else min(
+                self._cadence_moving_seconds * float(2**still),
+                self._cadence_still_seconds,
+            )
+        )
+        return max(adaptive, backoff)
 
     def _publish_liveness(self, circle_id: str, now_ms: int) -> None:
         """Set the heartbeat gauge to the age of this circle's last SUCCESS. It
@@ -298,7 +346,7 @@ class PresenceCollector:
                 # collect_once is documented never to raise; belt for braces so
                 # one bad cycle never kills a circle's loop.
                 log.exception("presence collect cycle failed for %s", circle.circle_id)
-            await asyncio.sleep(self.sleep_seconds())
+            await asyncio.sleep(self.sleep_seconds(circle.circle_id))
 
     async def _prune_loop(self) -> None:
         while True:

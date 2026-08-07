@@ -381,6 +381,18 @@ class PresenceConfig(BaseModel):
     # 60-120 band is guidance in config.example.toml, not a hard clamp, so an
     # operator can widen it deliberately without editing code.
     cadence_seconds: float = Field(default=90.0, ge=1.0)
+    # Adaptive cadence (design/19 §4.1, backlog 2026-08-07). The poll interval
+    # is not fixed: it drops to `cadence_moving_seconds` for a circle where
+    # ANYONE is driving — so `whereis` stays fresh through a commute — and grows
+    # back toward `cadence_still_seconds` as the circle sits still, so a parked
+    # circle is not polled every 20 s all night. `cadence_seconds` remains the
+    # base for the auth-failure back-off, which ALWAYS wins over the adaptive
+    # floor (a 429 lengthens the sleep regardless of who is moving — ban safety
+    # is never traded for freshness). Both `ge`-guarded against a busy-loop; a
+    # deployment that wants the old fixed cadence sets moving == still ==
+    # cadence_seconds.
+    cadence_moving_seconds: float = Field(default=20.0, ge=1.0)
+    cadence_still_seconds: float = Field(default=300.0, ge=1.0)
     retention_days: int = Field(default=180, ge=1)
     # The collector's own metrics/health endpoint (§4: liveness lives in the
     # daemon). A separate process, so a separate port from `obs.metrics.port`.

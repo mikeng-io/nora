@@ -163,13 +163,16 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         store=store,
         circles=circles,
         cadence_seconds=presence.cadence_seconds,
+        cadence_moving_seconds=presence.cadence_moving_seconds,
+        cadence_still_seconds=presence.cadence_still_seconds,
         geocoder=geocoder,
         metrics=metrics,
     )
     log.info(
-        "presence collector wired: %d circle(s), cadence %.0fs, retention %dd",
+        "presence collector wired: %d circle(s), cadence %.0f-%.0fs, retention %dd",
         len(circles),
-        presence.cadence_seconds,
+        presence.cadence_moving_seconds,
+        presence.cadence_still_seconds,
         presence.retention_days,
     )
     return PresenceDependencies(

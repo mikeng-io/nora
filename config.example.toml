@@ -170,10 +170,17 @@ api_key_env = "GOOGLE_MAPS_API_KEY"
 # auth); `username_env`/`password_env` name the account login. The collector
 # reads the VALUES from the environment.
 #
-# `cadence_seconds` is the per-circle poll interval — keep it ~60–120 s, roughly
-# what the Life360 app itself does; the collector is a CHANGE-RECORDER (it writes
-# only when a member's position advances), so polling faster buys no freshness,
-# only credential-POST risk. `retention_days` is the prune window (operator
+# The poll interval is ADAPTIVE, not fixed. `cadence_moving_seconds` (default 20)
+# is the floor used while ANYONE in the circle is driving — so `whereis` stays
+# fresh through a commute — and `cadence_still_seconds` (default 300) is the
+# ceiling a stationary circle ramps toward, so a parked circle is not polled
+# every 20 s all night. `cadence_seconds` (default 90) remains the base for the
+# auth-failure back-off, which ALWAYS wins over the moving floor: a Life360 429
+# lengthens the sleep regardless of who is driving — ban safety is never traded
+# for freshness. Keep the band ~15–300 s, roughly what the Life360 app itself
+# does; set moving == still == cadence_seconds for the old fixed interval. The
+# collector is a CHANGE-RECORDER (it writes only when a member's position
+# advances). `retention_days` is the prune window (operator
 # decision: 180). `metrics_port` is the daemon's own /metrics + /health endpoint,
 # separate from obs.metrics.port because it is a separate process.
 #
