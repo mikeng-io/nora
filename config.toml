@@ -55,7 +55,12 @@ temperature = 0.7
 # already holds — nothing to reason through. Measured on deepseek-v4-flash:
 # "none" 4.7s, "low" 9.5s, unset 16.1s, all producing the tool call.
 reasoning_effort = "low"
-timeout_seconds = 30
+# 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container
+# (1.15 MB, effort=low), and the vision per-call budget derives from THIS value
+# — at 30 it computed 9 s, so every real image timed out while the tiny probe
+# PNG passed. 60 derives ~18 s per describe: two image reads plus the text
+# turns still fit the loop.
+timeout_seconds = 60
 
 # The three caps around the WHOLE agent loop for one tag — all measured
 # 2026-08-06, all three previously wrong in the same direction.
