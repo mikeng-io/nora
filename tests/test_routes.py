@@ -27,6 +27,7 @@ an int, transit legs carry `transitLine.nameShort` / `.vehicle.type` /
 from __future__ import annotations
 
 import json
+import urllib.parse
 
 import pytest
 from aiohttp import web
@@ -625,3 +626,36 @@ async def test_an_unsaved_name_falls_through_to_the_public_lookup(google):
     assert out["status"] == "ok"
     places_calls = [c for c in google.calls if c.startswith("places")]
     assert sorted(places_calls) == ["places:Yoho Mall", "places:天水圍站"]
+
+
+# ── the Google Maps deep link (operator ask 2026-08-07) ──────────────────────
+
+async def test_an_ok_route_carries_a_maps_link_built_from_the_asked_words(google):
+    """`maps_url` is the Maps URLs API deep link for the same trip, built from
+    the words AS ASKED — a clickable handoff, not a second data source."""
+    out = await google.client.route("天水圍站", "Yoho Mall")
+    # The client itself adds nothing; the TOOL does. Exercise through the tool:
+    wiring = _tool_wiring(google.client)
+    out = await _call(wiring["route"], origin="天水圍站", destination="Yoho Mall")
+    assert out["status"] == "ok"
+    url = out["maps_url"]
+    assert url.startswith("https://www.google.com/maps/dir/?api=1&origin=")
+    assert urllib.parse.quote("天水圍站") in url
+    assert urllib.parse.quote("Yoho Mall", safe="") in url or "Yoho%20Mall" in url
+    assert "travelmode=transit" in url
+
+
+async def test_the_maps_link_never_carries_a_resolved_coordinate(google):
+    """A saved place resolves server-side, but the LINK still carries only the
+    asked word: a coordinate in a group message publishes the pin to anyone the
+    message is forwarded to (the R-28 spirit at one more exit)."""
+    home = Place(place_id="saved:p1", name="Home", address="Home",
+                 lat=22.4471, lng=114.0228)
+    out = await google.client.route("home", "Yoho Mall", local_places={"home": home})
+    assert out["status"] == "ok"
+    # The client-level result has no link at all (the tool adds it) …
+    assert "maps_url" not in out
+    # … and the tool's link for a plain call contains no digits of any coordinate.
+    wiring = _tool_wiring(google.client)
+    out = await _call(wiring["route"], origin="天水圍站", destination="Yoho Mall")
+    assert "22.4471" not in out["maps_url"] and "114.0228" not in out["maps_url"]

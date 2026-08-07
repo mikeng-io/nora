@@ -47,6 +47,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import urllib.parse
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -65,6 +66,10 @@ log = logging.getLogger("nora.tools")
 # since 1979, and this keeps `nora.agent` free of a system-tzdata dependency
 # that differs between the container and a developer machine.
 _HKT = timezone(timedelta(hours=8), "HKT")
+
+# Google Maps URLs API travelmode per Routes mode — the deep link `route`
+# returns on `ok` (keyless, cross-platform, documented-stable).
+_MAPS_TRAVELMODE = {"TRANSIT": "transit", "DRIVE": "driving", "WALK": "walking"}
 
 @dataclass(frozen=True)
 class NativeTool:
@@ -1135,7 +1140,9 @@ def build_tool_specs(
           - `ok` — `duration_seconds` is the whole trip. For transit, `legs` is
             each vehicle to board in order (`line`, `vehicle`, `departure_stop`,
             `departure_time`, `headsign`). Times are Google's schedule — say
-            «about» when you quote one.
+            «about» when you quote one. `maps_url` is a Google Maps link for
+            the same trip — include it in your reply when they want to open the
+            map themselves («俾條 link 我»), pasted EXACTLY as given.
           - `no_route` — read the note. Either Google found no way between the
             two places by that mode, or a place could not be pinned to ONE spot
             (`origin_could_be` / `destination_could_be` list the possibilities;
@@ -1246,6 +1253,19 @@ def build_tool_specs(
         for key in ("origin_could_be", "destination_could_be"):
             if isinstance(out.get(key), list):
                 out[key] = [c for c in out[key] if scan_identifiers(str(c)) is None]
+        if out.get("status") == "ok":
+            # A Google Maps deep link for the same trip (Maps URLs API — keyless
+            # and stable), built from the words AS ASKED, never from anything
+            # resolved: a coordinate or resolved address in a link would publish
+            # a saved place's pin to anyone the message is forwarded to (the
+            # R-28 spirit at one more exit). The asked strings are already past
+            # the identifier/person/coordinate screens above.
+            out["maps_url"] = (
+                "https://www.google.com/maps/dir/?api=1"
+                f"&origin={urllib.parse.quote(origin)}"
+                f"&destination={urllib.parse.quote(destination)}"
+                f"&travelmode={_MAPS_TRAVELMODE.get(str(out.get('mode', '')), 'transit')}"
+            )
         _record(
             metrics, "route", out["status"],
             mode=out.get("mode"), legs=len(out.get("legs") or ()),
