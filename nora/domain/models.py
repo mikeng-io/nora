@@ -197,6 +197,11 @@ class UnattributedRow:
     sender_id: str
     ts: int
     body: str | None
+    # The conversation the message was in — needed so lazy-adoption feeds it into
+    # the right conversation session (Honcho v2, design/24), the same way the
+    # ambient feed does. Like `platform`, it is carried because a re-fed row must
+    # know its session, which `TranscriptRow` (already conversation-scoped) omits.
+    conversation_id: str = ""
     raw_json: str | None = None
 
 

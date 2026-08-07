@@ -51,13 +51,14 @@ class Deliverer:
     names — construct cleanly and cap her at one message anyway, which is
     exactly the invisible half of that trap.
 
-    **`last_text` is deleted rather than generalised.** It existed so the tag
-    path could feed Nora's reply to Honcho; DEC-36 removed that feed entirely
-    (`nora.engagement.stages.feedback` now takes no deliverer and feeds only
-    the tagger's own words), leaving one attribute whose only remaining
-    property was being WRONG under multi-message — design/16 §4 predicted a
-    four-message reply feeding the last message and silently dropping three.
-    Structural absence beats a comment saying not to use it.
+    **`sent_texts` is a LIST, not a `last_text` (Honcho v2, design/24).** The
+    old `last_text` fed Nora's reply to Honcho but was WRONG under multi-message
+    — a four-message reply fed the last message and silently dropped three
+    (design/16 §4), so DEC-36 deleted it. v2 restores the feed CORRECTLY: every
+    delivered message is appended, and the feedback stage feeds each under the
+    Nora aiPeer into the conversation's session (§3). A list is the fix the
+    scalar could not be — it cannot drop the earlier messages of a multi-message
+    turn because it holds all of them.
     """
 
     def __init__(
@@ -84,6 +85,17 @@ class Deliverer:
         self._message_cap = message_cap
         self._attempts = 0
         self._delivered_count = 0
+        # Every message actually SENT this turn (Honcho v2): the feedback stage
+        # feeds each under the Nora aiPeer. Populated only on a successful send,
+        # so a refused/failed message is never fed.
+        self._sent_texts: list[str] = []
+
+    @property
+    def sent_texts(self) -> tuple[str, ...]:
+        """Every message actually sent this turn, in order (Honcho v2). A tuple
+        so a caller cannot mutate the Deliverer's record; the feedback stage
+        feeds each under the Nora aiPeer."""
+        return tuple(self._sent_texts)
 
     @property
     def delivered(self) -> bool:
@@ -200,6 +212,7 @@ class Deliverer:
 
         if result.ok:
             self._delivered_count += 1
+            self._sent_texts.append(text)
             self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)
         else:
             self._metrics.inc("nora_replies_total", status="failed", platform=self._target.platform)

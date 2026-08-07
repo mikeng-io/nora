@@ -88,6 +88,7 @@ def build_offline_pipeline(
         tool_registry=tool_registry,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
+        ai_peer=cfg.memory.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=None,
         # Defaults to None: an offline harness has no signal-cli to ask, and

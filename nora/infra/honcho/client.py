@@ -274,31 +274,28 @@ class HonchoClient:
                 return
             await self._create_peer(peer_id)
 
-    async def ensure_session(self, peer_id: str) -> str | None:
-        """The peer's one session id, created on first use.
+    async def ensure_session(self, conversation_id: str) -> str | None:
+        """The CONVERSATION's session id, created on first use (Honcho v2,
+        design/24). One session per Signal group / DM, holding EVERY speaker in
+        that conversation as its own peer — so a human's words and Nora's reply
+        share one session while each message stays under its own `peer_id`.
 
-        Sessions are created at the WORKSPACE level. This used to POST to
-        `/peers/{peer_id}/sessions`, which is not a create endpoint at all —
-        it LISTS a peer's sessions and answers 200 with a pagination envelope
-        (`{"items": [], "total": 0, ...}`). That envelope has no `id`, so this
-        returned None every single time, `feed` returned False before posting
-        anything, and **Honcho never received one message** for the entire life
-        of the deployment. Verified against the live instance: the old path
-        answers 200-with-no-id, `POST /sessions` answers 201 with the session.
+        This REPLACES the per-person `nora-<peer_id>` keying (design/24 §1): a
+        per-person session structurally cannot hold a two-speaker conversation,
+        which is why Nora's reply had nowhere honest to go (DEC-36). Old
+        per-person sessions become legacy — their peer cards carry forward
+        (peers are unchanged); nothing writes to them any more.
 
-        It failed invisibly because feeding is best-effort by contract — the
-        caller counts `honcho_feed_failure` and moves on, and nothing else
-        depends on the result. Both feed counters sat at 0.0.
-
-        The id is deterministic, so it survives a restart without state and
-        re-creating it is idempotent (the live instance answers 200 with the
-        same id on a repeat POST). The cache below only saves a round trip.
+        Sessions are created at the WORKSPACE level via `POST /sessions` (201
+        with the session; the live instance answers 200 with the same id on a
+        repeat POST, so re-creating is idempotent). The id is deterministic, so
+        it survives a restart without state; the cache only saves a round trip.
         """
-        async with self._peer_lock(peer_id):
-            cached = self._sessions.get(peer_id)
+        async with self._peer_lock(f"conv:{conversation_id}"):
+            cached = self._sessions.get(conversation_id)
             if cached is not None:
                 return cached
-            session_id = f"nora-{peer_id}"
+            session_id = f"nora-conv-{conversation_id}"
             result = await self._post(
                 self._url("/sessions"), {"id": session_id}, self._feed_timeout
             )
@@ -307,16 +304,30 @@ class HonchoClient:
             returned = result.get("id")
             if not isinstance(returned, str) or not returned:
                 return None
-            self._sessions[peer_id] = returned
+            self._sessions[conversation_id] = returned
             return returned
 
-    async def feed(self, *, peer_id: str, text: str) -> bool:
-        session_id = await self.ensure_session(peer_id)
+    async def feed(
+        self,
+        *,
+        peer_id: str,
+        text: str,
+        conversation_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> bool:
+        """Feed one message under its speaker's `peer_id` into the conversation's
+        session (design/24 §3). Best-effort: False on any failure, the caller
+        counts it and moves on. `metadata` rides on the message for the deriver
+        (never the text itself)."""
+        session_id = await self.ensure_session(conversation_id)
         if session_id is None:
             return False
+        message: dict[str, object] = {"content": text, "peer_id": peer_id}
+        if metadata:
+            message["metadata"] = metadata
         result = await self._post(
             self._url(f"/sessions/{session_id}/messages"),
-            {"messages": [{"content": text, "peer_id": peer_id}]},
+            {"messages": [message]},
             self._feed_timeout,
         )
         return result is not None

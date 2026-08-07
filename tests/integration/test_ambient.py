@@ -22,7 +22,7 @@ async def test_ambient_never_constructs_agent(harness):
 async def test_mapped_senders_are_fed_to_honcho(harness):
     await harness.handler.on_event(group_event(body="hi", sender="+852111"))
     await harness.drain()
-    assert harness.honcho.fed == [("miles", "hi")]
+    assert harness.honcho.fed == [("miles", "hi", "g1")]
 
 
 async def test_unmapped_senders_are_never_fed(harness):

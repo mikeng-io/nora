@@ -37,7 +37,8 @@ class FakeMemory:
     async def ensure_peer(self, *, peer_id: str) -> None:
         self.calls.append(("ensure_peer", peer_id))
 
-    async def feed(self, *, peer_id: str, text: str) -> bool:
+    async def feed(self, *, peer_id: str, text: str, conversation_id: str = "",
+                   metadata: dict | None = None) -> bool:
         self.calls.append(("feed", peer_id))
         return True
 

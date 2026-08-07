@@ -204,7 +204,8 @@ class SqlRecordStore:
         stmt = (
             sa.select(
                 MESSAGES.c.id, MESSAGES.c.platform, MESSAGES.c.sender_id,
-                MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.raw_json,
+                MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.conversation_id,
+                MESSAGES.c.raw_json,
             )
             .where(MESSAGES.c.person_id.is_(None), MESSAGES.c.is_nora == 0)
             .order_by(MESSAGES.c.ts.asc(), MESSAGES.c.id.asc())
@@ -215,7 +216,7 @@ class SqlRecordStore:
         return [
             UnattributedRow(
                 id=r.id, platform=r.platform, sender_id=r.sender_id, ts=r.ts,
-                body=r.body, raw_json=r.raw_json,
+                body=r.body, conversation_id=r.conversation_id, raw_json=r.raw_json,
             )
             for r in rows
         ]

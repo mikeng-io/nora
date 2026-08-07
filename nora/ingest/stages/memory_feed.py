@@ -31,10 +31,21 @@ async def run(
     sender is unmapped (D6) — the message is never fed to the semantic store."""
     if person is None:
         return
-    spawn(_feed(memory=memory, peer_id=person.honcho_peer_id, text=message.body, metrics=metrics))
+    spawn(_feed(
+        memory=memory, peer_id=person.honcho_peer_id, text=message.body,
+        conversation_id=message.conversation_id, ts=message.timestamp, metrics=metrics,
+    ))
 
 
-async def _feed(*, memory: MemoryStore, peer_id: str, text: str, metrics: Any) -> None:
+async def _feed(
+    *, memory: MemoryStore, peer_id: str, text: str, conversation_id: str,
+    ts: int, metrics: Any,
+) -> None:
     await memory.ensure_peer(peer_id=peer_id)
-    ok = await memory.feed(peer_id=peer_id, text=text)
+    # Fed under the SPEAKER'S peer into the CONVERSATION's session (Honcho v2,
+    # design/24). `ts` rides as metadata so the deriver has structure.
+    ok = await memory.feed(
+        peer_id=peer_id, text=text, conversation_id=conversation_id,
+        metadata={"ts": ts},
+    )
     metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")

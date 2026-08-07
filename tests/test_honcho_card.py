@@ -115,8 +115,8 @@ async def test_health_reports_unreachable_without_raising():
 
 async def test_fake_honcho_records_feeds():
     fake = FakeHoncho()
-    await fake.feed("miles", "hello")
-    assert fake.fed == [("miles", "hello")]
+    await fake.feed(peer_id="miles", text="hello", conversation_id="c1")
+    assert fake.fed == [("miles", "hello", "c1")]
 
 
 async def test_fake_honcho_serves_configured_cards():
@@ -127,7 +127,7 @@ async def test_fake_honcho_serves_configured_cards():
 
 async def test_fake_honcho_can_simulate_being_down():
     fake = FakeHoncho(fail=True)
-    assert await fake.feed("miles", "x") is False
+    assert await fake.feed(peer_id="miles", text="x", conversation_id="c1") is False
     assert await fake.peer_card("miles") == []
 
 

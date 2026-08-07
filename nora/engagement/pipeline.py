@@ -80,6 +80,7 @@ class EngagementPipeline:
         canary: str,
         display_name: str,
         nora_sender_id: str,
+        ai_peer: str,
         context_window: int,
         timeout_seconds: float,
         limits: dict,
@@ -102,6 +103,8 @@ class EngagementPipeline:
         self._canary = canary
         self._display_name = display_name
         self._nora_sender_id = nora_sender_id
+        # The Nora aiPeer id (Honcho v2, design/24): her replies feed under it.
+        self._ai_peer = ai_peer
         self._context_window = context_window
         self._timeout_seconds = timeout_seconds
         self._limits = limits
@@ -333,14 +336,21 @@ class EngagementPipeline:
             if not delivered:
                 return                       # `finally` still resolves the indicator
 
-            # Step 4: exactly one semantic-store write, and it carries the
-            # TAGGER'S words only — never Nora's reply, which under this peer
-            # id would make her own text evidence about them (DEC-36). The
-            # stage no longer takes the deliverer or either display name, so
-            # there is nothing here it could feed even by mistake.
-            if ctx.tagger is not None:
+            # Step 4: the tag path's semantic write — NORA'S replies, under the
+            # Nora aiPeer, into this conversation's session (Honcho v2, design/24
+            # §3). The human's words are already fed by the ambient memory_feed;
+            # this feeds only her side, building her self-model card. `sent_texts`
+            # is every message actually delivered (multi-message safe). Spawned
+            # off the reply path like every Honcho write.
+            # Gated on a MAPPED tagger, like the old feed: her self-model is
+            # built only from conversations with a known person (feeding her
+            # replies to unmapped senders is a deliberate later refinement,
+            # design/24). `ctx.tagger is None` means an unmapped sender.
+            sent = handle.deliverer.sent_texts
+            if sent and ctx.tagger is not None:
                 self._spawn(feedback.run(
-                    memory=self._memory, ctx=ctx, metrics=self._metrics,
+                    memory=self._memory, ai_peer=self._ai_peer, sent_texts=sent,
+                    conversation_id=msg.conversation_id, metrics=self._metrics,
                 ))
             completed = True
         except BaseException:

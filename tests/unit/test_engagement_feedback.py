@@ -1,96 +1,83 @@
-"""`feedback.run` — the tag path's one write to the semantic store.
+"""`feedback.run` — the tag path's semantic write: NORA's replies under the Nora
+aiPeer, into the conversation's session (Honcho v2, design/24 §3).
 
-Carried over from `Handler._feed_exchange` (`nora/handler.py:137-142`), and
-narrowed by DEC-36: one peer's stream holds one speaker's words.
+The old version fed the tagger's OWN message (a duplicate of the ambient
+memory_feed, DEC-36). v2 feeds only Nora's side; the human side is fed by
+`nora.ingest.stages.memory_feed`, so these tests assert what changed: her sent
+messages go under the aiPeer, EACH of them (multi-message safe), into the right
+conversation, and DEC-36 still holds — a human's peer never receives her words.
 """
 
 from __future__ import annotations
 
-from nora.domain.models import NormalizedMessage, PersonRef, TagContext
 from nora.engagement.stages import feedback
 from nora.obs.metrics import Metrics
 
 
 class _FakeMemory:
-    def __init__(self) -> None:
-        self.fed: list[tuple[str, str]] = []
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fed: list[tuple[str, str, str]] = []   # (peer_id, text, conversation_id)
+        self.peers: list[str] = []
+        self._fail = fail
 
-    async def feed(self, *, peer_id: str, text: str) -> bool:
-        self.fed.append((peer_id, text))
+    async def ensure_peer(self, *, peer_id: str) -> None:
+        self.peers.append(peer_id)
+
+    async def feed(self, *, peer_id: str, text: str, conversation_id: str,
+                   metadata: dict | None = None) -> bool:
+        if self._fail:
+            return False
+        self.fed.append((peer_id, text, conversation_id))
         return True
 
 
-def _ctx(tagger: PersonRef | None) -> TagContext:
-    msg = NormalizedMessage(
-        platform="signal", conversation_id="g1", conversation_type="group",
-        sender_id="+852111", sender_name="Miles", timestamp=1, body="幾點食飯", raw={},
+async def test_noras_replies_are_fed_under_the_nora_peer_into_the_conversation():
+    """THE v2 probe: her reply lands under the `nora` aiPeer (building her
+    self-model) in the conversation's session — never under a human's peer
+    (DEC-36 holds at the message level)."""
+    memory = _FakeMemory()
+    await feedback.run(
+        memory=memory, ai_peer="nora", sent_texts=["今晚七點半得"],
+        conversation_id="g1", metrics=Metrics(),
     )
-    return TagContext(
-        tag_id="tag-1", message=msg, tagger=tagger, transcript=(), peer_card=(), started_at=0.0,
+    assert memory.fed == [("nora", "今晚七點半得", "g1")]
+    assert "miles" not in [peer for peer, _, _ in memory.fed]
+    assert memory.peers == ["nora"]
+
+
+async def test_every_message_of_a_multi_message_reply_is_fed_not_just_the_last():
+    """The bug that killed `last_text` (design/16 §4): a multi-message reply must
+    feed EACH message. `sent_texts` is a list; reverting it to last-only reds
+    this."""
+    memory = _FakeMemory()
+    await feedback.run(
+        memory=memory, ai_peer="nora",
+        sent_texts=["俾阿星", "同你講聲阿珍都嚟"], conversation_id="g1",
+        metrics=Metrics(),
     )
+    assert [t for _, t, _ in memory.fed] == ["俾阿星", "同你講聲阿珍都嚟"]
+    assert {p for p, _, _ in memory.fed} == {"nora"}
 
 
-async def test_only_the_taggers_own_words_are_fed_under_the_taggers_peer():
-    """THE probe (DEC-36). Honcho's deriver is handed the stream as the "Target
-    peer"'s own messages and draws conclusions ABOUT that peer from all of it,
-    so feeding Nora's reply under the tagger's peer makes her own words evidence
-    about them — a corruption no backfill can undo, because the store keeps the
-    CONCLUSION rather than the text it came from.
-
-    Asserted as an exact equality rather than a `not in`: an absence check would
-    also pass for a stage that fed nothing at all, and for one that relabelled
-    the reply in a way the deriver still cannot see as a second speaker.
-    """
+async def test_no_replies_means_no_feed():
     memory = _FakeMemory()
-    ctx = _ctx(PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles"))
-
-    await feedback.run(memory=memory, ctx=ctx, metrics=Metrics())
-
-    assert memory.fed == [("miles", "幾點食飯")]
-
-
-async def test_noras_reply_never_reaches_any_peers_stream():
-    """The same claim from the other side, so it survives a change to the exact
-    shape above: whatever this stage decides to feed, and under whatever peer,
-    the text Nora produced is not part of it.
-
-    `feedback.run` no longer takes a `Deliverer` at all, so the reply is reached
-    for here the only way it still can be — off the pipeline's own handle. If
-    the parameter ever comes back, this test is what has to be argued with.
-    """
-    memory = _FakeMemory()
-    ctx = _ctx(PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles"))
-
-    await feedback.run(memory=memory, ctx=ctx, metrics=Metrics())
-
-    assert not any("今晚七點半得" in text for _, text in memory.fed)
-    assert not any("Nora" in text for _, text in memory.fed)
-
-
-async def test_an_unmapped_tagger_yields_no_feed_at_all():
-    memory = _FakeMemory()
-    ctx = _ctx(tagger=None)
-
-    await feedback.run(memory=memory, ctx=ctx, metrics=Metrics())
-
+    await feedback.run(
+        memory=memory, ai_peer="nora", sent_texts=[], conversation_id="g1",
+        metrics=Metrics(),
+    )
     assert memory.fed == []
 
 
-async def test_a_failed_feed_is_counted():
-    """The last Honcho write that left no trace. It matters because the exact
-    failure it would hide has already happened once: `ensure_session` POSTed to
-    a list endpoint, so `feed` returned False without an HTTP call and memory
-    received nothing for the deployment's whole life. Uncounted here, the
-    ambient counters would go red while the tagging path stayed invisible."""
-    class _Down:
-        async def ensure_peer(self, *, peer_id): ...
-        async def feed(self, *, peer_id, text): return False
-        async def peer_card(self, *, peer_id): return []
-        async def health(self): ...
-        async def aclose(self): ...
-
+async def test_each_failed_feed_is_counted():
+    """The last Honcho write that left no trace once — `ensure_session` POSTed to
+    a list endpoint, so `feed` returned False with no HTTP call and memory
+    received nothing for the deployment's whole life. Counting keeps a silent
+    regression on the same dashboard the ambient path uses."""
+    memory = _FakeMemory(fail=True)
     metrics = Metrics()
-    ctx = _ctx(PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles"))
-    await feedback.run(memory=_Down(), ctx=ctx, metrics=metrics)
-    assert metrics.get("honcho_feed_failure") == 1
+    await feedback.run(
+        memory=memory, ai_peer="nora", sent_texts=["a", "b"], conversation_id="g1",
+        metrics=metrics,
+    )
+    assert metrics.get("honcho_feed_failure") == 2
     assert metrics.get("honcho_feed_success") == 0

@@ -87,7 +87,7 @@ class _FakeAdapter:
 
 class _FakeMemory:
     def __init__(self) -> None:
-        self.fed: list[tuple[str, str]] = []
+        self.fed: list[tuple[str, str, str]] = []
         self.peers: list[str] = []
 
     async def ensure_workspace(self) -> None:
@@ -96,8 +96,9 @@ class _FakeMemory:
     async def ensure_peer(self, *, peer_id: str) -> None:
         self.peers.append(peer_id)
 
-    async def feed(self, *, peer_id: str, text: str) -> bool:
-        self.fed.append((peer_id, text))
+    async def feed(self, *, peer_id: str, text: str, conversation_id: str,
+                   metadata: dict | None = None) -> bool:
+        self.fed.append((peer_id, text, conversation_id))
         return True
 
     async def peer_card(self, *, peer_id: str) -> list[str]:
@@ -232,6 +233,7 @@ def _build_pipeline(
         canary="CANARY-XYZ",
         display_name="Nora",
         nora_sender_id="+8520000",
+        ai_peer="nora",
         context_window=10,
         timeout_seconds=timeout_seconds,
         limits=LIMITS,
@@ -284,7 +286,7 @@ async def test_a_successful_tag_delivers_releases_the_lock_and_feeds_the_exchang
     # DEC-36: the tagger's own words, under the tagger's peer, and nothing
     # else. This used to look for `"[Nora]"` in the fed text — the marker of
     # the two-speaker transcript that made her replies evidence about him.
-    assert memory.fed == [("miles", "nora.000 幾點食飯")]
+    assert memory.fed == [("nora", "今晚七點半得", "g1")]
     assert len(metrics.observations("nora_tag_latency_seconds")) == 1
     assert len(metrics.observations("nora_overhead_seconds")) == 1
 
@@ -317,10 +319,11 @@ async def test_the_feedback_feed_is_spawned_through_the_injected_tracker():
             super().__init__()
             self.started = asyncio.Event()
 
-        async def feed(self, *, peer_id: str, text: str) -> bool:
+        async def feed(self, *, peer_id: str, text: str, conversation_id: str = "",
+                       metadata: dict | None = None) -> bool:
             self.started.set()
             await asyncio.sleep(10)   # never completes within the test
-            self.fed.append((peer_id, text))
+            self.fed.append((peer_id, text, conversation_id))
             return True
 
     memory = _SlowMemory()
@@ -787,7 +790,7 @@ async def test_a_reaction_failure_never_prevents_the_reply():
     await _drain(background)
 
     assert adapter.texts == ["今晚七點半得"]
-    assert memory.fed == [("miles", "nora.000 幾點食飯")]
+    assert memory.fed == [("nora", "今晚七點半得", "g1")]
     assert metrics.get("nora_reactions_total", status="failed") == 3.0
     assert metrics.get("nora_silent_failures_total") == 0.0
     assert pipeline._in_flight == set()
@@ -1187,15 +1190,12 @@ async def test_every_message_gets_its_own_audit_row():
     assert [r.body for r in nora_rows] == ["一", "二", "三"]
 
 
-async def test_a_multi_message_turn_still_feeds_honcho_exactly_once():
-    """5d, and the half design/16 §4 got wrong before DEC-36 landed.
-
-    The tag path's Honcho write carries the TAGGER'S words and nothing else,
-    so message count cannot affect it — one tag, one feed, whatever she said
-    back. Asserted rather than assumed because the failure it guards against
-    is not recoverable: Honcho keeps the CONCLUSION, not the text, so feeding
-    the tagger's question three times cannot be undone by a backfill.
-    """
+async def test_a_multi_message_turn_feeds_each_of_noras_messages_under_her_peer():
+    """Honcho v2 (design/24 §3): the tag path feeds NORA's replies under her
+    aiPeer, and a multi-message turn feeds EACH message — the exact thing
+    `last_text` got wrong (design/16 §4 fed the last, dropped the rest). All
+    three go under `nora` into the conversation session; none under the human's
+    peer (DEC-36 at the message level)."""
     memory = _FakeMemory()
     pipeline, _, _, _, background = _build_pipeline(
         memory=memory, tool_registry=_RaisedCap(3),
@@ -1204,7 +1204,8 @@ async def test_a_multi_message_turn_still_feeds_honcho_exactly_once():
     await pipeline.run(_request())
     await _drain(background)
 
-    assert memory.fed == [("miles", "nora.000 幾點食飯")]
+    assert memory.fed == [("nora", "一", "g1"), ("nora", "二", "g1"),
+                          ("nora", "三", "g1")]
 
 
 # ---- the partial-delivery observable ---------------------------------------

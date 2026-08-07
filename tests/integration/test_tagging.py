@@ -21,8 +21,14 @@ async def test_happy_tag_produces_one_reply_one_row_one_feed(harness_factory, tm
     # DEC-36, end to end: every text Honcho was handed for this tag is the
     # TAGGER's, under the tagger's peer. Nora's reply — which the group
     # demonstrably received, one assertion above — is in none of them.
-    assert h.honcho.fed == [("miles", "nora.000 幾點食飯"), ("miles", "nora.000 幾點食飯")]
-    assert not any("今晚七點半得" in text for _, text in h.honcho.fed)
+    # Honcho v2 (design/24): the ambient path feeds the tagger's message under
+    # the tagger's peer; the feedback stage feeds NORA's reply under the Nora
+    # aiPeer. Both in the g1 session, each under its own speaker — DEC-36 at the
+    # peer level: her reply is fed, but never under a human's peer.
+    assert h.honcho.fed == [("miles", "nora.000 幾點食飯", "g1"),
+                            ("nora", "今晚七點半得", "g1")]
+    assert not any(peer == "miles" and "今晚七點半得" in text
+                   for peer, text, _ in h.honcho.fed)
 
 
 async def test_context_is_collected_before_the_model_runs(harness_factory):
@@ -186,7 +192,7 @@ async def test_the_tag_path_feed_happens_exactly_once_per_delivered_reply(harnes
     h = await harness_factory(script=_reply_script())
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert h.honcho.fed == [("miles", "nora.000 ?"), ("miles", "nora.000 ?")]
+    assert h.honcho.fed == [("miles", "nora.000 ?", "g1"), ("nora", "今晚七點半得", "g1")]
 
 
 async def test_an_undelivered_tag_adds_no_second_feed(harness_factory):
@@ -195,7 +201,7 @@ async def test_an_undelivered_tag_adds_no_second_feed(harness_factory):
     h = await harness_factory(script=[ScriptedTurn(final_text="silent")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert h.honcho.fed == [("miles", "nora.000 ?")]
+    assert h.honcho.fed == [("miles", "nora.000 ?", "g1")]
 
 
 async def test_latency_is_recorded(harness_factory):

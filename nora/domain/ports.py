@@ -375,7 +375,19 @@ class MemoryStore(Protocol):
 
     async def ensure_peer(self, *, peer_id: str) -> None: ...
 
-    async def feed(self, *, peer_id: str, text: str) -> bool: ...
+    # `conversation_id` (Honcho v2, design/24): the message is fed under
+    # `peer_id` into that CONVERSATION's session — a multi-peer session, so a
+    # human's words and Nora's reply share one session while each stays under its
+    # own speaker's peer (DEC-36 at the message level). `metadata` is optional
+    # structure for the deriver (ts, reply_to, …), not the message text.
+    async def feed(
+        self,
+        *,
+        peer_id: str,
+        text: str,
+        conversation_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> bool: ...
 
     async def peer_card(self, *, peer_id: str) -> list[str]: ...
 

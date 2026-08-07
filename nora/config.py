@@ -72,6 +72,11 @@ class MemoryConfig(BaseModel):
 
     base_url: str
     workspace_id: str
+    # The Nora aiPeer id (Honcho v2, design/24). Her replies feed under this peer
+    # into each conversation's session, building ONE global Nora self-model card
+    # (decision B-global). Defaulted so a config.toml written before v2 loads
+    # unchanged; the value is a peer id, never a secret.
+    ai_peer: str = "nora"
 
 
 class LimitsConfig(BaseModel):

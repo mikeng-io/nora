@@ -113,7 +113,8 @@ async def backfill(
             # see this module's docstring, point 1.
             text = (row.body or "").strip()
             if text:
-                if not await _feed(memory=memory, peer_id=person.honcho_peer_id, text=text):
+                if not await _feed(memory=memory, peer_id=person.honcho_peer_id,
+                                   text=text, conversation_id=row.conversation_id):
                     failed += 1
                     metrics.inc("nora_adoption_failures_total", platform=row.platform)
                     continue
@@ -144,7 +145,9 @@ async def backfill(
     return counts
 
 
-async def _feed(*, memory: MemoryStore, peer_id: str, text: str) -> bool:
+async def _feed(
+    *, memory: MemoryStore, peer_id: str, text: str, conversation_id: str,
+) -> bool:
     """One replayed message. `False` on any failure, never an exception.
 
     `HonchoClient` already returns `False` rather than raising, but the port
@@ -153,7 +156,9 @@ async def _feed(*, memory: MemoryStore, peer_id: str, text: str) -> bool:
     """
     try:
         await memory.ensure_peer(peer_id=peer_id)
-        return await memory.feed(peer_id=peer_id, text=text)
+        return await memory.feed(
+            peer_id=peer_id, text=text, conversation_id=conversation_id,
+        )
     except Exception as exc:  # noqa: BLE001 — Honcho is never load-bearing
         log.warning("honcho feed failed during lazy adoption of %s: %s", peer_id, exc)
         return False

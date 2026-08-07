@@ -60,7 +60,7 @@ async def test_a_now_mapped_sender_is_fed_and_marked():
 
     counts = await _run(audit, memory, _persons())
 
-    assert memory.fed == [("miles", "i like congee")]
+    assert memory.fed == [("miles", "i like congee", "g1")]
     assert "miles" in memory.peers
     assert audit.rows[row_id - 1]["person_id"] == "miles"
     assert counts.scanned == 1
@@ -97,7 +97,7 @@ async def test_the_feed_is_ordered_by_ts_not_by_insertion():
 
     await _run(audit, memory, _persons())
 
-    assert [text for _, text in memory.fed] == ["m1", "m2", "m3"]
+    assert [t for _, t, _ in memory.fed] == ["m1", "m2", "m3"]
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ async def test_a_honcho_failure_leaves_the_row_unmarked_for_the_next_start():
     # Honcho comes back; the next start adopts it.
     recovered = FakeMemoryStore()
     again = await _run(audit, recovered, _persons())
-    assert recovered.fed == [("miles", "hello")]
+    assert recovered.fed == [("miles", "hello", "g1")]
     assert audit.rows[row_id - 1]["person_id"] == "miles"
     assert again.marked == 1
 
@@ -185,7 +185,8 @@ async def test_a_raising_memory_store_neither_crashes_nor_marks():
     must not be mistaken for a successful feed."""
 
     class ExplodingMemory(FakeMemoryStore):
-        async def feed(self, *, peer_id: str, text: str) -> bool:
+        async def feed(self, *, peer_id: str, text: str, conversation_id: str,
+                       metadata: dict | None = None) -> bool:
             raise RuntimeError("connection reset")
 
     audit = FakeRecordStore()
@@ -199,10 +200,12 @@ async def test_a_raising_memory_store_neither_crashes_nor_marks():
 
 async def test_one_failing_row_does_not_abort_the_rows_behind_it():
     class FlakyMemory(FakeMemoryStore):
-        async def feed(self, *, peer_id: str, text: str) -> bool:
+        async def feed(self, *, peer_id: str, text: str, conversation_id: str,
+                       metadata: dict | None = None) -> bool:
             if text == "m1":
                 raise RuntimeError("connection reset")
-            return await super().feed(peer_id=peer_id, text=text)
+            return await super().feed(peer_id=peer_id, text=text,
+                                      conversation_id=conversation_id)
 
     audit = FakeRecordStore()
     memory = FlakyMemory()
@@ -211,7 +214,7 @@ async def test_one_failing_row_does_not_abort_the_rows_behind_it():
 
     counts = await _run(audit, memory, _persons())
 
-    assert [text for _, text in memory.fed] == ["m2", "m3"]
+    assert [t for _, t, _ in memory.fed] == ["m2", "m3"]
     assert counts.fed == 2
     assert counts.failed == 1
     assert audit.rows[0]["person_id"] is None
@@ -273,7 +276,7 @@ async def test_running_twice_does_not_double_feed_or_double_mark():
     first = await _run(audit, memory, _persons(), metrics)
     second = await _run(audit, memory, _persons(), metrics)
 
-    assert memory.fed == [("miles", "once")]
+    assert memory.fed == [("miles", "once", "g1")]
     assert first.marked == 1
     assert second.scanned == 0
     assert second.marked == 0
@@ -311,11 +314,11 @@ async def test_the_scan_is_bounded_and_the_remainder_survives_to_the_next_run():
         await audit.append(message=_msg(body=f"m{i}", ts=i))
 
     first = await _run(audit, memory, _persons(), limit=2)
-    assert [t for _, t in memory.fed] == ["m0", "m1"]
+    assert [t for _, t, _ in memory.fed] == ["m0", "m1"]
     assert first.marked == 2
 
     second = await _run(audit, memory, _persons(), limit=2)
-    assert [t for _, t in memory.fed] == ["m0", "m1", "m2", "m3"]
+    assert [t for _, t, _ in memory.fed] == ["m0", "m1", "m2", "m3"]
     assert second.marked == 2
 
 
@@ -349,12 +352,12 @@ async def test_adoption_against_the_real_postgres_store(pg_url):
         await store.append(message=_msg(body="stranger", ts=3, sender="+852999"))
 
         first = await _run(store, memory, _persons())
-        assert [t for _, t in memory.fed] == ["older", "newer"]
+        assert [t for _, t, _ in memory.fed] == ["older", "newer"]
         assert first.marked == 2
 
         # Reopened process, same database: nothing is re-fed.
         second = await _run(store, memory, _persons())
-        assert [t for _, t in memory.fed] == ["older", "newer"]
+        assert [t for _, t, _ in memory.fed] == ["older", "newer"]
         assert second.scanned == 1, "only the still-unmapped stranger remains"
         assert second.marked == 0
     finally:
@@ -374,4 +377,4 @@ async def test_a_second_platform_resolves_through_the_same_person():
 
     await _run(audit, memory, persons)
 
-    assert memory.fed == [("miles", "tg")]
+    assert memory.fed == [("miles", "tg", "g1")]

@@ -90,7 +90,25 @@ SPLITTING recall by cost, not by making everything heavy:
   conversation — a future "read the room" recall can query the conversation
   session, not stitch monologues.
 
-## 5. OPEN DECISION A — workspace granularity (operator to lock)
+## DECISIONS LOCKED (operator, 2026-08-07)
+
+- **A — workspace granularity: PHASED.** Phase 0 (build now) = **one workspace**
+  (A1), sessions per conversation. Phase 1 (future) = **workspace bound to
+  (circle_id + group_id), 1-to-many** (A2-shaped, the group↔circle pairing theme
+  extended to workspaces). Phase 0 must therefore route the workspace through a
+  SEAM — `workspace_for(conversation_id)` — that today returns the single
+  configured workspace and later maps conversation → (circle+group) → workspace.
+  The phase-0→1 split is SAFE despite §7's irreversibility warning: it is a
+  workspace SPLIT re-derived by BACKFILL from the record store (which retains the
+  text), not an in-place re-key — new per-binding workspaces start fresh and
+  backfill seeds them. So phase 0 does not paint into a corner.
+- **B — Nora card scope: ONE GLOBAL Nora card** (B-global). One `nora` aiPeer
+  across all conversations → a single derived self-model.
+
+The two sections below are the original options, kept for the reasoning behind
+the locked choices.
+
+## 5. OPTION A — workspace granularity (LOCKED: phased A1→A2, see above)
 
 The operator flagged possibly wanting a workspace per group. Options:
 

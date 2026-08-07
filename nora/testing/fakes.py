@@ -133,7 +133,8 @@ class FakeRecordStore:
         return [
             UnattributedRow(
                 id=r["id"], platform=r["platform"], sender_id=r["sender_id"],
-                ts=r["ts"], body=r["body"], raw_json=r["raw_json"],
+                ts=r["ts"], body=r["body"], conversation_id=r["conversation_id"],
+                raw_json=r["raw_json"],
             )
             for r in candidates[:limit]
         ]
@@ -173,7 +174,10 @@ class FakeMemoryStore:
         conclusions: dict[str, list[str]] | None = None,
         fail: bool = False,
     ) -> None:
-        self.fed: list[tuple[str, str]] = []
+        # (peer_id, text, conversation_id) — the conversation keys the session
+        # (Honcho v2, design/24), so a test can assert a message went under its
+        # own speaker's peer into the right conversation's session.
+        self.fed: list[tuple[str, str, str]] = []
         self.peers: list[str] = []
         self.cards = cards or {}
         # Separate from `cards` on purpose. `peer_card` and `representation`
@@ -194,10 +198,17 @@ class FakeMemoryStore:
         if not self.fail:
             self.peers.append(peer_id)
 
-    async def feed(self, *, peer_id: str, text: str) -> bool:
+    async def feed(
+        self,
+        *,
+        peer_id: str,
+        text: str,
+        conversation_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> bool:
         if self.fail:
             return False
-        self.fed.append((peer_id, text))
+        self.fed.append((peer_id, text, conversation_id))
         return True
 
     async def peer_card(self, *, peer_id: str) -> list[str]:

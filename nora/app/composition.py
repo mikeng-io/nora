@@ -218,6 +218,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
 
     memory = HonchoClient(cfg.memory.base_url, cfg.memory.workspace_id)
     await memory.ensure_workspace()          # best-effort, never fatal — no try/except
+    # The Nora aiPeer (Honcho v2, design/24): her replies feed under it to build
+    # her self-model card. Created here like the workspace — best-effort, never
+    # fatal (a missing peer is auto-created on first feed anyway).
+    await memory.ensure_peer(peer_id=cfg.memory.ai_peer)
 
     llm_state = LLMState()
     background = BackgroundTasks()
@@ -423,6 +427,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         tool_registry=tool_registry,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
+        ai_peer=cfg.memory.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
         reactions=cfg.engagement.reactions.enabled,

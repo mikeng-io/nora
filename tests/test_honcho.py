@@ -47,7 +47,7 @@ async def test_feed_creates_a_session_then_posts_the_message_batch(server_factor
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    assert await client.feed(peer_id="miles", text="hello") is True
+    assert await client.feed(peer_id="miles", text="hello", conversation_id="c1") is True
     # The session is created at the WORKSPACE level. This test previously
     # asserted `/peers/miles/sessions`, which is a LIST endpoint — it answers
     # 200 with a pagination envelope carrying no `id`, so `ensure_session`
@@ -75,7 +75,7 @@ async def test_feed_sends_the_correct_message_batch_body(server_factory):
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    assert await client.feed(peer_id="miles", text="hello") is True
+    assert await client.feed(peer_id="miles", text="hello", conversation_id="c1") is True
     assert bodies["messages"] == {"messages": [{"content": "hello", "peer_id": "miles"}]}
 
 
@@ -91,8 +91,8 @@ async def test_feed_reuses_the_cached_session_for_the_same_peer(server_factory):
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    assert await client.feed(peer_id="miles", text="a") is True
-    assert await client.feed(peer_id="miles", text="b") is True
+    assert await client.feed(peer_id="miles", text="a", conversation_id="c1") is True
+    assert await client.feed(peer_id="miles", text="b", conversation_id="c1") is True
 
     session_calls = [c for c in calls if c[1].endswith("/sessions")]
     message_calls = [c for c in calls if c[1].endswith("/messages")]
@@ -138,7 +138,7 @@ async def test_ensure_workspace_is_called_once(server_factory):
 
 async def test_feed_returns_false_when_honcho_is_down():
     client = HonchoClient("http://127.0.0.1:1", "nora", feed_timeout=0.3)
-    assert await client.feed(peer_id="miles", text="hello") is False
+    assert await client.feed(peer_id="miles", text="hello", conversation_id="c1") is False
 
 
 async def test_feed_never_raises_on_a_server_error(server_factory):
@@ -148,7 +148,7 @@ async def test_feed_never_raises_on_a_server_error(server_factory):
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    assert await client.feed(peer_id="miles", text="hello") is False
+    assert await client.feed(peer_id="miles", text="hello", conversation_id="c1") is False
 
 
 async def test_feed_times_out_without_blocking_the_caller(server_factory):
@@ -160,7 +160,7 @@ async def test_feed_times_out_without_blocking_the_caller(server_factory):
     client = HonchoClient(base_url, "nora", feed_timeout=0.3)
 
     start = time.monotonic()
-    result = await client.feed(peer_id="miles", text="hello")
+    result = await client.feed(peer_id="miles", text="hello", conversation_id="c1")
     elapsed = time.monotonic() - start
 
     assert result is False
@@ -230,7 +230,7 @@ async def test_the_session_is_created_at_the_workspace_level(server_factory):
     base_url = await server_factory(handler)
     client = HonchoClient(base_url, "nora")
 
-    assert await client.feed(peer_id="miles", text="hello") is True
+    assert await client.feed(peer_id="miles", text="hello", conversation_id="c1") is True
     assert "/v3/workspaces/nora/sessions" in calls
     assert "/v3/workspaces/nora/sessions/nora-miles/messages" in calls
 
@@ -259,7 +259,7 @@ async def test_a_list_shaped_session_response_is_not_mistaken_for_a_created_one(
     client = HonchoClient(base_url, "nora")
 
     assert await client.ensure_session("miles") is None
-    assert await client.feed(peer_id="miles", text="hello") is False
+    assert await client.feed(peer_id="miles", text="hello", conversation_id="c1") is False
     assert not any("/messages" in c for c in calls), (
         "no message may be posted when the session was never created"
     )

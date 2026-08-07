@@ -24,7 +24,7 @@ class FakeHoncho:
         conclusions: dict[str, list[str]] | None = None,
         fail: bool = False,
     ) -> None:
-        self.fed: list[tuple[str, str]] = []
+        self.fed: list[tuple[str, str, str]] = []   # (peer_id, text, conversation_id)
         self.peers: list[str] = []
         self.cards = cards or {}
         # Kept apart from `cards`: `peer_card` and `representation` are
@@ -41,10 +41,13 @@ class FakeHoncho:
         if not self.fail:
             self.peers.append(peer_id)
 
-    async def feed(self, peer_id: str, text: str) -> bool:
+    async def feed(
+        self, *, peer_id: str, text: str, conversation_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> bool:
         if self.fail:
             return False
-        self.fed.append((peer_id, text))
+        self.fed.append((peer_id, text, conversation_id))
         return True
 
     async def peer_card(self, peer_id: str) -> list[str]:

@@ -115,7 +115,7 @@ def _build_pipeline() -> tuple[EngagementPipeline, BackgroundTasks]:
         doctrine_store=_FakeDoctrineStore(), context_assembler=assembler,
         runner=_ReplyingRunner(), tool_registry=ToolRegistry(),
         debounce=Debounce(0.0), canary="CANARY-XYZ",
-        display_name="Nora", nora_sender_id="+8520000", context_window=10,
+        display_name="Nora", nora_sender_id="+8520000", ai_peer="nora", context_window=10,
         timeout_seconds=5.0, limits={"turns": 4, "output_tokens": 400, "total_tokens": 24000},
         metrics=metrics, spawn=background.spawn,
     )
