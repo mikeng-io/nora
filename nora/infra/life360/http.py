@@ -19,14 +19,27 @@ refuses to turn any of them into an exception inside the daemon loop.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-import aiohttp
-
 log = logging.getLogger("nora.presence.life360")
+
+# Life360 sits behind Cloudflare, which fingerprints the HTTP client and serves a
+# bot-challenge (HTML 403) to `aiohttp` — the same recipe (host, credential, UA)
+# that `aiohttp` gets 403'd on returns HTTP 200 through the stdlib `urllib`
+# (verified live 2026-08-07: aiohttp → Cloudflare HTML, urllib → access token).
+# So THIS one transport uses urllib rather than the aiohttp every other outbound
+# helper here uses. It is a blocking call, run in the default executor so the
+# collector's event loop is never stalled — the collector makes a handful of
+# requests a minute, so a threadpool hop per call costs nothing. If Cloudflare
+# ever fingerprints urllib too, the robust next step is a TLS-impersonating
+# client (curl_cffi) — noted, not yet needed.
 
 # A bounded slice of any body is kept for logging and for the canary's
 # non-JSON detection; a challenge page can be large and none of it is trusted.
@@ -59,37 +72,58 @@ async def request(
 ) -> HttpResult:
     """`method` `url` with `headers`, optional form `data`. NEVER raises.
 
-    Returns a typed `HttpResult`. A session per call, like every other outbound
-    helper in this codebase (`nora.infra.routes.http`, the transit catalogue):
-    the collector makes a handful of requests per minute to one host, and a
-    pooled session would be state to own for no measured gain.
+    Returns a typed `HttpResult`. Runs the blocking `urllib` call (see the
+    module docstring for why urllib, not aiohttp) in the default executor so the
+    collector's event loop is never blocked.
     """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, _blocking_request, method, url, headers, data, timeout_seconds
+    )
+
+
+def _blocking_request(
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    data: dict[str, str] | None,
+    timeout_seconds: float,
+) -> HttpResult:
+    """One synchronous urllib round trip → `HttpResult`. NEVER raises: an HTTP
+    error (incl. 4xx/5xx) is `ok=True` with the status; a transport failure is
+    `ok=False, status=0` — the same two-way distinction the caller relies on."""
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+        # Guards against a file:/custom scheme reaching urlopen (S310). The URLs
+        # are module constants today, but this keeps that a fact, not a hope.
+        log.warning("life360 refusing non-http(s) url: %s", url)
+        return HttpResult(ok=False, status=0, json=None, text="")
+    body_bytes = urllib.parse.urlencode(data).encode() if data else None
+    req = urllib.request.Request(url, data=body_bytes, method=method)  # noqa: S310 — scheme checked above
+    for name, value in headers.items():
+        req.add_header(name, value)
     try:
-        timeout_config = aiohttp.ClientTimeout(total=timeout_seconds)
-        async with (
-            aiohttp.ClientSession(timeout=timeout_config) as session,
-            session.request(method, url, headers=headers, data=data) as response,
-        ):
-            raw = await response.text()
-            body: Any | None
-            try:
-                # Parse the FULL body. `_MAX_BODY` bounds only the copy kept for
-                # the log line and the canary's non-JSON detection (below) — a
-                # real Life360 members response is well over 2 KB, so parsing a
-                # truncated slice would shred every genuine response mid-document
-                # and misread it as the challenge PAGE, shipping green while
-                # recording nothing (Kimi review 2026-08-07, the 61-day shape).
-                body = json.loads(raw)
-            except ValueError:
-                body = None
-            return HttpResult(
-                ok=True, status=response.status, json=body, text=raw[:_MAX_BODY],
-            )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_seconds) as response:  # noqa: S310 — scheme checked above
+                status = response.status
+                raw = response.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as http_error:
+            # A response WAS received, it was just a 4xx/5xx (Cloudflare's HTML
+            # 403 lands here) — keep the status and body so the canary can see it.
+            status = http_error.code
+            raw = http_error.read().decode("utf-8", "replace")
     except Exception as exc:  # noqa: BLE001
-        # Broad and never re-raised, for the reason every outbound helper here
-        # gives: this runs inside the collector loop, and a transport exception
-        # must degrade to a value the loop can classify, not take the daemon
-        # down. aiohttp alone raises ClientError, TimeoutError, SSLError and
-        # UnicodeDecodeError from here.
+        # Broad and never re-raised: this runs inside the collector loop, and a
+        # transport failure must degrade to a value the loop classifies, not take
+        # the daemon down. urllib raises URLError, socket.timeout, ssl.SSLError.
         log.warning("life360 %s %s unreachable: %s", method, url, exc)
         return HttpResult(ok=False, status=0, json=None, text="")
+    body: Any | None
+    try:
+        # Parse the FULL body. `_MAX_BODY` bounds only the copy kept for the log
+        # line and the canary's non-JSON detection — a real members response is
+        # well over 2 KB, so parsing a truncated slice would shred it and misread
+        # it as the challenge PAGE (Kimi review 2026-08-07, the 61-day shape).
+        body = json.loads(raw)
+    except ValueError:
+        body = None
+    return HttpResult(ok=True, status=status, json=body, text=raw[:_MAX_BODY])

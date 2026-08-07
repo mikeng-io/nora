@@ -41,14 +41,23 @@ from .members import Member, parse_members
 
 log = logging.getLogger("nora.presence.life360")
 
-TOKEN_URL = "https://api.life360.com/v3/oauth2/token.json"  # noqa: S105 — a URL, not a secret
-MEMBERS_URL = "https://api.life360.com/v3/circles/{circle_id}/members"
-CIRCLES_URL = "https://api.life360.com/v3/circles"
+# The Life360 host is `api-cloudfront.life360.com` (behind Cloudflare). These
+# exact paths + UA + the app client credential are the recipe the presence study
+# authenticated with — verified live returning HTTP 200 with an access token
+# (scratchpad probe, 2026-08-07 01:34, re-verified 12:xx). Every part is load-
+# bearing and Life360-specific: token is `/v3/oauth2/token.json` (WITH `.json`),
+# circles is `/v3/circles` (NOT v4), and the UA is `.../23.49.0/Android/13`
+# (slashes, capital Android). A wrong client token or UA does not 401 cleanly —
+# Cloudflare serves a bot-challenge HTML 403 instead, which is why getting any of
+# these wrong looks like "the whole API is blocked" rather than "bad credential".
+TOKEN_URL = "https://api-cloudfront.life360.com/v3/oauth2/token.json"  # noqa: S105 — a URL, not a secret
+MEMBERS_URL = "https://api-cloudfront.life360.com/v3/circles/{circle_id}/members"
+CIRCLES_URL = "https://api-cloudfront.life360.com/v3/circles"
 
 # The Life360 Android app's User-Agent shape — the study's missing ingredient.
 # A constructor default, overridable, because it is a property of the client
 # Nora impersonates, not of this deployment; the real value is operator-set.
-DEFAULT_USER_AGENT = "com.life360.android.safetymapd/KOKO/24.0.0 android/13"
+DEFAULT_USER_AGENT = "com.life360.android.safetymapd/KOKO/23.49.0/Android/13"
 
 TIMEOUT_SECONDS = 8.0
 
