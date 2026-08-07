@@ -29,7 +29,9 @@ _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # The platform sub-table names `_PersonEntry` accepts, in the order the reverse
 # index is built — every platform design/10 §3.1 declares a kind vocabulary for.
-PLATFORM_FIELDS: tuple[str, ...] = ("signal", "telegram", "discord", "whatsapp")
+PLATFORM_FIELDS: tuple[str, ...] = (
+    "signal", "telegram", "discord", "whatsapp", "life360",
+)
 
 
 def _check_account(platform: str, account: dict[str, str | int]) -> None:
@@ -98,6 +100,12 @@ class _PersonEntry(BaseModel):
     telegram: list[dict[str, str | int]] | None = None
     discord: list[dict[str, str | int]] | None = None
     whatsapp: list[dict[str, str | int]] | None = None
+    # A location account, not a chat one, but the same array-of-accounts shape:
+    # one block per Life360 account with a `member_id = "…"` (the circle-member
+    # UUID). It resolves to this person the same way their Signal number does
+    # (design/19 §3), which is what lets the presence collector name a live
+    # circle member as one of Nora's people.
+    life360: list[dict[str, str | int]] | None = None
     # Accepted here ONLY so the retired `[persons.<id>.platforms]` shorthand
     # gets a specific, readable error naming its replacement (design/10 §7.3
     # — a hard break, deliberately: identity.toml is gitignored and

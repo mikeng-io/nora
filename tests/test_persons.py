@@ -9,6 +9,8 @@ name = "Miles"
 [[persons.miles.signal]]
 phone = "+85212345678"
 uuid = "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
+[[persons.miles.life360]]
+member_id = "life360-miles-uuid"
 
 [persons.ada]
 name = "Ada"
@@ -48,6 +50,29 @@ def test_a_second_id_kind_for_the_same_person_resolves_to_them_too(persons):
     ref = persons.resolve("signal", "8185b8fa-359a-4c0a-c6ed-24814dc655bb")
     assert ref is not None
     assert ref.person_id == "miles"
+
+
+def test_a_life360_member_id_resolves_to_the_same_person(persons):
+    """design/19 §3: a person's Life360 circle-member UUID binds to the SAME
+    person_id as their Signal number, so the presence collector can name a live
+    circle member as one of Nora's people and join presence to memory on one
+    key. Both ids land on `miles`."""
+    ref = persons.resolve("life360", "life360-miles-uuid")
+    assert ref is not None
+    assert ref.person_id == "miles"
+    assert persons.resolve("signal", "+85212345678").person_id == ref.person_id
+
+
+def test_a_bad_life360_id_kind_is_a_startup_failure(tmp_path):
+    """life360's only matchable kind is `member_id`; a typo'd kind must be a
+    startup error, not a key that silently resolves no one (R-5)."""
+    p = tmp_path / "identity.toml"
+    p.write_text(
+        '[persons.miles]\nname = "Miles"\n'
+        '[[persons.miles.life360]]\nmemberid = "x"\n'   # typo: no underscore
+    )
+    with pytest.raises(PersonsError, match="member_id"):
+        load_persons(p)
 
 
 def test_display_name_prefers_the_mapped_name(persons):

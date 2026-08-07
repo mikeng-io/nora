@@ -41,6 +41,14 @@ _ID_KINDS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
         "telegram": frozenset({"user_id", "username"}),
         "discord": frozenset({"user_id", "username"}),
         "whatsapp": frozenset({"phone", "lid"}),
+        # Life360 is a location provider, not a chat platform, but a person's
+        # Life360 account is still "another account this person holds" — so it
+        # binds the same way (design/19 §3, DEC-14): the circle-member UUID
+        # Life360 returns is the ONE matchable id, and it resolves to the same
+        # `person_id` as their Signal number. The presence collector joins a
+        # live circle read to Nora's people through this, and identity.toml
+        # stays the single home for "who someone is" across every platform.
+        "life360": frozenset({"member_id"}),
     }
 )
 

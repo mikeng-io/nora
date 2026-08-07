@@ -328,20 +328,26 @@ class RouteConfig(BaseModel):
 
 
 class PresenceCircleConfig(BaseModel):
-    """One Life360 circle and how its members map to Nora's people (design/19).
+    """One Life360 circle: its id and the Life360 member ids that belong to it.
 
-    `members` is `life360_member_id -> person_id` — the same canonical id the
-    roster uses (§3), so presence joins messages and identity on one key. The
-    VALUES of this map are the circle's roster of `person_id`s, which is what the
-    R-21 disclosure seam intersects a conversation against (§5): Nora may report
-    a member's presence only into a conversation whose people are a SUBSET of
-    this set.
+    `members` is a LIST of `life360_member_id`s — deliberately NOT a
+    `member_id -> person_id` map. The binding to a `person_id` lives in
+    identity.toml (a `[[persons.<id>.life360]]` block, design/19 §3, DEC-14), so
+    "who someone is" stays in one file across every platform rather than being
+    half-declared here. `nora.presence.composition` resolves each member id
+    through `Persons` at startup and REFUSES to start on one it cannot resolve
+    (R-5: a circle member with no person would silently record nothing, a gap
+    invisible until someone asked where they were).
+
+    The resolved `person_id`s ARE the R-21 disclosure roster (§5): Nora may
+    report a member's presence only into a conversation whose people are a
+    SUBSET of that set.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     circle_id: str
-    members: dict[str, str]
+    members: tuple[str, ...]
 
 
 class PresenceConfig(BaseModel):

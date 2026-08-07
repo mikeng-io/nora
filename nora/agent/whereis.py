@@ -21,11 +21,20 @@ so it holds by construction — VERIFIED, not assumed.
 Two things this seam is careful NOT to weaken:
 - **Refuse, don't omit.** A silent omission would read to the group as «I don't
   know where they are», which is R-5's shape; a refusal says why.
-- **Outbound stays hard-blocked** (design/14 §2.2): a stored position may seed
-  an on-host route computation, but a coordinate must never leave in a tool
-  argument. `whereis` returns a position for Nora's REPLY (in-group disclosure
-  is fine, §5.3), which is a different exit than a Google query argument — the
-  latter is R-28's hard block in `nora.agent.tools`, untouched here.
+- **Outbound must stay hard-blocked** (design/14 §2.2): a stored position may
+  seed an on-host route computation, but a coordinate must never leave in a tool
+  argument. `whereis` returns a position for Nora's REPLY (in-group disclosure is
+  fine, §5.3), which is a different exit than a Google query argument.
+
+  **CAUTION for the engineer wiring this tool: today's R-28 block in
+  `nora.agent.tools` does NOT cover this.** R-28 screens `scan_identifiers`
+  (phone/UUID/key prefixes) and known person NAMES — a bare coordinate
+  («22.31,114.16») and a place string match neither and would pass to
+  `route()` → Google. So wiring `whereis` into a route-capable turn REQUIRES an
+  explicit coordinate/place outbound barrier added alongside; it is not already
+  there. This is council finding #4 (2026-08-07); the barrier lands when the
+  tool is wired, not before (the seam is inert until then, so nothing leaks in
+  the meantime).
 
 Shipped as a testable SEAM, not yet wired into `NATIVE_TOOLS` — the same INERT
 shape the navigation skill shipped in (DEC-48). Presence is `enabled=false`

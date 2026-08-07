@@ -230,17 +230,19 @@ def test_presence_credentials_are_named_not_inlined(toml_path):
     assert cfg.presence.password_env == "LIFE360_PASSWORD"  # noqa: S105 — an env-var NAME
 
 
-def test_a_presence_circle_maps_members_to_person_ids(toml_path):
+def test_a_presence_circle_lists_its_life360_member_ids(toml_path):
+    """The circle carries a LIST of Life360 member ids; the member_id -> person_id
+    binding lives in identity.toml and is resolved at composition (design/19 §3)."""
     toml_path.write_text(
         toml_path.read_text().replace("[presence]\nenabled = false", "[presence]\nenabled = true")
         + '\n[[presence.circles]]\ncircle_id = "cir1"\n'
-          'members = { "m1" = "miles_novak", "m2" = "grant_carver" }\n'
+          'members = ["m1", "m2"]\n'
     )
     cfg = load(toml_path)
     assert cfg.presence.enabled is True
     (circle,) = cfg.presence.circles
     assert circle.circle_id == "cir1"
-    assert circle.members == {"m1": "miles_novak", "m2": "grant_carver"}
+    assert circle.members == ("m1", "m2")
 
 
 def test_an_unknown_presence_key_is_still_a_startup_failure(toml_path):

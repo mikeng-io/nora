@@ -83,6 +83,12 @@ class PresenceCollector:
         self._cadence_seconds = cadence_seconds
         self._metrics = metrics
         self._last_success_ms: dict[str, int] = {}
+        # When each circle was FIRST attempted. The liveness age falls back to
+        # this until a circle's first success, so a from-boot-broken collector
+        # (rotated credential, challenge page on cycle one) emits a CLIMBING age
+        # instead of no series at all — «not running» and «up but never
+        # collecting» must not look identical (council #8, §4).
+        self._first_seen_ms: dict[str, int] = {}
 
     async def collect_once(self, circle: CircleSpec, *, now_ms: int) -> CircleRead:
         """One collection cycle for one circle. NEVER raises.
@@ -92,6 +98,7 @@ class PresenceCollector:
         or empty read, and publishes the liveness heartbeat. Returns the read so
         the loop can size its back-off.
         """
+        self._first_seen_ms.setdefault(circle.circle_id, now_ms)
         read = await self._client.read_circle(circle_id=circle.circle_id, now_ms=now_ms)
         self._count("nora_presence_reads_total", circle=circle.circle_id, status=read.status.value)
 
@@ -106,8 +113,14 @@ class PresenceCollector:
         if not read.members:
             # A circle that read cleanly but has NO members is the study's other
             # canary (§4): a required host/UA/token changed and the envelope came
-            # back empty. A real Ridgeline read returns five people.
+            # back empty. A real Ridgeline read returns five people. This is the
+            # breakage, NOT a success — do not stamp `_last_success_ms`, or the
+            # heartbeat reports age 0 (green) during the exact outage it exists to
+            # expose (council #3). Publish liveness so the age keeps climbing from
+            # the last real success, then stop before pretending a fix was written.
             self._count("nora_presence_canary_total", reason="empty_circle")
+            self._publish_liveness(circle.circle_id, now_ms)
+            return read
 
         for member in read.members:
             self._count("nora_presence_member_states_total", wire_state=member.wire_state.value)
@@ -172,11 +185,15 @@ class PresenceCollector:
     def _publish_liveness(self, circle_id: str, now_ms: int) -> None:
         """Set the heartbeat gauge to the age of this circle's last SUCCESS. It
         is 0 right after a success and climbs while collections fail — «up but
-        not collecting», which a frozen fix count cannot show (§4)."""
-        last = self._last_success_ms.get(circle_id)
-        if last is None:
+        not collecting», which a frozen fix count cannot show (§4).
+
+        Before the first success the baseline is when the circle was first
+        attempted, so a collector that has NEVER succeeded still emits a climbing
+        age from boot rather than no series at all (council #8)."""
+        baseline = self._last_success_ms.get(circle_id) or self._first_seen_ms.get(circle_id)
+        if baseline is None:
             return
-        age = max(0.0, (now_ms - last) / 1000.0)
+        age = max(0.0, (now_ms - baseline) / 1000.0)
         if self._metrics is not None:
             self._metrics.gauge(
                 "nora_presence_last_collection_age_seconds", age, circle=circle_id
