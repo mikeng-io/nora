@@ -218,7 +218,7 @@ def _whereis_tool(persons, *, room, presence_source=None, presence_circles=(),
         room=room, transit_source=None,
         presence_source=presence_source, presence_circles=presence_circles,
     )
-    return next(s for s in specs if s.name == "whereis")
+    return next(s for s in specs if s.name == "where_is")
 
 
 async def test_the_whereis_tool_is_unavailable_when_presence_is_not_wired(persons):

@@ -383,14 +383,14 @@ def _tool_wiring(search_source):
         question="what is the weather", context_window=40,
     )
     by_name = {t.tool_name: t for t in tools}
-    return {"search": by_name["search"], "fetch": by_name["fetch"], "metrics": metrics}
+    return {"search": by_name["web_search"], "fetch": by_name["web_fetch"], "metrics": metrics}
 
 
 async def _call(tool, **kwargs):
     return await tool._tool_func(**kwargs)
 
 
-async def test_fetch_refuses_a_url_no_search_returned():
+async def test_web_fetch_refuses_a_url_no_web_search_returned():
     """R-34 / DEC-57, and the fence Nora actually enforces (design/22 §2): `fetch`
     may open only a URL a `search` returned THIS turn. A URL the model invented
     reaches Firecrawl through NOTHING — `source.fetched == []` is exactly that
@@ -462,7 +462,7 @@ async def test_the_search_tool_counts_the_states_apart():
     wiring = _tool_wiring(source)
     out = await _call(wiring["search"], query="weather")
     assert out["status"] == "ok"
-    assert wiring["metrics"].get("nora_tool_calls_total", tool="search", status="ok") == 1
+    assert wiring["metrics"].get("nora_tool_calls_total", tool="web_search", status="ok") == 1
 
 
 # ---- helpers -----------------------------------------------------------------

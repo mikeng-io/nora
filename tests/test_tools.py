@@ -88,9 +88,9 @@ def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
         "now", "chat_earlier", "send_reply",
         "group_members", "lookup_person", "about", "calculate", "transit", "route",
-        "whereis",
+        "where_is",
         "media_fetch",
-        "search", "fetch",
+        "web_search", "web_fetch",
     }
 
 

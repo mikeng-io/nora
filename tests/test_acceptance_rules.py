@@ -94,7 +94,7 @@ RULE_TESTS = {
     # it is the fence Nora's own code enforces, alongside the `is_global`
     # precheck and the untrusted wrap. Next free number after the presence pair
     # (R-31/R-32) and media_fetch (R-33); R-26 stays reserved by design/proposed/18.
-    "R-34": "test_fetch_refuses_a_url_no_search_returned",
+    "R-34": "test_web_fetch_refuses_a_url_no_web_search_returned",
     # R-35: saved-place resolution is subset-scoped and falls through, never
     # refuses (design/23 §4.1, DEC-60). A room that is not a verified subset of
     # the circle resolves NO household place name — silently, so an outsider
