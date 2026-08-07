@@ -126,6 +126,17 @@ class NativeTool:
 # ONE line per tool, in the order the capability block renders them. Keep each
 # `when` to a single clause: it is paid on every model call of every tag, and it
 # is not the place to restate what the schema already says.
+#
+# BUDGETS: the per-tool CALL budgets were DOUBLED 2026-08-08 (operator) so a
+# research-heavy turn — surveying a few sources — does not hit the R-7 ceiling
+# mid-answer. The per-tool number comments below describe the RELATIVE sizing,
+# which a uniform doubling preserves (a tool sized "2, like route" is still
+# twice group_members). FIVE are deliberately HELD at their original value, for
+# reasons a bigger budget cannot help (review 2026-08-08): `send_reply` (3) is
+# the messages-per-reply spam cap, not a lookup; `ask_memory` (1) is a ~14-19s
+# dialectic call whose second invocation blows the turn's wall-clock; and
+# `group_members` / `saved_places` / `skills` (1) each return a per-tag CACHED,
+# provably-identical result, so a second call only crowds out `send_reply`.
 NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # Cheap, local, and the answer changes every second, so there is no reason
     # to ration it — but a budget is still required: R-7 default-denies any
@@ -210,7 +221,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # 1, like `group_members`: it lists a small fixed set for THIS room, and
     # calling it twice in a turn returns the same list. `time_shiftable=None`:
     # the household's saved names don't decay. Not terminal.
-    "saved_places": NativeTool(2, "the names this household has saved for places "
+    "saved_places": NativeTool(1, "the names this household has saved for places "
                                   "(«Home», «Miles Home») — check before routing to a "
                                   "place someone calls by a personal name"),
     # **`chat_earlier`, not `read_buffer`, and that was MEASURED, not argued
@@ -241,7 +252,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # caches the daemon read for the tag, so a second call is guaranteed to
     # return the identical answer four seconds later. Anything above 1 buys
     # nothing and can only crowd out `send_reply`.
-    "group_members": NativeTool(2, "who is in this conversation. People who have not "
+    "group_members": NativeTool(1, "who is in this conversation. People who have not "
                                    "spoken are still here, and people a message names "
                                    "may not be"),
     # 2: one message routinely names two people (「阿豹同峰哥去咗邊」). The call
@@ -281,7 +292,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # turn is the ceiling — a second would blow the loop budget on its own. It is
     # the escalation from `about` (retrieve), reached only when a profile lookup
     # will not answer a pieced-together question.
-    "ask_memory": NativeTool(2, "REASON about someone to answer a specific "
+    "ask_memory": NativeTool(1, "REASON about someone to answer a specific "
                                 "question that has to be pieced together, when a "
                                 "plain profile («about») is not enough — slower and "
                                 "deeper; use sparingly"),
@@ -369,7 +380,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # body comes back whenever it is asked. Both are stated rather than left to
     # the defaults so the fifth field (`plugin`) is not the only one this entry
     # sets on purpose.
-    "skills": NativeTool(2, "activate a skill named in <available_skills> to load its "
+    "skills": NativeTool(1, "activate a skill named in <available_skills> to load its "
                             "full instructions before you plan",
                          terminal=False, time_shiftable=None, plugin=True),
 }

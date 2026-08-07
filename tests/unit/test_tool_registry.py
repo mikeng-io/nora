@@ -78,10 +78,10 @@ def test_budgets_match_todays_table():
         "send_reply": 3,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
-        "group_members": 2, "lookup_person": 4, "about": 4,
+        "group_members": 1, "lookup_person": 4, "about": 4,
         # 1 — the dialectic reasoning verb is slow (~14-19s), so one call per
         # turn is the ceiling; it is the escalation from `about` (design/24 §4).
-        "ask_memory": 2,
+        "ask_memory": 1,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
@@ -96,7 +96,7 @@ def test_budgets_match_todays_table():
         # spots.
         "place_info": 4,
         # 1 like group_members: a fixed per-room list, same answer if called twice.
-        "saved_places": 2,
+        "saved_places": 1,
         # One message can ask after two people; each call is one local table
         # read, so like `calculate` this is sized by the question (DEC-59).
         "where_is": 4,
@@ -105,7 +105,7 @@ def test_budgets_match_todays_table():
         # the registry does not BUILD it (see the tests below). Sized 1 like
         # `group_members`: re-activating a skill re-injects a body already in
         # context and cannot improve the answer.
-        "skills": 2,
+        "skills": 1,
         # One message can name two images (a photo AND a screenshot); the
         # per-call vision timeout, not this number, is what keeps two describe
         # calls inside the loop budget (DEC-56).
@@ -235,7 +235,7 @@ def test_skills_is_budgeted_so_r7_admits_it_but_the_registry_does_not_build_it()
     registry = ToolRegistry()
     # Admitted by R-7.
     assert "skills" in registry.budgets()
-    assert registry.budgets()["skills"] == 2
+    assert registry.budgets()["skills"] == 1
     # Not built, not advertised, not in the catalogue gate.
     built = {t.tool_name for t in _built_tools(registry)}
     assert "skills" not in built

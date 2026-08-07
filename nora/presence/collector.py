@@ -46,6 +46,10 @@ log = logging.getLogger("nora.presence.collector")
 # once an hour, however many failures accrue. The floor is the cadence; the
 # growth is `cadence * 2^failures` (§4.1 — never hammer the credential POST).
 MAX_BACKOFF_SECONDS = 3600.0
+# Ceiling on the back-off/still EXPONENT (not the result) so `2**n` cannot
+# overflow float after days of stillness or a long ban; the result is bounded by
+# the still-ceiling / MAX_BACKOFF regardless (review 2026-08-08).
+_EXP_CAP = 32
 
 # How often a circle's saved PLACES refresh (design/23 §3). Places are static
 # household landmarks — an hourly read is generous, and it rides the member
@@ -297,13 +301,22 @@ class PresenceCollector:
         """
         # float() because typeshed types `int ** int` as Any (a negative
         # exponent would make it a float), and this module is mypy-strict.
-        failures = self._client.auth_failures
+        #
+        # Both exponents are CLAMPED before exponentiating (review 2026-08-08).
+        # `min(...)` caps the RESULT but Python evaluates `2**n` first, and
+        # `_still_cycles` grows unbounded (one per still cycle), so after ~1024
+        # consecutive still reads — days of a circle sitting home — `2**still`
+        # exceeds DBL_MAX and `float(...)` raises OverflowError. That call is
+        # outside `_run_circle`'s try/except, so it would take down the WHOLE
+        # collector. `_EXP_CAP` (2^32·cadence already dwarfs both ceilings) makes
+        # the exponent safe while the `min` still bounds the result.
+        failures = min(self._client.auth_failures, _EXP_CAP)
         backoff = (
             min(self._cadence_seconds * float(2**failures), MAX_BACKOFF_SECONDS)
             if failures > 0
             else 0.0
         )
-        still = self._still_cycles.get(circle_id, 0)
+        still = min(self._still_cycles.get(circle_id, 0), _EXP_CAP)
         adaptive = (
             self._cadence_moving_seconds
             if still <= 0

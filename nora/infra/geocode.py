@@ -56,18 +56,39 @@ class ReverseGeocoder:
         self._cache: dict[tuple[float, float], str] = {}
 
     async def address_for(self, lat: float, lng: float) -> str | None:
-        """The best formatted address for `lat,lng`, or None. NEVER raises.
+        """The best formatted address for `lat,lng` in BOTH languages, or None.
+        NEVER raises.
 
-        None means "no address to store" for every reason — a non-200, an
-        `OVER_QUERY_LIMIT`/`ZERO_RESULTS` status in Google's envelope, a body
-        that is not JSON, or any transport error. The caller falls back to the
-        raw coordinate exactly as if this had not run.
+        The group reads both, and Life360's own label was bilingual («雲杉徑 Cloudfir Path»), so store both: Google returns ONE language per call, so this
+        asks for `zh-HK` and `en` and joins them «中文 / English» (Chinese first — a
+        Cantonese group). One language missing still yields the other; both
+        missing is None (the caller falls back to Life360's label, or the raw
+        coordinate). Two calls per NEW coordinate, but the ~11 m cache means a
+        stationary member pays it once, not every cycle.
         """
         key = (round(lat, self._CACHE_PRECISION), round(lng, self._CACHE_PRECISION))
         cached = self._cache.get(key)
         if cached is not None:
             return cached
-        params = {"latlng": f"{lat},{lng}", "key": self._api_key}
+        zh = await self._fetch(lat, lng, "zh-HK")
+        en = await self._fetch(lat, lng, "en")
+        if zh and en and zh != en:
+            address: str | None = f"{zh} / {en}"
+        else:
+            address = zh or en
+        if address is not None:
+            if len(self._cache) >= self._CACHE_MAX:
+                # Drop the oldest entry (dicts preserve insertion order) so a
+                # long-running collector's cache stays bounded.
+                del self._cache[next(iter(self._cache))]
+            self._cache[key] = address
+        return address
+
+    async def _fetch(self, lat: float, lng: float, language: str) -> str | None:
+        """One Google reverse-geocode in `language`. None on any failure — a
+        non-200, a non-OK envelope status, non-JSON, or a transport error — so a
+        missing address is never a dropped cycle."""
+        params = {"latlng": f"{lat},{lng}", "key": self._api_key, "language": language}
         try:
             timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
             async with (
@@ -90,14 +111,7 @@ class ReverseGeocoder:
             # not a dropped cycle.
             log.warning("geocode unreachable: %s", exc)
             return None
-        address = _first_address(payload)
-        if address is not None:
-            if len(self._cache) >= self._CACHE_MAX:
-                # Drop the oldest entry (dicts preserve insertion order) so a
-                # long-running collector's cache stays bounded.
-                del self._cache[next(iter(self._cache))]
-            self._cache[key] = address
-        return address
+        return _first_address(payload)
 
 
 def _first_address(payload: Any) -> str | None:
