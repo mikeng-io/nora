@@ -31,7 +31,11 @@ class FakeHoncho:
         # different live endpoints with different failure shapes, and one dict
         # serving both would make them look interchangeable.
         self.conclusions = conclusions or {}
-        self.queries: list[tuple[str, str]] = []
+        # (observer, observed, search_query) — observed is `target or peer_id`.
+        # The observer/observed pair (design/24 §4) is recorded so a test can
+        # assert Nora's model of a person, not the person's self-model.
+        self.queries: list[tuple[str, str, str]] = []
+        self.chats: list[tuple[str, str, str, str]] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
@@ -56,19 +60,35 @@ class FakeHoncho:
         return list(self.cards.get(peer_id, []))
 
     async def representation(
-        self, *, peer_id: str, search_query: str, max_conclusions: int = 5
+        self, *, peer_id: str, search_query: str, max_conclusions: int = 5,
+        target: str | None = None,
     ) -> Recollection:
         """Mirrors `HonchoClient.representation` including its unknown-peer
         shape: the live instance answers 200 with an EMPTY STRING rather than
         404, so an unknown peer is reachable-but-empty here, and only
-        `fail=True` is unreachable."""
-        self.queries.append((peer_id, search_query))
+        `fail=True` is unreachable. `peer_id`=observer, `target`=observed;
+        conclusions key on the observed (`target or peer_id`)."""
+        observed = target if target is not None else peer_id
+        self.queries.append((peer_id, observed, search_query))
         if self.fail:
             return Recollection(reachable=False)
         return Recollection(
             reachable=True,
-            conclusions=tuple(self.conclusions.get(peer_id, ()))[:max_conclusions],
+            conclusions=tuple(self.conclusions.get(observed, ()))[:max_conclusions],
         )
+
+    async def chat(
+        self, *, peer_id: str, query: str, reasoning_level: str = "low",
+        target: str | None = None,
+    ) -> str | None:
+        """Mirrors `HonchoClient.chat`: a reasoned string from the observed peer's
+        conclusions, or None when there are none / `fail=True`."""
+        observed = target if target is not None else peer_id
+        self.chats.append((peer_id, observed, query, reasoning_level))
+        if self.fail:
+            return None
+        known = self.conclusions.get(observed, ())
+        return " ".join(known) if known else None
 
     async def health(self) -> MemoryHealth:
         return MemoryHealth(reachable=not self.fail)

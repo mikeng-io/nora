@@ -277,6 +277,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            "conversation. «I know nothing about them yet» and «I could "
                            "not check» are different answers; never report the second "
                            "as the first"),
+    # 1, not 2: `ask_memory` REASONS (a slow dialectic call, ~14-19s), so one per
+    # turn is the ceiling — a second would blow the loop budget on its own. It is
+    # the escalation from `about` (retrieve), reached only when a profile lookup
+    # will not answer a pieced-together question.
+    "ask_memory": NativeTool(1, "REASON about someone to answer a specific "
+                                "question that has to be pieced together, when a "
+                                "plain profile («about») is not enough — slower and "
+                                "deeper; use sparingly"),
     # 2, sized like the other look-it-up tools: one message can name two images
     # (a photo AND a screenshot), and two describe calls plus a reply still leave
     # the turn. The number is not what keeps two calls inside the loop budget —
@@ -407,6 +415,11 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 # back it wants is looking for a little more, not for the whole room.
 CHAT_EARLIER_MAX = 60
 CHAT_EARLIER_DEFAULT = 25
+
+# Honcho's dialectic reasoning levels (DialecticOptions.reasoning_level), from
+# the live schema. `ask_memory` lets the model pick; anything off-list falls back
+# to "low", the fast default (§4 design/24). Ordered shallow→deep.
+_REASONING_LEVELS = frozenset({"minimal", "low", "medium", "high", "max"})
 
 
 # ---- one line and one counter per tool call ---------------------------------
@@ -692,6 +705,7 @@ def build_tool_specs(
     shortener=None,
     question: str = "",
     context_window: int = 40,
+    ai_peer: str = "nora",
 ) -> tuple[ToolSpec, ...]:
     # The tag's conversation, captured once. It is the ONLY thing that decides
     # which rows `chat_earlier` returns — see DEC-24 for why the model is no
@@ -903,7 +917,15 @@ def build_tool_specs(
         ref = matches[0]
         try:
             memory = await honcho.representation(
-                peer_id=ref.honcho_peer_id,
+                # OBSERVER = Nora, OBSERVED = the person (design/24 §4). This is
+                # what NORA has come to understand about them from messages she
+                # witnessed — her own model — NOT the person's self-description.
+                # The pair only exists because Nora joins every session with
+                # observe_others=True (proven live 2026-08-07). Workspace-wide by
+                # design: her model blends every conversation she shares with them;
+                # the room roster above already gated WHO she may recall.
+                peer_id=ai_peer,
+                target=ref.honcho_peer_id,
                 # The QUESTION is Nora's to supply, not the model's (DEC-24):
                 # she has the tagging message, so asking for it would be one
                 # more value to invent per call. Truncated because it is a
@@ -962,6 +984,97 @@ def build_tool_specs(
         return {
             "status": "ok", "person": ref.name, "profile": list(kept),
             "withheld": withheld,
+            "partial_view": view.degraded,
+        }
+
+    async def ask_memory(person: str, depth: str = "low") -> dict:
+        """Work out an answer about someone from what you've come to understand
+        of them — a specific QUESTION, not a profile dump.
+
+        This REASONS over everything you've gathered about the person and
+        synthesises an answer, where `about` only hands back the raw notes. Reach
+        for it when a profile lookup is not enough — «would he be up for hotpot?»,
+        «does she usually run late?», «how does he get to work?» — a judgement
+        that has to be pieced together, not just recalled.
+
+        It is SLOW — several seconds, sometimes more — so use it sparingly, and
+        only when `about` would not answer. You decide how hard to think with
+        `depth`: `low` for a quick read, `high` or `max` when the question really
+        needs it (and is worth the wait). Deeper is slower.
+
+        Only knows people in THIS conversation, and answers about the message you
+        were tagged in. Same three-way outcome as `about`: `ok` with the answer,
+        `nothing_known`, or `unavailable` (could not check — never report that as
+        "I don't know them").
+
+        Args:
+            person: The name or nickname of the person, as the message said it.
+            depth: How hard to reason — minimal, low, medium, high, or max.
+        """
+        level = depth if depth in _REASONING_LEVELS else "low"
+        view = await room.scope()
+        if not view.available:
+            _record_room(metrics, "ask_memory", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't work out who that is right now. Say you can't "
+                        "check — do not say you don't know them.",
+            }
+        matches = view.find(person)
+        if not matches:
+            miss = _miss(person, view)
+            _record_room(metrics, "ask_memory", miss["status"], candidates=0)
+            return miss
+        if len(matches) > 1:
+            _record_room(metrics, "ask_memory", "ambiguous", candidates=len(matches))
+            return {
+                "status": "ambiguous", **_asked_about(person),
+                "could_be": [p.name for p in matches],
+                "note": "More than one person here goes by that. Ask which one.",
+            }
+        ref = matches[0]
+        try:
+            # OBSERVER = Nora, OBSERVED = the person (design/24 §4): she reasons
+            # from HER model of them. The QUESTION is the tagging message, hers to
+            # supply (DEC-24), not a value the model invents. `level` is the
+            # model's per-question depth/latency choice — Nora decides.
+            answer = await honcho.chat(
+                peer_id=ai_peer,
+                target=ref.honcho_peer_id,
+                query=(question or ref.name)[:500],
+                reasoning_level=level,
+            )
+        except Exception:
+            log.exception("ask_memory failed for %s", ref.person_id)
+            answer = None
+        if answer is None:
+            # chat returns None for both unreachable and nothing-to-say; neither
+            # is a licence to claim ignorance of the PERSON. Report unavailable.
+            metrics.inc("nora_recall_total", status="unavailable")
+            _record_room(metrics, "ask_memory", "unavailable")
+            return {
+                "status": "unavailable", "person": ref.name,
+                "note": "I couldn't work that out just now. Say you can't check "
+                        "right now — do not say you don't remember them.",
+            }
+        # R-18 fails closed on the WHOLE reply, so a reasoned answer carrying an
+        # identifier would cost the entire message. Unlike `about`'s list, this is
+        # one indivisible string — if it names an identifier it cannot be part-
+        # kept, so it is withheld whole. `scan_identifiers`, not the reply
+        # predicate (the `about` rationale: what she runs on stays hers because
+        # the Deliverer refuses to SAY it, not because she is made to forget).
+        if scan_identifiers(answer) is not None:
+            metrics.inc("nora_recall_total", status="withheld")
+            _record_room(metrics, "ask_memory", "ok", withheld=1)
+            return {
+                "status": "nothing_known", "person": ref.name, "withheld": 1,
+                "note": "I worked something out but can't repeat it here. Answer "
+                        "from what you already know, or say you're not sure.",
+            }
+        metrics.inc("nora_recall_total", status="ok")
+        _record_room(metrics, "ask_memory", "ok", depth=level)
+        return {
+            "status": "ok", "person": ref.name, "answer": answer,
             "partial_view": view.degraded,
         }
 
@@ -1885,6 +1998,7 @@ def build_tool_specs(
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
         _spec("about", about),
+        _spec("ask_memory", ask_memory),
         _spec("media_fetch", media_fetch),
         _spec("web_search", web_search),
         _spec("web_fetch", web_fetch),
@@ -1913,6 +2027,7 @@ def build_tools(
     shortener=None,
     question: str = "",
     context_window: int = 40,
+    ai_peer: str = "nora",
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -1926,6 +2041,6 @@ def build_tools(
         search_source=search_source,
         presence_source=presence_source, presence_circles=presence_circles,
         shortener=shortener,
-        question=question, context_window=context_window,
+        question=question, context_window=context_window, ai_peer=ai_peer,
     )
     return [adapt(spec) for spec in specs]

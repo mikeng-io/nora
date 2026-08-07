@@ -174,6 +174,7 @@ class HonchoClient:
         base_url: str,
         workspace_id: str,
         *,
+        ai_peer: str = "nora",
         feed_timeout: float = 2.0,
         card_timeout: float = 3.0,
         representation_timeout: float = 3.0,
@@ -181,6 +182,14 @@ class HonchoClient:
     ) -> None:
         self._base = base_url.rstrip("/")
         self._ws = workspace_id
+        # The OBSERVER peer — Nora. Honcho keys memory by (observer, observed)
+        # peer pairs (README, "the Honcho loop"), so this is the peer from whose
+        # perspective every recall is read: `(observer=nora, observed=person)` is
+        # NORA'S model of that person, distinct from the person's self-model. The
+        # deriver only builds that pair when Nora joins the session with
+        # `observe_others=True` — which is why the client, not just the caller,
+        # has to know who Nora is (design/24 §4).
+        self._ai_peer = ai_peer
         self._feed_timeout = feed_timeout
         self._card_timeout = card_timeout
         # Measured at 0.19 to 0.26 s against the live instance on 2026-08-06, so
@@ -198,6 +207,9 @@ class HonchoClient:
         self._workspace_ready = False
         self._known_peers: set[str] = set()
         self._sessions: dict[str, str] = {}
+        # (session_id, peer_id) pairs already given their observer config, so the
+        # add-peers call fires ONCE per peer per session, not every message.
+        self._configured_peers: set[tuple[str, str]] = set()
         # One asyncio.Lock per peer id, not one global lock — different peers must
         # still proceed concurrently. Shared between ensure_peer and ensure_session:
         # both are check-then-act over per-peer state, and person-centric identity
@@ -312,7 +324,37 @@ class HonchoClient:
             if not isinstance(returned, str) or not returned:
                 return None
             self._sessions[conversation_id] = returned
+            # Nora joins every session as an OBSERVER (observe_others=True), so
+            # the deriver builds her model of each human who speaks here; and as
+            # observable herself (observe_me=True) so her own self-card can form.
+            # Without this the (nora → person) pair is never derived and every
+            # recall reads empty — proven live 2026-08-07 (design/24 §4).
+            await self._configure_peer(
+                returned, self._ai_peer, observe_others=True, observe_me=True,
+            )
             return returned
+
+    async def _configure_peer(
+        self, session_id: str, peer_id: str, *, observe_others: bool, observe_me: bool,
+    ) -> None:
+        """Add `peer_id` to `session_id` with its observer config, ONCE per pair.
+
+        Honcho keys memory by (observer, observed) peer pairs, and only derives a
+        pair when the observer has `observe_others=True` AND the observed has
+        `observe_me=True`. Best-effort: a failure leaves the pair unconfigured so
+        the next message retries it — a missed config degrades to «not modelled»,
+        never a crash. `POST /sessions/{id}/peers` with `{peer_id: config}`
+        (verified against the live add-peers schema, 2026-08-07)."""
+        pair = (session_id, peer_id)
+        if pair in self._configured_peers:
+            return
+        result = await self._post(
+            self._url(f"/sessions/{session_id}/peers"),
+            {peer_id: {"observe_others": observe_others, "observe_me": observe_me}},
+            self._feed_timeout,
+        )
+        if result is not None:
+            self._configured_peers.add(pair)
 
     async def feed(
         self,
@@ -329,6 +371,14 @@ class HonchoClient:
         session_id = await self.ensure_session(conversation_id)
         if session_id is None:
             return False
+        # A human speaker joins as OBSERVABLE (observe_me=True) so Nora's model of
+        # them derives; not as an observer (observe_others=False) — only Nora
+        # models others, so the deriver does no N² human-of-human work. Nora's own
+        # feed skips this: she was configured at session creation.
+        if peer_id != self._ai_peer:
+            await self._configure_peer(
+                session_id, peer_id, observe_others=False, observe_me=True,
+            )
         message: dict[str, object] = {"content": text, "peer_id": peer_id}
         if metadata:
             message["metadata"] = metadata
@@ -364,7 +414,12 @@ class HonchoClient:
         return [str(line).lstrip("-* ").strip() for line in card if str(line).strip()]
 
     async def representation(
-        self, *, peer_id: str, search_query: str, max_conclusions: int = 9
+        self,
+        *,
+        peer_id: str,
+        search_query: str,
+        max_conclusions: int = 9,
+        target: str | None = None,
     ) -> Recollection:
         """What Honcho concludes about one peer, curated to one question.
 
@@ -372,15 +427,26 @@ class HonchoClient:
         `search_query`, verified against the live instance on 2026-08-06:
         answers 200 in ~0.2 s with `{"representation": "<markdown>"}`.
 
-        THREE THINGS ARE DELIBERATE, and each one is a live-verified fact
-        rather than a reading of the docs:
+        **`peer_id` is the OBSERVER, `target` the OBSERVED** (design/24 §4).
+        With `target` set, this reads `(observer=peer_id, observed=target)` — so
+        `representation(peer_id="nora", target="miles_novak")` is NORA'S model of
+        Miles, built from messages she observed, distinct from Miles's self-model
+        (`target=None` → observer==observed). The theory-of-mind form was once
+        dead here ("Nora is not a peer"); Honcho v2 makes Nora a peer that joins
+        every session with `observe_others=True`, so the pair now derives —
+        proven live 2026-08-07 (Nora's model of a probe peer returned its job and
+        hobby from one observed message). No `session_id`: recall is workspace-
+        wide ON PURPOSE, so Nora's model of a person blends every conversation
+        she shares with them in this workspace (the cross-group knowledge one
+        workspace buys); disclosure is gated by the room ROSTER at the tool
+        layer, not by narrowing the memory query.
+
+        TWO THINGS REMAIN DELIBERATE, each a live-verified fact not a doc-read:
 
         * **Not `peer_card`.** `GET /peers/{id}/card` returns `{"peer_card":
           null}` even for peers that demonstrably have conclusions — a dead
           endpoint that has been answering "I know nothing" all along. This
           endpoint returns the same peer's conclusions as prose.
-        * **No `target`.** The theory-of-mind form (`what does A think of B`)
-          404s unless the target peer itself exists, and Nora is not a peer.
         * **An unknown peer is 200 with an EMPTY STRING, never 404.** So the
           transport cannot tell "no such peer" from "nothing known", and the
           only recoverable bit is whether the request succeeded at all. That
@@ -388,11 +454,6 @@ class HonchoClient:
           return `list[str]` like `peer_card` does. `_post` answers `None` for
           both a >=400 and a transport failure, which is exactly the set of
           "could not ask" outcomes.
-
-        `session_id` is deliberately omitted: sessions here are per-peer
-        (`ensure_session` builds `nora-<peer_id>`), so scoping to one would
-        return a subset of what the unscoped call already returns for that
-        same peer.
 
         ## `max_conclusions` is a budget split THREE ways, not a row limit
 
@@ -429,15 +490,18 @@ class HonchoClient:
         and costs roughly 1,100 characters of tool result, in the same order as
         `chat_earlier`'s default and well inside `llm.limits`.
         """
+        payload: dict[str, object] = {
+            "search_query": search_query,
+            "max_conclusions": max_conclusions,
+            "search_top_k": max(1, max_conclusions // 3),
+            "include_most_frequent": True,
+            "search_max_distance": _MAX_DISTANCE,
+        }
+        if target is not None:
+            payload["target"] = target
         result = await self._post(
             self._url(f"/peers/{peer_id}/representation"),
-            {
-                "search_query": search_query,
-                "max_conclusions": max_conclusions,
-                "search_top_k": max(1, max_conclusions // 3),
-                "include_most_frequent": True,
-                "search_max_distance": _MAX_DISTANCE,
-            },
+            payload,
             self._representation_timeout,
         )
         if result is None:
@@ -448,7 +512,12 @@ class HonchoClient:
         )
 
     async def chat(
-        self, *, peer_id: str, query: str, reasoning_level: str = "low"
+        self,
+        *,
+        peer_id: str,
+        query: str,
+        reasoning_level: str = "low",
+        target: str | None = None,
     ) -> str | None:
         """The DIALECTIC verb — Honcho REASONS over a peer's representation and
         peer card to SYNTHESISE a natural-language answer (Honcho v2, design/24
@@ -457,23 +526,37 @@ class HonchoClient:
         while chat answers «Tin Shui Chi, based on repeated 天恆/天澤商場
         references» — probe-verified against the live instance 2026-08-07.
 
+        **`peer_id` is the OBSERVER, `target` the OBSERVED** — same axis as
+        `representation`. `chat(peer_id="nora", target="miles_novak", …)` reasons
+        from NORA'S model of Miles; `target=None` reasons from the peer's own
+        self-model. Workspace-wide by the same rationale (no `session_id`):
+        Nora reasons over everything she has observed of that person across the
+        workspace, and the room roster gates disclosure at the tool layer.
+
         `POST /v3/workspaces/{ws}/peers/{peer_id}/chat`, body `{query,
-        reasoning_level}` → `{"content": "<answer>"}` (docs.honcho.dev/v3, and
-        the probe). `reasoning_level` trades speed for depth (minimal→max);
-        `low` is Honcho's default and the right one for an in-turn call. NEVER
-        streamed here — Nora wants one synchronous answer inside the loop budget.
+        reasoning_level, target?}` → `{"content": "<answer>"}` (docs.honcho.dev/
+        v3, and the probe). **`reasoning_level` is chosen by the CALLER per
+        question** (minimal→max), because it is the depth/latency trade and only
+        the caller knows how hard the question is: a name-lookup takes `low`; a
+        «what would he think about X» takes `high`. The model picks it in the
+        `ask_memory` tool — Nora decides. NEVER streamed: one synchronous answer
+        inside the loop budget.
 
         Returns the answer string, or None on any failure (unreachable, non-200,
         no `content`) — the best-effort `MemoryStore` contract: the caller says
         «I couldn't recall that», never guesses. Empty/whitespace content is None
         (Honcho has nothing to say), the honest `unavailable` for the tool.
 
-        Its own timeout: this is a REASONING call (an LLM inside Honcho), so it
-        is slower than `representation`. Bounded like every in-turn Honcho call
-        so a slow reason cannot overrun the tag's budget."""
+        Its own timeout: this is a REASONING call (an LLM inside Honcho) measured
+        ~14-19s even at `low`, so it is far slower than `representation`. Bounded
+        by `_chat_timeout` so a slow reason cannot overrun the tag's budget; a
+        higher `reasoning_level` spends more of that budget for more depth."""
+        body: dict[str, object] = {"query": query, "reasoning_level": reasoning_level}
+        if target is not None:
+            body["target"] = target
         result = await self._post(
             self._url(f"/peers/{peer_id}/chat"),
-            {"query": query, "reasoning_level": reasoning_level},
+            body,
             self._chat_timeout,
         )
         if result is None:

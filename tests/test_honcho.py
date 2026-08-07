@@ -55,8 +55,16 @@ async def test_feed_creates_a_session_then_posts_the_message_batch(server_factor
     # received nothing for the entire life of the deployment. The test passed
     # throughout, because it was written against the implementation rather
     # than the API and its fake server answered whatever was asked of it.
+    #
+    # Two `.../peers` POSTs precede the message: the observer config (design/24
+    # §4) that makes Honcho DERIVE Nora's model of the speaker — Nora joins the
+    # session as an observer at creation, the human as observable on their feed.
+    # Without them the (nora → person) pair never derives and every recall reads
+    # empty (proven live 2026-08-07).
     assert calls == [
         ("POST", "/v3/workspaces/nora/sessions"),
+        ("POST", "/v3/workspaces/nora/sessions/sess-1/peers"),      # nora: observe_others
+        ("POST", "/v3/workspaces/nora/sessions/sess-1/peers"),      # miles: observe_me
         ("POST", "/v3/workspaces/nora/sessions/sess-1/messages"),
     ]
 

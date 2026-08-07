@@ -122,10 +122,15 @@ class _RecordingMemory(_FakeMemory):
 
     def __init__(self) -> None:
         super().__init__()
-        self.queries: list[tuple[str, str]] = []
+        # (observer, observed, search_query) — the `about` tool reads Nora's
+        # model of a person, `(observer=nora, observed=person)` (design/24 §4).
+        self.queries: list[tuple[str, str, str]] = []
 
-    async def representation(self, *, peer_id, search_query, max_conclusions=5):
-        self.queries.append((peer_id, search_query))
+    async def representation(
+        self, *, peer_id, search_query, max_conclusions=5, target=None,
+    ):
+        observed = target if target is not None else peer_id
+        self.queries.append((peer_id, observed, search_query))
         return Recollection(reachable=True, conclusions=("Miles is from Ridgeline",))
 
 
@@ -1066,7 +1071,7 @@ async def test_recall_asks_about_the_tagging_message_without_being_told_it():
     )
     await pipeline.run(_request(_msg()))
     await _drain(background)
-    assert memory.queries == [("miles", "nora.000 幾點食飯")]
+    assert memory.queries == [("nora", "miles", "nora.000 幾點食飯")]
 
 
 # ---------------------------------------------------------------------------

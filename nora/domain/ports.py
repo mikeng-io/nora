@@ -391,9 +391,32 @@ class MemoryStore(Protocol):
 
     async def peer_card(self, *, peer_id: str) -> list[str]: ...
 
+    # `peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4). With
+    # `target` set the recall is `(observer=peer_id, observed=target)` — Nora's
+    # model of a person, not the person's self-model. Workspace-wide (no session
+    # scope): knowledge blends across every conversation Nora shares with them;
+    # the room roster gates disclosure at the tool layer.
     async def representation(
-        self, *, peer_id: str, search_query: str, max_conclusions: int = 5
+        self,
+        *,
+        peer_id: str,
+        search_query: str,
+        max_conclusions: int = 5,
+        target: str | None = None,
     ) -> Recollection: ...
+
+    # The DIALECTIC verb: Honcho REASONS over the (observer, observed) model to
+    # synthesise an answer, vs `representation` which retrieves raw conclusions.
+    # `reasoning_level` is the caller's per-question depth/latency choice
+    # (minimal→max). None on any failure — best-effort, like `feed`.
+    async def chat(
+        self,
+        *,
+        peer_id: str,
+        query: str,
+        reasoning_level: str = "low",
+        target: str | None = None,
+    ) -> str | None: ...
 
     async def health(self) -> MemoryHealth: ...
 

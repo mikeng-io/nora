@@ -316,7 +316,7 @@ async def test_recall_asks_the_question_the_group_actually_asked(persons):
     honcho = FakeHoncho(conclusions={"miles_novak": ["something"]})
     tools = _build(persons=persons, honcho=honcho, question="佢係咪識踢波")
     await _call(tools["about"], person="Miles")
-    assert honcho.queries == [("miles_novak", "佢係咪識踢波")]
+    assert honcho.queries == [("nora", "miles_novak", "佢係咪識踢波")]
 
 
 async def test_recall_is_blind_to_someone_who_is_not_in_this_room(persons):
@@ -327,6 +327,58 @@ async def test_recall_is_blind_to_someone_who_is_not_in_this_room(persons):
     result = await _call(_build(persons=persons, honcho=honcho)["about"], person="外人")
     assert result["status"] == "not_found"
     assert honcho.queries == []          # her peer is never even asked about
+
+
+async def test_ask_memory_reasons_from_noras_model_of_the_person(persons):
+    """`ask_memory` is the DIALECTIC verb: it reads `(observer=nora,
+    observed=person)` through `chat`, carrying the tagging question and the
+    model's chosen depth (design/24 §4). The answer is the reasoned string."""
+    honcho = FakeHoncho(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
+    tools = _build(persons=persons, honcho=honcho, question="佢鍾唔鍾意踢波")
+    result = await _call(tools["ask_memory"], person="Miles", depth="high")
+    assert honcho.chats == [("nora", "miles_novak", "佢鍾唔鍾意踢波", "high")]
+    assert result["status"] == "ok"
+    assert result["answer"] == "plays five-a-side on Sundays"
+
+
+async def test_ask_memory_depth_falls_back_to_low_when_off_list(persons):
+    """Depth is the model's per-question choice, but only from Honcho's ladder;
+    anything off-list is the fast default, never passed through raw."""
+    honcho = FakeHoncho(conclusions={"miles_novak": ["likes hiking"]})
+    tools = _build(persons=persons, honcho=honcho)
+    await _call(tools["ask_memory"], person="Miles", depth="turbo")
+    assert honcho.chats[0][3] == "low"
+
+
+async def test_ask_memory_is_blind_to_someone_not_in_this_room(persons):
+    """Same roster gate as `about`: a reasoning call that could reach any peer
+    in the workspace is a cross-room leak with extra steps. Never asked."""
+    honcho = FakeHoncho(conclusions={"elsewhere_liu": ["a secret about her"]})
+    result = await _call(_build(persons=persons, honcho=honcho)["ask_memory"], person="外人")
+    assert result["status"] == "not_found"
+    assert honcho.chats == []
+
+
+async def test_ask_memory_withholds_a_reasoned_answer_that_names_an_identifier(persons):
+    """R-18 fails closed on the whole reply, and this answer is ONE indivisible
+    string — if it carries an identifier it is withheld whole, never handed to
+    the model to echo (the `about` rationale, applied to a reasoned blob)."""
+    honcho = FakeHoncho(conclusions={"miles_novak": ["reach him on +85298765432"]})
+    tools = _build(persons=persons, honcho=honcho)
+    result = await _call(tools["ask_memory"], person="Miles")
+    assert result["status"] == "nothing_known"
+    assert result["withheld"] == 1
+    assert "98765432" not in str(result)
+
+
+async def test_ask_memory_is_unavailable_when_honcho_cannot_answer(persons):
+    """`chat` returns None for both unreachable and nothing-to-say; neither is a
+    licence to claim ignorance of the PERSON — the tool says `unavailable`."""
+    honcho = FakeHoncho(conclusions={})           # miles_novak seeds nothing → chat None
+    tools = _build(persons=persons, honcho=honcho)
+    result = await _call(tools["ask_memory"], person="Miles")
+    assert result["status"] == "unavailable"
+    assert result["person"] == "Miles Novak"
 
 
 async def test_nothing_known_is_distinguishable_from_could_not_ask(persons):

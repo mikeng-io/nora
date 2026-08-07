@@ -188,7 +188,15 @@ class FakeMemoryStore:
         # is exactly the "fake answers every request the same way" trap that
         # hid three separate no-ops in this codebase.
         self.conclusions = conclusions or {}
-        self.queries: list[tuple[str, str]] = []
+        # (observer, observed, search_query) — the observed is `target or peer_id`,
+        # so a test can assert a recall ran as `(observer=nora, observed=person)`
+        # rather than the person's self-model. Kept a 3-tuple ON PURPOSE: the
+        # observer/observed pair is the whole point of design/24 §4, and a fake
+        # that dropped the observer could not tell Nora's model of Miles from
+        # Miles's own — the exact "answers every request the same" trap.
+        self.queries: list[tuple[str, str, str]] = []
+        # (observer, observed, query, reasoning_level) for each `chat` call.
+        self.chats: list[tuple[str, str, str, str]] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
@@ -217,10 +225,17 @@ class FakeMemoryStore:
         return list(self.cards.get(peer_id, []))
 
     async def representation(
-        self, *, peer_id: str, search_query: str, max_conclusions: int = 5
+        self, *, peer_id: str, search_query: str, max_conclusions: int = 5,
+        target: str | None = None,
     ) -> Recollection:
         """Mirrors `HonchoClient.representation`, INCLUDING the shape it
         returns for a peer it has never heard of.
+
+        `peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4); the
+        conclusions are keyed by the observed (`target or peer_id`), so a test
+        sets what is known ABOUT a person and reaches it as Nora's model of them
+        (`peer_id=nora, target=person`) or the person's self-model (`target=None`).
+        The observer is recorded in `queries` either way.
 
         The live instance answers **200 with an empty string** for an unknown
         peer rather than 404, so an unknown peer here is
@@ -230,13 +245,31 @@ class FakeMemoryStore:
         distinction pass against a client that had lost it, which is precisely
         how `peer_card` shipped dead.
         """
-        self.queries.append((peer_id, search_query))
+        observed = target if target is not None else peer_id
+        self.queries.append((peer_id, observed, search_query))
         if self.fail:
             return Recollection(reachable=False)
         return Recollection(
             reachable=True,
-            conclusions=tuple(self.conclusions.get(peer_id, ()))[:max_conclusions],
+            conclusions=tuple(self.conclusions.get(observed, ()))[:max_conclusions],
         )
+
+    async def chat(
+        self, *, peer_id: str, query: str, reasoning_level: str = "low",
+        target: str | None = None,
+    ) -> str | None:
+        """Mirrors `HonchoClient.chat` — the dialectic verb. Synthesises a stand-in
+        answer from the observed peer's conclusions (`target or peer_id`), so a
+        test that seeds conclusions gets a non-None reasoned string and an unseeded
+        peer gets None (the honest «nothing to say»). `fail=True` → None."""
+        observed = target if target is not None else peer_id
+        self.chats.append((peer_id, observed, query, reasoning_level))
+        if self.fail:
+            return None
+        known = self.conclusions.get(observed, ())
+        if not known:
+            return None
+        return " ".join(known)
 
     async def health(self) -> MemoryHealth:
         return MemoryHealth(reachable=not self.fail)

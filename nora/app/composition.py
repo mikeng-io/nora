@@ -229,7 +229,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     except DoctrineError as exc:
         raise StartupError(f"doctrine error: {exc}") from exc
 
-    memory = HonchoClient(cfg.memory.base_url, cfg.memory.workspace_id)
+    memory = HonchoClient(
+        cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
+    )
     await memory.ensure_workspace()          # best-effort, never fatal — no try/except
     # The Nora aiPeer (Honcho v2, design/24): her replies feed under it to build
     # her self-model card. Created here like the workspace — best-effort, never
@@ -409,6 +411,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         route=route_client, vision=vision_client, blobs=blobs, search=search_client,
         presence=presence_store, circles=presence_circles,
         shortener=shortener_client,
+        ai_peer=cfg.memory.ai_peer,
     )
     # The room-scoped tools' one platform dependency. Built here rather than
     # taken off the adapter because membership is a read-only DIRECTORY query

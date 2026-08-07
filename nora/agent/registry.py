@@ -72,6 +72,7 @@ class ToolRegistry:
         presence: PresenceReader | None = None,
         circles: tuple[Circle, ...] = (),
         shortener: LinkShortener | None = None,
+        ai_peer: str = "nora",
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -120,6 +121,12 @@ class ToolRegistry:
         # load-bearing, so no capability line and no budget: it is not a tool,
         # it is a post-processing step inside `route`.
         self._shortener = shortener
+        # The OBSERVER peer — Nora's Honcho peer id (cfg.memory.ai_peer). The
+        # `about`/`ask_memory` tools read her model of a person as
+        # (observer=ai_peer, observed=person), so the registry threads it like any
+        # other long-lived collaborator (design/24 §4). A future `[agent] name`
+        # config feeds this same seam.
+        self._ai_peer = ai_peer
 
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
@@ -262,6 +269,7 @@ class ToolRegistry:
             presence_source=self._presence, presence_circles=self._circles,
             shortener=self._shortener,
             question=question, context_window=context_window,
+            ai_peer=self._ai_peer,
         )
 
     def build(
