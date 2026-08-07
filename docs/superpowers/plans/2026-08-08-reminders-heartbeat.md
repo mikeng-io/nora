@@ -1011,90 +1011,174 @@ captured pre-split."
 
 ```python
 # tests/unit/test_heartbeat_loop.py
-import pytest
+from __future__ import annotations
+
+import uuid
 from datetime import datetime, timedelta, timezone
+
+import pytest
+
 from nora.app.heartbeat import HeartbeatLoop
-from nora.domain.reminders import ReminderState
-from nora.testing.reminders import FakeReminderStore
+from nora.domain.reminders import Reminder, ReminderState
+from nora.obs.metrics import Metrics
 from nora.engagement.slots import ConversationSlots
+from nora.testing.reminders import FakeReminderStore
 
 UTC = timezone.utc
 T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
+KEY = ("signal", "conv-1")
 
 
 class _AllowAll:
-    def is_allowed(self, *, platform, conversation_id, person_id): return True
+    def is_allowed(self, *, platform, conversation_id, person_id) -> bool:
+        return True
 
 
 class _DenyAll:
-    def is_allowed(self, *, platform, conversation_id, person_id): return False
+    def is_allowed(self, *, platform, conversation_id, person_id) -> bool:
+        return False
 
 
-@pytest.mark.asyncio
-async def test_a_due_row_fires_and_is_marked_done(store, slots, metrics):
-    fired = []
-    loop = HeartbeatLoop(
-        store=store, slots=slots, policy=_AllowAll(), clock=lambda: T0,
-        metrics=metrics, tick_seconds=60,
-        fire=lambda rows: _record(fired, rows, "sent"),
+def _row(**kw) -> Reminder:
+    base = dict(
+        id=uuid.uuid4(), requester_person_id="miles", platform="signal",
+        conversation_id="conv-1", conversation_type="group", text="洗衫",
+        created_at=T0 - timedelta(hours=1), due_at=T0 - timedelta(minutes=1),
+        state=ReminderState.PENDING, fired_at=None, outcome=None,
     )
-    r = await _create_due(store)
+    base.update(kw)
+    return Reminder(**base)
+
+
+def _build(*, store, policy=None, fire=None, slots=None, metrics=None):
+    """One constructor for every test — the loop takes all collaborators
+    through __init__, including the clock, so nothing here needs a real clock,
+    a real model, or a real adapter."""
+    fired: list[list[Reminder]] = []
+
+    async def _default_fire(rows):
+        fired.append(list(rows))
+        return "sent"
+
+    loop = HeartbeatLoop(
+        store=store,
+        slots=slots or ConversationSlots(maxlen=16, spawn=lambda c: None),
+        policy=policy or _AllowAll(),
+        clock=lambda: T0,
+        metrics=metrics or Metrics(),
+        tick_seconds=60.0,
+        fire=fire or _default_fire,
+    )
+    return loop, fired
+
+
+async def test_a_due_row_fires_and_is_marked_done():
+    store = FakeReminderStore()
+    row = _row()
+    await store.create(row)
+    loop, fired = _build(store=store)
+
     await loop.tick()
-    assert [x.id for x in fired[0]] == [r.id]
-    assert await store.due(now=T0, limit=10) == []
+
+    assert [r.id for r in fired[0]] == [row.id]
+    assert (await store.get(row.id)).state is ReminderState.DONE
+    assert (await store.get(row.id)).outcome == "sent"
 
 
-@pytest.mark.asyncio
-async def test_a_row_not_yet_due_does_not_fire(store, slots, metrics):
-    ...  # due_at = T0 + 1min; assert fire was never called
+async def test_a_row_not_yet_due_does_not_fire():
+    store = FakeReminderStore()
+    await store.create(_row(due_at=T0 + timedelta(minutes=1)))
+    loop, fired = _build(store=store)
 
-
-@pytest.mark.asyncio
-async def test_rows_are_grouped_by_conversation_one_turn_each(store, slots, metrics):
-    """§5.2: a turn has one conversation scope. Two conversations due in the
-    same tick are two turns, never one — sharing would leak one room's
-    reminder into the other."""
-    ...  # two rows, two conversation_ids -> fire called twice, disjoint
-
-
-@pytest.mark.asyncio
-async def test_a_revoked_conversation_never_fires(store, slots, metrics):
-    """§5.1: policy.toml is loaded at startup and a row may be 30 days old."""
-    loop = HeartbeatLoop(..., policy=_DenyAll(), ...)
-    r = await _create_due(store)
     await loop.tick()
+
     assert fired == []
-    row = (await store.pending_for(r.conversation_id))
-    assert row == []                       # resolved, not left pending
+
+
+async def test_rows_are_grouped_by_conversation_one_turn_each():
+    """§5.2: a turn has one conversation scope — one Room, one policy decision,
+    one Deliverer binding. Two conversations due in the same tick are two
+    turns; sharing one would leak one room's reminder into the other."""
+    store = FakeReminderStore()
+    a1 = _row(conversation_id="conv-1")
+    a2 = _row(conversation_id="conv-1")
+    b1 = _row(conversation_id="conv-2")
+    for r in (a1, a2, b1):
+        await store.create(r)
+    loop, fired = _build(store=store)
+
+    await loop.tick()
+
+    groups = {rows[0].conversation_id: {r.id for r in rows} for rows in fired}
+    assert groups == {"conv-1": {a1.id, a2.id}, "conv-2": {b1.id}}
+
+
+async def test_a_revoked_conversation_never_fires():
+    """§5.1: policy.toml loads once at startup and a row may be 30 days old, so
+    trust withdrawn in between must bite at fire time."""
+    store = FakeReminderStore()
+    row = _row()
+    await store.create(row)
+    metrics = Metrics()
+    loop, fired = _build(store=store, policy=_DenyAll(), metrics=metrics)
+
+    await loop.tick()
+
+    assert fired == []
+    assert (await store.get(row.id)).state is ReminderState.FAILED
+    assert (await store.get(row.id)).outcome == "failed_policy"
     assert metrics.get("nora_reminders_fired_total", outcome="failed_policy") == 1
 
 
-@pytest.mark.asyncio
-async def test_a_held_slot_defers_to_the_next_tick(store, slots, metrics):
-    """§5.3: never shed, never wait. The row stays pending and the tick moves on."""
-    key = ("signal", "conv-1")
-    slots.acquire(key)                      # a tag is in flight
-    r = await _create_due(store)
+async def test_a_held_slot_defers_to_the_next_tick():
+    """§5.3: never shed, never wait. The row stays PENDING and the tick moves on
+    — a reminder is not second-critical and the row persists."""
+    store = FakeReminderStore()
+    row = _row()
+    await store.create(row)
+    slots = ConversationSlots(maxlen=16, spawn=lambda c: None)
+    slots.acquire(KEY)                       # a tag is in flight
+    loop, fired = _build(store=store, slots=slots)
+
     await loop.tick()
+
     assert fired == []
-    assert [x.id for x in await store.due(now=T0, limit=10)] == [r.id]
+    assert (await store.get(row.id)).state is ReminderState.PENDING
 
 
-@pytest.mark.asyncio
-async def test_the_slot_is_released_even_when_fire_raises(store, slots, metrics):
-    loop = HeartbeatLoop(..., fire=_raises, ...)
+async def test_the_slot_is_released_even_when_fire_raises():
+    store = FakeReminderStore()
+    row = _row()
+    await store.create(row)
+    slots = ConversationSlots(maxlen=16, spawn=lambda c: None)
+    metrics = Metrics()
+
+    async def _boom(rows):
+        raise RuntimeError("model exploded")
+
+    loop, _ = _build(store=store, slots=slots, fire=_boom, metrics=metrics)
+
     await loop.tick()
-    assert slots.held(("signal", "conv-1")) is False
+
+    assert slots.held(KEY) is False
+    assert (await store.get(row.id)).state is ReminderState.FAILED
+    assert (await store.get(row.id)).outcome == "failed_error"
     assert metrics.get("nora_reminders_fired_total", outcome="failed_error") == 1
 
 
-@pytest.mark.asyncio
-async def test_boot_sweeps_firing_rows_to_failed(store, slots, metrics):
-    """§8.2 at-most-once."""
-    await store.create(_row(state=ReminderState.FIRING))
+async def test_recover_sweeps_firing_rows_to_failed():
+    """§8.2 at-most-once. Runs at boot regardless of [heartbeat] enabled."""
+    store = FakeReminderStore()
+    stuck = _row(state=ReminderState.FIRING)
+    await store.create(stuck)
+    loop, _ = _build(store=store)
+
     await loop.recover()
-    assert await store.due(now=T0 + timedelta(days=1), limit=10) == []
+
+    assert (await store.get(stuck.id)).state is ReminderState.FAILED
 ```
+
+Every fixture, helper and name above is defined in the file. `_build` exists so no test constructs `HeartbeatLoop` positionally with `Ellipsis`, which an earlier draft did.
 
 - [ ] **Step 2: Run, watch it fail** — `ModuleNotFoundError: nora.app.heartbeat`
 
