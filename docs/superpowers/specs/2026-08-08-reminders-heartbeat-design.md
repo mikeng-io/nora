@@ -300,7 +300,9 @@ Two new tools, one prefill block, one CLI.
 
 ### 7.1 `remind(when, text, target)`
 
-Writes one row. Refuses past the caps in §8, and says so.
+Writes one row. Refuses — and says why — when the caps in §8 are hit, **or when
+the requester or the target is not a mapped `person_id`** (§12.1). The mapped
+check is a guard, not a doctrine line: it holds whatever the model decides.
 
 ### 7.2 `cancel_reminder(id)`
 
@@ -439,7 +441,7 @@ So the `heartbeat` audience is **frontmatter plus one call site.**
 | file | change |
 |---|---|
 | `constraints.md`, `identity.md`, `voice.md` | `applies_to: [tag, heartbeat]` — she is still herself, still bound |
-| `conduct.md` | **open** — see §12.2 |
+| `conduct.md` | `applies_to: [tag, heartbeat]` — after extracting `# Silence is the default` into its own `[tag]`-only file (§12.2) |
 | **new** `reminders.md` | `kind: conduct`, `applies_to: [heartbeat]` |
 
 **Named `reminders.md`, not `heartbeat.md`.** The doctrine is about handling a
@@ -494,31 +496,71 @@ altitude.
 
 ---
 
-## 12. Open questions
+## 12. Decisions taken (were open questions)
 
-### 12.1 Unmapped requesters
+### 12.1 Mapped identities only — BOTH ends (operator, 2026-08-08)
 
-A DM target needs an address from `identity.toml`, so only a **mapped** person
-can be a DM reminder target — a natural deny-by-default falling out of DEC-14
-rather than a new rule.
+**A reminder requires a mapped `person_id` at both ends: requester AND target.**
+No unmapped sender may create one, even a group-targeted one; no unmapped person
+may be a target.
 
-Undecided: may an **unmapped** sender set a **group**-target reminder? Allowing
-it is harmless on the disclosure axis (the group already sees them speak) but
-gives an unmapped party a lever on Nora's unprompted speech.
+This is stronger than the constraint that falls out of DEC-14 (a DM target needs
+an `identity.toml` address, so *targets* were already mapped-only). The operator
+extended it to the requester as well: **producer or consumer, mapped or nothing.**
 
-### 12.2 `conduct.md` scope
+Rationale: an unprompted-speech lever is exactly the wrong thing to hand to
+someone the deployment cannot name. Deny-by-default, same posture as
+`policy.toml` and the R-31/R-35 disclosure gate.
 
-`conduct.md` is *"how Nora behaves in a group chat — silence, replies, honesty,
-checking first."* Some of that is universal; some is specifically about being
-tagged. Does it extend to `[tag, heartbeat]`, or split? **Needs a read of the
-file before deciding** — do not guess in the migration.
+Enforcement is at `remind()`: if the requester resolves to no `person_id`, refuse
+and say so. It is a guard, not a doctrine line — it must hold whatever the model
+decides. Needs an R-rule and a named test (§13).
 
-### 12.3 Cap values
+### 12.2 `conduct.md` — SPLIT, not rewritten (operator, 2026-08-08)
 
-`max_pending_per_person`, `min_lead_seconds`, `max_horizon_days` above are
-placeholders pending the operator's numbers.
+Read of the file settles it: **only the first section contradicts a fire turn.**
 
-### 12.4 Name collision
+> `# Silence is the default` — "You're only reading this because someone called
+> you. That's the only reason you ever speak. … once your turn is done you never
+> follow up on your own reply."
+
+Every clause is false when a clock fires: nobody called her, and a reminder *is*
+a follow-up on her own earlier 「好, 七點提你」.
+
+Everything from `# Replying` down applies to both audiences unchanged — and three
+parts are load-bearing here, which shrinks `reminders.md` considerably:
+
+- **"You have judgment — a friend, not a command line"** is already the doctrinal
+  basis for standing down. *"You are not a thing that runs whatever it's handed"*
+  generalises to a reminder whose premise has evaporated.
+- **"Check before you answer"** already says *"or on something said further back
+  than you were shown — find out first, then answer"* — nearly the staleness check.
+- **"When one answer needs more than one look"** already says *"when you need two
+  things that don't depend on each other, get them in the same breath"* — the
+  concurrent `search_memory ∥ ask_memory` instruction, already written.
+
+**Migration:** extract `# Silence is the default` into its own file at
+`applies_to: [tag]`; `conduct.md` becomes `[tag, heartbeat]`.
+
+**Why split rather than rewrite the section to be true for both audiences:** a
+split assembles **byte-identical text** for the tag audience, so live behaviour
+provably does not change and a prefill test can assert it. Rewriting edits a
+live prompt at `version: 5` and would need the eval suite re-run to prove no tag
+regression. Same outcome; one is free to verify.
+
+**Carry into the plan:** the new file's `order` must sit adjacent to
+`conduct.md`'s (`order: 30`), or the assembled string shifts and the
+byte-identity test fails for a reason that is not a real regression.
+
+### 12.3 Cap values — as configured, tunable later (operator, 2026-08-08)
+
+`max_pending_per_person = 20`, `min_lead_seconds = 60`,
+`max_horizon_days = 30` stand. They are config, so they are cheap to change
+once there is usage to size them against.
+
+## 12a. Still open
+
+### 12a.1 Name collision
 
 `heartbeat` already names the observability log line
 (`nora/obs/logging.py:130`). If review finds this confusing, **this** design
@@ -532,7 +574,8 @@ renames — the log line has seniority.
 |---|---|
 | alembic migration + `tests/infra/test_schema_parity.py` | new table with a CHECK constraint — `alembic check` is blind to it |
 | `design/09-decision-index.md` | new behavioural rules (never-early; a row fires once) need DEC entries |
-| `tests/test_acceptance_rules.py::RULE_TESTS` | each new rule needs a named test |
+| `tests/test_acceptance_rules.py::RULE_TESTS` | each new rule needs a named test — **including the mapped-both-ends guard (§12.1)**, which is a security rule, not a behaviour preference |
+| `tests/test_prefill.py` (or equivalent) | the `conduct.md` split must assert the **tag** audience assembles byte-identically (§12.2) |
 | `tests/contract/` | only if the clock or store gains a second implementation — including a test fake |
 | `uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence` | new config classes are in scope |
 | `uv run lint-imports` | the loop lives in `nora/app`; check the boundary before placing it |
