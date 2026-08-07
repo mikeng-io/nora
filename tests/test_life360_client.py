@@ -63,6 +63,7 @@ class _Life360:
         # Number of leading members calls that 403 before behaving as
         # `members_mode` — models a STALE token that recovers after a re-auth.
         self.members_403_countdown = 0
+        self.places_mode = "ok"            # ok | 403 | challenge
         self.requests: list[str] = []      # path log, for the no-loop assertion
         self.members_body = {"members": [
             _member("m-live", ts=NOW_MS // 1000),               # fresh → live
@@ -93,6 +94,29 @@ class _Life360:
             return web.json_response({"errorMessage": "no token"}, status=403)
         return web.json_response({"circles": [{"id": "c1", "name": "Ridgeline"}]})
 
+    async def places(self, request: web.Request) -> web.Response:
+        """The places endpoint, shaped like the live probe (2026-08-07): string
+        coordinates, `circleId` echoed, nullable type fields."""
+        self.requests.append("places")
+        if not request.headers.get("Authorization", "").startswith("Bearer "):
+            return web.json_response({"errorMessage": "no token"}, status=403)
+        if self.places_mode == "403":
+            return web.json_response({"errorMessage": "forbidden"}, status=403)
+        if self.places_mode == "challenge":
+            return web.Response(
+                text="<html><body>Are you human?</body></html>",
+                status=200, content_type="text/html",
+            )
+        return web.json_response({"places": [
+            {"id": "p-home", "ownerId": "o1", "circleId": "c-echoed-differently",
+             "name": "Home", "latitude": "22.4471", "longitude": "114.0228",
+             "radius": "80", "type": None, "typeLabel": None},
+            {"id": "p-tower", "ownerId": "o1", "circleId": "c1",
+             "name": "Acme Tower", "latitude": "22.2794", "longitude": "114.1720",
+             "radius": "150", "type": None, "typeLabel": None},
+            {"id": "", "name": "malformed — no id", "latitude": "x", "longitude": None},
+        ]}, status=200)
+
     async def members(self, request: web.Request) -> web.Response:
         self.requests.append("members")
         if not request.headers.get("Authorization", "").startswith("Bearer "):
@@ -122,6 +146,7 @@ async def life360():
     app.router.add_post("/token.json", fake.token)
     app.router.add_get("/circles", fake.circles)
     app.router.add_get("/circles/{cid}/members", fake.members)
+    app.router.add_get("/circles/{cid}/places", fake.places)
     server = TestServer(app)
     await server.start_server()
     base = str(server.make_url("/"))
@@ -135,6 +160,7 @@ def _client(base, *, metrics=None) -> Life360Client:
         token_url=f"{base}token.json",
         members_url=f"{base}circles/{{circle_id}}/members",
         circles_url=f"{base}circles",
+        places_url=f"{base}circles/{{circle_id}}/places",
         metrics=metrics,
     )
 
@@ -316,3 +342,40 @@ def test_classification_no_location_is_no_fix():
 def test_a_malformed_body_yields_no_members():
     assert parse_members("not a dict", now_ms=NOW_MS) == []
     assert parse_members({"error": "x"}, now_ms=NOW_MS) == []
+
+
+# ── read_places (design/23 §3) ───────────────────────────────────────────────
+
+async def test_a_places_read_types_the_wire_and_trusts_the_asked_circle(life360):
+    """The live-probed shape parses: string coordinates become floats, the
+    malformed row is skipped, and `circle_id` is the circle the collector ASKED
+    about — the body's own `circleId` echo (deliberately different in the fake)
+    cannot cross-file a place."""
+    _fake, base = life360
+    read = await _client(base).read_places(circle_id="c1", now_ms=NOW_MS)
+    assert read.status is ReadStatus.OK
+    assert [(p.name, p.circle_id) for p in read.places] == [
+        ("Home", "c1"), ("Acme Tower", "c1"),
+    ]
+    home = read.places[0]
+    assert home.lat == pytest.approx(22.4471)
+    assert home.radius_m == pytest.approx(80.0)
+
+
+async def test_a_persistent_places_403_is_banned_and_never_loops(life360):
+    fake, base = life360
+    fake.places_mode = "403"
+    read = await _client(base).read_places(circle_id="c1", now_ms=NOW_MS)
+    assert read.status is ReadStatus.BANNED
+    # One places GET, one re-auth, one retry — never a loop.
+    assert fake.requests.count("places") == 2
+    assert fake.requests.count("token") == 2
+
+
+async def test_a_places_challenge_page_is_its_own_status(life360):
+    fake, base = life360
+    fake.places_mode = "challenge"
+    metrics = Metrics()
+    read = await _client(base, metrics=metrics).read_places(circle_id="c1", now_ms=NOW_MS)
+    assert read.status is ReadStatus.CHALLENGE
+    assert metrics.get("nora_presence_auth_alarms_total", reason="challenge") == 1.0

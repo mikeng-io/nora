@@ -136,3 +136,32 @@ async def test_prune_is_a_no_op_when_all_fixes_are_fresh(store):
     now = 1_000 * _DAY_MS
     await store.record_fix(fix=_fix(ts=now - _DAY_MS))
     assert await store.prune(now_ms=now) == 0
+
+
+# ── saved places (design/23 §3) ──────────────────────────────────────────────
+
+async def test_replace_places_round_trips_and_removes_what_the_wire_dropped(store):
+    """Wholesale replacement: a place gone from the wire is gone from the table
+    — the delete-then-insert transaction, not an upsert that leaves ghosts."""
+    from nora.domain.presence import SavedPlace
+
+    def place(pid, name):
+        return SavedPlace(circle_id="c1", place_id=pid, name=name,
+                          lat=22.44, lng=114.02, radius_m=80.0, updated_ms=1000)
+
+    await store.replace_places(circle_id="c1", places=[place("p1", "Home"),
+                                                       place("p2", "School")])
+    assert [p.name for p in await store.places_for(circle_id="c1")] == [
+        "Home", "School",
+    ]
+    await store.replace_places(circle_id="c1", places=[place("p1", "Home")])
+    assert [p.name for p in await store.places_for(circle_id="c1")] == ["Home"]
+    # Another circle's places are untouched by c1's replacement.
+    await store.replace_places(
+        circle_id="c2",
+        places=[SavedPlace(circle_id="c2", place_id="px", name="Office",
+                           lat=22.28, lng=114.17, radius_m=None, updated_ms=1000)],
+    )
+    await store.replace_places(circle_id="c1", places=[])
+    assert await store.places_for(circle_id="c1") == []
+    assert [p.name for p in await store.places_for(circle_id="c2")] == ["Office"]

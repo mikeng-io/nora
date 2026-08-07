@@ -47,6 +47,11 @@ log = logging.getLogger("nora.presence.collector")
 # growth is `cadence * 2^failures` (§4.1 — never hammer the credential POST).
 MAX_BACKOFF_SECONDS = 3600.0
 
+# How often a circle's saved PLACES refresh (design/23 §3). Places are static
+# household landmarks — an hourly read is generous, and it rides the member
+# cycle so it can never out-poll the back-off.
+PLACES_REFRESH_SECONDS = 3600.0
+
 # How often the retention sweep runs. Off the write path (§9), like the record
 # store's prune; a movement history bounded by 180 days does not need pruning
 # more than a few times a day.
@@ -95,6 +100,12 @@ class PresenceCollector:
         # instead of no series at all — «not running» and «up but never
         # collecting» must not look identical (council #8, §4).
         self._first_seen_ms: dict[str, int] = {}
+        # When each circle's saved PLACES were last fetched (design/23 §3).
+        # Places change rarely, so they refresh at most every
+        # `PLACES_REFRESH_SECONDS` — piggybacked on the member cycle rather than
+        # a second loop, so places share the cadence back-off and can never
+        # out-poll the account's fragility budget.
+        self._places_fetched_ms: dict[str, int] = {}
 
     async def collect_once(self, circle: CircleSpec, *, now_ms: int) -> CircleRead:
         """One collection cycle for one circle. NEVER raises.
@@ -132,9 +143,40 @@ class PresenceCollector:
             self._count("nora_presence_member_states_total", wire_state=member.wire_state.value)
             await self._record(circle, member, now_ms=now_ms)
 
+        # Places refresh AFTER a clean member read on purpose: a cycle that
+        # could not even read members has no business spending a second call on
+        # the same struggling account (§3's fragility-budget argument).
+        await self._refresh_places(circle, now_ms=now_ms)
+
         self._last_success_ms[circle.circle_id] = now_ms
         self._publish_liveness(circle.circle_id, now_ms)
         return read
+
+    async def _refresh_places(self, circle: CircleSpec, *, now_ms: int) -> None:
+        """Fetch the circle's saved places if due (first cycle, then at most
+        every `PLACES_REFRESH_SECONDS`). NEVER raises; a failed fetch leaves the
+        stored places as they were and retries next due cycle."""
+        last = self._places_fetched_ms.get(circle.circle_id)
+        if last is not None and (now_ms - last) < PLACES_REFRESH_SECONDS * 1000:
+            return
+        read = await self._client.read_places(circle_id=circle.circle_id, now_ms=now_ms)
+        self._count(
+            "nora_presence_place_reads_total",
+            circle=circle.circle_id, status=read.status.value,
+        )
+        if read.status is not ReadStatus.OK:
+            # Not stamped: the next member cycle retries. The read already
+            # counted; auth-class failures alarmed inside the client.
+            return
+        try:
+            await self._store.replace_places(
+                circle_id=circle.circle_id, places=list(read.places)
+            )
+        except Exception:
+            log.exception("places store failed for circle")
+            return
+        self._places_fetched_ms[circle.circle_id] = now_ms
+        log.info("places refreshed: %d for circle", len(read.places))
 
     async def _record(self, circle: CircleSpec, member: Member, *, now_ms: int) -> None:
         person_id = circle.person_id_for(member.life360_id)

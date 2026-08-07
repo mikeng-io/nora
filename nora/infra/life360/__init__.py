@@ -12,9 +12,11 @@ from nora.infra.life360.client import (
     DiscoveredMember,
     Life360Client,
     Life360DiscoveryError,
+    PlacesRead,
     ReadStatus,
 )
 from nora.infra.life360.members import Member, parse_members
+from nora.infra.life360.places import parse_places
 
 __all__ = [
     "CircleRead",
@@ -23,6 +25,8 @@ __all__ = [
     "Life360Client",
     "Life360DiscoveryError",
     "Member",
+    "PlacesRead",
     "ReadStatus",
     "parse_members",
+    "parse_places",
 ]

@@ -370,6 +370,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(ok / unavailable / challenge / banned).",
         ("circle", "status"),
     ),
+    # The saved-places refresh (design/23 §3): at most hourly per circle, riding
+    # the member cycle. Counted separately from `nora_presence_reads_total` so a
+    # places-only breakage (endpoint moved, shape changed) is visible on its own
+    # rather than diluted into the member-read series.
+    _CounterSpec(
+        "nora_presence_place_reads_total",
+        "Life360 saved-place reads, by circle and outcome "
+        "(ok / unavailable / challenge / banned).",
+        ("circle", "status"),
+    ),
     # Per member per cycle, so «sharing off» is a KNOWN STATE, not a gap
     # (design/19 §5, §7.3). A member who turned sharing off writes no fix row, so
     # WITHOUT this series they would be indistinguishable from a member the

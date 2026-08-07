@@ -51,6 +51,27 @@ class WireState(StrEnum):
 
 
 @dataclass(frozen=True)
+class SavedPlace:
+    """One circle's named landmark («Home»), as stored and as read (design/23).
+
+    A STATIC household name for a position — deliberately a different type from
+    `PresenceFix`: a fix is where a PERSON was seen (surveillance-shaped,
+    R-31-guarded); a place is somewhere the household chose to name. The line
+    between them is design/23 §2's whole argument, so they never share a type.
+    `radius_m` is Life360's geofence radius, kept because derivation (§6) will
+    want «inside a place» eventually; nothing reads it yet.
+    """
+
+    circle_id: str
+    place_id: str
+    name: str
+    lat: float
+    lng: float
+    updated_ms: int               # when Nora last saw this place on the wire
+    radius_m: float | None = None
+
+
+@dataclass(frozen=True)
 class PresenceFix:
     """One distinct location fix for one circle member, as stored and as read.
 

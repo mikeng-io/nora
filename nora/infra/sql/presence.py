@@ -29,8 +29,8 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.presence import PresenceFix, WireState
-from nora.infra.sql.schema import PRESENCE_FIXES
+from nora.domain.presence import PresenceFix, SavedPlace, WireState
+from nora.infra.sql.schema import PRESENCE_FIXES, PRESENCE_PLACES
 
 log = logging.getLogger("nora.presence.store")
 
@@ -141,6 +141,58 @@ class PresenceStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_fix(r) for r in rows]
+
+    async def replace_places(self, *, circle_id: str, places: list[SavedPlace]) -> None:
+        """Replace one circle's saved places wholesale (design/23 §3).
+
+        Delete-then-insert in ONE transaction, not an upsert-and-reap: a circle
+        holds a handful of rarely-changing rows, so the simplest write that
+        cannot leave a deleted place behind wins. Called only by the collector's
+        places fetch — never on the fix write path."""
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                sa.delete(PRESENCE_PLACES).where(
+                    PRESENCE_PLACES.c.circle_id == circle_id
+                )
+            )
+            if places:
+                await conn.execute(
+                    sa.insert(PRESENCE_PLACES),
+                    [
+                        {
+                            "circle_id": p.circle_id,
+                            "place_id": p.place_id,
+                            "name": p.name,
+                            "lat": p.lat,
+                            "lng": p.lng,
+                            "radius_m": p.radius_m,
+                            "updated_ms": p.updated_ms,
+                        }
+                        for p in places
+                    ],
+                )
+
+    async def places_for(self, *, circle_id: str) -> list[SavedPlace]:
+        """One circle's saved places, name-ordered for deterministic reads."""
+        stmt = (
+            sa.select(PRESENCE_PLACES)
+            .where(PRESENCE_PLACES.c.circle_id == circle_id)
+            .order_by(PRESENCE_PLACES.c.name.asc(), PRESENCE_PLACES.c.place_id.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [
+            SavedPlace(
+                circle_id=r.circle_id,
+                place_id=r.place_id,
+                name=r.name,
+                lat=r.lat,
+                lng=r.lng,
+                radius_m=r.radius_m,
+                updated_ms=r.updated_ms,
+            )
+            for r in rows
+        ]
 
     async def prune(self, *, now_ms: int) -> int:
         """Delete every fix older than the retention window. Returns the count.

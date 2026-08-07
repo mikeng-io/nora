@@ -153,3 +153,23 @@ IDX_PRESENCE_MEMBER_TS = sa.Index(
     PRESENCE_FIXES.c.person_id,
     sa.text("ts DESC"),
 )
+
+# presence_places — a circle's named landmarks («Home»), design/23 §3. STATIC
+# household names for positions, deliberately a separate table from the fixes:
+# a fix is where a person WAS (R-31-guarded), a place is somewhere the household
+# chose to name. Replaced wholesale on each collector fetch (few rows, rarely
+# changing), so the natural key is the primary key and there is no Identity
+# column and no secondary index — every read is «all places for this circle»,
+# which the PK prefix already serves.
+PRESENCE_PLACES = sa.Table(
+    "presence_places",
+    METADATA,
+    sa.Column("circle_id", sa.Text, primary_key=True),
+    sa.Column("place_id", sa.Text, primary_key=True),
+    sa.Column("name", sa.Text, nullable=False),
+    sa.Column("lat", sa.Float, nullable=False),
+    sa.Column("lng", sa.Float, nullable=False),
+    sa.Column("radius_m", sa.Float),
+    # Epoch MILLISECONDS: when Nora last saw this place on the wire.
+    sa.Column("updated_ms", sa.BigInteger, nullable=False),
+)

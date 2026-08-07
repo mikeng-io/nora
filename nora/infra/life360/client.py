@@ -36,8 +36,11 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from nora.domain.presence import SavedPlace
+
 from .http import request
 from .members import Member, parse_members
+from .places import parse_places
 
 log = logging.getLogger("nora.presence.life360")
 
@@ -52,6 +55,7 @@ log = logging.getLogger("nora.presence.life360")
 # these wrong looks like "the whole API is blocked" rather than "bad credential".
 TOKEN_URL = "https://api-cloudfront.life360.com/v3/oauth2/token.json"  # noqa: S105 — a URL, not a secret
 MEMBERS_URL = "https://api-cloudfront.life360.com/v3/circles/{circle_id}/members"
+PLACES_URL = "https://api-cloudfront.life360.com/v3/circles/{circle_id}/places"
 CIRCLES_URL = "https://api-cloudfront.life360.com/v3/circles"
 
 # The Life360 Android app's User-Agent shape — the study's missing ingredient.
@@ -86,6 +90,17 @@ class CircleRead:
 
     status: ReadStatus
     members: tuple[Member, ...] = field(default_factory=tuple)
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class PlacesRead:
+    """The typed outcome of `read_places`. `places` is populated only on `ok`
+    and may be empty — a circle with no saved places is an ordinary answer, not
+    a canary (unlike an empty members list): plenty of circles never name one."""
+
+    status: ReadStatus
+    places: tuple[SavedPlace, ...] = field(default_factory=tuple)
     detail: str = ""
 
 
@@ -131,6 +146,7 @@ class Life360Client:
         token_url: str = TOKEN_URL,
         members_url: str = MEMBERS_URL,
         circles_url: str = CIRCLES_URL,
+        places_url: str = PLACES_URL,
         timeout_seconds: float = TIMEOUT_SECONDS,
         metrics: Any = None,
     ) -> None:
@@ -141,6 +157,7 @@ class Life360Client:
         self._user_agent = user_agent
         self._token_url = token_url
         self._members_url = members_url
+        self._places_url = places_url
         self._timeout_seconds = timeout_seconds
         self._metrics = metrics
         self._token: str | None = None
@@ -180,6 +197,43 @@ class Life360Client:
                 return self._banned("fresh token still 403 — ban risk")
 
         return self._classify(result, now_ms=now_ms)
+
+    async def read_places(self, *, circle_id: str, now_ms: int) -> PlacesRead:
+        """Read one circle's saved places (design/23 §3). NEVER raises, and holds
+        the identical one-re-auth-per-read discipline as `read_circle` — the two
+        reads share the token, the credential-POST bound, and the ban-class
+        classification, because they share the account whose ban we are bounding."""
+        token = self._token
+        if token is None:
+            token = await self._authenticate()
+            if token is None:
+                return PlacesRead(
+                    ReadStatus.BANNED, detail="initial authentication failed"
+                )
+        result = await self._get(self._places_url.format(circle_id=circle_id), token)
+        if result.status == 403:
+            self._token = None
+            token = await self._authenticate()
+            if token is None:
+                return PlacesRead(ReadStatus.BANNED, detail="re-auth after 403 failed")
+            result = await self._get(
+                self._places_url.format(circle_id=circle_id), token
+            )
+            if result.status == 403:
+                return PlacesRead(
+                    ReadStatus.BANNED, detail="fresh token still 403 — ban risk"
+                )
+        if not result.ok:
+            return PlacesRead(ReadStatus.UNAVAILABLE, detail="transport failed")
+        if result.status != 200:
+            return PlacesRead(
+                ReadStatus.UNAVAILABLE, detail=f"http {result.status}"
+            )
+        if not result.is_json:
+            self._alarm("challenge")
+            return PlacesRead(ReadStatus.CHALLENGE, detail="non-JSON body")
+        places = tuple(parse_places(result.json, circle_id=circle_id, now_ms=now_ms))
+        return PlacesRead(ReadStatus.OK, places=places)
 
     async def discover(self) -> list[DiscoveredCircle]:
         """Every circle this account can see, each with its members' id + name —
@@ -255,9 +309,15 @@ class Life360Client:
         return CircleRead(ReadStatus.OK, members=members)
 
     async def _get_members(self, circle_id: str, token: str) -> Any:
+        return await self._get(self._members_url.format(circle_id=circle_id), token)
+
+    async def _get(self, url: str, token: str) -> Any:
+        """One authenticated daemon GET — the non-raising twin of `_get_json`
+        (which backs the operator CLI and raises). Both circle reads
+        (`read_circle`, `read_places`) come through here."""
         return await request(
             "GET",
-            self._members_url.format(circle_id=circle_id),
+            url,
             headers={
                 "Authorization": f"Bearer {token}",
                 "User-Agent": self._user_agent,
