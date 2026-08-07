@@ -401,9 +401,9 @@ is the gate."
 
 `mark` returns `bool` (did the row change) so the caller can distinguish a lost race from a no-op.
 
-- [ ] **Step 1: Write the contract suite first — it is the spec for both implementations**
+- [ ] **Step 1: Write the contract suite — fake only for now**
 
-**Follow the house pattern exactly** — `tests/contract/test_audit_store_contract.py:32-42` uses a **parametrized fixture**, not a class hierarchy, and runs the SQL adapter against a real Postgres via `pg_url` + `run_migrations`. Copy that shape; do not invent a `ReminderStoreContract` base class and do not expect a `pg_engine` fixture, which does not exist.
+**Follow the house pattern exactly**: `tests/contract/test_audit_store_contract.py` uses a **parametrized `store` fixture** with module-level test functions. There is no base class and no `pg_engine` fixture. The SQL parameter is added in Step 6, after the adapter exists — importing it now makes the file fail collection with `ImportError` before a single test runs.
 
 ```python
 # tests/contract/test_reminder_store_contract.py
@@ -418,13 +418,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from nora.domain.reminders import Reminder, ReminderState, ReminderStore
-from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.migrate import run_migrations
-from nora.infra.sql.reminders import SqlReminderStore
 from nora.testing.reminders import FakeReminderStore
 
 UTC = timezone.utc
 T0 = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
+LATER = T0 + timedelta(days=1)
 
 
 def _row(**kw) -> Reminder:
@@ -438,275 +436,99 @@ def _row(**kw) -> Reminder:
     return Reminder(**base)
 
 
-@pytest.fixture(params=["sql", "fake"])
+@pytest.fixture(params=["fake"])
 async def store(request):
-    if request.param == "sql":
-        pg_url = request.getfixturevalue("pg_url")
-        run_migrations(pg_url)
-        s: ReminderStore = SqlReminderStore(create_sql_engine(pg_url))
-    else:
-        s = FakeReminderStore()
+    s: ReminderStore = FakeReminderStore()
     yield s
     await s.aclose()
 
 
-class _Contract:
-    """Namespace only — the tests below are module-level functions, per house
-    style. Kept as a marker so the section reads as one suite."""
-
-
 async def test_a_created_row_is_returned_once_due(store):
-        r = _row()
+    r = _row()
+    await store.create(r)
+    assert await store.due(now=T0, limit=10) == []
+    due = await store.due(now=r.due_at, limit=10)
+    assert [x.id for x in due] == [r.id]
+
+
+async def test_due_is_ordered_by_due_at(store):
+    late = _row(due_at=T0 + timedelta(hours=2))
+    early = _row(due_at=T0 + timedelta(hours=1))
+    await store.create(late)
+    await store.create(early)
+    due = await store.due(now=T0 + timedelta(hours=3), limit=10)
+    assert [x.id for x in due] == [early.id, late.id]
+
+
+async def test_only_pending_rows_are_due(store):
+    for state in (ReminderState.DONE, ReminderState.CANCELLED,
+                  ReminderState.FAILED, ReminderState.FIRING):
+        await store.create(_row(state=state))
+    assert await store.due(now=LATER, limit=10) == []
+
+
+async def test_mark_moves_state_and_reports_the_change(store):
+    r = _row()
+    await store.create(r)
+    assert await store.mark(r.id, ReminderState.DONE,
+                            fired_at=T0, outcome="sent") is True
+    assert (await store.get(r.id)).state is ReminderState.DONE
+    assert await store.mark(uuid.uuid4(), ReminderState.DONE) is False
+
+
+async def test_cancel_is_scoped_to_the_conversation(store):
+    r = _row(conversation_id="conv-1")
+    await store.create(r)
+    assert await store.cancel(r.id, conversation_id="conv-OTHER") is False
+    assert await store.cancel(r.id, conversation_id="conv-1") is True
+    assert (await store.get(r.id)).state is ReminderState.CANCELLED
+
+
+async def test_pending_for_is_scoped_and_excludes_finished(store):
+    mine = _row(conversation_id="conv-1")
+    theirs = _row(conversation_id="conv-2")
+    done = _row(conversation_id="conv-1", state=ReminderState.DONE)
+    for r in (mine, theirs, done):
         await store.create(r)
-        assert await store.due(now=T0, limit=10) == []
-        due = await store.due(now=r.due_at, limit=10)
-        assert [x.id for x in due] == [r.id]
+    assert [x.id for x in await store.pending_for("conv-1")] == [mine.id]
 
-    @pytest.mark.asyncio
-    async def test_due_is_ordered_by_due_at(self, store):
-        late = _row(due_at=T0 + timedelta(hours=2))
-        early = _row(due_at=T0 + timedelta(hours=1))
-        await store.create(late)
-        await store.create(early)
-        due = await store.due(now=T0 + timedelta(hours=3), limit=10)
-        assert [x.id for x in due] == [early.id, late.id]
 
-    @pytest.mark.asyncio
-    async def test_only_pending_rows_are_due(self, store):
-        for state in (ReminderState.DONE, ReminderState.CANCELLED,
-                      ReminderState.FAILED, ReminderState.FIRING):
-            await store.create(_row(state=state))
-        assert await store.due(now=T0 + timedelta(days=1), limit=10) == []
+async def test_count_pending_is_per_requester(store):
+    await store.create(_row(requester_person_id="miles"))
+    await store.create(_row(requester_person_id="miles"))
+    await store.create(_row(requester_person_id="tyler"))
+    assert await store.count_pending("miles") == 2
+    assert await store.count_pending("tyler") == 1
 
-    @pytest.mark.asyncio
-    async def test_mark_moves_state_and_reports_the_change(self, store):
-        r = _row()
-        await store.create(r)
-        assert await store.mark(r.id, ReminderState.DONE,
-                                fired_at=T0, outcome="sent") is True
-        assert await store.due(now=T0 + timedelta(days=1), limit=10) == []
-        assert await store.mark(uuid.uuid4(), ReminderState.DONE) is False
 
-    @pytest.mark.asyncio
-    async def test_cancel_is_scoped_to_the_conversation(self, store):
-        r = _row(conversation_id="conv-1")
-        await store.create(r)
-        assert await store.cancel(r.id, conversation_id="conv-OTHER") is False
-        assert await store.cancel(r.id, conversation_id="conv-1") is True
-        assert await store.pending_for("conv-1") == []
+async def test_sweep_resolves_firing_rows_to_failed(store):
+    """§8.2: at-most-once. A crash mid-fire loses that reminder, visibly. It is
+    NEVER re-queued — re-queueing double-sends anything that crashed after
+    egress, and nothing links a row to its delivered message.
 
-    @pytest.mark.asyncio
-    async def test_pending_for_is_scoped_and_excludes_finished(self, store):
-        mine = _row(conversation_id="conv-1")
-        theirs = _row(conversation_id="conv-2")
-        done = _row(conversation_id="conv-1", state=ReminderState.DONE)
-        for r in (mine, theirs, done):
-            await store.create(r)
-        assert [x.id for x in await store.pending_for("conv-1")] == [mine.id]
+    The assertion reads the TERMINAL STATE via get(). An earlier draft asserted
+    only that the row vanished from due(), which stays green if the sweep moves
+    FIRING to anything at all — decorative, per CLAUDE.md."""
+    stuck = _row(state=ReminderState.FIRING)
+    ok = _row(state=ReminderState.PENDING)
+    await store.create(stuck)
+    await store.create(ok)
 
-    @pytest.mark.asyncio
-    async def test_count_pending_is_per_requester(self, store):
-        await store.create(_row(requester_person_id="miles"))
-        await store.create(_row(requester_person_id="miles"))
-        await store.create(_row(requester_person_id="tyler"))
-        assert await store.count_pending("miles") == 2
-        assert await store.count_pending("tyler") == 1
-
-    @pytest.mark.asyncio
-    async def test_sweep_resolves_firing_rows_to_failed(self, store):
-        """§8.2: at-most-once. A crash mid-fire loses that reminder, visibly.
-        It is NEVER re-queued — re-queueing double-sends anything that crashed
-        after egress, and nothing links a row to its delivered message."""
-        stuck = _row(state=ReminderState.FIRING)
-        ok = _row(state=ReminderState.PENDING)
-        await store.create(stuck)
-        await store.create(ok)
     assert await store.sweep_firing() == 1
+
     swept = await store.get(stuck.id)
     assert swept is not None
-    assert swept.state is ReminderState.FAILED       # observed, not inferred
+    assert swept.state is ReminderState.FAILED
     assert swept.outcome == "failed_error"
     assert (await store.get(ok.id)).state is ReminderState.PENDING
 ```
 
-- [ ] **Step 2: Bind the suite to the fake and watch it fail**
+- [ ] **Step 2: Run it and watch it fail**
 
-```python
-# append to tests/contract/test_reminder_store_contract.py
-from nora.testing.reminders import FakeReminderStore
-
-
-class TestFakeReminderStore(ReminderStoreContract):
-    @pytest.fixture
-    def store(self):
-        return FakeReminderStore()
-```
-
-Run: `uv run pytest tests/contract/test_reminder_store_contract.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'nora.domain.reminders'`
+Run: `cd /tmp/nora-reminders && uv run pytest tests/contract/test_reminder_store_contract.py -v`
+Expected: FAIL at collection — `ModuleNotFoundError: No module named 'nora.domain.reminders'`
 
 - [ ] **Step 3: Write the port**
-
-```python
-# nora/domain/reminders.py
-"""The reminders port. A reminder is a DEFERRED REQUEST: the row stores the
-requester's own sentence, and at fire time it is put to Nora as a request
-(spec §2). One-shot — a row fires once, ever."""
-
-from __future__ import annotations
-
-from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import datetime
-from enum import StrEnum
-from typing import Protocol
-from uuid import UUID
-
-
-class ReminderState(StrEnum):
-    PENDING = "pending"
-    FIRING = "firing"
-    DONE = "done"
-    CANCELLED = "cancelled"
-    FAILED = "failed"
-
-
-@dataclass(frozen=True, slots=True)
-class Reminder:
-    id: UUID
-    requester_person_id: str
-    platform: str
-    conversation_id: str
-    conversation_type: str
-    text: str
-    created_at: datetime
-    due_at: datetime
-    state: ReminderState
-    fired_at: datetime | None
-    outcome: str | None
-
-
-class ReminderStore(Protocol):
-    async def create(self, reminder: Reminder) -> None: ...
-
-    async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
-        """PENDING rows whose `due_at` has passed, oldest first."""
-        ...
-
-    async def pending_for(self, conversation_id: str) -> Sequence[Reminder]: ...
-
-    async def count_pending(self, requester_person_id: str) -> int: ...
-
-    async def mark(
-        self, reminder_id: UUID, state: ReminderState, *,
-        fired_at: datetime | None = None, outcome: str | None = None,
-    ) -> bool:
-        """True if a row changed. False means it was already resolved."""
-        ...
-
-    async def cancel(self, reminder_id: UUID, *, conversation_id: str) -> bool:
-        """Scoped on purpose: a uuid carries none of its own (§7.3)."""
-        ...
-
-    async def get(self, reminder_id: UUID) -> Reminder | None:
-        """Read one row by id. Exists so the contract suite can assert the
-        TERMINAL STATE of a swept row — without it no test can distinguish
-        `FIRING -> FAILED` from `FIRING -> anything else`, because `due()`
-        excludes both, and §8.2's at-most-once decision rests on exactly that
-        distinction."""
-        ...
-
-    async def sweep_firing(self) -> int:
-        """Boot recovery. FIRING rows resolve to FAILED and are never
-        re-fired (§8.2, at-most-once). Returns how many."""
-        ...
-
-    async def aclose(self) -> None: ...
-```
-
-- [ ] **Step 4: Write the fake**
-
-```python
-# nora/testing/reminders.py
-from __future__ import annotations
-
-from collections.abc import Sequence
-from dataclasses import replace
-from datetime import datetime
-from uuid import UUID
-
-from nora.domain.reminders import Reminder, ReminderState
-
-
-class FakeReminderStore:
-    """In-memory ReminderStore. Passes tests/contract/test_reminder_store_contract.py."""
-
-    def __init__(self) -> None:
-        self._rows: dict[UUID, Reminder] = {}
-
-    async def create(self, reminder: Reminder) -> None:
-        self._rows[reminder.id] = reminder
-
-    async def due(self, *, now: datetime, limit: int) -> Sequence[Reminder]:
-        rows = [
-            r for r in self._rows.values()
-            if r.state is ReminderState.PENDING and r.due_at <= now
-        ]
-        return sorted(rows, key=lambda r: r.due_at)[:limit]
-
-    async def pending_for(self, conversation_id: str) -> Sequence[Reminder]:
-        return sorted(
-            (r for r in self._rows.values()
-             if r.conversation_id == conversation_id
-             and r.state is ReminderState.PENDING),
-            key=lambda r: r.due_at,
-        )
-
-    async def count_pending(self, requester_person_id: str) -> int:
-        return sum(
-            1 for r in self._rows.values()
-            if r.requester_person_id == requester_person_id
-            and r.state is ReminderState.PENDING
-        )
-
-    async def mark(
-        self, reminder_id: UUID, state: ReminderState, *,
-        fired_at: datetime | None = None, outcome: str | None = None,
-    ) -> bool:
-        row = self._rows.get(reminder_id)
-        if row is None:
-            return False
-        self._rows[reminder_id] = replace(
-            row, state=state,
-            fired_at=fired_at if fired_at is not None else row.fired_at,
-            outcome=outcome if outcome is not None else row.outcome,
-        )
-        return True
-
-    async def cancel(self, reminder_id: UUID, *, conversation_id: str) -> bool:
-        row = self._rows.get(reminder_id)
-        if row is None or row.conversation_id != conversation_id:
-            return False
-        if row.state is not ReminderState.PENDING:
-            return False
-        self._rows[reminder_id] = replace(row, state=ReminderState.CANCELLED)
-        return True
-
-    async def sweep_firing(self) -> int:
-        stuck = [r for r in self._rows.values() if r.state is ReminderState.FIRING]
-        for r in stuck:
-            self._rows[r.id] = replace(r, state=ReminderState.FAILED,
-                                       outcome="failed_error")
-        return len(stuck)
-
-    async def aclose(self) -> None:
-        return None
-```
-
-- [ ] **Step 5: Run the contract suite against the fake**
-
-Run: `uv run pytest tests/contract/test_reminder_store_contract.py -v`
-Expected: 8 passed
 
 - [ ] **Step 6: Add the table to `schema.py` and hand-write the migration**
 
@@ -738,19 +560,33 @@ IDX_REMINDERS_DUE = sa.Index("idx_reminders_due", REMINDERS.c.state, REMINDERS.c
 
 The migration is hand-written for the same reason `idx_messages_conv_ts` is: `alembic check` cannot see the CHECK constraint, so an autogenerated revision would look correct and drift.
 
-- [ ] **Step 7: Write `SqlReminderStore`, bind it to the contract suite, run both**
+- [ ] **Step 7: Write `SqlReminderStore`, then widen the fixture to both**
 
-Follow the existing adapter pattern in `nora/infra/sql/audit.py` (engine through `__init__`, `async with self._engine.begin()`). Then:
+Follow `nora/infra/sql/audit.py` (engine through `__init__`, `async with self._engine.begin()`).
+
+Then widen the *existing* fixture — do not add a class:
 
 ```python
-class TestSqlReminderStore(ReminderStoreContract):
-    @pytest.fixture
-    async def store(self, pg_engine):
-        return SqlReminderStore(engine=pg_engine)
+# tests/contract/test_reminder_store_contract.py — replace the fixture
+from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.migrations_runner import run_migrations   # NOT nora.infra.sql.migrate
+from nora.infra.sql.reminders import SqlReminderStore
+
+
+@pytest.fixture(params=["sql", "fake"])
+async def store(request):
+    if request.param == "sql":
+        pg_url = request.getfixturevalue("pg_url")
+        run_migrations(pg_url)
+        s: ReminderStore = SqlReminderStore(create_sql_engine(pg_url))
+    else:
+        s = FakeReminderStore()
+    yield s
+    await s.aclose()
 ```
 
 Run: `uv run pytest tests/contract/test_reminder_store_contract.py tests/infra/test_schema_parity.py -v`
-Expected: 16 passed (8 per implementation) + parity green.
+Expected: **16 passed** (8 tests × 2 parameters) + parity green.
 
 - [ ] **Step 8: Gates, then commit**
 
@@ -1166,16 +1002,12 @@ async def test_the_slot_is_released_even_when_fire_raises():
     assert metrics.get("nora_reminders_fired_total", outcome="failed_error") == 1
 
 
-async def test_recover_sweeps_firing_rows_to_failed():
-    """§8.2 at-most-once. Runs at boot regardless of [heartbeat] enabled."""
-    store = FakeReminderStore()
-    stuck = _row(state=ReminderState.FIRING)
-    await store.create(stuck)
-    loop, _ = _build(store=store)
-
-    await loop.recover()
-
-    assert (await store.get(stuck.id)).state is ReminderState.FAILED
+# NOTE: there is deliberately no `HeartbeatLoop.recover()`. Boot recovery is
+# `ReminderStore.sweep_firing()`, called directly in composition.py and
+# UNCONDITIONALLY — see Step 7. Putting it on the loop would make it dead code
+# whenever [heartbeat] enabled = false, which is exactly when a stranded FIRING
+# row most needs sweeping. Its behaviour is covered by
+# tests/contract/test_reminder_store_contract.py::test_sweep_resolves_firing_rows_to_failed.
 ```
 
 Every fixture, helper and name above is defined in the file. `_build` exists so no test constructs `HeartbeatLoop` positionally with `Ellipsis`, which an earlier draft did.
@@ -1231,9 +1063,9 @@ Append to `_COUNTERS`/`_GAUGES` in `nora/obs/metric_specs.py`:
 
 **The liveness gauge must not be published from inside the tick body.** Store `last_tick_at` on the loop and compute the age at scrape time. The presence collector publishes from inside its loop, so a dead loop freezes its gauge — the opposite of what a liveness signal is for. Copy the intent, not the code.
 
-- [ ] **Step 5: Write `HeartbeatLoop`** with `tick()`, `recover()` and `run()` (the `while True` that `BackgroundTasks.spawn` drives, following `prune_loop`'s never-die discipline at `nora/app/runtime.py:109-117`).
+- [ ] **Step 5: Write `HeartbeatLoop`** with `tick()` and `run()` (the `while True` that `BackgroundTasks.spawn` drives, following `prune_loop`'s never-die discipline at `nora/app/runtime.py:109-117`).
 
-- [ ] **Step 6: Run** — Expected: 7 passed
+- [ ] **Step 6: Run** — Expected: 6 passed
 
 - [ ] **Step 7: Wire into `composition.py`**
 
@@ -1243,7 +1075,12 @@ Same `slots` instance as the pipeline. Two things an earlier draft got wrong:
 - **`recover()` runs unconditionally at startup**, *not* behind `cfg.heartbeat.enabled`. Gating it means that when the heartbeat is switched off, `FIRING` rows left by a crash stay stuck forever and §8.2's at-most-once guarantee silently stops applying. Only the `run()` loop is gated.
 
 ```python
-reminders = SqlReminderStore(create_sql_engine(cfg.database.url))
+# REUSE the engine already in scope at composition.py:188. That module
+# documents "ONE engine (one pool) shared by the record store and the presence
+# reader", and audit.aclose() disposes it for everything — a second
+# create_sql_engine() forks the pool and its aclose() tears down the shared one.
+# (`cfg.database.url` does not exist; Config has `store: StoreConfig`.)
+reminders = SqlReminderStore(engine)
 await reminders.sweep_firing()          # §8.2 boot recovery — ALWAYS, not gated
 if cfg.heartbeat.enabled:
     heartbeat = HeartbeatLoop(store=reminders, slots=slots, policy=policy,
@@ -1261,7 +1098,7 @@ if cfg.heartbeat.enabled:
 
 **Files:**
 - Create: `nora/app/fire.py`
-- Modify: `nora/agent/prefill.py` (header parameter), `nora/agent/room.py` (tagger property), `nora/obs/metric_specs.py` (`audience` label), `nora/engagement/stages/{deliver,invoke}.py` + `nora/engagement/pipeline.py` + `nora/agent/guards.py` (pass `audience`), `tests/test_metrics_export.py`, `tests/test_metrics_stub.py`, `docs/runbook.md`
+- Modify: `nora/agent/prefill.py` (header parameter), `nora/agent/registry.py` + `nora/agent/tools.py` (the `fire_turn` keyword — **Task 5 owns it, not Task 6**, because Task 5 is the first caller), `nora/obs/metric_specs.py` (`audience` label), `nora/engagement/stages/{deliver,invoke}.py` + `nora/engagement/pipeline.py` + `nora/agent/guards.py` (pass `audience`), `tests/test_metrics_export.py`, `tests/test_metrics_stub.py`, `docs/runbook.md`
 - Test: `tests/unit/test_fire_path.py`
 
 - [ ] **Step 1: Enumerate the call sites with AST, not grep**
@@ -1296,13 +1133,23 @@ its output rather than its count.
 - [ ] **Step 2: Write the failing test for the synthetic context**
 
 ```python
-def test_the_fire_turn_carries_the_requester(fire_path, reminder):
+def _reminder() -> Reminder:
+    return Reminder(
+        id=uuid.uuid4(), requester_person_id="miles", platform="signal",
+        conversation_id="conv-1", conversation_type="group",
+        text="幫我睇下 Tyler 喺邊", created_at=T0, due_at=T0,
+        state=ReminderState.FIRING, fired_at=None, outcome=None,
+    )
+
+
+def test_the_fire_turn_carries_the_requester(fire_path: FirePath):
+    reminder = _reminder()
     """The trap this test exists for: blanking sender_id is correct for
     reactions (indicate.begin returns None on a falsy author) and wrong for
     everything that reads it. A blank sender_id resolves to tagger=None, which
     empties peer_card, makes Room.scope() unavailable, and makes search_memory
     refuse."""
-    ctx = fire_path.build_context(reminder)
+    ctx = fire_path.build_context([reminder])
     assert ctx.tagger is not None
     assert ctx.tagger.person_id == reminder.requester_person_id
     assert ctx.message.body == reminder.text          # the request itself
@@ -1321,7 +1168,27 @@ def test_the_fire_turn_carries_the_requester(fire_path, reminder):
 
 - [ ] **Step 6: `build_prefill` gains `header:`** — parameterise, do not duplicate. R-13/R-13b escaping is pinned to `build_prefill` by `tests/test_acceptance_rules.py:27-28`; a hand-rolled fire prefill would sit outside both named tests. The set-at and due-at facts go in the header, never the body — the body stays the requester's sentence or §2's premise breaks.
 
-- [ ] **Step 7: Write `FirePath.run(rows) -> str`** — build `TagContext`, `MentionRenderer.rehydrate`, doctrine at `applies_to="heartbeat"`, `ToolRegistry.build(..., fire_turn=True)`, `runner.invoke` inside its own `asyncio.wait_for` with `[heartbeat] timeout_seconds`, `deliver.build` + `Deliverer`, `feedback.run`. Do **not** call `invoke.run` or `deliver.check_outcome` — both own metric branches the fire path must account for itself.
+- [ ] **Step 6b: Thread `fire_turn` through the registry — Task 5 owns this**
+
+Nothing carries turn provenance today. `ToolRegistry.build` is
+`build(self, *, store, conversation_id, conversation_type, persons, honcho, deliverer, metrics, room, question="", context_window=40)`
+— no `fire_turn`. Add `fire_turn: bool = False` to `build_tool_specs`,
+`ToolRegistry.specs()` and `ToolRegistry.build()`, defaulting False so every
+existing caller is unchanged.
+
+This is legitimate against the registry docstring's "must not become one" bar:
+that bar is about registry-owned **collaborators**, not per-turn values.
+
+Task 6 consumes the flag (`remind` refuses when it is True). It cannot be added
+there — Task 5 runs first and calls `build(..., fire_turn=True)`.
+
+- [ ] **Step 7: Write `FirePath` — `build_context(rows)` and `async run(rows) -> str`**
+
+Two public methods, because the test in Step 2 exercises context assembly
+without a model:
+- `build_context(rows: Sequence[Reminder]) -> TagContext` — §6.4's table
+- `async run(rows: Sequence[Reminder]) -> str` — returns the §8.1 outcome, and
+  is what Task 4's `fire` parameter is typed against (`Awaitable[str]`) — build `TagContext`, `MentionRenderer.rehydrate`, doctrine at `applies_to="heartbeat"`, `ToolRegistry.build(..., fire_turn=True)`, `runner.invoke` inside its own `asyncio.wait_for` with `[heartbeat] timeout_seconds`, `deliver.build` + `Deliverer`, `feedback.run`. Do **not** call `invoke.run` or `deliver.check_outcome` — both own metric branches the fire path must account for itself.
 
 - [ ] **Step 8: Run, gates, commit.**
 
