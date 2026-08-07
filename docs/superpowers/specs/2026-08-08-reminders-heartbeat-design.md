@@ -1,119 +1,127 @@
 ---
 kind: spec
-title: "Reminders + heartbeat — a deferred message, re-decided at fire time"
-description: "Design for Nora's first unprompted-speech path: a cron-shaped heartbeat loop, a one-shot reminders table, and an injector that replays a held sentence into the ordinary agent pipeline. Establishes that a reminder is a deferred MESSAGE (not stored text to echo), that the fire turn RE-DECIDES rather than plays back, and that silence must be a tool call rather than an absence."
-tags: [nora, spec, reminders, heartbeat, proactive, honcho, doctrine]
+title: "Reminders + heartbeat — a deferred request, fired on its own path"
+description: "Nora's first unprompted-speech path. A tick selects due rows from a one-shot reminders table and runs them through a DEDICATED fire path — not the tag pipeline — because the tag pipeline's ingest gating, trigger text, audit write, memory feed, debounce, flood-shed and reaction placement are all wrong for a synthetic event. v2 after three independent reviews found v1's pipeline-reuse premise false and two live-path regressions."
+tags: [nora, spec, reminders, heartbeat, proactive, doctrine]
 timestamp: '2026-08-08'
-status: draft — awaiting review
+status: draft v2 — v1 failed review, rewritten against the findings
 derives_from:
   - design/01-ambient-ingest.md
-  - design/09-decision-index.md
   - design/11-recall-and-threading.md
   - design/12-prompt-tool-skill-boundaries.md
+  - design/17-prompt-substrate.md
   - design/proposed/19-presence-collector.md
-supersedes: "the `heartbeat ↔ note ↔ reminder` bullet in .claude/.../memory/future-ideas-backlog.md"
+  - design/proposed/20-postgres-migration.md
+  - docs/superpowers/specs/2026-08-08-turn-budget-finding.md
+supersedes: "v1 of this file (2026-08-08, same path) — see §0.1"
 ---
 
 # Reminders + heartbeat
 
 ## 0. What this document is
 
-The design settled in the 2026-08-08 brainstorm, written down before implementation.
-It covers Nora's **first unprompted-speech path**: until now she has only ever
-spoken in response to a tag.
+Nora's **first unprompted-speech path**. Until now she has only spoken in
+response to a tag.
 
-It resolves three things the backlog left open:
+**Scope note.** `heartbeat` here is a scheduling loop, unrelated to
+`nora.obs.logging.heartbeat` (a 60s counters log line, `nora/obs/logging.py:130`).
+The log line has seniority; if review finds the collision confusing, **this**
+design renames. Recorded once, here, and not restated elsewhere.
 
-1. **`note()` is dissolved, not deferred.** See §1.
-2. **A reminder is a deferred *message*, not stored text to echo.** See §2.
-3. **The fire turn re-decides; it does not play back.** See §6.
+### 0.1 What changed from v1, and why
 
-**Scope note.** `heartbeat` here is a scheduling loop. It is *unrelated* to the
-existing `nora.obs.logging.heartbeat`, which is a 60-second counters log line.
-Same word, different job. If the collision proves confusing in review, this one
-renames — the log line has seniority.
+v1 was reviewed by three independent agents (fact-check, adversarial, quality).
+It failed. Three findings were fatal, and each is verified against source:
+
+1. **v1's central claim — "the injector reuses the pipeline unchanged" — is
+   false in both directions.** Through `Dispatcher.on_message` the trigger gate
+   rejects a reminder (its text contains no trigger), `audit_stage` writes the
+   synthetic message into `messages` as something the requester really said, and
+   `memory_feed_stage` feeds it to Honcho **under their peer**
+   (`nora/ingest/stages/memory_feed.py:47-52`) — the design would poison the
+   store its own staleness check reads. Through `EngagementPipeline.run`
+   directly, `policy.toml` gating is skipped entirely, because that gating lives
+   in **ingest** (`nora/ingest/pipeline.py:106-152`), not engagement.
+2. **v1's `stand_down` regressed the live tag path.**
+   `ReplyGuard._terminal_budget_spent` is an **AND over every terminal tool**
+   (`nora/agent/guards.py:412-414`): a second terminal verb means an ordinary tag
+   turn never reaches its hard stop after `send_reply`×3. There is a pinned
+   invariant — `tests/test_guards_terminal.py:185`,
+   `terminal_tools() == frozenset({"send_reply"})`.
+3. **v1 analysed the wrong budget.** `[llm] timeout_seconds = 30` wraps the whole
+   loop in one `asyncio.wait_for` (`nora/engagement/stages/invoke.py:99`).
+   `ask_memory` is measured at **14–19s** (`nora/agent/tools.py:294`). v1's fire
+   turn blew wall-clock long before tokens.
+
+v2's response is structural, not cosmetic: **a dedicated fire path** (§5), **no
+new terminal verb** (§6.1), and **no staleness check in v1** (§11).
+
+Three v1 conveniences are also withdrawn, each because a reviewer showed the
+mechanism forbids it — §7.2 (no `target` parameter), §7.3 (no prefill block),
+§7.4 (read-only CLI).
 
 ---
 
-## 1. What is NOT being built, and why
+## 1. What is NOT being built
 
-### 1.1 `note()` — dissolved
+### 1.1 `note()` — dissolved, not deferred
 
-The original backlog entry paired `reminder` with a `note()` scratchpad: Nora
-writing things down for herself, unprompted.
+The test applied: *name one thing Nora should write to herself that is neither a
+fact about a person nor a timed reminder.* Nothing survived it. The fuzzy side is
+covered by `about` / `ask_memory` / `search_memory` (DEC-68, shipped `21f9712`).
 
-It is not being built, and the reason is not "later" — it is that **its consumer
-does not exist and its content belongs elsewhere.**
-
-- What separates a scratchpad from Honcho is **lifecycle**: Honcho remembers what
-  *was true*; a scratchpad holds what is *unfinished*. Honcho has no
-  representation of "still open."
-- But everything Nora would actually write to herself is either *a fact about a
-  person* (Honcho's `about` / `ask_memory`) or *a thing due at a time* (the
-  reminders table below). Nothing was left over.
-- The operator's own recall topology — `about()` (representation),
-  `search_memory()`, `ask_memory()` — already covers the fuzzy side, and
-  `search_memory` shipped in `21f9712` (DEC-68).
-
-**The test applied:** name one thing Nora should write to herself that is
-neither a fact about a person nor a timed reminder. Nothing survived it.
-
-Delete the `note` half of the backlog entry rather than leaving it as phantom
-scope.
+Delete the `note` half of the backlog entry rather than leaving phantom scope.
 
 ### 1.2 Recurring reminders — not in v1
 
-A recurring row *is* the runaway shape. One-shot only; see §8.
+A recurring row *is* the runaway shape (§9).
 
-### 1.3 A `list_reminders` tool — replaced by prefill
+### 1.3 The staleness check — not in v1
 
-See §7.3. She needs the pending set on every turn, not on request.
+See §11. Three independent mechanisms block it, and every shipped agent fires
+reminders unconditionally (§15.1).
+
+### 1.4 A second terminal verb — never
+
+§6.1. `stand_down` was v1's answer to "she may decide not to speak" and it
+regresses every tag turn.
 
 ---
 
 ## 2. The core idea
 
-> **A reminder is a deferred message.** The row stores *the requester's sentence*,
-> and at fire time it is delivered to Nora as if they had just said it.
+> **A reminder is a deferred request.** The row stores *the requester's own
+> sentence*; at fire time it is put to Nora as a request, and she answers it.
 
-This is the whole design, and everything else follows from it.
+The alternative — a structured payload naming an action — was rejected against
+one case: 「幫我睇下 Tyler 喺邊」, whose payload is not text to send but an
+instruction requiring a tool call at fire time. Storing the sentence needs no
+action types and no dispatch table, and gives one property worth stating:
 
-The alternative — a structured payload describing an action to perform — was
-rejected against a single test case: 「幫我睇下 Tyler 喺邊」. That reminder's
-payload is not text to send; it is an *instruction requiring a tool call at fire
-time*. A payload schema would have needed action types, a dispatch table, and a
-new entry per capability.
+**Every capability Nora gains later is automatically remindable.**
 
-Storing the sentence needs none of that, and gives a property worth stating
-explicitly:
-
-**Every capability Nora gains later is automatically remindable.** `route`,
-`transit`, `search_memory`, whatever comes next — nothing to wire.
-
-Consequence for §6: because the row is a *request*, not a *message*, the fire
-turn is an ordinary agent turn. There is no second way to speak.
+v1 called this "a deferred *message*" and then, four paragraphs later, "a
+request, not a message." **It is a request.** The word matters: a *message*
+implies replay through the message pipeline, which is exactly the mistake §0.1
+records.
 
 ---
 
-## 3. Architecture — three parts, deliberately separate
+## 3. Architecture
 
-| part | knows | does not know | owns |
-|---|---|---|---|
-| **heartbeat** | that time has passed | why it matters | tick cadence, liveness, crash recovery, "already fired?" |
-| **reminder row** | why it matters | that time has passed | text, target, requester, `due_at`, state |
-| **injector** | how to make a turn | either of the above | building the synthetic inbound event |
+| part | knows | owns |
+|---|---|---|
+| **heartbeat** | that time has passed | tick cadence, liveness, crash recovery, "already fired?" |
+| **reminder row** | why it matters | text, conversation, requester, `due_at`, state |
+| **fire path** | how to run one turn | prompt assembly, invoke, deliver, outcome |
 
-Neither of the first two is useful alone: a row with no loop is never read; a
-loop with no rows ticks forever doing nothing.
+**Nora never touches the tick.** No tool starts, stops, skips or schedules it.
+It is infrastructure in the sense the Signal listener's receive loop is
+infrastructure. Her only decisions are *whether to write a row* and *what to do
+when one is put to her*.
 
-**Nora never touches the tick.** There is no tool to start, stop, skip or
-schedule it, and there must not be. The tick is infrastructure in exactly the
-sense the Signal listener's receive loop is infrastructure — she does not decide
-to receive messages either. Her only two decisions are *whether to write a row*
-(request time) and *what to do when rows are handed to her* (fire time).
-
-The precedent for the loop's shape is `nora/presence/collector.py`: sleep-and-
-repeat, its own liveness, dedup by state rather than by memory.
+Loop shape follows `nora/presence/collector.py` — sleep-and-repeat, dedup by
+stored state rather than memory, its own liveness gauge.
 
 ---
 
@@ -121,492 +129,509 @@ repeat, its own liveness, dedup by state rather than by memory.
 
 ```
 reminders
-  id                       uuid pk
-  requester_person_id      text not null      -- identity.toml person_id (DEC-14)
-  target_conversation_id   text not null      -- where the reply goes
-  text                     text not null      -- the requester's own sentence
-  created_at               timestamptz not null
-  due_at                   timestamptz not null
-  state                    text not null      -- pending | firing | done | cancelled
-  fired_at                 timestamptz null
+  id                     uuid pk
+  requester_person_id    text        not null    -- identity.toml person_id (DEC-14)
+  conversation_id        text        not null    -- where it was set AND where it fires (§7.2)
+  text                   text        not null    -- the requester's own sentence
+  created_at             timestamptz not null
+  due_at                 timestamptz not null    -- UTC; see §7.1 on timezone
+  state                  text        not null    -- pending|firing|done|cancelled|failed
+  fired_at               timestamptz null
+  tag_id                 text        null        -- set when the fire turn starts (§8.2)
+  outcome                text        null        -- what happened: sent|silent|failed_*
 ```
 
-Index on `(state, due_at)` — the tick's only query.
+`state` is CHECK-constrained. The migration is **hand-written**; the schema gate
+is `tests/infra/test_schema_parity.py`, not `alembic check`, which is blind to
+CHECK constraints (CLAUDE.md).
 
-**One-shot.** A row fires once, ever. Double-firing is impossible by state
-machine, not by care.
+Index: `idx_reminders_due` on `(state, due_at)`, named explicitly — CLAUDE.md
+carries a standing warning about unnamed/autogenerated indexes.
 
-**`state` is a CHECK-constrained enum.** Note for whoever writes the migration:
-the schema gate is `tests/infra/test_schema_parity.py`, **not** `alembic check`,
-which is blind to CHECK constraints (CLAUDE.md).
+**One-shot.** A row fires once, ever.
+
+`tag_id` and `outcome` exist because of §8.2: without a link from a row to the
+turn it produced, the boot sweep cannot tell "crashed before egress" from
+"crashed after egress", and v1's "either re-queued or reported" was an unresolved
+fork presented as a design.
 
 ---
 
-## 5. The loop
+## 5. The fire path — dedicated, not the tag pipeline
+
+This is v2's central change.
 
 ```
 every [heartbeat] tick_seconds:
-    rows = SELECT * FROM reminders
-           WHERE state = 'pending' AND due_at <= now()
-    if not rows:
-        continue                      # the overwhelmingly common case
-    mark rows 'firing'
-    inject ONE batched turn (§6)
-    mark rows 'done' after successful egress
+    rows = SELECT … WHERE state='pending' AND due_at <= now()
+           ORDER BY due_at
+    for each conversation_id group:              # §5.2
+        re-check policy for that conversation    # §5.1
+        mark rows 'firing', stamp tag_id
+        run ONE fire turn
+        record outcome, mark done|failed
 ```
 
-**Placement: in-process**, via `BackgroundTasks.spawn` (`nora/app/runtime.py:41`)
-— *not* a separate daemon. The presence collector is a separate process precisely
-because it must never touch the agent (DEC-55). This loop must. The reasoning
-that separated one argues for keeping the other joined.
+The fire path **composes the same stage functions** as the tag pipeline where
+they fit, and **explicitly does not use** the ones that do not. Being explicit
+about the second list is the point:
 
-**Boot recovery:** rows left in `firing` by a crash are swept on the first tick
-after start — either re-queued or reported. The state column is what makes this
-possible; an in-memory timer would simply lose them.
+| stage | fire path | why |
+|---|---|---|
+| ingest scope/sender allowlist | **re-implemented at fire time** | lives in ingest; must still hold, and must hold *now* — not at `remind()` time, up to 30 days earlier |
+| trigger-text gate | **not used** | the reminder text contains no trigger; forging one would corrupt the stored sentence |
+| `audit_stage` (write to `messages`) | **not used** | would fabricate a message the requester never sent |
+| `memory_feed_stage` | **not used** | would feed Honcho a sentence under the requester's peer, at the wrong time |
+| `admission` (debounce R-9, flood-shed R-30, self-tag R-12) | **not used** | §5.3 |
+| per-conversation serialisation | **used, via the same queue key** | §5.3 |
+| doctrine + prefill | **own assembly** | §10 |
+| `invoke` | **used, own timeout** | §5.4 |
+| `deliver` / `Deliverer` | **used** | the only caller of `adapter.send` stays the only caller |
+| `indicate` (👀/✅/⚠️) | **not used** | §5.5 |
+| `LeakGuard` / R-18 on egress | **used** | unchanged |
 
-### 5.1 The timing contract
+### 5.1 Policy is re-checked at fire time
 
-> A reminder fires **at or after** `due_at`, **never before**, within **one tick**.
+`policy.toml` is deny-by-default and loaded once at startup. A reminder may be 30
+days old; trust can be withdrawn in between. **The fire path re-runs the room and
+sender checks immediately before firing.** A row whose conversation or requester
+is no longer permitted resolves `failed`/`cancelled` and never fires.
 
-"Never early" is the invariant. Early is *wrong*; 40 seconds late is just a
-reminder.
+v1 claimed policy applied "unchanged" via pipeline reuse. It did not apply at all.
 
-Resolution is a free config knob — the query is one indexed lookup on a Postgres
-already running, so `tick_seconds` can be tuned from 60 down to 15 with no code
-change and no meaningful cost. `reminder` is an abstraction over the tick, and
-**the tick is the resolution floor**; publishing that floor is what keeps the
-abstraction honest.
+### 5.2 Batching is per conversation, never across
 
-Sleep-until-next-due (sub-second accuracy, near-zero wakeups) was considered and
-rejected for v1: it needs an `asyncio.Event` to interrupt a long sleep when a new
-row is written, plus a max-sleep cap so a missed signal or clock jump cannot
-strand a row. That is a state machine where a `while True` suffices. If precision
-is ever wanted, lowering `tick_seconds` buys it with zero new code.
+v1 said "all rows due in one tick become one turn." A turn has exactly one
+conversation scope — one `Room`, one policy decision, one `Deliverer` binding
+(R-3). Rows for two conversations **cannot** share a turn without leaking one
+room's reminder into the other.
 
-### 5.2 Batching
+**Group by `conversation_id`; one turn per group.** At realistic volume every
+group has one row.
 
-All rows due in one tick become **one** turn, not one turn each.
+### 5.3 Serialisation without admission
 
-At realistic volume the count is 0 or 1 almost always, so batching degenerates to
-the simple case; on the rare tick with two, the result is one coherent message
-rather than two robots talking over each other.
+The fire turn must not run concurrently with a tag in the same conversation, but
+it must not go through `admission.run` either, because that path can **drop it**:
 
-**The heartbeat owns the state, not Nora.** She is never given a "mark done"
-tool. If she is handed three and mentions two, that is a voice failure — visible
-in the transcript — not a state corruption that re-fires tomorrow.
+- **R-9 debounce** (`admission.py:84`, `min_interval_seconds = 5`) rejects a fire
+  turn arriving within 5s of a tag — and, worse, a fire turn passing through
+  would *consume* the debounce window, so a human tagging Nora just after an
+  unprompted message gets nothing.
+- **R-30 flood-shed** (`admission.py:90`, `max_depth = 16`) sheds the *newest*
+  arrival — always the fire turn, which has waited hours.
+- **R-12 self-tag** rejects if the synthetic sender resolves to Nora.
+
+So the fire path takes the **conversation queue lock directly** (same key as the
+tag path, so mutual exclusion holds) and **waits** rather than being shed. A tick
+that cannot get the lock leaves the rows `pending` and retries next tick — which
+is correct, because a reminder is not time-critical to the second and the row is
+still there.
+
+### 5.4 Its own timeout
+
+`[heartbeat] timeout_seconds`, separate from `[llm] timeout_seconds = 30`.
+
+The 30s value is a *conversational* budget sized for a human watching a typing
+indicator. Nobody watches a fire turn. This is the knob v1 should have made
+per-audience — not `turns` (§12.1).
+
+### 5.5 No reactions
+
+`indicate.begin` reacts to the inbound message's `(author, timestamp)`
+(`nora/engagement/stages/indicate.py:255-262`). A synthetic event has neither.
+Fabricating them means either failed `sendReaction` calls on every tick or — if a
+fabricated timestamp collides — 👀 and ⚠️ landing on an unrelated old message.
+
+Consequence: a fire turn that delivers nothing shows **no ⚠️ in the room**, which
+is correct. ⚠️ means "done, nothing is coming" to someone who is waiting; nobody
+is waiting.
+
+### 5.6 The timing contract
+
+> Fires **at or after** `due_at`, **never before**, within one tick (plus lock wait).
+
+"Never early" is the invariant. Resolution is a config knob; `total_tokens`-style
+reachability does not apply because the query is one indexed lookup.
 
 ---
 
-## 6. The fire turn
+## 6. The turn
 
-The injector builds a synthetic inbound event: **the input channel is virtual,
-the output is real.** She receives on an internal channel; she replies into the
-actual conversation named in the row.
+She receives the sentence, when it was set, and when it was due, and answers it.
 
-Because the event is shaped like an ordinary inbound message, every existing
-stage applies unchanged — `policy.toml` gating, the per-conversation engagement
-queue (which serialises the fire turn against live traffic), conversation-bound
-tool scope (DEC-21), `LeakGuard` / R-18 on egress. **No new egress path is
-built.** The reminder text is model-adjacent content and is not trusted.
+### 6.1 `tool_choice="auto"`, and no `stand_down`
 
-The turn receives:
+v1 introduced a terminal `stand_down` verb so silence could be a tool call. Three
+reviewers independently showed it breaks turn termination for **every** tag turn
+(§0.1(2)), and that "registered for the heartbeat audience only" has no mechanism
+— `NATIVE_TOOLS` is module-level, `ToolRegistry` is one per process (DEC-10), and
+the generated capability section is `applies_to=("always",)`
+(`nora/doctrine/loader.py:360-366`). It would have offered every tag turn a verb
+for answering a human with silence.
 
-- the sentence
-- when it was set, and when it was due
-- the ordinary tool set, plus `stand_down`
+**The fire path opens on `tool_choice="auto"` instead.**
 
-and it **re-decides**: here is what you were asked to do, here is the time — act,
-or let it pass. That distinction is what makes this a friend rather than an alarm
-clock, and it is the reason option "verbatim echo" was rejected.
-
-### 6.1 Silence must be a tool call
-
-`nora/agent/tool_choice.py` records the measurement that forces this:
+The measurement that makes `auto` unsafe on a tag is exactly what makes it right
+here (`nora/agent/tool_choice.py:14`):
 
 ```
-FIRST_CALL = "required"
 A. auto, fresh question    plain text 5/6, called a tool 1/6
 ```
 
-Under `auto` on a turn's **first** model call the model answers in prose — not a
-tool call, therefore not a message. **Nora silent in the group while the turn
-looks successful.** The module's own comment names that as R-5's exact failure
-shape.
+On a tag, prose-instead-of-a-tool-call means **Nora silent while the turn looks
+successful** — R-5's failure shape. On a fire turn, prose-instead-of-a-tool-call
+means **she read the request and chose not to speak**, which is the desired
+stand-down. Same mechanism; the audience inverts whether it is a bug.
 
-So "she decides not to speak" **cannot** be implemented by relaxing
-`tool_choice`. It is implemented as a terminal verb:
+This costs nothing elsewhere: no new terminal verb, no change to
+`terminal_tools()`, no per-audience tool registry, and the pinned invariant test
+stays green. **The entire per-audience-registration problem dissolves** — because
+`remind`, `cancel_reminder` and `list_reminders` *should* be on tag turns (that
+is how you set one), and `stand_down` no longer exists.
 
-`stand_down(reason)` — satisfies `required`, marks the rows handled, emits a
-metric, sends nothing.
+Countability is preserved by the fire path recording its own outcome (§4
+`outcome`, §13 metrics), not by a shared counter.
 
-This is strictly better than a real silence: *she chose not to speak* becomes
-countable and **distinguishable from a crash**, which is precisely what R-5
-exists to guarantee.
+### 6.2 Not `nora_silent_failures_total`
 
-### 6.2 Staleness — checked at fire time, not at message time
+A deliberate non-send must **not** increment
+`nora_silent_failures_total{reason="no_send_call"}`. That series is targeted at
+<1%, and every correct stand-down would erode the alarm this feature depends on.
+The fire path owns its own outcome accounting and does not call
+`deliver.check_outcome`'s silent-failure branch.
 
-The motivating case: the requester says 「唔洗洗衫喇」 **without tagging Nora**.
-The reminder should not fire.
+### 6.3 The turn's framing is not doctrine
 
-She already has that message — Nora is ambient (design/01); every message is
-ingested whether or not she is tagged. She simply does not *speak* unprompted.
+`_context_header` (`nora/agent/prefill.py:100-102`) hardcodes:
 
-**The check happens at recall time, not at hear time.** The alternative —
-evaluating every ambient message against every pending reminder — would mean
-running the model on untagged messages, which she has never done, at a cost of
-one model call per group message to find nothing ~99.9% of the time. It would
-change what she is.
+> "You are in a group chat you have been reading all along. You do not speak
+> unless somebody calls you, and somebody just did — that is why this turn is
+> happening."
 
-The check uses **both** recall verbs, **concurrently** (the orchestration
-doctrine already permits batched concurrent tool calls; the shape is the same as
-`saved_places` + `about` in the place resolver):
-
-| verb | reads | catches |
-|---|---|---|
-| `search_memory(the reminder's own words)` | **raw messages**, semantically | 「唔洗洗衫喇」 verbatim — immune to derivation loss |
-| `ask_memory("does X still intend to …?")` | **derived** reasoning | 「聽日先啦」 — which moves the reminder rather than cancelling it, and matches no keyword |
-
-Cost is `max(latency)`, not the sum — and **at fire time nobody is waiting.**
-This is why the measurement that ruled dialectic out of the per-turn prefill
-(6.9–8.3 s against a ~5 s budget, design/11) **does not bind here**: that is a
-*conversational* budget, and this turn has no human staring at a typing
-indicator.
-
-**Precedence rule, for when the two disagree: `search_memory` is evidence,
-`ask_memory` is opinion — evidence wins.** A raw message that contradicts the
-reminder outranks a derived conclusion that does not. Same exact-beats-fuzzy
-ordering as the Honcho/Nora boundary rule.
-
-**No transcript is injected. Ever.** An earlier draft fed "messages since
-`created_at`", which is unbounded by construction — a reminder set seven days out
-would have carried seven days of chat. `search_memory` makes the cost constant
-and independent of horizon: one targeted retrieval finds the relevant message
-whether it was said ten minutes or five days ago.
-
-### 6.3 Overdue
-
-No grace-window constant and no config flag. She is handed the due time and the
-recall verbs, and judges: still useful → 「唔好意思, 呢個係七點提你嘅…」; moot →
-stand down. A `voice.md` line, not a mechanism.
-
-Note that 「睇下 Tyler 喺邊」 fired two hours late is **still correct** — she
-re-runs `where_is` fresh. Only the timing is stale, never the answer.
+Every clause is false on a fire turn, and this is **not** a doctrine file, so
+§10's `applies_to` mechanism does not reach it. The fire path builds its **own**
+prefill with its own header. This is new code, not a frontmatter change.
 
 ---
 
 ## 7. The model-facing surface
 
-Two new tools, one prefill block, one CLI.
+### 7.1 `remind(when, text)`
 
-### 7.1 `remind(when, text, target)`
+`when` is an **ISO-8601 timestamp with offset**, which the model produces. The
+turn already knows the current time — `_now_line` renders it, and the repo pins
+`_HKT = timezone(timedelta(hours=8), "HKT")` (`nora/agent/tools.py:68`, no tzdata
+dependency). `due_at` is stored UTC.
 
-Writes one row. Refuses — and says why — when the caps in §8 are hit, **or when
-the requester or the target is not a mapped `person_id`** (§12.1). The mapped
-check is a guard, not a doctrine line: it holds whatever the model decides.
+Refuses, with a reason, when: the requester is not a mapped `person_id` (§12),
+the caps are exceeded (§9), `when` is unparseable, or `when` is in the past.
 
-### 7.2 `cancel_reminder(id)`
+Ambiguity (「七點」 — this evening or tomorrow morning?) is resolved by the model
+against the current time, and **stated back** (§10.1). It is not a parse rule.
 
-The explicit path — 「唔使提我洗衫喇」. Works with the ids already in front of
-her (§7.3).
+### 7.2 No `target` parameter — the conversation comes from the closure
 
-### 7.3 Pending rows in the **prefill**, not a `list_reminders` tool
+v1 had `remind(when, text, target)`. **DEC-24's whole holding is that no tool
+takes a conversation argument**, because a parameter is a value the model must
+invent every call — and the first real tag died `no_send_call` after the model
+invented the wrong group id three times. `send_reply` and `load_transcript` both
+resolve their conversation from the closure; `remind` does too.
 
-The set is capped (§8) and usually empty, so it costs nothing on almost every
-turn and a few lines when it does not. Three things this buys that a tool does
-not:
+Two things follow, and the second is a deliberate narrowing:
 
-1. She has it without deciding to look.
-2. `cancel_reminder(id)` has its ids.
-3. **Runaway becomes visible to her**, not buried in a table.
+- The guard's scope counter keys on the literal parameter name `conversation_id`
+  (`nora/agent/guards.py:316`), so a `target` parameter would be invisible to
+  `nora_tool_scope_violations_total`.
+- **A reminder fires into the conversation it was set in.** DM in, DM out; group
+  in, group out. The operator's "fire to either the user or the group" is
+  satisfied by *where you set it*, not by a parameter — and cross-conversation
+  targeting is removed outright, which also removes an unprompted-speech lever
+  into a room the requester may not belong to.
 
-### 7.4 `stand_down(reason)`
+### 7.3 `list_reminders()` and `cancel_reminder(id)` — conversation-scoped, no prefill block
 
-§6.1. Registered for the heartbeat audience only.
+v1 put the pending set in the prefill. That re-creates a leak this repo already
+paid for — `build_prefill`'s docstring (`nora/agent/prefill.py:260-275`) records
+a roster block that was removed after it listed five people who had never been
+members, and notes that **R-18 saw nothing to block, because the block carried
+only names**. A reminder block carries free text: 「提我同 Anna 講分手嘅事」, set
+in a DM, would sit in the group's prefill where R-18 again sees nothing to block.
 
-### 7.5 `nora reminders list|cancel <id>` (CLI)
+So: a **tool**, scoped by closure to the current conversation, returning only
+that conversation's pending rows. `cancel_reminder(id)` re-checks the same scope
+inside the tool — a uuid carries no scope of its own.
 
-Outside the model entirely. `nora/app/cli.py` already exists.
+(This reverses v1's reasoning, which rested on the retracted design/11 §1.6
+argument. The retraction is real — `lookup_person` 6/6 on turn one — so a tool
+does get called. The prefill was never the safe option.)
 
-**This is the actual safety valve** — the thing an operator reaches for at 2am.
-Handing the model a cancel button does not protect against a misbehaving model.
+### 7.4 The CLI is read-only
+
+`nora/app/cli.py` is *"the read-only operator control plane"*: it opens the store
+through `create_readonly_sql_engine`, every connection sets
+`default_transaction_read_only=on`, and deployment grants `SELECT` only.
+`nora reminders cancel` would break both.
+
+**`nora reminders list` only.** The operator's kill switch is
+`[heartbeat] enabled = false` plus a restart — which is how this repo already
+does inert features, and which stops *all* firing rather than one row.
 
 ---
 
-## 8. Anti-runaway — structural, not model-dependent
+## 8. State machine
+
+### 8.1 The fire path returns an outcome
+
+`EngagementPipeline.run` returns `None` across six distinguishable outcomes
+(rejected, queue-full, queued-not-yet-run, invoke-failed, no-send, swallowed by
+`except BaseException`). v1's "mark done after successful egress" was
+unimplementable against it: a tick that got `QUEUED` would mark rows `done`
+before the turn had run.
+
+The fire path is ours, so **it returns a typed outcome** and the loop records it:
+`sent` / `silent` / `failed_policy` / `failed_timeout` / `failed_error`.
+
+### 8.2 Boot recovery cannot guess
+
+Rows left `firing` by a crash are swept on the first tick after start. The sweep
+**consults `tag_id`**: `Deliverer` writes a `messages` row carrying
+`raw={"tag_id": …}` and a `delivery_status`, so the sweep can ask whether this
+row's turn actually delivered.
+
+- delivered → `done`. No double-send.
+- not delivered → `failed`, and **not** silently re-queued.
+
+v1's "either re-queued or reported" was a fork, not a decision: re-queue
+double-sends everything that crashed after egress; report loses everything that
+crashed before it. `tag_id` is the column that makes the question answerable.
+
+### 8.3 `cancelled` does not stop a turn in flight
+
+A cancel against a row already `firing` is a no-op — the turn is running. The
+tool and the CLI say so rather than implying otherwise.
+
+---
+
+## 9. Anti-runaway — structural
 
 | control | value |
 |---|---|
 | no recurring rows | v1 |
 | one-shot state machine | a row fires once, ever |
-| max pending per requester | `[reminders] max_pending_per_person` |
-| minimum lead time | `[reminders] min_lead_seconds` |
-| maximum horizon | `[reminders] max_horizon_days` |
-| operator CLI | §7.5 |
+| max pending per requester | `[reminders] max_pending_per_requester = 20` |
+| minimum lead | `min_lead_seconds = 120` (> `tick_seconds`, §12) |
+| maximum horizon | `max_horizon_days = 30` |
+| the loop's off switch | `[heartbeat] enabled = false` |
 
-Every one of these holds whether or not the model behaves.
-
----
-
-## 9. Configuration
-
-Ships **inert**, the pattern `[media]` / `[search]` / `[presence]` already set.
-
-```toml
-[heartbeat]           # the loop
-enabled = false
-tick_seconds = 60
-
-[reminders]           # the policy
-max_pending_per_person = 20
-min_lead_seconds = 60
-max_horizon_days = 30
-```
-
-### 9.1 No limits configuration — deliberately
-
-An earlier draft proposed a heartbeat-specific `turns`. **Dropped**, and the
-reasoning is worth keeping so it is not re-proposed:
-
-- Conversational `turns` is **20** (8 → 20, operator, 2026-08-07), sized for
-  "locate a person → read a place → describe an image → reply". A fire turn is
-  `[search_memory ∥ ask_memory] → route → send_reply` ≈ 4–5. Nowhere near.
-- `turns` is not the binding cap anyway; `config.toml`'s own comment records that
-  `total_tokens` binds first on a heavy turn.
-- **R-24 requires `turns` to be reachable** — `total_tokens >= turns × ~6124`.
-  That is why 64k → 128k moved when 8 → 20. A second `turns` knob would need its
-  own paired `total_tokens` or become dead config: the exact trap that tuning
-  climbed out of.
-
-Tool budgets likewise need **no change**: `search_memory` 4, `ask_memory`,
-`route`, `send_reply` 3, `stand_down` 1 — a fire turn fits inside today's numbers
-(doubled 2026-08-08).
-
-*(Correction recorded to prevent a wrong inference downstream: `ToolRegistry` is
-built **once per process** (DEC-10), not per turn. The per-turn seam is
-`ReplyGuard`, which consumes `budgets()`.)*
-
-### 9.2 `total_tokens` has NO headroom — measured, 2026-08-08
-
-An earlier draft of this section said `total_tokens = 128000` "has large
-headroom." **That is false**, and the correction matters enough to state at
-length. See `2026-08-08-turn-budget-finding.md` for the full investigation.
-
-Langfuse trace `0459c8b9cb9f61c0bf9566418ae26981` (2026-08-07), one
-`invoke_agent nora`, nine generations:
-
-```
-input reported     129,543   (76.4% cache reads)
-output               1,266
-TOTAL              130,809   -> stopped at limit_total_tokens
-finish             {"message": "", "finish_reason": "limit_total_tokens"}
-```
-
-Three consequences for this design:
-
-1. **A real turn already hits the ceiling at ~9 cycles**, not 20. Per-call is
-   ~14,400 measured, against the ~6,124 R-24 sized reachability with — off by
-   2.4×. `turns = 20` is unreachable today; the token cap binds first.
-2. **The cap counts cached tokens at full weight.** Only ~32k of that 130,809
-   was *new* work (30,614 fresh input + 1,266 output); the rest was prompt-cache
-   reads billed at a fifth the rate. The budget therefore penalises the exact
-   mechanism that makes the turn cheap — the turn cost **$0.0074**.
-3. **The failure mode is silence.** `message: ""`. The group got nothing.
-
-A fire turn is `[search_memory ∥ ask_memory] → route → send_reply`, and
-`search_memory` returns raw messages, so its input is *fatter* than a
-conversational turn's. At ~15k/cycle it has roughly **8 cycles**, not 20.
-
-**And it is worse here than on a tag.** A tagged human notices silence. A
-reminder that dies this way is *invisible* — nobody was waiting for it. So
-`stand_down`'s metric and an alarm on `nora_llm_stop_reason_total{reason=~"limit_.*"}`
-are **load-bearing for this feature**, not observability nice-to-haves.
-
-This design does not attempt to fix the budget — that is the finding doc's
-scope. It records the constraint it is being built under.
+Every one holds whether or not the model behaves. The values are unmeasured
+starting points, and §14 says so plainly rather than dressing them as derived.
 
 ---
 
 ## 10. Doctrine
 
-**No new doctrine *kind* is needed — a new *audience* is, and the mechanism
-already exists.**
+A new **audience**, `heartbeat`. The mechanism exists —
+`DoctrineStore.get(applies_to=…)` filters and caches per audience, honouring
+`"always"` (`nora/doctrine/loader.py:533-554`) — but v1 understated the work:
 
-Every doctrine file carries `applies_to` (`voice.md:5` is `[tag]`), and
-`DoctrineStore.get(applies_to=…)` already filters and caches per audience,
-honouring `"always"` (`nora/doctrine/loader.py:533–553`).
-`nora/app/composition.py:228` merely hardcodes `applies_to="tag"`.
+- There are **two** hardcoded call sites, not one: `nora/app/composition.py:228`
+  and `nora/engagement/pipeline.py:264`. The second is the per-turn production
+  path.
+- `_scan` **rejects duplicate `order`s** (`loader.py:485`) and `35` is reserved
+  for the generated capability section (`CAPABILITY_ORDER`, `loader.py:334`).
+- `_REQUIRED` frontmatter is **ten keys**, and `check_authority_chain` is
+  **symmetric** (`loader.py:402-415`) — a new file's `authority_above` forces
+  matching `authority_below` edits in every file it names.
+- `kind: conduct` rejects **uppercase** RFC-2119 absolutes (`loader.py:111`), and
+  a `conduct`/`identity` file may not name a tool (`check_kind_boundaries`,
+  `loader.py:289` — note this gate is narrower than "DEC-29 forbids naming
+  tools": `constraint` is exempt).
 
-So the `heartbeat` audience is **frontmatter plus one call site.**
+### 10.1 The split, honestly justified
 
-| file | change |
-|---|---|
-| `constraints.md`, `identity.md`, `voice.md` | `applies_to: [tag, heartbeat]` — she is still herself, still bound |
-| `conduct.md` | `applies_to: [tag, heartbeat]` — after extracting `# Silence is the default` into its own `[tag]`-only file (§12.2) |
-| **new** `reminders.md` | `kind: conduct`, `applies_to: [heartbeat]` |
+`# Silence is the default` is the only section that contradicts a fire turn
+(*"the only reason you ever speak"*, *"you never follow up on your own reply"*).
+Everything from `# Replying` down applies to both audiences — and three parts are
+load-bearing here, which is why `reminders.md` stays small:
 
-**Named `reminders.md`, not `heartbeat.md`.** The doctrine is about handling a
-deferred request. The loop is infrastructure she never sees; naming a doctrine
-file after it would teach her a mechanism instead of a behaviour.
+- *"You have judgment — a friend, not a command line"* is already the basis for
+  declining to act.
+- *"Check before you answer… or on something said further back than you were
+  shown"* is nearly the staleness instruction, for when §11 lands.
+- *"When you need two things that don't depend on each other, get them in the
+  same breath"* (`conduct.md:112`) is the concurrency permission.
 
-Two constraints on writing it, both machine-enforced:
+**Migration:** extract the silence section into its own file, `applies_to: [tag]`,
+`order` in the free range **21–29** (10/20/30/40 taken, 35 reserved), sorted
+`(order, path.name)` so it must sort *before* `conduct.md` to preserve position.
 
-- **DEC-29 — doctrine names no tools.** It says *"you may decide the request no
-  longer applies, and let it pass"*, never *"call `stand_down`"*. The verb
-  reaches her through the generated `capability` block.
-- **`kind: conduct` is SHOULD-register.** The loader rejects absolute MUSTs in a
-  conduct file (`_RFC2119_ABSOLUTE`).
+**v1's justification was false and is withdrawn.** v1 said the split assembles
+byte-identical text. It cannot: `_assemble` emits one `<section …>` wrapper **per
+file** (`loader.py:261-268`), so two files necessarily add a section boundary.
 
-### 10.1 `voice.md` additions (both audiences)
+The honest test is therefore: **the concatenated section *bodies* for the `tag`
+audience are unchanged, and the only structural diff is one added boundary.**
+That is mechanically assertable and is what §14 requires — it is a weaker
+guarantee than v1 claimed, and it is the true one.
+
+### 10.2 `voice.md` additions
 
 **Precision lives in the database; vagueness lives in the voice.**
 
-The row must store an exact `due_at` — the tick has no other way to work. That is
-an implementation detail and must never become the requester's problem.
+- 「等陣提我洗衫」 → 「好, 等陣提你」 — *not* 「好, 19:47 提你」
+- 「七點提我出門」 → 「好, 七點」
 
-- 「等陣提我洗衫」 → 「好, 等陣提你」 — **not** 「好, 19:47 提你」
-- 「七點提我出門」 → 「好, 七點」 — precise ask, precise confirm
+She picks a sensible time and only asks 「幾點?」 when there is no reasonable
+default. *Rationale, recorded because it was the operator's correction: a friend
+who answers 「等陣提我洗衫」 with 「幾點? 15 分鐘定 30 分鐘?」 is not a friend, it is
+a judge. Interrogating someone to populate a column is the schema leaking through
+the persona.*
 
-She picks a sensible time herself (a model is good at that judgment) and only
-asks 「幾點?」 when there is genuinely no reasonable default.
+She always confirms *something*, so a wrong guess dies now rather than at fire
+time.
 
-**Rationale, recorded because it was the operator's correction:** a friend who
-answers 「等陣提我洗衫」 with 「幾點? 15 分鐘定 30 分鐘?」 is not a friend, it is a
-judge. Interrogating the requester to populate a column is the design leaking
-through the persona.
-
-She should still confirm *something* back, so a wrong guess dies immediately
-rather than at fire time.
+**Constraint:** `voice.md` is `kind: identity`, which forbids **all** RFC-2119
+uppercase keywords. These lines must be written as description, not rule.
 
 ---
 
 ## 11. Phasing
 
-**Phase 1 — everything.** Table, loop, injector, `remind`, `cancel_reminder`,
-`stand_down`, prefill block, CLI, doctrine audience, staleness check.
+**Phase 1 — fires unconditionally.** Table, migration, store, tick, fire path,
+`remind` / `list_reminders` / `cancel_reminder`, doctrine audience, CLI listing,
+metrics.
 
-The staleness check was originally phase 2, gated on `search_memory`. That
-shipped in `21f9712` (DEC-68) during the brainstorm, so the gate is open.
+**Phase 2 — the staleness check.** Deferred, because three mechanisms block it
+and none is in this design's control:
 
-**Later, not now:** recurring reminders; event triggers. The latter is worth
-noting because it validates the abstraction — 「Tyler 返到屋企話我知」 is not
-time-based at all, and it needs **only a different `WHERE` clause in the tick.**
-Same table, same injector, same fire turn. That the pipeline absorbs a
-non-temporal trigger without a rebuild is the main evidence it sits at the right
-altitude.
+1. **`search_memory` fails closed on unmapped room members** — `if view.degraded
+   or view.unnamed > 0: refused` (`nora/agent/tools.py:1133`). §12's mapped-both-
+   ends gate covers the requester, not the other people standing in the room. In
+   a realistic group the evidence verb simply refuses.
+2. **Wall clock.** `ask_memory` is 14–19s against a 30s turn timeout, and its
+   budget is **1**, not 4 (`tools.py:295` — *"a second would blow the loop budget
+   on its own"*).
+3. **`memory_feed` is spawned, never awaited** (`nora/ingest/stages/memory_feed.py:36`),
+   so 「唔洗洗衫喇」 is not guaranteed to have been *submitted* to Honcho, let
+   alone embedded. The ingest→searchable lag is unmeasured.
 
----
+Phase 2 begins with a measurement, not code: feed a cancellation, time
+submission→retrievable, and check whether `search_memory` is reachable at all in
+the target room.
 
-## 12. Decisions taken (were open questions)
-
-### 12.1 Mapped identities only — BOTH ends (operator, 2026-08-08)
-
-**A reminder requires a mapped `person_id` at both ends: requester AND target.**
-No unmapped sender may create one, even a group-targeted one; no unmapped person
-may be a target.
-
-This is stronger than the constraint that falls out of DEC-14 (a DM target needs
-an `identity.toml` address, so *targets* were already mapped-only). The operator
-extended it to the requester as well: **producer or consumer, mapped or nothing.**
-
-Rationale: an unprompted-speech lever is exactly the wrong thing to hand to
-someone the deployment cannot name. Deny-by-default, same posture as
-`policy.toml` and the R-31/R-35 disclosure gate.
-
-Enforcement is at `remind()`: if the requester resolves to no `person_id`, refuse
-and say so. It is a guard, not a doctrine line — it must hold whatever the model
-decides. Needs an R-rule and a named test (§13).
-
-### 12.2 `conduct.md` — SPLIT, not rewritten (operator, 2026-08-08)
-
-Read of the file settles it: **only the first section contradicts a fire turn.**
-
-> `# Silence is the default` — "You're only reading this because someone called
-> you. That's the only reason you ever speak. … once your turn is done you never
-> follow up on your own reply."
-
-Every clause is false when a clock fires: nobody called her, and a reminder *is*
-a follow-up on her own earlier 「好, 七點提你」.
-
-Everything from `# Replying` down applies to both audiences unchanged — and three
-parts are load-bearing here, which shrinks `reminders.md` considerably:
-
-- **"You have judgment — a friend, not a command line"** is already the doctrinal
-  basis for standing down. *"You are not a thing that runs whatever it's handed"*
-  generalises to a reminder whose premise has evaporated.
-- **"Check before you answer"** already says *"or on something said further back
-  than you were shown — find out first, then answer"* — nearly the staleness check.
-- **"When one answer needs more than one look"** already says *"when you need two
-  things that don't depend on each other, get them in the same breath"* — the
-  concurrent `search_memory ∥ ask_memory` instruction, already written.
-
-**Migration:** extract `# Silence is the default` into its own file at
-`applies_to: [tag]`; `conduct.md` becomes `[tag, heartbeat]`.
-
-**Why split rather than rewrite the section to be true for both audiences:** a
-split assembles **byte-identical text** for the tag audience, so live behaviour
-provably does not change and a prefill test can assert it. Rewriting edits a
-live prompt at `version: 5` and would need the eval suite re-run to prove no tag
-regression. Same outcome; one is free to verify.
-
-**Carry into the plan:** the new file's `order` must sit adjacent to
-`conduct.md`'s (`order: 30`), or the assembled string shifts and the
-byte-identity test fails for a reason that is not a real regression.
-
-### 12.3 Cap values — as configured, tunable later (operator, 2026-08-08)
-
-`max_pending_per_person = 20`, `min_lead_seconds = 60`,
-`max_horizon_days = 30` stand. They are config, so they are cheap to change
-once there is usage to size them against.
-
-## 12a. Still open
-
-### 12a.1 Name collision
-
-`heartbeat` already names the observability log line
-(`nora/obs/logging.py:130`). If review finds this confusing, **this** design
-renames — the log line has seniority.
+**Later:** recurring reminders; event triggers. The latter validates the
+abstraction — 「Tyler 返到屋企話我知」 is not time-based and needs only a different
+`WHERE` clause in the tick, same table and same fire path.
 
 ---
 
-## 13. Gates this touches
+## 12. Decisions taken
+
+**Mapped identity required (operator).** Only a mapped `person_id` may create a
+reminder. With §7.2 removing the `target` parameter, the *target* is a
+conversation the requester was already speaking in, so the requester check is the
+whole gate. Enforced at `remind()` **and re-checked at fire time** (§5.1), because
+`identity.toml` is loaded once at startup and trust can be withdrawn inside a
+30-day horizon. A guard, not a doctrine line.
+
+**`conduct.md` splits rather than being rewritten** — §10.1, with the corrected
+justification.
+
+**Caps as configured** (§9), explicitly unmeasured.
+
+### 12.1 No heartbeat-specific `turns`
+
+Conversational `turns = 20`; a fire turn is 3–4 round trips. `turns` is not the
+binding cap — `config.toml`'s own comment says `total_tokens` binds first — and
+**R-24 requires `turns` to be reachable** (`total_tokens >= turns × ~6124`), so a
+second `turns` knob would need its own paired `total_tokens` or become dead
+config.
+
+Tool budgets need no change. Correct current values, which v1 got wrong:
+`search_memory` **4**, `route` **4**, `send_reply` **3**, `ask_memory` **1**.
+
+The knob that *does* need a per-audience value is `timeout_seconds` (§5.4).
+
+### 12.2 Budget reality
+
+The measured ceiling is ~9 cycles at ~14,400 tokens/call, not 20 — see
+`2026-08-08-turn-budget-finding.md`. One qualifier v1 omitted: **that trace is a
+pathology**, ~86k of its 130,809 spent in a budget-veto retry loop. It is not a
+baseline. A 3–4 cycle fire turn has room; wall clock (§5.4) is the real
+constraint.
+
+---
+
+## 13. Metrics — new series, never new labels on old ones
+
+Metric names and labels are append-only in this repo
+(`nora/obs/metric_specs.py:40`), and a fire turn must not silently move
+tag-path series (`nora_tags_total`, `nora_tag_latency_seconds`,
+`nora_messages_per_tag`, `nora_silent_failures_total`). So the fire path gets its
+own:
+
+| metric | why |
+|---|---|
+| `nora_reminders_created_total{status}` | writes, refusals and the reason |
+| `nora_reminders_fired_total{outcome}` | `sent` / `silent` / `failed_*` (§8.1) |
+| `nora_reminders_pending` (gauge) | runaway visible without a query |
+| `nora_heartbeat_last_tick_age_seconds` (gauge) | **liveness** — the collector's precedent (DEC-55(4)): a gauge that climbs when up-but-not-ticking, which a frozen fired-count cannot show (R-5) |
+
+---
+
+## 14. Gates this touches
 
 | gate | why |
 |---|---|
-| alembic migration + `tests/infra/test_schema_parity.py` | new table with a CHECK constraint — `alembic check` is blind to it |
-| `design/09-decision-index.md` | new behavioural rules (never-early; a row fires once) need DEC entries |
-| `tests/test_acceptance_rules.py::RULE_TESTS` | each new rule needs a named test — **including the mapped-both-ends guard (§12.1)**, which is a security rule, not a behaviour preference |
-| `tests/test_prefill.py` (or equivalent) | the `conduct.md` split must assert the **tag** audience assembles byte-identically (§12.2) |
-| `tests/contract/` | only if the clock or store gains a second implementation — including a test fake |
-| `uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence` | new config classes are in scope |
-| `uv run lint-imports` | the loop lives in `nora/app`; check the boundary before placing it |
+| hand-written alembic migration + `tests/infra/test_schema_parity.py` | new table, CHECK constraint, named index |
+| `design/09-decision-index.md` | **R-1 must be amended** — *"only the tagging path may cause a send"*, named test `test_ambient_never_constructs_agent`. A fire turn is a send not caused by a tag. This is the rule this design changes, and v1 never named it. |
+| `tests/test_acceptance_rules.py::RULE_TESTS` | the mapped-identity guard, never-early, fires-once |
+| `tests/test_guards_terminal.py` | must stay green — `terminal_tools() == {"send_reply"}` (§6.1 keeps it so) |
+| doctrine body-identity test | §10.1 |
+| `ARCHITECTURE.md` | `test_architecture_doc_covers_every_package` fails on any new top-level package under `nora/` |
+| `config.example.toml` | kept in parity by `tests/test_config.py` |
+| `uv run pytest -q` / `ruff` / `mypy` (scoped) / `lint-imports` | CLAUDE.md's four |
 
-The clock is taken through `__init__` (test-seam policy), so the loop's timing
-behaviour is a **fake-clock unit test with zero model calls**.
+The clock is taken through `__init__` (test-seam policy), so the tick's timing is
+a fake-clock unit test with zero model calls.
 
 ---
 
-## 14. Honest limits — state these, do not paper over them
+## 15. Honest limits
 
-- **"Consider whether anything has changed" is a doctrine line, not a guard** — a
-  request to a model, per design/12's mechanical-vs-asserted distinction. It will
-  mostly work and will sometimes not.
-- **Implicit cancellation is best-effort.** Explicit cancel (`cancel_reminder`,
-  or the CLI) always works.
-- `search_memory` returns other people's raw words, so the roster-speaker filter
-  and per-message R-18 apply at fire time exactly as they do on a tag — same
-  guard, no new one.
-- **Ingest → searchable lag in Honcho is unmeasured**, and the 40-minute laundry
-  case lives or dies on it. Embedding is far cheaper than derivation, so the
-  prior is good, but it is a number to obtain rather than assume.
+- Reminders in v1 **fire unconditionally**. A plan changed after setting one is
+  handled by cancelling it, not by Nora inferring it.
+- The fire path **duplicates** ingest's policy check rather than sharing it
+  (§5.1). Duplication is a drift risk and must be tested on both paths.
+- `Room.scope()` degrades to *the tagger alone* when the roster is unreadable
+  (`nora/agent/room.py:151-167`). On a fire turn that is the requester. Tools
+  other than `search_memory` do not fail closed on `degraded` — they answer with
+  `partial_view`. Bounded here because §7.2 keeps the room the requester's own.
+- Cap values are unmeasured (§9).
+- Phase 2's feasibility is unmeasured (§11).
 
-### 14.1 Prior art
+### 15.1 Prior art
 
-Worth knowing before paying for the novel part: **almost no shipped agent does
-implicit cancellation.** ChatGPT Tasks, Gemini/Assistant reminders, Siri, Alexa,
-Todoist — a reminder fires unless explicitly cancelled. The dominant pattern is
-"scheduled prompt, fresh context", which is independently the same shape as §2's
-deferred message. Where agents do consult history, they *retrieve* rather than
-stuff a window — which is §6.2.
+Almost no shipped agent does implicit cancellation — ChatGPT Tasks, Gemini,
+Siri, Alexa, Todoist all fire unless explicitly cancelled. The dominant pattern
+is *scheduled prompt, fresh context*, which is independently §2's deferred
+request. So phase 1 matches the industry baseline, and phase 2 is the part with
+no precedent to lean on — which is why it is gated on a measurement.
 
-So §6.2 is the part of this design with no industry precedent to lean on, and the
-part most worth measuring rather than assuming.
+---
+
+## 16. Scope
+
+Reviewers flagged v1 as too large for one unit. v2 is smaller (no staleness, no
+prefill block, no `stand_down`, no per-audience registry, no cross-conversation
+targeting) but still decomposes into four buildable steps, in dependency order:
+
+1. **Table + migration + store + `nora reminders list`** — no model, fake-clock
+   testable, ships alone.
+2. **Tick + policy re-check + outcome recording** — still no model; the fire path
+   can be tested with a stub turn.
+3. **Fire turn** — own prefill/header, own timeout, `auto` tool choice, deliver.
+4. **Tools + doctrine audience + the `conduct.md` split.**
+
+The implementation plan takes these as its phases.
