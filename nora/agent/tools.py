@@ -296,6 +296,10 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 "question that has to be pieced together, when a "
                                 "plain profile («about») is not enough — slower and "
                                 "deeper; use sparingly"),
+    "search_memory": NativeTool(4, "find the exact WORDS somebody said in this "
+                                   "group, further back than load_transcript "
+                                   "reaches — a phrase or a topic; not a profile "
+                                   "(«about») and not a reasoned answer («ask_memory»)"),
     # 2, sized like the other look-it-up tools: one message can name two images
     # (a photo AND a screenshot), and two describe calls plus a reply still leave
     # the turn. The number is not what keeps two calls inside the loop budget —
@@ -1096,6 +1100,71 @@ def build_tool_specs(
             "status": "ok", "person": ref.name, "answer": answer,
             "partial_view": view.degraded,
         }
+
+    async def search_memory(query: str) -> dict:
+        """Find where something was actually SAID in this group's history — the
+        exact words, further back than load_transcript reaches.
+
+        Use it to recall a specific thing somebody said a long time ago —
+        «邊個話要book枱», «我哋幾時講過去日本» — when you need the words themselves,
+        not a profile (`about`) or a reasoned answer (`ask_memory`). It searches
+        what people in THIS group have said and hands back the matching lines.
+
+        Outcomes: `ok` with the lines (each with who said it); `nothing_found`
+        when nothing matches; `unavailable` when it can't be checked — never
+        report the last as the middle. Only ever surfaces words from people in
+        this conversation, and never in a room with someone it can't place.
+
+        Args:
+            query: what to look for — a phrase, a topic, a thing that was said.
+        """
+        view = await room.scope()
+        if not view.available:
+            _record_room(metrics, "search_memory", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't work out who is here, so I can't look back through "
+                        "what was said. Say you can't check — do not guess.",
+            }
+        # An UNVERIFIED room (someone here Nora can't place) does not get the
+        # group's history surfaced into it — the same fail-closed shape whereis
+        # draws (R-31), sharper here because these are raw words, not a distilled
+        # model. A degraded view (roster unreadable) refuses for the same reason.
+        if view.degraded or view.unnamed > 0:
+            _record_room(metrics, "search_memory", "refused")
+            return {
+                "status": "refused",
+                "note": "I can't dig up what was said here — someone in this "
+                        "conversation I can't place. Say so; do not guess.",
+            }
+        # OBSERVED speakers Nora may surface into THIS room: the resolved people
+        # here, by their peer id. A message from anyone else — Nora's own peer, or
+        # a peer not in this room — is dropped.
+        roster = {p.honcho_peer_id: p.name for p in view.people}
+        try:
+            hits = await honcho.search(query=query[:500])
+        except Exception:
+            log.exception("search_memory failed")
+            hits = []
+        kept: list[dict] = []
+        for peer, content in hits:
+            name = roster.get(peer)
+            if name is None:
+                continue                       # only what this room's people said
+            # R-18 fails closed on the whole reply; a raw line carrying an
+            # identifier is dropped here, not handed to the model to echo.
+            if scan_identifiers(content) is not None:
+                continue
+            kept.append({"who": name, "said": content})
+        if not kept:
+            _record_room(metrics, "search_memory", "ok", results=0)
+            return {
+                "status": "nothing_found",
+                "note": "I couldn't find anything like that in what's been said "
+                        "here. Say so — don't invent a quote.",
+            }
+        _record_room(metrics, "search_memory", "ok", results=len(kept))
+        return {"status": "ok", "results": kept, "partial_view": view.degraded}
 
     async def now() -> str:
         """The current date and time, in Hong Kong time.
@@ -2019,6 +2088,7 @@ def build_tool_specs(
         _spec("lookup_person", lookup_person),
         _spec("about", about),
         _spec("ask_memory", ask_memory),
+        _spec("search_memory", search_memory),
         _spec("media_fetch", media_fetch),
         _spec("web_search", web_search),
         _spec("web_fetch", web_fetch),

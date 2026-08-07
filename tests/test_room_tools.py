@@ -381,6 +381,45 @@ async def test_ask_memory_is_unavailable_when_honcho_cannot_answer(persons):
     assert result["person"] == "Miles Novak"
 
 
+async def test_search_memory_surfaces_only_roster_speakers_and_screens_identifiers(persons):
+    """design/24 §S.3: search_memory hands back RAW words, so it is the tightest-
+    gated recall verb — only messages from people in THIS room (never Nora's own,
+    never an off-room peer), and R-18 drops any line carrying an identifier."""
+    honcho = FakeHoncho()
+    honcho.messages = [
+        ("miles_novak", "book 咗七點枱"),                 # a roster speaker → kept
+        ("nora", "好呀"),                              # Nora's own reply → dropped
+        ("miles_novak", "call 佢 +85298765432"),          # carries a phone → R-18 drops it
+        ("elsewhere_liu", "a secret about her"),      # not in this room → dropped
+    ]
+    tools = _build(persons=persons, honcho=honcho)
+    result = await _call(tools["search_memory"], query="枱")
+    assert honcho.searches == ["枱"]
+    assert result["status"] == "ok"
+    assert result["results"] == [{"who": "Miles Novak", "said": "book 咗七點枱"}]
+
+
+async def test_search_memory_nothing_found_when_no_roster_speaker_matches(persons):
+    honcho = FakeHoncho()
+    honcho.messages = [("nora", "只有我講嘢")]           # only Nora → filtered → empty
+    tools = _build(persons=persons, honcho=honcho)
+    result = await _call(tools["search_memory"], query="x")
+    assert result["status"] == "nothing_found"
+
+
+async def test_search_memory_refuses_in_a_room_with_someone_it_cannot_place(persons):
+    """A raw-message search must NOT surface the group's history into a room
+    holding an outsider Nora can't place (R-31, fail-closed) — and it never even
+    reaches Honcho."""
+    honcho = FakeHoncho()
+    honcho.messages = [("miles_novak", "something")]
+    stranger = frozenset({"+85260000000"})              # not in identity.toml
+    tools = _build(persons=persons, honcho=honcho, members=(MILES, TYLER, NORA, stranger))
+    result = await _call(tools["search_memory"], query="x")
+    assert result["status"] == "refused"
+    assert honcho.searches == []                         # never queried
+
+
 async def test_nothing_known_is_distinguishable_from_could_not_ask(persons):
     """THE distinction. Honcho answers 200-with-an-empty-string for a peer it
     has never heard of, so at the HTTP layer these two are the same event —

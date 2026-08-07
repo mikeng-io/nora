@@ -197,6 +197,9 @@ class FakeMemoryStore:
         self.queries: list[tuple[str, str, str]] = []
         # (observer, observed, query, reasoning_level) for each `chat` call.
         self.chats: list[tuple[str, str, str, str]] = []
+        # (peer_id, content) messages a test seeds for `search` to return.
+        self.messages: list[tuple[str, str]] = []
+        self.searches: list[str] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
@@ -270,6 +273,14 @@ class FakeMemoryStore:
         if not known:
             return None
         return " ".join(known)
+
+    async def search(
+        self, *, query: str, limit: int = 8, workspace_id: str | None = None,
+    ) -> list[tuple[str, str]]:
+        self.searches.append(query)
+        if self.fail:
+            return []
+        return list(self.messages)[:limit]
 
     async def health(self) -> MemoryHealth:
         return MemoryHealth(reachable=not self.fail)

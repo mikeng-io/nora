@@ -644,6 +644,50 @@ class HonchoClient:
             return None
         return content.strip()
 
+    async def search(
+        self, *, query: str, limit: int = 8, workspace_id: str | None = None,
+    ) -> list[tuple[str, str]]:
+        """Semantic search over the raw MESSAGES (not derived conclusions) — the
+        verb behind `search_memory` (design/24 §S.3). `POST /search` with
+        `{query, limit}` → a LIST of message objects `{content, peer_id,
+        session_id, …}` (verified live 2026-08-08); returns `(peer_id, content)`
+        pairs, [] on any failure. It has its OWN parse rather than `_post` because
+        the response is a list, not the dict every other endpoint returns.
+
+        WORKSPACE-scoped (no session/peer narrowing): the whole social unit, which
+        is safe under the one-social-unit-per-workspace topology (§S.1). Media-only
+        messages (Honcho stores the `￼` object-replacement placeholder for an
+        attachment) are dropped — there is no text to find. DISCLOSURE is the
+        caller's: `search_memory` keeps only messages from the room's roster and
+        screens identifiers (R-18); this method is the raw reach."""
+        url = self._url("/search", workspace=workspace_id)
+        try:
+            timeout = aiohttp.ClientTimeout(total=self._representation_timeout)
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.post(url, json={"query": query, "limit": limit}) as r,
+            ):
+                if r.status >= 400:
+                    log.warning("honcho search -> %s", r.status)
+                    return []
+                body = await r.json()
+        except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
+            log.warning("honcho search unreachable: %s", e)
+            return []
+        if not isinstance(body, list):
+            return []
+        out: list[tuple[str, str]] = []
+        for m in body:
+            if not isinstance(m, dict):
+                continue
+            peer, content = m.get("peer_id"), m.get("content")
+            if not isinstance(peer, str) or not isinstance(content, str):
+                continue
+            text = content.replace("￼", "").strip()   # drop the media placeholder
+            if text:
+                out.append((peer, text))
+        return out
+
     async def health(self) -> MemoryHealth:
         result = await self._get(f"{self._base}/health", self._card_timeout)
         return MemoryHealth(reachable=result is not None)

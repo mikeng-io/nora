@@ -404,6 +404,34 @@ async def test_the_observer_config_retries_after_a_transient_failure(server_fact
     assert len(nora_posts) >= 2, "the ai_peer observer-config must retry after a failure"
 
 
+async def test_search_parses_the_message_list_and_drops_media_placeholders(server_factory):
+    """`POST /search` returns a LIST (not the dict every other endpoint returns);
+    `search` has its own parse → (peer_id, content) pairs, dropping media-only
+    (`￼`) and blank lines. design/24 §S.3."""
+    async def handler(request: web.Request) -> web.Response:
+        if request.path.endswith("/search"):
+            body = await request.json()
+            assert body == {"query": "hotpot", "limit": 8}
+            return web.json_response([
+                {"peer_id": "miles_novak", "content": "打邊爐"},
+                {"peer_id": "miles_novak", "content": "￼"},          # media only → dropped
+                {"peer_id": "tom", "content": "   "},             # blank → dropped
+            ])
+        return web.json_response({"ok": True})
+
+    base = await server_factory(handler)
+    out = await HonchoClient(base, "nora").search(query="hotpot")
+    assert out == [("miles_novak", "打邊爐")]
+
+
+async def test_search_is_empty_on_failure_and_never_raises(server_factory):
+    async def handler(request: web.Request) -> web.Response:
+        return web.Response(status=500)
+
+    base = await server_factory(handler)
+    assert await HonchoClient(base, "nora").search(query="x") == []
+
+
 async def test_chat_sends_the_observed_peer_as_target_and_the_chosen_depth(server_factory):
     """`peer_id`=observer, `target`=observed (design/24 §4): `ask_memory` reads
     Nora's model of a person via `chat(peer_id="nora", target="miles_novak", …)`, and

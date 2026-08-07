@@ -36,9 +36,12 @@ class _HonchoAdapter:
         self._messages: list[dict] = []
         self._session_has_id = True
         self._chat_answer = ""
+        self._search_hits: list[dict] = []
 
     async def start(self) -> None:
         async def handler(request: web.Request) -> web.Response:
+            if request.path.endswith("/search"):
+                return web.json_response(self._search_hits)   # a LIST, not a dict
             if request.path.endswith("/sessions"):
                 return web.json_response({} if not self._session_has_id else {"id": "sess-1"})
             if request.path.endswith("/messages"):
@@ -73,6 +76,9 @@ class _HonchoAdapter:
     def seed_reasoned_answer(self, text: str) -> None:
         self._chat_answer = text        # what the dialectic /chat will synthesise
 
+    def seed_message(self, peer_id: str, content: str) -> None:
+        self._search_hits.append({"peer_id": peer_id, "content": content})
+
 
 class _FakeAdapter:
     def __init__(self) -> None:
@@ -90,6 +96,9 @@ class _FakeAdapter:
     def seed_reasoned_answer(self, text: str) -> None:
         # The fake synthesises `chat` from the observed peer's conclusions.
         self.store.conclusions["miles"] = [text]
+
+    def seed_message(self, peer_id: str, content: str) -> None:
+        self.store.messages.append((peer_id, content))
 
 
 @pytest.fixture(params=["honcho", "fake"])
@@ -158,3 +167,13 @@ async def test_chat_is_none_when_there_is_nothing_to_say(adapter):
     caller says «I couldn't recall that», never guesses."""
     out = await adapter.store.chat(peer_id="miles", query="where does he live?")
     assert out is None
+
+
+async def test_search_returns_peer_content_pairs_and_is_empty_when_nothing_matches(adapter):
+    """The raw-message search verb (design/24 §S.3), on the port so both backends
+    agree: seeded messages come back as (peer_id, content) pairs, and an unseeded
+    search is [] (never None, never a raised error) — the caller's roster filter
+    and R-18 screen run on top of that."""
+    assert await adapter.store.search(query="hotpot") == []
+    adapter.seed_message("miles", "打邊爐 tonight?")
+    assert await adapter.store.search(query="hotpot") == [("miles", "打邊爐 tonight?")]

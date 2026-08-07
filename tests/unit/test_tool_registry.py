@@ -60,7 +60,7 @@ def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
         "now", "load_transcript", "send_reply",
-        "group_members", "lookup_person", "about", "ask_memory",
+        "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
@@ -81,7 +81,7 @@ def test_budgets_match_todays_table():
         "group_members": 1, "lookup_person": 4, "about": 4,
         # 1 — the dialectic reasoning verb is slow (~14-19s), so one call per
         # turn is the ceiling; it is the escalation from `about` (design/24 §4).
-        "ask_memory": 1,
+        "ask_memory": 1, "search_memory": 4,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.

@@ -36,6 +36,9 @@ class FakeHoncho:
         # assert Nora's model of a person, not the person's self-model.
         self.queries: list[tuple[str, str, str]] = []
         self.chats: list[tuple[str, str, str, str]] = []
+        # (peer_id, content) messages a test seeds for `search` to return.
+        self.messages: list[tuple[str, str]] = []
+        self.searches: list[str] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
@@ -89,6 +92,16 @@ class FakeHoncho:
             return None
         known = self.conclusions.get(observed, ())
         return " ".join(known) if known else None
+
+    async def search(
+        self, *, query: str, limit: int = 8, workspace_id: str | None = None,
+    ) -> list[tuple[str, str]]:
+        """Mirrors `HonchoClient.search`: (peer_id, content) pairs from the seeded
+        `messages`, or [] on `fail=True`. Records the query."""
+        self.searches.append(query)
+        if self.fail:
+            return []
+        return list(self.messages)[:limit]
 
     async def health(self) -> MemoryHealth:
         return MemoryHealth(reachable=not self.fail)

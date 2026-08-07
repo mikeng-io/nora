@@ -39,7 +39,7 @@ from one observed message; empty without the observe-config.
 - `load_transcript` — Postgres, verbatim this-channel (renamed from `chat_earlier` 2026-08-08).
 - `about(person)` — Honcho `representation`, retrieve Nora's model. Fast.
 - `ask_memory(person, depth)` — Honcho `chat`/dialectic, REASON; `depth` model-chosen (minimal→max), slow (~14-19s), budget 1.
-- `search_memory(query)` — Honcho `search` over raw messages. NOT BUILT. Workspace-scoped is SAFE under S.1 (one social unit); raw is higher-fidelity than the distilled verbs, so roster-speaker filter + R-18 per message when built.
+- `search_memory(query)` — Honcho `search` over raw messages. BUILT 2026-08-08: workspace-scoped, roster-speaker-filtered, R-18-screened, refuses in an unverified room.
 
 ### S.4 Resolved OPEN DECISIONS (§7)
 
