@@ -772,7 +772,7 @@ async def store(request):
 Run: `uv run pytest tests/contract/test_reminder_store_contract.py tests/infra/test_schema_parity.py -v`
 Expected: **16 passed** (8 tests × 2 parameters) + parity green.
 
-- [ ] **Step 8: Gates, then commit**
+- [x] **Step 8: Gates, then commit**
 
 ```bash
 uv run pytest -q && uv run ruff check nora/ evals/ tests/ \
