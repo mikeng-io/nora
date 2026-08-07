@@ -44,3 +44,9 @@ Someone with a car wants somewhere to put it near where they are going — wheth
 there is space, and what it costs — not the way to the door. Someone without one
 wants the way there. Read which they are before you plan, because the same
 destination answers them differently.
+
+## A seen position is something to say, never a route input
+
+Where someone is now — and how old that sighting is — can settle a plan by itself:
+someone already near the destination needs none. Say it here, age and all. But routes
+run between places people NAME; a seen position, even as an address, never enters one.
