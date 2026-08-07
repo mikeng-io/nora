@@ -61,6 +61,7 @@ def test_the_registry_exposes_every_declared_tool():
     assert {t.tool_name for t in tools} == {
         "now", "chat_earlier", "send_reply",
         "group_members", "lookup_person", "about", "calculate", "transit", "route",
+        "whereis",
         "media_fetch",
         "search", "fetch",
     }
@@ -86,6 +87,9 @@ def test_budgets_match_todays_table():
         # Sized like transit: two place lookups plus a route, paid and external,
         # so a turn may reach for it twice but not more (DEC-46).
         "route": 2,
+        # One message can ask after two people; each call is one local table
+        # read, so like `calculate` this is sized by the question (DEC-59).
+        "whereis": 2,
         # The plugin-provided activation tool (DEC-50, activating DEC-48). It is
         # in `budgets()` ONLY so R-7 admits the `AgentSkills` activation call;
         # the registry does not BUILD it (see the tests below). Sized 1 like
@@ -188,7 +192,9 @@ def test_the_live_only_tools_are_the_ones_whose_answer_decays():
     """`time_shiftable is False`, never `not time_shiftable` — the second
     sweeps in `calculate`, whose `None` means the question has no time in it at
     all, and would have the model told that arithmetic goes stale."""
-    assert ToolRegistry().live_only_tools() == ("now", "transit")
+    # `whereis` joins (DEC-59): its answer is the LATEST fix and decays — the
+    # age rides in the result, but asked about LATER it has nothing.
+    assert ToolRegistry().live_only_tools() == ("now", "transit", "whereis")
 
 
 def test_the_capability_block_tells_her_which_tools_only_describe_now():
@@ -196,7 +202,7 @@ def test_the_capability_block_tells_her_which_tools_only_describe_now():
     that she must not quote a 112-second bus wait for a 19:30 departure, and
     the only place that can reach her is the prompt."""
     block = ToolRegistry().capability()
-    assert "now and transit describe this moment only" in block
+    assert "now and transit and whereis describe this moment only" in block
     assert "never quote one to answer about later" in block
 
 

@@ -195,3 +195,106 @@ def test_the_startup_invariant_alarms_the_day_group_is_not_a_subset():
     )
     assert ok is False
     assert metrics.get("nora_presence_circle_subset_ok", circle=CIRCLE_ID) == 0.0
+
+
+# ── the DEC-59 wiring: `whereis` as a native tool over this seam ─────────────
+#
+# The seam above is what the tool CLOSES OVER; these prove the closure in
+# `nora.agent.tools.build_tool_specs` composes it honestly: unavailable (never
+# a crash, never a guess) when presence is not wired, the seam's own answer
+# when it is, and — with several circles — no answer from a circle the room is
+# not a verified subset of (R-31 held through the wiring, not just the seam).
+
+from nora.agent.tools import build_tool_specs  # noqa: E402
+from nora.agent.whereis import circles_from_persons  # noqa: E402
+
+
+def _whereis_tool(persons, *, room, presence_source=None, presence_circles=(),
+                  metrics=None):
+    specs = build_tool_specs(
+        store=None, conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None,
+        metrics=metrics if metrics is not None else Metrics(),
+        room=room, transit_source=None,
+        presence_source=presence_source, presence_circles=presence_circles,
+    )
+    return next(s for s in specs if s.name == "whereis")
+
+
+async def test_the_whereis_tool_is_unavailable_when_presence_is_not_wired(persons):
+    """Offline/eval compositions and `[presence] enabled=false` build the same
+    tool with no reader — it must say «I could not check», never crash and
+    never guess (R-5)."""
+    spec = _whereis_tool(persons, room=_room(persons, members=(MILES, NORA)))
+    out = await spec.call("Miles")
+    assert out["status"] == "unavailable"
+
+
+async def test_the_whereis_tool_answers_through_the_wired_seam(persons, store):
+    await _record(store, person="miles_novak", ts=NOW - 300_000, address="Acme Tower")
+    spec = _whereis_tool(
+        persons, room=_room(persons, members=(MILES, GRANT, NORA)),
+        presence_source=store, presence_circles=(CIRCLE,),
+    )
+    out = await spec.call("Miles")
+    assert out["status"] == "ok"
+    assert out["address"] == "Acme Tower"
+
+
+async def test_the_whereis_tool_never_discloses_via_a_circle_the_room_is_not_in(
+    persons, store,
+):
+    """Two circles wired, and the room is a subset of only the second: the
+    first must refuse inside the seam and the answer must come from the
+    qualifying circle — R-31 survives the multi-circle wiring."""
+    await _record(store, person="miles_novak", ts=NOW - 60_000, address="Yoho Mall")
+    outsiders_only = Circle(circle_id="c-other", person_ids=frozenset({"outsider"}))
+    spec = _whereis_tool(
+        persons, room=_room(persons, members=(MILES, GRANT, NORA)),
+        presence_source=store, presence_circles=(outsiders_only, CIRCLE),
+    )
+    out = await spec.call("Miles")
+    assert out["status"] == "ok"
+    assert out["address"] == "Yoho Mall"
+
+
+async def test_the_whereis_tool_refuses_when_no_wired_circle_contains_the_room(
+    persons, store,
+):
+    await _record(store, person="miles_novak", ts=NOW - 60_000, address="Yoho Mall")
+    outsiders_only = Circle(circle_id="c-other", person_ids=frozenset({"outsider"}))
+    spec = _whereis_tool(
+        persons, room=_room(persons, members=(MILES, GRANT, NORA)),
+        presence_source=store, presence_circles=(outsiders_only,),
+    )
+    out = await spec.call("Miles")
+    assert out["status"] == "refused"
+    assert "Yoho" not in str(out)
+
+
+def test_circles_from_persons_groups_by_circle_and_skips_unplaced(tmp_path):
+    """The tool-side roster derivation: same grouping as the collector's
+    `_circles_from_identity`, but LENIENT — an unplaced block is skipped (the
+    collector is what refuses over it) and an empty identity yields no circles
+    (whereis degrades to unavailable rather than Nora refusing to start)."""
+    path = tmp_path / "identity.toml"
+    path.write_text(IDENTITY + """
+[[persons.miles_novak.life360]]
+member_id = "m-miles"
+circle_id = "c1"
+
+[[persons.grant_carver.life360]]
+member_id = "m-gab"
+circle_id = "c1"
+
+[[persons.outsider.life360]]
+member_id = "m-sam"
+""")
+    circles = circles_from_persons(load_persons(path))
+    assert circles == (
+        Circle(circle_id="c1", person_ids=frozenset({"miles_novak", "grant_carver"})),
+    )
+
+
+def test_circles_from_persons_is_empty_for_an_identity_with_no_life360_blocks(persons):
+    assert circles_from_persons(persons) == ()

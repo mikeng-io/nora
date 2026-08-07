@@ -36,6 +36,7 @@ from ..infra.vision import VisionCache, VisionClient
 from .ports import ToolSpec, adapt
 from .room import Room
 from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs
+from .whereis import Circle, PresenceReader
 
 
 class ToolRegistry:
@@ -67,6 +68,8 @@ class ToolRegistry:
         vision: VisionClient | None = None,
         blobs: BlobStore | None = None,
         search: SearchClient | None = None,
+        presence: PresenceReader | None = None,
+        circles: tuple[Circle, ...] = (),
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -100,6 +103,16 @@ class ToolRegistry:
         # answer `unavailable` (the honest «not configured» state, R-5). The
         # composition root passes one built from `[search]` only when enabled.
         self._search = search
+        # `presence`/`circles` are `whereis`'s collaborators (DEC-59, activating
+        # DEC-54's inert seam): the local `presence_fixes` reader and the circle
+        # rosters derived from identity.toml (`circles_from_persons`). NOT
+        # default-constructed, for the reason `route` is not: there is no
+        # readerless default, so every composition that has not wired them —
+        # offline, eval, `[presence]` disabled, an identity with no circle —
+        # leaves `whereis` answering `unavailable`, honest and inert (R-5). The
+        # per-call R-31 subset guard lives in `nora.agent.whereis`, not here.
+        self._presence = presence
+        self._circles = tuple(circles)
 
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
@@ -239,6 +252,7 @@ class ToolRegistry:
             vision_source=self._vision, blob_store=self._blobs,
             vision_cache=self._vision_cache,
             search_source=self._search,
+            presence_source=self._presence, presence_circles=self._circles,
             question=question, context_window=context_window,
         )
 

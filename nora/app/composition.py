@@ -27,7 +27,9 @@ from openai import AsyncOpenAI
 
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
+from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
+from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.ports import (
@@ -46,6 +48,7 @@ from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
+from nora.infra.sql.presence import PresenceStore
 from nora.infra.vision import VisionClient, derive_vision_timeout
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
@@ -61,7 +64,7 @@ from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
-from nora.policy import PolicyError, load_policy
+from nora.policy import Policy, PolicyError, load_policy
 from nora.tag import Debounce
 
 from .agent_runner import LiveAgentRunner
@@ -165,8 +168,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     except Exception as exc:
         raise StartupError(f"migration error: {exc}") from exc
     metrics = Metrics()
+    # ONE engine (one pool) shared by the record store and the presence reader —
+    # the shape `PresenceStore`'s own docstring asks for. `audit.aclose()` (in
+    # `nora.__main__.App.shutdown`) disposes it for both; `PresenceStore.aclose`
+    # is deliberately NOT also called on this shared engine.
+    engine = create_sql_engine(database_url)
     audit = SqlRecordStore(
-        create_sql_engine(database_url),
+        engine,
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
     )
@@ -342,8 +350,29 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             fetch_max_chars=cfg.search.fetch_max_chars,
             timeout_seconds=cfg.search.timeout_seconds,
         )
+    # `whereis` (DEC-59, activating DEC-54's inert seam) is wired ONLY when
+    # `[presence] enabled` AND identity.toml yields at least one circle — the
+    # enabled-AND-configured gate `route` and media custody use. Off, or
+    # circle-less, leaves the registry without a reader and `whereis` answers
+    # `unavailable` (R-5's honest «not configured»). The reader shares the
+    # `audit` engine (one pool, one lifecycle); the COLLECTOR process, not this
+    # one, owns writing/pruning `presence_fixes` — Nora only ever reads it.
+    presence_store: PresenceStore | None = None
+    presence_circles: tuple[Circle, ...] = ()
+    if cfg.presence.enabled:
+        presence_circles = circles_from_persons(persons)
+        if presence_circles:
+            presence_store = PresenceStore(
+                engine, retention_days=cfg.presence.retention_days, metrics=metrics,
+            )
+        else:
+            log.warning(
+                "presence enabled but identity.toml yields no circle "
+                "([[persons.<id>.life360]] with circle_id) — whereis stays unavailable"
+            )
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client, blobs=blobs, search=search_client,
+        presence=presence_store, circles=presence_circles,
     )
     # The room-scoped tools' one platform dependency. Built here rather than
     # taken off the adapter because membership is a read-only DIRECTORY query
@@ -352,6 +381,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     roster_source: RosterSource = SignalRoster(
         base_url=cfg.platforms.signal.base_url, account=cfg.platforms.signal.account,
     )
+    if presence_store is not None:
+        # The R-21/R-31 startup invariant (design/19 §7.7, wired with `whereis`
+        # per DEC-54(4)): alarm the day a policy conversation is no longer a
+        # subset of a circle. A BACKGROUND task, not a startup gate — it needs
+        # the signal-cli roster, and an unreadable roster must not stop Nora
+        # (the AUTHORITATIVE fail-closed check is per-call in `Whereis.locate`;
+        # this is the belt-and-braces pre-flight its docstring names).
+        background.spawn(_presence_preflight(
+            allowlist=allowlist, roster_source=roster_source, persons=persons,
+            circles=presence_circles, metrics=metrics,
+            # Without her aliases Nora HERSELF is the «1 unmapped account» —
+            # found live 2026-08-07, first boot of this pre-flight: her own
+            # membership resolves to nobody in identity.toml, exactly the
+            # stranger-shape the warning exists for. The tag path's Room gets
+            # the same set (`EngagementPipeline._run_admitted`).
+            self_ids=frozenset(getattr(registry.identity_for("signal"), "aliases", ())),
+        ))
     engagement = EngagementPipeline(
         adapter=adapter, audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
@@ -373,6 +419,66 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client,
     )
+
+
+async def _presence_preflight(
+    *,
+    allowlist: Policy,
+    roster_source: RosterSource,
+    persons: Persons,
+    circles: tuple[Circle, ...],
+    metrics: Metrics,
+    self_ids: frozenset[str] = frozenset(),
+) -> None:
+    """The R-21/R-31 disclosure pre-flight (design/19 §7.7): for every policy
+    conversation, is its resolved membership a SUBSET of each circle?
+
+    `check_disclosure_invariant` publishes `nora_presence_circle_subset_ok` and
+    logs an ERROR on the day the answer is no — the operator's tell that a
+    stranger joined the group (or someone left the circle) and `whereis` is now
+    refusing there. Belt-and-braces over the KNOWN person_ids only; the per-call
+    guard in `Whereis.locate` is authoritative and also refuses on unmapped
+    accounts (`view.unnamed`), which a person_id subset cannot see — so this
+    logs those as a warning rather than pretending the gauge covers them.
+
+    Never fatal, never raises: an unreadable roster leaves the invariant
+    UNVERIFIED (warned, not alarmed), and the per-call guard refuses on exactly
+    that unverifiability."""
+    for conv in allowlist.conversations:
+        if conv.platform != "signal":
+            continue
+        try:
+            view = None
+            # `ids` is the id plus its aliases; the first readable one is the room.
+            for conversation_id in sorted(conv.ids):
+                candidate = await Room(
+                    platform=conv.platform, conversation_id=conversation_id,
+                    roster_source=roster_source, persons=persons, self_ids=self_ids,
+                ).members()
+                if candidate.available:
+                    view = candidate
+                    break
+            if view is None:
+                log.warning(
+                    "presence pre-flight: roster unreadable for a policy "
+                    "conversation — subset invariant unverified there; whereis's "
+                    "per-call guard still refuses anything unverifiable"
+                )
+                continue
+            if view.unnamed:
+                log.warning(
+                    "presence pre-flight: %d unmapped account(s) in a policy "
+                    "conversation — whereis refuses there until identity.toml "
+                    "names them (`nora persons pending`)",
+                    view.unnamed,
+                )
+            group_person_ids = frozenset(p.person_id for p in view.people)
+            for circle in circles:
+                check_disclosure_invariant(
+                    circle=circle, group_person_ids=group_person_ids, metrics=metrics,
+                )
+        except Exception:
+            log.exception("presence pre-flight failed for a policy conversation")
 
 
 def _build_media_custody(cfg: Config) -> tuple[MediaSource | None, BlobStore | None]:

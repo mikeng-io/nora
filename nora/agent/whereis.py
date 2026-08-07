@@ -26,20 +26,16 @@ Two things this seam is careful NOT to weaken:
   argument. `whereis` returns a position for Nora's REPLY (in-group disclosure is
   fine, §5.3), which is a different exit than a Google query argument.
 
-  **CAUTION for the engineer wiring this tool: today's R-28 block in
-  `nora.agent.tools` does NOT cover this.** R-28 screens `scan_identifiers`
-  (phone/UUID/key prefixes) and known person NAMES — a bare coordinate
-  («22.31,114.16») and a place string match neither and would pass to
-  `route()` → Google. So wiring `whereis` into a route-capable turn REQUIRES an
-  explicit coordinate/place outbound barrier added alongside; it is not already
-  there. This is council finding #4 (2026-08-07); the barrier lands when the
-  tool is wired, not before (the seam is inert until then, so nothing leaks in
-  the meantime).
+  That barrier EXISTS: `nora.agent.tools._looks_like_coordinate` refuses a raw
+  coordinate in a `route` argument (council finding #4, 2026-08-07, R-28) — it
+  landed BEFORE this tool was wired, exactly as the council required, so a
+  `whereis` fallback coordinate cannot ride a route argument to Google.
 
-Shipped as a testable SEAM, not yet wired into `NATIVE_TOOLS` — the same INERT
-shape the navigation skill shipped in (DEC-48). Presence is `enabled=false`
-(DEC-54/55); wiring `whereis` as a model-facing tool is a later step, so its
-prompt weight and selection are not on the live surface until then.
+Shipped 2026-08-07 as a testable SEAM (the DEC-48 inert shape), WIRED the same
+day (DEC-59): `whereis` is in `NATIVE_TOOLS`, built by `build_tool_specs` over
+this seam, and `ToolRegistry` holds the presence reader + circles the way it
+holds the route client. The R-28 coordinate barrier in `nora.agent.tools`
+(council #4) landed BEFORE the wiring, as required above.
 """
 
 from __future__ import annotations
@@ -74,6 +70,28 @@ class Circle:
 
     circle_id: str
     person_ids: frozenset[str]
+
+
+def circles_from_persons(persons: Any) -> tuple[Circle, ...]:
+    """The `Circle`s Nora's own process wires `whereis` with, from identity.toml's
+    `[[persons.<id>.life360]]` blocks — the same grouping the collector's
+    `_circles_from_identity` does, with DIFFERENT failure semantics on purpose:
+    the collector REFUSES to start on an unplaced block or an empty roster
+    (enabled-but-collecting-nothing is R-5's shape), while here a block with no
+    `circle_id` is simply skipped and an empty result is a valid answer —
+    `whereis` degrades to `unavailable`, and Nora must not refuse to START over a
+    tool that can honestly say «I can't check».
+
+    Sorted by circle_id so the tuple is deterministic across restarts."""
+    by_circle: dict[str, set[str]] = {}
+    for membership in persons.life360:
+        if membership.circle_id is None:
+            continue
+        by_circle.setdefault(membership.circle_id, set()).add(membership.person_id)
+    return tuple(
+        Circle(circle_id=circle_id, person_ids=frozenset(person_ids))
+        for circle_id, person_ids in sorted(by_circle.items())
+    )
 
 
 class DisclosureGuard:

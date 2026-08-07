@@ -57,6 +57,7 @@ from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers
 from .ports import ToolSpec, adapt
 from .room import Room, RoomView, _key, _names_of
+from .whereis import Whereis
 
 log = logging.getLogger("nora.tools")
 
@@ -180,6 +181,19 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            "takes — the only tool that can answer about a trip at a "
                            "later time",
                         time_shiftable=True),
+    # 2, sized like `route`: one message can ask after two people («阿仔同阿女
+    # 喺邊»), and two calls plus a reply still leave half the turn. Each call
+    # is one local table read — cheap — so like `calculate` the budget is sized
+    # by the QUESTION, not the cost.
+    #
+    # `time_shiftable=False` (design/14 §5.1): the answer is the LATEST recorded
+    # fix and decays from the moment it is read — the fix's age rides in the
+    # result so the model can say «20 分鐘前», but asked where someone will be
+    # LATER this tool has nothing. `terminal=False`: a position is the middle of
+    # an answer, never the end of one.
+    "whereis": NativeTool(2, "where somebody in this conversation is — never state "
+                             "or guess a location you did not get from here",
+                          time_shiftable=False),
     # **`chat_earlier`, not `read_buffer`, and that was MEASURED, not argued
     # (DEC-58, same harness as DEC-39).** The old name was a lie — nothing is
     # buffered; it reads durable rows off disk (GLOSSARY). With the docstring
@@ -654,6 +668,8 @@ def build_tool_specs(
     blob_store=None,
     vision_cache=None,
     search_source=None,
+    presence_source=None,
+    presence_circles=(),
     question: str = "",
     context_window: int = 40,
 ) -> tuple[ToolSpec, ...]:
@@ -1213,6 +1229,67 @@ def build_tool_specs(
         )
         return out
 
+    async def whereis(person: str) -> dict:
+        """Where somebody in this conversation was last seen.
+
+        Call this when somebody asks where a person is («佢喺邊», «阿媽返咗
+        屋企未»). Give it the person the way they were named — a name or
+        nickname of somebody IN this conversation. It reads a location this
+        household already shares with you; nothing leaves this machine.
+
+        `status` is one of five and they mean different things:
+          - `ok` — where they were last recorded. `age_seconds` says how OLD
+            that fix is — ALWAYS carry the age into your reply («大概 20 分鐘前
+            喺…»): a position said without its age reads as «right now», which
+            you do not know. `address` is the place when there is one. If you
+            get `lat`/`lng` instead, say you only have a rough position — NEVER
+            read coordinates aloud and NEVER pass them to another tool.
+          - `refused` — you may not say here: someone in this conversation is
+            outside the location-sharing circle, or you can't confirm who is
+            here. Say that in one clause; do not hint at the location.
+          - `not_found` — nobody in this conversation goes by that name. Say
+            you're not sure who they mean — do not guess.
+          - `ambiguous` — more than one person here matches; `could_be` lists
+            them. Ask which one.
+          - `unavailable` — no recorded position, or you could not check. Say
+            so — never guess a place, never make one up.
+
+        Args:
+            person: Who they asked about, exactly as they said it («阿豹», «Miles»).
+        """
+        if presence_source is None or not presence_circles:
+            # Presence not wired (offline/eval compositions, or `[presence]`
+            # disabled / identity.toml carrying no circle). `unavailable`, never
+            # a silent empty — a wiring gap must look like «I could not check»,
+            # not «I don't know where they are» (R-5), and never a crash.
+            _record(metrics, "whereis", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't check where people are right now. Say you have no "
+                        "way to see that — do not guess.",
+            }
+        # One `Whereis` per circle, first `ok` wins. With one circle (today's
+        # deployment) this is exactly the seam's own behaviour. With several, a
+        # non-`refused` answer from a circle the room IS a subset of outranks a
+        # `refused` from one it is not — the refusal is about the ROOM/circle
+        # pair, not the person — while `ok` from any qualifying circle is the
+        # answer. All of this stays inside `Whereis.locate`'s guard: no circle
+        # the room is not a verified subset of ever discloses (R-31).
+        results: list[dict] = []
+        for circle in presence_circles:
+            out = await Whereis(
+                room=room, circle=circle, presence=presence_source, metrics=metrics,
+            ).locate(person)
+            if str(out.get("status", "")) == "ok":
+                _record(metrics, "whereis", "ok", age_seconds=out.get("age_seconds"))
+                return out
+            results.append(out)
+        answer = next(
+            (r for r in results if r.get("status") != "refused"), results[0],
+        )
+        _record(metrics, "whereis", str(answer.get("status", "unavailable")))
+        return answer
+
     # ---- media_fetch: read a stored image back through MiMo (DEC-56) ---------
     #
     # The window scanned for the handle. It must be at least as deep as the
@@ -1593,6 +1670,7 @@ def build_tool_specs(
         _spec("calculate", calculate),
         _spec("transit", transit),
         _spec("route", route),
+        _spec("whereis", whereis),
         _spec("chat_earlier", chat_earlier),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
@@ -1620,6 +1698,8 @@ def build_tools(
     blob_store=None,
     vision_cache=None,
     search_source=None,
+    presence_source=None,
+    presence_circles=(),
     question: str = "",
     context_window: int = 40,
 ) -> list:
@@ -1632,6 +1712,8 @@ def build_tools(
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
         room=room, transit_source=transit_source, route_source=route_source,
         vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
-        search_source=search_source, question=question, context_window=context_window,
+        search_source=search_source,
+        presence_source=presence_source, presence_circles=presence_circles,
+        question=question, context_window=context_window,
     )
     return [adapt(spec) for spec in specs]
