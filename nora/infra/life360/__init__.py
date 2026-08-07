@@ -8,14 +8,20 @@ unit-test without a server), and the never-raising HTTP round trip in `http`.
 
 from nora.infra.life360.client import (
     CircleRead,
+    DiscoveredCircle,
+    DiscoveredMember,
     Life360Client,
+    Life360DiscoveryError,
     ReadStatus,
 )
 from nora.infra.life360.members import Member, parse_members
 
 __all__ = [
     "CircleRead",
+    "DiscoveredCircle",
+    "DiscoveredMember",
     "Life360Client",
+    "Life360DiscoveryError",
     "Member",
     "ReadStatus",
     "parse_members",

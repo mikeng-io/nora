@@ -43,6 +43,7 @@ log = logging.getLogger("nora.presence.life360")
 
 TOKEN_URL = "https://api.life360.com/v3/oauth2/token.json"  # noqa: S105 — a URL, not a secret
 MEMBERS_URL = "https://api.life360.com/v3/circles/{circle_id}/members"
+CIRCLES_URL = "https://api.life360.com/v3/circles"
 
 # The Life360 Android app's User-Agent shape — the study's missing ingredient.
 # A constructor default, overridable, because it is a property of the client
@@ -79,6 +80,30 @@ class CircleRead:
     detail: str = ""
 
 
+@dataclass(frozen=True)
+class DiscoveredMember:
+    """A circle member as OPERATOR discovery needs them: the Life360 id to paste
+    into a `[[persons.<id>.life360]]` block, and the NAME `read_circle` discards
+    (the collector classifies location; it never needed the name)."""
+
+    member_id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class DiscoveredCircle:
+    circle_id: str
+    name: str
+    members: tuple[DiscoveredMember, ...]
+
+
+class Life360DiscoveryError(Exception):
+    """A discovery failure. UNLIKE `read_circle`, `discover` RAISES — it backs the
+    one-shot `nora presence members` CLI, not the daemon loop, and an operator
+    running it wants a clear message and a non-zero exit, not a typed-degraded
+    value he has to inspect."""
+
+
 class Life360Client:
     """One Life360 account's circle reads, behind the collector.
 
@@ -96,10 +121,12 @@ class Life360Client:
         user_agent: str = DEFAULT_USER_AGENT,
         token_url: str = TOKEN_URL,
         members_url: str = MEMBERS_URL,
+        circles_url: str = CIRCLES_URL,
         timeout_seconds: float = TIMEOUT_SECONDS,
         metrics: Any = None,
     ) -> None:
         self._client_credential = client_credential
+        self._circles_url = circles_url
         self._username = username
         self._password = password
         self._user_agent = user_agent
@@ -144,6 +171,58 @@ class Life360Client:
                 return self._banned("fresh token still 403 — ban risk")
 
         return self._classify(result, now_ms=now_ms)
+
+    async def discover(self) -> list[DiscoveredCircle]:
+        """Every circle this account can see, each with its members' id + name —
+        the mapping `nora presence members` prints for identity.toml. One-shot
+        operator call: RAISES `Life360DiscoveryError` on any failure (see it)."""
+        token = await self._authenticate()
+        if token is None:
+            raise Life360DiscoveryError(
+                "authentication failed — check LIFE360_CLIENT_CREDENTIAL, "
+                "LIFE360_USERNAME and LIFE360_PASSWORD"
+            )
+        body = await self._get_json(self._circles_url, token)
+        circles = body.get("circles") if isinstance(body, dict) else None
+        if not isinstance(circles, list):
+            raise Life360DiscoveryError("unexpected /circles response shape")
+        out: list[DiscoveredCircle] = []
+        for circle in circles:
+            if not isinstance(circle, dict):
+                continue
+            circle_id = str(circle.get("id") or "").strip()
+            if not circle_id:
+                continue
+            members_body = await self._get_json(
+                self._members_url.format(circle_id=circle_id), token
+            )
+            out.append(
+                DiscoveredCircle(
+                    circle_id=circle_id,
+                    name=str(circle.get("name") or "").strip(),
+                    members=_discovered_members(members_body),
+                )
+            )
+        return out
+
+    async def _get_json(self, url: str, token: str) -> Any:
+        """One authenticated GET for discovery. Raises on anything but a 200 JSON
+        body — the CLI wants the failure surfaced, not degraded."""
+        result = await request(
+            "GET",
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "User-Agent": self._user_agent,
+                "Accept": "application/json",
+            },
+            timeout_seconds=self._timeout_seconds,
+        )
+        if not result.ok or result.status != 200 or not result.is_json:
+            raise Life360DiscoveryError(
+                f"GET {url} failed (status {result.status}, json={result.is_json})"
+            )
+        return result.json
 
     def _classify(self, result: Any, *, now_ms: int) -> CircleRead:
         if not result.ok:
@@ -221,3 +300,25 @@ class Life360Client:
     def _alarm(self, reason: str) -> None:
         if self._metrics is not None:
             self._metrics.inc("nora_presence_auth_alarms_total", reason=reason)
+
+
+def _discovered_members(body: Any) -> tuple[DiscoveredMember, ...]:
+    """Parse a /members body into (id, name) pairs for discovery. The members
+    endpoint carries `firstName`/`lastName`, which `parse_members` (built for the
+    collector's location classification) drops — this keeps them."""
+    members = body.get("members") if isinstance(body, dict) else None
+    if not isinstance(members, list):
+        return ()
+    out: list[DiscoveredMember] = []
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        member_id = str(member.get("id") or "").strip()
+        if not member_id:
+            continue
+        name = " ".join(
+            str(member.get(key) or "").strip()
+            for key in ("firstName", "lastName")
+        ).strip()
+        out.append(DiscoveredMember(member_id=member_id, name=name or "(unnamed)"))
+    return tuple(out)

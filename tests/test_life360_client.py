@@ -87,6 +87,12 @@ class _Life360:
             {"access_token": "tok-abc", "token_type": "Bearer"}, status=200
         )
 
+    async def circles(self, request: web.Request) -> web.Response:
+        self.requests.append("circles")
+        if not request.headers.get("Authorization", "").startswith("Bearer "):
+            return web.json_response({"errorMessage": "no token"}, status=403)
+        return web.json_response({"circles": [{"id": "c1", "name": "Ridgeline"}]})
+
     async def members(self, request: web.Request) -> web.Response:
         self.requests.append("members")
         if not request.headers.get("Authorization", "").startswith("Bearer "):
@@ -114,6 +120,7 @@ async def life360():
     fake = _Life360()
     app = web.Application()
     app.router.add_post("/token.json", fake.token)
+    app.router.add_get("/circles", fake.circles)
     app.router.add_get("/circles/{cid}/members", fake.members)
     server = TestServer(app)
     await server.start_server()
@@ -127,6 +134,7 @@ def _client(base, *, metrics=None) -> Life360Client:
         client_credential=CREDENTIAL, username="u", password="p", user_agent=UA,  # noqa: S106
         token_url=f"{base}token.json",
         members_url=f"{base}circles/{{circle_id}}/members",
+        circles_url=f"{base}circles",
         metrics=metrics,
     )
 
@@ -254,6 +262,34 @@ async def test_a_token_response_without_a_token_is_banned(life360):
     client = _client(base)
     read = await client.read_circle(circle_id="c1", now_ms=NOW_MS)
     assert read.status is ReadStatus.BANNED
+
+
+# ── discover(): the operator capture path (nora presence members) ────────────
+
+async def test_discover_lists_circles_and_members_with_names(life360):
+    """`discover` keeps the member NAME (firstName/lastName) that `read_circle`'s
+    classification path drops — the operator needs it to map a Life360 id to a
+    person. Auth once, list circles, then members per circle."""
+    fake, base = life360
+    fake.members_body = {"members": [
+        {"id": "m-miles", "firstName": "Miles", "lastName": "Novak"},
+        {"id": "m-gab", "firstName": "Grant"},
+    ]}
+    circles = await _client(base).discover()
+    assert [(c.circle_id, c.name) for c in circles] == [("c1", "Ridgeline")]
+    assert {(m.member_id, m.name) for m in circles[0].members} == {
+        ("m-miles", "Miles Novak"), ("m-gab", "Grant"),
+    }
+
+
+async def test_discover_raises_a_readable_error_when_auth_fails(life360):
+    """UNLIKE read_circle, discover RAISES — it backs a one-shot CLI, and a bad
+    credential must be a clear message + non-zero exit, not a degraded value."""
+    from nora.infra.life360 import Life360DiscoveryError
+    fake, base = life360
+    fake.auth_mode = "403"
+    with pytest.raises(Life360DiscoveryError, match="authentication failed"):
+        await _client(base).discover()
 
 
 # ── classification is pure; unit-test it directly (no server) ────────────────

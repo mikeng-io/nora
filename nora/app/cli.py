@@ -45,6 +45,7 @@ from nora.app import report
 from nora.app.pending import correlate
 from nora.config import Config, ConfigError, load
 from nora.domain.models import UnattributedRow
+from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import SqlRecordStore, create_readonly_sql_engine
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.signal import directory
@@ -92,6 +93,16 @@ def add_subcommands(
         help=f"unattributed audit rows to scan (default {DEFAULT_SCAN_LIMIT})",
     )
     pending.set_defaults(func=cmd_pending)
+
+    presence = subparsers.add_parser(
+        "presence", parents=[parent], help="Life360 presence helpers",
+    )
+    presence_sub = presence.add_subparsers(dest="presence_command", required=True)
+    members = presence_sub.add_parser(
+        "members", parents=[parent],
+        help="list your Life360 circles + members (id + name) to paste into identity.toml",
+    )
+    members.set_defaults(func=cmd_presence_members)
 
 
 def run(args: argparse.Namespace) -> int:
@@ -158,6 +169,41 @@ async def cmd_groups(args: argparse.Namespace) -> int:
         groups=groups, policy=policy,
         policy_path=str(cfg.policy_file), base_url=signal.base_url,
     ):
+        print(line)
+    return 0
+
+
+async def cmd_presence_members(args: argparse.Namespace) -> int:
+    """`nora presence members` — one authenticated Life360 read that prints every
+    circle and member (id + name), so the operator can paste the ids into
+    identity.toml and config.toml. Reuses the SAME `Life360Client` the collector
+    runs on (one Life360 library, design/19 §4) — nothing here is a second impl."""
+    cfg = _config(args)
+    presence = cfg.presence
+    creds = {
+        presence.client_credential_env: os.environ.get(presence.client_credential_env, ""),
+        presence.username_env: os.environ.get(presence.username_env, ""),
+        presence.password_env: os.environ.get(presence.password_env, ""),
+    }
+    missing = [name for name, value in creds.items() if not value]
+    if missing:
+        raise CliError(
+            "these Life360 env vars are unset: " + ", ".join(missing) + "\n"
+            f"Add them to .env. {presence.client_credential_env} is the Life360 "
+            "app's Basic credential (a public app constant, the same for every "
+            f"unofficial client); {presence.username_env}/{presence.password_env} "
+            "are your Life360 login."
+        )
+    client = Life360Client(
+        client_credential=creds[presence.client_credential_env],
+        username=creds[presence.username_env],
+        password=creds[presence.password_env],
+    )
+    try:
+        circles = await client.discover()
+    except Life360DiscoveryError as exc:
+        raise CliError(f"life360 discovery failed: {exc}") from exc
+    for line in report.render_presence_members(circles):
         print(line)
     return 0
 
