@@ -4,7 +4,7 @@ title: "Reminders + heartbeat — a deferred request, fired on its own path"
 description: "Nora's first unprompted-speech path. A tick selects due rows from a one-shot reminders table and runs them through a dedicated fire path — not the tag pipeline, whose ingest gating, trigger gate, audit write, memory feed, admission and reactions are all wrong for a synthetic turn. v3 after two review rounds: v1's pipeline-reuse premise was false, v2's tool_choice=auto answer was refuted by the measurement it cited."
 tags: [nora, spec, reminders, heartbeat, proactive, doctrine]
 timestamp: '2026-08-08'
-status: draft v3 — rewritten twice against review
+status: settled — READY FOR PLAN after six review rounds
 derives_from:
   - design/01-ambient-ingest.md
   - design/11-recall-and-threading.md
@@ -386,7 +386,7 @@ Consequences to carry into implementation:
 
 **Scope of the label, stated deliberately.** Only `nora_silent_failures_total`
 gets `audience` in v1, because it is the alarm. `Deliverer` also moves
-`nora_replies_total{status,platform}` (`guards.py:214, 217`),
+`nora_replies_total{status,platform}` (`guards.py:216, 218`),
 `nora_guard_vetoes_total`, `nora_leak_blocks_total` and `nora_egress_blocks_total`,
 and those stay unlabelled — so **a fire-path send is indistinguishable from a tag
 reply in `nora_replies_total`**, the series an operator reaches for straight after
@@ -884,9 +884,15 @@ from this repo.)*
 4. **The fire turn** — own `TagContext` and synthetic message (§6.4), header
    parameter (§6.3), own `wait_for` and error accounting (§6.2), `required`,
    deliver. Plus the `audience` label, whose full scope is: **all nine increment
-   sites** (§6.2), the two exact-label assertions in
-   `tests/test_metrics_export.py:76, :152`, and the A8 expression in
-   `docs/runbook.md:10` / `:17`.
+   sites** (§6.2), the **three** exact-label assertions in
+   `tests/test_metrics_export.py:76`, `:152` and `tests/test_metrics_stub.py:48`,
+   and the A8 expression in `docs/runbook.md:10` / `:17`.
+
+   *`test_metrics_stub.py` was missed by v3.3's list of two. `snapshot()` keys on
+   `tuple(sorted(sample.labels.items()))` (`metrics.py:135-138`), so the added
+   label changes the key and the exact-2-tuple subscript raises `KeyError`. Every
+   other assertion in the suite reads through `Metrics.get`, which subset-matches
+   (`metrics.py:51-53`) and survives untouched.*
 5. **Tools** — `remind` / `list_reminders` / `cancel_reminder`, plus the
    `Room.tagger` accessor (§12) and the `fire_turn` keyword threaded through
    `build_tool_specs` / `specs()` / `build()` (§7.1).
