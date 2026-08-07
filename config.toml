@@ -222,14 +222,18 @@ retention_days = 180
 # SearXNG web_search + Firecrawl web_fetch (DEC-57, design/22). Turned ON
 # 2026-08-07 in the SPLIT shape: web_search is live (SearXNG queries fixed
 # engines, fetches no model-chosen page; the query egress is coordinate- and
-# identifier-screened). web_fetch stays OFF (`fetch_enabled = false`) until the
-# Firecrawl egress deny-rule lands — Firecrawl fetches a model-chosen URL and is
-# the SSRF surface (design/22 §0). Nora's code-side guards are already strong:
-# is_global pre-check + post-redirect sourceURL re-validation (Hermes study) +
-# the per-tag allowed_urls fence + the untrusted wrap; the packet-layer egress
-# floor is the remaining gate. URLs point at the co-located local services.
+# identifier-screened). web_fetch turned ON 2026-08-08 at the operator's call,
+# accepting the documented residual: Firecrawl fetches a model-chosen URL (the
+# SSRF surface, design/22 §0) and its packet-layer egress deny-rule is NOT yet
+# in place. The code-side guards that ship the CONTENT boundary are live —
+# is_global pre-check + post-redirect sourceURL re-validation (Hermes study,
+# refuses the body if Firecrawl's FINAL host is non-global) + the per-tag
+# allowed_urls fence + the untrusted wrap — so an internal service's content
+# cannot reach the model or the group; the residual is blind-SSRF side effects
+# only (a request reaching an internal host, its body withheld). URLs point at
+# the co-located local services.
 enabled = true
-fetch_enabled = false
+fetch_enabled = true
 # Container names on the joined external networks (see docker-compose.yml) —
 # these services publish only on host 127.0.0.1, unreachable via the gateway.
 searxng_url = "http://searxng-core:8080"
