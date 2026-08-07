@@ -172,3 +172,13 @@ vision_timeout_seconds = 20.0
 # R-28 blocks a person's name/position from ever leaving in origin/destination.
 enabled = true
 api_key_env = "GOOGLE_MAPS_API_KEY"
+
+[presence]
+# The Life360 presence collector (design/19). Circles + member ids live entirely
+# in identity.toml ([[persons.<id>.life360]] blocks) — this section is id-free.
+# Life360 creds are in .env (DEC-8). whereis discloses a member's position only
+# into a conversation whose people are a SUBSET of that member's circle (R-21):
+# an identity not in the circle simply cannot be located, by design.
+enabled = true
+cadence_seconds = 90
+retention_days = 180

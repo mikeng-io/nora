@@ -155,6 +155,59 @@ services:
       start_period: 20s
       retries: 3
 
+  # presence — the Life360 presence collector (design/19 §4). Same image as
+  # nora, a DIFFERENT command and a SEPARATE process: `python -m nora.presence`
+  # polls each circle derived from identity.toml and records fixes into the
+  # shared Postgres store. No build: stanza on purpose — it runs whatever
+  # `docker compose build nora` produced, so the two processes can never drift
+  # onto different code.
+  presence:
+    image: nora:latest
+    container_name: presence
+    restart: unless-stopped
+    # The image's ENTRYPOINT is `uv run --no-sync python -m nora` (the daemon) —
+    # a compose `command:` would be appended to THAT as subcommand args, so the
+    # collector must override the entrypoint itself, not the command.
+    entrypoint: ["uv", "run", "--no-sync", "python", "-m", "nora.presence"]
+    command: ["--config", "config.toml"]
+    networks: [nora]
+    # :9101 on loopback so deploy/watchdog.sh (host) can read the collector's
+    # own /metrics + /health (§4: liveness lives in the daemon).
+    ports: ["127.0.0.1:9101:9101"]
+    depends_on:
+      db:
+        # The collector runs `alembic upgrade head` first thing, so it needs a
+        # SERVING Postgres, not merely a spawned container.
+        condition: service_healthy
+    environment:
+      # Same DATABASE_URL shape as nora's: the two processes share one store.
+      - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora
+      # Life360 creds are `:-` not `:?` on purpose: a compose-level `:?` failure
+      # aborts `docker compose up` for EVERY service, while an unset value here
+      # lets the collector itself refuse to start with its readable
+      # PresenceStartupError (composition.py, DEC-8) — scoped to this one
+      # container, visible in its logs, and absent entirely when presence is
+      # disabled in config.toml.
+      - LIFE360_CLIENT_CREDENTIAL=${LIFE360_CLIENT_CREDENTIAL:-}
+      - LIFE360_USERNAME=${LIFE360_USERNAME:-}
+      - LIFE360_PASSWORD=${LIFE360_PASSWORD:-}
+      # Optional reverse geocoder for address-less fixes — same key `route` uses;
+      # unset stores coordinates, never a failure.
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      # Same reasoning as nora's TZ: fix timestamps and logs should read in the
+      # group's clock, not UTC.
+      - TZ=Asia/Hong_Kong
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      # The circle/member mapping — the collector's entire roster (design/19 §3).
+      - ./identity.toml:/app/identity.toml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9101/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
   # db — Nora's own PostgreSQL record store (design/20 §3). Reached as `db:5432`
   # on the private network; loopback publish (127.0.0.1:5435) lets host-side ops
   # (migrations, the one-time load, backups, the `nora groups` CLI) in without
