@@ -362,13 +362,35 @@ not (§13).
 
 Consequences to carry into implementation:
 
-- Every increment site must pass it — the five in `Deliverer`, plus
-  `invoke.run`'s two and `check_outcome`'s one. Missing one produces an
-  unlabelled series, which is worse than no label.
+- **All nine increment sites must pass it.** Five in `Deliverer`
+  (`guards.py:146, 155, 169, 193, 220`), two in `invoke.run`
+  (`invoke.py:109-112, 116-118`), one in `check_outcome`, **and one in
+  `EngagementPipeline`'s outer `except BaseException`**
+  (`pipeline.py:355-360`, `reason="handler_error"`). Missing one leaves
+  `audience=""` (`Metrics._full_labels`, `nora/obs/metrics.py:41-47`) — an
+  unlabelled series, worse than no label.
+
+  *That ninth site was missed by this section's first draft, which is the
+  fourth consecutive enumeration of these call sites to come up short. The count
+  is nine; the list above is the list.*
 - **The A8 alarm must filter to `audience="tag"`**, or fire-path failures silently
-  consume a <1% budget sized for conversation.
+  consume a <1% budget sized for conversation. The `handler_error` site matters
+  most here: it is the last-resort R-5 signal, and an unlabelled one would be
+  excluded by that filter.
+- **`docs/runbook.md:10` carries the only in-repo copy of the A8 expression**
+  (`nora_silent_failures_total / nora_tags_total`, with a `curl | grep` recipe at
+  `:17`). After the label, that ratio mixes heartbeat failures into a tag-only
+  denominator. The runbook is part of step 4's scope (§16).
 - A fire-path alarm on `audience="heartbeat"` is then a separate expression, which
   is what §13's liveness argument wants anyway.
+
+**Scope of the label, stated deliberately.** Only `nora_silent_failures_total`
+gets `audience` in v1, because it is the alarm. `Deliverer` also moves
+`nora_replies_total{status,platform}` (`guards.py:214, 217`),
+`nora_guard_vetoes_total`, `nora_leak_blocks_total` and `nora_egress_blocks_total`,
+and those stay unlabelled — so **a fire-path send is indistinguishable from a tag
+reply in `nora_replies_total`**, the series an operator reaches for straight after
+the A8 ratio. That is a real limit (§15), accepted rather than overlooked.
 
 The fire path still calls `runner.invoke` inside its own `asyncio.wait_for` with
 `[heartbeat] timeout_seconds` rather than `invoke.run` — not for metric isolation
@@ -772,7 +794,7 @@ by a gate — worth knowing, since §14 exists to list what *does* catch mistake
 | `tests/test_guards_terminal.py` | must stay green — §6.1 adds no terminal verb |
 | doctrine tests | tag-audience body-identity **and** heartbeat-audience non-degeneracy (§10.1) |
 | queue-hoist tests | FIFO order must still hold after §5.3's refactor |
-| ~~`tests/test_metrics_export.py`~~ | **not a gate** — see §13; new metric names are held by review only |
+| `tests/test_metrics_export.py` | **a gate for the label, not for the names.** New metric *names* pass untouched (§13). But `:76` and `:152` assert **exact rendered label sets** — e.g. `nora_silent_failures_total{platform="signal",reason="llm_error"} 1.0` — and `generate_latest` emits labels **sorted**, so adding `audience` renders `{audience="",platform=…}` and both fail. `:152` is `test_platform_label_present_on_the_four_named_series`, i.e. the test the cited precedent itself produced — direct evidence that a label change owes a test edit |
 | `ARCHITECTURE.md` | `test_architecture_doc.py:8` fails on any new top-level package **or module** under `nora/` |
 | `uv run pytest -q` / `ruff` / `mypy` (scoped) / `lint-imports` | CLAUDE.md's four |
 
@@ -808,6 +830,12 @@ value asserted in `test_config.py` must match what is added.
   than `search_memory` answer with `partial_view` rather than failing closed.
   Bounded here because §7.2 keeps the room the requester's own.
 - Cap values are unmeasured (§9); phase 2's feasibility is unmeasured (§11).
+- **Only `nora_silent_failures_total` gains the `audience` label.** A fire-path
+  send is therefore indistinguishable from a tag reply in `nora_replies_total`,
+  and likewise in `nora_guard_vetoes_total` / `nora_leak_blocks_total` /
+  `nora_egress_blocks_total` — all of which `Deliverer` moves on both paths. The
+  alarm is separable; the traffic counters are not. Accepted for v1 because the
+  alarm is what has an SLO.
 - §5.3's hoist touches the live tag path. It is the riskiest change in the design
   and it is a prerequisite, so it lands first, alone, behind its own tests.
 
@@ -826,9 +854,10 @@ from this repo.)*
 
 0. **Hoist conversation serialisation** out of `EngagementPipeline` into an
    injected collaborator (§5.3), via the coroutine-factory escape. Live-path
-   refactor, no new behaviour, FIFO tests must stay green. **Blocks step 2, not
-   step 1** — but it lands first and alone regardless, because it is the only
-   live-path change in the design and should not share a review with new
+   refactor, no new behaviour, FIFO tests must stay green. **Blocks step 3** (the
+   tick, which needs §5.3's slot acquisition) — not steps 1 or 2, which touch
+   nothing the queue owns. It lands first and alone regardless, because it is the
+   only live-path change in the design and should not share a review with new
    behaviour.
 1. **Table + migration + `ReminderStore` + boot sweep + `nora reminders list`.**
    No model, fake-clock testable end to end. The §8.2 sweep (`firing` → `failed`)
@@ -853,8 +882,11 @@ from this repo.)*
 3. **Tick + policy re-check + outcome recording**, with a stub turn returning the
    §8.1 outcome enum. Still no model.
 4. **The fire turn** — own `TagContext` and synthetic message (§6.4), header
-   parameter (§6.3), own `wait_for` and error accounting (§6.2), the `audience`
-   label on `nora_silent_failures_total`, `required`, deliver.
+   parameter (§6.3), own `wait_for` and error accounting (§6.2), `required`,
+   deliver. Plus the `audience` label, whose full scope is: **all nine increment
+   sites** (§6.2), the two exact-label assertions in
+   `tests/test_metrics_export.py:76, :152`, and the A8 expression in
+   `docs/runbook.md:10` / `:17`.
 5. **Tools** — `remind` / `list_reminders` / `cancel_reminder`, plus the
    `Room.tagger` accessor (§12) and the `fire_turn` keyword threaded through
    `build_tool_specs` / `specs()` / `build()` (§7.1).
