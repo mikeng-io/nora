@@ -1555,6 +1555,22 @@ would break `_terminal_budget_spent`'s AND and the pinned
 
 - [ ] **Step 4:** `nora reminders list` in `cli.py` — **read-only only**. The module opens the store through `create_readonly_sql_engine` with a `SELECT`-only grant; a `cancel` subcommand would break both. The operator's kill switch is `[heartbeat] enabled = false` plus a restart.
 
+- [ ] **Step 4b: Publish `nora_reminders_pending`, or delete it**
+
+Task 4 declared the gauge and never published it, so it renders **`0.0`** — which
+reads as "no backlog" and is indistinguishable from "nobody is measuring". That is
+the silent-failure shape this repo exists to reject, and a gauge that means
+"unknown" while printing "fine" is worse than no gauge.
+
+`ReminderStore.count_pending` is **per requester**; there is no global count. So
+either add `count_all_pending() -> int` to the port — which means the fake, the
+SQL adapter and a **new contract test**, since Task 2 proved these two drift
+whenever the suite is not looking — or delete the declaration. Do not leave it
+declared and unpublished.
+
+Publish it the same way as the liveness gauge: `Metrics.gauge_function`, computed
+at scrape time, never from inside the tick body.
+
 - [ ] **Step 5:** Amend **R-1** in `design/09-decision-index.md` and add the replacement named test to `RULE_TESTS`: *the tag path and the fire path are the only two senders.* R-1's existing test asserts both its clauses but only over ambient input, so it stays green untouched — amending the row alone would delete the only written brake on a third send path with nothing going red.
 
 - [ ] **Step 6:** Update `ARCHITECTURE.md` (`test_architecture_doc.py` fails on any new top-level module under `nora/`).
