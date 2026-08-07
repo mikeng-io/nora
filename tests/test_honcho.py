@@ -263,3 +263,37 @@ async def test_a_list_shaped_session_response_is_not_mistaken_for_a_created_one(
     assert not any("/messages" in c for c in calls), (
         "no message may be posted when the session was never created"
     )
+
+
+async def test_chat_returns_the_synthesised_content(server_factory):
+    """The DIALECTIC verb (Honcho v2, design/24 §4): `POST /peers/{id}/chat`
+    with `{query, reasoning_level}` → `{"content": "<answer>"}`. Distinct from
+    `representation`, which returns raw conclusions; chat REASONS. Probe-verified
+    endpoint + fields against the live instance 2026-08-07."""
+    bodies: list[dict] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        if request.path.endswith("/chat"):
+            bodies.append(await request.json())
+            return web.json_response({"content": "Tin Shui Chi, from 天恆/天澤 mentions."})
+        return web.json_response({"ok": True})
+
+    base_url = await server_factory(handler)
+    client = HonchoClient(base_url, "nora")
+    out = await client.chat(peer_id="miles_novak", query="where does he live?")
+    assert out == "Tin Shui Chi, from 天恆/天澤 mentions."
+    assert bodies == [{"query": "where does he live?", "reasoning_level": "low"}]
+
+
+async def test_chat_is_none_on_empty_or_unreachable(server_factory):
+    """Best-effort: empty content is «nothing to say» (None), and a non-200 is
+    «could not ask» (None) — the caller never guesses a recollection."""
+    async def empty(request: web.Request) -> web.Response:
+        return web.json_response({"content": "  "})
+    client = HonchoClient(await server_factory(empty), "nora")
+    assert await client.chat(peer_id="miles_novak", query="q") is None
+
+    async def down(request: web.Request) -> web.Response:
+        return web.json_response({}, status=500)
+    client2 = HonchoClient(await server_factory(down), "nora")
+    assert await client2.chat(peer_id="miles_novak", query="q") is None

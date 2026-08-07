@@ -177,6 +177,7 @@ class HonchoClient:
         feed_timeout: float = 2.0,
         card_timeout: float = 3.0,
         representation_timeout: float = 3.0,
+        chat_timeout: float = 25.0,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._ws = workspace_id
@@ -188,6 +189,12 @@ class HonchoClient:
         # is bounded at all: the tag already costs a model round trip per tool
         # call, and a hung memory service must not add to that.
         self._representation_timeout = representation_timeout
+        # The DIALECTIC chat is a REASONING call — measured ~19 s against the live
+        # instance 2026-08-07 (the Honcho-side reasoning model is slow; a faster
+        # model is Miles's mimo/M3 tuning). 25 s is headroom over that measurement,
+        # deliberately larger than every other Honcho timeout, and it is why chat
+        # is NOT an eager in-turn tool yet: 19 s blows the p95≤5s SLO.
+        self._chat_timeout = chat_timeout
         self._workspace_ready = False
         self._known_peers: set[str] = set()
         self._sessions: dict[str, str] = {}
@@ -439,6 +446,42 @@ class HonchoClient:
             reachable=True,
             conclusions=_conclusions(result.get("representation")),
         )
+
+    async def chat(
+        self, *, peer_id: str, query: str, reasoning_level: str = "low"
+    ) -> str | None:
+        """The DIALECTIC verb — Honcho REASONS over a peer's representation and
+        peer card to SYNTHESISE a natural-language answer (Honcho v2, design/24
+        §4). Distinct from `representation`, which RETRIEVES raw conclusions:
+        asked «where does he live», representation returns event-log conclusions,
+        while chat answers «Tin Shui Chi, based on repeated 天恆/天澤商場
+        references» — probe-verified against the live instance 2026-08-07.
+
+        `POST /v3/workspaces/{ws}/peers/{peer_id}/chat`, body `{query,
+        reasoning_level}` → `{"content": "<answer>"}` (docs.honcho.dev/v3, and
+        the probe). `reasoning_level` trades speed for depth (minimal→max);
+        `low` is Honcho's default and the right one for an in-turn call. NEVER
+        streamed here — Nora wants one synchronous answer inside the loop budget.
+
+        Returns the answer string, or None on any failure (unreachable, non-200,
+        no `content`) — the best-effort `MemoryStore` contract: the caller says
+        «I couldn't recall that», never guesses. Empty/whitespace content is None
+        (Honcho has nothing to say), the honest `unavailable` for the tool.
+
+        Its own timeout: this is a REASONING call (an LLM inside Honcho), so it
+        is slower than `representation`. Bounded like every in-turn Honcho call
+        so a slow reason cannot overrun the tag's budget."""
+        result = await self._post(
+            self._url(f"/peers/{peer_id}/chat"),
+            {"query": query, "reasoning_level": reasoning_level},
+            self._chat_timeout,
+        )
+        if result is None:
+            return None
+        content = result.get("content")
+        if not isinstance(content, str) or not content.strip():
+            return None
+        return content.strip()
 
     async def health(self) -> MemoryHealth:
         result = await self._get(f"{self._base}/health", self._card_timeout)
