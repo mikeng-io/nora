@@ -43,7 +43,11 @@ from one observed message; empty without the observe-config.
 
 ### S.4 Resolved OPEN DECISIONS (§7)
 
-- **Granularity:** ONE workspace `cfg.memory.workspace_id="nora"`, one social unit — acceptable for alpha. **Future:** each distinct social unit gets its own `workspace_id`, declared per-group in identity.toml (which already binds people→groups/circles), graduating to a dedicated `workspaces.toml`. The code hook is a conversation→workspace mapping. This is the REAL "phase 1".
+- **Granularity:** ONE workspace `cfg.memory.workspace_id="nora"`, one social unit — acceptable for alpha. **Future:** each distinct social unit gets its own `workspace_id`, declared per-group in identity.toml (which already binds people→groups/circles), graduating to a dedicated `workspaces.toml`. The code hook is `WorkspaceRouter` (a74972a) — the FEED path is fully routed today. **But populating the overrides map is NOT sufficient on its own** (seam review 2026-08-08); three follow-ups are required or overridden conversations break SILENTLY (best-effort Honcho swallows the errors):
+  1. **Recall must route too.** `about`/`ask_memory` call `representation`/`chat` without `workspace_id`, so recall always reads the DEFAULT workspace — while feed WRITES to the override workspace. Add `workspace_id` to the `MemoryStore` port (it exists only on the concrete client today) and wire the tools to resolve it from their `conversation_id` (already in `build_tool_specs` scope) and pass it.
+  2. **Override workspaces + peers must be provisioned.** `ensure_workspace`/`ensure_peer`/`_create_peer` only touch `self._ws`; a feed to an override workspace assumes Honcho get-or-creates the workspace/peer, else every feed there returns False silently. Route these by conversation too.
+  3. Confirm Honcho's session-create/add-peers auto-create semantics for a not-yet-existing workspace before relying on (2).
+  This is the REAL "phase 1".
 - **N4 (subagent review):** non-identifier content blends across a unit's channels — accepted, because a workspace IS one social unit, so there is no cross-context to leak.
 
 ### S.5 The base64 session-id trap (live-caught, `4c9f107`)
