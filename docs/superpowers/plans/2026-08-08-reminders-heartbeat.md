@@ -38,7 +38,7 @@
 | `nora/app/heartbeat.py` | `HeartbeatLoop` — the tick, policy re-check, slot acquisition, outcome recording |
 | `nora/app/fire.py` | `FirePath` — one fire turn: `TagContext`, prefill, invoke, deliver |
 | `nora/doctrine/silence.md` | the extracted `[tag]`-only silence rules |
-| `migrations/versions/<rev>_reminders.py` | hand-written table + CHECK + named index |
+| `nora/infra/sql/migrations/versions/0004_reminders.py` | hand-written table + CHECK + named index |
 
 **Modified:**
 
@@ -339,6 +339,13 @@ pipeline = EngagementPipeline(..., slots=slots, ...)   # was queue_max=...
 
 Same shape in `nora/app/offline.py:85`, `tests/unit/test_engagement_pipeline.py:228`, `tests/architecture/test_no_retained_per_tag_state.py:113`. Keep `slots` in scope in `composition.py` — Task 4 needs the same instance.
 
+**Three more callers the constructor list misses**, each passing the deleted `in_flight=` / `queue_depth=` / `queue_max=` parameters directly to `admission.run`:
+- `tests/unit/test_engagement_admission.py:51-54` — the dedicated admission unit test
+- `tests/test_signal_self_id.py:249, :283` — two direct `admission.run` calls
+- `tests/integration/harness.py:151-152` — an `_in_flight` property proxying `self._engagement._in_flight`, backing five assertions in `tests/integration/test_tagging.py:124-154`
+
+Also: add `from ..slots import ConversationSlots` to `admission.py`, and delete `DEFAULT_QUEUE_MAX` (`pipeline.py:64`), which becomes dead — ruff will not flag it.
+
 - [ ] **Step 8: Run the full suite; fix the ~20 assertions**
 
 Run: `uv run pytest tests/unit/test_engagement_pipeline.py tests/architecture/ -v`
@@ -381,8 +388,9 @@ is the gate."
 
 **Files:**
 - Create: `nora/domain/reminders.py`, `nora/infra/sql/reminders.py`, `nora/testing/reminders.py`, `tests/contract/test_reminder_store_contract.py`
-- Create: `migrations/versions/<rev>_reminders.py`
-- Modify: `nora/infra/sql/schema.py`, `tests/infra/pg_schema_baseline.sql`
+- Create: `nora/infra/sql/migrations/versions/0004_reminders.py`
+- Modify: `nora/infra/sql/schema.py`
+- Regenerate: `tests/infra/pg_schema_baseline.sql` via `uv run python scripts/gen_pg_baseline.py` — `test_schema_parity.py:164` names this as the regeneration path
 - Test: `tests/infra/test_schema_parity.py` (existing, must pass)
 
 **Interfaces:**
@@ -394,6 +402,8 @@ is the gate."
 `mark` returns `bool` (did the row change) so the caller can distinguish a lost race from a no-op.
 
 - [ ] **Step 1: Write the contract suite first — it is the spec for both implementations**
+
+**Follow the house pattern exactly** — `tests/contract/test_audit_store_contract.py:32-42` uses a **parametrized fixture**, not a class hierarchy, and runs the SQL adapter against a real Postgres via `pg_url` + `run_migrations`. Copy that shape; do not invent a `ReminderStoreContract` base class and do not expect a `pg_engine` fixture, which does not exist.
 
 ```python
 # tests/contract/test_reminder_store_contract.py
@@ -407,7 +417,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from nora.domain.reminders import Reminder, ReminderState
+from nora.domain.reminders import Reminder, ReminderState, ReminderStore
+from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.migrate import run_migrations
+from nora.infra.sql.reminders import SqlReminderStore
+from nora.testing.reminders import FakeReminderStore
 
 UTC = timezone.utc
 T0 = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
@@ -424,11 +438,24 @@ def _row(**kw) -> Reminder:
     return Reminder(**base)
 
 
-class ReminderStoreContract:
-    """Subclass and provide `store`."""
+@pytest.fixture(params=["sql", "fake"])
+async def store(request):
+    if request.param == "sql":
+        pg_url = request.getfixturevalue("pg_url")
+        run_migrations(pg_url)
+        s: ReminderStore = SqlReminderStore(create_sql_engine(pg_url))
+    else:
+        s = FakeReminderStore()
+    yield s
+    await s.aclose()
 
-    @pytest.mark.asyncio
-    async def test_a_created_row_is_returned_once_due(self, store):
+
+class _Contract:
+    """Namespace only — the tests below are module-level functions, per house
+    style. Kept as a marker so the section reads as one suite."""
+
+
+async def test_a_created_row_is_returned_once_due(store):
         r = _row()
         await store.create(r)
         assert await store.due(now=T0, limit=10) == []
@@ -494,11 +521,12 @@ class ReminderStoreContract:
         ok = _row(state=ReminderState.PENDING)
         await store.create(stuck)
         await store.create(ok)
-        assert await store.sweep_firing() == 1
-        assert await store.due(now=T0 + timedelta(days=1), limit=10) == [
-            x for x in await store.due(now=T0 + timedelta(days=1), limit=10)
-            if x.id == ok.id
-        ]
+    assert await store.sweep_firing() == 1
+    swept = await store.get(stuck.id)
+    assert swept is not None
+    assert swept.state is ReminderState.FAILED       # observed, not inferred
+    assert swept.outcome == "failed_error"
+    assert (await store.get(ok.id)).state is ReminderState.PENDING
 ```
 
 - [ ] **Step 2: Bind the suite to the fake and watch it fail**
@@ -578,6 +606,14 @@ class ReminderStore(Protocol):
 
     async def cancel(self, reminder_id: UUID, *, conversation_id: str) -> bool:
         """Scoped on purpose: a uuid carries none of its own (§7.3)."""
+        ...
+
+    async def get(self, reminder_id: UUID) -> Reminder | None:
+        """Read one row by id. Exists so the contract suite can assert the
+        TERMINAL STATE of a swept row — without it no test can distinguish
+        `FIRING -> FAILED` from `FIRING -> anything else`, because `due()`
+        excludes both, and §8.2's at-most-once decision rests on exactly that
+        distinction."""
         ...
 
     async def sweep_firing(self) -> int:
@@ -674,11 +710,13 @@ Expected: 8 passed
 
 - [ ] **Step 6: Add the table to `schema.py` and hand-write the migration**
 
+House style: `METADATA` is uppercase, table constants are uppercase, the module imports **only** `sqlalchemy as sa` (no `postgresql` import — use `sa.Uuid`), and indexes are module-level constants *after* the table. Compare `MESSAGES` / `IDX_CONV_TS`.
+
 ```python
 # nora/infra/sql/schema.py — append
-reminders = sa.Table(
-    "reminders", metadata,
-    sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+REMINDERS = sa.Table(
+    "reminders", METADATA,
+    sa.Column("id", sa.Uuid, primary_key=True),
     sa.Column("requester_person_id", sa.Text, nullable=False),
     sa.Column("platform", sa.Text, nullable=False),
     sa.Column("conversation_id", sa.Text, nullable=False),
@@ -693,8 +731,9 @@ reminders = sa.Table(
         "state IN ('pending','firing','done','cancelled','failed')",
         name="ck_reminders_state",
     ),
-    sa.Index("idx_reminders_due", "state", "due_at"),
 )
+
+IDX_REMINDERS_DUE = sa.Index("idx_reminders_due", REMINDERS.c.state, REMINDERS.c.due_at)
 ```
 
 The migration is hand-written for the same reason `idx_messages_conv_ts` is: `alembic check` cannot see the CHECK constraint, so an autogenerated revision would look correct and drift.
@@ -720,7 +759,7 @@ uv run pytest -q && uv run ruff check nora/ evals/ tests/ \
   && uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence \
   && uv run lint-imports
 git add nora/domain/reminders.py nora/infra/sql/ nora/testing/reminders.py \
-        tests/contract/ migrations/ tests/infra/
+        tests/contract/ tests/infra/
 git commit -m "feat(reminders): ReminderStore port, SQL adapter, fake, contract suite
 
 One-shot rows keyed by (platform, conversation_id, conversation_type) — every
@@ -748,68 +787,115 @@ check, which is blind to the CHECK constraint."
 - Modify: `nora/doctrine/{identity,voice,conduct,constraints}.md`
 - Test: `tests/test_doctrine_audiences.py` (new)
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Add a `doctrine_store` fixture — it does not exist**
+
+`tests/conftest.py` defines only `anyio_backend`, `_pg_container`, `pg_admin`, `pg_url`. Add this to `tests/conftest.py`. **The `canary`, `display_name` and `trigger` values must be identical here and in Step 2's capture script** — `Doctrine.text` appends a `<runtime_context>` block built from them (`nora/doctrine/loader.py:525-531`), so a mismatch fails the body test for a reason that has nothing to do with doctrine.
+
+```python
+# tests/conftest.py — append
+from pathlib import Path
+from nora.agent.registry import ToolRegistry
+from nora.doctrine.loader import DoctrineStore
+from nora.obs.metrics import Metrics
+
+DOCTRINE_CANARY = "test-canary"
+DOCTRINE_DISPLAY_NAME = "Nora"
+DOCTRINE_TRIGGER = "nora.000"
+
+
+def build_test_doctrine_store() -> DoctrineStore:
+    """Module-level so tests/fixtures/gen_tag_doctrine_bodies.py can import it
+    and produce a byte-comparable capture."""
+    return DoctrineStore(
+        Path("nora/doctrine"), strict=True, reload=False,
+        canary=DOCTRINE_CANARY, display_name=DOCTRINE_DISPLAY_NAME,
+        trigger=DOCTRINE_TRIGGER, language_hint="zh-HK",
+        tool_names=ToolRegistry().tool_names(),
+        capability=ToolRegistry().capability(),
+        metrics=Metrics(),
+    )
+
+
+@pytest.fixture
+def doctrine_store() -> DoctrineStore:
+    return build_test_doctrine_store()
+```
+
+- [ ] **Step 2: Capture the pre-split fixture — BEFORE touching any doctrine file**
+
+`tests/fixtures/` does not exist; create it. This order is the only one that works: the fixture is the *pre-split* truth, and capturing it afterwards proves nothing.
+
+```bash
+cd /tmp/nora-reminders && mkdir -p tests/fixtures && uv run python - <<'PYEOF'
+import re, pathlib, sys
+sys.path.insert(0, "tests")
+from conftest import build_test_doctrine_store
+text = build_test_doctrine_store().get(applies_to="tag").text
+bodies = re.sub(r"<section[^>]*>|</section>|<nora_doctrine>|</nora_doctrine>", "", text)
+pathlib.Path("tests/fixtures/tag_doctrine_bodies.txt").write_text(bodies)
+print(len(bodies.split()), "tokens captured")
+PYEOF
+```
+
+- [ ] **Step 3: Write the failing tests**
 
 ```python
 # tests/test_doctrine_audiences.py
-import pytest
+import re
+from pathlib import Path
+
 from nora.doctrine.loader import DoctrineStore
 
 AUTHORED = ("identity", "voice", "conduct", "constraints")
+MULTI_MESSAGE = "never split one answer across several"
+SILENCE = "That's the only reason you ever speak"
+NEW_HEADING_TOKENS = {"#", "One", "answer,", "however", "many", "messages"}
 
 
-def test_the_heartbeat_audience_is_not_degenerate(doctrine_store: DoctrineStore):
-    """§10.1: all four authored files must reach the fire turn. Without this
-    she delivers with no persona and no constraints, and LeakGuard's
-    verbatim-leak corpus shrinks to the capability block."""
+def _bodies(store: DoctrineStore, audience: str) -> str:
+    text = store.get(applies_to=audience).text
+    return re.sub(r"<section[^>]*>|</section>|<nora_doctrine>|</nora_doctrine>", "", text)
+
+
+def test_the_heartbeat_audience_is_not_degenerate(doctrine_store):
+    """All four authored files must reach the fire turn. Without this she
+    delivers with no persona and no constraints, and LeakGuard's verbatim-leak
+    corpus shrinks to the capability block."""
     text = doctrine_store.get(applies_to="heartbeat").text
     for name in AUTHORED:
         assert f'name="{name}"' in text, f"{name} missing from the heartbeat audience"
 
 
-def test_silence_reaches_tags_only(doctrine_store: DoctrineStore):
-    assert 'name="silence"' in doctrine_store.get(applies_to="tag").text
-    assert 'name="silence"' not in doctrine_store.get(applies_to="heartbeat").text
+def test_silence_reaches_tags_only(doctrine_store):
+    assert SILENCE in _bodies(doctrine_store, "tag")
+    assert SILENCE not in _bodies(doctrine_store, "heartbeat")
 
 
-def test_the_multi_message_rule_survives_in_both_audiences(doctrine_store: DoctrineStore):
-    """DEC-40 lived inside the silence section but is not a silence rule, and
-    is true on a fire turn. Splitting on the heading would have deleted it."""
-    needle = "you never split one answer across several"
-    assert needle in doctrine_store.get(applies_to="tag").text
-    assert needle in doctrine_store.get(applies_to="heartbeat").text
+def test_the_multi_message_rule_survives_in_both_audiences(doctrine_store):
+    """DEC-40 lived inside the silence section but is not a silence rule, and is
+    true on a fire turn. Splitting on the heading would have deleted it.
+
+    The needle is a fragment that does NOT span a line break in either the
+    current wrapping or the replacement — a longer phrase fails on whitespace,
+    not on meaning."""
+    assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "tag").split())
+    assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "heartbeat").split())
 
 
-def test_tag_audience_bodies_are_unchanged(doctrine_store: DoctrineStore):
-    """The split adds one <section> boundary; it must not change any WORDS.
-    Byte-identity is impossible — _assemble wraps per file — so assert the
-    concatenated bodies instead."""
-    import re
-    text = doctrine_store.get(applies_to="tag").text
-    bodies = re.sub(r"<section[^>]*>|</section>|<nora_doctrine>|</nora_doctrine>", "", text)
-    expected = (pytest.importorskip("pathlib").Path(
-        "tests/fixtures/tag_doctrine_bodies.txt").read_text())
-    assert bodies.split() == expected.split()
+def test_tag_audience_words_are_unchanged_except_the_new_heading(doctrine_store):
+    """The split adds one <section> boundary and one heading; it must not change
+    or lose any RULE. Byte-identity is impossible — _assemble wraps per file —
+    so compare token multisets and allow exactly the heading's tokens."""
+    from collections import Counter
+    before = Counter(Path("tests/fixtures/tag_doctrine_bodies.txt").read_text().split())
+    after = Counter(_bodies(doctrine_store, "tag").split())
+    added = after - before
+    removed = before - after
+    assert not removed, f"tag audience LOST tokens: {sorted(removed)}"
+    assert set(added) <= NEW_HEADING_TOKENS, f"unexpected additions: {sorted(added)}"
 ```
 
-- [ ] **Step 2: Capture the fixture BEFORE editing any doctrine**
-
-```bash
-uv run python -c "
-from nora.app.composition import build_doctrine_store
-import re, pathlib
-t = build_doctrine_store().get(applies_to='tag').text
-b = re.sub(r'<section[^>]*>|</section>|<nora_doctrine>|</nora_doctrine>', '', t)
-pathlib.Path('tests/fixtures/tag_doctrine_bodies.txt').write_text(b)
-"
-```
-
-This is the only order that works: the fixture is the *pre-split* truth. Capturing it after editing proves nothing.
-
-- [ ] **Step 3: Run and watch three of four fail**
-
-Run: `uv run pytest tests/test_doctrine_audiences.py -v`
-Expected: `test_tag_audience_bodies_are_unchanged` PASSES (nothing edited yet); the other three FAIL.
+The fourth test is the one that changed from an earlier draft. It previously asserted the token lists were *equal* — which Step 5's mandated new heading makes unsatisfiable, while Step 6 told the implementer to "fix the doctrine, not the test". An instruction that cannot be obeyed is worse than no instruction. The rule that actually matters is **nothing is lost**; additions are bounded to the heading.
 
 - [ ] **Step 4: Create `silence.md` — first three sentences only**
 
@@ -853,10 +939,32 @@ several.
 
 Then in all four: `applies_to: [tag]` → `applies_to: [tag, heartbeat]`. Bump `conduct.md`'s `version: 5` → `6`. Add `silence` to `authority_below` in `identity.md`, `voice.md` and `constraints.md` — `check_authority_chain` is symmetric and startup fails otherwise.
 
+- [ ] **Step 5b: Add spec §10.2's voice rules to `voice.md`**
+
+Unimplemented by any earlier draft of this plan, and it is the operator's own correction: without it she states exact fire times back to the user.
+
+**`voice.md` is `kind: identity`, which forbids BOTH absolute and advisory RFC-2119 keywords** (`loader.py:112`) — no MUST, no SHOULD, no MAY, uppercase. Write it as description:
+
+```markdown
+# Times you are given, and times you say back
+
+When somebody asks you to remember something for later, you answer in the register they
+asked in. 「等陣提我洗衫」 gets 「好, 等陣提你」 — not 「好, 19:47 提你」. 「七點提我出門」 gets
+「好, 七點」. The exact moment is your problem, not theirs; saying a timestamp back at
+someone who said 「等陣」 is the machinery showing through.
+
+You still say something back, so a wrong guess dies now instead of at the wrong hour. And
+you only ask 「幾點?」 when there is genuinely nothing sensible to assume — a friend who
+answers 「等陣提我洗衫」 with 「幾點? 15 分鐘定 30 分鐘?」 is not being careful, they are being
+a judge.
+```
+
+Add its tokens to `NEW_HEADING_TOKENS` in Step 3's test, or that test will report unexpected additions — it is bounded on purpose.
+
 - [ ] **Step 6: Run**
 
 Run: `uv run pytest tests/test_doctrine_audiences.py -v`
-Expected: 4 passed. If `test_tag_audience_bodies_are_unchanged` fails, a word moved that shouldn't have — fix the doctrine, not the test.
+Expected: 4 passed. If `test_tag_audience_words_are_unchanged_except_the_new_heading` reports LOST tokens, a rule went missing — fix the doctrine, not the test. If it reports unexpected additions, you rewrote something you were only meant to move.
 
 - [ ] **Step 7: Add the second `applies_to` call site**
 
@@ -865,8 +973,10 @@ Expected: 4 passed. If `test_tag_audience_bodies_are_unchanged` fails, a word mo
 - [ ] **Step 8: Gates, commit**
 
 ```bash
-uv run pytest -q && uv run ruff check nora/ evals/ tests/ && uv run lint-imports
-git add nora/doctrine/ tests/test_doctrine_audiences.py tests/fixtures/
+uv run pytest -q && uv run ruff check nora/ evals/ tests/ \
+  && uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence \
+  && uv run lint-imports
+git add nora/doctrine/ tests/conftest.py tests/test_doctrine_audiences.py tests/fixtures/
 git commit -m "feat(doctrine): a heartbeat audience, and extract silence to tags only
 
 All four authored files gain the audience. Splitting only conduct.md would
@@ -988,7 +1098,32 @@ async def test_boot_sweeps_firing_rows_to_failed(store, slots, metrics):
 
 - [ ] **Step 2: Run, watch it fail** — `ModuleNotFoundError: nora.app.heartbeat`
 
-- [ ] **Step 3: Add config**
+- [ ] **Step 3: Add config — pydantic models FIRST, then TOML**
+
+Every model in `nora/config.py` sets `extra="forbid"`. Adding `[heartbeat]`/`[reminders]` to the TOML **without** matching models makes the whole config fail to load, and every config-touching test goes red at once with an error that points at the TOML, not at the missing model.
+
+```python
+# nora/config.py — two models plus two Config fields
+class HeartbeatConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+    tick_seconds: float = 60.0
+    timeout_seconds: float = 120.0
+
+
+class RemindersConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    max_pending_per_requester: int = 20
+    min_lead_seconds: int = 120
+    max_horizon_days: int = 30
+
+
+# on Config:
+    heartbeat: HeartbeatConfig = HeartbeatConfig()
+    reminders: RemindersConfig = RemindersConfig()
+```
+
+Then the TOML, in **both** files:
 
 ```toml
 # config.toml AND config.example.toml — both, by hand.
@@ -1016,7 +1151,23 @@ Append to `_COUNTERS`/`_GAUGES` in `nora/obs/metric_specs.py`:
 
 - [ ] **Step 6: Run** — Expected: 7 passed
 
-- [ ] **Step 7: Wire into `composition.py`** — same `slots` instance as the pipeline; only spawn the loop when `cfg.heartbeat.enabled`.
+- [ ] **Step 7: Wire into `composition.py`**
+
+Same `slots` instance as the pipeline. Two things an earlier draft got wrong:
+
+- **`FirePath` does not exist until Task 5.** Wire the loop with a stub that records and returns `"sent"`, and leave a one-line comment naming Task 5 as its replacement. Do not forward-reference `nora.app.fire`.
+- **`recover()` runs unconditionally at startup**, *not* behind `cfg.heartbeat.enabled`. Gating it means that when the heartbeat is switched off, `FIRING` rows left by a crash stay stuck forever and §8.2's at-most-once guarantee silently stops applying. Only the `run()` loop is gated.
+
+```python
+reminders = SqlReminderStore(create_sql_engine(cfg.database.url))
+await reminders.sweep_firing()          # §8.2 boot recovery — ALWAYS, not gated
+if cfg.heartbeat.enabled:
+    heartbeat = HeartbeatLoop(store=reminders, slots=slots, policy=policy,
+                              clock=lambda: datetime.now(timezone.utc),
+                              metrics=metrics, tick_seconds=cfg.heartbeat.tick_seconds,
+                              fire=_stub_fire)   # Task 5 replaces this with FirePath.run
+    background.spawn(heartbeat.run())
+```
 
 - [ ] **Step 8: Gates, commit.**
 
@@ -1029,13 +1180,34 @@ Append to `_COUNTERS`/`_GAUGES` in `nora/obs/metric_specs.py`:
 - Modify: `nora/agent/prefill.py` (header parameter), `nora/agent/room.py` (tagger property), `nora/obs/metric_specs.py` (`audience` label), `nora/engagement/stages/{deliver,invoke}.py` + `nora/engagement/pipeline.py` + `nora/agent/guards.py` (pass `audience`), `tests/test_metrics_export.py`, `tests/test_metrics_stub.py`, `docs/runbook.md`
 - Test: `tests/unit/test_fire_path.py`
 
-- [ ] **Step 1: Grep before trusting the spec's list of nine**
+- [ ] **Step 1: Enumerate the call sites with AST, not grep**
 
 ```bash
-grep -rn 'nora_silent_failures_total' nora/ evals/ | grep '\.inc('
+cd /tmp/nora-reminders && python3 - <<'PY'
+import ast, pathlib
+hits = []
+for p in sorted(pathlib.Path("nora").rglob("*.py")) + sorted(pathlib.Path("evals").rglob("*.py")):
+    for n in ast.walk(ast.parse(p.read_text())):
+        if (isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "inc"
+                and n.args and isinstance(n.args[0], ast.Constant)
+                and n.args[0].value == "nora_silent_failures_total"):
+            hits.append(f"{p}:{n.lineno}")
+print(f"{len(hits)} sites")
+for h in hits: print(" ", h)
+PY
 ```
 
-Expected nine sites: `guards.py:146,155,169,193,220`, `invoke.py:110,117`, `deliver.py:156`, `pipeline.py:359`. **If the grep returns a different set, the grep wins.** Four separate hand-enumerations of this list came up short during design review; that is why this is step 1 and not an assumption.
+Expected output: **9 sites** — `guards.py:145,154,168,192,219`, `pipeline.py:358`, `deliver.py:156`, `invoke.py:109,116`.
+
+**Do not substitute a grep.** An earlier draft of this plan mandated
+`grep -rn 'nora_silent_failures_total' nora/ evals/ | grep '\.inc('` and gave it
+authority over the spec's list. It returns **one** site of nine, because
+`metrics.inc(` sits on the *previous* line in eight of them. A `-B2` variant
+returns twelve, three of which are adjacent calls to *different* metrics. The
+calls are multi-line, so only a parser is reliable here.
+
+If the AST script disagrees with the nine above, **the script wins** — but read
+its output rather than its count.
 
 - [ ] **Step 2: Write the failing test for the synthetic context**
 
@@ -1052,7 +1224,7 @@ def test_the_fire_turn_carries_the_requester(fire_path, reminder):
     assert ctx.message.body == reminder.text          # the request itself
     assert ctx.message.sender_name != ""              # NOT Persons.display_name
     assert ctx.message.sender_id == ""                # so no reaction is placed
-    assert ctx.message.timestamp is None
+    assert ctx.message.timestamp == 0            # falsy AND an int — models.py:61 is `timestamp: int`, non-optional, and nora/app/* is mypy-strict
 ```
 
 - [ ] **Step 3: Add the `audience` label to all nine sites**, defaulting to `"tag"` at the tag-path call sites and `"heartbeat"` in the fire path. Missing one leaves `audience=""`, which is worse than no label.
@@ -1078,7 +1250,7 @@ def test_the_fire_turn_carries_the_requester(fire_path, reminder):
 - [ ] **Step 1: Failing tests**
 
 ```python
-def test_remind_refuses_on_a_fire_turn():
+async def test_remind_refuses_on_a_fire_turn():
     """§7.1: without this she re-arms her own reminder each time one fires —
     recurrence through the back door, and none of §9's caps stop it because
     max_pending_per_requester counts PENDING rows and each fire frees one."""
@@ -1095,7 +1267,7 @@ def test_list_reminders_is_scoped_to_this_conversation(): ...
 def test_cancel_refuses_an_id_from_another_conversation(): ...
 ```
 
-- [ ] **Step 2:** Add `tagger` property to `Room`; thread `fire_turn: bool = False` through `build_tool_specs` / `ToolRegistry.specs()` / `build()`; add `reminders=` to `ToolRegistry.__init__` alongside `transit`/`route`/`search`/`presence`.
+- [ ] **Step 2:** Add `tagger` property to `Room`; add `reminders=` to `ToolRegistry.__init__` alongside `transit`/`route`/`search`/`presence`.
 
 - [ ] **Step 3:** Implement the three tools with budgets — `remind` 2, `list_reminders` 2, `cancel_reminder` 2.
 
