@@ -66,13 +66,21 @@ at the platform layer**, not by choice here. Group-only until a DM path exists.
 6. v2's `tag_id` boot-recovery mechanism has no read path (§8.2).
 
 Corrections of fact carried into v3: `[llm] timeout_seconds` is **60**, not 30
-(`config.toml:71`; `config.example.toml:61` is stale at 30 and **nothing gates
-the drift** — see §14); the flood-shed rule is **R-29**, not R-30 (the inline
-comment at `admission.py:90` is stale, `design/09:100` is authoritative);
-DEC-24's holding is the broader *"a tool never asks the model for a value the
-tool does not read"*; metric **names** are append-only but **labels are not**
+(`config.toml:71`), while `config.example.toml:61` still says 30 — see §14 for
+what that actually means, which is not what v3's first draft claimed; DEC-24's
+holding is the broader *"a tool never asks the model for a value the tool does
+not read"*; metric **names** are append-only but **labels are not**
 (`nora/obs/metric_specs.py:40-44` records `platform` being added to four existing
 series).
+
+**A repo defect found on the way, reported not resolved.** `design/09` carries
+**two rows numbered R-29** — the queue/flood rule (`:100`) and a skills rule
+(`:102`) — and no R-30 row at all. `RULE_TESTS` disagrees with the index and
+assigns `R-29 → test_a_message_can_name_a_skill_but_never_load_one` (`:61`) and
+`R-30 → test_three_tags_for_one_conversation_are_answered_in_fifo_order` (`:67`),
+matching the inline comment at `admission.py:90`. **This spec uses R-30 for
+flood-shed**, following the test registry, and the duplicate belongs on someone's
+backlog. An earlier draft "corrected" R-30 to R-29 by fiat; that was wrong.
 
 ---
 
@@ -183,7 +191,7 @@ ones that do not. Being explicit about the second list is the design:
 | trigger-text gate | **not used** | the text carries no trigger; forging one corrupts the stored sentence |
 | `audit_stage` | **not used** | would fabricate a message the requester never sent |
 | `memory_feed_stage` | **not used** | would feed Honcho a sentence under their peer, at the wrong time |
-| `admission.run` (R-9 / R-12 / R-29) | **not used** | §5.3 |
+| `admission.run` (R-9 / R-12 / R-30) | **not used** | §5.3 |
 | conversation serialisation | **used**, via a hoisted collaborator | §5.3 |
 | doctrine + prefill | `build_prefill` with a header parameter | §6.3 |
 | `invoke.run` | **used** — `timeout_seconds` is already a per-call parameter | §5.4 |
@@ -195,12 +203,17 @@ ones that do not. Being explicit about the second list is the design:
 ### 5.1 Policy is re-checked at fire time — and it is one call
 
 `Policy.is_allowed(*, platform, conversation_id, person_id)` (`nora/policy.py:56-77`)
-already enforces **both** the room and the sender gate. `scope_stage` and the
-ingest sender check are thin wrappers around it, differing only by a metric and a
-log line.
+already enforces **both** the room and the sender gate, so the fire-time re-check
+is **one public call**, not the duplication risk v2 called it. What genuinely
+cannot be reused is the trigger gate, which §5 excludes on purpose.
 
-So this is **not** the duplication risk v2 called it — it is one public call. What
-genuinely cannot be reused is the trigger gate, which §5 excludes on purpose.
+**Do not reach for `scope_stage` instead.** It is *not* a wrapper around
+`is_allowed` — it checks the room half only
+(`policy.conversation(platform, conversation_id) is not None`,
+`nora/ingest/stages/scope.py`). The two predicates diverge exactly where it
+matters: in a room with an explicit `persons = [...]` list,
+`is_allowed(…, person_id=None)` is `False` where `scope_stage` is `True`. Only
+the ingest *sender* check (`nora/ingest/pipeline.py:140-144`) wraps `is_allowed`.
 
 Why re-check at all: `policy.toml` is loaded once at startup and a row may be 30
 days old. Trust withdrawn between `remind()` and `due_at` must bite.
@@ -220,7 +233,7 @@ must **not** go through `admission.run`, which would drop it three ways:
   turn within 5s of a tag — and a fire turn passing through would *consume* the
   window (`nora/tag.py:70` writes `_last[key]` on the allow path), so a human
   tagging just after an unprompted message gets nothing.
-- **R-29 flood-shed** (`admission.py:90`, `max_depth = 16`) sheds the **newest**
+- **R-30 flood-shed** (`admission.py:90`, `max_depth = 16`) sheds the **newest**
   arrival — always the fire turn, which has waited hours.
 - **R-12 self-tag** rejects if the synthetic sender resolves to Nora.
 
@@ -327,7 +340,7 @@ file, so §10's `applies_to` mechanism does not reach it.
 **`build_prefill` gains a header parameter.** It must not be duplicated: R-13/R-13b
 escaping is pinned to `build_prefill` by
 `test_prefill_escapes_angle_brackets` and `test_forged_closing_tag_is_escaped`
-(`tests/test_acceptance_rules.py:23-24`), and a hand-rolled fire prefill rendering
+(R-13 / R-13b, `tests/test_acceptance_rules.py:27-28`), and a hand-rolled fire prefill rendering
 the same untrusted transcript would sit outside both named tests. Everything else
 it needs (`_now_line`, `_peer_card_block`, `_transcript_block`) is private to that
 module.
@@ -602,8 +615,13 @@ Even so, fire turns must not silently move tag-path series
 | `nora_reminders_pending` (gauge) | runaway visible without a query |
 | `nora_heartbeat_last_tick_age_seconds` (gauge) | **liveness** — DEC-55(4)'s precedent: a gauge that climbs when up-but-not-ticking, which a frozen fired-count cannot show (R-5). Mirrors `nora_presence_last_collection_age_seconds` (`metric_specs.py:489`). |
 
-These append to `_COUNTERS`/`_GAUGES` and flow into `DECLARED_NAMES`, which
-`tests/test_metrics_export.py` enumerates — a test edit, listed in §14.
+These append to `_COUNTERS`/`_GAUGES` and flow into `DECLARED_NAMES`.
+
+**No test will catch it if they are forgotten.** `tests/test_metrics_export.py`
+asserts only that a frozen historical set is still present
+(`PRESERVED_METRIC_NAMES <= DECLARED_NAMES`, `:31`); adding new series requires no
+edit and the suite stays green either way. So these four are held by review, not
+by a gate — worth knowing, since §14 exists to list what *does* catch mistakes.
 
 ---
 
@@ -611,13 +629,13 @@ These append to `_COUNTERS`/`_GAUGES` and flow into `DECLARED_NAMES`, which
 
 | gate | why |
 |---|---|
-| **`design/09-decision-index.md` — R-1** | *"Only the tagging path may cause a send"*. A fire turn is a send not caused by a tag. **This is the rule the design changes.** Its named test (`test_ambient_never_constructs_agent`) asserts only the *second* clause and stays green untouched — so amending the row alone deletes the only written brake on a third send path. **A replacement named test is required**: the tag path and the fire path are the only two senders. |
+| **`design/09-decision-index.md` — R-1** | *"Only the tagging path may cause a send"*. A fire turn is a send not caused by a tag. **This is the rule the design changes.** Its named test (`test_ambient_never_constructs_agent`, `tests/integration/test_ambient.py:13-19`) asserts both clauses — but only over *ambient input*, so a reminders fire path never enters its harness and it stays green untouched. Amending the row alone therefore deletes the only written brake on a third send path without anything going red. **A replacement named test is required**: the tag path and the fire path are the only two senders. |
 | hand-written alembic migration + `tests/infra/test_schema_parity.py` | new table, CHECK constraint, named index |
 | `tests/test_acceptance_rules.py::RULE_TESTS` | mapped-identity guard, never-early, fires-once |
 | `tests/test_guards_terminal.py` | must stay green — §6.1 adds no terminal verb |
 | doctrine tests | tag-audience body-identity **and** heartbeat-audience non-degeneracy (§10.1) |
 | queue-hoist tests | FIFO order must still hold after §5.3's refactor |
-| `tests/test_metrics_export.py` | `DECLARED_NAMES` (§13) |
+| ~~`tests/test_metrics_export.py`~~ | **not a gate** — see §13; new metric names are held by review only |
 | `ARCHITECTURE.md` | `test_architecture_doc.py:8` fails on any new top-level package **or module** under `nora/` |
 | `uv run pytest -q` / `ruff` / `mypy` (scoped) / `lint-imports` | CLAUDE.md's four |
 
@@ -629,11 +647,18 @@ inside the mypy strict override, so the fire path must be fully typed; and
 fine via `LiveAgentRunner`/`factory`. A new top-level `nora/reminders/` would be
 **absent from every importlinter contract** and is rejected for that reason.
 
-**Not a gate, and worth knowing:** `config.example.toml` is *not* kept in parity
-by any test. `tests/test_config.py` only loads it; the only cross-file assertions
-are `tests/test_turn_budget.py:99-100`, covering `[llm.limits]` and `max_tokens`.
-Proof: `timeout_seconds` is 60 in `config.toml` and 30 in the example, and nothing
-catches it. New keys must be added to both by hand.
+**A trap in `config.example.toml`, stated because an earlier draft got it exactly
+backwards.** The example is *not* diffed against `config.toml` — the only
+cross-file assertions are `tests/test_turn_budget.py:99-100`, covering
+`[llm.limits]` and `max_tokens`. But it is not ungoverned either:
+`tests/test_config.py` loads **the example** as its fixture and asserts specific
+values, including `cfg.llm.timeout_seconds == 30` (`:135`).
+
+So `timeout_seconds` is 60 in `config.toml` and 30 in the example, and the
+example's stale value is **pinned by an explicit assertion**: "fixing" it turns
+`test_config.py` red. Anyone touching it must change the assertion in the same
+commit. New `[heartbeat]` / `[reminders]` keys go into both files by hand, and any
+value asserted in `test_config.py` must match what is added.
 
 ---
 
