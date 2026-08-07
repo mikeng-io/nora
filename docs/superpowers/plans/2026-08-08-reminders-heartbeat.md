@@ -809,7 +809,7 @@ check, which is blind to the CHECK constraint."
 - Modify: `nora/doctrine/{identity,voice,conduct,constraints}.md`
 - Test: `tests/test_doctrine_audiences.py` (new)
 
-- [ ] **Step 1: Add a `doctrine_store` fixture — it does not exist**
+- [x] **Step 1: Add a `doctrine_store` fixture — it does not exist**
 
 `tests/conftest.py` defines only `anyio_backend`, `_pg_container`, `pg_admin`, `pg_url`. Add this to `tests/conftest.py`. **The `canary`, `display_name` and `trigger` values must be identical here and in Step 2's capture script** — `Doctrine.text` appends a `<runtime_context>` block built from them (`nora/doctrine/loader.py:525-531`), so a mismatch fails the body test for a reason that has nothing to do with doctrine.
 
@@ -843,7 +843,7 @@ def doctrine_store() -> DoctrineStore:
     return build_test_doctrine_store()
 ```
 
-- [ ] **Step 2: Capture the pre-split fixture — BEFORE touching any doctrine file**
+- [x] **Step 2: Capture the pre-split fixture — BEFORE touching any doctrine file**
 
 `tests/fixtures/` does not exist; create it. This order is the only one that works: the fixture is the *pre-split* truth, and capturing it afterwards proves nothing.
 
@@ -859,7 +859,7 @@ print(len(bodies.split()), "tokens captured")
 PYEOF
 ```
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 ```python
 # tests/test_doctrine_audiences.py
@@ -919,7 +919,7 @@ def test_tag_audience_words_are_unchanged_except_the_new_heading(doctrine_store)
 
 The fourth test is the one that changed from an earlier draft. It previously asserted the token lists were *equal* — which Step 5's mandated new heading makes unsatisfiable, while Step 6 told the implementer to "fix the doctrine, not the test". An instruction that cannot be obeyed is worse than no instruction. The rule that actually matters is **nothing is lost**; additions are bounded to the heading.
 
-- [ ] **Step 4: Create `silence.md` — first three sentences only**
+- [x] **Step 4: Create `silence.md` — first three sentences only**
 
 ```markdown
 ---
@@ -947,7 +947,7 @@ follow up on your own reply.
 
 `order: 25` sits in the free range 21–29 (10/20/30/40 taken, 35 reserved for the generated capability section) and sorts before `conduct.md`, holding the text's position. All ten `_REQUIRED` keys are present.
 
-- [ ] **Step 5: Edit the four existing files**
+- [x] **Step 5: Edit the four existing files**
 
 In `conduct.md`: delete the three sentences above from the `# Silence is the default` section; **keep the remaining sentence** under a new heading:
 
@@ -961,7 +961,7 @@ several.
 
 Then in all four: `applies_to: [tag]` → `applies_to: [tag, heartbeat]`. Bump `conduct.md`'s `version: 5` → `6`. Add `silence` to `authority_below` in `identity.md`, `voice.md` and `constraints.md` — `check_authority_chain` is symmetric and startup fails otherwise.
 
-- [ ] **Step 5b: Add spec §10.2's voice rules to `voice.md`**
+- [x] **Step 5b: Add spec §10.2's voice rules to `voice.md`**
 
 Unimplemented by any earlier draft of this plan, and it is the operator's own correction: without it she states exact fire times back to the user.
 
@@ -983,16 +983,16 @@ a judge.
 
 Add its tokens to `NEW_HEADING_TOKENS` in Step 3's test, or that test will report unexpected additions — it is bounded on purpose.
 
-- [ ] **Step 6: Run**
+- [x] **Step 6: Run**
 
 Run: `uv run pytest tests/test_doctrine_audiences.py -v`
 Expected: 4 passed. If `test_tag_audience_words_are_unchanged_except_the_new_heading` reports LOST tokens, a rule went missing — fix the doctrine, not the test. If it reports unexpected additions, you rewrote something you were only meant to move.
 
-- [ ] **Step 7: Add the second `applies_to` call site**
+- [x] **Step 7: Add the second `applies_to` call site**
 
 `nora/app/composition.py:228` and `nora/engagement/pipeline.py:264` both hardcode `"tag"`. Leave both — Task 5 adds the `"heartbeat"` call in the fire path. `evals/run.py:232` is correct as-is.
 
-- [ ] **Step 8: Gates, commit**
+- [x] **Step 8: Gates, commit**
 
 ```bash
 uv run pytest -q && uv run ruff check nora/ evals/ tests/ \
