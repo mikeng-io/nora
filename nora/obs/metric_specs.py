@@ -451,6 +451,29 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "blocked) so the design/14 §2.2 count-vs-block call can be revisited "
         "against real queries.",
     ),
+    # Reminders, the two halves. CREATED is the `remind` tool's own answer —
+    # `status` separates an accepted row from each way the caps refuse one
+    # (too_soon / too_far / too_many), which is the only visibility into a cap
+    # that is set too tight; a refusal is a sentence to a human, and sentences
+    # do not aggregate.
+    _CounterSpec(
+        "nora_reminders_created_total",
+        "Reminder creation attempts, by status (created / too_soon / too_far / "
+        "too_many).",
+        ("status",),
+    ),
+    # FIRED is the tick's outcome per reminder, and it counts the FAILURES the
+    # group never sees: `failed_policy` (trust withdrawn between setting and
+    # firing — R-5 keeps that silent in the room, so this is the only trace) and
+    # `failed_error` (the fire turn raised, or a crash left the row FIRING and
+    # boot recovery resolved it). A reminder that vanishes must never vanish
+    # from the metrics too.
+    _CounterSpec(
+        "nora_reminders_fired_total",
+        "Reminders resolved by the heartbeat, by outcome (the fire path's own "
+        "status, or failed_policy / failed_error).",
+        ("outcome",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -501,6 +524,26 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "1 when the conversation's people are a subset of the circle (R-21 holds "
         "by construction), 0 the day someone outside the circle is in the group.",
         ("circle",),
+    ),
+    # The backlog. Set from a count, not derived from the two counters above:
+    # created - fired silently drifts the day a row is cancelled, and a backlog
+    # that climbs forever is exactly what a stuck tick looks like.
+    _GaugeSpec(
+        "nora_reminders_pending",
+        "Reminders currently PENDING — the backlog waiting on the tick.",
+    ),
+    # The heartbeat's LIVENESS, and the one gauge in this file that must not be
+    # written from inside the loop it measures. It is bound to a function
+    # evaluated at SCRAPE time (`Metrics.gauge_function`), so a loop that has
+    # STOPPED shows a climbing age rather than freezing at its last reading —
+    # the failure this signal exists to make visible. Alert on it crossing a few
+    # ticks. Contrast `nora_presence_last_collection_age_seconds` above, which
+    # IS published from inside its collector's loop and therefore only detects a
+    # collector that is up and failing, not one that is gone.
+    _GaugeSpec(
+        "nora_heartbeat_last_tick_age_seconds",
+        "Seconds since the heartbeat's last completed tick, computed at scrape "
+        "time. Climbing past a few ticks means the loop has stopped.",
     ),
 )
 

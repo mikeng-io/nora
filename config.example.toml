@@ -254,6 +254,25 @@ snippet_max_bytes = 500     # per-snippet byte clamp; truncation stated in the r
 fetch_max_chars = 10000     # a scraped page's char ceiling
 timeout_seconds = 15.0
 
+[heartbeat]
+# The background tick that fires due reminders — Nora's first unprompted-speech
+# path. Ships INERT, like [presence] and [search]: turning it on is an operator
+# decision, never something a missing section decides.
+enabled = false
+tick_seconds = 60          # also the worst-case lateness of a reminder
+# NOT [llm].timeout_seconds = 60. That number bounds a turn a human is waiting
+# on; nobody is waiting on a fire turn, and cutting one short leaves silence in
+# a group where nobody asked anything.
+timeout_seconds = 120
+
+[reminders]
+# The anti-runaway caps. They apply whenever a reminder can be CREATED, which is
+# independent of whether [heartbeat] is firing them.
+max_pending_per_requester = 20
+min_lead_seconds = 120     # > heartbeat.tick_seconds, so a minimum-lead row
+                           # cannot land in the tick already running
+max_horizon_days = 30
+
 [doctrine]
 dir = "nora/doctrine"
 reload = "mtime"                      # mtime | startup

@@ -221,6 +221,36 @@ def test_the_presence_section_is_optional_and_ships_inert(toml_path):
     assert cfg.presence.retention_days == 180
 
 
+def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_path):
+    """Both sections deleted from the example must keep loading, and the
+    heartbeat default is INERT (enabled = false): Nora's first
+    unprompted-speech path must never turn on because a section is MISSING
+    from a config.toml written before it existed. `extra="forbid"` is what
+    makes that a real constraint rather than a courtesy.
+
+    The values asserted are the class defaults, so this fails if one silently
+    changes — including the `min_lead_seconds > tick_seconds` relation the two
+    sections are chosen together for."""
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[heartbeat]\n")
+    assert tail, "config.example.toml no longer declares [heartbeat]"
+    # [reminders] is the very next section, so cutting from [heartbeat] to the
+    # section after it removes both.
+    remainder = tail.split("\n[", 2)
+    assert len(remainder) > 2, "config.example.toml no longer declares [reminders]"
+    toml_path.write_text(head + "[" + remainder[2])
+
+    cfg = load(toml_path)
+
+    assert cfg.heartbeat.enabled is False
+    assert cfg.heartbeat.tick_seconds == 60.0
+    assert cfg.heartbeat.timeout_seconds == 120.0
+    assert cfg.reminders.max_pending_per_requester == 20
+    assert cfg.reminders.min_lead_seconds == 120
+    assert cfg.reminders.max_horizon_days == 30
+    assert cfg.reminders.min_lead_seconds > cfg.heartbeat.tick_seconds
+
+
 def test_presence_config_carries_no_ids(toml_path):
     """The [presence] section holds only operational knobs — no circle or member
     ids. Circle membership lives in identity.toml (design/19 §3), so config.toml

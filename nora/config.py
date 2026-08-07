@@ -488,6 +488,49 @@ class SearchConfig(BaseModel):
     timeout_seconds: float = 15.0
 
 
+class HeartbeatConfig(BaseModel):
+    """The background tick that fires due reminders (`nora.app.heartbeat`).
+
+    Optional, defaulted, and INERT by default like `[presence]` and `[search]`:
+    this is Nora's first unprompted-speech path, so it must never turn itself on
+    because a section is missing from a config.toml written before it existed.
+
+    `timeout_seconds` is deliberately NOT `[llm].timeout_seconds`: that number
+    bounds a turn a human is waiting on. Nobody is waiting on a fire turn, and
+    cutting one short produces silence in a group nobody asked anything in.
+
+    `tick_seconds` is the wake interval, not a promise of accuracy: a reminder
+    fires on the first tick at or after its `due_at`, so the tick is also the
+    worst-case lateness. `[reminders].min_lead_seconds` is held above it on
+    purpose (see `RemindersConfig`).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    tick_seconds: float = 60.0
+    timeout_seconds: float = 120.0
+
+
+class RemindersConfig(BaseModel):
+    """The three anti-runaway caps on stored reminders.
+
+    Mirrored by `nora.domain.reminders.ReminderCaps`, which is what the tool
+    layer actually receives — import-linter forbids `nora.agent` from importing
+    `nora.config` at all, so the config type cannot cross that boundary. The
+    composition root builds the domain value from this one; the DEFAULTS on both
+    are the same numbers on purpose, and this is the pair to keep in step.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    max_pending_per_requester: int = Field(default=20, ge=1)
+    # Above `[heartbeat].tick_seconds`, so a reminder set with the minimum lead
+    # cannot land in the tick that is already running.
+    min_lead_seconds: int = Field(default=120, ge=1)
+    max_horizon_days: int = Field(default=30, ge=1)
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -636,6 +679,11 @@ class Config(BaseModel):
     # turns it on AND Firecrawl's egress is isolated; a config.toml without a
     # `[search]` section keeps loading.
     search: SearchConfig = SearchConfig()
+    # Optional and defaulted — see `HeartbeatConfig`/`RemindersConfig`. The tick
+    # ships INERT (`enabled = false`); the caps apply the moment a reminder can
+    # be created, whether or not anything is firing them.
+    heartbeat: HeartbeatConfig = HeartbeatConfig()
+    reminders: RemindersConfig = RemindersConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     identity_file: Path

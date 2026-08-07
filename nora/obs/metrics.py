@@ -21,6 +21,7 @@ under `platform=""`, never dropped or rejected).
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
@@ -114,6 +115,28 @@ class Metrics:
             gauge.labels(**_full_labels(labelnames, labels)).set(value)
         else:
             gauge.set(value)
+
+    def gauge_function(self, name: str, fn: Callable[[], float]) -> None:
+        """Bind a gauge to a callback evaluated at SCRAPE time, not at call time.
+
+        For the gauges whose whole point is that they keep MOVING when the thing
+        they measure has stopped. `gauge(name, value)` writes a number once, so a
+        loop that publishes its own age freezes that age the moment it dies —
+        the reading looks healthy precisely when it isn't. `set_function` is
+        prometheus-client's own answer: the callback runs inside
+        `CollectorRegistry.collect()`, so every scrape (and every `snapshot()`,
+        `get()` and `render()` here, which all collect) recomputes it.
+
+        Unlabeled gauges only. A per-child callback would need one registration
+        per label combination, and there is no caller for that; refusing is
+        better than binding the callback to a series nobody reads.
+        """
+        if self._gauge_labels[name]:
+            raise ValueError(
+                f"{name} declares labels {self._gauge_labels[name]}; "
+                "gauge_function only supports unlabeled gauges"
+            )
+        self._gauges[name].set_function(fn)
 
     def observe(self, name: str, value: float, **labels: object) -> None:
         self._histograms[name].observe(value)

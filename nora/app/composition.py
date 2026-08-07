@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -42,6 +43,7 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
+from nora.domain.reminders import Reminder, ReminderStore
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
@@ -50,6 +52,7 @@ from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.presence import PresenceStore
+from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.vision import VisionClient, derive_vision_timeout
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
@@ -70,6 +73,7 @@ from nora.tag import Debounce
 
 from .agent_runner import LiveAgentRunner
 from .dispatch import Dispatcher
+from .heartbeat import HeartbeatLoop
 from .runtime import BackgroundTasks
 
 log = logging.getLogger("nora.app.composition")
@@ -497,6 +501,41 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 
+    # Reminders + the heartbeat tick. The store REUSES `engine` — this module's
+    # "ONE engine (one pool)" rule (see its construction above): a second
+    # `create_sql_engine` would fork the pool, and its `aclose()` would dispose
+    # the engine the record store and the presence reader are still using.
+    reminders: ReminderStore = SqlReminderStore(engine)
+    # Boot recovery (§8.2), UNCONDITIONALLY — deliberately NOT behind
+    # `cfg.heartbeat.enabled`. A crash leaves rows FIRING, and a heartbeat that
+    # has been switched off is exactly the state in which a stranded row would
+    # otherwise sit there forever: at-most-once would silently stop applying on
+    # the very config that looks safest. Only the LOOP is gated.
+    swept = await reminders.sweep_firing()
+    if swept:
+        log.warning(
+            "boot recovery: %d reminder(s) were left FIRING by a previous run and "
+            "are now FAILED — at-most-once, never re-fired (§8.2)", swept,
+        )
+    if cfg.heartbeat.enabled:
+        heartbeat = HeartbeatLoop(
+            store=reminders,
+            # The SAME `slots` the engagement pipeline holds. Two instances
+            # would be two locks and no serialisation at all.
+            slots=slots,
+            # `allowlist` — policy.toml — NOT `policy`, which is the
+            # CompositePolicy deciding whether a message is a tag and has no
+            # `is_allowed` at all. Re-checking the ALLOWLIST at fire time is the
+            # whole point of this parameter (§5.1): the file is read once at
+            # startup and a row may be thirty days old.
+            policy=allowlist,
+            clock=lambda: datetime.now(UTC),
+            metrics=metrics,
+            tick_seconds=cfg.heartbeat.tick_seconds,
+            fire=_stub_fire,       # Task 5 replaces this with FirePath.run
+        )
+        background.spawn(heartbeat.run())
+
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
@@ -504,6 +543,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client,
     )
+
+
+async def _stub_fire(reminders: Sequence[Reminder]) -> str:
+    """The `fire` collaborator until `nora.app.fire.FirePath` exists.
+
+    It answers `"not_wired"`, NOT `"sent"`. The string it returns is written to
+    the row's `outcome` column and to `nora_reminders_fired_total{outcome}`, and
+    "sent" there would record a delivery that never happened — the group hears
+    nothing while the metrics say every reminder landed, which is the exact
+    silent-failure shape this repo refuses. `[heartbeat] enabled = false` ships,
+    so nobody reaches this without turning the tick on deliberately; if they do,
+    the warning and the distinct outcome say what is missing.
+    """
+    log.warning(
+        "heartbeat: %d reminder(s) came due but no fire path is wired yet — "
+        "resolved as not_wired, not delivered", len(reminders),
+    )
+    return "not_wired"
 
 
 async def _presence_preflight(

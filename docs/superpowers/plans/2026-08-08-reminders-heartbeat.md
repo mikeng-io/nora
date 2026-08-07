@@ -1029,7 +1029,7 @@ captured pre-split."
 
 `clock` is a `Callable[[], datetime]` through `__init__` — the entire tick is fake-clock testable with zero model calls.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/unit/test_heartbeat_loop.py
@@ -1197,9 +1197,9 @@ async def test_the_slot_is_released_even_when_fire_raises():
 
 Every fixture, helper and name above is defined in the file. `_build` exists so no test constructs `HeartbeatLoop` positionally with `Ellipsis`, which an earlier draft did.
 
-- [ ] **Step 2: Run, watch it fail** — `ModuleNotFoundError: nora.app.heartbeat`
+- [x] **Step 2: Run, watch it fail** — `ModuleNotFoundError: nora.app.heartbeat`
 
-- [ ] **Step 3: Add config — pydantic models FIRST, then TOML**
+- [x] **Step 3: Add config — pydantic models FIRST, then TOML**
 
 Every model in `nora/config.py` sets `extra="forbid"`. Adding `[heartbeat]`/`[reminders]` to the TOML **without** matching models makes the whole config fail to load, and every config-touching test goes red at once with an error that points at the TOML, not at the missing model.
 
@@ -1241,18 +1241,20 @@ min_lead_seconds = 120   # > tick_seconds, so a minimum-lead row cannot land in 
 max_horizon_days = 30
 ```
 
-- [ ] **Step 4: Add the metrics**
+- [x] **Step 4: Add the metrics**
 
 Append to `_COUNTERS`/`_GAUGES` in `nora/obs/metric_specs.py`:
 `nora_reminders_created_total{status}`, `nora_reminders_fired_total{outcome}`, `nora_reminders_pending` (gauge), `nora_heartbeat_last_tick_age_seconds` (gauge).
 
 **The liveness gauge must not be published from inside the tick body.** Store `last_tick_at` on the loop and compute the age at scrape time. The presence collector publishes from inside its loop, so a dead loop freezes its gauge — the opposite of what a liveness signal is for. Copy the intent, not the code.
 
-- [ ] **Step 5: Write `HeartbeatLoop`** with `tick()` and `run()` (the `while True` that `BackgroundTasks.spawn` drives, following `prune_loop`'s never-die discipline at `nora/app/runtime.py:109-117`).
+- [x] **Step 5: Write `HeartbeatLoop`** with `tick()` and `run()` (the `while True` that `BackgroundTasks.spawn` drives, following `prune_loop`'s never-die discipline at `nora/app/runtime.py:109-117`).
 
-- [ ] **Step 6: Run** — Expected: 6 passed
+- [x] **Step 6: Run** — Expected: 6 passed (landed as **7**: a seventh test
+  pins the liveness gauge's scrape-time computation, which nothing in the six
+  could see)
 
-- [ ] **Step 7: Wire into `composition.py`**
+- [x] **Step 7: Wire into `composition.py`**
 
 Same `slots` instance as the pipeline. Two things an earlier draft got wrong:
 
@@ -1281,7 +1283,7 @@ if cfg.heartbeat.enabled:
     background.spawn(heartbeat.run())
 ```
 
-- [ ] **Step 8: Gates, commit.**
+- [x] **Step 8: Gates, commit.**
 
 ---
 
