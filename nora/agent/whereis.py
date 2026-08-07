@@ -63,6 +63,10 @@ class PresenceReader(Protocol):
 
     async def places_for(self, *, circle_id: str) -> list[SavedPlace]: ...
 
+    async def window(
+        self, *, circle_id: str, person_id: str, since_ts: int, until_ts: int
+    ) -> list[PresenceFix]: ...
+
 
 @dataclass(frozen=True)
 class Circle:
@@ -76,6 +80,49 @@ class Circle:
 
 
 _EARTH_RADIUS_M = 6_371_000.0
+
+# The movement read (design/19 §6, first slice — operator ask 2026-08-07):
+# MEASURED facts off the stored fix history, never a prediction. A member is
+# `moving` when their last two fixes inside this window are further apart than
+# the noise floor; `towards` names a saved place only when the distance to it
+# CLOSED by more than the floor across those fixes — «getting nearer to Home»
+# is a measurement, «going home» is a guess, and only the first ships (R-5).
+_MOVEMENT_WINDOW_MS = 15 * 60_000
+_MOVEMENT_FLOOR_M = 150.0
+
+
+def _distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * _EARTH_RADIUS_M * math.asin(math.sqrt(a))
+
+
+def movement_view(
+    fixes: list[PresenceFix], places: list[SavedPlace],
+) -> dict[str, Any]:
+    """`moving` / `towards` off the last two fixes in the window — pure,
+    server-side, and empty when there is only one fix (one point has no
+    direction; absence of the keys IS the honest «cannot tell»)."""
+    if len(fixes) < 2:
+        return {}
+    prev, last = fixes[-2], fixes[-1]
+    moved = _distance_m(prev.lat, prev.lng, last.lat, last.lng)
+    out: dict[str, Any] = {"moving": moved > _MOVEMENT_FLOOR_M}
+    if not out["moving"]:
+        return out
+    best_name, best_closed = None, _MOVEMENT_FLOOR_M
+    for place in places:
+        closed = (
+            _distance_m(prev.lat, prev.lng, place.lat, place.lng)
+            - _distance_m(last.lat, last.lng, place.lat, place.lng)
+        )
+        if closed > best_closed:
+            best_name, best_closed = place.name, closed
+    if best_name is not None:
+        out["towards"] = best_name
+    return out
 
 
 def _within_place(lat: float, lng: float, place: SavedPlace) -> bool:
@@ -305,15 +352,26 @@ class Whereis:
         # together means the model never guesses between them. Geometry runs
         # HERE, server-side; a failed places read just means no place name.
         place_name: str | None = None
+        movement: dict[str, Any] = {}
         try:
-            for saved in await self._presence.places_for(
-                circle_id=self._circle.circle_id
-            ):
+            places = await self._presence.places_for(circle_id=self._circle.circle_id)
+            for saved in places:
                 if _within_place(fix.lat, fix.lng, saved):
                     place_name = saved.name
                     break
+            # The movement read (§6 first slice): measured off the recent fix
+            # history, and only when NOT inside a saved place — «at Home» and
+            # «moving» cannot both be the headline, and containment wins.
+            if place_name is None:
+                recent = await self._presence.window(
+                    circle_id=self._circle.circle_id, person_id=ref.person_id,
+                    since_ts=now - _MOVEMENT_WINDOW_MS, until_ts=now,
+                )
+                movement = movement_view(recent, places)
         except Exception:
-            log.exception("whereis places read failed — answering without a place")
+            log.exception("whereis derivation read failed — answering without it")
+        if fix.is_driving:
+            movement["driving"] = True
         return {
             "status": "ok",
             "person": ref.name,
@@ -330,6 +388,7 @@ class Whereis:
             **({"address": fix.address} if fix.address else {}),
             **({} if (place_name or fix.address) else
                {"lat": fix.lat, "lng": fix.lng}),
+            **movement,
         }
 
     def _unavailable(self, note: str, **extra: Any) -> dict[str, Any]:

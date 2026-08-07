@@ -369,3 +369,63 @@ async def test_an_unreadable_roster_resolves_no_saved_place(persons, store):
     assert await resolvable_places(
         room=room, circles=(CIRCLE,), presence=store,
     ) == ()
+
+
+# ── the movement read (design/19 §6 first slice, DEC-61) ─────────────────────
+
+async def test_whereis_reports_measured_movement_towards_a_saved_place(persons, store):
+    """Two fixes closing on the saved place: `moving` and `towards` — measured
+    facts, not a forecast. The fix history is the evidence."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[
+        _saved("Home", lat=22.46, lng=114.02, radius=300.0),
+    ])
+    await _record(store, person="miles_novak", ts=NOW - 300_000, address="Far Road")
+    # ~1.1km nearer Home five minutes later.
+    await store.record_fix(fix=PresenceFix(
+        circle_id=CIRCLE_ID, person_id="miles_novak", ts=NOW - 60_000,
+        lat=22.45, lng=114.02, wire_state=WireState.LIVE,
+        recorded_at=NOW - 60_000, address="Near Road", is_driving=True,
+    ))
+    out = await _whereis(persons, store, members=(MILES, NORA)).locate(
+        "Miles", now_ms=NOW
+    )
+    assert out["status"] == "ok"
+    assert out["moving"] is True
+    assert out["towards"] == "Home"
+    assert out["driving"] is True
+
+
+async def test_whereis_reports_still_when_recent_fixes_are_together(persons, store):
+    await _record(store, person="miles_novak", ts=NOW - 300_000, address="Same Road")
+    await _record(store, person="miles_novak", ts=NOW - 60_000, address="Same Road")
+    out = await _whereis(persons, store, members=(MILES, NORA)).locate(
+        "Miles", now_ms=NOW
+    )
+    assert out["status"] == "ok"
+    assert out["moving"] is False
+    assert "towards" not in out
+
+
+async def test_one_fix_has_no_direction_and_claims_none(persons, store):
+    """A single point cannot say moving or still — the keys are ABSENT, the
+    honest «cannot tell» (R-5: absence, never a guessed boolean)."""
+    await _record(store, person="miles_novak", ts=NOW - 60_000, address="Jvvilxgd Road")
+    out = await _whereis(persons, store, members=(MILES, NORA)).locate(
+        "Miles", now_ms=NOW
+    )
+    assert out["status"] == "ok"
+    assert "moving" not in out and "towards" not in out
+
+
+async def test_inside_a_place_the_containment_wins_over_movement(persons, store):
+    """«at Home» and «moving» cannot both be the headline: inside a geofence
+    the movement read is skipped entirely."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    await _record(store, person="miles_novak", ts=NOW - 300_000, address="Far Road")
+    await _record(store, person="miles_novak", ts=NOW - 60_000, address="Home Road")
+    out = await _whereis(persons, store, members=(MILES, NORA)).locate(
+        "Miles", now_ms=NOW
+    )
+    assert out["status"] == "ok"
+    assert out["place"] == "Home"
+    assert "moving" not in out and "towards" not in out

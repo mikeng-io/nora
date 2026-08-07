@@ -1268,7 +1268,12 @@ def build_tool_specs(
             («Home») — prefer it in your reply; `address` is the street
             address. Both can appear together. If you get `lat`/`lng` instead,
             say you only have a rough position — NEVER read coordinates aloud
-            and NEVER pass them to another tool.
+            and NEVER pass them to another tool. You may also get MEASURED
+            movement: `driving` (their phone says they are in a vehicle),
+            `moving` (their recent positions are apart), and `towards` (the
+            saved place their distance has been CLOSING on). These are
+            measurements, not intentions — say «好似向緊屋企方向» or «喺車度»,
+            never promise where someone will end up or when.
           - `refused` — you may not say here: someone in this conversation is
             outside the location-sharing circle, or you can't confirm who is
             here. Say that in one clause; do not hint at the location.
