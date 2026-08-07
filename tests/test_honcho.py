@@ -7,6 +7,7 @@ Honcho, so no live network is required (and none of these carry the `network` ma
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 
 import pytest
@@ -291,6 +292,30 @@ async def test_chat_returns_the_synthesised_content(server_factory):
     out = await client.chat(peer_id="miles_novak", query="where does he live?")
     assert out == "Tin Shui Chi, from 天恆/天澤 mentions."
     assert bodies == [{"query": "where does he live?", "reasoning_level": "low"}]
+
+
+async def test_a_base64_group_id_becomes_a_honcho_legal_session_id(server_factory):
+    """live 2026-08-08: a Signal group id is standard base64 (`+` `/` `=`), and
+    Honcho's session-create rejects anything but `^[a-zA-Z0-9_-]+$` with a 422 —
+    which silently broke the ENTIRE feed/recall path on the real group (offline
+    tests used clean ids like "c1" and never saw it). The session key is now
+    sanitised base64→url-safe; reverting the sanitiser sends the raw `+/=` and
+    turns this red."""
+    session_ids: list[str] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        if request.path.endswith("/sessions"):
+            body = await request.json()
+            session_ids.append(body["id"])
+            return web.json_response({"id": body["id"]})
+        return web.json_response({"ok": True})
+
+    base = await server_factory(handler)
+    client = HonchoClient(base, "nora")
+    group_id = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="   # a real Signal group id
+    assert await client.feed(peer_id="miles_novak", text="hi", conversation_id=group_id) is True
+    assert session_ids, "the session must be created, not 422'd"
+    assert re.fullmatch(r"[a-zA-Z0-9_-]+", session_ids[0]), session_ids[0]
 
 
 async def test_the_observer_config_retries_after_a_transient_failure(server_factory):

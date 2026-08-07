@@ -8,6 +8,7 @@ ambient reply path.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from typing import Any, cast
@@ -66,6 +67,29 @@ _CONTRADICTION = re.compile(r"^\*\*CONTRADICTION\*\*:\s*")
 # every real hit. Calibrated against the embedding model, not the deployment,
 # which is why it lives here and not in `config.toml`.
 _MAX_DISTANCE = 0.5
+
+# Honcho constrains a session id to `^[a-zA-Z0-9_-]+$` (a 422 otherwise, verified
+# live 2026-08-08). A Signal group id is STANDARD base64 (`+`, `/`, `=`), and a
+# DM key can be a phone number (`+`) — all rejected. This maps the base64
+# alphabet to the url-safe one and drops padding, so the common ids stay
+# readable in the Honcho UI; anything still non-conforming falls back to a hash.
+_SESSION_ID_OK = re.compile(r"^[a-zA-Z0-9_-]+$")
+_B64_TO_URLSAFE = str.maketrans({"+": "-", "/": "_", "=": ""})
+
+
+def _safe_conversation_key(conversation_id: str) -> str:
+    """A Honcho-legal session key derived from an opaque conversation id.
+
+    A Signal group id (`Lhof…+…/…=`) 422s the session-create endpoint on its `+`
+    `/` `=`, which silently broke the ENTIRE feed/recall path on real groups —
+    offline tests used clean ids and never saw it (live-verified 2026-08-08).
+    Base64→url-safe keeps the id readable and deterministic (survives restart);
+    an id that STILL violates the pattern falls back to a sha256 hex so the key
+    is ALWAYS legal rather than a silent feed failure."""
+    candidate = conversation_id.translate(_B64_TO_URLSAFE)
+    if candidate and _SESSION_ID_OK.match(candidate):
+        return candidate
+    return hashlib.sha256(conversation_id.encode()).hexdigest()
 
 
 def _conclusions(representation: Any) -> tuple[str, ...]:
@@ -330,7 +354,7 @@ class HonchoClient:
                     cached, self._ai_peer, observe_others=True, observe_me=True,
                 )
                 return cached
-            session_id = f"nora-conv-{conversation_id}"
+            session_id = f"nora-conv-{_safe_conversation_key(conversation_id)}"
             result = await self._post(
                 self._url("/sessions"), {"id": session_id}, self._feed_timeout
             )
