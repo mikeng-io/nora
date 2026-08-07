@@ -30,7 +30,15 @@ set -euo pipefail
 # RE-RUN after any `docker compose up` of Firecrawl OR Nora: container IPs can
 # change, and the DOCKER-USER hooks match the SSRF-surface containers by IP.
 
-CHAIN="NORA_FC_EGRESS"
+# Filtering happens in the `raw` table's PREROUTING chain, matched by the
+# Firecrawl containers' source IPs — NOT DOCKER-USER. DOCKER-USER lives in
+# FORWARD and never sees a container→HOST packet (dest 172.17.0.1 is a local
+# address, delivered via INPUT), so it missed the exact path that matters:
+# firecrawl → OmniRoute/Honcho on the docker gateway. raw/PREROUTING is the
+# first hook every packet from the container hits, before the routing decision,
+# so it catches host-bound AND forwarded traffic uniformly (verified: this is
+# what the DOCKER-USER version could not block).
+TAG="nora-fc-egress"
 FC_NET="firecrawl_backend"
 # The SSRF-surface containers: the API and the headless browser both fetch
 # model-influenced URLs. The backend stores (redis/postgres/rabbitmq) are not
@@ -65,12 +73,12 @@ fc_ips() {
   done
 }
 
-remove_hooks() {
-  # Delete every DOCKER-USER jump into our chain (idempotent teardown).
-  iptables -S DOCKER-USER 2>/dev/null | grep -- "-j $CHAIN" | sed 's/^-A/-D/' \
-    | while read -r rule; do
+remove_rules() {
+  # Idempotent teardown: delete every raw/PREROUTING rule we tagged.
+  iptables -t raw -S PREROUTING 2>/dev/null | grep -- "--comment \"$TAG" \
+    | sed 's/^-A/-D/' | while read -r rule; do
         # shellcheck disable=SC2086
-        iptables $rule || true
+        iptables -t raw $rule 2>/dev/null || true
       done
 }
 
@@ -79,38 +87,32 @@ apply() {
   local subnet; subnet=$(fc_subnet)
   [ -n "$subnet" ] || { echo "could not read $FC_NET subnet — is Firecrawl up?" >&2; exit 1; }
 
-  # (Re)build the decision chain.
-  iptables -N "$CHAIN" 2>/dev/null || iptables -F "$CHAIN"
-  iptables -A "$CHAIN" -d "$subnet" -j RETURN \
-    -m comment --comment "nora-fc-egress: own backend, allow"
-  local net
-  for net in "${BLOCK_NETS[@]}"; do
-    iptables -A "$CHAIN" -d "$net" -j DROP \
-      -m comment --comment "nora-fc-egress: private/host, deny"
-  done
-  iptables -A "$CHAIN" -j RETURN \
-    -m comment --comment "nora-fc-egress: public, allow"
-
-  # Hook the SSRF-surface containers' current IPs into DOCKER-USER.
-  remove_hooks
+  remove_rules
   local ip found=0
   while read -r ip; do
     [ -n "$ip" ] || continue
-    iptables -I DOCKER-USER -s "$ip" -j "$CHAIN" \
-      -m comment --comment "nora-fc-egress"
+    # Per Firecrawl surface IP, in raw/PREROUTING (first hook, before routing —
+    # catches host-bound AND forwarded packets, which DOCKER-USER could not).
+    # ACCEPT its own backend subnet FIRST (inserted LAST so it sits on top),
+    # then DROP every private/host range, letting the public internet through.
+    local net
+    for net in "${BLOCK_NETS[@]}"; do
+      iptables -t raw -I PREROUTING -s "$ip" -d "$net" -j DROP \
+        -m comment --comment "$TAG: deny private/host"
+    done
+    iptables -t raw -I PREROUTING -s "$ip" -d "$subnet" -j ACCEPT \
+      -m comment --comment "$TAG: allow own backend"
     found=$((found + 1))
-    echo "  hooked $ip → $CHAIN"
+    echo "  filtered $ip (own subnet $subnet allowed, private/host denied, public allowed)"
   done < <(fc_ips)
-  [ "$found" -gt 0 ] || { echo "no Firecrawl container IPs found — nothing hooked" >&2; exit 1; }
-  echo "Firecrawl egress policy applied ($found surface container(s); own subnet $subnet + public allowed, private/host denied)."
+  [ "$found" -gt 0 ] || { echo "no Firecrawl container IPs found — nothing filtered" >&2; exit 1; }
+  echo "Firecrawl egress policy applied ($found surface container(s))."
   echo "Verify before flipping [search] fetch_enabled = true:  sudo $0 verify"
 }
 
 down() {
   need_root
-  remove_hooks
-  iptables -F "$CHAIN" 2>/dev/null || true
-  iptables -X "$CHAIN" 2>/dev/null || true
+  remove_rules
   echo "Firecrawl egress policy removed."
 }
 

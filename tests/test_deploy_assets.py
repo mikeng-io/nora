@@ -45,7 +45,10 @@ def test_the_egress_script_governs_firecrawls_ssrf_surface():
     internet. Pins the load-bearing shape so a revert to the port-allowlist —
     or dropping a blocked range — turns red."""
     text = (DEPLOY / "egress.sh").read_text()
-    assert "DOCKER-USER" in text
+    # raw/PREROUTING, not DOCKER-USER: the latter (FORWARD) never sees a
+    # container→HOST packet, so it could not block firecrawl→OmniRoute on the
+    # docker gateway — measured, then fixed 2026-08-07.
+    assert "raw" in text and "PREROUTING" in text
     assert "firecrawl-api-1" in text
     # The host/private ranges it must deny (172.16/12 covers the docker gateway
     # → OmniRoute/Honcho; 169.254 is link-local + cloud metadata).
