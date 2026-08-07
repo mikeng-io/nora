@@ -20,6 +20,8 @@
 - **A port never gains a second implementation, including a test fake, without a shared contract suite both pass** (`tests/contract/`).
 - **Migrations are hand-written.** The schema gate is `tests/infra/test_schema_parity.py`, not `alembic check`, which is blind to CHECK constraints.
 - **Never trust an enumeration in the spec.** Six review rounds produced four separate under-counts of one metric's call sites. Where a task says "all N sites", **grep first and reconcile** — the grep is the authority, the number is a hint.
+- **Dict literals, never `dict(...)`.** Ruff's `C4` ruleset is enabled and `C408`
+  rejects `dict()` calls. Task 2 hit this in a test helper the plan supplied.
 - **`from datetime import UTC`, never `timezone.utc`.** Ruff's `UP017` is enabled
   (`target-version = "py311"`) and `timezone.utc` appears **zero times** in this
   repo — `nora/app/report.py:19` is the house form. Note `ruff --fix` rewrites
@@ -432,12 +434,12 @@ LATER = T0 + timedelta(days=1)
 
 
 def _row(**kw) -> Reminder:
-    base = dict(
-        id=uuid.uuid4(), requester_person_id="miles", platform="signal",
-        conversation_id="conv-1", conversation_type="group", text="洗衫",
-        created_at=T0, due_at=T0 + timedelta(minutes=40),
-        state=ReminderState.PENDING, fired_at=None, outcome=None,
-    )
+    base = {
+        "id": uuid.uuid4(), "requester_person_id": "miles", "platform": "signal",
+        "conversation_id": "conv-1", "conversation_type": "group", "text": "洗衫",
+        "created_at": T0, "due_at": T0 + timedelta(minutes=40),
+        "state": ReminderState.PENDING, "fired_at": None, "outcome": None,
+    }   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
     base.update(kw)
     return Reminder(**base)
 
@@ -1059,12 +1061,12 @@ class _DenyAll:
 
 
 def _row(**kw) -> Reminder:
-    base = dict(
-        id=uuid.uuid4(), requester_person_id="miles", platform="signal",
-        conversation_id="conv-1", conversation_type="group", text="洗衫",
-        created_at=T0 - timedelta(hours=1), due_at=T0 - timedelta(minutes=1),
-        state=ReminderState.PENDING, fired_at=None, outcome=None,
-    )
+    base = {
+        "id": uuid.uuid4(), "requester_person_id": "miles", "platform": "signal",
+        "conversation_id": "conv-1", "conversation_type": "group", "text": "洗衫",
+        "created_at": T0 - timedelta(hours=1), "due_at": T0 - timedelta(minutes=1),
+        "state": ReminderState.PENDING, "fired_at": None, "outcome": None,
+    }   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
     base.update(kw)
     return Reminder(**base)
 
