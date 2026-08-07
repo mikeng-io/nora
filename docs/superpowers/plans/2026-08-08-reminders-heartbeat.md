@@ -1561,6 +1561,30 @@ would break `_terminal_budget_spent`'s AND and the pinned
 
 ---
 
+## Merge-time actions (decided, not deferred)
+
+**Delete `test_tag_audience_words_are_unchanged_except_the_new_prose` before merging.**
+
+Task 3's implementer flagged that this test is a permanent token-multiset golden
+over the tag audience — exactly the friction `tests/test_doctrine_assembly.py:19-29`
+records DEC-29 as deliberately removing ("a golden the operator has to
+regenerate every time she edits `voice.md`"). `voice.md` is `operator-may-edit`
+and hot-reloaded, so keeping it means Miles cannot touch his own persona file
+without a red suite.
+
+The decision: it is **scaffolding, not an invariant.** It exists to prove the
+`conduct.md` split lost nothing, and it did that. The durable invariants are
+already covered by the other three tests — the heartbeat audience is
+non-degenerate, `silence` reaches tags only, and DEC-40 survives in both.
+
+Keep it for the rest of this branch (it guards Tasks 4-6 against editing
+doctrine by accident), then delete it and `tests/fixtures/tag_doctrine_bodies.txt`
+in the merge commit. Do not leave it for someone to discover as a mystery
+failure the first time the operator rewords a sentence.
+
+**Also outstanding at merge:** the reminders feature still has no
+`design/09-decision-index.md` entry and no `RULE_TESTS` entry. Task 6 owns both.
+
 ## Self-Review
 
 **Spec coverage.** §4 → Task 2. §5 (loop, policy, batching, slots, timeout, reactions) → Tasks 1, 4. §6 (`required`, outcome accounting, header, `TagContext`) → Task 5. §7 (tools, no target, scoped list/cancel, read-only CLI) → Task 6. §8 (typed outcome, at-most-once, cancel-in-flight) → Tasks 2, 4. §9 caps → Tasks 4, 6. §10/§16.1 doctrine → Task 3. §12 mapped identity → Task 6. §13 metrics → Tasks 4, 5. §14 gates → every task's final step. §16 build order → task order.
