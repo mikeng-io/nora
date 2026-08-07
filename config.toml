@@ -217,6 +217,12 @@ api_key_env = "GOOGLE_MAPS_API_KEY"
 enabled = true
 cadence_seconds = 90
 retention_days = 180
+# On-demand LIVE refresh (DEC-67): where_is pings the phone for a fresh position
+# before answering, so it reports where they ARE, not where they were last seen.
+# `refresh_url` is the collector's HTTP endpoint AS NORA REACHES IT (the presence
+# service by name in compose); empty leaves where_is read-only.
+refresh_url = "http://presence:9101"
+refresh_timeout_seconds = 8
 
 [search]
 # SearXNG web_search + Firecrawl web_fetch (DEC-57, design/22). Turned ON

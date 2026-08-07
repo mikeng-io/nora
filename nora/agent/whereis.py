@@ -68,6 +68,17 @@ class PresenceReader(Protocol):
     ) -> list[PresenceFix]: ...
 
 
+class LocationRefresher(Protocol):
+    """Forces a LIVE on-demand reading for one person before `where_is` reads the
+    store (DEC-67). The implementation (`nora.infra.presence_refresh`) calls the
+    collector — which owns Life360 and the DB write — so `where_is` stays a pure
+    reader. Best-effort and bounded: returns when a fresh fix is written OR the
+    collector's timeout elapses; NEVER raises, so a failure leaves `where_is`
+    reading the last stored fix."""
+
+    async def refresh(self, *, person_id: str) -> bool: ...
+
+
 @dataclass(frozen=True)
 class Circle:
     """A Life360 circle as `whereis` needs it: its id and the set of `person_id`s
@@ -256,11 +267,16 @@ class Whereis:
         room: Room,
         circle: Circle,
         presence: PresenceReader,
+        refresher: LocationRefresher | None = None,
         metrics: Any = None,
     ) -> None:
         self._room = room
         self._circle = circle
         self._presence = presence
+        # Optional LIVE refresh (DEC-67): when wired, `where_is` asks the collector
+        # to force a fresh reading before it reads the store. None → the old
+        # read-only behaviour (the last stored fix), unchanged.
+        self._refresher = refresher
         self._guard = DisclosureGuard(circle)
         self._metrics = metrics
 
@@ -330,6 +346,14 @@ class Whereis:
                 "note": "More than one person here goes by that. Ask which one.",
             }
         ref = matches[0]
+        # LIVE refresh BEFORE the read (DEC-67, operator: "nora is asking WHERE IS,
+        # not where they used to be"): ask the collector to ping this person's
+        # phone and write a fresh fix, so the read below sees NOW, not the last
+        # battery-saved report. Runs only after disclosure passed and the person
+        # resolved — never for someone the room may not ask about. Best-effort: a
+        # timeout or failure leaves the stored fix, which the read still returns.
+        if self._refresher is not None:
+            await self._refresher.refresh(person_id=ref.person_id)
         try:
             fix = await self._presence.latest_fix(
                 circle_id=self._circle.circle_id, person_id=ref.person_id

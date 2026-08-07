@@ -38,7 +38,7 @@ from typing import Any
 
 from nora.domain.presence import SavedPlace
 
-from .http import request
+from .http import HttpResult, request
 from .members import Member, parse_members
 from .places import parse_places
 
@@ -57,6 +57,9 @@ TOKEN_URL = "https://api-cloudfront.life360.com/v3/oauth2/token.json"  # noqa: S
 MEMBERS_URL = "https://api-cloudfront.life360.com/v3/circles/{circle_id}/members"
 PLACES_URL = "https://api-cloudfront.life360.com/v3/circles/{circle_id}/places"
 CIRCLES_URL = "https://api-cloudfront.life360.com/v3/circles"
+# The on-demand location request (design/19 §on-demand, DEC-67): POST pings the
+# member's phone to report a FRESH position — the app's silent refresh button.
+REQUEST_URL = "https://api-cloudfront.life360.com/v3/circles/{circle_id}/members/{member_id}/request"
 
 # The Life360 Android app's User-Agent shape — the study's missing ingredient.
 # A constructor default, overridable, because it is a property of the client
@@ -147,6 +150,7 @@ class Life360Client:
         members_url: str = MEMBERS_URL,
         circles_url: str = CIRCLES_URL,
         places_url: str = PLACES_URL,
+        request_url: str = REQUEST_URL,
         timeout_seconds: float = TIMEOUT_SECONDS,
         metrics: Any = None,
     ) -> None:
@@ -158,6 +162,7 @@ class Life360Client:
         self._token_url = token_url
         self._members_url = members_url
         self._places_url = places_url
+        self._request_url = request_url
         self._timeout_seconds = timeout_seconds
         self._metrics = metrics
         self._token: str | None = None
@@ -197,6 +202,42 @@ class Life360Client:
                 return self._banned("fresh token still 403 — ban risk")
 
         return self._classify(result, now_ms=now_ms)
+
+    async def request_location(self, *, circle_id: str, member_id: str) -> bool:
+        """Ask Life360 to ping this member's phone for a FRESH position — the
+        app's silent refresh (DEC-67). `POST .../members/{id}/request` with form
+        `type=location`. Best-effort: True only if Life360 accepted the request
+        (200); False on no token, a non-200, or any transport failure. NEVER
+        raises — the caller falls back to the last stored fix. Re-auths ONCE on a
+        403, the same bound `read_circle` holds so an on-demand request cannot
+        become a credential-POST loop."""
+        token = self._token
+        if token is None:
+            token = await self._authenticate()
+            if token is None:
+                return False
+        url = self._request_url.format(circle_id=circle_id, member_id=member_id)
+        result = await self._post_request(url, token)
+        if result.status == 403:
+            self._token = None
+            token = await self._authenticate()
+            if token is None:
+                return False
+            result = await self._post_request(url, token)
+        return result.status == 200
+
+    async def _post_request(self, url: str, token: str) -> HttpResult:
+        return await request(
+            "POST",
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "User-Agent": self._user_agent,
+                "Accept": "application/json",
+            },
+            data={"type": "location"},
+            timeout_seconds=self._timeout_seconds,
+        )
 
     async def read_places(self, *, circle_id: str, now_ms: int) -> PlacesRead:
         """Read one circle's saved places (design/23 §3). NEVER raises, and holds

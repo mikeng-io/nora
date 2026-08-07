@@ -227,23 +227,26 @@ class PresenceCollector:
         self._places_fetched_ms[cid] = now_ms + int(PLACES_REFRESH_SECONDS * 1000)
         log.info("places refreshed: %d for circle", len(read.places))
 
-    async def _record(self, circle: CircleSpec, member: Member, *, now_ms: int) -> None:
+    async def _record(self, circle: CircleSpec, member: Member, *, now_ms: int) -> bool:
+        """Write the member's fix if its `ts` advanced. Returns whether a row was
+        written — the background loop ignores it, but `refresh_member` reads it to
+        know the on-demand fresh fix has landed."""
         person_id = circle.person_id_for(member.life360_id)
         if person_id is None:
             # A circle member Nora has no person for — recorded as nothing (the
             # config mapping is the operator's, §6). Its state was already
             # counted above; there is no fix to write without a person key.
-            return
+            return False
         if not member.has_fix:
             # sharing_off / disconnected / no_fix: a KNOWN state, already counted.
             # No row — its state rides the metric and its last stored fix, never
             # a null-island row (§7.6).
-            return
+            return False
         # `has_fix` guarantees these three are not None; narrow explicitly rather
         # than asserting (S101 forbids `assert` in production code).
         ts_ms, lat, lng = member.ts_ms, member.lat, member.lng
         if ts_ms is None or lat is None or lng is None:
-            return
+            return False
         # PREFER Google's reverse-geocode of the GPS coordinate over Life360's own
         # address label (§5, operator report 2026-08-08). Life360's label is
         # COARSE and often wrong: a real fix (22.410600, 114.124500) it labelled
@@ -277,13 +280,55 @@ class PresenceCollector:
         except Exception:
             # A store failure must not take the loop down; the next cycle retries.
             log.exception("presence record failed for %s", person_id)
-            return
+            return False
         if written:
             self._count(
                 "nora_presence_fixes_total",
                 circle=circle.circle_id,
                 wire_state=member.wire_state.value,
             )
+        return written
+
+    def _member_for(self, person_id: str) -> tuple[CircleSpec, str] | None:
+        """The (circle, life360 member id) a person_id maps to, or None — the
+        reverse of `CircleSpec.person_id_for`, for the on-demand refresh."""
+        for circle in self._circles:
+            for life360_id, pid in circle.members.items():
+                if pid == person_id:
+                    return circle, life360_id
+        return None
+
+    async def refresh_member(
+        self, *, person_id: str, timeout_seconds: float, poll_interval: float = 2.0
+    ) -> bool:
+        """On-demand LIVE refresh for one person (DEC-67, whereis freshness): ping
+        the member's phone for a fresh position, then poll until a fix newer than
+        what's stored lands or `timeout_seconds` elapses — recording it through the
+        SAME path as the background loop, so the on-demand reading persists to the
+        DB. True once a fresh fix is written; False on an unknown person, a refused
+        request with nothing fresher to read, or timeout. NEVER raises.
+
+        The poll is BOUNDED (a read every `poll_interval` up to the deadline) so an
+        on-demand request can never become the tight Life360 read-loop the ban
+        back-off exists to prevent."""
+        located = self._member_for(person_id)
+        if located is None:
+            return False
+        circle, member_id = located
+        await self._client.request_location(circle_id=circle.circle_id, member_id=member_id)
+        deadline = time.time() + timeout_seconds
+        while True:
+            now_ms = int(time.time() * 1000)
+            read = await self._client.read_circle(circle_id=circle.circle_id, now_ms=now_ms)
+            if read.status is ReadStatus.OK:
+                member = next(
+                    (m for m in read.members if m.life360_id == member_id), None
+                )
+                if member is not None and await self._record(circle, member, now_ms=now_ms):
+                    return True
+            if time.time() + poll_interval >= deadline:
+                return False
+            await asyncio.sleep(poll_interval)
 
     def sleep_seconds(self, circle_id: str) -> float:
         """The next inter-cycle sleep for one circle. The larger of two floors,

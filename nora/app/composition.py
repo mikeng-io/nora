@@ -427,9 +427,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "shortener enabled but %s is unset — links stay long",
                 cfg.shortener.token_env,
             )
+    # The on-demand LIVE-refresh client (DEC-67): when `[presence].refresh_url` is
+    # set AND presence is wired, `where_is` asks the collector to force a fresh
+    # reading before it reads the store. Unset → `where_is` stays read-only
+    # (offline/eval, or an operator who leaves it off).
+    refresher = None
+    if cfg.presence.refresh_url and presence_store is not None:
+        from nora.infra.presence_refresh import HttpLocationRefresher
+        refresher = HttpLocationRefresher(
+            base_url=cfg.presence.refresh_url,
+            # Larger than the collector's own refresh timeout so Nora waits for
+            # the phone ping to finish rather than cutting it off.
+            timeout_seconds=cfg.presence.refresh_timeout_seconds + 2.0,
+        )
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client, blobs=blobs, search=search_client,
         presence=presence_store, circles=presence_circles,
+        refresher=refresher,
         shortener=shortener_client,
         ai_peer=cfg.memory.ai_peer,
     )

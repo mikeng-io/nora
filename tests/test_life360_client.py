@@ -58,6 +58,7 @@ class _Life360:
 
     def __init__(self) -> None:
         # Per-endpoint behaviour a test flips.
+        self.location_requests: list[tuple[str, str]] = []   # (member_id, type) pings
         self.members_mode = "ok"           # ok | 403 | challenge | empty | shape
         self.auth_mode = "ok"             # ok | 403 | notoken
         # Number of leading members calls that 403 before behaving as
@@ -144,6 +145,13 @@ class _Life360:
             return web.json_response({"errorMessage": "expired"}, status=200)
         return web.json_response(self.members_body, status=200)
 
+    async def request_location(self, request: web.Request) -> web.Response:
+        if not request.headers.get("Authorization", "").startswith("Bearer "):
+            return web.json_response({"errorMessage": "no token"}, status=403)
+        data = await request.post()
+        self.location_requests.append((request.match_info["mid"], data.get("type", "")))
+        return web.json_response({"requestId": "r1", "isPollable": True}, status=200)
+
 
 @pytest.fixture
 async def life360():
@@ -153,6 +161,7 @@ async def life360():
     app.router.add_get("/circles", fake.circles)
     app.router.add_get("/circles/{cid}/members", fake.members)
     app.router.add_get("/circles/{cid}/places", fake.places)
+    app.router.add_post("/circles/{cid}/members/{mid}/request", fake.request_location)
     server = TestServer(app)
     await server.start_server()
     base = str(server.make_url("/"))
@@ -167,8 +176,28 @@ def _client(base, *, metrics=None) -> Life360Client:
         members_url=f"{base}circles/{{circle_id}}/members",
         circles_url=f"{base}circles",
         places_url=f"{base}circles/{{circle_id}}/places",
+        request_url=f"{base}circles/{{circle_id}}/members/{{member_id}}/request",
         metrics=metrics,
     )
+
+
+async def test_request_location_pings_the_phone_with_type_location(life360):
+    """DEC-67: the on-demand ping — POST .../request with form `type=location`,
+    authenticated. True on 200."""
+    fake, base = life360
+    client = _client(base)
+    ok = await client.request_location(circle_id="c1", member_id="m-live")
+    assert ok is True
+    assert fake.location_requests == [("m-live", "location")]
+
+
+async def test_request_location_is_false_when_life360_refuses(life360):
+    """A ban-class 403 even after a re-auth → False (never raises); the caller
+    falls back to the stored fix."""
+    fake, base = life360
+    fake.auth_mode = "notoken"                 # authentication yields no token
+    client = _client(base)
+    assert await client.request_location(circle_id="c1", member_id="m-live") is False
 
 
 async def test_a_healthy_read_authenticates_then_returns_classified_members(life360):

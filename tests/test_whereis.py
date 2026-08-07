@@ -87,11 +87,29 @@ def _room(persons, *, members, fail=False, tagger=None):
     )
 
 
-def _whereis(persons, store, *, members, fail=False, tagger=None, metrics=None):
+def _whereis(persons, store, *, members, fail=False, tagger=None, metrics=None,
+             refresher=None):
     return Whereis(
         room=_room(persons, members=members, fail=fail, tagger=tagger),
-        circle=CIRCLE, presence=store, metrics=metrics,
+        circle=CIRCLE, presence=store, refresher=refresher, metrics=metrics,
     )
+
+
+class _FakeRefresher:
+    """Records who was asked for, and optionally writes a FRESH fix on refresh —
+    the collector's job in production. `ok` is what the HTTP round trip returns."""
+
+    def __init__(self, store=None, *, fresh_ts=None, ok=True):
+        self.calls: list[str] = []
+        self._store = store
+        self._fresh_ts = fresh_ts
+        self._ok = ok
+
+    async def refresh(self, *, person_id: str) -> bool:
+        self.calls.append(person_id)
+        if self._store is not None and self._fresh_ts is not None:
+            await _record(self._store, person=person_id, ts=self._fresh_ts, address="Live Spot")
+        return self._ok
 
 
 async def _record(store, *, person, ts, address=None):
@@ -110,6 +128,34 @@ async def test_whereis_returns_the_latest_fix_with_its_age(persons, store):
     assert out["age_seconds"] == 20 * 60          # the fix's age reaches the model
     assert out["address"] == "Yoho Mall"
     assert out["wire_state"] == "live"
+
+
+async def test_whereis_forces_a_live_refresh_before_reading(persons, store):
+    """DEC-67: `where_is` is asking WHERE they ARE. With a refresher wired it
+    pings for a fresh fix (which the collector writes) BEFORE the read, so the
+    answer is the live one — not the stale stored fix. The refresh is asked only
+    for the RESOLVED person, after disclosure passed."""
+    await _record(store, person="miles_novak", ts=NOW - 20 * 60_000, address="Old Spot")
+    refresher = _FakeRefresher(store, fresh_ts=NOW)      # writes a fresh fix on refresh
+    w = _whereis(persons, store, members=(MILES, GRANT, NORA), refresher=refresher)
+    out = await w.locate("Miles", now_ms=NOW)
+    assert refresher.calls == ["miles_novak"]                # asked for the resolved person
+    assert out["status"] == "ok"
+    assert out["age_seconds"] == 0                        # the LIVE fix, not the 20-min-old one
+    assert out["address"] == "Live Spot"
+
+
+async def test_whereis_falls_back_to_the_stored_fix_when_the_refresh_fails(persons, store):
+    """Never load-bearing: a refresh that times out / cannot reach the collector
+    returns False and writes nothing, and `where_is` still answers from the last
+    stored fix rather than «unavailable»."""
+    await _record(store, person="miles_novak", ts=NOW - 20 * 60_000, address="Yoho Mall")
+    refresher = _FakeRefresher(ok=False)                 # refresh failed, no fresh write
+    w = _whereis(persons, store, members=(MILES, GRANT, NORA), refresher=refresher)
+    out = await w.locate("Miles", now_ms=NOW)
+    assert refresher.calls == ["miles_novak"]
+    assert out["status"] == "ok"
+    assert out["address"] == "Yoho Mall"                 # the stored fix stands
 
 
 async def test_whereis_refuses_to_disclose_outside_the_circle(persons, store):

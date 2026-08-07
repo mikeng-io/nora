@@ -713,6 +713,7 @@ def build_tool_specs(
     search_source=None,
     presence_source=None,
     presence_circles=(),
+    refresher=None,
     shortener=None,
     question: str = "",
     context_window: int = 40,
@@ -1603,7 +1604,8 @@ def build_tool_specs(
         results: list[dict] = []
         for circle in presence_circles:
             out = await Whereis(
-                room=room, circle=circle, presence=presence_source, metrics=metrics,
+                room=room, circle=circle, presence=presence_source,
+                refresher=refresher, metrics=metrics,
             ).locate(person)
             if str(out.get("status", "")) == "ok":
                 _record(metrics, "where_is", "ok", age_seconds=out.get("age_seconds"))
@@ -2042,6 +2044,7 @@ def build_tools(
     search_source=None,
     presence_source=None,
     presence_circles=(),
+    refresher=None,
     shortener=None,
     question: str = "",
     context_window: int = 40,
@@ -2058,6 +2061,7 @@ def build_tools(
         vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
         search_source=search_source,
         presence_source=presence_source, presence_circles=presence_circles,
+        refresher=refresher,
         shortener=shortener,
         question=question, context_window=context_window, ai_peer=ai_peer,
     )

@@ -71,6 +71,7 @@ class ToolRegistry:
         search: SearchClient | None = None,
         presence: PresenceReader | None = None,
         circles: tuple[Circle, ...] = (),
+        refresher: Any = None,
         shortener: LinkShortener | None = None,
         ai_peer: str = "nora",
     ) -> None:
@@ -116,6 +117,9 @@ class ToolRegistry:
         # per-call R-31 subset guard lives in `nora.agent.whereis`, not here.
         self._presence = presence
         self._circles = tuple(circles)
+        # The LIVE-refresh client (DEC-67) — None leaves `where_is` reading the
+        # last stored fix (offline/eval, or [presence] refresh_url unset).
+        self._refresher = refresher
         # The n.example.net mint client ([shortener], 2026-08-07) — None leaves
         # long URLs in replies, and a failed mint does the same; never
         # load-bearing, so no capability line and no budget: it is not a tool,
@@ -267,6 +271,7 @@ class ToolRegistry:
             vision_cache=self._vision_cache,
             search_source=self._search,
             presence_source=self._presence, presence_circles=self._circles,
+            refresher=self._refresher,
             shortener=self._shortener,
             question=question, context_window=context_window,
             ai_peer=self._ai_peer,

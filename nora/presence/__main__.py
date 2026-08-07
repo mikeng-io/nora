@@ -19,6 +19,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from aiohttp import web
 
@@ -34,10 +35,19 @@ log = logging.getLogger("nora.presence.__main__")
 __all__ = ["build_parser", "main"]
 
 
-def _metrics_app(metrics: Metrics) -> web.Application:
+def _metrics_app(
+    metrics: Metrics, collector: Any = None, refresh_timeout_seconds: float = 8.0,
+) -> web.Application:
     """A minimal /metrics + /health app for the collector process — it has no
     adapter or record store to report on, only its own metrics registry (which
-    carries the liveness heartbeat and the canary counters, §4)."""
+    carries the liveness heartbeat and the canary counters, §4).
+
+    Plus `POST /refresh?person_id=…` (DEC-67): Nora's `where_is` calls it to force
+    a LIVE on-demand reading for one person — the collector owns Life360 and the
+    DB write, so `where_is` stays a pure DB reader and no Life360 credential lands
+    in Nora. 200 once a fresh fix is written, 408 on timeout / nothing fresher,
+    503 when collection is disabled. Best-effort: never 500s (a failed refresh
+    leaves `where_is` reading the last stored fix)."""
     app = web.Application()
 
     async def metrics_endpoint(_: web.Request) -> web.Response:
@@ -49,8 +59,26 @@ def _metrics_app(metrics: Metrics) -> web.Application:
     async def health(_: web.Request) -> web.Response:
         return web.json_response({"status": "ok"})
 
+    async def refresh(request: web.Request) -> web.Response:
+        person_id = request.query.get("person_id", "")
+        if collector is None:
+            return web.json_response({"status": "unavailable"}, status=503)
+        if not person_id:
+            return web.json_response({"status": "bad_request"}, status=400)
+        try:
+            fresh = await collector.refresh_member(
+                person_id=person_id, timeout_seconds=refresh_timeout_seconds,
+            )
+        except Exception:  # never 500 — a broken refresh degrades to the stored fix
+            log.exception("on-demand refresh failed for a person")
+            return web.json_response({"status": "error"}, status=502)
+        return web.json_response(
+            {"status": "fresh" if fresh else "stale"}, status=200 if fresh else 408,
+        )
+
     app.router.add_get("/metrics", metrics_endpoint)
     app.router.add_get("/health", health)
+    app.router.add_post("/refresh", refresh)
     return app
 
 
@@ -76,7 +104,12 @@ async def _run(config_path: Path) -> None:
         ],
     )
     deps = build_collector(cfg)
-    runner = await serve(_metrics_app(deps.metrics), deps.metrics_port)
+    runner = await serve(
+        _metrics_app(
+            deps.metrics, deps.collector, cfg.presence.refresh_timeout_seconds,
+        ),
+        deps.metrics_port,
+    )
     try:
         if deps.collector is None:
             log.info("presence disabled — nothing to collect; exiting")

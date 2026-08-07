@@ -397,6 +397,17 @@ class PresenceConfig(BaseModel):
     # The collector's own metrics/health endpoint (§4: liveness lives in the
     # daemon). A separate process, so a separate port from `obs.metrics.port`.
     metrics_port: int = 9101
+    # How long the on-demand LIVE refresh (DEC-67) waits for a member's phone to
+    # report a fresh position before `where_is` falls back to the stored fix. A
+    # ceiling on the user's wait — the phone ping takes a few seconds, so ~8 s
+    # covers a normal response without hanging the tag on an unreachable phone.
+    refresh_timeout_seconds: float = Field(default=8.0, ge=0.5)
+    # The collector's HTTP base URL, as NORA reaches it, for the on-demand LIVE
+    # refresh (DEC-67). In compose that is the presence service by name, e.g.
+    # "http://presence:9101". EMPTY (default) → `where_is` stays read-only (the
+    # old behaviour, and the offline/eval shape). Nora reads this same
+    # `[presence]` block; the collector serves the endpoint on `metrics_port`.
+    refresh_url: str = ""
     # Names the env var holding the Google Maps key used to reverse-geocode a fix
     # Life360 returned WITHOUT an address (§5) — the same key the `route` tool
     # uses. OPTIONAL like everything else here: unset means no geocoder, and an
