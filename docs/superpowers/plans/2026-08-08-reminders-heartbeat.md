@@ -20,6 +20,11 @@
 - **A port never gains a second implementation, including a test fake, without a shared contract suite both pass** (`tests/contract/`).
 - **Migrations are hand-written.** The schema gate is `tests/infra/test_schema_parity.py`, not `alembic check`, which is blind to CHECK constraints.
 - **Never trust an enumeration in the spec.** Six review rounds produced four separate under-counts of one metric's call sites. Where a task says "all N sites", **grep first and reconcile** — the grep is the authority, the number is a hint.
+- **`from datetime import UTC`, never `timezone.utc`.** Ruff's `UP017` is enabled
+  (`target-version = "py311"`) and `timezone.utc` appears **zero times** in this
+  repo — `nora/app/report.py:19` is the house form. Note `ruff --fix` rewrites
+  `UTC = timezone.utc` into `UTC = UTC`, which is legal and nonsense, so fix it by
+  hand rather than blindly.
 - **This branch is `design/reminders-heartbeat` in a worktree.** Another session is live on the main checkout. Never write to `/home/norty/workspace/nora`. Never commit to `master`.
 
 ---
@@ -415,14 +420,13 @@ contract suite both pass."""
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from nora.domain.reminders import Reminder, ReminderState, ReminderStore
 from nora.testing.reminders import FakeReminderStore
 
-UTC = timezone.utc
 T0 = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
 LATER = T0 + timedelta(days=1)
 
@@ -1030,7 +1034,7 @@ captured pre-split."
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -1040,7 +1044,6 @@ from nora.obs.metrics import Metrics
 from nora.engagement.slots import ConversationSlots
 from nora.testing.reminders import FakeReminderStore
 
-UTC = timezone.utc
 T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
 KEY = ("signal", "conv-1")
 
@@ -1270,7 +1273,7 @@ await reminders.sweep_firing()          # §8.2 boot recovery — ALWAYS, not ga
 # composition.py, and place this AFTER `slots` exists (~:474), not at :188.
 if cfg.heartbeat.enabled:
     heartbeat = HeartbeatLoop(store=reminders, slots=slots, policy=allowlist,
-                              clock=lambda: datetime.now(timezone.utc),
+                              clock=lambda: datetime.now(UTC),
                               metrics=metrics, tick_seconds=cfg.heartbeat.tick_seconds,
                               fire=_stub_fire)   # Task 5 replaces this with FirePath.run
     background.spawn(heartbeat.run())
@@ -1327,14 +1330,13 @@ is not a checkpoint.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from nora.app.fire import FirePath
 from nora.domain.reminders import Reminder, ReminderState
 
-UTC = timezone.utc
 T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
 
 
@@ -1459,8 +1461,8 @@ to `ToolRegistry.__init__` alongside `reminders=`, both stated explicitly
 because neither exists today:
 
 ```python
-reminder_caps: ReminderCaps = ReminderCaps(),
-clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+reminder_caps: ReminderCaps | None = None,   # B008: no call in a default
+clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ```
 
 **`ReminderCaps`, not `RemindersConfig`.** `nora/domain/reminders.py` defines it
@@ -1472,6 +1474,11 @@ clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
 grimp's `exclude_type_checking_imports` defaults to `False` and this repo does
 not set it. `nora/app/composition.py` converts:
 `ReminderCaps(**cfg.reminders.model_dump())`.
+
+Store it as `self._caps = reminder_caps or ReminderCaps()`. The parameter is
+`| None` rather than a default instance because ruff's **B008** ("do not perform
+function call in argument defaults") is in this repo's select list with no
+`extend-immutable-calls`, so `= ReminderCaps()` fails `uv run ruff check`.
 
 **There is no "existing clock convention" in the registry** — an earlier draft
 said to reuse one. `registry.py:66-76` takes
