@@ -286,8 +286,9 @@ async def test_running_twice_does_not_double_feed_or_double_mark():
 
 
 async def test_the_sweep_waits_before_touching_the_single_writer():
-    """It must not compete with the first burst of ingest writes — SQLite's WAL
-    permits exactly one writer and the ingest path DROPS on contention."""
+    """It must not compete with the first burst of ingest writes — a habit from
+    SQLite's single-writer WAL (the ingest path DROPS on contention), still
+    free under Postgres."""
     audit = FakeRecordStore()
     memory = FakeMemoryStore()
     await audit.append(message=_msg())

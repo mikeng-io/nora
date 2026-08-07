@@ -225,7 +225,7 @@ def test_the_agent_is_named_so_a_trace_can_be_found():
 
 
 def test_two_agents_share_no_state():
-    """D4: fresh agent per tag; continuity is SQLite + Honcho, never agent memory."""
+    """D4: fresh agent per tag; continuity is the record store + Honcho, never agent memory."""
     model = factory.create_model_provider(
         model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
     )

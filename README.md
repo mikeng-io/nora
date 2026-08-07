@@ -37,8 +37,9 @@ indistinguishable from a working one in a quiet group. Edit the copied file so i
 names a real conversation; `uv run nora groups` prints every group's id beside its
 name once signal-cli is running.
 
-Nora creates `data/messages.db` on first run (schema managed by
-`nora/infra/sql/schema.py` and applied via Alembic — see `nora/infra/sql/migrations_runner.py`),
+Nora brings the PostgreSQL record store to head on startup (schema managed by
+`nora/infra/sql/schema.py` and applied via Alembic — see `nora/infra/sql/migrations_runner.py`;
+the `db` compose service holds the data, `DATABASE_URL` names it),
 connects to the signal-cli SSE stream, and starts serving `GET /health` and `GET /metrics`
 on `obs.metrics.port` (default `9100`).
 
@@ -53,7 +54,7 @@ Signal group
    │  SSE push (every message)
    ▼
 ① AMBIENT PATH (always, no Agent SDK)
-   event → parser → NormalizedMessage → SQLite audit + Honcho feed (mapped senders only)
+   event → parser → NormalizedMessage → Postgres audit + Honcho feed (mapped senders only)
    │
    └─ trigger text present? ── no ──▶ done, ambient only
                               └─ yes ──▶
@@ -66,9 +67,9 @@ Signal group
 ```
 
 Ambient traffic never touches the Strands Agent SDK — it is a pure, deterministic write
-path (SQLite + Honcho). The Agent SDK is constructed, invoked, and discarded **once per
+path (Postgres + Honcho). The Agent SDK is constructed, invoked, and discarded **once per
 tag**: there is no session carry-over between tags. Continuity comes from the two stores
-(SQLite for transcript, Honcho for durable memory), pre-filled into each fresh agent's
+(Postgres for transcript, Honcho for durable memory), pre-filled into each fresh agent's
 context. See `design/01-ambient-ingest.md`, `design/02-tagging-path.md`, and
 `design/03-strands-reuse.md` for the detail behind each layer.
 
@@ -177,10 +178,13 @@ operator playbook when a doctrine edit misbehaves.
 ## Inspecting the buffer
 
 ```bash
-sqlite3 data/messages.db ".schema messages"
-sqlite3 data/messages.db "SELECT count(*) FROM messages"
-sqlite3 data/messages.db "SELECT sender_name, body FROM messages WHERE is_nora=1"
+docker compose exec db psql -U nora -d nora -c '\d messages'
+docker compose exec db psql -U nora -d nora -c 'SELECT count(*) FROM messages'
+docker compose exec db psql -U nora -d nora -c "SELECT sender_name, body FROM messages WHERE is_nora"
 ```
+
+(Or from the host: `psql postgresql://nora@127.0.0.1:5435/nora` — the `db` service
+publishes 5432 on loopback as 5435.)
 
 ## Operator runbook
 
@@ -220,7 +224,8 @@ honest than reproducing three port-forwards. `GET http://127.0.0.1:9100/health` 
 
 `config.toml`, `identity.toml`, and `nora/doctrine/` are bind-mounted **read-only** into
 the container from the repo — they are never baked into the image. `./data` is mounted
-read-write for `messages.db` and `nora.log`.
+read-write for `nora.log` (and media blobs when custody is on); the record store itself
+lives in the `db` service's `db-data` volume.
 
 ### Editing the doctrine in the container
 
@@ -271,7 +276,7 @@ docker compose up -d --no-build
 ```
 
 Either way, `.env` supplies `OMNIROUTE_API_KEY` to Compose automatically — nothing needs
-exporting by hand. `data/messages.db` is untouched by either path — schema changes are
-versioned Alembic revisions applied by `run_migrations` at startup, not additive
-`CREATE TABLE IF NOT EXISTS` statements. See `docs/runbook.md` §3 for the full incident
-playbook, including the persistence-phase rollback step.
+exporting by hand. The record store (the `db` service's volume) is untouched by either
+path — schema changes are versioned Alembic revisions applied by `run_migrations` at
+startup, not additive `CREATE TABLE IF NOT EXISTS` statements. See `docs/runbook.md` §3
+for the full incident playbook, including the persistence-phase rollback step.

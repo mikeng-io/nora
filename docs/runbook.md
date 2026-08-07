@@ -23,7 +23,7 @@ is correct. To tell "quiet" from "broken":
    curl -s http://127.0.0.1:9100/health | python -m json.tool
    ```
 
-   Look at `sse.connected`, `sqlite.reachable`, `honcho.reachable`, and
+   Look at `sse.connected`, `store.reachable`, `honcho.reachable`, and
    `omniroute.last_success_at`. Any of those false/stale explains real silence: the SSE
    stream dropped, the DB is unreachable, Honcho is down, or the LLM hasn't answered
    recently.
@@ -147,6 +147,11 @@ so `messages.db` after v2 has run may contain columns/rows the v1 binary doesn't
 restore `messages.db.v1.bak` (the backup taken before the v1→v2 schema migration, per
 Task 44 Step 1) rather than pointing v1 at a v2-migrated file.
 
+> **Historical note (pre-Postgres):** the v1 path above is SQLite-era in full — v1 ran
+> against `data/messages.db`, so restoring its `.bak` is still exactly right FOR v1.
+> Everything recorded after the 2026-08-07 Postgres cutover (DEC-51) lives in the `db`
+> service's volume and would not travel back with it.
+
 ### Rolling back the persistence phase (Alembic)
 
 The persistence phase replaced the additive `nora/store/db.py` migration with versioned
@@ -157,16 +162,16 @@ docker compose stop nora
 git revert <persistence-phase-merge-commit>
 docker build --network=host -t nora:latest .
 docker compose up -d --no-build
-sqlite3 data/messages.db "DROP TABLE alembic_version"
+docker compose exec db psql -U nora -d nora -c 'DROP TABLE alembic_version'
 ```
 
-Do **not** clear `PRAGMA user_version` — it is still `1` from the pre-Alembic era, and
-leaving it untouched is what makes this rollback safe: if the reverted (pre-Alembic)
-binary's old migration path ever runs again, it reads `user_version == 1`, sees the schema
-it expects, and short-circuits instead of trying to re-migrate a database Alembic already
-brought to head. Dropping `alembic_version` is enough on its own to undo the phase, because
-it was the only new object this phase added — see
-`tests/test_migration.py::test_the_alembic_version_table_is_the_only_new_object`.
+> **Historical note (pre-Postgres):** this procedure was written for the SQLite era
+> (`sqlite3 data/messages.db "DROP TABLE alembic_version"`, plus a warning not to clear
+> `PRAGMA user_version`). The store moved to PostgreSQL on 2026-08-07 (DEC-51); the
+> `user_version` guard was a SQLite concept and no longer applies. Rolling back past the
+> Postgres cutover itself is a different operation: the old `data/messages.db` file is
+> still on disk, untouched by the cutover, but everything recorded AFTER the cutover
+> lives only in Postgres.
 
 ## 4. "The watchdog alerted"
 
@@ -378,7 +383,8 @@ One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
                             default. She REFUSES TO START if it is missing or
                             allows nothing — running mute would be
                             indistinguishable from working (R-5).
-  data/                     Nora's own state — messages.db, nora.log
+  data/                     Nora's own state — nora.log, media blobs; the record
+                            store itself is the db service's Postgres volume
                             (bind-mounted into the nora container as /app/data)
   state/signal-cli/         SIGNAL ACCOUNT: identity keys, sessions, group and
                             contact caches. 1.4MB. gitignored.

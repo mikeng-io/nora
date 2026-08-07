@@ -699,9 +699,10 @@ def build_tool_specs(
         # Clamp both ends. `limit` is MODEL-SUPPLIED, so this clamp is the
         # only bound on it — see `CHAT_EARLIER_MAX` above for the measured
         # cost of getting it wrong at the top end. At the bottom end a
-        # non-positive value must never reach the store: SQLite renders
-        # `LIMIT -1` as unbounded, so an unclamped negative limit would
-        # dump the entire conversation into context.
+        # non-positive value must never reach the store: under the old SQLite
+        # backend `LIMIT -1` meant unbounded (the whole conversation into
+        # context); Postgres rejects a negative LIMIT outright. Either way the
+        # clamp, not the backend, owns the bound.
         asked = CHAT_EARLIER_DEFAULT
         try:
             asked = max(1, min(int(limit), CHAT_EARLIER_MAX))

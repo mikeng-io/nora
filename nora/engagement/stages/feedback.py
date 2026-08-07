@@ -25,7 +25,7 @@ omission.** Three arguments, in the order they were made:
   output. Session-per-conversation is deferred work, and this stage is not the
   place to invent half of it.
 * ADR 0001's operative test — *could she have read this in the buffer?* — says
-  yes. Her reply is in SQLite, which is the RECORD, and `chat_earlier` already
+  yes. Her reply is in the Postgres record store, which is the RECORD, and `chat_earlier` already
   reaches it. Feeding it to the INTERPRETATION store costs deriver time to
   learn something she can already look up.
 

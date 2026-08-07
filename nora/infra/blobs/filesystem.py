@@ -15,9 +15,10 @@ tell an empty answer from a dead endpoint).
 Two concrete costs, on top of that:
 
 * An object store is a CONTAINER, on the INGEST WRITE PATH, that can be DOWN.
-  Today the failure modes of recording a message are: SQLite, and the disk it
-  is on. Adding a network round trip to a second daemon adds a way for custody
-  to fail that has nothing to do with either.
+  The failure modes of recording a message are: the record store (SQLite when
+  this was written; the co-located Postgres container since 2026-08-07) and the
+  disk the bytes land on. Adding a network round trip to yet another daemon
+  adds a way for custody to fail that has nothing to do with either.
 * Its headline feature for this problem — lifecycle rules that expire objects —
   is one Nora does not need. She already runs a retention sweep for messages
   (`SqlRecordStore.prune_all`, called periodically by the runtime). Media expiry

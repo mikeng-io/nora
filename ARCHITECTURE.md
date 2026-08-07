@@ -39,7 +39,7 @@ Signal group
    │  SSE push (every message)
    ▼
 ① AMBIENT PATH (always, no Agent SDK)
-   event → parser → NormalizedMessage → SQLite audit + Honcho feed (mapped senders only)
+   event → parser → NormalizedMessage → Postgres audit + Honcho feed (mapped senders only)
    │
    └─ trigger text present? ── no ──▶ done, ambient only
                               └─ yes ──▶
@@ -61,11 +61,11 @@ confused — including in this document until 2026-08-06.
 
 | layer | store | what it holds | how she reads it |
 |---|---|---|---|
-| **hot** | SQLite | the last 40 messages, verbatim | injected into every tag prompt |
-| **deeper** | **the same SQLite** | everything older, verbatim | `read_buffer` — a wider window, **not a second system** |
+| **hot** | Postgres | the last 40 messages, verbatim | injected into every tag prompt |
+| **deeper** | **the same Postgres** | everything older, verbatim | `chat_earlier` — a wider window, **not a second system** |
 | **derived** | Honcho | conclusions *about people* | `about` |
 
-**SQLite is the RECORD; Honcho is the INTERPRETATION.** SQLite stores what was
+**Postgres is the RECORD; Honcho is the INTERPRETATION.** Postgres stores what was
 literally said, is authoritative, and is the only thing R-2/A9 guarantee.
 
 **Media is part of the record, not a fourth layer** (DEC-45,
@@ -93,7 +93,7 @@ deriver is being settled; until it is, do not build further on Honcho.
 
 **D1 — the boundary rule.** The Agent SDK never sees ambient-only traffic. It is
 constructed, invoked, and discarded once per tag. Ambient ingest is a pure,
-deterministic write path (SQLite audit + Honcho feed) with exactly one branch:
+deterministic write path (Postgres audit + Honcho feed) with exactly one branch:
 trigger detection. See `design/00-overview.md` D1 and `design/09-decision-index.md`.
 
 ## 2. Packages — what lives here, what it may import
@@ -202,7 +202,7 @@ receives an already-normalized `NormalizedMessage`, never a raw dict.
 3. `nora/app/dispatch.py::Dispatcher.on_message` — the entry point for anything that *did* parse; awaits `IngestPipeline.run(message=message)`.
 4. `nora/ingest/stages/identity.py::run` → `nora/persons.py::Persons.resolve` — the mapped `PersonRef`, or `None` for an unmapped sender (D6). Runs BEFORE the audit write so the resolved `person_id` lands in that one INSERT rather than a second write; `resolve` is two dict lookups on a startup-built frozen mapping, so nothing fallible moved ahead of the record. An unmapped sender increments `nora_unmapped_senders_total{platform}` and logs a redacted warning — its symptom set is otherwise empty (still audited, gate still runs, prefill still shows the platform display name, nothing reaches Honcho).
 5. `nora/ingest/stages/media.py::run` → `nora/platform/signal/media.py::SignalMediaSource.fetch` + `nora/infra/blobs/filesystem.py::FilesystemBlobStore.put` — attachment bytes into Nora's own custody, content-addressed. Runs BEFORE the audit write, INLINE rather than through `spawn`, because a handle in the body (`[image a3f2c1]`) is a promise the bytes exist and both must land in one INSERT (DEC-45). No attachments means one `if` and no calls. Any failure leaves the placeholder without a handle, records the message anyway, and increments `nora_media_custody_total{status}`; `nora_media_attachments_total` counts what was SEEN, so zero custody is distinguishable from zero media. **Not wired in `composition.py` yet** — see `design/18-media-custody.md` §9.
-6. `nora/ingest/stages/audit.py::run` → `nora/infra/sql/audit.py::SqlRecordStore.append` — SQLite audit write, carrying `person_id` (NULL when unmapped). On failure: log + `nora_errors_total{stage="ambient"}` + drop (`IngestResult(message=None, decision=None)`, pipeline ends here), never re-raise into the listener.
+6. `nora/ingest/stages/audit.py::run` → `nora/infra/sql/audit.py::SqlRecordStore.append` — Postgres audit write, carrying `person_id` (NULL when unmapped). On failure: log + `nora_errors_total{stage="ambient"}` + drop (`IngestResult(message=None, decision=None)`, pipeline ends here), never re-raise into the listener.
 7. `nora/ingest/stages/memory_feed.py::run` — if mapped, schedules (never awaits inline) a background task → `nora/infra/honcho/client.py::HonchoClient.ensure_peer` + `.feed`.
 8. `nora/ingest/stages/gate.py::run` → `nora/ingest/policy.py::TriggerTextPolicy.should_engage` → `nora/tag.py::is_tagged` — the trigger branch. Two policy gates bracket it: the room gate ran before the audit write, and the sender gate runs immediately after this one, downgrading `engage` to False with `reason="sender_not_allowed"` when the tagger is not in that conversation's `persons` list (DEC-18). `Dispatcher.on_message` returns without spawning anything if `decision.engage` is `False`. Ambient-only messages stop here.
 
@@ -223,7 +223,7 @@ same shape `Handler._spawn(self.handle_tag(msg))` had.
 14. `nora/engagement/stages/invoke.py::run` → `nora/app/agent_runner.py::LiveAgentRunner.invoke` → `nora/agent/factory.py::create_agent` / `invoke` — the Strands `Agent` loop runs, bounded by `asyncio.wait_for(..., timeout=...)` (R-8/R-10's invocation timeout). `factory.create_client` is called once at process start (`nora/app/composition.py::build_dependencies`), never per tag — that is audit T2's guarantee and it is what pools connections. The `OpenAIModel` **is** built per tag, by `factory.ModelSource.create()`, because `tool_choice` is per-turn state: `required` until she has spoken, `auto` after, flipped by `ReplyGuard._before_model` via `nora/agent/tool_choice.py::relax` (DEC-40). One shared model would apply one tag's relaxation to a concurrent tag's first call, which sends nothing.
 15. A `send_reply` tool call → `nora/agent/guards.py::Deliverer.deliver` — audit-first: `SqlRecordStore.append(..., is_nora=True, delivery_status=DeliveryStatus.PENDING)`, then `adapter.send(...)` (`SendResult`, keyword-only — `Deliverer` reads `.ok`, not truthiness), then `SqlRecordStore.set_delivery_status`.
 16. `nora/engagement/stages/deliver.py::check_outcome` — confirms a reply actually went out; a model that never called `send_reply` is counted separately (`nora_silent_failures_total{reason="no_send_call"}`).
-17. `nora/engagement/stages/feedback.py::run` — spawned as a background task if a tagger was mapped, and it feeds the TAGGER'S message body under the tagger's peer, nothing else. Not the exchange: a two-speaker transcript under one peer id made Nora's own replies evidence about the person she was answering, because Honcho's deriver reads that stream as the target peer's own messages (DEC-36). Her reply is in SQLite and reachable through `read_buffer`, which is where ADR 0001 says it belongs.
+17. `nora/engagement/stages/feedback.py::run` — spawned as a background task if a tagger was mapped, and it feeds the TAGGER'S message body under the tagger's peer, nothing else. Not the exchange: a two-speaker transcript under one peer id made Nora's own replies evidence about the person she was answering, because Honcho's deriver reads that stream as the target peer's own messages (DEC-36). Her reply is in Postgres and reachable through `chat_earlier`, which is where ADR 0001 says it belongs.
 18. `nora/engagement/pipeline.py::EngagementPipeline._run_admitted`'s `finally` — releases the in-flight key (R-10, every exit path) and records `nora_tag_latency_seconds`/`nora_overhead_seconds`/`nora_messages_per_tag` (the last one 0 for a silent turn, so every admitted tag contributes exactly one observation — DEC-31) and, for a turn that sent SOME of its messages and then stopped early, `nora_partial_replies_total{reason}` (R-25/DEC-40 — such a turn is not silent, so nothing R-23 built can see it). Its enclosing `except BaseException` is what makes R-5's silence guarantee unconditional, including on faults that are not an `Exception` at all.
 
 ## 5. Where new code goes

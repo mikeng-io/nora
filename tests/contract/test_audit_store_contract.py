@@ -78,10 +78,11 @@ async def test_recent_with_a_zero_limit_is_empty(store):
 
 async def test_recent_with_a_negative_limit_is_empty(store):
     """The regression this guards: SQLAlchemy renders `.limit(-1)` as
-    `LIMIT -1`, which SQLite treats as unbounded rather than zero, so a
-    naive `SqlRecordStore.recent(limit=-1)` would return every row in the
-    conversation instead of none. `FakeRecordStore` already returned `[]`
-    here; `SqlRecordStore` must short-circuit rather than issue that query."""
+    `LIMIT -1`, which the old SQLite backend treated as unbounded rather than
+    zero (Postgres errors on it), so a naive `SqlRecordStore.recent(limit=-1)`
+    would dump or crash instead of returning none. `FakeRecordStore` already
+    returned `[]` here; `SqlRecordStore` must short-circuit rather than issue
+    that query."""
     await store.append(message=_msg())
     assert await store.recent(conversation_id="g1", limit=-1) == []
 
@@ -165,9 +166,10 @@ async def test_quoted_ts_needs_no_extra_argument_because_it_rides_the_message(st
 
 
 async def test_row_ids_are_positive_and_start_at_one(store):
-    """SQLite AUTOINCREMENT starts at 1. A 0-based fake would make the first
-    id falsy, so any `if row_id:` would behave differently against the fake
-    than against production — the drift this suite exists to prevent."""
+    """The id sequence starts at 1 (SQLite AUTOINCREMENT then, a Postgres
+    sequence now). A 0-based fake would make the first id falsy, so any
+    `if row_id:` would behave differently against the fake than against
+    production — the drift this suite exists to prevent."""
     assert await store.append(message=_msg()) == 1
     assert await store.append(message=_msg(ts=2)) == 2
 
@@ -232,8 +234,9 @@ async def test_unattributed_honours_its_limit(store):
 
 
 async def test_unattributed_with_a_non_positive_limit_is_empty(store):
-    """Same trap `recent` documents: SQLAlchemy renders `.limit(-1)` as SQLite's
-    unbounded `LIMIT -1`, so a naive implementation returns everything."""
+    """Same trap `recent` documents: `.limit(-1)` was SQLite's unbounded
+    `LIMIT -1` (Postgres errors on it), so a naive implementation dumps or
+    crashes; the store must short-circuit."""
     await store.append(message=_msg())
     assert await store.unattributed(limit=0) == []
     assert await store.unattributed(limit=-1) == []

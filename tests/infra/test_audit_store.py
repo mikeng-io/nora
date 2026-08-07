@@ -109,10 +109,12 @@ async def test_recent_limit_with_tied_ts_takes_the_highest_ids(store):
 
 async def test_append_does_not_prune(make_store):
     """The defect this closes: db.append ran an INSERT plus a correlated-subquery
-    prune in ONE transaction per message. Under WAL with N adapters that yields
-    SQLITE_BUSY, and the ingest stage's failure behaviour is to drop the
-    message — silent audit loss, the one thing SQLite is here to prevent.
-    Append is now a bare INSERT; pruning is a periodic sweep."""
+    prune in ONE transaction per message. Under the SQLite era's WAL with N
+    adapters that yielded SQLITE_BUSY, and the ingest stage's failure behaviour
+    is to drop the message — silent audit loss, the one thing the record store
+    is here to prevent. Append is now a bare INSERT; pruning is a periodic
+    sweep, a shape kept under Postgres because a hot write path has no business
+    doing retention either way."""
     store = make_store(max_per_conversation=3)
     for i in range(10):
         await store.append(message=_msg(body=f"m{i}", ts=i))

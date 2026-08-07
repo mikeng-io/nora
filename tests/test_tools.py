@@ -233,9 +233,10 @@ async def test_chat_earlier_names_nora_the_same_way_in_reply_to_as_in_sender(wir
 
 
 async def test_chat_earlier_clamps_a_hostile_limit_before_it_reaches_the_store(wiring, monkeypatch):
-    """`limit` is a model-supplied argument. SQLite renders `LIMIT -1` as
-    unbounded rather than zero, so an unclamped negative limit would dump the
-    entire conversation into context; `limit=0` is equally meaningless. This
+    """`limit` is a model-supplied argument. The old SQLite backend rendered
+    `LIMIT -1` as unbounded rather than zero — a full-conversation dump into
+    context — and Postgres rejects a negative LIMIT outright; either way the
+    clamp owns the bound, and `limit=0` is equally meaningless. This
     asserts what `chat_earlier` actually sends downstream — independent of
     whatever the store itself does with a non-positive limit — so it fails if
     the tool-level clamp regresses even though the store has its own guard."""

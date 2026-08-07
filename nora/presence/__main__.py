@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from .. import config
 from ..config import ConfigError
 from ..obs.health import serve
 from ..obs.logging import setup_logging
+from ..obs.metrics import Metrics
 from .composition import PresenceStartupError, build_collector
 
 log = logging.getLogger("nora.presence.__main__")
@@ -32,7 +34,7 @@ log = logging.getLogger("nora.presence.__main__")
 __all__ = ["build_parser", "main"]
 
 
-def _metrics_app(metrics) -> web.Application:
+def _metrics_app(metrics: Metrics) -> web.Application:
     """A minimal /metrics + /health app for the collector process — it has no
     adapter or record store to report on, only its own metrics registry (which
     carries the liveness heartbeat and the canary counters, §4)."""
@@ -58,7 +60,20 @@ async def _run(config_path: Path) -> None:
         level=cfg.obs.logging.level,
         path=cfg.obs.logging.path,
         format=cfg.obs.logging.format,
-        secrets=[],
+        # The collector's own credentials, redacted the way `nora.__main__`
+        # redacts the LLM key. The username is included on purpose: it is an
+        # email address — an identifier, exactly what this repo keeps out of
+        # log files (audit hygiene, 2026-08-07).
+        secrets=[
+            value
+            for value in (
+                os.environ.get(cfg.presence.client_credential_env, ""),
+                os.environ.get(cfg.presence.username_env, ""),
+                os.environ.get(cfg.presence.password_env, ""),
+                os.environ.get(cfg.presence.geocode_api_key_env, ""),
+            )
+            if value
+        ],
     )
     deps = build_collector(cfg)
     runner = await serve(_metrics_app(deps.metrics), deps.metrics_port)

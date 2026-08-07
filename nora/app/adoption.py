@@ -67,8 +67,9 @@ log = logging.getLogger("nora.app.adoption")
 # stopped, because marking is what removes a row from the scan.
 DEFAULT_SCAN_LIMIT = 1000
 
-# Let the listener settle before competing for SQLite's single writer. Nothing
-# depends on this having finished, so a late start costs nothing.
+# Let the listener settle before the backfill contends for the store (a habit
+# from SQLite's single writer; still free under Postgres). Nothing depends on
+# this having finished, so a late start costs nothing.
 DEFAULT_START_DELAY_SECONDS = 5.0
 
 

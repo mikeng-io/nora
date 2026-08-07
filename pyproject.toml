@@ -6,7 +6,6 @@ requires-python = ">=3.11"
 dependencies = [
     "strands-agents==1.50.2",
     "aiohttp>=3.9",
-    "aiosqlite>=0.20",
     "openai>=1.40",
     "PyYAML>=6.0",
     "pydantic>=2.8",
@@ -70,7 +69,7 @@ warn_unused_ignores = true
 # out here so this override only tightens nora.domain/config/app/infra and does
 # not silently tighten nora.obs, nora.agent, etc.
 [[tool.mypy.overrides]]
-module = ["nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*"]
+module = ["nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*", "nora.presence.*"]
 disallow_any_generics = true
 disallow_subclassing_any = true
 disallow_untyped_calls = true

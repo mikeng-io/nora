@@ -44,7 +44,7 @@ Run before claiming anything is done, and before every commit:
 ```bash
 uv run pytest -q                                         # tests green
 uv run ruff check nora/ evals/ tests/                    # lint clean
-uv run mypy nora/domain nora/config.py nora/app nora/infra   # types clean (strict, scoped)
+uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence   # types clean (strict, scoped)
 uv run lint-imports                                      # import boundaries clean
 ```
 

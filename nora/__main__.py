@@ -104,9 +104,11 @@ class App:
         deps.background.spawn(heartbeat(deps.metrics))
         deps.background.spawn(self._update_last_event_age())
         # Lazy adoption, spawned exactly like the prune sweep and for the same
-        # reason: it writes to SQLite, WAL permits one writer, and the ingest
-        # path drops a message it cannot audit. Nothing awaits it — a slow or
-        # failing backfill must not delay the adapters coming up.
+        # reason: it writes to the record store, and the ingest path drops a
+        # message it cannot audit (the shape dates from the SQLite era's
+        # single-writer WAL; off the hot path is still right under Postgres).
+        # Nothing awaits it — a slow or failing backfill must not delay the
+        # adapters coming up.
         deps.background.spawn(self._adopt_pending())
         deps.background.spawn(runtime.prune_loop(
             deps.audit, deps.metrics, interval_seconds=PRUNE_INTERVAL_SECONDS,

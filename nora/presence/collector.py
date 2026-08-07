@@ -194,7 +194,9 @@ class PresenceCollector:
         failures = self._client.auth_failures
         if failures <= 0:
             return self._cadence_seconds
-        return min(self._cadence_seconds * (2 ** failures), MAX_BACKOFF_SECONDS)
+        # float() because typeshed types `int ** int` as Any (a negative
+        # exponent would make it a float), and this module is mypy-strict.
+        return min(self._cadence_seconds * float(2**failures), MAX_BACKOFF_SECONDS)
 
     def _publish_liveness(self, circle_id: str, now_ms: int) -> None:
         """Set the heartbeat gauge to the age of this circle's last SUCCESS. It
