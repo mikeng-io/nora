@@ -201,7 +201,10 @@ class UnattributedRow:
     # the right conversation session (Honcho v2, design/24), the same way the
     # ambient feed does. Like `platform`, it is carried because a re-fed row must
     # know its session, which `TranscriptRow` (already conversation-scoped) omits.
-    conversation_id: str = ""
+    # REQUIRED, not defaulted (council 2026-08-07): a `""` would build a malformed
+    # `nora-conv-` session, so an omission is a construction error, not a silent
+    # garbage feed.
+    conversation_id: str
     raw_json: str | None = None
 
 

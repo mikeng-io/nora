@@ -125,6 +125,16 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
         await build_dependencies(override_config(cfg, {"doctrine.dir": d}))
 
 
+async def test_the_nora_aipeer_id_is_reserved_and_no_human_may_hold_it(cfg):
+    """Honcho v2 corpus-safety (council 2026-08-07): the aiPeer id is Nora's
+    self-model peer. A human mapped to it would feed under it and merge
+    IRREVERSIBLY into her card (Honcho keeps conclusions, not text). Setting
+    `memory.ai_peer` to an existing person id ("miles" in this fixture) must
+    refuse to start, not silently corrupt the corpus."""
+    with pytest.raises(StartupError, match="reserved for Nora"):
+        await build_dependencies(override_config(cfg, {"memory.ai_peer": "miles"}))
+
+
 async def test_no_enabled_platform_refuses_to_start(cfg):
     """`platforms.signal.enabled = false` is honoured now (nora.platform.registry
     .AdapterRegistry) — previously (config.py's "NOT YET HONOURED" comment)

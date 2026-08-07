@@ -294,11 +294,22 @@ class SearchClient:
         # fetched it), but it stops an internal service's CONTENT reaching the
         # model or the group — the exact gap Hermes documents in the
         # third-party-reader model.
+        # Check BOTH `metadata.url` AND `metadata.sourceURL` (council 2026-08-07):
+        # which one carries the post-redirect FINAL host is instance-dependent,
+        # so re-validate every host Firecrawl reports and refuse if ANY is
+        # non-global. And FAIL CLOSED: if neither field is present, the final
+        # host cannot be confirmed, so refuse the body rather than return it
+        # (the earlier code returned it — a fail-open hole). The pre-check
+        # cleared the REQUESTED host; this stops a 302/rebind to an internal
+        # service returning its content.
         meta = data.get("metadata") if isinstance(data, dict) else None
-        final_url = meta.get("sourceURL") if isinstance(meta, dict) else None
-        if isinstance(final_url, str) and final_url:
-            final_host = urlsplit(final_url).hostname
-            if final_host is None or not await _all_global(final_host, self._resolver):
+        reported = [meta.get(k) for k in ("url", "sourceURL")] if isinstance(meta, dict) else []
+        hosts = [urlsplit(u).hostname for u in reported if isinstance(u, str) and u]
+        if not hosts:
+            log.warning("fetch returned no final URL to verify; refusing the body")
+            return _REFUSED_FETCH
+        for host in hosts:
+            if host is None or not await _all_global(host, self._resolver):
                 log.warning("fetch redirected off-global; refusing the body")
                 return _REFUSED_FETCH
         markdown = data.get("markdown") if isinstance(data, dict) else None

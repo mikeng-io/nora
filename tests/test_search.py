@@ -90,6 +90,9 @@ class _Firecrawl:
         # network. None → echo the requested url (no redirect). Set it to an
         # internal host to model a public→private 302 the pre-check can't see.
         self.redirect_to: str | None = None
+        # True → return data with NO metadata, so the final host cannot be
+        # confirmed (the fail-closed probe).
+        self.no_metadata = False
         self.markdown = "# Example\n\nThe page body, in markdown."
 
     async def scrape(self, request: web.Request) -> web.Response:
@@ -103,6 +106,8 @@ class _Firecrawl:
             # `unavailable`, distinct from an empty page.
             return web.json_response({"success": False, "error": "could not scrape"})
         markdown = "" if self.empty else self.markdown
+        if self.no_metadata:
+            return web.json_response({"success": True, "data": {"markdown": markdown}})
         return web.json_response({
             "success": True,
             "data": {
@@ -252,6 +257,18 @@ async def test_a_redirect_to_an_internal_host_refuses_the_body(services):
     # Firecrawl WAS asked (the fetch already happened on its network) — the guard
     # is on returning the BODY, which is the honest boundary for a hosted reader.
     assert firecrawl.calls == ["https://example.com/weather"]
+    assert "page body" not in json.dumps(out, ensure_ascii=False)
+
+
+async def test_fetch_fails_closed_when_the_final_host_cannot_be_confirmed(services):
+    """council 2026-08-07: if Firecrawl returns no metadata (no url/sourceURL),
+    the final host it actually read cannot be verified — so refuse the body
+    rather than return it (the old code fail-OPEN'd on missing metadata, a hole).
+    Reverting to fail-open returns the page."""
+    _, firecrawl, client = services
+    firecrawl.no_metadata = True
+    out = await client.fetch("https://example.com/weather")
+    assert out["status"] == "refused"
     assert "page body" not in json.dumps(out, ensure_ascii=False)
 
 

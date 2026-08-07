@@ -145,6 +145,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     except PersonsError as exc:
         raise StartupError(f"person mapping error: {exc}") from exc
 
+    # The Nora aiPeer id is RESERVED — no human may hold it (council 2026-08-07,
+    # Honcho v2 corpus-safety). If an operator gave a person the id `nora`, that
+    # human's words would feed under the aiPeer and merge IRREVERSIBLY into
+    # Nora's self-model card (Honcho keeps conclusions, not text). Fail closed at
+    # startup rather than pollute the corpus.
+    if cfg.memory.ai_peer in persons.by_person:
+        raise StartupError(
+            f"identity.toml maps a person to the id '{cfg.memory.ai_peer}', which "
+            "is reserved for Nora's own aiPeer (memory.ai_peer) — a human under "
+            "that id would corrupt her self-model card. Rename the person or the "
+            "aiPeer."
+        )
+
     try:
         allowlist = load_policy(cfg.policy_file)
     except PolicyError as exc:

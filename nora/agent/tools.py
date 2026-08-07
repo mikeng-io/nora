@@ -1357,7 +1357,8 @@ def build_tool_specs(
         # reply, the same screen `route` gives its echoed fields.
         if scan_identifiers(str(out.get("name", ""))) is not None:
             out.pop("name", None)
-        if scan_identifiers(str(out.get("address", ""))) is not None:
+        addr = str(out.get("address", ""))
+        if scan_identifiers(addr) is not None or _looks_like_coordinate(addr):
             out.pop("address", None)
         if isinstance(out.get("could_be"), list):
             out["could_be"] = [c for c in out["could_be"]
