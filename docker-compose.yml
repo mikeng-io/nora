@@ -22,10 +22,15 @@ services:
     image: signal-cli:0.14.7
     container_name: signal-cli
     restart: unless-stopped
-    # Host networking so it binds 127.0.0.1:18080 directly. That matters: the
-    # HTTP interface has NO authentication, and binding 0.0.0.0 behind a port
-    # map makes signal-cli DISABLE its Host-header check. Loopback keeps it.
-    network_mode: host
+    # On the private `nora` network (cutover 2026-08-07, Option 2). It binds
+    # 0.0.0.0:18080 (see command) so co-networked containers (nora, presence)
+    # reach it as `signal-cli:18080`, and it publishes NOTHING — a netns
+    # reachable only on that network, a STRICTER trust set than the old host
+    # loopback (any host process could hit that). The no-auth / host-header
+    # concern only bites behind a host port-map or a browser (DNS-rebinding);
+    # neither can reach an internal-only network with no published port.
+    # --receive-mode=on-start stays load-bearing (CLAUDE.md #3).
+    networks: [nora]
     volumes:
       # Identity keys, group state, contacts. Losing this loses the device
       # registration itself — not just message history.
@@ -39,7 +44,7 @@ services:
     # HTTP server comes up and every RPC works while signal-cli never opens its
     # websocket to Signal — so not one message is delivered. The host daemon
     # ran that way for two months, and under R-5 it looked like a quiet group.
-    command: ["--account", "+85290000100", "daemon", "--http", "127.0.0.1:18080", "--receive-mode", "on-start"]
+    command: ["--account", "+85290000100", "daemon", "--http", "0.0.0.0:18080", "--receive-mode", "on-start"]
     healthcheck:
       # Probes the RUNNING daemon over JSON-RPC. The previous check was
       # `signal-cli --version`, which forks a fresh JVM, prints a string and
@@ -76,22 +81,32 @@ services:
     image: nora:latest
     container_name: nora
     restart: unless-stopped
-    # Nora only ever talks to localhost services (signal-cli :18080, Honcho :8000,
-    # OmniRoute :20128) and exposes metrics on :9100 — host networking is simpler and
-    # more honest than reproducing three port-forwards for a purely localhost agent.
-    # signal-cli runs in this same project (service above) on host networking too,
-    # so Nora reaches it on 127.0.0.1:18080.
-    network_mode: host
+    # On the private `nora` network (cutover 2026-08-07, Option 2): reaches
+    # db and signal-cli BY NAME (db:5432, signal-cli:18080), and the
+    # host-side externals — Honcho :8000, OmniRoute :20128, Langfuse :3100 — via
+    # host.docker.internal (they publish 0.0.0.0, so host-gateway reaches them).
+    # config.toml's base_urls were switched to match.
+    networks: [nora]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    # :9100 on loopback so deploy/watchdog.sh (host) still reads /health; the
+    # in-container healthcheck below hits the container's own 127.0.0.1:9100.
+    ports: ["127.0.0.1:9100:9100"]
     depends_on:
       signal-cli:
         # service_started only waits for the process to exist. Nora's first
         # act is to attach an SSE listener, so she must wait for the daemon
         # to be SERVING, not merely spawned.
         condition: service_healthy
+      db:
+        condition: service_healthy
     environment:
       # Never hardcoded — must already be exported in the shell that runs `docker
       # compose up` (see .env.example). Compose fails fast if it's unset.
       - OMNIROUTE_API_KEY=${OMNIROUTE_API_KEY:?set OMNIROUTE_API_KEY in the host environment first}
+      # The Postgres record store (cutover 2026-08-07, DEC-51). asyncpg-shaped;
+      # the sync/Alembic driver is derived from it; Nora runs migrations at
+      # startup. Password from .env (DEC-8), never inlined.
+      - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora
       # Langfuse OTLP auth. Optional by design: tracing is never load-bearing, so an
       # unset value must degrade to no-auth rather than refuse to boot — hence `:-`
       # and not `:?`. config.toml's obs.tracing.headers_env names this variable; the
@@ -139,3 +154,33 @@ services:
       timeout: 5s
       start_period: 20s
       retries: 3
+
+  # db — Nora's own PostgreSQL record store (design/20 §3). Reached as `db:5432`
+  # on the private network; loopback publish (127.0.0.1:5435) lets host-side ops
+  # (migrations, the one-time load, backups, the `nora groups` CLI) in without
+  # exposing it off the box.
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    networks: [nora]
+    ports: ["127.0.0.1:5435:5432"]
+    environment:
+      POSTGRES_USER: nora
+      POSTGRES_DB: nora
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      # pg18+ stores data in a major-version subdir under this mount
+      # (/var/lib/postgresql/18/docker) — mount the PARENT, not .../data, or the
+      # image refuses to start ("unused mount/volume"). See docker-library/postgres#1259.
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nora -d nora"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  nora:
+
+volumes:
+  db-data:

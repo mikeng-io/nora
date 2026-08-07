@@ -8,18 +8,18 @@ identity_file = "identity.toml"
 policy_file = "policy.toml"
 
 [platforms.signal]
-base_url = "http://127.0.0.1:18080"
+base_url = "http://signal-cli:18080"
 account = "+85290000100"         # Nora's Signal number (the linked account)
 nora_sender_id = "nora"          # how Nora's own rows are tagged in the audit
 enabled = true                   # NOT YET HONOURED — SignalAdapter starts regardless;
                                   # wiring lands with the Phase 4 adapter registry
 
 [memory]
-base_url = "http://127.0.0.1:8000"
+base_url = "http://host.docker.internal:8000"
 workspace_id = "nora"
 
 [llm]
-base_url = "http://localhost:20128/v1"   # OmniRoute OpenAI-compatible
+base_url = "http://host.docker.internal:20128/v1"   # OmniRoute OpenAI-compatible
 api_key_env = "OMNIROUTE_API_KEY"        # env var NAME, never the value
 
 # PINNED to one upstream, not the `nora` combo. The combo fans out per request
@@ -132,7 +132,7 @@ port = 9100
 [obs.tracing]
 enabled = true
 exporter = "otlp_http"                     # console | otlp_http | file
-endpoint = "http://127.0.0.1:3100/api/public/otel/v1/traces"
+endpoint = "http://host.docker.internal:3100/api/public/otel/v1/traces"
 headers_env = "LANGFUSE_OTLP_HEADERS"                      # env var NAME holding OTLP auth headers, never the
                                        # value (DEC-8); only read when exporter = "otlp_http"
 
@@ -144,7 +144,7 @@ headers_env = "LANGFUSE_OTLP_HEADERS"                      # env var NAME holdin
 # config.example.toml deliberately keeps this false — a fresh install should not
 # assume a Langfuse exists.
 enabled = true
-host = "http://127.0.0.1:3100"
+host = "http://host.docker.internal:3100"
 headers_env = "LANGFUSE_OTLP_HEADERS"
 
 [media]
