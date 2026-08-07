@@ -14,7 +14,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.infra.honcho import HonchoClient
+from nora.infra.honcho import HonchoClient, WorkspaceRouter
 
 
 @pytest.fixture
@@ -34,6 +34,62 @@ async def server_factory():
 
     for server in servers:
         await server.close()
+
+
+def test_workspace_router_maps_conversations_and_falls_back_to_the_default():
+    """design/24 §S: a conversation resolves to its social unit's workspace, or
+    the single default when unmapped (today, every conversation)."""
+    r = WorkspaceRouter("nora", {"g-work": "acme"})
+    assert r.workspace_for("g-work") == "acme"
+    assert r.workspace_for("g-unmapped") == "nora"
+
+
+async def test_feed_routes_every_call_to_the_conversations_workspace(server_factory):
+    """The seam threaded through the whole feed path (design/24 §S): a mapped
+    conversation's session-create, peer-config AND message POST all land under
+    its own workspace — never the default."""
+    paths: list[str] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        paths.append(request.path)
+        if request.path.endswith("/sessions"):
+            return web.json_response({"id": "s1"})
+        return web.json_response({"ok": True})
+
+    base = await server_factory(handler)
+    client = HonchoClient(
+        base, "nora", workspace_router=WorkspaceRouter("nora", {"g-work": "acme"}),
+    )
+    assert await client.feed(peer_id="miles", text="hi", conversation_id="g-work") is True
+    assert paths and all("/workspaces/acme/" in p for p in paths), paths
+    assert not any("/workspaces/nora/" in p for p in paths)
+
+
+async def test_an_unmapped_conversation_and_a_direct_recall_use_the_default(server_factory):
+    """The behaviour-preserving half: no override → the single default workspace,
+    exactly as before the seam. And a recall carrying an explicit `workspace_id`
+    targets that workspace (the caller resolves it from the room)."""
+    paths: list[str] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        paths.append(request.path)
+        if request.path.endswith("/sessions"):
+            return web.json_response({"id": "s1"})
+        if request.path.endswith("/representation"):
+            return web.json_response({"representation": "x"})
+        return web.json_response({"ok": True})
+
+    base = await server_factory(handler)
+    client = HonchoClient(
+        base, "nora", workspace_router=WorkspaceRouter("nora", {"g-work": "acme"}),
+    )
+    await client.feed(peer_id="miles", text="hi", conversation_id="g-other")   # unmapped
+    assert all("/workspaces/nora/" in p for p in paths) and paths
+    paths.clear()
+    await client.representation(
+        peer_id="nora", target="miles", search_query="q", workspace_id="acme",
+    )
+    assert any("/workspaces/acme/peers/nora/representation" in p for p in paths), paths
 
 
 async def test_feed_creates_a_session_then_posts_the_message_batch(server_factory):

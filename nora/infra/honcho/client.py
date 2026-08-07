@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import logging
 import re
+from collections.abc import Mapping
 from typing import Any, cast
 
 import aiohttp
@@ -192,6 +193,26 @@ def _conclusions(representation: Any) -> tuple[str, ...]:
     return tuple(out)
 
 
+class WorkspaceRouter:
+    """A conversation → Honcho workspace map. The workspace is a social UNIT's
+    memory boundary (design/24 §S.1): one group of PEOPLE, whose Signal/Discord/
+    WhatsApp channels are all sessions inside it.
+
+    `default` is the single workspace today (`cfg.memory.workspace_id`);
+    `overrides` is the per-conversation map a FUTURE identity.toml / workspaces
+    .toml populates so a second social unit gets its own workspace. With empty
+    overrides every conversation resolves to the one workspace, so wiring this in
+    changes nothing today — it is the seam the multi-unit routing lands on
+    without a client refactor (operator-approved "seam only", 2026-08-08)."""
+
+    def __init__(self, default: str, overrides: Mapping[str, str] | None = None) -> None:
+        self._default = default
+        self._overrides = dict(overrides or {})
+
+    def workspace_for(self, conversation_id: str) -> str:
+        return self._overrides.get(conversation_id, self._default)
+
+
 class HonchoClient:
     def __init__(
         self,
@@ -199,6 +220,7 @@ class HonchoClient:
         workspace_id: str,
         *,
         ai_peer: str = "nora",
+        workspace_router: WorkspaceRouter | None = None,
         feed_timeout: float = 2.0,
         card_timeout: float = 3.0,
         representation_timeout: float = 3.0,
@@ -206,6 +228,14 @@ class HonchoClient:
     ) -> None:
         self._base = base_url.rstrip("/")
         self._ws = workspace_id
+        # A conversation's workspace is resolved through the router (design/24
+        # §S). None → every call uses the single `workspace_id` (the default and
+        # today's behaviour); a router lets a future per-social-unit map send
+        # different conversations to different workspaces without touching this
+        # class. `_ws` stays the DEFAULT for peer-keyed calls that carry no
+        # conversation (ensure_peer, and a recall where the caller passes no
+        # workspace).
+        self._router = workspace_router
         # The OBSERVER peer — Nora. Honcho keys memory by (observer, observed)
         # peer pairs (README, "the Honcho loop"), so this is the peer from whose
         # perspective every recall is read: `(observer=nora, observed=person)` is
@@ -251,8 +281,13 @@ class HonchoClient:
             lock = self._peer_locks[peer_id] = asyncio.Lock()
         return lock
 
-    def _url(self, path: str) -> str:
-        return f"{self._base}/v3/workspaces/{self._ws}{path}"
+    def _url(self, path: str, *, workspace: str | None = None) -> str:
+        return f"{self._base}/v3/workspaces/{workspace or self._ws}{path}"
+
+    def _workspace_for(self, conversation_id: str) -> str:
+        """The workspace for a conversation — the router's answer, or the single
+        default when no router is wired (today, every conversation)."""
+        return self._router.workspace_for(conversation_id) if self._router else self._ws
 
     async def _post(
         self,
@@ -334,6 +369,7 @@ class HonchoClient:
         repeat POST, so re-creating is idempotent). The id is deterministic, so
         it survives a restart without state; the cache only saves a round trip.
         """
+        ws = self._workspace_for(conversation_id)
         async with self._peer_lock(f"conv:{conversation_id}"):
             # Nora joins every session as an OBSERVER (observe_others=True), so
             # the deriver builds her model of each human who speaks here; and as
@@ -352,11 +388,12 @@ class HonchoClient:
             if cached is not None:
                 await self._configure_peer(
                     cached, self._ai_peer, observe_others=True, observe_me=True,
+                    workspace=ws,
                 )
                 return cached
             session_id = f"nora-conv-{_safe_conversation_key(conversation_id)}"
             result = await self._post(
-                self._url("/sessions"), {"id": session_id}, self._feed_timeout
+                self._url("/sessions", workspace=ws), {"id": session_id}, self._feed_timeout
             )
             if result is None:
                 return None
@@ -366,11 +403,13 @@ class HonchoClient:
             self._sessions[conversation_id] = returned
             await self._configure_peer(
                 returned, self._ai_peer, observe_others=True, observe_me=True,
+                workspace=ws,
             )
             return returned
 
     async def _configure_peer(
         self, session_id: str, peer_id: str, *, observe_others: bool, observe_me: bool,
+        workspace: str | None = None,
     ) -> None:
         """Add `peer_id` to `session_id` with its observer config, ONCE per pair.
 
@@ -379,12 +418,13 @@ class HonchoClient:
         `observe_me=True`. Best-effort: a failure leaves the pair unconfigured so
         the next message retries it — a missed config degrades to «not modelled»,
         never a crash. `POST /sessions/{id}/peers` with `{peer_id: config}`
-        (verified against the live add-peers schema, 2026-08-07)."""
+        (verified against the live add-peers schema, 2026-08-07). `workspace` is
+        the conversation's workspace (design/24 §S); None is the default."""
         pair = (session_id, peer_id)
         if pair in self._configured_peers:
             return
         result = await self._post(
-            self._url(f"/sessions/{session_id}/peers"),
+            self._url(f"/sessions/{session_id}/peers", workspace=workspace),
             {peer_id: {"observe_others": observe_others, "observe_me": observe_me}},
             self._feed_timeout,
         )
@@ -406,19 +446,20 @@ class HonchoClient:
         session_id = await self.ensure_session(conversation_id)
         if session_id is None:
             return False
+        ws = self._workspace_for(conversation_id)
         # A human speaker joins as OBSERVABLE (observe_me=True) so Nora's model of
         # them derives; not as an observer (observe_others=False) — only Nora
         # models others, so the deriver does no N² human-of-human work. Nora's own
         # feed skips this: she was configured at session creation.
         if peer_id != self._ai_peer:
             await self._configure_peer(
-                session_id, peer_id, observe_others=False, observe_me=True,
+                session_id, peer_id, observe_others=False, observe_me=True, workspace=ws,
             )
         message: dict[str, object] = {"content": text, "peer_id": peer_id}
         if metadata:
             message["metadata"] = metadata
         result = await self._post(
-            self._url(f"/sessions/{session_id}/messages"),
+            self._url(f"/sessions/{session_id}/messages", workspace=ws),
             {"messages": [message]},
             self._feed_timeout,
         )
@@ -455,6 +496,7 @@ class HonchoClient:
         search_query: str,
         max_conclusions: int = 9,
         target: str | None = None,
+        workspace_id: str | None = None,
     ) -> Recollection:
         """What Honcho concludes about one peer, curated to one question.
 
@@ -535,7 +577,7 @@ class HonchoClient:
         if target is not None:
             payload["target"] = target
         result = await self._post(
-            self._url(f"/peers/{peer_id}/representation"),
+            self._url(f"/peers/{peer_id}/representation", workspace=workspace_id),
             payload,
             self._representation_timeout,
         )
@@ -553,6 +595,7 @@ class HonchoClient:
         query: str,
         reasoning_level: str = "low",
         target: str | None = None,
+        workspace_id: str | None = None,
     ) -> str | None:
         """The DIALECTIC verb — Honcho REASONS over a peer's representation and
         peer card to SYNTHESISE a natural-language answer (Honcho v2, design/24
@@ -590,7 +633,7 @@ class HonchoClient:
         if target is not None:
             body["target"] = target
         result = await self._post(
-            self._url(f"/peers/{peer_id}/chat"),
+            self._url(f"/peers/{peer_id}/chat", workspace=workspace_id),
             body,
             self._chat_timeout,
         )

@@ -46,7 +46,7 @@ from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
-from nora.infra.honcho import HonchoClient
+from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.vision import VisionClient, derive_vision_timeout
@@ -242,8 +242,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             "unless this split is intended",
             cfg.agent.name, cfg.memory.ai_peer,
         )
+    # The conversation→workspace seam (design/24 §S.4). Today a router with NO
+    # overrides — every conversation resolves to the single `workspace_id`, so
+    # this changes nothing — but the multi-social-unit routing (a per-group
+    # workspace from identity.toml / a future workspaces.toml) lands here without
+    # a client refactor.
     memory = HonchoClient(
         cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
+        workspace_router=WorkspaceRouter(cfg.memory.workspace_id),
     )
     await memory.ensure_workspace()          # best-effort, never fatal — no try/except
     # The Nora aiPeer (Honcho v2, design/24): her replies feed under it to build
