@@ -208,6 +208,19 @@ password_env = "LIFE360_PASSWORD"
 cadence_seconds = 90
 retention_days = 180
 metrics_port = 9101
+# Reverse-geocode backend — a switchable OPTION, never a replacement. "google"
+# (default, proven; needs GOOGLE_MAPS_API_KEY) or "hkgov" (the HK-gov LandsD
+# ArcGIS locator). Both sit behind the ReverseGeocoder port and both are optional
+# (no credential → no geocoder, fixes store the coordinate/Life360 label). For
+# hkgov, set the full .../reverseGeocode service URL and the token env var from
+# your LANDSD Map API portal account (the key is issued to government
+# departments); tune hkgov_lang_zh/_en to the langCode strings your locator
+# honours. Left commented — the default is google.
+# geocode_provider = "hkgov"
+# hkgov_geocode_url = "https://api.hkmapservice.gov.hk/.../GeocodeServer/reverseGeocode"
+# hkgov_token_env = "HKGOV_MAPS_TOKEN"
+# hkgov_lang_zh = "zh"
+# hkgov_lang_en = "en"
 
 # Web search (SearXNG) + page fetch (Firecrawl) for the `search`/`fetch` tools
 # (DEC-57, design/22). The WHOLE SECTION IS OPTIONAL and every key defaults — a

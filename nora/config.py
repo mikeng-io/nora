@@ -403,6 +403,21 @@ class PresenceConfig(BaseModel):
     # address-less fix stores the coordinate as before (never a crash). The value
     # lives in the env, never in this file (DEC-8).
     geocode_api_key_env: str = "GOOGLE_MAPS_API_KEY"
+    # Which reverse-geocode backend to use (2026-08-08). "google" (default, the
+    # proven one) or "hkgov" (the HK-gov ArcGIS locator, a switchable OPTION —
+    # never replacing Google). Both sit behind the `ReverseGeocoder` port; the
+    # collector is unchanged by the choice.
+    geocode_provider: Literal["google", "hkgov"] = "google"
+    # HK-gov backend (only read when `geocode_provider = "hkgov"`). The full
+    # `.../reverseGeocode` service URL from the operator's LANDSD Map API portal
+    # account, and the env var holding its access token (DEC-8: the token is an
+    # env value, never inlined). `hkgov_lang_zh`/`_en` are the langCode strings
+    # the deployment's locator honours (portal-specific; tune if the default
+    # returns the wrong language). Live-verifying these needs the operator's key.
+    hkgov_geocode_url: str = ""
+    hkgov_token_env: str = "HKGOV_MAPS_TOKEN"  # noqa: S105 — names an env var, not a secret
+    hkgov_lang_zh: str = "zh"
+    hkgov_lang_en: str = "en"
 
 
 class SearchConfig(BaseModel):

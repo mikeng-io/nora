@@ -35,8 +35,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from nora.domain.ports import ReverseGeocoder
 from nora.domain.presence import PresenceFix
-from nora.infra.geocode import ReverseGeocoder
 from nora.infra.life360 import CircleRead, Life360Client, Member, ReadStatus
 from nora.infra.sql.presence import PresenceStore
 
@@ -256,7 +256,7 @@ class PresenceCollector:
         # not re-billed every cycle.
         address = None
         if self._geocoder is not None:
-            address = await self._geocoder.address_for(lat, lng)
+            address = await self._geocoder.address_for(lat=lat, lng=lng)
         if address is None:
             address = member.address
         fix = PresenceFix(

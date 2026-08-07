@@ -32,12 +32,16 @@ log = logging.getLogger("nora.geocode")
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 
 
-class ReverseGeocoder:
-    """`lat, lng -> formatted address` against the Google Geocoding API.
+class CachingBilingualGeocoder:
+    """The shared discipline every `ReverseGeocoder` implementation (Google today,
+    HK-gov as a switchable option) inherits: a ~11 m memo cache, the bilingual
+    «中文 / English» join, and fail-soft.
 
-    Constructed with the resolved key (DEC-8: from the environment at the
-    composition root, never read here). Built only when a key is present; a
-    collector with no key simply has no geocoder and stores the coordinate as-is.
+    A subclass implements ONLY `_fetch(lat, lng, language)` — one reverse-geocode
+    in one language (`"zh"` | `"en"`), returning the formatted address or None on
+    ANY failure. The caching, the two-language join, and the never-raise policy
+    are written and TESTED once, here, so a second backend cannot drift from it
+    (the `tests/contract/` suite pins this shape for every impl).
     """
 
     # Round to ~11 m (4 dp) for the memo key: a stationary member reports a
@@ -47,21 +51,19 @@ class ReverseGeocoder:
     _CACHE_PRECISION = 4
     _CACHE_MAX = 512
 
-    def __init__(self, *, api_key: str, timeout_seconds: float = 5.0) -> None:
-        self._api_key = api_key
-        self._timeout_seconds = timeout_seconds
+    def __init__(self) -> None:
         # (rounded lat, rounded lng) -> address. Only successful lookups are
         # cached; a miss (None) is NOT stored, so a transient geocode outage does
         # not pin a coordinate to "no address" for the life of the process.
         self._cache: dict[tuple[float, float], str] = {}
 
-    async def address_for(self, lat: float, lng: float) -> str | None:
+    async def address_for(self, *, lat: float, lng: float) -> str | None:
         """The best formatted address for `lat,lng` in BOTH languages, or None.
         NEVER raises.
 
-        The group reads both, and Life360's own label was bilingual («雲杉徑 Cloudfir Path»), so store both: Google returns ONE language per call, so this
-        asks for `zh-HK` and `en` and joins them «中文 / English» (Chinese first — a
-        Cantonese group). One language missing still yields the other; both
+        The group reads both, and Life360's own label was bilingual («雲杉徑 Cloudfir Path»), so store both: a backend returns ONE language per call, so
+        this asks for `zh` and `en` and joins them «中文 / English» (Chinese first —
+        a Cantonese group). One language missing still yields the other; both
         missing is None (the caller falls back to Life360's label, or the raw
         coordinate). Two calls per NEW coordinate, but the ~11 m cache means a
         stationary member pays it once, not every cycle.
@@ -70,7 +72,7 @@ class ReverseGeocoder:
         cached = self._cache.get(key)
         if cached is not None:
             return cached
-        zh = await self._fetch(lat, lng, "zh-HK")
+        zh = await self._fetch(lat, lng, "zh")
         en = await self._fetch(lat, lng, "en")
         if zh and en and zh != en:
             address: str | None = f"{zh} / {en}"
@@ -85,10 +87,28 @@ class ReverseGeocoder:
         return address
 
     async def _fetch(self, lat: float, lng: float, language: str) -> str | None:
-        """One Google reverse-geocode in `language`. None on any failure — a
-        non-200, a non-OK envelope status, non-JSON, or a transport error — so a
-        missing address is never a dropped cycle."""
-        params = {"latlng": f"{lat},{lng}", "key": self._api_key, "language": language}
+        raise NotImplementedError
+
+
+class GoogleGeocoder(CachingBilingualGeocoder):
+    """`lat, lng -> formatted address` against the Google Geocoding API.
+
+    Constructed with the resolved key (DEC-8: from the environment at the
+    composition root, never read here). Built only when a key is present; a
+    collector with no key simply has no geocoder and stores the coordinate as-is.
+    """
+
+    def __init__(self, *, api_key: str, timeout_seconds: float = 5.0) -> None:
+        super().__init__()
+        self._api_key = api_key
+        self._timeout_seconds = timeout_seconds
+
+    async def _fetch(self, lat: float, lng: float, language: str) -> str | None:
+        """One Google reverse-geocode in `language` (`"zh"` → Google's `zh-HK`).
+        None on any failure — a non-200, a non-OK envelope status, non-JSON, or a
+        transport error — so a missing address is never a dropped cycle."""
+        lang = "zh-HK" if language == "zh" else "en"
+        params = {"latlng": f"{lat},{lng}", "key": self._api_key, "language": lang}
         try:
             timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
             async with (

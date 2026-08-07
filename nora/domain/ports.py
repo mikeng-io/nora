@@ -443,6 +443,17 @@ class BlobStore(Protocol):
 
 
 @runtime_checkable
+class ReverseGeocoder(Protocol):
+    """coordinate → a human place name, or None. The presence collector's
+    optional address source (design/19 §5). NEVER raises — a failure is a missing
+    address, so the fix stores the coordinate/Life360 label instead. Has more than
+    one implementation (Google today, HK-gov/OSM as switchable options), so it is
+    a port with a shared contract suite both pass (tests/contract/, CLAUDE.md)."""
+
+    async def address_for(self, *, lat: float, lng: float) -> str | None: ...
+
+
+@runtime_checkable
 class EngagePolicy(Protocol):
     """Async now, ahead of need — see module docstring."""
 

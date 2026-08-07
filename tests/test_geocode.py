@@ -11,7 +11,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nora.infra import geocode
-from nora.infra.geocode import ReverseGeocoder
+from nora.infra.geocode import GoogleGeocoder
 
 
 class _Google:
@@ -57,24 +57,24 @@ async def test_a_coordinate_resolves_to_both_languages_joined(google):
     """The group reads both, and Life360's label was bilingual, so `address_for`
     asks zh-HK AND en and joins «中文 / English» (Chinese first). Two HTTP calls for
     one coordinate."""
-    addr = await ReverseGeocoder(api_key="k").address_for(22.4445, 114.0289)
+    addr = await GoogleGeocoder(api_key="k").address_for(lat=22.4445, lng=114.0289)
     assert addr == "元朗形點 / Yoho Mall, Yuen Long"
     assert google.requests == ["22.4445,114.0289", "22.4445,114.0289"]
 
 
 async def test_a_non_ok_status_is_no_address_not_a_partial(google):
     google.mode = "denied"
-    assert await ReverseGeocoder(api_key="k").address_for(22.44, 114.02) is None
+    assert await GoogleGeocoder(api_key="k").address_for(lat=22.44, lng=114.02) is None
 
 
 async def test_zero_results_is_none(google):
     google.mode = "zero"
-    assert await ReverseGeocoder(api_key="k").address_for(22.44, 114.02) is None
+    assert await GoogleGeocoder(api_key="k").address_for(lat=22.44, lng=114.02) is None
 
 
 async def test_a_non_json_body_is_none(google):
     google.mode = "notjson"
-    assert await ReverseGeocoder(api_key="k").address_for(22.44, 114.02) is None
+    assert await GoogleGeocoder(api_key="k").address_for(lat=22.44, lng=114.02) is None
 
 
 async def test_the_same_place_is_geocoded_once(google):
@@ -82,9 +82,9 @@ async def test_the_same_place_is_geocoded_once(google):
     memo-cache (rounded to ~11 m) must not re-bill Google for the same doorstep.
     Two lookups within the rounding window → ONE pair of HTTP calls (zh + en),
     not two — the second `address_for` is served from the cache."""
-    geo = ReverseGeocoder(api_key="k")
-    a = await geo.address_for(22.44451, 114.02890)
-    b = await geo.address_for(22.44453, 114.02889)   # same to 4 dp
+    geo = GoogleGeocoder(api_key="k")
+    a = await geo.address_for(lat=22.44451, lng=114.02890)
+    b = await geo.address_for(lat=22.44453, lng=114.02889)   # same to 4 dp
     assert a == b == "元朗形點 / Yoho Mall, Yuen Long"
     assert len(google.requests) == 2                 # one zh+en pair, then cached
 
@@ -94,13 +94,14 @@ async def test_a_miss_is_not_cached(google):
     address" — the next cycle retries. A ZERO then an OK for the same spot makes
     two PAIRS of calls (zh+en each) and eventually resolves."""
     google.mode = "zero"
-    geo = ReverseGeocoder(api_key="k")
-    assert await geo.address_for(22.44, 114.02) is None
+    geo = GoogleGeocoder(api_key="k")
+    assert await geo.address_for(lat=22.44, lng=114.02) is None
     google.mode = "ok"
-    assert await geo.address_for(22.44, 114.02) == "元朗形點 / Yoho Mall, Yuen Long"
+    assert await geo.address_for(lat=22.44, lng=114.02) == "元朗形點 / Yoho Mall, Yuen Long"
     assert len(google.requests) == 4
 
 
 async def test_a_dead_host_is_none_never_raises(monkeypatch):
     monkeypatch.setattr(geocode, "GEOCODE_URL", "http://127.0.0.1:1/dead")
-    assert await ReverseGeocoder(api_key="k", timeout_seconds=0.5).address_for(1.0, 2.0) is None
+    geo = GoogleGeocoder(api_key="k", timeout_seconds=0.5)
+    assert await geo.address_for(lat=1.0, lng=2.0) is None

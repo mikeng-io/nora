@@ -1,0 +1,109 @@
+"""The `ReverseGeocoder` contract — one behavioural suite BOTH backends pass
+(Google, HK-gov). CLAUDE.md: a port never gains a second implementation — test
+fakes included — without a shared contract suite both pass.
+
+The shared discipline (the bilingual «中文 / English» join, the ~11 m memo cache,
+and never-raise fail-soft) lives ONCE in `CachingBilingualGeocoder`; this drives
+it through each backend's REAL HTTP path against a fake server that answers in
+that backend's own shape (Google's `{status, results:[{formatted_address}]}`, HK-
+gov's Esri `{address:{LongLabel}}`), so a backend cannot answer the wrong shape
+and still pass. Each adapter can `break_it()` into that backend's failure form
+(Google's non-OK-in-200, HK-gov's error-object-in-200).
+"""
+
+from __future__ import annotations
+
+import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestServer
+
+from nora.infra import geocode
+from nora.infra.geocode import GoogleGeocoder
+from nora.infra.geocode_hkgov import HKGovGeocoder
+
+
+class _GoogleAdapter:
+    """`GoogleGeocoder` against a fake Google Geocoding host (language=zh-HK|en)."""
+
+    async def start(self, monkeypatch) -> None:
+        self.requests: list[str] = []
+        self._ok = True
+
+        async def handler(request: web.Request) -> web.Response:
+            self.requests.append(request.query.get("language", ""))
+            if not self._ok:
+                return web.json_response({"status": "ZERO_RESULTS", "results": []})
+            addr = "元朗形點" if request.query.get("language") == "zh-HK" else "Yoho Mall"
+            return web.json_response({"status": "OK", "results": [{"formatted_address": addr}]})
+
+        app = web.Application()
+        app.router.add_get("/geo", handler)
+        self._server = TestServer(app)
+        await self._server.start_server()
+        monkeypatch.setattr(geocode, "GEOCODE_URL", str(self._server.make_url("/geo")))
+        self.geocoder = GoogleGeocoder(api_key="k")
+
+    async def stop(self) -> None:
+        await self._server.close()
+
+    def break_it(self) -> None:
+        self._ok = False
+
+
+class _HKGovAdapter:
+    """`HKGovGeocoder` against a fake Esri reverseGeocode host (langCode=zh|en)."""
+
+    async def start(self, monkeypatch) -> None:
+        self.requests: list[str] = []
+        self._ok = True
+
+        async def handler(request: web.Request) -> web.Response:
+            self.requests.append(request.query.get("langCode", ""))
+            if not self._ok:
+                # ArcGIS reports failure as a 200 with an error object.
+                return web.json_response({"error": {"code": 400, "message": "nope"}})
+            label = "元朗形點" if request.query.get("langCode") == "zh" else "Yoho Mall"
+            return web.json_response({"address": {"LongLabel": label}, "location": {}})
+
+        app = web.Application()
+        app.router.add_get("/rev", handler)
+        self._server = TestServer(app)
+        await self._server.start_server()
+        self.geocoder = HKGovGeocoder(service_url=str(self._server.make_url("/rev")), token="t")  # noqa: S106
+
+    async def stop(self) -> None:
+        await self._server.close()
+
+    def break_it(self) -> None:
+        self._ok = False
+
+
+@pytest.fixture(params=["google", "hkgov"])
+async def adapter(request, monkeypatch):
+    a = _GoogleAdapter() if request.param == "google" else _HKGovAdapter()
+    await a.start(monkeypatch)
+    yield a
+    await a.stop()
+
+
+async def test_a_coordinate_resolves_to_both_languages_joined(adapter):
+    """Both backends return one language per call, and the base joins them
+    «中文 / English» — Chinese first, for a Cantonese group."""
+    assert await adapter.geocoder.address_for(lat=22.4445, lng=114.0289) == "元朗形點 / Yoho Mall"
+
+
+async def test_a_stationary_coordinate_is_fetched_once_then_cached(adapter):
+    """The ~11 m memo: two lookups within the rounding window → ONE zh+en pair of
+    HTTP calls, not two. Re-billing a stationary doorstep is the cost it cuts."""
+    a = await adapter.geocoder.address_for(lat=22.44451, lng=114.02890)
+    b = await adapter.geocoder.address_for(lat=22.44453, lng=114.02889)   # same to 4 dp
+    assert a == b == "元朗形點 / Yoho Mall"
+    assert len(adapter.requests) == 2
+
+
+async def test_a_failure_is_none_and_never_raises(adapter):
+    """Fail-soft by contract: each backend's own failure shape (Google's non-OK
+    status, HK-gov's error object — both in a 200) becomes None, never an
+    exception in the collector loop and never a partial address."""
+    adapter.break_it()
+    assert await adapter.geocoder.address_for(lat=22.44, lng=114.02) is None
