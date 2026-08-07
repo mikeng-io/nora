@@ -41,11 +41,12 @@ holds the route client. The R-28 coordinate barrier in `nora.agent.tools`
 from __future__ import annotations
 
 import logging
+import math
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from ..domain.presence import PresenceFix
+from ..domain.presence import PresenceFix, SavedPlace
 from .room import Room
 
 log = logging.getLogger("nora.agent.whereis")
@@ -60,6 +61,8 @@ class PresenceReader(Protocol):
         self, *, circle_id: str, person_id: str
     ) -> PresenceFix | None: ...
 
+    async def places_for(self, *, circle_id: str) -> list[SavedPlace]: ...
+
 
 @dataclass(frozen=True)
 class Circle:
@@ -70,6 +73,47 @@ class Circle:
 
     circle_id: str
     person_ids: frozenset[str]
+
+
+_EARTH_RADIUS_M = 6_371_000.0
+
+
+def _within_place(lat: float, lng: float, place: SavedPlace) -> bool:
+    """Haversine containment against the place's geofence (design/23 §4.1) —
+    server-side geometry the model never performs; a place with no radius
+    cannot contain."""
+    if place.radius_m is None or place.radius_m <= 0:
+        return False
+    p1, p2 = math.radians(lat), math.radians(place.lat)
+    dp = math.radians(place.lat - lat)
+    dl = math.radians(place.lng - lng)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    d = 2 * _EARTH_RADIUS_M * math.asin(math.sqrt(a))
+    return d <= place.radius_m
+
+
+async def resolvable_places(
+    *, room: Room, circles: tuple[Circle, ...], presence: PresenceReader,
+) -> tuple[SavedPlace, ...]:
+    """The saved places THIS room may resolve by name (design/23 §4.1): only
+    from circles the room is a verified subset of, and EMPTY on any doubt —
+    degraded room, unmapped account, guard refusal, or a failed read. The
+    caller falls through to the public lookup rather than refusing: a hard
+    refusal would confirm a guarded name exists, and fall-through makes it
+    indistinguishable from an unsaved one (R-21's own shape)."""
+    try:
+        view = await room.scope()
+        if not view.available or view.degraded or view.unnamed > 0:
+            return ()
+        room_ids = frozenset(p.person_id for p in view.people)
+        out: list[SavedPlace] = []
+        for circle in circles:
+            if DisclosureGuard(circle).permits(room_ids):
+                out.extend(await presence.places_for(circle_id=circle.circle_id))
+        return tuple(out)
+    except Exception:
+        log.exception("resolvable_places failed — falling through to public lookup")
+        return ()
 
 
 def circles_from_persons(persons: Any) -> tuple[Circle, ...]:
@@ -255,6 +299,21 @@ class Whereis:
                 person=ref.name,
             )
         age_seconds = max(0, (now - fix.ts) // 1000)
+        # The household's own name for the spot, when the fix sits inside a
+        # saved place's geofence (design/23 §4.1, operator ask 2026-08-07):
+        # «喺屋企» is the answer a person wants, and carrying place AND address
+        # together means the model never guesses between them. Geometry runs
+        # HERE, server-side; a failed places read just means no place name.
+        place_name: str | None = None
+        try:
+            for saved in await self._presence.places_for(
+                circle_id=self._circle.circle_id
+            ):
+                if _within_place(fix.lat, fix.lng, saved):
+                    place_name = saved.name
+                    break
+        except Exception:
+            log.exception("whereis places read failed — answering without a place")
         return {
             "status": "ok",
             "person": ref.name,
@@ -263,11 +322,13 @@ class Whereis:
             # the model is told how old it is so it can say «20 分鐘前».
             "age_seconds": int(age_seconds),
             "wire_state": fix.wire_state.value,
-            # In-group disclosure is fine (§5.3): the address/place, for Nora's
-            # REPLY. Raw coordinates are only here as a fallback when the fix did
-            # not reverse-geocode; they still never leave in a tool ARGUMENT
-            # (R-28, outbound stays hard-blocked).
-            **({"address": fix.address} if fix.address else
+            # In-group disclosure is fine (§5.3): the place name and/or address,
+            # for Nora's REPLY. Raw coordinates are only here as a LAST fallback
+            # when the fix carries neither; they still never leave in a tool
+            # ARGUMENT (R-28, outbound stays hard-blocked).
+            **({"place": place_name} if place_name else {}),
+            **({"address": fix.address} if fix.address else {}),
+            **({} if (place_name or fix.address) else
                {"lat": fix.lat, "lng": fix.lng}),
         }
 

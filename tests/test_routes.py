@@ -33,7 +33,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nora.infra.routes import RouteClient
-from nora.infra.routes.places import PlaceResolver
+from nora.infra.routes.places import Place, PlaceResolver
 
 # ---- what the two Google endpoints really return ----------------------------
 
@@ -534,6 +534,9 @@ async def test_the_tool_forwards_the_transit_preferences_to_the_client():
     assert client.kwargs[-1] == {
         "by": "mtr", "prefer": "less_walking",
         "depart_after": "2026-08-07T18:00:00+08:00",
+        # No presence wired in this fixture → the saved-places layer passes
+        # None through, the as-today shape (design/23 §4).
+        "local_places": None,
     }
 
 
@@ -589,3 +592,36 @@ async def test_the_tool_screens_an_identifier_out_of_a_candidate_list():
     wiring = _tool_wiring(_Candidates())
     out = await _call(wiring["route"], origin="天水圍站", destination="打邊爐")
     assert out["destination_could_be"] == ["元朗打邊爐"]
+
+
+# ── the household saved-places layer (design/23 §4, DEC-60) ──────────────────
+
+async def test_a_saved_place_hit_skips_google_places_entirely(google):
+    """«Home» in `local_places` resolves locally: the name never reaches the
+    Places text search — only the coordinate travels, as the Routes waypoint
+    the request itself requires. The public endpoint («Yoho Mall») still goes
+    through Places as today."""
+    home = Place(place_id="saved:p1", name="Home", address="Home",
+                 lat=22.4471, lng=114.0228)
+    out = await google.client.route(
+        "home", "Yoho Mall", local_places={"home": home},
+    )
+    assert out["status"] == "ok"
+    # Exactly ONE Places text search (the public endpoint) — none for «home».
+    places_calls = [c for c in google.calls if c.startswith("places")]
+    assert places_calls == ["places:Yoho Mall"]
+    assert "routes" in google.calls
+
+
+async def test_an_unsaved_name_falls_through_to_the_public_lookup(google):
+    """A miss in `local_places` behaves exactly as an empty map — the public
+    lookup answers, so an unauthorised room (which passes no map at all) is
+    indistinguishable from an unsaved name (R-35's shape)."""
+    home = Place(place_id="saved:p1", name="Home", address="Home",
+                 lat=22.4471, lng=114.0228)
+    out = await google.client.route(
+        "天水圍站", "Yoho Mall", local_places={"home": home},
+    )
+    assert out["status"] == "ok"
+    places_calls = [c for c in google.calls if c.startswith("places")]
+    assert sorted(places_calls) == ["places:Yoho Mall", "places:天水圍站"]

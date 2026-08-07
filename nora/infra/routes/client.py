@@ -154,6 +154,7 @@ class RouteClient:
         self, origin: str, destination: str,
         mode: str = DEFAULT_MODE, arrive_by: str = "",
         by: str = "", prefer: str = "", depart_after: str = "",
+        local_places: Mapping[str, Place] | None = None,
     ) -> dict[str, Any]:
         """A journey from `origin` to `destination`, or why there is none. NEVER raises.
 
@@ -162,6 +163,16 @@ class RouteClient:
         in the return value (DEC-24). `mode` is one of TRANSIT / DRIVE / WALK;
         `arrive_by`/`depart_after`, when given, are RFC 3339 instants that only
         TRANSIT honours (§5.1), and they are mutually exclusive (arrive-by wins).
+
+        `local_places` (design/23 §4, DEC-60) maps CASEFOLDED household place
+        names to pre-resolved `Place`s — the saved-places layer the tool builds
+        per room, already subset-checked THERE (the guard needs the room, which
+        this process-wide client must not hold). A hit here skips the Google
+        Places text search entirely — the name never reaches Google — and the
+        stored coordinate travels only as the Routes waypoint the person's own
+        request requires. A miss falls through to the public lookup, so an
+        unsaved (or unauthorised — the caller passes none then) name behaves
+        exactly as today.
 
         The three TRANSIT sub-preferences are intent a person states, not
         plumbing (audit 2026-08-07): `by` names a sub-mode (bus/mtr/light_rail/
@@ -176,6 +187,7 @@ class RouteClient:
             return await self._route(
                 origin, destination, chosen, arrive_by,
                 by=by, prefer=prefer, depart_after=depart_after,
+                local_places=local_places,
             )
         except Exception:
             # The never-raises contract's backstop. Every collaborator here is
@@ -189,10 +201,21 @@ class RouteClient:
     async def _route(
         self, origin: str, destination: str, chosen: str, arrive_by: str,
         by: str = "", prefer: str = "", depart_after: str = "",
+        local_places: Mapping[str, Place] | None = None,
     ) -> dict[str, Any]:
+        async def resolve(text: str) -> PlaceResolution:
+            # The household layer first (design/23 §4): a casefolded name match
+            # short-circuits Google Places — the name stays on the host. Logged
+            # as a count-free line (never the name: it is household data).
+            if local_places:
+                place = local_places.get(text.strip().casefold())
+                if place is not None:
+                    log.info("route endpoint resolved from a saved place")
+                    return PlaceResolution(status="ok", asked=text, place=place)
+            return await self._resolver.resolve(text)
+
         origin_res, dest_res = await asyncio.gather(
-            self._resolver.resolve(origin),
-            self._resolver.resolve(destination),
+            resolve(origin), resolve(destination),
         )
         # A place that could not be READ makes the whole route unavailable —
         # there is nothing honest to say, exactly as an unread catalogue does in

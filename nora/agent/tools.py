@@ -57,7 +57,7 @@ from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers
 from .ports import ToolSpec, adapt
 from .room import Room, RoomView, _key, _names_of
-from .whereis import Whereis
+from .whereis import Whereis, resolvable_places
 
 log = logging.getLogger("nora.tools")
 
@@ -1123,8 +1123,9 @@ def build_tool_specs(
         plans for that arrival instead of for now.
 
         Give it PLACES, the way the person named them — a mall, a building, a
-        station, a restaurant («Yoho Mall», «黃大仙祠», «天水圍站»). It looks
-        each place up itself; you do not give it coordinates or a stop code.
+        station, a restaurant («Yoho Mall», «黃大仙祠», «天水圍站»), or a name
+        this household uses for a place («Home»). It looks each place up
+        itself; you do not give it coordinates or a stop code.
 
         NEVER put a person where a place goes. «從陳生屋企» is not a place, and
         this tool will refuse a route that names someone rather than somewhere —
@@ -1199,10 +1200,31 @@ def build_tool_specs(
                 "note": "I can't work out routes right now. Say you couldn't check — "
                         "do not say there is no way to get there.",
             }
+        # The household saved-places layer (design/23 §4, DEC-60): built per
+        # room HERE — the guard needs the room, which the process-wide client
+        # must not hold — and EMPTY on any doubt, so an unauthorised or unsaved
+        # name falls through to the public lookup indistinguishably. Import is
+        # local so offline compositions (route_source None, returned above)
+        # never touch the routes package.
+        local_places = None
+        if presence_source is not None and presence_circles:
+            from ..infra.routes.places import Place
+            saved = await resolvable_places(
+                room=room, circles=presence_circles, presence=presence_source,
+            )
+            if saved:
+                local_places = {
+                    p.name.strip().casefold(): Place(
+                        place_id=f"saved:{p.place_id}", name=p.name,
+                        address=p.name, lat=p.lat, lng=p.lng,
+                    )
+                    for p in saved
+                }
         try:
             out = await route_source.route(
                 origin, destination, mode=mode, arrive_by=arrive_by,
                 by=by, prefer=prefer, depart_after=depart_after,
+                local_places=local_places,
             )
         except Exception:
             # `RouteClient.route` is documented never to raise; this is the belt
@@ -1242,9 +1264,11 @@ def build_tool_specs(
           - `ok` — where they were last recorded. `age_seconds` says how OLD
             that fix is — ALWAYS carry the age into your reply («大概 20 分鐘前
             喺…»): a position said without its age reads as «right now», which
-            you do not know. `address` is the place when there is one. If you
-            get `lat`/`lng` instead, say you only have a rough position — NEVER
-            read coordinates aloud and NEVER pass them to another tool.
+            you do not know. `place` is this household's own name for the spot
+            («Home») — prefer it in your reply; `address` is the street
+            address. Both can appear together. If you get `lat`/`lng` instead,
+            say you only have a rough position — NEVER read coordinates aloud
+            and NEVER pass them to another tool.
           - `refused` — you may not say here: someone in this conversation is
             outside the location-sharing circle, or you can't confirm who is
             here. Say that in one clause; do not hint at the location.

@@ -298,3 +298,74 @@ member_id = "m-sam"
 
 def test_circles_from_persons_is_empty_for_an_identity_with_no_life360_blocks(persons):
     assert circles_from_persons(persons) == ()
+
+
+# ── the at-place answer + saved-place resolution scope (design/23 §4.1) ──────
+
+from nora.agent.whereis import resolvable_places  # noqa: E402
+from nora.domain.presence import SavedPlace  # noqa: E402
+
+
+def _saved(name, *, lat=22.44, lng=114.02, radius=300.0, circle=CIRCLE_ID):
+    return SavedPlace(circle_id=circle, place_id=f"p-{name}", name=name,
+                      lat=lat, lng=lng, radius_m=radius, updated_ms=NOW)
+
+
+async def test_whereis_names_the_saved_place_the_fix_sits_inside(persons, store):
+    """A fix inside a place's geofence answers with the household's own name
+    for the spot, AND the address — both, so the model never guesses (operator
+    ask 2026-08-07). Geometry runs server-side; the model sees only names."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    await _record(store, person="miles_novak", ts=NOW - 60_000, address="Jvvilxgd Road")
+    w = _whereis(persons, store, members=(MILES, GRANT, NORA))
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "ok"
+    assert out["place"] == "Home"
+    assert out["address"] == "Jvvilxgd Road"
+    assert "lat" not in out and "lng" not in out
+
+
+async def test_whereis_outside_every_geofence_answers_without_a_place(persons, store):
+    """~1.1 km from the saved place with a 300 m radius: no place name, address
+    only. A place with no radius cannot contain."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[
+        _saved("Home", lat=22.45, lng=114.02, radius=300.0),
+        _saved("NoRadius", lat=22.44, lng=114.02, radius=None),
+    ])
+    await _record(store, person="miles_novak", ts=NOW - 60_000, address="Jvvilxgd Road")
+    out = await _whereis(persons, store, members=(MILES, NORA)).locate(
+        "Miles", now_ms=NOW
+    )
+    assert out["status"] == "ok"
+    assert "place" not in out
+    assert out["address"] == "Jvvilxgd Road"
+
+
+async def test_resolvable_places_returns_the_subset_circles_places(persons, store):
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    room = _room(persons, members=(MILES, GRANT, NORA))
+    places = await resolvable_places(room=room, circles=(CIRCLE,), presence=store)
+    assert [p.name for p in places] == ["Home"]
+
+
+async def test_a_non_subset_room_resolves_no_saved_place(persons, store):
+    """R-35 (design/23 §4.1): a room containing anyone outside the circle — or
+    anyone unmapped — resolves NOTHING, silently. Empty, not a refusal: a
+    refusal would confirm the guarded name exists."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    outsider_room = _room(persons, members=(MILES, GRANT, STRANGER, NORA))
+    assert await resolvable_places(
+        room=outsider_room, circles=(CIRCLE,), presence=store,
+    ) == ()
+    unmapped_room = _room(persons, members=(MILES, frozenset({"+85299999999"}), NORA))
+    assert await resolvable_places(
+        room=unmapped_room, circles=(CIRCLE,), presence=store,
+    ) == ()
+
+
+async def test_an_unreadable_roster_resolves_no_saved_place(persons, store):
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    room = _room(persons, members=(MILES, NORA), fail=True)
+    assert await resolvable_places(
+        room=room, circles=(CIRCLE,), presence=store,
+    ) == ()
