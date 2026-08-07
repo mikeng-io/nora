@@ -67,7 +67,7 @@ contracts.
   (design/19) will share.
 
 - **`read_buffer` was misnamed** — nothing is buffered; it reads durable rows
-  from disk. **Renamed to `chat_earlier` 2026-08-07 (DEC-58)**, the honest name,
+  from disk. **Renamed to `chat_earlier` 2026-08-07 (DEC-58), then to `load_transcript` 2026-08-08**, the honest name,
   after the MEASURED selection harness confirmed no regression (16/16 on its own
   question, no collision onto other tools). The `nora_tool_calls_total{tool}`
   label moves with it (it must agree with the `_log_call` grep); the metric NAME

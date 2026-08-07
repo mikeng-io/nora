@@ -436,8 +436,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         from nora.infra.presence_refresh import HttpLocationRefresher
         refresher = HttpLocationRefresher(
             base_url=cfg.presence.refresh_url,
-            # Larger than the collector's own refresh timeout so Nora waits for
-            # the phone ping to finish rather than cutting it off.
+            # A margin over the collector's poll deadline, not a guarantee: the
+            # collector's TOTAL time is request_location + read_circle (each up to
+            # the Life360 client's own timeout) + the poll, so a slow network can
+            # still exceed this and Nora cuts it off. Harmless — the path is never
+            # load-bearing, so a cut-off just falls back to the stored fix (review
+            # 2026-08-08).
             timeout_seconds=cfg.presence.refresh_timeout_seconds + 2.0,
         )
     tool_registry = ToolRegistry(

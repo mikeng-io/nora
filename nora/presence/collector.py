@@ -310,7 +310,14 @@ class PresenceCollector:
 
         The poll is BOUNDED (a read every `poll_interval` up to the deadline) so an
         on-demand request can never become the tight Life360 read-loop the ban
-        back-off exists to prevent."""
+        back-off exists to prevent. And it HONOURS that back-off: when the
+        background loop is in a ban-safe back-off (the client reports auth
+        failures — a 429 or a fresh-token 403), an on-demand ping+poll would fire
+        UNPACED reads exactly when the account is most rate-sensitive, so it is
+        skipped — `where_is` falls back to the stored fix (never load-bearing) and
+        the loop's back-off does the waiting (review 2026-08-08)."""
+        if self._client.auth_failures > 0:
+            return False
         located = self._member_for(person_id)
         if located is None:
             return False
