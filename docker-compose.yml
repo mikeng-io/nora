@@ -124,6 +124,8 @@ services:
       - MEDIA_ENCRYPTION_KEY=${MEDIA_ENCRYPTION_KEY:-}
       - LIFE360_USERNAME=${LIFE360_USERNAME:-}
       - LIFE360_PASSWORD=${LIFE360_PASSWORD:-}
+      #   NORA_SHORTENER_TOKEN  — minting n.example.net short links ([shortener])
+      - NORA_SHORTENER_TOKEN=${NORA_SHORTENER_TOKEN:-}
       # The group is in Hong Kong. Without this the container runs UTC, and
       # `nora.agent.prefill._now_line` — which calls `datetime.now().astimezone()`
       # — tells her it is 07:05 when the group's clock says 15:05.

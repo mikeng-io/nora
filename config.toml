@@ -168,6 +168,13 @@ vision_reasoning_effort = "low"
 vision_max_bytes = 8388608
 vision_timeout_seconds = 20.0
 
+[shortener]
+# Nora's own n.example.net link shortener (deploy/shortener/, Worker+KV this repo's
+# Terraform owns — 2026-08-07). Self-hosted so no third party sees what the
+# group routes to; never load-bearing (a failed mint keeps the long URL). The
+# mint bearer lives in .env as NORA_SHORTENER_TOKEN (DEC-8).
+enabled = true
+
 [route]
 # Google Routes v2 — journey planning with arrive_by (DEC-46). Costs money and
 # reaches Google, so off-by-default in code; turned ON here because the key is

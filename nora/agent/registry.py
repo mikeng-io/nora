@@ -31,6 +31,7 @@ from typing import Any
 from ..domain.ports import BlobStore
 from ..infra.routes import RouteClient
 from ..infra.search import SearchClient
+from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
 from ..infra.vision import VisionCache, VisionClient
 from .ports import ToolSpec, adapt
@@ -70,6 +71,7 @@ class ToolRegistry:
         search: SearchClient | None = None,
         presence: PresenceReader | None = None,
         circles: tuple[Circle, ...] = (),
+        shortener: LinkShortener | None = None,
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -113,6 +115,11 @@ class ToolRegistry:
         # per-call R-31 subset guard lives in `nora.agent.whereis`, not here.
         self._presence = presence
         self._circles = tuple(circles)
+        # The n.example.net mint client ([shortener], 2026-08-07) — None leaves
+        # long URLs in replies, and a failed mint does the same; never
+        # load-bearing, so no capability line and no budget: it is not a tool,
+        # it is a post-processing step inside `route`.
+        self._shortener = shortener
 
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
@@ -253,6 +260,7 @@ class ToolRegistry:
             vision_cache=self._vision_cache,
             search_source=self._search,
             presence_source=self._presence, presence_circles=self._circles,
+            shortener=self._shortener,
             question=question, context_window=context_window,
         )
 

@@ -675,6 +675,7 @@ def build_tool_specs(
     search_source=None,
     presence_source=None,
     presence_circles=(),
+    shortener=None,
     question: str = "",
     context_window: int = 40,
 ) -> tuple[ToolSpec, ...]:
@@ -1266,6 +1267,14 @@ def build_tool_specs(
                 f"&destination={urllib.parse.quote(destination)}"
                 f"&travelmode={_MAPS_TRAVELMODE.get(str(out.get('mode', '')), 'transit')}"
             )
+            # Minted through Nora's OWN shortener when one is wired
+            # ([shortener], self-hosted so no third party sees the trip). Never
+            # load-bearing: any failure keeps the long URL, which was already a
+            # fine answer.
+            if shortener is not None:
+                short = await shortener.shorten(out["maps_url"])
+                if short:
+                    out["maps_url"] = short
         _record(
             metrics, "route", out["status"],
             mode=out.get("mode"), legs=len(out.get("legs") or ()),
@@ -1750,6 +1759,7 @@ def build_tools(
     search_source=None,
     presence_source=None,
     presence_circles=(),
+    shortener=None,
     question: str = "",
     context_window: int = 40,
 ) -> list:
@@ -1764,6 +1774,7 @@ def build_tools(
         vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
         search_source=search_source,
         presence_source=presence_source, presence_circles=presence_circles,
+        shortener=shortener,
         question=question, context_window=context_window,
     )
     return [adapt(spec) for spec in specs]

@@ -327,6 +327,26 @@ class RouteConfig(BaseModel):
     api_key_env: str = "GOOGLE_MAPS_API_KEY"
 
 
+class ShortenerConfig(BaseModel):
+    """Nora's own link shortener (n.example.net — a Worker+KV this repo's
+    `deploy/shortener/` Terraform owns, operator decision 2026-08-07).
+
+    **Optional, defaulted, `enabled` False** — the `[route]` shape: off (or an
+    unset token) leaves long URLs in replies, never a failure. The shortener is
+    SELF-HOSTED on purpose — a third-party one would see every destination the
+    group routes to — and it is never load-bearing: a mint that fails leaves
+    the long URL exactly as it was. `token_env` NAMES the env var holding the
+    mint bearer token (DEC-8); the same value is the Worker's secret.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    base_url: str = "https://n.example.net"
+    token_env: str = "NORA_SHORTENER_TOKEN"  # noqa: S105 — names an env var, not a secret
+    timeout_seconds: float = Field(default=5.0, gt=0)
+
+
 class PresenceConfig(BaseModel):
     """The presence collector (design/19), DEC-54/DEC-55.
 
@@ -526,6 +546,9 @@ class Config(BaseModel):
     # Optional and defaulted — see `RouteConfig`. Off unless an operator turns
     # it on; a config.toml without a `[route]` section keeps loading.
     route: RouteConfig = RouteConfig()
+    # Optional and defaulted — see `ShortenerConfig`. Off unless an operator
+    # turns it on; never load-bearing (a failed mint leaves the long URL).
+    shortener: ShortenerConfig = ShortenerConfig()
     # Optional and defaulted — see `PresenceConfig`. Off unless an operator turns
     # it on; a config.toml without a `[presence]` section keeps loading, and the
     # collector is a SEPARATE process (`python -m nora.presence`) that reads this

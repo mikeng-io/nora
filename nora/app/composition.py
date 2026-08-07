@@ -370,9 +370,27 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "presence enabled but identity.toml yields no circle "
                 "([[persons.<id>.life360]] with circle_id) — whereis stays unavailable"
             )
+    # The link shortener ([shortener], 2026-08-07): enabled AND token present,
+    # the `route`-keyless gate. Off (or tokenless) leaves long URLs in replies —
+    # never load-bearing either way.
+    shortener_client = None
+    if cfg.shortener.enabled:
+        shortener_token = os.environ.get(cfg.shortener.token_env, "")
+        if shortener_token:
+            from nora.infra.shortener import LinkShortener
+            shortener_client = LinkShortener(
+                base_url=cfg.shortener.base_url, token=shortener_token,
+                timeout_seconds=cfg.shortener.timeout_seconds,
+            )
+        else:
+            log.warning(
+                "shortener enabled but %s is unset — links stay long",
+                cfg.shortener.token_env,
+            )
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client, blobs=blobs, search=search_client,
         presence=presence_store, circles=presence_circles,
+        shortener=shortener_client,
     )
     # The room-scoped tools' one platform dependency. Built here rather than
     # taken off the adapter because membership is a read-only DIRECTORY query
