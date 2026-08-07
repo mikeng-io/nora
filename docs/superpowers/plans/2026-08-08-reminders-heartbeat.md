@@ -1209,18 +1209,52 @@ async def test_remind_refuses_on_a_fire_turn():
     assert result["status"] == "refused"
 
 
-def test_remind_refuses_an_unmapped_requester(): ...
-def test_remind_refuses_past_the_pending_cap(): ...
-def test_remind_refuses_a_time_in_the_past(): ...
-def test_remind_refuses_inside_min_lead_seconds(): ...
-def test_remind_refuses_beyond_max_horizon_days(): ...
-def test_list_reminders_is_scoped_to_this_conversation(): ...
-def test_cancel_refuses_an_id_from_another_conversation(): ...
+# The remaining six follow the same shape: build the tool through
+# ToolRegistry.build(...), call it, assert status == "refused" and that a note
+# is present. Each names the ONE condition it exercises:
+#   test_remind_refuses_an_unmapped_requester         -> room.tagger is None
+#   test_remind_refuses_past_the_pending_cap          -> count_pending >= 20
+#   test_remind_refuses_a_time_in_the_past            -> when < now
+#   test_remind_refuses_inside_min_lead_seconds       -> when < now + 120s
+#   test_remind_refuses_beyond_max_horizon_days       -> when > now + 30d
+#   test_list_reminders_is_scoped_to_this_conversation -> a row in conv-2 is absent
+#   test_cancel_refuses_an_id_from_another_conversation -> store.cancel returns False
 ```
 
 - [ ] **Step 2:** Add `tagger` property to `Room`; add `reminders=` to `ToolRegistry.__init__` alongside `transit`/`route`/`search`/`presence`.
 
-- [ ] **Step 3:** Implement the three tools with budgets — `remind` 2, `list_reminders` 2, `cancel_reminder` 2.
+- [ ] **Step 3: Implement the three tools**
+
+Follow the closure shape already in `build_tool_specs` — each tool closes over
+`conversation_id`, `room` and the registry's collaborators; none takes a
+conversation argument (DEC-24). Exact signatures and return shapes:
+
+```python
+async def remind(when: str, text: str) -> dict:
+    """when: ISO-8601 with offset. Returns
+    {"status": "ok", "due_at": "...", "id": "..."} or
+    {"status": "refused", "note": "<a sentence she can act on>"}."""
+
+async def list_reminders() -> dict:
+    """Scoped by closure to this conversation. Returns
+    {"status": "ok", "reminders": [{"id": ..., "text": ..., "due_at": ...}]}."""
+
+async def cancel_reminder(reminder_id: str) -> dict:
+    """Returns {"status": "ok"} or {"status": "refused", "note": ...}.
+    Scope is re-checked INSIDE the store (`cancel(id, conversation_id=...)`) —
+    a uuid carries none of its own."""
+```
+
+Every refusal path returns `status: "refused"` with a `note`, matching
+`arithmetic.py` and `whereis.py`. The six refusal cases are Step 1's six tests:
+fire turn, unmapped requester, pending cap, past time, inside `min_lead_seconds`,
+beyond `max_horizon_days`.
+
+Register in `NATIVE_TOOLS` with budgets `remind` 2, `list_reminders` 2,
+`cancel_reminder` 2, each with a one-line `when` (the generated capability block
+reads it) and `terminal=False` — **none of these is a terminal verb**; adding one
+would break `_terminal_budget_spent`'s AND and the pinned
+`terminal_tools() == frozenset({"send_reply"})`.
 
 - [ ] **Step 4:** `nora reminders list` in `cli.py` — **read-only only**. The module opens the store through `create_readonly_sql_engine` with a `SELECT`-only grant; a `cancel` subcommand would break both. The operator's kill switch is `[heartbeat] enabled = false` plus a restart.
 
