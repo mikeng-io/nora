@@ -16,7 +16,7 @@ builds ONE MODEL PER TAG over the process-wide `AsyncOpenAI` client.
 **It used to hold one already-constructed model for the whole process**, and
 that was correct only while the model was immutable. Step 5b makes
 `tool_choice` per-turn state — `required` until she has spoken, `auto`
-after — and `EngagementPipeline._in_flight` keys on
+after — and the engagement in-flight lock (`nora.engagement.slots`) keys on
 `(platform, conversation_id)`, so two conversations run concurrently: one
 model would have applied tag A's relaxation to tag B's FIRST call, which
 design/16 §2.1 measured as sending nothing 5/6. Audit T2's actual guarantee,

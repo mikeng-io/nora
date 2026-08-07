@@ -40,6 +40,7 @@ from nora.domain.ports import (
 )
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages import indicate
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
@@ -55,6 +56,27 @@ from nora.testing.scripted_agent import _invoke_tool
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 PERSONS = Persons(by_person={"miles": MILES}, index={("signal", "+852111"): "miles"})
 LIMITS = {"turns": 4, "output_tokens": 400, "total_tokens": 24000}
+
+G1 = ("signal", "g1")
+G2 = ("signal", "g2")
+
+
+# R-10's lock and R-30's queue are no longer private attributes of the pipeline
+# — they are the injected `ConversationSlots` both it and the heartbeat fire
+# path share (`nora/engagement/slots.py`). These three read that collaborator
+# through its PUBLIC surface; the one private hop (`pipeline._slots`) is spelled
+# out here once instead of at each of the twenty assertions below.
+def _held(pipeline: EngagementPipeline, key: tuple[str, str] = G1) -> bool:
+    return pipeline._slots.held(key)
+
+
+def _depth(pipeline: EngagementPipeline, key: tuple[str, str] = G1) -> int:
+    return pipeline._slots.depth(key)
+
+
+def _waiting(pipeline: EngagementPipeline) -> int:
+    """Conversations with at least one tag still queued."""
+    return len(pipeline._slots)
 
 
 class _FakeClock:
@@ -247,7 +269,7 @@ def _build_pipeline(
         llm_state=llm_state,
         reactions=reactions,
         roster_source=roster_source,
-        queue_max=queue_max,
+        slots=ConversationSlots(maxlen=queue_max, spawn=background.spawn),
     )
     return pipeline, metrics, audit, memory, background
 
@@ -286,7 +308,7 @@ async def test_a_successful_tag_delivers_releases_the_lock_and_feeds_the_exchang
     await _drain(background)
 
     assert adapter.texts == ["今晚七點半得"]
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
     assert llm_state.last_success_at is not None
     # DEC-36: the tagger's own words, under the tagger's peer, and nothing
     # else. This used to look for `"[Nora]"` in the fed text — the marker of
@@ -305,7 +327,7 @@ async def test_an_unmapped_sender_delivers_with_no_honcho_feed():
     await _drain(background)
 
     assert memory.fed == []
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +405,7 @@ async def test_a_timeout_releases_the_lock_and_counts_invocation_timeout():
     await pipeline.run(_request())
 
     assert adapter.sent == []
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
     assert metrics.get("nora_silent_failures_total", reason="invocation_timeout") == 1
     assert len(metrics.observations("nora_tag_latency_seconds")) == 1
     assert len(metrics.observations("nora_overhead_seconds")) == 1
@@ -398,7 +420,7 @@ async def test_an_llm_error_releases_the_lock_and_counts_llm_error():
     await pipeline.run(_request())
 
     assert adapter.sent == []
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
     assert metrics.get("nora_silent_failures_total", reason="llm_error") == 1
     assert len(metrics.observations("nora_tag_latency_seconds")) == 1
     assert len(metrics.observations("nora_overhead_seconds")) == 1
@@ -413,7 +435,7 @@ async def test_a_base_exception_only_fault_is_absorbed_silently():
 
     await pipeline.run(_request())   # must not raise
 
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
     assert metrics.get("nora_silent_failures_total", reason="handler_error") == 1
     assert len(metrics.observations("nora_tag_latency_seconds")) == 1
     assert len(metrics.observations("nora_overhead_seconds")) == 1
@@ -432,7 +454,7 @@ async def test_no_send_call_is_counted_when_the_model_never_calls_send_reply():
     assert adapter.sent == []
     assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
     assert memory.fed == []
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
 
 
 async def test_latency_and_overhead_are_observed_on_every_path():
@@ -585,18 +607,18 @@ async def test_three_tags_for_one_conversation_are_answered_in_fifo_order():
 
     first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
     await asyncio.sleep(0.02)   # first tag admitted and mid-invoke
-    assert pipeline._in_flight == {("signal", "g1")}
+    assert _held(pipeline) is True
 
     await pipeline.run(_req(body="q2", tag_id="t2"))   # queued behind t1
     await pipeline.run(_req(body="q3", tag_id="t3"))   # queued behind t2
-    assert pipeline._queues.depth(("signal", "g1")) == 2
+    assert _depth(pipeline) == 2
 
     await first
     await _drain(background)
 
     assert adapter.texts == ["reply-to-q1", "reply-to-q2", "reply-to-q3"]
-    assert pipeline._in_flight == set()
-    assert len(pipeline._queues) == 0   # drained: nothing retained per-conversation
+    assert _held(pipeline) is False
+    assert _waiting(pipeline) == 0   # drained: nothing retained per-conversation
     assert metrics.get("nora_tags_queued_total") == 2
     assert metrics.get("nora_tags_total", platform="signal") == 3
 
@@ -607,9 +629,9 @@ async def test_a_queued_tag_sees_the_earlier_tags_reply_in_its_context():
     the transcript. Two concurrent turns would both reason from a room missing
     the other's reply.
 
-    PROBE: make `_dispatch_next` spawn the queued turn WITHOUT waiting for the
-    in-flight one (e.g. dequeue eagerly in `run`) and tag 2's transcript no
-    longer contains tag 1's reply."""
+    PROBE: make `ConversationSlots.release_and_dispatch` spawn the queued turn
+    WITHOUT waiting for the in-flight one (e.g. dequeue eagerly in `run`) and
+    tag 2's transcript no longer contains tag 1's reply."""
     adapter = _FakeAdapter()
     runner = _EchoRunner(delay=0.2)
     pipeline, _, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
@@ -638,14 +660,16 @@ async def test_different_conversations_still_run_concurrently():
     await asyncio.sleep(0.02)
 
     # BOTH in flight at once — neither queued behind the other.
-    assert pipeline._in_flight == {("signal", "g1"), ("signal", "g2")}
-    assert len(pipeline._queues) == 0
+    assert _held(pipeline, G1) is True
+    assert _held(pipeline, G2) is True
+    assert _waiting(pipeline) == 0
 
     await asyncio.gather(a, b)
     await _drain(background)
 
     assert sorted(adapter.texts) == ["reply-to-qa", "reply-to-qb"]
-    assert pipeline._in_flight == set()
+    assert _held(pipeline, G1) is False
+    assert _held(pipeline, G2) is False
 
 
 async def test_a_flood_past_the_queue_bound_is_shed_with_its_own_counter():
@@ -653,8 +677,8 @@ async def test_a_flood_past_the_queue_bound_is_shed_with_its_own_counter():
     max of 2, a fourth tag arriving while one runs and two wait is dropped and
     counted distinctly — everything already accepted keeps its place.
 
-    PROBE: remove the `queue_depth >= queue_max` check in admission and the
-    fourth tag is queued and answered instead of shed."""
+    PROBE: remove the `depth >= maximum` check in admission and the fourth tag
+    is queued and answered instead of shed."""
     adapter = _FakeAdapter()
     runner = _EchoRunner(delay=0.2)
     pipeline, metrics, _, _, background = _build_pipeline(
@@ -667,15 +691,15 @@ async def test_a_flood_past_the_queue_bound_is_shed_with_its_own_counter():
     await pipeline.run(_req(body="q3", tag_id="t3"))   # queued (depth 1 -> 2)
     await pipeline.run(_req(body="q4", tag_id="t4"))   # queue full -> shed
 
-    assert pipeline._queues.depth(("signal", "g1")) == 2
+    assert _depth(pipeline) == 2
     assert metrics.get("nora_tags_dropped_total", reason="queue_full") == 1
 
     await first
     await _drain(background)
 
     assert adapter.texts == ["reply-to-q1", "reply-to-q2", "reply-to-q3"]   # not q4
-    assert pipeline._in_flight == set()
-    assert len(pipeline._queues) == 0
+    assert _held(pipeline) is False
+    assert _waiting(pipeline) == 0
 
 
 async def test_a_debounced_tag_is_never_admitted_and_never_releases_a_lock():
@@ -684,12 +708,12 @@ async def test_a_debounced_tag_is_never_admitted_and_never_releases_a_lock():
 
     await pipeline.run(_request(tag_id="first"))
     await _drain(background)
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
 
     await pipeline.run(_request(tag_id="second"))   # same conversation, inside the window
 
     assert metrics.get("nora_tags_debounced_total") == 1
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
 
 
 async def test_a_self_tag_is_refused_and_admission_never_runs_the_pipeline():
@@ -699,7 +723,7 @@ async def test_a_self_tag_is_refused_and_admission_never_runs_the_pipeline():
 
     await pipeline.run(_request(_msg(sender_id="+852111")))
 
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
     assert metrics.get("nora_tags_total") == 0
 
 
@@ -771,7 +795,7 @@ async def test_a_queued_tag_gets_its_eyes_promptly_while_it_waits():
     for _ in range(5):
         await asyncio.sleep(0)
 
-    assert pipeline._queues.depth(("signal", "g1")) == 1        # t2 still queued
+    assert _depth(pipeline) == 1                                # t2 still queued
     ack_timestamps = [ts for emoji, _a, ts, remove in adapter.reactions
                       if emoji == indicate.ACK and not remove]
     assert 2 in ack_timestamps   # the 👀 for the QUEUED tag's message fired already
@@ -798,7 +822,7 @@ async def test_a_reaction_failure_never_prevents_the_reply():
     assert memory.fed == [("nora", "今晚七點半得", "g1")]
     assert metrics.get("nora_reactions_total", status="failed") == 3.0
     assert metrics.get("nora_silent_failures_total") == 0.0
-    assert pipeline._in_flight == set()
+    assert _held(pipeline) is False
 
 
 async def test_a_platform_that_cannot_react_still_replies_normally():

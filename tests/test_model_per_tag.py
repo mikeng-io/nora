@@ -3,7 +3,8 @@
 `tool_choice` is per-turn state from step 5b onwards — `required` for the first
 model call, `auto` once she has spoken — and until this change there was one
 `OpenAIModel` for the whole process (`nora.app.composition` built it once and
-handed it to `LiveAgentRunner`). `EngagementPipeline._in_flight` keys on
+handed it to `LiveAgentRunner`). The engagement in-flight lock
+(`nora.engagement.slots`) keys on
 `(platform, conversation_id)`, so two conversations run at the same time, and a
 flip made for tag A would therefore have applied to tag B's FIRST call.
 

@@ -8,17 +8,24 @@ complex enough to earn its own stage module.
 
 **R-10 lock ownership is split across two modules on purpose** — documented
 on both halves so a reader landing on either one sees the whole contract.
-`nora.engagement.stages.admission.run` ACQUIRES: it adds `key` to
-`in_flight` on admission, and only on admission. THIS module's `run` RELEASES
-via its `finally` — but only for a tag admission actually admitted. `run`
-below calls `admission.run` OUTSIDE the `try/finally` that owns `key`, and
-opens that block only once admission returns True. That ordering matters: if
-the lock-release `finally` wrapped the admission call too, a REJECTED tag
+`nora.engagement.stages.admission.run` ACQUIRES: it acquires `key` in
+`ConversationSlots` on admission, and only on admission. THIS module's `run`
+RELEASES via its `finally` — but only for a tag admission actually admitted.
+`run` below calls `admission.run` OUTSIDE the `try/finally` that owns `key`,
+and opens that block only once admission returns True. That ordering matters:
+if the lock-release `finally` wrapped the admission call too, a REJECTED tag
 (debounced, self-tagged, or dropped because another tag is already in flight
-for this conversation) would still discard `key` from `in_flight` on the way
-out — for the in-flight-drop case specifically, that key belongs to a
-DIFFERENT, still-running tag, and discarding it would release that other
-tag's lock out from under it.
+for this conversation) would still release `key` on the way out — for the
+in-flight case specifically, that key belongs to a DIFFERENT, still-running
+tag, and releasing it would take that other tag's lock out from under it.
+
+The lock and the queue themselves are NOT owned here: they are
+`nora.engagement.slots.ConversationSlots`, injected, because the heartbeat
+fire path (`nora.app.heartbeat`) has to contend for the same per-conversation
+slot. `release_and_dispatch` is deliberately ONE call rather than the two
+statements it replaced — a release that forgot to dispatch would strand
+whatever queued behind this turn until the next tag arrived, and that tag
+would then jump the queue.
 
 The outer `except BaseException` (not `Exception`) is what makes R-5's
 silence guarantee unconditional — including on a fault that is not an
@@ -48,20 +55,13 @@ from nora.persons import Persons
 from nora.tag import Debounce
 
 from .mentions import MentionRenderer
-from .queue import ConversationQueues
+from .slots import ConversationSlots
 from .stages import admission, deliver, feedback, indicate, invoke
 from .stages.admission import Admission
 from .stages.indicate import Indicator
 from .stages.invoke import AgentRunner
 
 log = logging.getLogger("nora.engagement.pipeline")
-
-# Per-conversation queue depth beyond which an arriving tag is shed as a flood
-# (R-30). Generous on purpose: it bounds runaway growth, not waiting — see
-# `nora.engagement.queue`. Wired from `engagement.queue.max_depth` by the
-# composition root; this default keeps the pipeline constructible without it
-# (the offline/retention harnesses).
-DEFAULT_QUEUE_MAX = 16
 
 
 class EngagementPipeline:
@@ -86,10 +86,10 @@ class EngagementPipeline:
         limits: dict,
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], Any],
+        slots: ConversationSlots,
         llm_state: Any = None,
         reactions: bool = True,
         roster_source: RosterSource | None = None,
-        queue_max: int = DEFAULT_QUEUE_MAX,
     ) -> None:
         self._adapter = adapter
         self._audit = audit
@@ -120,15 +120,15 @@ class EngagementPipeline:
         # here" (R-5).
         self._roster_source = roster_source
         # R-10's single-in-flight lock and R-30's per-conversation FIFO queue,
-        # both keyed by (platform, conversation_id). The queue feeds the lock's
-        # one slot in order as each turn finishes — it never widens it. Both are
-        # per-CONVERSATION and self-draining: `in_flight.discard` on every exit
-        # path, and `ConversationQueues.dequeue` deletes a key once its last
-        # waiting tag is gone. Neither retains anything per-tag.
-        self._in_flight: set[tuple[str, str]] = set()
-        self._queues: ConversationQueues[tuple[str, str], tuple[Any, Indicator | None]] = (
-            ConversationQueues(maxlen=queue_max)
-        )
+        # both keyed by (platform, conversation_id), as one INJECTED
+        # collaborator. The queue feeds the lock's one slot in order as each
+        # turn finishes — it never widens it. Both are per-CONVERSATION and
+        # self-draining: `release_and_dispatch` on every exit path, and
+        # `ConversationQueues.dequeue` deletes a key once its last waiting tag
+        # is gone. Neither retains anything per-tag. It is injected rather than
+        # constructed here because the heartbeat fire path holds the SAME
+        # instance — see `nora.engagement.slots`.
+        self._slots = slots
 
     async def run(self, request: EngagementRequest) -> None:
         """Classify the tag (admission), then run it now, queue it, or drop it.
@@ -156,8 +156,7 @@ class EngagementPipeline:
         key = (message.platform, message.conversation_id)
         verdict = admission.run(
             message=message, identity=identity, debounce=self._debounce,
-            in_flight=self._in_flight, queue_depth=self._queues.depth(key),
-            queue_max=self._queues.maxlen, metrics=self._metrics,
+            slots=self._slots, metrics=self._metrics,
         )
         if verdict is Admission.REJECTED or verdict is Admission.QUEUE_FULL:
             return
@@ -167,7 +166,13 @@ class EngagementPipeline:
             # the depth admission checked cannot change underneath it and FIFO
             # order is exactly arrival order. `identity` is not stored: it is
             # re-resolved (memoized, in-process) when the tag is dequeued.
-            self._queues.enqueue(key, (request, indicator))
+            #
+            # A zero-argument FACTORY, not a coroutine and not a callback: the
+            # closure keeps this tag's request and 👀 handle here, in the
+            # pipeline, so `ConversationSlots` needs no reference back into it
+            # (see that module's docstring). Nothing is created until the slot
+            # actually frees, so a queued tag holds no coroutine object either.
+            self._slots.enqueue(key, lambda: self._run_queued(request, indicator))
             return
         # RUN_NOW. `identity` is threaded on rather than re-resolved: the
         # room-scoped tools need Nora's own id forms to leave herself out of the
@@ -200,21 +205,6 @@ class EngagementPipeline:
         re-resolved here (memoized) rather than carried through the queue."""
         identity = await self._adapter.resolve_identity()
         await self._run_admitted(request, identity, indicator)
-
-    def _dispatch_next(self, key: tuple[str, str]) -> None:
-        """Pop the next queued tag for `key` and start its turn. Called from
-        `_run_admitted`'s `finally`, AFTER the finishing turn released the lock,
-        so re-acquiring it here restores R-10's invariant — while the dequeued
-        turn runs, the conversation is in flight again and any newly arriving
-        tag queues behind it rather than running concurrently. Both operations
-        are synchronous with no await between them, so no incoming tag can slip
-        into the RUN_NOW path in the gap."""
-        item = self._queues.dequeue(key)
-        if item is None:
-            return
-        queued_request, indicator = item
-        self._in_flight.add(key)
-        self._spawn(self._run_queued(queued_request, indicator))
 
     async def _run_admitted(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
@@ -367,16 +357,18 @@ class EngagementPipeline:
             indicate.resolve(
                 indicator=indicator, delivered=delivered, spawn=self._spawn,
             )
-            self._in_flight.discard(key)     # R-10: released on EVERY exit path
-            # R-30: hand the conversation's next waiting tag into the slot this
-            # turn just vacated. `_dispatch_next` re-acquires the lock (no await
-            # between the discard above and that add, so no incoming tag can
-            # race into RUN_NOW in the gap) and spawns the next turn, whose
-            # context is assembled fresh — so it sees this turn's reply. On an
-            # empty queue it is a no-op, and a drained conversation retains
-            # nothing. This runs on EVERY exit path, so a turn that timed out or
-            # faulted still lets the people queued behind it be answered.
-            self._dispatch_next(key)
+            # R-10 released, and in the SAME synchronous step R-30 hands the
+            # conversation's next waiting tag into the slot this turn just
+            # vacated — re-acquiring the lock for it, with no await in the gap,
+            # so no incoming tag can race into RUN_NOW between the two. The
+            # dequeued turn's context is assembled fresh, so it sees this turn's
+            # reply. On an empty queue the dispatch half is a no-op and a
+            # drained conversation retains nothing. ONE call, not two
+            # statements: a release that skipped the dispatch would strand
+            # everyone queued behind this turn until the next tag arrived. This
+            # runs on EVERY exit path, so a turn that timed out or faulted still
+            # lets the people queued behind it be answered.
+            self._slots.release_and_dispatch(key)
             total = time.perf_counter() - started
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))

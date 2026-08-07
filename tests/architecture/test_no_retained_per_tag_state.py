@@ -37,6 +37,7 @@ from nora.domain.ports import (
 )
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.slots import ConversationSlots
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.tag import Debounce
@@ -118,6 +119,7 @@ def _build_pipeline() -> tuple[EngagementPipeline, BackgroundTasks]:
         display_name="Nora", nora_sender_id="+8520000", ai_peer="nora", context_window=10,
         timeout_seconds=5.0, limits={"turns": 4, "output_tokens": 400, "total_tokens": 24000},
         metrics=metrics, spawn=background.spawn,
+        slots=ConversationSlots(maxlen=16, spawn=background.spawn),
     )
     return pipeline, background
 

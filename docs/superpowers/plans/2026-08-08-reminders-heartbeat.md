@@ -82,7 +82,7 @@
 
 **The coroutine-factory rule:** `enqueue` takes a **factory**, not a coroutine. `_dispatch_next` currently does `self._spawn(self._run_queued(request, indicator))` — a direct call into a pipeline method. Storing a factory (`lambda: self._run_queued(request, indicator)`) means `ConversationSlots` needs only `spawn` and never a reference back to the pipeline, which is what keeps this inside CLAUDE.md's "no `*_fn` hooks" rule: `spawn` is a collaborator passed at construction, not a callback seam.
 
-- [ ] **Step 1: Write the failing test for acquire/release/dispatch**
+- [x] **Step 1: Write the failing test for acquire/release/dispatch**
 
 ```python
 # tests/unit/test_conversation_slots.py
@@ -159,12 +159,12 @@ def test_nothing_is_retained_once_drained():
     assert slots.held(KEY) is False
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd /tmp/nora-reminders && uv run pytest tests/unit/test_conversation_slots.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'nora.engagement.slots'`
 
-- [ ] **Step 3: Write `ConversationSlots`**
+- [x] **Step 3: Write `ConversationSlots`**
 
 ```python
 # nora/engagement/slots.py
@@ -259,12 +259,12 @@ class ConversationSlots:
         return len(self._queues)
 ```
 
-- [ ] **Step 4: Run and watch it pass**
+- [x] **Step 4: Run and watch it pass**
 
 Run: `uv run pytest tests/unit/test_conversation_slots.py -v`
 Expected: 5 passed
 
-- [ ] **Step 5: Change `admission.run` to take `slots`**
+- [x] **Step 5: Change `admission.run` to take `slots`**
 
 Replace the `in_flight: set[tuple[str, str]]` parameter with `slots: ConversationSlots`, and the two usages:
 
@@ -312,7 +312,7 @@ def run(
 
 `queue_depth` and `queue_max` parameters are **deleted** — `slots` carries both, and two sources for one fact is how they drift.
 
-- [ ] **Step 6: Rewire `EngagementPipeline`**
+- [x] **Step 6: Rewire `EngagementPipeline`**
 
 Delete `self._in_flight` and `self._queues` from `__init__`; take `slots: ConversationSlots` instead of `queue_max: int`. Delete `_dispatch_next` entirely. Then three call sites:
 
@@ -335,7 +335,7 @@ finally:
 
 The `finally` is the load-bearing edit: release and dispatch were two statements and are now one call, which is the point — they can no longer be separated by an early return or a new exception path.
 
-- [ ] **Step 7: Update the four constructors**
+- [x] **Step 7: Update the four constructors**
 
 ```python
 # EDIT FRAGMENT — not a whole file.
@@ -353,17 +353,17 @@ Same shape in `nora/app/offline.py:85`, `tests/unit/test_engagement_pipeline.py:
 
 Also: add `from ..slots import ConversationSlots` to `admission.py`, and delete `DEFAULT_QUEUE_MAX` (`pipeline.py:64`), which becomes dead — ruff will not flag it.
 
-- [ ] **Step 8: Run the full suite; fix the ~20 assertions**
+- [x] **Step 8: Run the full suite; fix the ~20 assertions**
 
 Run: `uv run pytest tests/unit/test_engagement_pipeline.py tests/architecture/ -v`
 Expected: failures in assertions reading `pipeline._in_flight` / `pipeline._queues`. Rewrite each against `slots.held(...)` / `slots.depth(...)` / `len(slots)`. Do **not** re-add the private attributes to satisfy a test.
 
-- [ ] **Step 9: Prove the FIFO guarantee survived**
+- [x] **Step 9: Prove the FIFO guarantee survived**
 
 Run: `uv run pytest -q -k "fifo or queue or in_flight or admission"`
 Expected: PASS, including `test_three_tags_for_one_conversation_are_answered_in_fifo_order`. **This test is the whole point of the task.** If it fails, the hoist is wrong — do not adjust the test.
 
-- [ ] **Step 10: All four gates, then commit**
+- [x] **Step 10: All four gates, then commit**
 
 ```bash
 uv run pytest -q && uv run ruff check nora/ evals/ tests/ \

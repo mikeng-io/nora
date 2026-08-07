@@ -36,6 +36,7 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import DeliveryStatus
 from nora.domain.ports import RecordStore
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.slots import ConversationSlots
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -115,8 +116,8 @@ class _HarnessAdapter(SinkSender):
 
 class _HandlerView:
     """Thin test-side view combining `Dispatcher.on_message` with direct access
-    to `EngagementPipeline`'s in-flight set, for the R-9/R-10 tests written
-    against `h.handler._in_flight` (the deleted `Handler`'s surface).
+    to the conversation slots, for the R-9/R-10 tests that used to read the
+    deleted `Handler`'s own in-flight set and now read `h.handler.slots`.
 
     `on_event` keeps its pre-phase-4 name and raw-dict-in shape deliberately:
     every test in this suite already calls `h.handler.on_event(group_event(...))`,
@@ -128,11 +129,12 @@ class _HandlerView:
     no longer accepts raw dicts at all, so this parse-then-dispatch step cannot
     move into `Dispatcher` itself.
 
-    This is a proxy, not a retention: `_in_flight` is a `@property` reading the
-    SAME set `EngagementPipeline` already owns and clears on every exit path
-    (`nora/engagement/pipeline.py`'s `finally`) — nothing is copied or accumulated
-    here. That distinction matters: `Handler._guards`/`_prefills` were lists that
-    grew forever; this is a live view into already-bounded state.
+    This is a proxy, not a retention: `slots` is a `@property` returning the
+    SAME `ConversationSlots` the pipeline was built with and releases into on
+    every exit path (`nora/engagement/pipeline.py`'s `finally`) — nothing is
+    copied or accumulated here. That distinction matters:
+    `Handler._guards`/`_prefills` were lists that grew forever; this is a live
+    view into already-bounded state.
     """
 
     def __init__(
@@ -148,8 +150,8 @@ class _HandlerView:
             await self._dispatcher.on_message(message)
 
     @property
-    def _in_flight(self):
-        return self._engagement._in_flight
+    def slots(self) -> ConversationSlots:
+        return self._engagement._slots
 
 
 @dataclasses.dataclass

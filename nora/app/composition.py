@@ -44,6 +44,7 @@ from nora.domain.ports import (
 )
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.slots import ConversationSlots
 from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
@@ -475,6 +476,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # the same set (`EngagementPipeline._run_admitted`).
             self_ids=frozenset(getattr(registry.identity_for("signal"), "aliases", ())),
         ))
+    # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
+    # Every path that may speak into a conversation holds this same instance —
+    # two would be two locks and no serialisation at all.
+    slots = ConversationSlots(
+        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
+    )
     engagement = EngagementPipeline(
         adapter=adapter, audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
@@ -486,7 +493,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
         reactions=cfg.engagement.reactions.enabled,
         roster_source=roster_source,
-        queue_max=cfg.engagement.queue.max_depth,
+        slots=slots,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 
