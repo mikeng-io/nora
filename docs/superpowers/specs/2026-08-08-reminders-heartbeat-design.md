@@ -49,7 +49,7 @@ at the platform layer**, not by choice here. Group-only until a DM path exists.
    (`nora/ingest/pipeline.py:106-109` room, `:140-152` sender).
 2. v1's `stand_down` **regressed every tag turn**: `_terminal_budget_spent` is an
    AND over all terminal tools (`nora/agent/guards.py:412-414`), and
-   `tests/test_guards_terminal.py:185` pins
+   `tests/test_guards_terminal.py:184` pins
    `terminal_tools() == frozenset({"send_reply"})`.
 3. v1 had no per-audience tool registry to hang `stand_down` on, and none exists.
 
@@ -130,7 +130,7 @@ contradicted itself.
 **Nora never touches the tick.** No tool starts, stops, skips or schedules it.
 
 **Loop precedent: `nora/app/runtime.py`'s `prune_loop` / `debounce_sweep_loop`
-(`:102`, `:119`)** — same sleep-and-repeat shape, in-process, spawned via
+(`:102`, `:120`)** — same sleep-and-repeat shape, in-process, spawned via
 `BackgroundTasks.spawn` (`:54`). *Not* the presence collector: that is a separate
 process (`nora/presence/__main__.py:3`) with no adapter, no agent and no access
 to the engagement machinery. v2 cited it and thereby made §5.3's lock problem
@@ -193,8 +193,10 @@ ones that do not. Being explicit about the second list is the design:
 | `memory_feed_stage` | **not used** | would feed Honcho a sentence under their peer, at the wrong time |
 | `admission.run` (R-9 / R-12 / R-30) | **not used** | §5.3 |
 | conversation serialisation | **used**, via a hoisted collaborator | §5.3 |
+| context assembly | **own `TagContext`**, not `ContextAssembler.assemble` | §6.4 |
 | doctrine + prefill | `build_prefill` with a header parameter | §6.3 |
-| `invoke.run` | **used** — `timeout_seconds` is already a per-call parameter | §5.4 |
+| `invoke.run` | **not used** — it increments `nora_silent_failures_total` | §6.2 |
+| `runner.invoke` + own `wait_for` | **used**, own timeout and error accounting | §5.4, §6.2 |
 | `deliver.build` / `Deliverer` | **used** — the only caller of `adapter.send` stays so | |
 | `deliver.check_outcome` | **not used** | §6.2 |
 | `indicate` (👀/✅/⚠️) | **not used** | §5.5 |
@@ -248,6 +250,19 @@ ahead of it. That is a regression of the FIFO guarantee pinned by
 **Therefore: hoist `_in_flight` + `_queues` + `_dispatch_next` into an injected
 collaborator that both paths share.** This is a live-path refactor with its own
 tests, and it is a **prerequisite**, not a footnote — §16 makes it step 0.
+
+**One trap to route around.** `_dispatch_next` spawns `self._run_queued`, a
+pipeline method, so a naive hoist needs a callback *back into* the pipeline —
+which CLAUDE.md forbids ("collaborators through `__init__` only, no `*_fn`
+hooks"). The escape: **enqueue a coroutine factory**, so the collaborator needs
+only `spawn` and never a reference to the pipeline.
+
+Production readers are exactly two — `pipeline.py` (`:128-131`, `:159-160`,
+`:170`, `:204-217`, `:370`, `:379`) and `admission.run`'s `in_flight` parameter
+(`admission.py:71`, `:89`, `:107`). The cascade is four constructors
+(`composition.py:474`, `offline.py:85`, and two test files), the `queue_max`
+wiring from `config.toml:123`, and ~20 assertions in
+`tests/unit/test_engagement_pipeline.py`.
 
 Contention policy, stated once (v2 gave two): a tick that cannot acquire the slot
 **leaves the rows `pending` and retries next tick.** It does not wait and it is
@@ -323,12 +338,22 @@ was behaviourally wrong.
 
 ### 6.2 Outcome accounting is the fire path's own
 
-The fire path does **not** call `deliver.check_outcome`. Its `no_send_call`
-branch increments `nora_silent_failures_total`, a series targeted at <1% (A8), and
-routing fire-turn outcomes into it would corrupt the alarm this feature depends
-on. The fire path records `outcome` on the row (§4) and its own metrics (§13),
-and must reimplement the `llm_state.last_success_at` touch that
-`check_outcome` performs.
+`nora_silent_failures_total` is targeted at <1% (A8) and is the alarm this
+feature depends on, so the fire path must not move it. **Two** call sites would:
+
+- `deliver.check_outcome`'s `no_send_call` branch, and
+- **`invoke.run` itself**, which increments it unconditionally with
+  `reason="invocation_timeout"` / `"llm_error"`
+  (`nora/engagement/stages/invoke.py:109-112`, `:116-118`).
+
+An earlier draft closed the first and left the second open while §4 named a
+`failed_timeout` outcome — i.e. it expected exactly the branch it had not
+excluded.
+
+So the fire path uses **neither**. It calls `runner.invoke` inside its own
+`asyncio.wait_for` with `[heartbeat] timeout_seconds`, catches its own errors,
+records `outcome` on the row (§4) and its own metrics (§13), and reimplements the
+`llm_state.last_success_at` touch that `check_outcome` performs.
 
 ### 6.3 The header is not doctrine — parameterise, don't duplicate
 
@@ -345,12 +370,43 @@ the same untrusted transcript would sit outside both named tests. Everything els
 it needs (`_now_line`, `_peer_card_block`, `_transcript_block`) is private to that
 module.
 
+### 6.4 The fire path builds `TagContext` itself — and must not let the requester fall out
+
 `TagContext` requires a non-optional `message: NormalizedMessage`
-(`nora/domain/models.py:212-220`), and `invoke.run` dereferences
-`ctx.message.platform` on both error branches. So the fire path constructs a
-synthetic `NormalizedMessage` **in memory only** — nothing writes it (§5's table)
-— with `platform` / `conversation_id` / `conversation_type` from the row,
-`sender_id` and `timestamp` empty so §5.5 holds by construction.
+(`nora/domain/models.py:212-220`). The fire path constructs one **in memory only**
+— nothing writes it (§5's table) — with `platform` / `conversation_id` /
+`conversation_type` from the row, and `sender_id` / `timestamp` **blank**, which
+is what makes §5.5's "no reactions" hold by construction (`indicate.begin`
+returns `None` when either is falsy).
+
+**But it must not reach `ContextAssembler` with that message.**
+`nora/engagement/context.py:62` resolves the tagger as
+`self._persons.resolve(msg.platform, msg.sender_id)` — a blank `sender_id`
+resolves to `None`, and then:
+
+- `ctx.tagger is None` and `peer_card = ()`
+- `Room(tagger=None).scope()` returns **unavailable** (`nora/agent/room.py:165-167`)
+- `search_memory` refuses (`tools.py:1133`), and every room-scoped tool goes dark
+- §12's `tagger is None → refuse` gate fires on **every** fire turn, for the wrong
+  reason
+
+So the fire path **assembles `TagContext` directly** rather than calling
+`ContextAssembler.assemble`:
+
+| field | source |
+|---|---|
+| `message` | the synthetic `NormalizedMessage` above |
+| `tagger` | the requester's `PersonRef`, resolved from `reminders.requester_person_id` |
+| `transcript` | `RecordStore.recent(conversation_id, limit)` |
+| `peer_card` | `MemoryStore.peer_card(...)` for the requester |
+| `tag_id`, `started_at` | minted by the fire path |
+
+This is the context step §5's table omitted. It is listed there now.
+
+*(Earlier drafts said only "sender_id blank" and left the rest implied. Under
+that reading an implementer gets a fire turn with no requester at all, and §15's
+claim that the room degrades "to the requester" is false. Naming the fields is
+the fix.)*
 
 ---
 
@@ -366,11 +422,22 @@ resolved by the model against the current time and **stated back** (§10.2); it 
 not a parse rule.
 
 Refuses, with a reason, when: the requester is unmapped (§12), a cap is exceeded
-(§9), `when` is unparseable or in the past, **or the turn is a fire turn**. That
-last one is not optional — `ToolRegistry` is one per process (DEC-10) and
-`build()` hands the same list to every caller, so without it Nora can re-arm her
-own reminder each time one fires, which is recurrence (§1.2) with none of §9's
-caps able to stop it.
+(§9), `when` is unparseable or in the past, **or the turn is a fire turn**.
+
+That last one is not optional: without it Nora can re-arm her own reminder each
+time one fires, which is recurrence (§1.2) with none of §9's caps able to stop it
+— `max_pending_per_requester` counts pending rows, and each fire frees one before
+the new one is written.
+
+**Nothing carries turn provenance today.** Neither `build_tool_specs`
+(`tools.py:702-725`) nor `ToolRegistry.specs()` / `build()` knows what kind of
+turn it is serving, so a `fire_turn: bool = False` keyword must be threaded
+through all three. That is legitimate: the registry docstring's bar is about
+registry-owned *collaborators*, not per-turn values.
+
+*(An earlier draft justified this with "`build()` hands the same list to every
+caller." That is loose — `build()` re-derives closures per call. The conclusion
+holds; the reason given for it did not.)*
 
 ### 7.2 No `target` parameter
 
@@ -469,9 +536,10 @@ A new **audience**, `heartbeat`. The mechanism exists —
 `"always"` (`nora/doctrine/loader.py:533-554`, filter at `:540`) — but it is more
 than frontmatter:
 
-- **Two** hardcoded call sites: `nora/app/composition.py:228` and
-  `nora/engagement/pipeline.py:264`. The second is the per-turn production path.
-  (Verified exhaustively: these are the only two.)
+- **Three** hardcoded `applies_to="tag"` call sites: `nora/app/composition.py:228`,
+  `nora/engagement/pipeline.py:264` (the per-turn production path), and
+  `evals/run.py:232`. The last is correct as-is — evals want the tag audience —
+  but `evals/` is inside the ruff and importlinter gates, so it counts.
 - `_scan` rejects duplicate `order`s (`:485`); `CAPABILITY_ORDER = 35` is reserved
   (`:334`); 10/20/30/40 are taken, so **21–29 is the free range**, and sorting is
   `(order, path.name)` (`:492`).
@@ -569,9 +637,14 @@ abstraction — 「Tyler 返到屋企話我知」 is not time-based and needs on
 
 Only a mapped `person_id` may create a reminder. With §7.2 removing `target`, the
 destination is a conversation the requester was already speaking in, so the
-requester check is the whole gate. Reachable in the tool: `Room` holds
-`tagger: PersonRef | None` and `build_tool_specs` receives `room`, so the check is
-`tagger is None → refuse`.
+requester check is the whole gate.
+
+**`Room` needs a public accessor first.** It stores `self._tagger`
+(`nora/agent/room.py:141`) with no property, and `scope()` surfaces the tagger
+only in its degraded branch. The tool needs more than a `None` check anyway — it
+needs `tagger.person_id` to populate `reminders.requester_person_id` (§4). So a
+one-line `@property tagger` on `Room` is part of this work, not something already
+available.
 
 Enforced at `remind()` **and re-checked at fire time** (§5.1) — `identity.toml`
 loads once at startup and trust can be withdrawn inside a 30-day horizon. A guard,
@@ -613,7 +686,16 @@ Even so, fire turns must not silently move tag-path series
 | `nora_reminders_created_total{status}` | writes and refusals, by reason |
 | `nora_reminders_fired_total{outcome}` | `sent` / `failed_*` (§8.1) |
 | `nora_reminders_pending` (gauge) | runaway visible without a query |
-| `nora_heartbeat_last_tick_age_seconds` (gauge) | **liveness** — DEC-55(4)'s precedent: a gauge that climbs when up-but-not-ticking, which a frozen fired-count cannot show (R-5). Mirrors `nora_presence_last_collection_age_seconds` (`metric_specs.py:489`). |
+| `nora_heartbeat_last_tick_age_seconds` (gauge) | **liveness** — a gauge that climbs when up-but-not-ticking, which a frozen fired-count cannot show (R-5). Same intent as `nora_presence_last_collection_age_seconds` (`metric_specs.py:489`). |
+
+**The liveness gauge only climbs if it is published from outside the tick body.**
+The presence precedent publishes from *inside* its loop
+(`collector.py:375-390`), so a loop that dies leaves the gauge frozen — the exact
+opposite of what a liveness signal is for. Either store `last_tick_at` and let the
+metrics endpoint compute the age on scrape, or follow `prune_loop`'s never-die
+discipline (`runtime.py:109-117`) so the loop cannot stop publishing. Copying the
+collector verbatim would ship a liveness metric that goes quiet precisely when it
+matters.
 
 These append to `_COUNTERS`/`_GAUGES` and flow into `DECLARED_NAMES`.
 
@@ -688,12 +770,38 @@ from this repo.)*
 ## 16. Build order
 
 0. **Hoist conversation serialisation** out of `EngagementPipeline` into an
-   injected collaborator (§5.3). Live-path refactor, no new behaviour, FIFO tests
-   must stay green. **Prerequisite.**
-1. **Table + migration + store + `nora reminders list`.** No model, fake-clock
-   testable.
-2. **Tick + policy re-check + outcome recording**, with a stub turn. Still no model.
-3. **The fire turn** — header parameter, own timeout, `required`, deliver.
-4. **Tools + doctrine audience + the `conduct.md` extraction.**
+   injected collaborator (§5.3), via the coroutine-factory escape. Live-path
+   refactor, no new behaviour, FIFO tests must stay green. **Blocks step 2, not
+   step 1** — but it lands first and alone regardless, because it is the only
+   live-path change in the design and should not share a review with new
+   behaviour.
+1. **Table + migration + store + boot sweep + `nora reminders list`.** No model,
+   fake-clock testable end to end. The §8.2 sweep (`firing` → `failed`) belongs
+   here — earlier drafts specified it and then named it in no step.
+2. **Tick + policy re-check + outcome recording**, with a stub turn returning the
+   §8.1 outcome enum. Still no model.
+3. **The fire turn** — own `TagContext` (§6.4), header parameter, own
+   `wait_for` and error accounting (§6.2), `required`, deliver.
+4. **Tools + doctrine audience + the `conduct.md` extraction** (§16.1), plus the
+   `Room.tagger` accessor (§12) and the `fire_turn` keyword (§7.1).
 
-The implementation plan takes these as its phases.
+### 16.1 The doctrine edits, exactly
+
+`check_authority_chain` runs inside `_scan` over **all** scanned sections
+(`loader.py:490`), before any `applies_to` filtering — so a `[tag]`-only
+`silence.md` named by `[tag, heartbeat]` files is fine for both audiences.
+
+- **New `nora/doctrine/silence.md`** — all ten `_REQUIRED` keys; `name: silence`;
+  `order` in 21–29; `kind: conduct`; `applies_to: [tag]`;
+  `authority_above: [constraints, identity, voice]`;
+  `authority_below: [capability, situation, message-content, tool-output]`.
+- **Add `silence` to `authority_below`** in `identity.md`, `voice.md`,
+  `constraints.md` (symmetry, `loader.py:402-415`).
+- **`conduct.md`** — body loses `# Silence is the default`; `version: 5` → 6. No
+  chain edit needed if `silence` names it in neither direction.
+- **All four** — `applies_to: [tag]` → `[tag, heartbeat]`.
+- **No edit to the capability section** — its `authority_above` is derived
+  (`loader.py:369`) from whoever lists `capability` in `authority_below`, so it
+  picks up `silence` automatically.
+- `check_kind_boundaries` and `check_normative_register` pass on the extracted
+  text as it stands (no snake_case token, no uppercase RFC-2119 keyword).
