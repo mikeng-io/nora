@@ -1301,31 +1301,76 @@ its output rather than its count.
 
 - [ ] **Step 2: Write the failing test for the synthetic context**
 
+`FirePath`'s constructor is declared here rather than in Step 7 so this test can
+exist first — a red checkpoint you cannot write until after the implementation
+is not a checkpoint.
+
 ```python
+# tests/unit/test_fire_path.py
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from nora.app.fire import FirePath
+from nora.domain.reminders import Reminder, ReminderState
+
+UTC = timezone.utc
+T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
+
+
 def _reminder() -> Reminder:
     return Reminder(
         id=uuid.uuid4(), requester_person_id="miles", platform="signal",
         conversation_id="conv-1", conversation_type="group",
-        text="幫我睇下 Tyler 喺邊", created_at=T0, due_at=T0,
-        state=ReminderState.FIRING, fired_at=None, outcome=None,
+        text="幫我睇下 Tyler 喺邊", created_at=T0 - timedelta(hours=1),
+        due_at=T0, state=ReminderState.FIRING, fired_at=None, outcome=None,
     )
 
 
-def test_the_fire_turn_carries_the_requester(fire_path: FirePath):
-    reminder = _reminder()
+@pytest.fixture
+def fire_path(persons, record_store, memory_store, doctrine_store, metrics) -> FirePath:
+    """Only `build_context` is exercised here, so the model-side collaborators
+    (`runner`, `adapter`, `registry`) may be None — the test never calls
+    `run()`. Step 7's constructor takes them all."""
+    return FirePath(
+        persons=persons, records=record_store, memory=memory_store,
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=None, adapter=None, registry=None,
+        timeout_seconds=120.0, clock=lambda: T0,
+    )
+
+
+def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     """The trap this test exists for: blanking sender_id is correct for
     reactions (indicate.begin returns None on a falsy author) and wrong for
-    everything that reads it. A blank sender_id resolves to tagger=None, which
-    empties peer_card, makes Room.scope() unavailable, and makes search_memory
-    refuse."""
+    everything that reads it. A blank sender_id resolved through
+    ContextAssembler gives tagger=None, which empties peer_card, makes
+    Room.scope() unavailable, and makes search_memory refuse."""
+    reminder = _reminder()
+
     ctx = fire_path.build_context([reminder])
+
     assert ctx.tagger is not None
     assert ctx.tagger.person_id == reminder.requester_person_id
     assert ctx.message.body == reminder.text          # the request itself
     assert ctx.message.sender_name != ""              # NOT Persons.display_name
     assert ctx.message.sender_id == ""                # so no reaction is placed
-    assert ctx.message.timestamp == 0            # falsy AND an int — models.py:61 is `timestamp: int`, non-optional, and nora/app/* is mypy-strict
+    assert ctx.message.timestamp == 0                 # falsy AND an int — models.py:61
 ```
+
+The `persons`, `record_store`, `memory_store` and `metrics` fixtures do not
+exist in `tests/conftest.py` — build them in this file from
+`nora.persons.Persons`, `nora.testing`'s fakes and `nora.obs.metrics.Metrics`,
+the same way Task 4's `_build()` constructs everything it needs in-file.
+`doctrine_store` comes from Task 3's conftest addition.
+
+- [ ] **Step 2b: Run it and watch it fail**
+
+Run: `uv run pytest tests/unit/test_fire_path.py -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'nora.app.fire'`
 
 - [ ] **Step 3: Add the `audience` label to all nine sites**, defaulting to `"tag"` at the tag-path call sites and `"heartbeat"` in the fire path. Missing one leaves `audience=""`, which is worse than no label.
 
@@ -1387,10 +1432,25 @@ against a registry built with the fake. Pass the same `SqlReminderStore`
 instance Task 4 created.
 
 **The caps and the clock reach the closure the same way.** Four of the six
-refusal conditions need `cfg.reminders.*` and a "now": add
-`reminder_caps: RemindersConfig | None = None` and reuse the registry's existing
-clock convention alongside `reminders=` on `ToolRegistry.__init__` — they are
-process-lifetime values, which is what that constructor is for (`registry.py:44-66`).
+refusal conditions need `cfg.reminders.*` and a "now": add **two** parameters
+to `ToolRegistry.__init__` alongside `reminders=`, both stated explicitly
+because neither exists today:
+
+```python
+reminder_caps: RemindersConfig | None = None,
+clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+```
+
+**There is no "existing clock convention" in the registry** — an earlier draft
+said to reuse one. `registry.py:66-76` takes
+`transit, route, vision, blobs, search, presence, circles, refresher, shortener,
+ai_peer` and imports no `datetime`; the only `clock` in the file is a local
+**string** of capability prose at `:229`. Three of the six refusal conditions
+(`when < now`, `min_lead_seconds`, `max_horizon_days`) depend on the clock, so
+an implementer who greps for the "convention" finds a sentence and stalls.
+
+Both are process-lifetime values, which is what that constructor is for
+(`registry.py:44-66`).
 
 - [ ] **Step 1: Failing tests**
 
@@ -1468,4 +1528,4 @@ would break `_terminal_budget_spent`'s AND and the pinned
 
 **Type consistency.** `ReminderState` is a `StrEnum` used identically in Tasks 2, 4, 6. `ConversationSlots`'s key is `tuple[str, str]` in Tasks 1 and 4. `fire: Callable[[Sequence[Reminder]], Awaitable[str]]` in Task 4 matches `FirePath.run(rows) -> str` in Task 5. `mark()` returns `bool` everywhere.
 
-**One known gap, called out rather than hidden:** Task 5's step 7 and Task 6's steps 2–3 describe implementations by their interfaces and constraints rather than showing every line. They are the two tasks whose exact code depends on shapes the implementer will read in the files they are editing (`deliver.build`'s eleven arguments, `build_tool_specs`'s closure body). Every *decision* is specified — what to call, what not to call, what must not be duplicated and why — but an implementer will write more original code in these two than in Tasks 1–4.
+**Known gaps, called out rather than hidden:** Task 6's **Step 1** gives one worked test and seven condition-named comments rather than eight written tests — each names its exact refusal condition, so it is actionable, but the failing-test step is prose and an executing agent should know that going in. Task 5's step 7 and Task 6's steps 2–3 describe implementations by their interfaces and constraints rather than showing every line. They are the two tasks whose exact code depends on shapes the implementer will read in the files they are editing (`deliver.build`'s eleven arguments, `build_tool_specs`'s closure body). Every *decision* is specified — what to call, what not to call, what must not be duplicated and why — but an implementer will write more original code in these two than in Tasks 1–4.
