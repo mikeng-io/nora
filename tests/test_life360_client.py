@@ -143,6 +143,8 @@ class _Life360:
             return web.json_response({"members": []}, status=200)
         if self.members_mode == "shape":
             return web.json_response({"errorMessage": "expired"}, status=200)
+        if self.members_mode == "429":
+            return web.json_response({"errorMessage": "rate limited"}, status=429)
         return web.json_response(self.members_body, status=200)
 
     async def request_location(self, request: web.Request) -> web.Response:
@@ -276,6 +278,23 @@ async def test_a_persistent_403_backs_off_and_never_loops(life360):
     assert fake.requests.count("token") <= 2 * reads
     assert client.auth_failures == reads               # climbs → collector backs off
     assert metrics.get("nora_presence_auth_alarms_total", reason="banned") == reads
+
+
+async def test_a_429_is_ban_class_and_drives_the_backoff(life360):
+    """Kimi audit 2026-08-08: an explicit rate-limit (429) is the strongest
+    ban-class signal, but the client was 403-ONLY, so a 429 read through the
+    cadence unchanged. Now 429 → BANNED, `auth_failures` climbs (the collector
+    backs off), the alarm fires, and it does NOT re-auth (no credential POST
+    mid-throttle). Revert the 429 branch and this goes red."""
+    fake, base = life360
+    fake.members_mode = "429"
+    metrics = Metrics()
+    client = _client(base, metrics=metrics)
+    read = await client.read_circle(circle_id="c1", now_ms=NOW_MS)
+    assert read.status is ReadStatus.BANNED
+    assert client.auth_failures == 1
+    assert metrics.get("nora_presence_auth_alarms_total", reason="banned") == 1
+    assert fake.requests.count("token") == 1           # authed once, did NOT re-auth on 429
 
 
 async def test_a_challenge_page_is_its_own_status_and_alarms(life360):

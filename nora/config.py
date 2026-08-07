@@ -468,9 +468,11 @@ class SearchConfig(BaseModel):
     # deny-rule (design/22 §0). So `web_search` rides `enabled`, and `web_fetch`
     # ALSO needs `fetch_enabled` — letting an operator turn search on before the
     # Firecrawl egress isolation is in place, with `web_fetch` still `unavailable`.
-    # Defaults True so `enabled=true` alone keeps the original both-on semantics
-    # for a deployment that HAS done the egress work.
-    fetch_enabled: bool = True
+    # Defaults FALSE (Kimi audit 2026-08-08): the SSRF surface must be OPT-IN, or a
+    # fresh config that only flips `enabled=true` gets a model-chosen fetcher live
+    # with no egress isolation. A deployment that has done the egress work (or
+    # accepts the blind-SSRF residual) sets it true explicitly.
+    fetch_enabled: bool = False
     searxng_url: str = "http://127.0.0.1:8080"
     firecrawl_url: str = "http://127.0.0.1:3002"
     # "v1" or "v2" — the scrape route on the DEPLOYED Firecrawl. Verified v1 on

@@ -201,6 +201,15 @@ class Life360Client:
                 # Stop here; the collector's back-off does the waiting.
                 return self._banned("fresh token still 403 — ban risk")
 
+        if result.status == 429:
+            # An explicit rate-limit — the strongest ban-class signal there is.
+            # Do NOT re-auth (that POSTs the credential mid-throttle); hand it to
+            # the collector's back-off, which the auth_failures increment drives.
+            # The client was 403-only before, so a 429 read through the cadence
+            # unchanged — the exact hammer the back-off exists to prevent (Kimi
+            # audit 2026-08-08).
+            return self._banned("rate limited (429)")
+
         return self._classify(result, now_ms=now_ms)
 
     async def request_location(self, *, circle_id: str, member_id: str) -> bool:

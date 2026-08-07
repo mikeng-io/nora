@@ -197,17 +197,19 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                            "takes — the only tool that can answer about a trip at a "
                            "later time",
                         time_shiftable=True),
-    # 2, sized like `route`: one message can ask after two people («阿仔同阿女
-    # 喺邊»), and two calls plus a reply still leave half the turn. Each call
-    # is one local table read — cheap — so like `calculate` the budget is sized
-    # by the QUESTION, not the cost.
+    # 2, and HELD at 2 through the budget doubling (Kimi audit 2026-08-08): each
+    # call is no longer a cheap local read — with the DEC-67 live refresh it can
+    # BLOCK up to `refresh_timeout_seconds` (~8-10s) pinging the phone, so a
+    # doubled 4 would be ~40s of where_is alone, blowing the 60s loop wall-clock.
+    # Two people asked after («阿仔同阿女喺邊») is the real ceiling; the cost, not
+    # just the question, sizes it now.
     #
     # `time_shiftable=False` (design/14 §5.1): the answer is the LATEST recorded
     # fix and decays from the moment it is read — the fix's age rides in the
     # result so the model can say «20 分鐘前», but asked where someone will be
     # LATER this tool has nothing. `terminal=False`: a position is the middle of
     # an answer, never the end of one.
-    "where_is": NativeTool(4, "where somebody in this conversation is — never state "
+    "where_is": NativeTool(2, "where somebody in this conversation is — never state "
                              "or guess a location you did not get from here",
                           time_shiftable=False),
     # 2, sized like `route`: one message can ask after two spots («邊間好啲»),
@@ -1142,7 +1144,11 @@ def build_tool_specs(
         # a peer not in this room — is dropped.
         roster = {p.honcho_peer_id: p.name for p in view.people}
         try:
-            hits = await honcho.search(query=query[:500])
+            # SESSION-scoped to THIS channel (Kimi audit 2026-08-08): a
+            # workspace-wide search would surface a roster member's PRIVATE DM
+            # words into this room. `bound_conversation_id` is the tag's channel,
+            # captured once (DEC-24), never a model-supplied value.
+            hits = await honcho.search(query=query[:500], conversation_id=bound_conversation_id)
         except Exception:
             log.exception("search_memory failed")
             hits = []
@@ -1623,7 +1629,10 @@ def build_tool_specs(
         Call this when somebody asks where a person is («佢喺邊», «阿媽返咗
         屋企未»). Give it the person the way they were named — a name or
         nickname of somebody IN this conversation. It reads a location this
-        household already shares with you; nothing leaves this machine.
+        household already shares with you, forcing a fresh reading first so the
+        answer is where they ARE, not where they were last seen (it may pause a
+        moment for that). Nothing you send leaves — only a member id, never a
+        coordinate.
 
         `status` is one of five and they mean different things:
           - `ok` — where they were last recorded. `age_seconds` says how OLD

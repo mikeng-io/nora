@@ -645,22 +645,30 @@ class HonchoClient:
         return content.strip()
 
     async def search(
-        self, *, query: str, limit: int = 8, workspace_id: str | None = None,
+        self, *, query: str, conversation_id: str | None = None, limit: int = 8,
+        workspace_id: str | None = None,
     ) -> list[tuple[str, str]]:
         """Semantic search over the raw MESSAGES (not derived conclusions) — the
-        verb behind `search_memory` (design/24 §S.3). `POST /search` with
-        `{query, limit}` → a LIST of message objects `{content, peer_id,
-        session_id, …}` (verified live 2026-08-08); returns `(peer_id, content)`
-        pairs, [] on any failure. It has its OWN parse rather than `_post` because
-        the response is a list, not the dict every other endpoint returns.
+        verb behind `search_memory` (design/24 §S.3). Returns a LIST of message
+        objects `{content, peer_id, session_id, …}` parsed to `(peer_id, content)`
+        pairs, [] on any failure. Its OWN parse, not `_post`, because the response
+        is a list, not the dict every other endpoint returns.
 
-        WORKSPACE-scoped (no session/peer narrowing): the whole social unit, which
-        is safe under the one-social-unit-per-workspace topology (§S.1). Media-only
-        messages (Honcho stores the `￼` object-replacement placeholder for an
-        attachment) are dropped — there is no text to find. DISCLOSURE is the
-        caller's: `search_memory` keeps only messages from the room's roster and
-        screens identifiers (R-18); this method is the raw reach."""
-        url = self._url("/search", workspace=workspace_id)
+        SESSION-scoped when a `conversation_id` is given — `POST /sessions/{id}/
+        search`, restricted to THIS channel's messages. That is the safe default
+        and what `search_memory` uses: a workspace-wide search would surface a
+        roster member's words from a PRIVATE DM (a different session in the same
+        workspace) into this room — the raw-word blend the one-workspace topology
+        does NOT license (Kimi audit 2026-08-08). Without a `conversation_id` it
+        falls back to the workspace search, for an operator/probe that wants the
+        whole unit. Media-only messages (the `￼` attachment placeholder) are
+        dropped. DISCLOSURE remains the caller's: `search_memory` also keeps only
+        the room's roster speakers and screens identifiers (R-18)."""
+        if conversation_id is not None:
+            safe = _safe_conversation_key(conversation_id)
+            url = self._url(f"/sessions/nora-conv-{safe}/search", workspace=workspace_id)
+        else:
+            url = self._url("/search", workspace=workspace_id)
         try:
             timeout = aiohttp.ClientTimeout(total=self._representation_timeout)
             async with (

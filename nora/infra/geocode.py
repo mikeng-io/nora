@@ -8,9 +8,14 @@ with a place.
 It lives here, at the infra level and NOT under `nora.infra.routes`, on purpose:
 the caller is the presence COLLECTOR, and coupling the collector to Nora's tool
 infra would drag the whole routing package into a second process for one call.
-The collector is also the RIGHT place for it (design/14 §2.2: a stored position
-may seed an on-host geocoding call) — doing it here means whereis stays a pure
-local-DB read that never itself sends a coordinate anywhere.
+The collector is also the RIGHT place for it: this IS a coordinate egress — the
+collector sends the member's coordinate to Google's (or the HK-gov) geocoding API
+to turn it into a place name. That egress is the collector's alone and never the
+model's: the resolved NAME is what reaches Nora, the coordinate never does
+(DEC-24/60), and `whereis` stays a pure local-DB read that itself sends nothing.
+(The earlier «design/14 §2.2 on-host geocoding» citation was wrong — the call is
+off-host to Google; a proper decision record for the collector's coordinate
+egress is a governance follow-up flagged by the 2026-08-08 audit.)
 
 Uses the classic Geocoding API, which is a GET with the key in the query string
 (NOT the `X-Goog-Api-Key` header the Routes/Places v1 endpoints use — a different

@@ -240,6 +240,12 @@ metrics_port = 9101
 # the input-token cost of retrieved text, re-sent on every subsequent model call.
 [search]
 enabled = false
+# web_fetch is a SEPARATE opt-in from web_search: Firecrawl fetches a
+# model-chosen URL and is the SSRF surface (design/22 §0). It stays OFF
+# (`fetch_enabled = false`, the default) until the Firecrawl egress is
+# network-isolated OR you accept the blind-SSRF residual — turning `enabled =
+# true` alone leaves web_fetch unavailable, which is the honest inert state.
+fetch_enabled = false
 searxng_url = "http://127.0.0.1:8080"
 firecrawl_url = "http://127.0.0.1:3002"
 firecrawl_api_version = "v1"

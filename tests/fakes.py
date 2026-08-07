@@ -94,7 +94,8 @@ class FakeHoncho:
         return " ".join(known) if known else None
 
     async def search(
-        self, *, query: str, limit: int = 8, workspace_id: str | None = None,
+        self, *, query: str, conversation_id: str | None = None,
+        limit: int = 8, workspace_id: str | None = None,
     ) -> list[tuple[str, str]]:
         """Mirrors `HonchoClient.search`: (peer_id, content) pairs from the seeded
         `messages`, or [] on `fail=True`. Records the query."""

@@ -1,10 +1,14 @@
 """`whereis(person)` and its R-21 disclosure seam (design/19 §5, design/14 §5.2).
 
-`whereis` reads the LOCAL presence record — never Life360 live — for one person
-in this conversation, carries the fix's AGE to the model, and degrades to
-`unavailable` (never null-island) when there is no usable fix. Nora reads a
-local table that is always available; the collector daemon absorbs Life360's
-fragility (§4), so `whereis` has no auth, no retry, no challenge-page to handle.
+`whereis` reads the LOCAL presence record for one person in this conversation,
+carries the fix's AGE to the model, and degrades to `unavailable` (never
+null-island) when there is no usable fix. Nora reads a local table; the collector
+daemon absorbs Life360's fragility (§4), so `whereis` has no auth, no retry, no
+challenge-page to handle. With a `LocationRefresher` wired (DEC-67) it first asks
+the COLLECTOR to force a fresh reading before the read — Nora still never speaks
+to Life360 herself, and a location REQUEST sends a member-id, not a coordinate,
+so nothing sensitive leaves; the refresh is best-effort and falls back to the
+stored fix.
 
 **The disclosure guard is a NEW fail-closed seam, and this module does not
 pretend the existing R-21 machinery covers it (both design reviews, HIGH).**

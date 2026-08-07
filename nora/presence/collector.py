@@ -327,12 +327,17 @@ class PresenceCollector:
         while True:
             now_ms = int(time.time() * 1000)
             read = await self._client.read_circle(circle_id=circle.circle_id, now_ms=now_ms)
-            if read.status is ReadStatus.OK:
-                member = next(
-                    (m for m in read.members if m.life360_id == member_id), None
-                )
-                if member is not None and await self._record(circle, member, now_ms=now_ms):
-                    return True
+            if read.status is not ReadStatus.OK:
+                # A ban/challenge that began DURING the refresh: stop polling
+                # immediately rather than fire more unpaced reads at a now-refusing
+                # account (the entry gate only saw a clean state; Kimi audit
+                # 2026-08-08). where_is falls back to the stored fix.
+                return False
+            member = next(
+                (m for m in read.members if m.life360_id == member_id), None
+            )
+            if member is not None and await self._record(circle, member, now_ms=now_ms):
+                return True
             if time.time() + poll_interval >= deadline:
                 return False
             await asyncio.sleep(poll_interval)

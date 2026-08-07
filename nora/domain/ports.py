@@ -422,7 +422,8 @@ class MemoryStore(Protocol):
     # `search_memory`. Returns (peer_id, content) pairs; the caller filters to the
     # room roster and screens identifiers. Workspace-scoped (design/24 §S.3).
     async def search(
-        self, *, query: str, limit: int = 8, workspace_id: str | None = None,
+        self, *, query: str, conversation_id: str | None = None, limit: int = 8,
+        workspace_id: str | None = None,
     ) -> list[tuple[str, str]]: ...
 
     async def health(self) -> MemoryHealth: ...

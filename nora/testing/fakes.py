@@ -275,7 +275,8 @@ class FakeMemoryStore:
         return " ".join(known)
 
     async def search(
-        self, *, query: str, limit: int = 8, workspace_id: str | None = None,
+        self, *, query: str, conversation_id: str | None = None,
+        limit: int = 8, workspace_id: str | None = None,
     ) -> list[tuple[str, str]]:
         self.searches.append(query)
         if self.fail:

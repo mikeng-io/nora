@@ -99,7 +99,7 @@ def test_budgets_match_todays_table():
         "saved_places": 1,
         # One message can ask after two people; each call is one local table
         # read, so like `calculate` this is sized by the question (DEC-59).
-        "where_is": 4,
+        "where_is": 2,
         # The plugin-provided activation tool (DEC-50, activating DEC-48). It is
         # in `budgets()` ONLY so R-7 admits the `AgentSkills` activation call;
         # the registry does not BUILD it (see the tests below). Sized 1 like

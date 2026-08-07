@@ -432,6 +432,26 @@ async def test_search_is_empty_on_failure_and_never_raises(server_factory):
     assert await HonchoClient(base, "nora").search(query="x") == []
 
 
+async def test_search_scopes_to_the_conversations_session_not_the_workspace(server_factory):
+    """Kimi audit 2026-08-08: a conversation_id session-scopes the search to THIS
+    channel — `/sessions/nora-conv-<safe>/search`, NOT the workspace-wide `/search`
+    — so a roster member's PRIVATE DM words can't surface into this room. The
+    base64 group id is sanitised into the session key on the way."""
+    paths: list[str] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        paths.append(request.path)
+        return web.json_response([])
+
+    base = await server_factory(handler)
+    gid = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="   # a real base64 group id
+    await HonchoClient(base, "nora").search(query="x", conversation_id=gid)
+    assert paths and paths[0].endswith(
+        "/sessions/nora-conv-Lf2L9zqeNUahRsOz6BA-sTB8aWfbuvqu9vOhpvmJi34/search"
+    ), paths
+    assert "/workspaces/nora/search" not in paths[0]
+
+
 async def test_chat_sends_the_observed_peer_as_target_and_the_chosen_depth(server_factory):
     """`peer_id`=observer, `target`=observed (design/24 §4): `ask_memory` reads
     Nora's model of a person via `chat(peer_id="nora", target="miles_novak", …)`, and
