@@ -556,6 +556,23 @@ class ReminderState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class ReminderCaps:
+    """The three anti-runaway caps, as a DOMAIN value.
+
+    Not `RemindersConfig` from `nora/config.py`: import-linter's "only app and
+    __main__ read config" contract (`pyproject.toml:132-141`) lists `nora.agent`
+    as a source module and `nora.config` as forbidden, so a config type on
+    `ToolRegistry.__init__` fails `uv run lint-imports` outright. A
+    `TYPE_CHECKING` guard does not rescue it — grimp's
+    `exclude_type_checking_imports` defaults to False and this repo does not set
+    it. `nora.app.composition` builds one from `cfg.reminders`."""
+
+    max_pending_per_requester: int = 20
+    min_lead_seconds: int = 120
+    max_horizon_days: int = 30
+
+
+@dataclass(frozen=True, slots=True)
 class Reminder:
     id: UUID
     requester_person_id: str
@@ -1343,7 +1360,7 @@ def fire_path(persons, record_store, memory_store, doctrine_store, metrics) -> F
     )
 
 
-def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
+async def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     """The trap this test exists for: blanking sender_id is correct for
     reactions (indicate.begin returns None on a falsy author) and wrong for
     everything that reads it. A blank sender_id resolved through
@@ -1351,14 +1368,14 @@ def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     Room.scope() unavailable, and makes search_memory refuse."""
     reminder = _reminder()
 
-    ctx = fire_path.build_context([reminder])
+    ctx = await fire_path.build_context([reminder])
 
     assert ctx.tagger is not None
     assert ctx.tagger.person_id == reminder.requester_person_id
     assert ctx.message.body == reminder.text          # the request itself
     assert ctx.message.sender_name != ""              # NOT Persons.display_name
     assert ctx.message.sender_id == ""                # so no reaction is placed
-    assert ctx.message.timestamp == 0                 # falsy AND an int — models.py:61
+    assert ctx.message.timestamp == 0                 # falsy AND an int — models.py:63
 ```
 
 The `persons`, `record_store`, `memory_store` and `metrics` fixtures do not
@@ -1400,7 +1417,12 @@ there — Task 5 runs first and calls `build(..., fire_turn=True)`.
 
 Two public methods, because the test in Step 2 exercises context assembly
 without a model:
-- `build_context(rows: Sequence[Reminder]) -> TagContext` — §6.4's table
+- `async build_context(rows: Sequence[Reminder]) -> TagContext` — §6.4's table.
+  **Async, necessarily**: it sources `transcript` from `RecordStore.recent`
+  (`nora/domain/ports.py:355`) and `peer_card` from `MemoryStore.peer_card`
+  (`:392`), and both are `async`. A synchronous signature would push an
+  implementer toward empty `transcript`/`peer_card` — a fire turn with no
+  context and every gate green.
 - `async run(rows: Sequence[Reminder]) -> str` — returns the §8.1 outcome, and
   is what Task 4's `fire` parameter is typed against (`Awaitable[str]`) — build `TagContext`, `MentionRenderer.rehydrate`, doctrine at `applies_to="heartbeat"`, `ToolRegistry.build(..., fire_turn=True)`, `runner.invoke` inside its own `asyncio.wait_for` with `[heartbeat] timeout_seconds`, `deliver.build` + `Deliverer`, `feedback.run`. Do **not** call `invoke.run` or `deliver.check_outcome` — both own metric branches the fire path must account for itself.
 
@@ -1437,9 +1459,19 @@ to `ToolRegistry.__init__` alongside `reminders=`, both stated explicitly
 because neither exists today:
 
 ```python
-reminder_caps: RemindersConfig | None = None,
+reminder_caps: ReminderCaps = ReminderCaps(),
 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
 ```
+
+**`ReminderCaps`, not `RemindersConfig`.** `nora/domain/reminders.py` defines it
+(Task 2); `nora/config.py`'s `RemindersConfig` must not cross into
+`nora/agent/`. Import-linter's *"only app and `__main__` read config"* contract
+(`pyproject.toml:132-141`) names `nora.agent` as a source module and
+`nora.config` as forbidden, so the config type there fails
+`uv run lint-imports` — and a `TYPE_CHECKING` guard does not help, because
+grimp's `exclude_type_checking_imports` defaults to `False` and this repo does
+not set it. `nora/app/composition.py` converts:
+`ReminderCaps(**cfg.reminders.model_dump())`.
 
 **There is no "existing clock convention" in the registry** — an earlier draft
 said to reuse one. `registry.py:66-76` takes
