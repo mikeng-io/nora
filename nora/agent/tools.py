@@ -135,7 +135,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # instant by definition and is stale for any other one. It is the second
     # live-only tool and the older of the two, which is worth stating here
     # rather than letting `transit` look like a special case.
-    "now": NativeTool(2, "anything that depends on when it is — never guess the "
+    "now": NativeTool(4, "anything that depends on when it is — never guess the "
                          "date or time from the transcript",
                       time_shiftable=False),
     # 4, and the only budget here NOT sized by what a call costs. This is the
@@ -153,7 +153,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `time_shiftable` has no meaning for this tool in either direction, which
     # is worth stating rather than leaving ambiguous: unlike `now`, the answer
     # to `1485/7` is the same whenever it is asked.
-    "calculate": NativeTool(4, "any arithmetic at all — never work a number out in "
+    "calculate": NativeTool(8, "any arithmetic at all — never work a number out in "
                                "your head, and never state one you did not get "
                                "from here"),
     # 2, and sized the way `lookup_person` is — by model round trips, not by
@@ -167,7 +167,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # hours away is confidently, checkably wrong. `route()`'s `arrive_by` is
     # what answers that question, and it is not built yet — which is exactly
     # why this field exists before it does.
-    "transit": NativeTool(2, "a Hong Kong bus or feeder route somebody named by number "
+    "transit": NativeTool(4, "a Hong Kong bus or feeder route somebody named by number "
                              "— never state a bus time you did not get from here, and "
                              "never use it for a bus later than now",
                           time_shiftable=False),
@@ -182,7 +182,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # about a departure hours from now — 「夜晚八點去到」 asked at three in the
     # afternoon. `terminal=False`: a route is the middle of an answer, not the
     # end of one; she still has to say it.
-    "route": NativeTool(2, "how to travel between two places, or how long a journey "
+    "route": NativeTool(4, "how to travel between two places, or how long a journey "
                            "takes — the only tool that can answer about a trip at a "
                            "later time",
                         time_shiftable=True),
@@ -196,7 +196,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # result so the model can say «20 分鐘前», but asked where someone will be
     # LATER this tool has nothing. `terminal=False`: a position is the middle of
     # an answer, never the end of one.
-    "where_is": NativeTool(2, "where somebody in this conversation is — never state "
+    "where_is": NativeTool(4, "where somebody in this conversation is — never state "
                              "or guess a location you did not get from here",
                           time_shiftable=False),
     # 2, sized like `route`: one message can ask after two spots («邊間好啲»),
@@ -204,13 +204,13 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # has no time dimension the way `route` does — «幾好食» is the same question
     # whenever asked (a stale open_now is the one caveat, and Google returns it
     # fresh per call). `terminal=False`: a rating is the middle of an answer.
-    "place_info": NativeTool(2, "how good or how pricey a place is — a shop, a "
+    "place_info": NativeTool(4, "how good or how pricey a place is — a shop, a "
                                 "restaurant, a clinic — its rating and whether it's "
                                 "open; never guess a rating you did not get from here"),
     # 1, like `group_members`: it lists a small fixed set for THIS room, and
     # calling it twice in a turn returns the same list. `time_shiftable=None`:
     # the household's saved names don't decay. Not terminal.
-    "saved_places": NativeTool(1, "the names this household has saved for places "
+    "saved_places": NativeTool(2, "the names this household has saved for places "
                                   "(«Home», «Miles Home») — check before routing to a "
                                   "place someone calls by a personal name"),
     # **`chat_earlier`, not `read_buffer`, and that was MEASURED, not argued
@@ -230,7 +230,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # room_members 7/48 where group_members took 0/48 (z≈2.75, DEC-39's own
     # threshold). A name is not documentation; it is the feature the router
     # matches on.
-    "chat_earlier": NativeTool(2, "something was said further back than the messages "
+    "chat_earlier": NativeTool(4, "something was said further back than the messages "
                                  "you were shown"),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
@@ -241,7 +241,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # caches the daemon read for the tag, so a second call is guaranteed to
     # return the identical answer four seconds later. Anything above 1 buys
     # nothing and can only crowd out `send_reply`.
-    "group_members": NativeTool(1, "who is in this conversation. People who have not "
+    "group_members": NativeTool(2, "who is in this conversation. People who have not "
                                    "spoken are still here, and people a message names "
                                    "may not be"),
     # 2: one message routinely names two people (「阿豹同峰哥去咗邊」). The call
@@ -249,7 +249,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # sized by round trips, not by work, and two lookups plus a reply still
     # leaves half the turn budget. A third name is rare enough to be worth
     # answering from what she has.
-    "lookup_person": NativeTool(2, "who a name or nickname in a message refers to"),
+    "lookup_person": NativeTool(4, "who a name or nickname in a message refers to"),
     # 2: same shape, but each call is also an HTTP request (~0.2 s measured).
     # Two covers the question this exists for — "what is this person like" for
     # the person who asked plus one person they asked about — and caps how much
@@ -273,7 +273,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # person-shaped routing collapsed onto that tool — including for a question
     # about the TRANSCRIPT, where `chat_earlier` fell from 14/24 to 3/16. A name
     # is not only documentation; it is the feature the router matches on.
-    "about": NativeTool(2, "what someone is LIKE, when the answer is not in the "
+    "about": NativeTool(4, "what someone is LIKE, when the answer is not in the "
                            "conversation. «I know nothing about them yet» and «I could "
                            "not check» are different answers; never report the second "
                            "as the first"),
@@ -281,7 +281,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # turn is the ceiling — a second would blow the loop budget on its own. It is
     # the escalation from `about` (retrieve), reached only when a profile lookup
     # will not answer a pieced-together question.
-    "ask_memory": NativeTool(1, "REASON about someone to answer a specific "
+    "ask_memory": NativeTool(2, "REASON about someone to answer a specific "
                                 "question that has to be pieced together, when a "
                                 "plain profile («about») is not enough — slower and "
                                 "deeper; use sparingly"),
@@ -294,7 +294,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `terminal=False` (a description is the middle of an answer, she still has
     # to say what she saw) and `time_shiftable=None` (an image does not decay and
     # cannot be asked about "later" — it is the bytes it is).
-    "media_fetch": NativeTool(2, "somebody asks about an image already in this "
+    "media_fetch": NativeTool(4, "somebody asks about an image already in this "
                                  "conversation — what a photo shows, or what a "
                                  "screenshot says"),
     # The two web verbs (DEC-57, design/22). Each is 2, sized like the other
@@ -308,11 +308,11 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # invented: it may only open a page a `search` returned THIS turn, which is
     # the per-tag `allowed_urls` fence (design/22 §2), and the schema cannot say
     # that on its own.
-    "web_search": NativeTool(2, "look something up on the web when the answer isn't in "
+    "web_search": NativeTool(4, "look something up on the web when the answer isn't in "
                             "the conversation and isn't a bus, a route or a person you "
                             "know — you get titles, snippets and links, never the "
                             "page itself"),
-    "web_fetch": NativeTool(2, "read the actual page behind one of the links a web_search just "
+    "web_fetch": NativeTool(4, "read the actual page behind one of the links a web_search just "
                            "returned this turn — only those links, never an address you "
                            "made up"),
     # THE ONLY TERMINAL TOOL, and **the number that caps how many messages one
@@ -369,7 +369,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # body comes back whenever it is asked. Both are stated rather than left to
     # the defaults so the fifth field (`plugin`) is not the only one this entry
     # sets on purpose.
-    "skills": NativeTool(1, "activate a skill named in <available_skills> to load its "
+    "skills": NativeTool(2, "activate a skill named in <available_skills> to load its "
                             "full instructions before you plan",
                          terminal=False, time_shiftable=None, plugin=True),
 }

@@ -27,12 +27,14 @@ def test_a_first_send_reply_is_allowed():
 
 
 def test_send_reply_past_the_cap_is_cancelled():
-    """The cap is 3 (DEC-42, multi-message active). The first three are allowed;
-    the fourth is refused — by the R-7 budget, reported as R-2 (both branches
-    share the model-facing sentence, DEC-33)."""
+    """The cap is `send_reply`'s budget (DEC-42, multi-message active; doubled
+    per operator 2026-08-08). Every call up to the cap is allowed; the next is
+    refused — by the R-7 budget, reported as R-2 (both branches share the
+    model-facing sentence, DEC-33). Derived from BUDGETS so a budget change
+    cannot silently un-test the cap."""
     m = Metrics()
     g = _guard(m)
-    for _ in range(3):
+    for _ in range(BUDGETS["send_reply"]):
         assert g.evaluate("send_reply", _send()) is None
         g.record("send_reply")
     msg = g.evaluate("send_reply", _send())
@@ -74,7 +76,7 @@ def test_empty_reply_is_cancelled_before_the_tool_runs():
 def test_tool_call_budget_enforced_for_chat_earlier():
     m = Metrics()
     g = _guard(m)
-    for _ in range(2):
+    for _ in range(BUDGETS["chat_earlier"]):
         assert g.evaluate("chat_earlier", {"limit": 40}) is None
         g.record("chat_earlier")
     msg = g.evaluate("chat_earlier", {"limit": 40})
@@ -84,15 +86,16 @@ def test_tool_call_budget_enforced_for_chat_earlier():
 
 def test_tool_call_budget_enforced_for_group_members():
     g = _guard()
-    assert g.evaluate("group_members", {}) is None
-    g.record("group_members")
+    for _ in range(BUDGETS["group_members"]):
+        assert g.evaluate("group_members", {}) is None
+        g.record("group_members")
     assert g.evaluate("group_members", {}) is not None
 
 
 def test_the_correction_names_what_the_model_already_has():
     g = _guard()
-    g.record("chat_earlier")
-    g.record("chat_earlier")
+    for _ in range(BUDGETS["chat_earlier"]):
+        g.record("chat_earlier")
     msg = g.evaluate("chat_earlier", {"limit": 40})
     assert "already" in msg
 

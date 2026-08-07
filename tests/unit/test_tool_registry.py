@@ -71,49 +71,49 @@ def test_the_registry_exposes_every_declared_tool():
 
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
-        "now": 2, "chat_earlier": 2,
+        "now": 4, "chat_earlier": 4,
         # 3 — multi-message active (DEC-42): the cap on how many messages one
         # tag may send, raised 1→3 as the whole activation (the delivery path
         # already read this one number as the cap).
         "send_reply": 3,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
-        "group_members": 1, "lookup_person": 2, "about": 2,
+        "group_members": 2, "lookup_person": 4, "about": 4,
         # 1 — the dialectic reasoning verb is slow (~14-19s), so one call per
         # turn is the ceiling; it is the escalation from `about` (design/24 §4).
-        "ask_memory": 1,
+        "ask_memory": 2,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
-        "calculate": 4,
+        "calculate": 8,
         # One message names two routes often enough (「68X 定 K73 快啲」) and
         # three almost never.
-        "transit": 2,
+        "transit": 4,
         # Sized like transit: two place lookups plus a route, paid and external,
         # so a turn may reach for it twice but not more (DEC-46).
-        "route": 2,
+        "route": 4,
         # Sized like route: one Places lookup per call, a turn may ask after two
         # spots.
-        "place_info": 2,
+        "place_info": 4,
         # 1 like group_members: a fixed per-room list, same answer if called twice.
-        "saved_places": 1,
+        "saved_places": 2,
         # One message can ask after two people; each call is one local table
         # read, so like `calculate` this is sized by the question (DEC-59).
-        "where_is": 2,
+        "where_is": 4,
         # The plugin-provided activation tool (DEC-50, activating DEC-48). It is
         # in `budgets()` ONLY so R-7 admits the `AgentSkills` activation call;
         # the registry does not BUILD it (see the tests below). Sized 1 like
         # `group_members`: re-activating a skill re-injects a body already in
         # context and cannot improve the answer.
-        "skills": 1,
+        "skills": 2,
         # One message can name two images (a photo AND a screenshot); the
         # per-call vision timeout, not this number, is what keeps two describe
         # calls inside the loop budget (DEC-56).
-        "media_fetch": 2,
+        "media_fetch": 4,
         # The two web verbs (DEC-57): sized by model round trips — search, read a
         # result, refine — two of each leaving half the turn.
-        "web_search": 2,
-        "web_fetch": 2,
+        "web_search": 4,
+        "web_fetch": 4,
     }
 
 
@@ -235,7 +235,7 @@ def test_skills_is_budgeted_so_r7_admits_it_but_the_registry_does_not_build_it()
     registry = ToolRegistry()
     # Admitted by R-7.
     assert "skills" in registry.budgets()
-    assert registry.budgets()["skills"] == 1
+    assert registry.budgets()["skills"] == 2
     # Not built, not advertised, not in the catalogue gate.
     built = {t.tool_name for t in _built_tools(registry)}
     assert "skills" not in built

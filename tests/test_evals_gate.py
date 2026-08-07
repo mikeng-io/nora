@@ -44,15 +44,18 @@ def test_no_send_without_trigger_fails_on_any_send():
 
 
 def test_tool_budget_enforces_the_r7_limits():
-    assert ToolBudget().evaluate(_t(["chat_earlier", "chat_earlier", "send_reply"])).passed
-    assert not ToolBudget().evaluate(
-        _t(["chat_earlier", "chat_earlier", "chat_earlier", "send_reply"])).passed
-    assert not ToolBudget().evaluate(_t(["group_members", "group_members"])).passed
-    # send_reply's own upper bound (the cap of 3) is ToolBudget's job now that
+    # Derived from the live budgets (doubled per operator 2026-08-08), so a
+    # budget change cannot silently un-test the R-7 ceiling: exactly the budget
+    # is allowed, one more is refused.
+    from nora.agent.tools import NATIVE_TOOL_BUDGETS as B
+    ce, gm, sr = B["chat_earlier"], B["group_members"], B["send_reply"]
+    assert ToolBudget().evaluate(_t(["chat_earlier"] * ce + ["send_reply"])).passed
+    assert not ToolBudget().evaluate(_t(["chat_earlier"] * (ce + 1) + ["send_reply"])).passed
+    assert not ToolBudget().evaluate(_t(["group_members"] * (gm + 1))).passed
+    # send_reply's own upper bound (the cap) is ToolBudget's job now that
     # RepliesAtLeastOnce owns only the lower bound (DEC-42).
-    assert ToolBudget().evaluate(_t(["send_reply", "send_reply", "send_reply"])).passed
-    assert not ToolBudget().evaluate(
-        _t(["send_reply", "send_reply", "send_reply", "send_reply"])).passed
+    assert ToolBudget().evaluate(_t(["send_reply"] * sr)).passed
+    assert not ToolBudget().evaluate(_t(["send_reply"] * (sr + 1))).passed
 
 
 def test_no_redundant_read_fails_when_prefill_was_sufficient():
