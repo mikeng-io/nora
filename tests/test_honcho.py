@@ -293,6 +293,61 @@ async def test_chat_returns_the_synthesised_content(server_factory):
     assert bodies == [{"query": "where does he live?", "reasoning_level": "low"}]
 
 
+async def test_the_observer_config_retries_after_a_transient_failure(server_factory):
+    """review C1: the ai_peer observe-config must RETRY on a dropped add-peers
+    POST, like the human-speaker config does — not run once at session creation
+    and cache the session as done. A single transient failure otherwise leaves
+    Nora a non-observer of the session for the whole process, and every recall
+    there reads empty. So the config re-fires on the cache-hit path (idempotent
+    once it lands); reverting that turns this red."""
+    peers_posts: list[dict] = []
+    nora_should_fail = {"v": True}
+
+    async def handler(request: web.Request) -> web.Response:
+        if request.path.endswith("/sessions"):
+            return web.json_response({"id": "sess-1"})
+        if request.path.endswith("/peers"):
+            body = await request.json()
+            peers_posts.append(body)
+            if "nora" in body and nora_should_fail["v"]:
+                nora_should_fail["v"] = False       # fail once, then succeed
+                return web.Response(status=500)
+            return web.json_response({"ok": True})
+        return web.json_response({"ok": True})
+
+    base = await server_factory(handler)
+    client = HonchoClient(base, "nora")
+    await client.feed(peer_id="miles", text="a", conversation_id="c1")   # nora config fails
+    await client.feed(peer_id="miles", text="b", conversation_id="c1")   # nora config retried
+    nora_posts = [b for b in peers_posts if "nora" in b]
+    assert len(nora_posts) >= 2, "the ai_peer observer-config must retry after a failure"
+
+
+async def test_chat_sends_the_observed_peer_as_target_and_the_chosen_depth(server_factory):
+    """`peer_id`=observer, `target`=observed (design/24 §4): `ask_memory` reads
+    Nora's model of a person via `chat(peer_id="nora", target="miles_novak", …)`, and
+    the model's chosen `reasoning_level` rides the body. Pins the WIRE — reverting
+    the client's `if target is not None` or the reasoning_level pass-through turns
+    this red (review I2, 2026-08-08)."""
+    bodies: list[dict] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        if request.path.endswith("/chat"):
+            bodies.append(await request.json())
+            return web.json_response({"content": "answer"})
+        return web.json_response({"ok": True})
+
+    base_url = await server_factory(handler)
+    client = HonchoClient(base_url, "nora")
+    await client.chat(
+        peer_id="nora", query="does he like hotpot?", reasoning_level="high",
+        target="miles_novak",
+    )
+    assert bodies == [
+        {"query": "does he like hotpot?", "reasoning_level": "high", "target": "miles_novak"},
+    ]
+
+
 async def test_chat_is_none_on_empty_or_unreachable(server_factory):
     """Best-effort: empty content is «nothing to say» (None), and a non-200 is
     «could not ask» (None) — the caller never guesses a recollection."""

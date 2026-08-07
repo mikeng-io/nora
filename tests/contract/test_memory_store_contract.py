@@ -35,6 +35,7 @@ class _HonchoAdapter:
     def __init__(self) -> None:
         self._messages: list[dict] = []
         self._session_has_id = True
+        self._chat_answer = ""
 
     async def start(self) -> None:
         async def handler(request: web.Request) -> web.Response:
@@ -48,6 +49,8 @@ class _HonchoAdapter:
                 for m in body.get("messages", []):
                     self._messages.append({**m, "_session": conv})
                 return web.json_response({"ok": True})
+            if request.path.endswith("/chat"):
+                return web.json_response({"content": self._chat_answer})
             return web.json_response({"ok": True})
 
         app = web.Application()
@@ -67,6 +70,9 @@ class _HonchoAdapter:
         # the peer placement is the contract-relevant part.
         return [(m["peer_id"], m["content"]) for m in self._messages]
 
+    def seed_reasoned_answer(self, text: str) -> None:
+        self._chat_answer = text        # what the dialectic /chat will synthesise
+
 
 class _FakeAdapter:
     def __init__(self) -> None:
@@ -80,6 +86,10 @@ class _FakeAdapter:
 
     def landed(self) -> list[tuple[str, str]]:
         return [(peer, text) for peer, text, _conv in self.store.fed]
+
+    def seed_reasoned_answer(self, text: str) -> None:
+        # The fake synthesises `chat` from the observed peer's conclusions.
+        self.store.conclusions["miles"] = [text]
 
 
 @pytest.fixture(params=["honcho", "fake"])
@@ -128,3 +138,23 @@ async def test_metadata_rides_the_message_without_touching_the_text(adapter):
     )
     assert adapter.landed() == [("miles", "hello")]
     assert "123" not in json.dumps(adapter.landed(), ensure_ascii=False)
+
+
+async def test_chat_returns_the_reasoned_string_when_there_is_something_to_say(adapter):
+    """The dialectic verb, now on the port (design/24 §4): both implementations
+    return a non-empty string when the store can reason, so `ask_memory` gets an
+    answer. Without this in the shared suite, `chat` joins `representation` as a
+    port method whose fake behaviour is bound to nothing real — the drift class
+    this file exists to catch."""
+    adapter.seed_reasoned_answer("Tin Shui Chi, from repeated 天恆 mentions")
+    out = await adapter.store.chat(peer_id="miles", query="where does he live?")
+    assert out == "Tin Shui Chi, from repeated 天恆 mentions"
+
+
+async def test_chat_is_none_when_there_is_nothing_to_say(adapter):
+    """The best-effort None contract: nothing seeded → the live instance answers
+    200 with an empty `content` and the fake has no conclusions, and BOTH collapse
+    that to None (never an empty string the tool would present as an answer). The
+    caller says «I couldn't recall that», never guesses."""
+    out = await adapter.store.chat(peer_id="miles", query="where does he live?")
+    assert out is None

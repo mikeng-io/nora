@@ -229,6 +229,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     except DoctrineError as exc:
         raise StartupError(f"doctrine error: {exc}") from exc
 
+    # Two machine ids for one agent: `[agent].name` (trace lineage) and
+    # `[memory].ai_peer` (the Honcho observer peer). A clone ("delia") must set
+    # BOTH; if they diverge, the agent traces under one name but builds its
+    # memory under another — a silent split. Warn rather than fail: a deliberate
+    # divergence is rare but conceivable, and this is a config smell, not an
+    # invariant (review M6, 2026-08-08).
+    if cfg.agent.name != cfg.memory.ai_peer:
+        log.warning(
+            "agent.name (%r) != memory.ai_peer (%r): traces and Honcho memory "
+            "will use different agent identities — set both to the same value "
+            "unless this split is intended",
+            cfg.agent.name, cfg.memory.ai_peer,
+        )
     memory = HonchoClient(
         cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
     )

@@ -311,8 +311,24 @@ class HonchoClient:
         it survives a restart without state; the cache only saves a round trip.
         """
         async with self._peer_lock(f"conv:{conversation_id}"):
+            # Nora joins every session as an OBSERVER (observe_others=True), so
+            # the deriver builds her model of each human who speaks here; and as
+            # observable herself (observe_me=True) so her own self-card can form.
+            # Without this the (nora → person) pair is never derived and every
+            # recall reads empty — proven live 2026-08-07 (design/24 §4).
+            #
+            # This runs on the cache HIT path too, NOT only at creation: it is
+            # idempotent via `_configured_peers` (a no-op once it has landed), so
+            # running it every call means a transient add-peers failure RETRIES on
+            # the next message instead of leaving Nora a non-observer of this
+            # session for the whole process life. The human speaker's config in
+            # `feed` already retries this way; the ai_peer must match it, or one
+            # dropped POST silently disables all recall here (review C1, 2026-08-08).
             cached = self._sessions.get(conversation_id)
             if cached is not None:
+                await self._configure_peer(
+                    cached, self._ai_peer, observe_others=True, observe_me=True,
+                )
                 return cached
             session_id = f"nora-conv-{conversation_id}"
             result = await self._post(
@@ -324,11 +340,6 @@ class HonchoClient:
             if not isinstance(returned, str) or not returned:
                 return None
             self._sessions[conversation_id] = returned
-            # Nora joins every session as an OBSERVER (observe_others=True), so
-            # the deriver builds her model of each human who speaks here; and as
-            # observable herself (observe_me=True) so her own self-card can form.
-            # Without this the (nora → person) pair is never derived and every
-            # recall reads empty — proven live 2026-08-07 (design/24 §4).
             await self._configure_peer(
                 returned, self._ai_peer, observe_others=True, observe_me=True,
             )

@@ -234,10 +234,17 @@ async def test_it_posts_the_search_query_to_the_representation_endpoint(server_f
     assert body["max_conclusions"] == 3
 
 
-async def test_it_never_sends_a_target(server_factory):
-    """`target=` is theory-of-mind and 404s unless the target peer exists —
-    Nora is not a peer, so passing one would turn every recall into a failure
-    (design/11 §1.3)."""
+async def test_target_rides_the_body_as_the_observed_peer_and_is_absent_when_omitted(
+    server_factory,
+):
+    """`peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4). The
+    theory-of-mind form was once dead ("Nora is not a peer"); Honcho v2 makes
+    her a peer that joins every session with observe_others=True, so the pair
+    now derives — and this pins the WIRE: `target` reaches the body when given
+    (so `about` really reads Nora's model of a person, not the person's self-
+    model), and is absent when omitted (self-model). Reverting the client's
+    `if target is not None` turns this red — the load-bearing behaviour was
+    untested before (review I2, 2026-08-08)."""
     seen: list[dict] = []
 
     async def handler(request: web.Request) -> web.Response:
@@ -245,8 +252,11 @@ async def test_it_never_sends_a_target(server_factory):
         return web.json_response({"representation": ""})
 
     base = await server_factory(handler)
-    await HonchoClient(base, "nora").representation(peer_id="miles_novak", search_query="q")
-    assert "target" not in seen[0]
+    client = HonchoClient(base, "nora")
+    await client.representation(peer_id="nora", search_query="q", target="miles_novak")
+    assert seen[0]["target"] == "miles_novak"
+    await client.representation(peer_id="miles_novak", search_query="q")
+    assert "target" not in seen[1]
 
 
 async def test_a_body_of_the_wrong_shape_is_reachable_with_nothing_in_it(server_factory):

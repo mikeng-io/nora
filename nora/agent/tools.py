@@ -1003,9 +1003,13 @@ def build_tool_specs(
         needs it (and is worth the wait). Deeper is slower.
 
         Only knows people in THIS conversation, and answers about the message you
-        were tagged in. Same three-way outcome as `about`: `ok` with the answer,
-        `nothing_known`, or `unavailable` (could not check — never report that as
-        "I don't know them").
+        were tagged in. Outcomes: `ok` with the answer; `unavailable` when the
+        reasoning could not be done (unreachable, or nothing to work from) —
+        never report that as "I don't know them", say you can't check right now;
+        and, rarely, `nothing_known` when she worked something out but it can't be
+        repeated here. There is no "she has no conclusions" outcome distinct from
+        `unavailable`: the reasoner cannot tell "nothing known" from "could not
+        reach" apart, so both are `unavailable`, honestly.
 
         Args:
             person: The name or nickname of the person, as the message said it.
@@ -1064,7 +1068,10 @@ def build_tool_specs(
         # predicate (the `about` rationale: what she runs on stays hers because
         # the Deliverer refuses to SAY it, not because she is made to forget).
         if scan_identifiers(answer) is not None:
-            metrics.inc("nora_recall_total", status="withheld")
+            # `status="empty"` to match `about`'s all-withheld path (nothing
+            # usable surfaced), not a new label value — the recall metric keeps
+            # its ok/empty/unavailable cardinality (review M5).
+            metrics.inc("nora_recall_total", status="empty")
             _record_room(metrics, "ask_memory", "ok", withheld=1)
             return {
                 "status": "nothing_known", "person": ref.name, "withheld": 1,
