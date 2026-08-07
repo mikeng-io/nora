@@ -37,7 +37,7 @@ class FakeHoncho:
     async def ensure_workspace(self) -> None:
         return None
 
-    async def ensure_peer(self, peer_id: str) -> None:
+    async def ensure_peer(self, *, peer_id: str) -> None:
         if not self.fail:
             self.peers.append(peer_id)
 
@@ -50,7 +50,7 @@ class FakeHoncho:
         self.fed.append((peer_id, text, conversation_id))
         return True
 
-    async def peer_card(self, peer_id: str) -> list[str]:
+    async def peer_card(self, *, peer_id: str) -> list[str]:
         if self.fail:
             return []
         return list(self.cards.get(peer_id, []))

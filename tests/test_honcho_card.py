@@ -121,14 +121,14 @@ async def test_fake_honcho_records_feeds():
 
 async def test_fake_honcho_serves_configured_cards():
     fake = FakeHoncho(cards={"miles": ["likes espresso"]})
-    assert await fake.peer_card("miles") == ["likes espresso"]
-    assert await fake.peer_card("nobody") == []
+    assert await fake.peer_card(peer_id="miles") == ["likes espresso"]
+    assert await fake.peer_card(peer_id="nobody") == []
 
 
 async def test_fake_honcho_can_simulate_being_down():
     fake = FakeHoncho(fail=True)
     assert await fake.feed(peer_id="miles", text="x", conversation_id="c1") is False
-    assert await fake.peer_card("miles") == []
+    assert await fake.peer_card(peer_id="miles") == []
 
 
 async def test_the_content_key_honcho_never_returns_yields_nothing(server_factory):
