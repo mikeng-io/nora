@@ -150,6 +150,52 @@ def test_the_same_id_twice_under_the_same_person_is_not_a_duplicate_failure(tmp_
     assert persons.resolve("signal", "+852111") is not None
 
 
+def test_the_same_life360_member_id_across_two_circles_is_not_a_duplicate_failure(tmp_path):
+    """One physical Life360 account can sit in several circles (design/19 §3)
+    — `member_id` is per-ACCOUNT, not per-circle, so it legitimately repeats
+    across blocks as long as `circle_id` differs. The generic copy-paste
+    guard (`test_...same_id_twice...`, above) must not fire on this
+    intentional pattern."""
+    p = tmp_path / "identity.toml"
+    p.write_text(
+        "[persons.miles]\n"
+        "name = \"Miles\"\n"
+        "[[persons.miles.life360]]\n"
+        "label = \"family circle\"\n"
+        "member_id = \"m-1\"\n"
+        "circle_id = \"family\"\n"
+        "[[persons.miles.life360]]\n"
+        "label = \"team42 circle\"\n"
+        "member_id = \"m-1\"\n"
+        "circle_id = \"team42\"\n"
+    )
+    persons = load_persons(p)
+    assert persons.resolve("life360", "m-1").person_id == "miles"
+    circles = {m.circle_id for m in persons.life360 if m.member_id == "m-1"}
+    assert circles == {"family", "team42"}
+
+
+def test_the_same_life360_member_id_and_circle_id_twice_is_still_a_copy_paste_failure(tmp_path):
+    """The narrower key must not swallow the real mistake it exists to
+    catch: two blocks with the SAME member_id AND the SAME circle_id is
+    still a copy-paste-and-forget, not a second legitimate membership."""
+    p = tmp_path / "identity.toml"
+    p.write_text(
+        "[persons.miles]\n"
+        "name = \"Miles\"\n"
+        "[[persons.miles.life360]]\n"
+        "label = \"family circle\"\n"
+        "member_id = \"m-1\"\n"
+        "circle_id = \"family\"\n"
+        "[[persons.miles.life360]]\n"
+        "label = \"family circle again\"\n"
+        "member_id = \"m-1\"\n"
+        "circle_id = \"family\"\n"
+    )
+    with pytest.raises(PersonsError, match="two different account blocks"):
+        load_persons(p)
+
+
 def test_person_id_must_satisfy_the_honcho_peer_id_charset(tmp_path):
     p = tmp_path / "identity.toml"
     p.write_text(

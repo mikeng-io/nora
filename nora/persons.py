@@ -134,7 +134,21 @@ def load_persons(path: Path) -> Persons:
                     # to nobody — and under sealed sender that is often the
                     # only id Nora sees. Tolerated WITHIN one block, where the
                     # same literal under two kinds is harmless.
-                    previous = claimed_by.get(key)
+                    #
+                    # life360's `member_id` is the one legitimate exception
+                    # (design/19 §3): it names an ACCOUNT, not a circle, so
+                    # ONE account genuinely repeats it across several
+                    # `[[...life360]]` blocks — one per circle it belongs to.
+                    # The dedup key for JUST this platform/kind also carries
+                    # `circle_id`, so two blocks for different circles never
+                    # collide, while two blocks for the SAME circle (a real
+                    # copy-paste) still do.
+                    dedup_key: tuple[str, ...] = key
+                    if platform == "life360" and kind == "member_id":
+                        circle = account.get("circle_id")
+                        dedup_key = (*key, str(circle) if circle is not None else "")
+
+                    previous = claimed_by.get(dedup_key)
                     if previous is not None and previous != account_no:
                         raise PersonsError(
                             f"{person_id!r} lists ({platform}, {id_value}) in "
@@ -143,7 +157,7 @@ def load_persons(path: Path) -> Persons:
                             "forget to edit this id? The account whose real id "
                             "is missing would silently resolve to nobody."
                         )
-                    claimed_by[key] = account_no
+                    claimed_by[dedup_key] = account_no
 
                     existing = index.get(key)
                     if existing is not None and existing != person_id:
