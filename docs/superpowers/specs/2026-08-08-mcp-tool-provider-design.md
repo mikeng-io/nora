@@ -269,18 +269,26 @@ overrides when a real server actually needs them.
 
 All MCP tools are **non-terminal** (they feed Nora's reply; only
 `send_reply` sends it — DEC-32's `terminal_tools() == frozenset({"send_reply"})`
-is unaffected). Every tool call is synchronous inside the Strands loop
-regardless of `time_shiftable`'s value — that field doesn't control blocking,
-it controls whether `ToolRegistry.live_only_tools()` renders a "this
-describes the current instant only, don't quote it later" warning into the
-capability text (DEC-40's three values: `None` = no time dimension at all,
-e.g. `calculate`; `False` = live-only and decays, e.g. `now`/`transit`;
-`True` = takes a target time, e.g. `route`). Pulse's tools — player status,
-world state, recent events — describe the current state of a live server,
-so they get `time_shiftable=False`, the same value as `now`, not the `None`
-value `calculate` gets; the plan should set this per discovered tool (or per
-server, defaulting all of a server's tools to `False` unless there's reason
-to differ) rather than leave it unset.
+is unaffected).
+
+**`time_shiftable` does not apply to MCP tools, and that is a deliberate
+consequence of §3's capability()-exclusion decision, not an oversight.**
+An earlier draft of this section said Pulse's tools should get
+`time_shiftable=False` (DEC-40's live-only value, same as `now`/`transit`).
+That doesn't fit the corrected design: `time_shiftable` is a field on
+`nora.agent.ports.ToolSpec`/the `NativeTool` table, read ONLY by
+`ToolRegistry.live_only_tools()` to render the "this describes the current
+instant only" sentence into the generated capability text (DEC-40, design/14
+§5.1) — and §3 already establishes that MCP tools never enter `NATIVE_TOOLS`
+and `live_only_tools()`/`capability()` stay byte-for-byte unchanged by any
+MCP server being configured. An `MCPAgentTool` (what `list_tools_sync()`
+returns) has no `time_shiftable` field to set; there is nothing here for a
+value to attach to. The live-only warning this would have bought — "don't
+quote Pulse's answer for a later moment" — is simply not given for MCP
+tools in this phase, the same way no authored `when` clause is. A future
+phase that wants it back would need to extend `live_only_tools()` to also
+read from `mcp_tools` (a real, deferred design question, not a "the plan
+figures it out" gap), not merely set a field.
 
 ## 5. Error handling (R-22: "could not ask" ≠ "nothing known")
 
