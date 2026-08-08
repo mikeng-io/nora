@@ -40,6 +40,10 @@ class Conversation:
     ids: frozenset[str]         # `id` plus `also_ids`, matched identically
     persons: frozenset[str] | None   # None == EVERYONE
     label: str = ""             # never matched on (§4.2)
+    # The MCP servers this conversation may use (spec:
+    # mcp-tool-provider-design §2.3). Empty means none — deny-by-default,
+    # the same posture as the rest of this file (R-5).
+    tools: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -113,6 +117,7 @@ class _ConversationEntry(BaseModel):
     also_ids: list[str] = Field(default_factory=list)
     label: str = ""
     persons: list[str] | str = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
 
     @field_validator("persons")
     @classmethod
@@ -168,7 +173,8 @@ def load_policy(path: Path) -> Policy:
         ids = frozenset([entry.id, *entry.also_ids])
         persons = None if entry.persons == EVERYONE else frozenset(entry.persons)
         convo = Conversation(
-            platform=entry.platform, ids=ids, persons=persons, label=entry.label
+            platform=entry.platform, ids=ids, persons=persons, label=entry.label,
+            tools=frozenset(entry.tools),
         )
         conversations.append(convo)
         for cid in ids:
