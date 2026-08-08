@@ -166,6 +166,14 @@ vision_timeout_seconds = 20.0
 enabled = false
 api_key_env = "GOOGLE_MAPS_API_KEY"
 
+# MCP tool providers (spec: docs/superpowers/specs/2026-08-08-mcp-tool-provider-design.md).
+# Off unless enabled=true; the token value goes in .env, never here.
+[tools.mcp.pulse]
+enabled = false
+base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
+token_env = "PULSE_MCP_TOKEN"
+budget = 5
+
 # The presence collector (design/19, DEC-54/55) — a SEPARATE process,
 # `python -m nora.presence`, that records circle members' distinct location
 # fixes into the same `nora` database (PLAINTEXT). The WHOLE SECTION IS OPTIONAL
