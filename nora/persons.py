@@ -108,7 +108,10 @@ def load_persons(path: Path) -> Persons:
         for platform in PLATFORM_FIELDS:
             # (platform, value) → the index of the account block that claimed
             # it, so the two duplicate cases can be told apart below.
-            claimed_by: dict[tuple[str, str], int] = {}
+            # `tuple[str, ...]`, not `tuple[str, str]`: the life360/member_id branch
+            # below widens the key with `circle_id` to a 3-tuple (a member_id
+            # legitimately repeats across circles), so the dedup key is variable-length.
+            claimed_by: dict[tuple[str, ...], int] = {}
             metadata = metadata_keys(platform)
             for account_no, account in enumerate(getattr(entry, platform) or ()):
                 if platform == "life360" and "member_id" in account:
