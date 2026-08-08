@@ -24,14 +24,33 @@ T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
 KEY = ("signal", "conv-1")
 
 
-class _AllowAll:
-    def is_allowed(self, *, platform, conversation_id, person_id) -> bool:
-        return True
+class _RecordingAllowlist:
+    """The `_Allowlist` shape, RECORDING what it was asked.
 
+    A double that ignores its arguments and answers a constant cannot see the
+    defect that matters here. `Policy.is_allowed` enforces the room gate AND
+    the sender gate, and the two diverge exactly where it counts: in a room
+    with an explicit `persons = [...]` list, `person_id=None` is refused; in a
+    room with `persons = "*"` it is ALLOWED. So a regression that dropped the
+    requester — passing `person_id=None`, or the conversation id in its place —
+    would keep every assertion in this file green while quietly firing
+    reminders on behalf of nobody in every wildcard room.
 
-class _DenyAll:
+    `calls` is what makes that visible: the tests below assert the exact
+    keywords, not merely that the predicate was consulted.
+    """
+
+    def __init__(self, *, allow: bool) -> None:
+        self._allow = allow
+        self.calls: list[dict[str, str | None]] = []
+
     def is_allowed(self, *, platform, conversation_id, person_id) -> bool:
-        return False
+        self.calls.append({
+            "platform": platform,
+            "conversation_id": conversation_id,
+            "person_id": person_id,
+        })   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
+        return self._allow
 
 
 class _StoreWithOneFailure(FakeReminderStore):
@@ -94,7 +113,7 @@ def _build(*, store, policy=None, fire=None, slots=None, metrics=None, clock=Non
         # for a fresh one — which hands every test its own private lock and
         # makes the held-slot test pass a turn it should have deferred.
         slots=slots if slots is not None else ConversationSlots(maxlen=16, spawn=lambda c: None),
-        policy=policy or _AllowAll(),
+        policy=policy if policy is not None else _RecordingAllowlist(allow=True),
         clock=clock or (lambda: T0),
         metrics=metrics or Metrics(),
         tick_seconds=60.0,
@@ -107,13 +126,23 @@ async def test_a_due_row_fires_and_is_marked_done():
     store = FakeReminderStore()
     row = _row()
     await store.create(row)
-    loop, fired = _build(store=store)
+    policy = _RecordingAllowlist(allow=True)
+    loop, fired = _build(store=store, policy=policy)
 
     await loop.tick()
 
     assert [r.id for r in fired[0]] == [row.id]
     assert (await store.get(row.id)).state is ReminderState.DONE
     assert (await store.get(row.id)).outcome == "sent"
+    # The allow path asks the SAME question the deny path does. Asserted on
+    # both sides because a screen that dropped the requester would go on
+    # answering True here — and would then be answering it about a room rather
+    # than about a person.
+    assert policy.calls == [{
+        "platform": row.platform,
+        "conversation_id": row.conversation_id,
+        "person_id": row.requester_person_id,
+    }]
 
 
 async def test_a_row_not_yet_due_does_not_fire():
@@ -174,7 +203,8 @@ async def test_a_revoked_conversation_never_fires():
     row = _row()
     await store.create(row)
     metrics = Metrics()
-    loop, fired = _build(store=store, policy=_DenyAll(), metrics=metrics)
+    policy = _RecordingAllowlist(allow=False)
+    loop, fired = _build(store=store, policy=policy, metrics=metrics)
 
     await loop.tick()
 
@@ -182,22 +212,59 @@ async def test_a_revoked_conversation_never_fires():
     assert (await store.get(row.id)).state is ReminderState.FAILED
     assert (await store.get(row.id)).outcome == "failed_policy"
     assert metrics.get("nora_reminders_fired_total", outcome="failed_policy") == 1
+    # The GRANT is (room, person), so the row's requester has to be in the
+    # question. A screen that passed `person_id=None` would be refused here
+    # anyway — and would silently ALLOW in a `persons = "*"` room, which is the
+    # regression this assertion exists to catch.
+    assert policy.calls == [{
+        "platform": row.platform,
+        "conversation_id": row.conversation_id,
+        "person_id": row.requester_person_id,
+    }]
 
 
 async def test_a_held_slot_defers_to_the_next_tick():
     """§5.3: never shed, never wait. The row stays PENDING and the tick moves on
-    — a reminder is not second-critical and the row persists."""
+    — a reminder is not second-critical and the row persists.
+
+    And it is COUNTED. A deferral is invisible to every other signal this
+    feature has: nothing fired, so `nora_reminders_fired_total` is flat; the
+    tick completed, so `nora_heartbeat_last_tick_age_seconds` drops back to
+    zero. A group under continuous tag load can therefore starve its own
+    reminders for hours with the whole dashboard reading healthy, which is what
+    `nora_heartbeat_deferrals_total` is for.
+    """
     store = FakeReminderStore()
     row = _row()
     await store.create(row)
     slots = ConversationSlots(maxlen=16, spawn=lambda c: None)
     slots.acquire(KEY)                       # a tag is in flight
-    loop, fired = _build(store=store, slots=slots)
+    metrics = Metrics()
+    loop, fired = _build(store=store, slots=slots, metrics=metrics)
 
     await loop.tick()
 
     assert fired == []
     assert (await store.get(row.id)).state is ReminderState.PENDING
+    assert metrics.get("nora_heartbeat_deferrals_total") == 1
+    # The two series that CANNOT see this, asserted so the counter's reason for
+    # existing stays pinned rather than merely written down.
+    assert metrics.get("nora_reminders_fired_total") == 0
+    assert metrics.get("nora_heartbeat_last_tick_age_seconds") == 0.0
+
+
+async def test_a_tick_that_fires_normally_counts_no_deferral():
+    """The control. Without it, a counter incremented unconditionally would
+    satisfy the assertion above and make every fired reminder read as starved."""
+    store = FakeReminderStore()
+    await store.create(_row())
+    metrics = Metrics()
+    loop, fired = _build(store=store, metrics=metrics)
+
+    await loop.tick()
+
+    assert len(fired) == 1
+    assert metrics.get("nora_heartbeat_deferrals_total") == 0
 
 
 async def test_the_slot_is_released_even_when_fire_raises():
@@ -418,11 +485,17 @@ async def test_boot_recovery_counts_every_row_it_sweeps():
         await store.create(r)
     metrics = Metrics()
 
-    assert await recover(store=store, metrics=metrics) == 2
+    assert await recover(store=store, metrics=metrics, now=T0) == 2
 
     assert metrics.get("nora_reminders_fired_total", outcome="failed_error") == 2
     assert (await store.get(stuck_a.id)).state is ReminderState.FAILED
+    # The sweep's own timestamp reaches the row, so «when was this handled?» has
+    # an answer for the rows a crash ate — the ones it has an answer for
+    # nowhere else.
+    assert (await store.get(stuck_a.id)).fired_at == T0
+    assert (await store.get(stuck_b.id)).fired_at == T0
     assert (await store.get(ok.id)).state is ReminderState.PENDING
+    assert (await store.get(ok.id)).fired_at is None
 
 
 async def test_recovery_that_sweeps_nothing_counts_nothing():
@@ -430,7 +503,7 @@ async def test_recovery_that_sweeps_nothing_counts_nothing():
     await store.create(_row())
     metrics = Metrics()
 
-    assert await recover(store=store, metrics=metrics) == 0
+    assert await recover(store=store, metrics=metrics, now=T0) == 0
 
     assert metrics.get("nora_reminders_fired_total", outcome="failed_error") == 0
 

@@ -484,14 +484,25 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "against real queries.",
     ),
     # Reminders, the two halves. CREATED is the `remind` tool's own answer —
-    # `status` separates an accepted row from each way the caps refuse one
-    # (too_soon / too_far / too_many), which is the only visibility into a cap
-    # that is set too tight; a refusal is a sentence to a human, and sentences
-    # do not aggregate.
+    # `status` separates an accepted row from each way the tool refuses one,
+    # which is the only visibility into a cap that is set too tight; a refusal
+    # is a sentence to a human, and sentences do not aggregate.
+    #
+    # The help text lists ALL NINE values `nora.agent.tools._record_created` can
+    # emit, not just the caps. An earlier version named four, so an operator
+    # reading the metric's own documentation could not tell whether a status it
+    # omitted (`fire_turn`, `unmapped`, `unparseable`, `past`, `unavailable`)
+    # was a value this series can take or a typo somewhere — and `unavailable`
+    # in particular means reminders are not wired at all, which is the one
+    # status here that is an outage rather than a policy decision. Keep this
+    # list in step with `_record_created`'s call sites.
     _CounterSpec(
         "nora_reminders_created_total",
-        "Reminder creation attempts, by status (created / too_soon / too_far / "
-        "too_many).",
+        "Reminder creation attempts, by status: created; the caps' refusals "
+        "(too_soon / too_far / too_many); the turn-provenance refusal "
+        "(fire_turn); the input refusals (unmapped / unparseable / past); and "
+        "unavailable, which means no reminders store is wired or the write "
+        "failed.",
         ("status",),
     ),
     # FIRED is the tick's outcome per reminder, and it counts the FAILURES the
@@ -505,6 +516,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Reminders resolved by the heartbeat, by outcome (the fire path's own "
         "status, or failed_policy / failed_error).",
         ("outcome",),
+    ),
+    # DEFERRALS are the third reading, and the one neither of the two above can
+    # give. A tick that finds the conversation slot held leaves its rows PENDING
+    # and moves on (§5.3) — nothing fires, nothing fails, and the tick itself
+    # completes, so `nora_reminders_fired_total` never moves and
+    # `nora_heartbeat_last_tick_age_seconds` stays at zero. A busy group can
+    # therefore starve a reminder for hours with every other signal reading
+    # healthy. Counted ONCE PER DEFERRED TURN, not per reminder and not per
+    # distinct row: the same rows are deferred again on the next tick, so this
+    # is a measure of CONTENTION over time (alert on a rate), never a count of
+    # how many reminders are late — `nora reminders list` answers that, by
+    # naming the overdue rows.
+    _CounterSpec(
+        "nora_heartbeat_deferrals_total",
+        "Fire turns the heartbeat deferred to a later tick because the "
+        "conversation slot was held by a tag. One per deferred turn per tick, "
+        "so a sustained rate means a group is starving its own reminders.",
     ),
 )
 

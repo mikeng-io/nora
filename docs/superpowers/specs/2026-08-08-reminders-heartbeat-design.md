@@ -113,6 +113,14 @@ table, and an entry per capability.
 Storing the sentence gives: **every capability Nora gains later is automatically
 remindable.**
 
+**"Their own sentence" is a design intent, not a guarantee, and it is not a
+security property.** The row holds what the MODEL wrote into `remind(text=…)`
+while composing a reply — not a transcribed utterance — on a turn whose
+transcript is group-authored content. Everything below reads correctly with
+that substitution; nothing below should be read as "the row cannot contain
+text somebody else in the room influenced". §15 states the residual and its
+bounds.
+
 *"Request", not "message"* — deliberately. "Message" implies replay through the
 message pipeline, which is exactly §0.1(1)'s mistake. v1 used both words and
 contradicted itself.
@@ -147,7 +155,8 @@ reminders
   platform             text        not null   -- see below
   conversation_id      text        not null   -- set here, fires here (§7.2)
   conversation_type    text        not null   -- 'group' (§0 platform note)
-  text                 text        not null   -- the requester's own sentence
+  text                 text        not null   -- what was asked for, as the model
+                                              -- wrote it (§2's caveat, §15)
   created_at           timestamptz not null
   due_at               timestamptz not null   -- UTC
   state                text        not null   -- pending|firing|done|cancelled|failed
@@ -825,6 +834,7 @@ Even so, fire turns must not silently move tag-path series
 | `nora_reminders_fired_total{outcome}` | `sent` / `failed_*` (§8.1) |
 | `nora_reminders_pending` (gauge) | runaway visible without a query |
 | `nora_heartbeat_last_tick_age_seconds` (gauge) | **liveness** — a gauge that climbs when up-but-not-ticking, which a frozen fired-count cannot show (R-5). Same intent as `nora_presence_last_collection_age_seconds` (`metric_specs.py:489`). |
+| `nora_heartbeat_deferrals_total` | **contention** — §5.3's slot-held deferral, which none of the four above can see. Nothing fired, nothing failed, and the tick COMPLETED, so the fired counter is flat and the liveness gauge returns to zero: a group under continuous tag load can starve its own reminders for hours with the whole dashboard healthy. Counted once per deferred TURN per tick (so the same rows re-count each tick — it is a rate, not a backlog depth; `nora reminders list` names the overdue rows). |
 
 **The liveness gauge only climbs if it is published from outside the tick body.**
 The presence precedent publishes from *inside* its loop
@@ -944,6 +954,48 @@ value asserted in `test_config.py` must match what is added.
   not. Accepted for v1 because the alarms are what have an SLO.
 - §5.3's hoist touches the live tag path. It is the riskiest change in the design
   and it is a prerequisite, so it lands first, alone, behind its own tests.
+- **"The requester's own sentence" is MODEL-MEDIATED, and §2/§4 lean on it as a
+  security argument more than it can bear.** `reminders.text` is not what the
+  person typed — it is the `text=` argument the MODEL wrote while composing a
+  reply, on a turn whose transcript is group content anybody in the room can
+  author. So a member can attempt to steer what gets stored for somebody
+  else, during that other person's tag turn, and the stored sentence is later
+  read back to Nora as a request in §6.4's `<tag_message>`.
+
+  What is *not* wrong here: the escaping. That transcript reaches the model
+  through `build_prefill`, which is R-13/R-13b-escaped and pinned by
+  `test_prefill_escapes_angle_brackets` / `test_forged_closing_tag_is_escaped`
+  — the fire path shares it deliberately (§6.3) rather than hand-rolling a
+  prefill outside those two named tests. The group's text arrives as *framed
+  data*, not as instructions, on both the setting turn and the firing turn.
+  There is no injection *hole* to close; the residual is **model fidelity** —
+  whether she writes down what she was asked for rather than what somebody
+  else in the room suggested she write down.
+
+  Two things make the residual worse here than on a tag turn, and both are
+  properties of this feature rather than of the prompt:
+
+  1. **Deferral removes the live audience.** A strange reply to a tag is read
+     immediately by the person who tagged her, and they say so. A reminder is
+     composed now and delivered hours later, into a room where nobody is
+     waiting (§5.5 places no reaction, by construction), so the sentence that
+     was stored is never checked by a human between the two moments.
+  2. **The check that would catch it is the one thing the CLI can't act on.**
+     `nora reminders list` shows the stored text, but §7.4 makes the control
+     plane read-only — the operator's remedies are `cancel_reminder` through
+     the model, or `[heartbeat] enabled = false` plus a restart, which stops
+     everything rather than one row.
+
+  Accepted for v1, explicitly, not overlooked. The bounds that do hold are
+  structural and are the reason this is a residual rather than a hole: §7.2
+  keeps the destination the conversation the row was set in, so nothing can be
+  steered into a room the requester is not already in; §12 requires a mapped
+  `person_id` and re-checks it at fire time; §9's caps bound the volume; and
+  §5.1 re-checks `policy.toml` at fire time. What is *not* bounded is the
+  content of one sentence spoken into a room the requester was already in.
+  Phase 2 is where that gets revisited — it opens with a measurement anyway
+  (§11), and「what was actually asked for」is exactly the kind of question the
+  staleness check needs a memory read to answer.
 
 ### 15.1 Prior art
 

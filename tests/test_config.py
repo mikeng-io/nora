@@ -251,6 +251,34 @@ def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_p
     assert cfg.reminders.min_lead_seconds > cfg.heartbeat.tick_seconds
 
 
+def test_a_minimum_lead_inside_the_tick_is_refused(toml_path):
+    """The relation was a COMMENT in three files and a rule in none.
+
+    An operator who lengthens the tick past the minimum lead gets a reminder
+    that becomes due inside the tick already running — so Nora answers 「等陣提
+    你」 to something she will not say until after the moment has gone. The
+    promise made at create time is what is at stake, so this refuses to start
+    rather than warning; `policy.toml`'s deny-by-default refusal (R-5) is the
+    precedent for a config that stops the process rather than degrading.
+    """
+    text = toml_path.read_text()
+    toml_path.write_text(text.replace("tick_seconds = 60", "tick_seconds = 600"))
+
+    with pytest.raises(ConfigError, match="min_lead_seconds"):
+        load(toml_path)
+
+
+def test_a_lead_equal_to_the_tick_is_refused_too(toml_path):
+    """`>`, not `>=`. Equal is the boundary the relation exists to exclude: a
+    row due exactly one tick out races the tick that is already running, and
+    which side it lands on is decided by scheduling rather than by config."""
+    text = toml_path.read_text()
+    toml_path.write_text(text.replace("min_lead_seconds = 120", "min_lead_seconds = 60"))
+
+    with pytest.raises(ConfigError, match="min_lead_seconds"):
+        load(toml_path)
+
+
 def test_presence_config_carries_no_ids(toml_path):
     """The [presence] section holds only operational knobs — no circle or member
     ids. Circle membership lives in identity.toml (design/19 §3), so config.toml

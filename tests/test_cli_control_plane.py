@@ -511,6 +511,33 @@ async def test_reminders_list_calls_out_an_overdue_row(env, capsys):
     assert "heartbeat" in out
 
 
+async def test_reminders_list_says_truncated_only_when_it_really_is(env, capsys):
+    """`len(rows) >= limit` called a COMPLETE listing truncated.
+
+    The store answers at most what it is asked for, so a database holding
+    exactly `--limit` rows produces the same length as one that was cut off.
+    The operator was then told to re-run with a larger limit and got the
+    identical output — the report's one piece of advice, wrong every time the
+    counts happen to match. The read asks for one row more than it prints,
+    which is what makes the two states distinguishable.
+    """
+    for i in range(3):
+        await _seed_reminder(env, text=f"row-{i}",
+                             due_at=REMINDER_T0 + timedelta(hours=i + 1))
+
+    assert await invoke(env, "reminders", "list", "--limit", "3") == 0
+    out = capsys.readouterr().out
+    assert "3 pending" in out
+    assert "truncated" not in out          # exactly `limit` rows is COMPLETE
+
+    assert await invoke(env, "reminders", "list", "--limit", "2") == 0
+    out = capsys.readouterr().out
+    assert "2 pending" in out
+    assert "Listing was truncated" in out
+    # And it prints `limit` rows, never the extra one it read to find out.
+    assert "row-2" not in out
+
+
 async def test_reminders_list_refuses_a_non_positive_limit(env, capsys):
     assert await invoke(env, "reminders", "list", "--limit", "0") == 1
     assert "--limit must be positive" in capsys.readouterr().err

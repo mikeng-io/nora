@@ -538,7 +538,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     #
     # `recover` counts what it sweeps; this call site logged and counted nothing,
     # which made a crash that ate reminders invisible to every dashboard.
-    await recover(store=reminders, metrics=metrics)
+    await recover(store=reminders, metrics=metrics, now=datetime.now(UTC))
     # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
     # otherwise every deployment on the shipped default (`enabled = false`)
     # exports 0.0 forever, which reads identically to "ticked a moment ago".

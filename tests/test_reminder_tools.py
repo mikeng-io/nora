@@ -28,6 +28,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from nora.agent import tools as tools_module
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import ConversationTarget, PersonRef
@@ -401,3 +402,34 @@ def test_the_three_tools_are_described_to_the_model():
     block = ToolRegistry().capability()
     for name in ("remind", "list_reminders", "cancel_reminder"):
         assert f"- {name} — " in block
+
+
+# ---- the counter's own documentation ----------------------------------------
+
+def test_every_status_remind_can_emit_is_named_in_the_metric_help():
+    """`nora_reminders_created_total`'s `# HELP` line is the ONLY description of
+    what its `status` axis can hold — the series is unlabelled-by-default in
+    every dashboard until someone reads that line.
+
+    It listed four values while `_record_created` emitted nine, so five real
+    statuses — including `unavailable`, which means no store is wired at all,
+    and `fire_turn`, which is R-39 — were undocumented. An operator seeing one
+    could not tell a genuine status from a typo. Read out of the module SOURCE
+    rather than from a hand-kept list here, so adding a tenth refusal without
+    documenting it is what turns this red.
+    """
+    import re
+    from pathlib import Path
+
+    from nora.obs.metric_specs import _COUNTERS
+
+    source = Path(tools_module.__file__).read_text(encoding="utf-8")
+    emitted = set(re.findall(r'_record_created\(metrics,\s*"([a-z_]+)"', source))
+    assert len(emitted) >= 9, f"expected every status to be a literal; found {emitted}"
+
+    spec = next(c for c in _COUNTERS if c.name == "nora_reminders_created_total")
+    undocumented = {s for s in emitted if s not in spec.help_text}
+    assert not undocumented, (
+        f"nora_reminders_created_total emits {sorted(undocumented)} and its help "
+        f"text does not name them: {spec.help_text!r}"
+    )

@@ -23,6 +23,19 @@ is correct. To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="heartbeat"}` alongside
    `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
 
+   **A reminder can also be hours late with all three of those reading healthy.**
+   A tick that finds the conversation's slot held by a tag leaves the rows
+   `pending` and moves on: nothing fired, nothing failed, and the tick itself
+   completed, so the fired counter is flat and the tick-age gauge drops back to
+   zero. `nora_heartbeat_deferrals_total` is the only signal — a sustained rate
+   means a busy group is starving its own reminders. It counts deferred *turns
+   per tick*, so the same rows re-count each tick; `nora reminders list` is
+   where you find out which rows, and marks them `OVERDUE`.
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep nora_heartbeat_deferrals_total
+   ```
+
    **Those two can disagree, and the disagreement is a reading, not a bug.** A
    reminder that delivered message 1 of 3 and then timed out increments
    `nora_silent_failures_total{audience="heartbeat",reason="invocation_timeout"}`

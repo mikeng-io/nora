@@ -123,10 +123,14 @@ class FakeReminderStore:
         self._put(replace(row, state=ReminderState.CANCELLED))
         return True
 
-    async def sweep_firing(self) -> int:
+    async def sweep_firing(self, *, now: datetime) -> int:
+        stamp = ensure_utc(now, field="now")
         stuck = [r for r in self._rows.values() if r.state is ReminderState.FIRING]
         for r in stuck:
-            self._put(replace(r, state=ReminderState.FAILED, outcome="failed_error"))
+            self._put(replace(
+                r, state=ReminderState.FAILED, fired_at=stamp,
+                outcome="failed_error",
+            ))
         return len(stuck)
 
     async def aclose(self) -> None:

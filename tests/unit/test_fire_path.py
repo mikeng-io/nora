@@ -22,11 +22,12 @@ from nora.app import fire as fire_module
 from nora.app.fire import FirePath
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.ports import PlatformIdentity, SendResult
-from nora.domain.reminders import Reminder, ReminderState
+from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.testing import FakeAgentRunner, ScriptedTurn
 from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
+from nora.testing.reminders import FakeReminderStore
 
 T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
 
@@ -269,6 +270,7 @@ def _fire_path(
     adapter: _FireAdapter | None = None,
     memory: FakeMemoryStore | None = None,
     records: FakeRecordStore | None = None,
+    registry: ToolRegistry | None = None,
     timeout_seconds: float = 5.0,
 ) -> FirePath:
     return FirePath(
@@ -277,7 +279,8 @@ def _fire_path(
         memory=memory if memory is not None else FakeMemoryStore(),
         doctrine_store=doctrine_store, metrics=metrics, runner=runner,
         adapter=adapter if adapter is not None else _FireAdapter(),
-        registry=ToolRegistry(), canary="test-canary", display_name="Nora",
+        registry=registry if registry is not None else ToolRegistry(),
+        canary="test-canary", display_name="Nora",
         nora_sender_id="+85200000000", ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
     )
@@ -447,6 +450,103 @@ async def test_a_peer_card_outage_does_not_cost_the_reminder(
     assert metrics.get(
         "nora_errors_total", stage="fire_peer_card", platform="signal",
     ) == 1
+
+
+# ---------------------------------------------------------------------------
+# The two refusals `run()` OWNS. Both used to be pinned only indirectly — one
+# through `build_context`, one through a tool test that passed the flag by hand
+# — so deleting either line inside `run()` turned nothing red.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_reminder_whose_requester_left_identity_toml_sends_nothing(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """§12's fire-time identity re-check, pinned on `run()` rather than on
+    `build_context`.
+
+    `build_context` reporting `tagger is None` is only half the rule: what
+    matters is what `run()` DOES with it — `failed_policy`, nothing sent,
+    nothing counted. That was asserted nowhere, so deleting the early return in
+    `_turn` left the whole suite green while a row naming a person
+    identity.toml no longer knows ran a full turn on somebody else's behalf.
+
+    All three halves are here, and the counters are the half that is easy to
+    miss: `failed_policy` is not a FAILURE of Nora's, so an R-5 alarm that moved
+    for it would charge a withdrawn grant to the silent-failure budget. The
+    counter that SHOULD move is `nora_reminders_fired_total{failed_policy}`, and
+    that one is the heartbeat's to write (`_resolve`), not this path's.
+    """
+    adapter = _FireAdapter()
+    runner = FakeAgentRunner(_send_turns("記得食藥"))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=runner,
+    )
+
+    outcome = await path.run([_reminder(requester_person_id="ghost")])
+
+    assert outcome == "failed_policy"
+    # Nothing reached the group, and the model was never asked anything.
+    assert adapter.sent == []
+    assert runner.invocations == 0
+    # Nothing was counted. Read with NO labels, which `Metrics.get` sums over
+    # every dimension — an assertion naming a reason would pass against a turn
+    # that raised under a different one.
+    for series in ("nora_silent_failures_total", "nora_llm_stop_reason_total",
+                   "nora_partial_replies_total", "nora_replies_total",
+                   "nora_errors_total"):
+        assert metrics.get(series) == 0, series
+    assert metrics.observations("nora_llm_latency_seconds") == []
+
+
+async def test_the_fire_path_hands_its_tools_the_turn_provenance(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """R-39/§7.1, pinned at the ONE place that connects it to production.
+
+    `remind`'s refusal has its own test, but that test passes `fire_turn=True`
+    into the registry by hand — it proves the tool reads the flag, not that
+    anything ever sets it. The single line that does is
+    `registry.build(..., fire_turn=True)` in `FirePath._turn`, and reverting it
+    to the default turned nothing red anywhere.
+
+    So this builds the registry the way the composition root does, runs a REAL
+    fire turn whose script calls `remind`, and asserts the refusal actually
+    happened: without the flag she re-arms her own reminder every time one comes
+    due, which is recurrence with none of §9's caps able to stop it.
+    """
+    store = FakeReminderStore()
+    registry = ToolRegistry(
+        reminders=store, reminder_caps=ReminderCaps(), clock=lambda: T0,
+    )
+    adapter = _FireAdapter()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, registry=registry,
+        runner=FakeAgentRunner([
+            # Cycle one: she tries to set a fresh reminder from inside the turn
+            # that is a reminder going off. Cycle two: she answers, so the turn
+            # is an ordinary successful fire and the assertions below are about
+            # the refusal alone.
+            ScriptedTurn(tool_calls=[
+                ("remind", {"when": (T0 + timedelta(hours=2)).isoformat(),
+                            "text": "再提我一次"}),
+            ]),
+            *_send_turns("記得食藥"),
+        ]),
+    )
+
+    assert await path.run([_reminder()]) == "sent"
+    assert adapter.texts == ["記得食藥"]
+
+    # The refusal is the assertion; the empty store is what makes it mean
+    # something (a refusal that still wrote the row would satisfy a
+    # status-only check and lose nothing but the truth).
+    assert metrics.get("nora_reminders_created_total", status="fire_turn") == 1
+    assert metrics.get("nora_reminders_created_total", status="created") == 0
+    assert await store.count_pending("miles") == 0
+    assert metrics.get("nora_tool_calls_total", tool="remind", status="refused") == 1
 
 
 def test_the_audience_label_is_the_one_constant_every_fire_counter_carries() -> None:

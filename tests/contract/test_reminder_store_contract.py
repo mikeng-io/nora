@@ -198,13 +198,24 @@ async def test_sweep_resolves_firing_rows_to_failed(store):
     await store.create(stuck)
     await store.create(ok)
 
-    assert await store.sweep_firing() == 1
+    assert await store.sweep_firing(now=LATER) == 1
 
     swept = await store.get(stuck.id)
     assert swept is not None
     assert swept.state is ReminderState.FAILED
     assert swept.outcome == "failed_error"
+    # `fired_at` is STAMPED, exactly as `mark` stamps it on every other terminal
+    # write. A swept row is the one an operator most needs a time on — the
+    # process that set it FIRING is gone and nothing else in the table records
+    # when the crash happened — and both stores used to leave it NULL, so the
+    # row with the least recoverable history was also the only one with no
+    # timestamp at all.
+    assert swept.fired_at == LATER
+    assert swept.fired_at.utcoffset() == timedelta(0)
     assert (await store.get(ok.id)).state is ReminderState.PENDING
+    # Untouched rows keep their NULL: a blanket stamp would date every pending
+    # reminder to the last boot.
+    assert (await store.get(ok.id)).fired_at is None
 
 
 # --------------------------------------------------------------------------

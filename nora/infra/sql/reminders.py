@@ -253,11 +253,20 @@ class SqlReminderStore:
             result = await conn.execute(stmt)
         return bool(result.rowcount)
 
-    async def sweep_firing(self) -> int:
+    async def sweep_firing(self, *, now: datetime) -> int:
+        """`fired_at` is stamped here too, and it is not cosmetic: it records
+        when the row was HANDLED, which for a swept row is the only timestamp
+        that exists — the process that set it FIRING is gone, and nothing else
+        in the table says when. Every other terminal write goes through
+        `_resolve` -> `mark(fired_at=now)`; this one used to be the exception."""
         stmt = (
             sa.update(REMINDERS)
             .where(REMINDERS.c.state == ReminderState.FIRING.value)
-            .values(state=ReminderState.FAILED.value, outcome="failed_error")
+            .values(
+                state=ReminderState.FAILED.value,
+                fired_at=ensure_utc(now, field="now"),
+                outcome="failed_error",
+            )
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)

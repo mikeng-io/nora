@@ -217,8 +217,18 @@ class HeartbeatLoop:
         if not self._slots.try_acquire(slot):
             # A tag owns this conversation. The rows stay PENDING and the next
             # tick finds them again — never queued, never shed.
+            #
+            # COUNTED, not merely logged, and that is not decoration: a deferral
+            # is the one way a reminder goes hours late with every other signal
+            # reading healthy. Nothing fired, so `nora_reminders_fired_total`
+            # does not move; the tick itself completed, so the liveness gauge
+            # returns to zero. A group under continuous tag load could starve
+            # its own reminders indefinitely and the only trace was a log line
+            # at INFO. See the series' spec for why it counts TURNS per tick
+            # rather than distinct reminders.
             log.info("heartbeat deferred %d reminder(s) in %s: slot held",
                      len(allowed), slot[1])
+            self._metrics.inc("nora_heartbeat_deferrals_total")
             return
         try:
             await self._run_turn(allowed, now=now)
@@ -409,8 +419,13 @@ def publish_idle_gauge(metrics: Metrics) -> None:
     )
 
 
-async def recover(*, store: ReminderStore, metrics: Metrics) -> int:
+async def recover(*, store: ReminderStore, metrics: Metrics, now: datetime) -> int:
     """Boot recovery (§8.2): rows a crash left FIRING resolve to FAILED, counted.
+
+    `now` is the moment the sweep ran, stamped onto every row it resolves. The
+    clock arrives as a VALUE rather than being read here for the reason it
+    arrives as a callable on `HeartbeatLoop`: this module reads no wall clock of
+    its own, so the whole of §8.2 is assertable at a fixed instant.
 
     A module-level function, not a method on `HeartbeatLoop`, and called
     UNCONDITIONALLY — a heartbeat that has been switched off is exactly the
@@ -424,7 +439,7 @@ async def recover(*, store: ReminderStore, metrics: Metrics) -> int:
     the rows a crash ate appeared on no dashboard and in no alert, only in a log
     line nobody greps for.
     """
-    swept = await store.sweep_firing()
+    swept = await store.sweep_firing(now=now)
     if not swept:
         return 0
     log.warning(

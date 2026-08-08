@@ -258,7 +258,14 @@ async def cmd_reminders_list(args: argparse.Namespace) -> int:
     url = _database_url(cfg)
     store = readonly_reminder_store(url)
     try:
-        rows = await store.all_pending(limit=limit)
+        # `limit + 1`, and the extra row is dropped below. The store answers at
+        # most what it is asked for, so `len(rows) == limit` is the SAME shape
+        # for a listing that happens to hold exactly `limit` rows and one that
+        # was cut off — and `>= limit` called both of them truncated. That sent
+        # an operator whose database holds precisely `--limit` reminders back to
+        # re-run with a larger one, for nothing. One extra row is what makes the
+        # two distinguishable at all.
+        rows = list(await store.all_pending(limit=limit + 1))
     except Exception as exc:  # one readable line, never a traceback
         raise CliError(
             f"could not read the reminders in {_redacted(url)}: "
@@ -267,12 +274,14 @@ async def cmd_reminders_list(args: argparse.Namespace) -> int:
         ) from exc
     finally:
         await store.aclose()
+    truncated = len(rows) > limit
+    rows = rows[:limit]
 
     for line in report.render_reminders(
         reminders=rows,
         now=datetime.now(UTC),
         source=_redacted(url),
-        truncated=len(rows) >= limit,
+        truncated=truncated,
     ):
         print(line)
     return 0

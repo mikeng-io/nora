@@ -222,9 +222,24 @@ class ReminderStore(Protocol):
         """Scoped on purpose: a uuid carries none of its own."""
         ...
 
-    async def sweep_firing(self) -> int:
+    async def sweep_firing(self, *, now: datetime) -> int:
         """Boot recovery. FIRING rows resolve to FAILED and are never re-fired
-        (at-most-once). Returns how many."""
+        (at-most-once). Returns how many.
+
+        `now` is STAMPED ONTO `fired_at`, for the same reason `mark` stamps it
+        on every other terminal write: `fired_at` records when the reminder was
+        HANDLED, not when it spoke. A swept row is exactly the one an operator
+        asks that of — "when did the crash eat this?" — and the sweep used to
+        leave it NULL, so the one row whose history is unreconstructable from
+        anything else was also the one row with no timestamp. `outcome` is
+        already written (`failed_error`); the stamp is the other half of the
+        same fact.
+
+        Timezone-aware, like every other datetime crossing this port. Passed in
+        rather than read from the wall clock inside each store so the two
+        implementations cannot answer it differently and a test can assert an
+        exact instant.
+        """
         ...
 
     async def aclose(self) -> None: ...
