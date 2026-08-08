@@ -288,3 +288,9 @@ min_lead_seconds = 120     # MUST be > heartbeat.tick_seconds, so a
                            # minimum-lead row cannot land in the tick already
                            # running. Nora refuses to start if it is not.
 max_horizon_days = 30
+
+[tools.mcp.pulse]
+enabled = true
+base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
+token_env = "PULSE_MCP_TOKEN"
+budget = 5
