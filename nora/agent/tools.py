@@ -606,6 +606,39 @@ def _parse_when(raw: str) -> datetime | None:
     return parsed
 
 
+# A row whose `requester_person_id` no longer resolves. NOT the raw person_id:
+# that key is operator vocabulary (`identity.toml`'s table name), and handing it
+# to the model invites her to say it out loud as if it were what the group calls
+# somebody. The listing still carries the row — dropping the field, or the row,
+# would hide a reminder that is genuinely there and genuinely nobody's — so this
+# says the one true thing instead: it exists, and she cannot name who set it.
+#
+# The state is real, not defensive padding: `identity.toml` loads once at startup
+# and a pending row may be thirty days old, so the person it names may have left
+# the file in between. The fire path already reaches the same conclusion from the
+# same lookup and answers `failed_policy` (`nora/app/fire.py`, §12) — a row that
+# lists like this is one that will not fire. The operator side of the question
+# ("which id?") is `nora reminders list`, which prints `who = <person_id>` raw
+# because an operator reads identity.toml and Nora does not.
+_UNKNOWN_OWNER = "someone I can no longer name"
+
+
+def _owner_name(persons, person_id: str) -> str:
+    """The display name for a reminder's requester — `PersonRef.name`.
+
+    The SAME source and the same lookup the fire turn uses
+    (`FirePath.build_context`: `persons.by_person.get(row.requester_person_id)`),
+    so what `list_reminders` calls a person and what she is called when the
+    reminder actually goes out cannot drift apart.
+
+    `getattr(..., {})` for `_known_names`'s reason: `persons` arrives here
+    duck-typed.
+    """
+    ref = getattr(persons, "by_person", {}).get(person_id)
+    name = getattr(ref, "name", "") if ref is not None else ""
+    return name or _UNKNOWN_OWNER
+
+
 def _handle_hex(raw: str) -> str:
     """The hex handle inside whatever the model passed — `a3f2c1`, `[image a3f2c1]`
     or a full sha256 all reduce to the same lowercase hex run.
@@ -2307,6 +2340,14 @@ def build_tool_specs(
         here are the only ones cancel_reminder accepts. It covers this conversation
         only; you cannot see or touch another room's.
 
+        These are the CONVERSATION's reminders, whoever set them — not just the
+        person talking to you. Each row carries `set_by`, the name of the person who
+        asked for it, and you may say whose is whose: 「Tyler 七點嗰個」 is a fair
+        answer, and so is telling someone that the one they just called off was
+        Tyler's. `set_by` reads «someone I can no longer name» when the person who
+        set it is no longer someone you know — the reminder is still real, you just
+        cannot put a name to it.
+
         Outcomes: `ok` with the list (empty means nothing is waiting, which is a real
         answer); `unavailable` when reminders are not configured.
         """
@@ -2333,6 +2374,17 @@ def build_tool_specs(
                 {
                     "id": str(r.id),
                     "text": r.text,
+                    # WHOSE. A reminder is group-owned in a group (§7.3), so this
+                    # listing shows everybody's and anybody here may cancel any of
+                    # them — which is precisely why the name has to be on the row.
+                    # Without it 「取消 Tyler 七點嗰個」 is unanswerable, and one
+                    # person can call off another's with neither of them able to
+                    # see that that is what happened.
+                    #
+                    # `set_by`, not `owner`: the group owns it, this person asked
+                    # for it, and a field called `owner` would tell the model the
+                    # opposite of the rule cancel actually enforces.
+                    "set_by": _owner_name(persons, r.requester_person_id),
                     # Rendered in Nora's own zone rather than UTC: the model
                     # reasons about 「聽日七點」 against the local clock the prefill
                     # stated, and a UTC stamp is one silent subtraction away from
@@ -2349,6 +2401,12 @@ def build_tool_specs(
         Only ids from this conversation work, and only ones still waiting: something
         that has already gone out cannot be un-sent, and this will say so rather than
         pretend.
+
+        Anything set in this conversation can be called off by anyone in it — a
+        reminder belongs to the room it was set in, not to the person who set it.
+        Do not tell somebody a reminder is not theirs to cancel; it is. If calling
+        one off would surprise the person who set it, say whose it was (list_reminders
+        gives you the name) — that is the honest move, not a refusal.
 
         Outcomes: `ok`; `refused` with a note (no such waiting reminder here — it may
         already have fired, or belong to another room); `unavailable` when reminders

@@ -46,6 +46,7 @@ T0 = datetime(2026, 8, 8, 11, 0, tzinfo=UTC)
 SOON = (T0 + timedelta(hours=2)).isoformat()
 
 MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+TYLER = PersonRef(person_id="tyler", name="Tyler Cortez", honcho_peer_id="tyler")
 
 
 class _FakeStore:
@@ -54,6 +55,19 @@ class _FakeStore:
 
 
 class _FakePersons:
+    """The address book, with BOTH of its lookups.
+
+    `resolve` (platform, sender_id) answers None because these tests inject the
+    tagger into `Room` directly rather than through a message. `by_person` is the
+    other lookup — by `person_id`, the one `list_reminders` uses to name whoever
+    set a row, and the one `FirePath.build_context` uses at fire time. A fake
+    carrying only `resolve` made every owner unresolvable, which is the answer
+    the degrade test wants and the WRONG one everywhere else.
+    """
+
+    def __init__(self, *refs: PersonRef) -> None:
+        self.by_person = {ref.person_id: ref for ref in refs}
+
     def resolve(self, platform: str, sender_id: str):
         return None
 
@@ -61,7 +75,7 @@ class _FakePersons:
 def _room(*, tagger: PersonRef | None = MILES) -> Room:
     return Room(
         platform="signal", conversation_id=CONVERSATION, roster_source=None,
-        persons=_FakePersons(), tagger=tagger,
+        persons=_FakePersons(MILES, TYLER), tagger=tagger,
     )
 
 
@@ -74,6 +88,7 @@ def _tools(
     tagger: PersonRef | None = MILES,
     metrics: Metrics | None = None,
     conversation_id: str = CONVERSATION,
+    persons: _FakePersons | None = None,
 ) -> dict:
     """Every native tool, closed over one turn — keyed by name.
 
@@ -83,7 +98,8 @@ def _tools(
     registry = ToolRegistry(reminders=reminders, reminder_caps=caps, clock=clock)
     specs = registry.specs(
         store=_FakeStore(), conversation_id=conversation_id, conversation_type="group",
-        persons=_FakePersons(), honcho=FakeHoncho(), deliverer=SinkSender(),
+        persons=persons if persons is not None else _FakePersons(MILES, TYLER),
+        honcho=FakeHoncho(), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=_room(tagger=tagger),
         fire_turn=fire_turn,
     )
@@ -325,6 +341,64 @@ async def test_list_reminders_is_scoped_to_this_conversation():
     assert result["status"] == "ok"
     assert [r["id"] for r in result["reminders"]] == [str(mine.id)]
     assert [r["text"] for r in result["reminders"]] == ["洗衫"]
+
+
+async def test_list_reminders_names_who_set_each_one():
+    """§7.3's ownership rule made legible. A reminder is group-owned, so this
+    listing shows everybody's and anyone here may cancel any of them — which is
+    exactly why the row has to say whose it is. Without `set_by`, 「取消 Tyler
+    七點嗰個」 is unanswerable and one person can call off another's with neither
+    of them able to see it happened.
+
+    Two DIFFERENT requesters, not one: a `set_by` hard-wired to the tagger — the
+    obvious wrong implementation, since the tagger is right there in the closure
+    — passes a single-requester test and is wrong about every row it did not set.
+    """
+    store = FakeReminderStore()
+    mine = _row(requester_person_id="miles", text="洗衫",
+                due_at=T0 + timedelta(hours=1))
+    tylers = _row(requester_person_id="tyler", text="交租",
+                  due_at=T0 + timedelta(hours=2))
+    await store.create(mine)
+    await store.create(tylers)
+    tools = _tools(reminders=store)
+
+    result = await tools["list_reminders"]()
+
+    assert result["status"] == "ok"
+    assert [(r["text"], r["set_by"]) for r in result["reminders"]] == [
+        ("洗衫", "Miles Novak"), ("交租", "Tyler Cortez"),
+    ]
+
+
+async def test_list_reminders_says_so_when_the_setter_is_no_longer_known():
+    """identity.toml loads once at startup and a pending row may be thirty days
+    old, so the person it names may have left the file — the same lookup the fire
+    path does, where it means the row will answer `failed_policy` instead of
+    firing (§12).
+
+    Three things are asserted, and each is a way this could go wrong: the row is
+    STILL LISTED (dropping it hides a reminder that is genuinely waiting), the
+    field is non-empty (a blank reads as «nobody set this», which is false), and
+    it is not the raw `person_id` (operator vocabulary from identity.toml, which
+    she would say out loud as if the group called him that).
+    """
+    store = FakeReminderStore()
+    orphan = _row(requester_person_id="someone_who_left", text="洗衫")
+    await store.create(orphan)
+    # The address book still knows Miles — the row's person is the one missing,
+    # not the whole book. A `by_person={}` fake would pass against a lookup that
+    # was broken for everybody.
+    tools = _tools(reminders=store, persons=_FakePersons(MILES))
+
+    result = await tools["list_reminders"]()
+
+    assert result["status"] == "ok"
+    [row] = result["reminders"]
+    assert row["id"] == str(orphan.id)
+    assert row["set_by"]
+    assert "someone_who_left" not in row["set_by"]
+    assert row["set_by"] == tools_module._UNKNOWN_OWNER
 
 
 async def test_cancel_refuses_an_id_from_another_conversation():

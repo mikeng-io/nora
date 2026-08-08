@@ -586,6 +586,38 @@ reminder block carries free text, so R-18 would see nothing to block there eithe
 (`nora/agent/registry.py:248-278`), so scoping is free. `cancel_reminder` re-checks
 scope inside the tool: a uuid carries none of its own.
 
+**Ownership: group-owned in a group, person-owned in a DM — and neither is
+enforced separately.** A reminder belongs to the CONVERSATION it was set in, not to
+the person who set it. `ReminderStore.cancel(id, conversation_id=...)` is the only
+scope check there is, and it produces both halves of the rule on its own: in a group
+anyone in the room may call off anyone's, and when DMs land (§0 — there are none in
+v1) a DM conversation contains exactly one person, so the same check is
+person-scoped without a line changing. That is why the rule is stated as
+conversation scope rather than as an owner test — an owner test would be a second
+authority to keep in step with the first, and the first is the one the store
+already enforces. **Do not add one.**
+
+What conversation scope does not give you is LEGIBILITY, and under group ownership
+that is the part that hurts: anyone may cancel anyone's, so `list_reminders`
+returning `{id, text, due_at}` meant 「取消 Tyler 七點嗰個」 was unanswerable, and
+one person could call off another's with neither of them able to see that that is
+what happened. So each row also carries **`set_by`** — the requester's display name,
+resolved through `Persons.by_person` by exactly the lookup `FirePath.build_context`
+uses on the same id (`nora/agent/tools.py::_owner_name`), so the listing and the
+message she eventually sends call a person the same thing. `set_by` and not `owner`:
+the group owns it, this person asked for it, and `owner` would tell the model the
+opposite of what cancel enforces. `cancel_reminder`'s docstring says the rule
+outright, so she does not tell somebody a reminder is not theirs to cancel.
+
+An id `identity.toml` no longer knows reads «someone I can no longer name». The row
+is still listed — it is genuinely waiting, and dropping it would hide a real
+reminder — and the raw `person_id` is deliberately not shown: it is operator
+vocabulary, and she would say it out loud as though it were what the group calls
+him. (It is also the same lookup that makes the row unfireable, §12 — the fire path
+answers `failed_policy` on it.) The operator's version of the question is
+`nora reminders list`, which already prints `who = <person_id>` raw, which is the
+right answer there: an operator reads `identity.toml`, and Nora does not.
+
 **Store injection:** the reminders store is a per-process collaborator, so it goes
 on `ToolRegistry.__init__` alongside `transit` / `route` / `search` / `presence`
 — the registry docstring (`registry.py:44-66`) makes exactly this argument, and
