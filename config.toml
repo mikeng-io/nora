@@ -63,12 +63,17 @@ temperature = 0.7
 # already holds — nothing to reason through. Measured on deepseek-v4-flash:
 # "none" 4.7s, "low" 9.5s, unset 16.1s, all producing the tool call.
 reasoning_effort = "low"
-# 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container
-# (1.15 MB, effort=low), and the vision per-call budget derives from THIS value
-# — at 30 it computed 9 s, so every real image timed out while the tiny probe
-# PNG passed. 60 derives ~18 s per describe: two image reads plus the text
-# turns still fit the loop.
-timeout_seconds = 60
+# 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container,
+# and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
+# so every real image timed out while the tiny probe PNG passed.
+# 60 → 120 (2026-08-08, Kimi audit): this is the WHOLE-TURN wall-clock
+# (`asyncio.wait_for` in the invoke stage), and a research turn can spend 4×15 s
+# on web_fetch alone — the doubled budgets meant a genuine «幫我搵下邊間餐廳好»
+# turn hit 60 s and died silent. 120 lets a full research turn (fetches + searches
+# + model round-trips) finish; a normal turn is still ~10 s, so this only affects
+# the rare slow research turn (the operator: a longer wait is fine, a person
+# reading a reply needs time too). Vision still derives min(configured 20, 120×0.5).
+timeout_seconds = 120
 
 # The three caps around the WHOLE agent loop for one tag — all measured
 # 2026-08-06, all three previously wrong in the same direction.
