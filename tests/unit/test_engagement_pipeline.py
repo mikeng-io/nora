@@ -508,6 +508,36 @@ async def test_no_send_call_is_counted_when_the_model_never_calls_send_reply():
     assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
     assert memory.fed == []
     assert _held(pipeline) is False
+    # And NO fallback: a plain no-send (end_turn) is a DELIBERATE silence she is
+    # allowed — the never-silent fallback fires only on a budget CUT-OFF.
+    assert metrics.get("nora_loop_exhausted_fallbacks_total") == 0
+
+
+async def test_the_never_silent_fallback_delivers_when_the_loop_is_cut_off():
+    """operator 2026-08-09: a turn cut off by a token/turn cap BEFORE `send_reply`
+    used to leave the group with SILENCE (the repeated weather/carpark failure).
+    Now Nora delivers one honest fallback line — and, having recovered, the turn
+    is NOT also counted a silent failure. One tool call spends the `total_tokens`
+    cap, so the next cycle trips `limit_total_tokens` before any reply."""
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner(
+            [ScriptedTurn(tool_calls=[("now", {})], total_tokens=24_000)]
+        ),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert len(adapter.sent) == 1                                    # a reply, not a void
+    assert metrics.get(
+        "nora_loop_exhausted_fallbacks_total", reason="limit_total_tokens"
+    ) == 1
+    # recovered → NOT a silent failure (the double-count the pre-check ordering avoids)
+    assert metrics.get(
+        "nora_silent_failures_total", reason="limit_total_tokens"
+    ) == 0
 
 
 async def test_latency_and_overhead_are_observed_on_every_path():

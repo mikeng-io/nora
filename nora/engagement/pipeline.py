@@ -64,6 +64,15 @@ from .stages.invoke import AgentRunner
 
 log = logging.getLogger("nora.engagement.pipeline")
 
+# The one line Nora delivers when the agent loop is cut off by a token/turn cap
+# before she could reply (see the NEVER-SILENT FALLBACK below). It is NOT a
+# model-authored reply — the one place the strict "she only sends what send_reply
+# sent" rule bends, because a visible «I couldn't get to it» beats a void the
+# group reads as being ignored. Kept short, generic (the cause varies), Cantonese
+# (her register); a non-Cantonese clone would override it. Carries no identifier,
+# so it passes the leak/egress scans in `Deliverer.deliver` unchanged.
+_EXHAUSTED_FALLBACK = "唔好意思，我一時搞唔掂，遲啲再問我啦 😅"  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
+
 
 class EngagementPipeline:
     def __init__(
@@ -347,6 +356,29 @@ class EngagementPipeline:
                 # edge case — so this is a partial delivery, not a silent turn,
                 # and the `finally` counts it as one.
                 return
+
+            # NEVER-SILENT FALLBACK (operator 2026-08-09): the loop was cut off by
+            # one of R-8's caps (limit_total_tokens/turns/output) BEFORE she sent a
+            # reply — she was mid-work, not declining. A weak model that will not
+            # stop flailing on a hard query (a specific carpark, a weather page)
+            # hits this repeatedly, and to the group silence is indistinguishable
+            # from being ignored. So deliver ONE honest line here — BEFORE
+            # `check_outcome`, so a RECOVERED turn is not also counted a silent
+            # failure. ONLY on a budget cut-off: a plain `end_turn` with no send is
+            # a DELIBERATE silence she is allowed (strict-silence, R-4/R-2) and must
+            # stay silent. If she already sent something (multi-message cut off
+            # mid-stream), `deliverer.delivered` is True and this is skipped — that
+            # is a partial delivery, not a void.
+            cut_off_before_reply = (
+                stop_reason in deliver.BUDGET_STOP_REASONS
+                and not handle.deliverer.delivered
+            )
+            if cut_off_before_reply and await handle.deliverer.deliver(
+                _EXHAUSTED_FALLBACK, source="fallback"
+            ):
+                self._metrics.inc(
+                    "nora_loop_exhausted_fallbacks_total", reason=stop_reason,
+                )
 
             # `stop_reason` is threaded rather than dropped (R-23): without it
             # a turn Strands cut off at one of R-8's caps is indistinguishable

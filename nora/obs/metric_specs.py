@@ -538,6 +538,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "conversation slot was held by a tag. One per deferred turn per tick, "
         "so a sustained rate means a group is starving its own reminders.",
     ),
+    _CounterSpec(
+        "nora_loop_exhausted_fallbacks_total",
+        "Turns where the agent loop was cut off by an R-8 cap before the model "
+        "sent a reply, and Nora delivered the never-silent fallback line instead "
+        "of going silent (operator 2026-08-09). `reason` is the stop cap that "
+        "fired (limit_total_tokens/limit_turns/limit_output_tokens) — a sustained "
+        "rate on one reason is the model flailing into that cap, the tell to "
+        "revisit budgets or the query shape.",
+        ("reason",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
