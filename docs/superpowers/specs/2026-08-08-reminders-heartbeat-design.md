@@ -399,6 +399,23 @@ Consequences to carry into implementation:
   *That ninth site was missed by this section's first draft, which is the
   fourth consecutive enumeration of these call sites to come up short. The count
   is nine; the list above is the list.*
+- **And the fire path needs its OWN counterpart to that ninth site — a tenth,
+  which the first implementation did not have.** `FirePath._turn` ran
+  `resolve_identity`, `rehydrate`, `doctrine_store.get`, `deliver.build`, `Room`,
+  `registry.build`, `build_prefill` and `build_tag_message` with no outer guard,
+  so a fault in any of them propagated to `HeartbeatLoop._run_turn` and was
+  written as `failed_error` — the same string an ordinary model error writes —
+  with `nora_silent_failures_total` never moving. A total wiring fault and a bad
+  model call were one reading, and the last-resort R-5 signal was absent from the
+  path that has no human to notice. It now emits
+  `{reason="handler_error", audience="heartbeat"}`, matching the tag path.
+
+  One deliberate divergence: the fire path catches `Exception`, not the tag
+  path's `BaseException`. The tag path is a spawned turn nobody awaits, so
+  swallowing everything is what makes its silence guarantee unconditional; this
+  one is awaited by `HeartbeatLoop`, whose `run()` loop is cancelled at shutdown,
+  and absorbing a `CancelledError` here would answer `failed_error`, write a
+  terminal row, and swallow the cancellation of the loop itself.
 - **The A8 alarm must filter to `audience="tag"`**, or fire-path failures silently
   consume a <1% budget sized for conversation. The `handler_error` site matters
   most here: it is the last-resort R-5 signal, and an unlabelled one would be
@@ -411,7 +428,12 @@ Consequences to carry into implementation:
   is what §13's liveness argument wants anyway.
 
 **Scope of the label, stated deliberately.** Only `nora_silent_failures_total`
-gets `audience` in v1, because it is the alarm. `Deliverer` also moves
+gets `audience` in v1 *out of the series named here*, because it is the alarm.
+(**Corrected in §13.1**: the model call moves two more shared series —
+`nora_llm_latency_seconds` and `nora_llm_stop_reason_total` — which this section
+did not consider and which now carry `audience` too. That is the fifth
+enumeration of these call sites to come up short, and the count of labelled
+series is three.) `Deliverer` also moves
 `nora_replies_total{status,platform}` (`guards.py:216, 218`),
 `nora_guard_vetoes_total`, `nora_leak_blocks_total` and `nora_egress_blocks_total`,
 and those stay unlabelled — so **a fire-path send is indistinguishable from a tag
@@ -815,6 +837,47 @@ matters.
 
 These append to `_COUNTERS`/`_GAUGES` and flow into `DECLARED_NAMES`.
 
+### 13.1 The "must not move" list was incomplete — corrected after review
+
+The list above named four tag-path series. **It missed the two the model call
+itself moves**, and the fire path shipped writing both of them unlabelled:
+
+| series | what an unlabelled fire turn did to it |
+|---|---|
+| `nora_llm_latency_seconds` | pooled samples bounded by **`[heartbeat] timeout_seconds` = 120** with tag samples bounded by **`[llm] timeout_seconds` = 60**. Two populations, two different ceilings; after the merge neither a p95 nor a bucket count describes either one. |
+| `nora_llm_stop_reason_total{reason}` | `2026-08-08-turn-budget-finding.md:224` recommends alarming on `{reason=~"limit_.*"}`. Unlabelled, that alarm cannot say whether a **tag** or a **reminder** ran out of budget — and the two have different caps, different timeouts and different fixes. |
+
+Both now carry **`audience`**, on the §6.2 precedent and for the §6.2 reason:
+*names* are append-only, labels are not (`metric_specs.py:40-44` records
+`platform` being added to four existing series). Every call site passes it —
+`nora/engagement/stages/invoke.py` as the literal `"tag"` (that stage is the tag
+path's, exclusively) and `nora/app/fire.py` as `AUDIENCE`.
+
+`nora_llm_latency_seconds` is the **first labelled histogram**, which needed one
+mechanical change: `_HistogramSpec` had no `labelnames` field and `Metrics.observe`
+accepted `**labels` while recording them only in its test-readback dict — so a
+call site passing a label got a silently unlabelled sample. `observe` now labels
+the collector, and `observations()` matches labels **partially**, exactly as
+`get()` does, so a caller naming no label still sees every sample.
+
+**`nora_partial_replies_total` (R-25/DEC-42) is the third correction, and it is
+not a label — it is a call the fire path was not making at all.** The send cap is
+3, so multi-message is live on this path too, and a turn that delivered message 1
+of 3 and then timed out is **not silent**: `delivered` is True, §8.1's outcome is
+`sent`, and the row is DONE. The tag path compensates in its `finally` with
+`deliver.truncation_reason` + this counter; the fire path called neither, which
+left the counter's own spec — *"every increment here is a message the group was
+meant to receive"* — unreachable for reminders, and left `docs/runbook.md`
+pointing an operator at two series that contradict each other. `FirePath._turn`
+now has the same `finally`, with `completed` decided at the invocation rather
+than at the end of the block (a fire turn that timed out AFTER delivering still
+answers `sent`, so unlike the tag path it does not return early).
+
+It stays **`{reason, platform}`** with no `audience`: the fire path's increments
+are already separable by `nora_reminders_fired_total`, and splitting a
+DEC-42-era series would divide a number the multi-message rollout is being
+watched on.
+
 **No test will catch it if they are forgotten.** `tests/test_metrics_export.py`
 asserts only that a frozen historical set is still present
 (`PRESERVED_METRIC_NAMES <= DECLARED_NAMES`, `:31`); adding new series requires no
@@ -870,12 +933,15 @@ value asserted in `test_config.py` must match what is added.
   than `search_memory` answer with `partial_view` rather than failing closed.
   Bounded here because §7.2 keeps the room the requester's own.
 - Cap values are unmeasured (§9); phase 2's feasibility is unmeasured (§11).
-- **Only `nora_silent_failures_total` gains the `audience` label.** A fire-path
-  send is therefore indistinguishable from a tag reply in `nora_replies_total`,
-  and likewise in `nora_guard_vetoes_total` / `nora_leak_blocks_total` /
-  `nora_egress_blocks_total` — all of which `Deliverer` moves on both paths. The
-  alarm is separable; the traffic counters are not. Accepted for v1 because the
-  alarm is what has an SLO.
+- **Three series gain the `audience` label** — `nora_silent_failures_total`
+  (§6.2), plus `nora_llm_latency_seconds` and `nora_llm_stop_reason_total`
+  (§13.1, added after review found the fire path moving both unlabelled). A
+  fire-path send is still indistinguishable from a tag reply in
+  `nora_replies_total`, and likewise in `nora_guard_vetoes_total` /
+  `nora_leak_blocks_total` / `nora_egress_blocks_total` — all of which
+  `Deliverer` moves on both paths — and in `nora_partial_replies_total`, which is
+  shared deliberately (§13.1). The alarms are separable; the traffic counters are
+  not. Accepted for v1 because the alarms are what have an SLO.
 - §5.3's hoist touches the live tag path. It is the riskiest change in the design
   and it is a prerequisite, so it lands first, alone, behind its own tests.
 

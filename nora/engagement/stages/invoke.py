@@ -9,6 +9,11 @@ Preserves `Handler._invoke`'s timeout/exception behaviour exactly
   + return silently.
 - `finally` → always `metrics.observe("nora_llm_latency_seconds", elapsed)`.
 
+Every series this stage moves is labelled `audience="tag"` as a literal, all
+four of them: both `nora_silent_failures_total` increments, the latency
+histogram and `nora_llm_stop_reason_total`. This stage IS the tag path and the
+fire turn never enters it — see `run`'s docstring.
+
 Both reasons are R-5 cases with named tests in
 `tests/test_acceptance_rules.py::RULE_TESTS` — the strings must not change.
 
@@ -92,9 +97,12 @@ async def run(
     with (R-23): `limit_total_tokens` and `no_send_call` are different
     failures and used to be the same metric.
 
-    **Both `nora_silent_failures_total` increments below are labelled
-    `audience="tag"` as a literal, because this stage is the TAG path's,
-    exclusively** (design spec §6.2). The heartbeat's fire path deliberately
+    **Every series below is labelled `audience="tag"` as a literal, because
+    this stage is the TAG path's, exclusively** (design spec §6.2, §13). That is
+    both `nora_silent_failures_total` increments, `nora_llm_latency_seconds` and
+    `nora_llm_stop_reason_total` — the last two because a fire turn is bounded
+    by a DIFFERENT timeout and a mixed histogram describes neither population.
+    The heartbeat's fire path deliberately
     does NOT call it: it needs `[heartbeat] timeout_seconds` rather than the
     tier's, and it needs the failure mapped to one of §8.1's outcome strings so
     the reminder row records what actually happened. It calls `runner.invoke`
@@ -128,11 +136,11 @@ async def run(
         ok = False
     finally:
         elapsed = time.perf_counter() - started
-        metrics.observe("nora_llm_latency_seconds", elapsed)
+        metrics.observe("nora_llm_latency_seconds", elapsed, audience="tag")
     if stop_reason is not None:
         # Every completed invocation, not just the ones that ran out of
         # budget: a series that only ever carries `limit_*` cannot say what
         # fraction of turns are being cut off, and `end_turn` being the
         # overwhelming majority is the thing that makes a `limit_*` legible.
-        metrics.inc("nora_llm_stop_reason_total", reason=stop_reason)
+        metrics.inc("nora_llm_stop_reason_total", reason=stop_reason, audience="tag")
     return ok, elapsed, stop_reason

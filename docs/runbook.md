@@ -23,6 +23,19 @@ is correct. To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="heartbeat"}` alongside
    `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
 
+   **Those two can disagree, and the disagreement is a reading, not a bug.** A
+   reminder that delivered message 1 of 3 and then timed out increments
+   `nora_silent_failures_total{audience="heartbeat",reason="invocation_timeout"}`
+   *and* resolves `nora_reminders_fired_total{outcome="sent"}` — because both are
+   true: the invocation was abandoned, and the group did hear something.
+   `nora_partial_replies_total{reason="invocation_failed"}` is the series that
+   says which one it was. Every increment there is a message the group was meant
+   to receive, so read it whenever the two above do not agree:
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep nora_partial_replies_total
+   ```
+
    ```bash
    curl -s http://127.0.0.1:9100/metrics \
      | grep -E 'nora_silent_failures_total\{audience="tag"|nora_tags_total'

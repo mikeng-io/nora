@@ -77,9 +77,11 @@ class Metrics:
             spec.name: Gauge(spec.name, spec.help_text, spec.labelnames, registry=self._registry)
             for spec in _GAUGES
         }
+        self._histogram_labels = {spec.name: spec.labelnames for spec in _HISTOGRAMS}
         self._histograms = {
             spec.name: Histogram(
-                spec.name, spec.help_text, buckets=spec.buckets, registry=self._registry,
+                spec.name, spec.help_text, spec.labelnames, buckets=spec.buckets,
+                registry=self._registry,
             )
             for spec in _HISTOGRAMS
         }
@@ -139,11 +141,35 @@ class Metrics:
         self._gauges[name].set_function(fn)
 
     def observe(self, name: str, value: float, **labels: object) -> None:
-        self._histograms[name].observe(value)
+        """Record one sample, under whatever labels the spec declares.
+
+        `**labels` used to reach the test-readback dict ONLY — the prometheus
+        histogram itself was observed unlabelled — so a call site that passed a
+        label got a series that silently pooled every path's samples together.
+        A histogram that declares no label still takes the fast path below, so
+        the three unlabelled ones are untouched.
+        """
+        histogram = self._histograms[name]
+        labelnames = self._histogram_labels[name]
+        if labelnames:
+            histogram.labels(**_full_labels(labelnames, labels)).observe(value)
+        else:
+            histogram.observe(value)
         self._observations[_obs_key(name, labels)].append(value)
 
     def observations(self, name: str, **labels: object) -> list[float]:
-        return list(self._observations.get(_obs_key(name, labels), []))
+        """Every recorded sample whose labels match every kwarg given.
+
+        PARTIAL matching, exactly as `get` does it and for the same reason: a
+        caller that names no label must keep seeing every sample after a label
+        is added, or "how many model calls happened at all" stops being
+        answerable the day a second audience starts observing.
+        """
+        matched: list[float] = []
+        for (obs_name, obs_labels), values in self._observations.items():
+            if obs_name == name and _series_matches(obs_labels, labels):
+                matched.extend(values)
+        return matched
 
     def snapshot(self) -> dict[tuple, float]:
         """Every counter/gauge sample, keyed `(name, sorted label pairs)`.

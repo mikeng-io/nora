@@ -166,3 +166,25 @@ async def test_llm_latency_is_observed_on_every_path():
     await _run(_FakeRunner(raises=ValueError("boom")), metrics=metrics)
 
     assert len(metrics.observations("nora_llm_latency_seconds")) == 3
+
+
+async def test_this_stage_labels_both_llm_series_audience_tag():
+    """This stage is the TAG path's, exclusively (see the module docstring), so
+    both series it moves say so as a literal.
+
+    Without the label the latency histogram mixes samples bounded by `[llm]
+    timeout_seconds = 60` with fire-turn samples bounded by `[heartbeat]
+    timeout_seconds = 120`, and the `limit_.*` alarm on the stop-reason series
+    cannot say which path ran out of budget.
+    """
+    metrics = Metrics()
+    await _run(_FakeRunner(stop_reason="limit_turns"), metrics=metrics)
+
+    assert metrics.get(
+        "nora_llm_stop_reason_total", reason="limit_turns", audience="tag",
+    ) == 1
+    assert metrics.get(
+        "nora_llm_stop_reason_total", reason="limit_turns", audience="heartbeat",
+    ) == 0
+    assert len(metrics.observations("nora_llm_latency_seconds", audience="tag")) == 1
+    assert metrics.observations("nora_llm_latency_seconds", audience="heartbeat") == []

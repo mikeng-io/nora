@@ -34,6 +34,12 @@ class _HistogramSpec(NamedTuple):
     name: str
     help_text: str
     buckets: tuple[float, ...] = _DEFAULT_BUCKETS
+    # Histograms were label-free until `nora_llm_latency_seconds` gained
+    # `audience` (see its entry below). `Metrics.observe` had accepted `**labels`
+    # and recorded them only in its test-readback dict all along, so a call site
+    # passing one got a silently unlabelled sample — which is why this field, not
+    # the keyword, is what makes a labelled histogram real.
+    labelnames: tuple[str, ...] = ()
 
 
 # Every metric name below already existed before this module's prometheus-client
@@ -247,11 +253,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # an operator what fraction of turns are being cut off. Alert on any
     # sustained `limit_*`; raising a cap without this counter just moves the
     # cliff somewhere nobody is looking.
+    #
+    # **`audience` for the reason `nora_silent_failures_total` has one**, and it
+    # was missed when the heartbeat's fire path shipped. Design §13 named the
+    # tag-path series a fire turn must not silently move and this was not on the
+    # list, so a reminder's turn began sharing it unlabelled. The consequence is
+    # specific rather than tidiness: `2026-08-08-turn-budget-finding.md:224`
+    # recommends alarming on `{reason=~"limit_.*"}`, and without the label that
+    # alarm cannot say whether a tag or a reminder ran out of budget — the two
+    # have different caps, different timeouts and different fixes. Names are
+    # append-only; labels are not (see this module's header).
     _CounterSpec(
         "nora_llm_stop_reason_total",
         "How the agent loop terminated, by Strands stop_reason "
-        "(end_turn / tool_use / limit_turns / limit_total_tokens / ...).",
-        ("reason",),
+        "(end_turn / tool_use / limit_turns / limit_total_tokens / ...) and by "
+        "which path was speaking (audience=\"tag\" | \"heartbeat\").",
+        ("reason", "audience"),
     ),
     # The tools that had NO counter of their own — `now`, `load_transcript`,
     # `send_reply`, and now `calculate` (DEC-35), whose two
@@ -566,7 +583,21 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     _HistogramSpec(
         "nora_tag_latency_seconds", "End-to-end tag latency, including the model call.",
     ),
-    _HistogramSpec("nora_llm_latency_seconds", "Model invocation latency."),
+    # The one LABELLED histogram, and the label is `audience` for the same
+    # reason `nora_llm_stop_reason_total` gained it — except that here the two
+    # populations are not merely hard to tell apart, they are bounded by
+    # DIFFERENT NUMBERS. A tag's invocation is cut at `[llm] timeout_seconds`
+    # (60); a fire turn's at `[heartbeat] timeout_seconds` (120), deliberately,
+    # because nobody is waiting on it. Mixed into one histogram the tail is a
+    # blend of two distributions with two different ceilings, so neither a p95
+    # nor a bucket count means anything about either path.
+    _HistogramSpec(
+        "nora_llm_latency_seconds",
+        "Model invocation latency, by which path was speaking "
+        "(audience=\"tag\" | \"heartbeat\"). The two carry different timeouts.",
+        _DEFAULT_BUCKETS,
+        ("audience",),
+    ),
     _HistogramSpec("nora_overhead_seconds", "Tag latency excluding the model call."),
     # A COUNT, not a duration, so it carries its own buckets — the default set
     # is calibrated for seconds and would put every possible value in the first

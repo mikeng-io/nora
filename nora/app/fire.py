@@ -190,7 +190,22 @@ class FirePath:
 
         card: tuple[str, ...] = ()
         if ref is not None:
-            card = tuple(await self._memory.peer_card(peer_id=ref.honcho_peer_id))
+            try:
+                card = tuple(await self._memory.peer_card(peer_id=ref.honcho_peer_id))
+            except Exception:
+                # Guarded where `TranscriptInjection`'s equivalent is not, and
+                # the asymmetry is §8.2: at-most-once means a raise here writes
+                # `failed_error` and the reminder is GONE. The tag path's
+                # equivalent costs somebody a re-tag. The shipped
+                # `HonchoClient.peer_card` returns `[]` on failure, so nothing
+                # reaches this today — it is here because the cost of the day
+                # something does is a reminder nobody can get back.
+                # Its OWN stage, not `fire_context`: an operator asking which
+                # half of the context went blind must not have to guess.
+                log.exception("fire peer_card read failed; continuing without it")
+                self._metrics.inc(
+                    "nora_errors_total", stage="fire_peer_card", platform=row.platform,
+                )
 
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -229,90 +244,170 @@ class FirePath:
             clear_tag_id()
 
     async def _turn(self, rows: Sequence[Reminder], ctx: TagContext) -> str:
+        """One turn's stages, its last-resort guard, and DEC-42's observable.
+
+        The `except` is the fire path's counterpart to
+        `EngagementPipeline._run_admitted`'s outer guard — §6.2 enumerated nine
+        sites that must carry `audience`, all of them on the tag path, and this
+        is the tenth.
+        Without it every stage between `resolve_identity` and
+        `build_tag_message` could fault straight past `nora_silent_failures_total`
+        into the heartbeat's `failed_error` — the same string an ordinary model
+        error writes, so a total wiring fault and a bad model call were one
+        reading. `handler_error` is R-5's last-resort signal and this is where
+        the fire path raises it.
+
+        `Exception`, not the tag path's `BaseException`, and that is the one
+        deliberate divergence. The tag path is a spawned turn nobody awaits, so
+        swallowing everything is what makes its silence guarantee unconditional.
+        This one is awaited by `HeartbeatLoop`, whose `run()` loop is cancelled
+        at shutdown — absorbing a `CancelledError` here would answer
+        `failed_error`, write a terminal row, and swallow the cancellation of
+        the loop itself.
+
+        The `finally` is DEC-42/R-25 on this path: a turn that sent SOME of its
+        messages and then stopped is NOT silent — `delivered` is True, the
+        outcome is `sent`, the row is DONE — so nothing R-23 built can see it.
+        It runs in a `finally` for the tag path's reason: that is the one point
+        every exit path converges on, the cap-cut loop, the timeout, the
+        `llm_error` and the guard above alike.
+        """
         row = rows[0]
-        tagger = ctx.tagger
-        if tagger is None:
-            # §12: only a mapped person may hold a reminder, re-checked here for
-            # the same reason policy is (§5.1) — identity.toml is read once at
-            # startup and this row may be thirty days old. `failed_policy`, not
-            # `failed_error`: nothing went wrong, the grant went away.
-            log.error(
-                "reminder %s not fired: %s is no longer in identity.toml",
-                row.id, row.requester_person_id,
+        # The three the `finally` reads. LOCALS, never attributes: `FirePath` is
+        # built once per process and outlives every turn, so state parked on
+        # `self` would let one turn's stop reason describe the next one's
+        # delivery — the shape `Handler._guards` had.
+        handle = None
+        stop_reason: str | None = None
+        completed = False
+        try:
+            tagger = ctx.tagger
+            if tagger is None:
+                # §12: only a mapped person may hold a reminder, re-checked here
+                # for the same reason policy is (§5.1) — identity.toml is read
+                # once at startup and this row may be thirty days old.
+                # `failed_policy`, not `failed_error`: nothing went wrong, the
+                # grant went away.
+                log.error(
+                    "reminder %s not fired: %s is no longer in identity.toml",
+                    row.id, row.requester_person_id,
+                )
+                return FAILED_POLICY
+
+            identity = await self._adapter.resolve_identity()
+            self_ids = frozenset(getattr(identity, "aliases", ()))
+            # Without this every @-mention in the transcript — including mentions
+            # of Nora herself — reaches the model as U+FFFC. Same placement as the
+            # tag path: on the assembled context, never at ingest (the audit
+            # stores what arrived) and never in the prefill (which may not import
+            # nora.platform).
+            ctx = MentionRenderer(
+                persons=self._persons, display_name=self._display_name,
+                self_ids=self_ids, metrics=self._metrics,
+            ).rehydrate(ctx)
+
+            doctrine = self._doctrine_store.get(applies_to=AUDIENCE)
+            log.info(
+                "fire turn start (tag_id=%s conversation_id=%s person_id=%s "
+                "reminders=%d doctrine_sha256=%s)",
+                ctx.tag_id, row.conversation_id, tagger.person_id, len(rows),
+                doctrine.sha256,
             )
-            return FAILED_POLICY
 
-        identity = await self._adapter.resolve_identity()
-        self_ids = frozenset(getattr(identity, "aliases", ()))
-        # Without this every @-mention in the transcript — including mentions of
-        # Nora herself — reaches the model as U+FFFC. Same placement as the tag
-        # path: on the assembled context, never at ingest (the audit stores what
-        # arrived) and never in the prefill (which may not import nora.platform).
-        ctx = MentionRenderer(
-            persons=self._persons, display_name=self._display_name,
-            self_ids=self_ids, metrics=self._metrics,
-        ).rehydrate(ctx)
+            handle = deliver.build(
+                store=self._records, adapter=self._adapter,
+                target=ctx.message.target(),
+                doctrine=doctrine, canary=self._canary, tag_id=ctx.tag_id,
+                nora_sender_id=self._nora_sender_id,
+                conversation_id=row.conversation_id,
+                budgets=self._registry.budgets(),
+                terminal=self._registry.terminal_tools(), metrics=self._metrics,
+                audience=AUDIENCE,
+            )
+            room = Room(
+                platform=row.platform, conversation_id=row.conversation_id,
+                roster_source=self._roster_source, persons=self._persons,
+                tagger=tagger, self_ids=self_ids,
+            )
+            tools = self._registry.build(
+                store=self._records, conversation_id=row.conversation_id,
+                conversation_type=row.conversation_type, persons=self._persons,
+                honcho=self._memory, deliverer=handle.deliverer, room=room,
+                question=ctx.message.body, context_window=self._context_window,
+                metrics=self._metrics,
+                # The one thing that tells a tool this turn was not a tag. Task
+                # 6's `remind` refuses on it: a reminder that can set a reminder
+                # is an unbounded loop, and the conversation it would fire into
+                # is this one.
+                fire_turn=True,
+            )
+            now = self._clock().astimezone()
+            pre_fill = build_prefill(
+                ctx, display_name=self._display_name,
+                context_window=self._context_window,
+                now=now, header=_fire_header(rows, tagger, now),
+            )
+            # `tagger.name`, NOT `Persons.display_name(ctx.message)` — that reads
+            # `sender_id`, which is blank here, and would attribute the request to
+            # nobody. Same trap as `build_context`'s `sender_name`.
+            tag_message = build_tag_message(
+                ctx, tagger_name=tagger.name, display_name=self._display_name,
+            )
 
-        doctrine = self._doctrine_store.get(applies_to=AUDIENCE)
-        log.info(
-            "fire turn start (tag_id=%s conversation_id=%s person_id=%s "
-            "reminders=%d doctrine_sha256=%s)",
-            ctx.tag_id, row.conversation_id, tagger.person_id, len(rows),
-            doctrine.sha256,
-        )
+            failure, stop_reason = await self._invoke(
+                doctrine=doctrine, tools=tools, pre_fill=pre_fill,
+                guard=handle.guard, tag_message=tag_message, ctx=ctx,
+                platform=row.platform, deliverer=handle.deliverer,
+            )
+            # `truncation_reason`'s "the turn reached the end of its try block",
+            # decided HERE rather than at the end of it. The tag path can leave
+            # it to the last line because a failed invocation returns early
+            # there; a fire turn that timed out AFTER delivering still answers
+            # `sent` (§8.1: the outcome is `sent` iff the group heard something),
+            # so it runs on to the end of this block, and a `completed = True`
+            # down there would tell `truncation_reason` the invocation finished
+            # when it was abandoned mid-reply — the one case this counter exists
+            # for.
+            completed = failure is None
+            if not handle.deliverer.delivered:
+                return failure if failure is not None else FAILED_ERROR
 
-        handle = deliver.build(
-            store=self._records, adapter=self._adapter, target=ctx.message.target(),
-            doctrine=doctrine, canary=self._canary, tag_id=ctx.tag_id,
-            nora_sender_id=self._nora_sender_id, conversation_id=row.conversation_id,
-            budgets=self._registry.budgets(),
-            terminal=self._registry.terminal_tools(), metrics=self._metrics,
-            audience=AUDIENCE,
-        )
-        room = Room(
-            platform=row.platform, conversation_id=row.conversation_id,
-            roster_source=self._roster_source, persons=self._persons,
-            tagger=tagger, self_ids=self_ids,
-        )
-        tools = self._registry.build(
-            store=self._records, conversation_id=row.conversation_id,
-            conversation_type=row.conversation_type, persons=self._persons,
-            honcho=self._memory, deliverer=handle.deliverer, room=room,
-            question=ctx.message.body, context_window=self._context_window,
-            metrics=self._metrics,
-            # The one thing that tells a tool this turn was not a tag. Task 6's
-            # `remind` refuses on it: a reminder that can set a reminder is an
-            # unbounded loop, and the conversation it would fire into is this one.
-            fire_turn=True,
-        )
-        now = self._clock().astimezone()
-        pre_fill = build_prefill(
-            ctx, display_name=self._display_name, context_window=self._context_window,
-            now=now, header=_fire_header(rows, tagger, now),
-        )
-        # `tagger.name`, NOT `Persons.display_name(ctx.message)` — that reads
-        # `sender_id`, which is blank here, and would attribute the request to
-        # nobody. Same trap as `build_context`'s `sender_name`.
-        tag_message = build_tag_message(
-            ctx, tagger_name=tagger.name, display_name=self._display_name,
-        )
-
-        failure = await self._invoke(
-            doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=handle.guard,
-            tag_message=tag_message, ctx=ctx, platform=row.platform,
-            deliverer=handle.deliverer,
-        )
-        if not handle.deliverer.delivered:
-            return failure if failure is not None else FAILED_ERROR
-
-        # A delivered reply implies a successful invocation — the touch
-        # `deliver.check_outcome` performs, reimplemented rather than inherited
-        # (§6.2). Without it a process whose only recent speech was a reminder
-        # reports a stale LLM on `GET /health`.
-        if self._llm_state is not None:
-            self._llm_state.last_success_at = time.time()
-        await self._feed(handle.deliverer.sent_texts, row.conversation_id)
-        return SENT
+            # A delivered reply implies a successful invocation — the touch
+            # `deliver.check_outcome` performs, reimplemented rather than
+            # inherited (§6.2). Without it a process whose only recent speech was
+            # a reminder reports a stale LLM on `GET /health`.
+            if self._llm_state is not None:
+                self._llm_state.last_success_at = time.time()
+            await self._feed(
+                handle.deliverer.sent_texts, row.conversation_id, row.platform,
+            )
+            return SENT
+        except Exception:
+            log.exception("fire turn failed (tag=%s); staying silent", ctx.tag_id)
+            self._metrics.inc(
+                "nora_silent_failures_total", reason="handler_error",
+                platform=row.platform, audience=AUDIENCE,
+            )
+            # Whatever the invocation reported, this turn did NOT reach its end —
+            # which is what makes `pipeline_error` reachable for a fault raised
+            # after some messages had already gone out.
+            completed = False
+            return FAILED_ERROR
+        finally:
+            messages = handle.deliverer.delivered_count if handle is not None else 0
+            if messages:
+                reason = deliver.truncation_reason(
+                    stop_reason=stop_reason, completed=completed,
+                )
+                if reason is not None:
+                    log.warning(
+                        "partial_reply: %d reminder message(s) sent, then %s "
+                        "(tag=%s)", messages, reason, ctx.tag_id,
+                    )
+                    self._metrics.inc(
+                        "nora_partial_replies_total", reason=reason,
+                        platform=row.platform,
+                    )
 
     async def _invoke(
         self,
@@ -325,14 +420,21 @@ class FirePath:
         ctx: TagContext,
         platform: str,
         deliverer: Any,
-    ) -> str | None:
+    ) -> tuple[str | None, str | None]:
         """The model call, with the heartbeat's own timeout and its own
-        accounting. Returns the §8.1 failure name, or None if the loop finished.
+        accounting. Returns `(failure, stop_reason)`: the §8.1 failure name — or
+        None if the loop finished — and how the loop ENDED.
 
-        A `None` return does NOT mean she spoke — `run` asks the `Deliverer`
+        A `None` failure does NOT mean she spoke — `_turn` asks the `Deliverer`
         that. It means the invocation completed, which is a different fact, and
         conflating them is what `deliver.check_outcome`'s `stop_reason`
         parameter exists to prevent (R-23).
+
+        `stop_reason` is handed back rather than only counted here for the
+        reason `invoke.run` hands it back: `truncation_reason` needs it, and
+        `None` (the invocation never returned) means something different from
+        `"limit_turns"` — a distinction `_turn`'s `finally` cannot recover
+        afterwards.
         """
         started = time.perf_counter()
         stop_reason: str | None = None
@@ -361,11 +463,21 @@ class FirePath:
             )
             failure = FAILED_ERROR
         finally:
+            # `audience` on both, and it is not symmetry for its own sake: this
+            # turn was bounded by `[heartbeat] timeout_seconds`, not the tag
+            # tier's, so an unlabelled sample blends two populations with two
+            # different ceilings and describes neither (§13). Same for the stop
+            # reason — the `limit_.*` alarm
+            # (`2026-08-08-turn-budget-finding.md:224`) has to say which path
+            # ran out of budget, because the caps differ.
             self._metrics.observe(
                 "nora_llm_latency_seconds", time.perf_counter() - started,
+                audience=AUDIENCE,
             )
         if stop_reason is not None:
-            self._metrics.inc("nora_llm_stop_reason_total", reason=stop_reason)
+            self._metrics.inc(
+                "nora_llm_stop_reason_total", reason=stop_reason, audience=AUDIENCE,
+            )
         if failure is None and not deliverer.delivered and not deliverer.attempted:
             # The loop finished and she never called `send_reply`, or one of
             # R-8's caps cut it off. Labelled the way `check_outcome` labels it
@@ -381,9 +493,11 @@ class FirePath:
                 "nora_silent_failures_total", reason=reason,
                 platform=platform, audience=AUDIENCE,
             )
-        return failure
+        return failure, stop_reason
 
-    async def _feed(self, sent_texts: Sequence[str], conversation_id: str) -> None:
+    async def _feed(
+        self, sent_texts: Sequence[str], conversation_id: str, platform: str,
+    ) -> None:
         """Nora's own messages, under the Nora aiPeer, into this conversation's
         session — the tag path's `feedback` stage, awaited rather than spawned.
 
@@ -401,7 +515,14 @@ class FirePath:
             )
         except Exception:
             log.exception("fire turn feedback failed; the reminder was still delivered")
-            self._metrics.inc("nora_errors_total", stage="fire_feedback")
+            # `platform`, because the series DECLARES `(stage, platform)` and an
+            # omitted label records `platform=""` (`Metrics._full_labels`) — a
+            # sample invisible to `nora_errors_total{platform="signal"}`, which
+            # is the filter an operator reaches for first. `fire_context` above
+            # already gets this right; this site did not.
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_feedback", platform=platform,
+            )
 
 
 def _synthetic_message(
