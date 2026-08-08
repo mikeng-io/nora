@@ -44,9 +44,12 @@ def test_gauges_overwrite():
 
 def test_snapshot_includes_recorded_counters():
     m = Metrics()
-    m.inc("nora_silent_failures_total", reason="empty_reply", platform="signal")
+    m.inc(
+        "nora_silent_failures_total", reason="empty_reply", platform="signal", audience="tag",
+    )
     assert m.snapshot()[
-        ("nora_silent_failures_total", (("platform", "signal"), ("reason", "empty_reply")))
+        ("nora_silent_failures_total",
+         (("audience", "tag"), ("platform", "signal"), ("reason", "empty_reply")))
     ] == 1.0
 
 

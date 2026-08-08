@@ -51,6 +51,15 @@ class Deliverer:
     names — construct cleanly and cap her at one message anyway, which is
     exactly the invisible half of that trap.
 
+    **`audience` is REQUIRED and has no default**, for the reason `message_cap`
+    has none. It labels every `nora_silent_failures_total` this class raises —
+    five branches, more than any other single site — with which path was
+    speaking (`"tag"` or `"heartbeat"`). A default would let the heartbeat's
+    fire path construct cleanly and report its failures as conversation
+    failures, spending the A8 budget (`docs/runbook.md`) that is filtered to
+    `audience="tag"` and sized for tags. The reverse mistake is louder and
+    therefore safer: a missing keyword is a `TypeError` at construction.
+
     **`sent_texts` is a LIST, not a `last_text` (Honcho v2, design/24).** The
     old `last_text` fed Nora's reply to Honcho but was WRONG under multi-message
     — a four-message reply fed the last message and silently dropped three
@@ -72,6 +81,7 @@ class Deliverer:
         tag_id: str,
         nora_sender_id: str,
         message_cap: int,
+        audience: str,
         metrics: Metrics,
     ) -> None:
         self._store = store
@@ -79,6 +89,10 @@ class Deliverer:
         self._target = target
         self._tag_id = tag_id
         self._nora_sender_id = nora_sender_id
+        # Which path is speaking — `"tag"` or `"heartbeat"`. Carried only onto
+        # `nora_silent_failures_total`; see the class docstring for why it is
+        # required, and the metric spec for why only that one series gets it.
+        self._audience = audience
         self._metrics = metrics
         self._leak = LeakGuard(doctrine, canary)
         self._doctrine_sha256 = doctrine.sha256
@@ -143,7 +157,8 @@ class Deliverer:
         if not text or not text.strip():                       # R-4
             log.warning("delivery refused: empty reply (tag=%s)", self._tag_id)
             self._metrics.inc(
-                "nora_silent_failures_total", reason="empty_reply", platform=self._target.platform,
+                "nora_silent_failures_total", reason="empty_reply",
+                platform=self._target.platform, audience=self._audience,
             )
             return False
 
@@ -153,7 +168,7 @@ class Deliverer:
             self._metrics.inc("nora_leak_blocks_total")
             self._metrics.inc(
                 "nora_silent_failures_total", reason="doctrine_leak",
-                platform=self._target.platform,
+                platform=self._target.platform, audience=self._audience,
             )
             return False
 
@@ -167,7 +182,7 @@ class Deliverer:
             self._metrics.inc("nora_egress_blocks_total", kind=kind)
             self._metrics.inc(
                 "nora_silent_failures_total", reason="egress_block",
-                platform=self._target.platform,
+                platform=self._target.platform, audience=self._audience,
             )
             return False
 
@@ -191,7 +206,7 @@ class Deliverer:
             log.exception("audit_write_failed (tag=%s); staying silent", self._tag_id)
             self._metrics.inc(
                 "nora_silent_failures_total", reason="audit_write_failed",
-                platform=self._target.platform,
+                platform=self._target.platform, audience=self._audience,
             )
             return False
 
@@ -217,7 +232,8 @@ class Deliverer:
         else:
             self._metrics.inc("nora_replies_total", status="failed", platform=self._target.platform)
             self._metrics.inc(
-                "nora_silent_failures_total", reason="send_failed", platform=self._target.platform,
+                "nora_silent_failures_total", reason="send_failed",
+                platform=self._target.platform, audience=self._audience,
             )
         return result.ok
 

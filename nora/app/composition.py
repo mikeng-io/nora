@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from collections.abc import Coroutine
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -43,7 +43,7 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
-from nora.domain.reminders import Reminder, ReminderStore
+from nora.domain.reminders import ReminderStore
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
@@ -73,6 +73,7 @@ from nora.tag import Debounce
 
 from .agent_runner import LiveAgentRunner
 from .dispatch import Dispatcher
+from .fire import FirePath
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .runtime import BackgroundTasks
 
@@ -520,10 +521,28 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # exports 0.0 forever, which reads identically to "ticked a moment ago".
     publish_idle_gauge(metrics)
     if cfg.heartbeat.enabled:
-        # `_stub_fire` resolves rows without delivering anything, so running the
-        # tick against it SPENDS every reminder that comes due. Refuse to start
-        # instead — see `_refuse_unwired_heartbeat`.
-        _refuse_unwired_heartbeat(fire=_stub_fire)
+        # The real fire turn. It holds the SAME collaborators the tag path does
+        # — one record store, one Honcho client, one runner, one tool registry —
+        # because a fire turn is a turn in the same conversation and a second
+        # set would be a second Nora with her own memory and her own budgets.
+        # It reads doctrine at `applies_to="heartbeat"` itself.
+        fire_path = FirePath(
+            persons=persons, records=audit, memory=memory,
+            doctrine_store=doctrine_store, metrics=metrics,
+            runner=runner, adapter=adapter, registry=tool_registry,
+            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+            nora_sender_id=cfg.platforms.signal.nora_sender_id,
+            ai_peer=cfg.memory.ai_peer,
+            context_window=cfg.store.context_window,
+            limits=limits,
+            # `[heartbeat]`, not `[llm]`: nobody is waiting on a fire turn, so
+            # the 60s chosen for a person staring at a group chat is the wrong
+            # bound (§5.4).
+            timeout_seconds=cfg.heartbeat.timeout_seconds,
+            clock=lambda: datetime.now(UTC),
+            roster_source=roster_source,
+            llm_state=llm_state,
+        )
         heartbeat = HeartbeatLoop(
             store=reminders,
             # The SAME `slots` the engagement pipeline holds. Two instances
@@ -538,7 +557,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             clock=lambda: datetime.now(UTC),
             metrics=metrics,
             tick_seconds=cfg.heartbeat.tick_seconds,
-            fire=_stub_fire,       # Task 5 replaces this with FirePath.run
+            fire=fire_path.run,
         )
         background.spawn(heartbeat.run())
 
@@ -549,51 +568,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client,
     )
-
-
-def _refuse_unwired_heartbeat(
-    *, fire: Callable[[Sequence[Reminder]], Awaitable[str]],
-) -> None:
-    """`[heartbeat] enabled = true` with no fire path is a startup failure.
-
-    Not a degraded start: the tick would claim every due row, hand it to a stub
-    that speaks to nobody, and resolve it. The group hears nothing and the row
-    is spent — a data-loss path dressed as a working feature, and the loudest
-    trace it leaves is a WARNING in a log nobody is reading at 03:00.
-
-    A startup refusal costs one config edit. Reminders consumed by a stub cannot
-    be got back at all, so the asymmetry decides it. This guard is belt and
-    braces over the state-machine fix (`not_wired` now resolves rows FAILED
-    rather than DONE) — FAILED is still terminal, so the reminder is still never
-    delivered; the row merely says so afterwards.
-
-    DELETE THIS when `nora.app.fire.FirePath.run` is wired in `_stub_fire`'s
-    place: the check is a statement about the stub, not about the feature.
-    """
-    if fire is _stub_fire:
-        raise StartupError(
-            "[heartbeat] enabled = true but no fire path is wired yet — the "
-            "tick would resolve every due reminder without delivering it. "
-            "Set enabled = false until nora.app.fire.FirePath is wired in."
-        )
-
-
-async def _stub_fire(reminders: Sequence[Reminder]) -> str:
-    """The `fire` collaborator until `nora.app.fire.FirePath` exists.
-
-    It answers `"not_wired"`, NOT `"sent"`. The string it returns is written to
-    the row's `outcome` column and to `nora_reminders_fired_total{outcome}`, and
-    "sent" there would record a delivery that never happened — the group hears
-    nothing while the metrics say every reminder landed, which is the exact
-    silent-failure shape this repo refuses. `[heartbeat] enabled = false` ships,
-    so nobody reaches this without turning the tick on deliberately; if they do,
-    the warning and the distinct outcome say what is missing.
-    """
-    log.warning(
-        "heartbeat: %d reminder(s) came due but no fire path is wired yet — "
-        "resolved as not_wired, not delivered", len(reminders),
-    )
-    return "not_wired"
 
 
 async def _presence_preflight(

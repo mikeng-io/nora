@@ -44,7 +44,8 @@ MESSAGE_CAP = NATIVE_TOOL_BUDGETS["send_reply"]
 def _deliverer(store, doctrine, sink, metrics=None, *, message_cap=MESSAGE_CAP) -> Deliverer:
     return Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                      canary="CANARY-1", tag_id="tag-1", nora_sender_id="nora",
-                     message_cap=message_cap, metrics=metrics or Metrics())
+                     message_cap=message_cap, audience="tag",
+                     metrics=metrics or Metrics())
 
 
 async def test_happy_path_records_then_sends(store, doctrine):

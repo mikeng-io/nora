@@ -278,7 +278,8 @@ async def _drive(*, terminal, budgets=None) -> _AlwaysCallsNow:
     budgets = budgets or BUDGETS
     deliverer = Deliverer(
         store=_Store(), adapter=SinkSender(), target=TARGET, doctrine=_doctrine(),
-        canary="C", tag_id="t1", nora_sender_id="nora", message_cap=1, metrics=Metrics(),
+        canary="C", tag_id="t1", nora_sender_id="nora", message_cap=1, audience="tag",
+        metrics=Metrics(),
     )
     tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
                           when="the stub turn needs a tool", budget=budgets["now"]))

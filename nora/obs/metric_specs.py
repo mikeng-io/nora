@@ -66,8 +66,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_silent_failures_total",
-        "Failures kept silent from the group, by reason.",
-        ("reason", "platform"),
+        "Failures kept silent from the group, by reason and by which path was "
+        "speaking (audience=\"tag\" | \"heartbeat\").",
+        # `audience` is the ONE label the heartbeat adds to an existing series
+        # (design spec §6.2, §13), and it is added rather than the fire path
+        # getting its own silent-failure series, because isolation-by-omission
+        # was tried twice and undercounted twice: `Deliverer` — which the fire
+        # path MUST use, being the only caller of `adapter.send` — increments
+        # this on five branches of its own, so any "the fire path just doesn't
+        # call the counting code" scheme is wrong by construction.
+        #
+        # **A8 is now `audience="tag"`-filtered** (`docs/runbook.md`). Without
+        # the filter a fire-path failure spends a <1% budget sized for
+        # conversation; without the LABEL at every call site, an unlabelled
+        # increment records `audience=""` (`Metrics._full_labels`) and is
+        # excluded from that filter — silently, and most damagingly at the
+        # `handler_error` site, which is R-5's last-resort signal.
+        ("reason", "platform", "audience"),
     ),
     _CounterSpec("nora_guard_vetoes_total", "ReplyGuard vetoes, by rule.", ("rule",)),
     _CounterSpec(

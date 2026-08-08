@@ -1294,7 +1294,7 @@ if cfg.heartbeat.enabled:
 - Modify: `nora/app/composition.py` (**replace Task 4's `_stub_fire` — Step 8**), `nora/agent/prefill.py` (header parameter), `nora/agent/registry.py` + `nora/agent/tools.py` (the `fire_turn` keyword — **Task 5 owns it, not Task 6**, because Task 5 is the first caller), `nora/obs/metric_specs.py` (`audience` label), `nora/engagement/stages/{deliver,invoke}.py` + `nora/engagement/pipeline.py` + `nora/agent/guards.py` (pass `audience`), `tests/test_metrics_export.py`, `tests/test_metrics_stub.py`, `docs/runbook.md`
 - Test: `tests/unit/test_fire_path.py`
 
-- [ ] **Step 1: Enumerate the call sites with AST, not grep**
+- [x] **Step 1: Enumerate the call sites with AST, not grep**
 
 ```bash
 cd /tmp/nora-reminders && python3 - <<'PY'
@@ -1323,7 +1323,7 @@ calls are multi-line, so only a parser is reliable here.
 If the AST script disagrees with the nine above, **the script wins** — but read
 its output rather than its count.
 
-- [ ] **Step 2: Write the failing test for the synthetic context**
+- [x] **Step 2: Write the failing test for the synthetic context**
 
 `FirePath`'s constructor is declared here rather than in Step 7 so this test can
 exist first — a red checkpoint you cannot write until after the implementation
@@ -1390,22 +1390,22 @@ exist in `tests/conftest.py` — build them in this file from
 the same way Task 4's `_build()` constructs everything it needs in-file.
 `doctrine_store` comes from Task 3's conftest addition.
 
-- [ ] **Step 2b: Run it and watch it fail**
+- [x] **Step 2b: Run it and watch it fail**
 
 Run: `uv run pytest tests/unit/test_fire_path.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'nora.app.fire'`
 
-- [ ] **Step 3: Add the `audience` label to all nine sites**, defaulting to `"tag"` at the tag-path call sites and `"heartbeat"` in the fire path. Missing one leaves `audience=""`, which is worse than no label.
+- [x] **Step 3: Add the `audience` label to all nine sites**, defaulting to `"tag"` at the tag-path call sites and `"heartbeat"` in the fire path. Missing one leaves `audience=""`, which is worse than no label.
 
-- [ ] **Step 4: Fix the three exact-label assertions**
+- [x] **Step 4: Fix the three exact-label assertions**
 
 `tests/test_metrics_export.py:76`, `:152`, and `tests/test_metrics_stub.py:48`. `generate_latest` emits labels **sorted**, so `audience` renders first: `nora_silent_failures_total{audience="tag",platform="signal",reason="llm_error"}`. `test_metrics_stub.py`'s `snapshot()` keys on `tuple(sorted(labels.items()))`, so its exact-2-tuple subscript raises `KeyError` until updated. Every other assertion reads through `Metrics.get`, which subset-matches, and needs no change.
 
-- [ ] **Step 5: Update `docs/runbook.md:10` and `:17`** — the A8 ratio becomes `nora_silent_failures_total{audience="tag"} / nora_tags_total`, and the `curl | grep` recipe follows. Without this the runbook's first diagnostic silently mixes heartbeat failures into a tag-only denominator.
+- [x] **Step 5: Update `docs/runbook.md:10` and `:17`** — the A8 ratio becomes `nora_silent_failures_total{audience="tag"} / nora_tags_total`, and the `curl | grep` recipe follows. Without this the runbook's first diagnostic silently mixes heartbeat failures into a tag-only denominator.
 
-- [ ] **Step 6: `build_prefill` gains `header:`** — parameterise, do not duplicate. R-13/R-13b escaping is pinned to `build_prefill` by `tests/test_acceptance_rules.py:27-28`; a hand-rolled fire prefill would sit outside both named tests. The set-at and due-at facts go in the header, never the body — the body stays the requester's sentence or §2's premise breaks.
+- [x] **Step 6: `build_prefill` gains `header:`** — parameterise, do not duplicate. R-13/R-13b escaping is pinned to `build_prefill` by `tests/test_acceptance_rules.py:27-28`; a hand-rolled fire prefill would sit outside both named tests. The set-at and due-at facts go in the header, never the body — the body stays the requester's sentence or §2's premise breaks.
 
-- [ ] **Step 6b: Thread `fire_turn` through the registry — Task 5 owns this**
+- [x] **Step 6b: Thread `fire_turn` through the registry — Task 5 owns this**
 
 Nothing carries turn provenance today. `ToolRegistry.build` is
 `build(self, *, store, conversation_id, conversation_type, persons, honcho, deliverer, metrics, room, question="", context_window=40)`
@@ -1419,7 +1419,7 @@ that bar is about registry-owned **collaborators**, not per-turn values.
 Task 6 consumes the flag (`remind` refuses when it is True). It cannot be added
 there — Task 5 runs first and calls `build(..., fire_turn=True)`.
 
-- [ ] **Step 7: Write `FirePath` — `build_context(rows)` and `async run(rows) -> str`**
+- [x] **Step 7: Write `FirePath` — `build_context(rows)` and `async run(rows) -> str`**
 
 Two public methods, because the test in Step 2 exercises context assembly
 without a model:
@@ -1432,7 +1432,7 @@ without a model:
 - `async run(rows: Sequence[Reminder]) -> str` — returns the §8.1 outcome, and
   is what Task 4's `fire` parameter is typed against (`Awaitable[str]`) — build `TagContext`, `MentionRenderer.rehydrate`, doctrine at `applies_to="heartbeat"`, `ToolRegistry.build(..., fire_turn=True)`, `runner.invoke` inside its own `asyncio.wait_for` with `[heartbeat] timeout_seconds`, `deliver.build` + `Deliverer`, `feedback.run`. Do **not** call `invoke.run` or `deliver.check_outcome` — both own metric branches the fire path must account for itself.
 
-- [ ] **Step 8: Replace Task 4's stub in `composition.py` — Task 5 owns this**
+- [x] **Step 8: Replace Task 4's stub in `composition.py` — Task 5 owns this**
 
 Task 4 wired `fire=_stub_fire`. **No other task replaces it**, so without this
 step every gate stays green and the heartbeat delivers a stubbed `"sent"`
@@ -1445,7 +1445,7 @@ heartbeat = HeartbeatLoop(..., fire=fire_path.run)
 
 Delete `_stub_fire` in the same commit.
 
-- [ ] **Step 9: Run, gates, commit.**
+- [x] **Step 9: Run, gates, commit.**
 
 ---
 

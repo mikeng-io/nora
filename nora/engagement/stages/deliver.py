@@ -56,7 +56,18 @@ def build(
     budgets: Mapping[str, int],
     terminal: Collection[str],
     metrics: Any,
+    audience: str,
 ) -> DeliveryHandle:
+    """Build the pair `invoke` needs.
+
+    `audience` labels the `Deliverer`'s five `nora_silent_failures_total`
+    branches with which path is speaking — `"tag"` here, `"heartbeat"` from
+    `nora.app.fire.FirePath`. **No default**, at either level: a defaulted
+    `"tag"` would let the fire path be wired without it and report its failures
+    as conversation failures, inside the very budget A8 filters to
+    `audience="tag"` (`docs/runbook.md`). That is invisible; a missing keyword
+    is a `TypeError`.
+    """
     deliverer = Deliverer(
         store=store, adapter=adapter, target=target, doctrine=doctrine, canary=canary,
         tag_id=tag_id, nora_sender_id=nora_sender_id,
@@ -67,6 +78,7 @@ def build(
         # `send_reply` is a wiring fault, and a default would let it start and
         # then bound her replies by a number nobody chose.
         message_cap=budgets["send_reply"],
+        audience=audience,
         metrics=metrics,
     )
     # `budgets` and `terminal` travel together and come from the same place
@@ -148,12 +160,22 @@ def check_outcome(
     worse than a missing one, because it aims the next investigation at the
     wrong thing. No default value, so a new call site cannot quietly go back
     to always saying `no_send_call`.
+
+    **`audience="tag"` is a literal here because this function is the TAG
+    path's, exclusively** (design spec §6.2). The heartbeat's fire path does
+    its own outcome accounting — it has its own timeout and its own §8.1
+    outcome mapping to produce, and a shared `check_outcome` could give it
+    neither. If a second caller ever appears, this literal is wrong and the
+    parameter it needs is `audience`, threaded like `Deliverer`'s.
     """
     if not deliverer.delivered:
         if not deliverer.attempted:
             reason = stop_reason if stop_reason in BUDGET_STOP_REASONS else "no_send_call"
             log.warning("%s (tag=%s); dropping the model's text", reason, tag_id)
-            metrics.inc("nora_silent_failures_total", reason=reason, platform=platform)
+            metrics.inc(
+                "nora_silent_failures_total", reason=reason, platform=platform,
+                audience="tag",
+            )
         return False
     if llm_state is not None:   # a delivered reply implies a successful invocation
         llm_state.last_success_at = time.time()

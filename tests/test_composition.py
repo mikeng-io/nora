@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from nora.app.composition import Dependencies, StartupError, build_dependencies
+from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.config import load
 from nora.infra.blobs import FilesystemBlobStore
@@ -202,19 +203,32 @@ async def test_media_disabled_is_off_even_with_a_valid_key(cfg, monkeypatch):
     assert deps.ingest._blobs is None
 
 
-async def test_the_heartbeat_refuses_to_start_while_the_fire_path_is_a_stub(cfg):
-    """`enabled = true` with no fire path wired is a DATA-LOSS path, not a
-    degraded one: every due row is claimed, handed to a stub that delivers
-    nothing, and resolved. Nobody hears the reminder and the row is spent.
+async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
+    """The tick's `fire` collaborator is a `FirePath`, not a stub.
 
-    So the root refuses to start rather than shredding reminders quietly. A loud
-    startup failure is recoverable in one edit; rows consumed by a stub are not
-    recoverable at all. This check goes away when `nora.app.fire.FirePath` is
-    wired in its place — deleting it is part of that task.
+    This replaces the startup refusal that guarded the stub while it existed.
+    The refusal was a statement about the stub; this is a statement about the
+    feature, and it is the assertion the whole wiring step needs: `HeartbeatLoop`
+    takes `fire` as a collaborator and calls whatever it is handed, so a stub
+    left in place claims every due row, delivers nothing, and resolves it — with
+    every unit test green, because each one supplies its own fake `fire`.
+
+    Reaching into `background._tasks` and `_fire` is the only way to see it from
+    out here: `Dependencies` deliberately exposes no heartbeat, and widening it
+    to make one test easier is exactly what its docstring refuses.
     """
     on = override_config(cfg, {"heartbeat.enabled": True})
-    with pytest.raises(StartupError, match="no fire path is wired"):
-        await build_dependencies(on)
+    deps = await build_dependencies(on)
+    try:
+        loops = [
+            task.get_coro().cr_frame.f_locals["self"]
+            for task in deps.background._tasks
+            if task.get_coro().__qualname__ == "HeartbeatLoop.run"
+        ]
+        assert loops, "the heartbeat loop was not spawned"
+        assert isinstance(loops[0]._fire.__self__, FirePath)
+    finally:
+        await deps.background.cancel_all()
 
 
 async def test_boot_recovery_counts_the_rows_it_swept(cfg, pg_url):

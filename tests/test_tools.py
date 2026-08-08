@@ -64,7 +64,7 @@ async def wiring(pg_url, tmp_path):
     deliverer = Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                           canary="C", tag_id="t1", nora_sender_id="nora",
                           message_cap=NATIVE_TOOL_BUDGETS["send_reply"],
-                          metrics=Metrics())
+                          audience="tag", metrics=Metrics())
     metrics = Metrics()
     persons = load_persons(persons_file)
     # No roster source: this fixture is about the tools that do not need one.

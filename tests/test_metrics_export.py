@@ -71,9 +71,14 @@ def test_declared_unlabeled_counters_render_at_zero_before_first_use():
 
 def test_counters_render_with_labels():
     m = Metrics()
-    m.inc("nora_silent_failures_total", reason="llm_error", platform="signal")
+    m.inc(
+        "nora_silent_failures_total", reason="llm_error", platform="signal", audience="tag",
+    )
     text = m.render()
-    assert 'nora_silent_failures_total{platform="signal",reason="llm_error"} 1.0' in text
+    assert (
+        'nora_silent_failures_total{audience="tag",platform="signal",reason="llm_error"} 1.0'
+        in text
+    )
 
 
 def test_label_values_are_escaped():
@@ -144,12 +149,17 @@ def test_platform_label_present_on_the_four_named_series():
     m = Metrics()
     m.inc("nora_tags_total", platform="signal")
     m.inc("nora_replies_total", status="sent", platform="signal")
-    m.inc("nora_silent_failures_total", reason="empty_reply", platform="signal")
+    m.inc(
+        "nora_silent_failures_total", reason="empty_reply", platform="signal", audience="tag",
+    )
     m.inc("nora_errors_total", stage="ambient", platform="signal")
     text = m.render()
     assert 'nora_tags_total{platform="signal"} 1.0' in text
     assert 'nora_replies_total{platform="signal",status="sent"} 1.0' in text
-    assert 'nora_silent_failures_total{platform="signal",reason="empty_reply"} 1.0' in text
+    assert (
+        'nora_silent_failures_total{audience="tag",platform="signal",reason="empty_reply"} 1.0'
+        in text
+    )
     assert 'nora_errors_total{platform="signal",stage="ambient"} 1.0' in text
 
 

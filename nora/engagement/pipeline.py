@@ -266,6 +266,7 @@ class EngagementPipeline:
                 nora_sender_id=self._nora_sender_id, conversation_id=msg.conversation_id,
                 budgets=self._tool_registry.budgets(),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
+                audience="tag",
             )
             # One `Room` per tag, constructed here and closed over by the three
             # room-scoped tools. Nothing reads the platform roster unless one
@@ -345,8 +346,14 @@ class EngagementPipeline:
             completed = True
         except BaseException:
             log.exception("tag pipeline failed (tag=%s); staying silent", request.tag_id)
+            # `audience="tag"` as a literal: this pipeline IS the tag path, and
+            # the heartbeat's fire turn never enters it. It matters most here of
+            # the nine sites — this is R-5's last-resort signal, and A8 filters
+            # on `audience="tag"`, so an unlabelled increment would be excluded
+            # from the one alarm that is meant to catch a total handler fault.
             self._metrics.inc(
-                "nora_silent_failures_total", reason="handler_error", platform=msg.platform,
+                "nora_silent_failures_total", reason="handler_error",
+                platform=msg.platform, audience="tag",
             )
         finally:
             # Resolved here, not after `check_outcome`, so that EVERY exit path

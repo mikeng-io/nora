@@ -48,6 +48,7 @@ def test_build_wires_the_guard_to_the_same_deliverer():
         store=FakeRecordStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
         conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=Metrics(),
+        audience="tag",
     )
 
     assert isinstance(handle.deliverer, Deliverer)
@@ -61,6 +62,7 @@ async def test_check_outcome_counts_no_send_call_when_the_model_never_attempted(
         store=FakeRecordStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
         budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
+        audience="tag",
     )
 
     delivered = deliver.check_outcome(
@@ -81,6 +83,7 @@ async def test_check_outcome_does_not_double_count_when_the_model_attempted_but_
         store=FakeRecordStore(), adapter=_FakeAdapter(succeed=False), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
         conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
+        audience="tag",
     )
     await handle.deliverer.deliver("hello")
 
@@ -101,6 +104,7 @@ async def test_check_outcome_returns_true_and_sets_llm_state_on_a_delivered_repl
         store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
         conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
+        audience="tag",
     )
     await handle.deliverer.deliver("hello")
     before = time.time()
@@ -121,6 +125,7 @@ async def test_check_outcome_tolerates_no_llm_state():
         store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000",
         conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
+        audience="tag",
     )
     await handle.deliverer.deliver("hello")
 
@@ -146,6 +151,7 @@ async def test_a_turn_cut_off_by_a_budget_cap_is_not_labelled_no_send_call():
             store=FakeRecordStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
             canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
             budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
+            audience="tag",
         )
 
         delivered = deliver.check_outcome(
@@ -170,6 +176,7 @@ async def test_an_ordinary_stop_reason_still_counts_no_send_call():
             store=FakeRecordStore(), adapter=_FakeAdapter(), target=TARGET, doctrine=_doctrine(),
             canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
             budgets=BUDGETS, terminal=TERMINAL, metrics=metrics,
+            audience="tag",
         )
 
         deliver.check_outcome(
@@ -196,6 +203,7 @@ async def test_a_delivered_reply_is_recorded_in_the_audit_store():
         store=store, adapter=_FakeAdapter(succeed=True), target=TARGET, doctrine=_doctrine(),
         canary="CANARY", tag_id="tag-1", nora_sender_id="+8520000", conversation_id="g1",
         budgets=BUDGETS, terminal=TERMINAL, metrics=Metrics(),
+        audience="tag",
     )
 
     await handle.deliverer.deliver("hello")
@@ -218,6 +226,7 @@ def test_build_takes_the_deliverers_message_cap_from_the_same_budget_table():
         doctrine=_doctrine(), canary="CANARY", tag_id="tag-1",
         nora_sender_id="+8520000", conversation_id="g1",
         budgets={**BUDGETS, "send_reply": 4}, terminal=TERMINAL, metrics=Metrics(),
+        audience="tag",
     )
     assert handle.deliverer._message_cap == 4
 

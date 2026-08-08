@@ -724,7 +724,22 @@ def build_tool_specs(
     question: str = "",
     context_window: int = 40,
     ai_peer: str = "nora",
+    fire_turn: bool = False,
 ) -> tuple[ToolSpec, ...]:
+    """Every native tool, closed over one turn's collaborators.
+
+    `fire_turn` is this turn's PROVENANCE: True when the heartbeat's fire path
+    built it (`nora.app.fire.FirePath`), False for a tag. Nothing carried that
+    before, and a tool cannot otherwise tell the two apart — the synthetic
+    message a fire turn is built from is a well-formed `NormalizedMessage` by
+    construction (design spec §6.4), which is exactly what makes it
+    indistinguishable.
+
+    It defaults False so every existing caller is unchanged, and it is threaded
+    from `ToolRegistry.build`. The consumer is `remind`, which refuses inside a
+    fire turn — a reminder that can set a reminder is a loop with no bound, and
+    the turn it would fire into is the one it is already in.
+    """
     # The tag's conversation, captured once. It is the ONLY thing that decides
     # which rows `load_transcript` returns — see DEC-24 for why the model is no
     # longer asked for it. Task 1's cross-group read leak was this value being

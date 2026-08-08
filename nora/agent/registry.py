@@ -253,6 +253,7 @@ class ToolRegistry:
         room: Room,
         question: str = "",
         context_window: int = 40,
+        fire_turn: bool = False,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -262,7 +263,12 @@ class ToolRegistry:
         become one: each is the registry's own long-lived collaborator (or, for
         the cache, its own per-process state), not something a tag brings with
         it, so every caller of `specs()`/`build()` is unchanged by their
-        arrival."""
+        arrival.
+
+        `fire_turn` IS in this signature and does not violate that rule: it is a
+        per-turn VALUE, like `question` and `conversation_id`, not a
+        registry-owned collaborator. The heartbeat's fire path passes True; see
+        `nora.agent.tools.build_tool_specs` for what reads it."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -274,7 +280,7 @@ class ToolRegistry:
             refresher=self._refresher,
             shortener=self._shortener,
             question=question, context_window=context_window,
-            ai_peer=self._ai_peer,
+            ai_peer=self._ai_peer, fire_turn=fire_turn,
         )
 
     def build(
@@ -290,13 +296,18 @@ class ToolRegistry:
         room: Room,
         question: str = "",
         context_window: int = 40,
+        fire_turn: bool = False,
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
-        the old direct `nora.agent.tools.build_tools` import."""
+        the old direct `nora.agent.tools.build_tools` import.
+
+        `nora.app.fire.FirePath` is the other caller, and the only one that
+        passes `fire_turn=True`."""
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
+            fire_turn=fire_turn,
         )
         return [adapt(spec) for spec in specs]

@@ -7,14 +7,25 @@ Five scenarios an operator actually hits, each with the exact command to run.
 Silence is the default behavior (S1) — Nora only ever speaks when tagged, so most silence
 is correct. To tell "quiet" from "broken":
 
-1. Check the silent failure rate: `nora_silent_failures_total / nora_tags_total`, scraped
+1. Check the silent failure rate:
+   `nora_silent_failures_total{audience="tag"} / nora_tags_total`, scraped
    from `GET /metrics`. **Target < 1%** (spec E.6) — this is the escape hatch for
    "invisible when broken": failures stay invisible to the group but must stay *visible*
    to the operator. A sustained rise above 1% means tags are failing, not that nobody
    tagged her.
 
+   **The `audience="tag"` filter is load-bearing, not tidiness.** The heartbeat's
+   fire path (reminders) shares this series and is labelled `audience="heartbeat"`;
+   unfiltered, its failures are charged to a <1% budget whose denominator counts
+   only tags, so a broken heartbeat reads as a broken conversation path and a
+   handful of failed reminders can blow an alarm nobody can then diagnose. The
+   heartbeat's own health is a separate expression —
+   `nora_silent_failures_total{audience="heartbeat"}` alongside
+   `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
+
    ```bash
-   curl -s http://127.0.0.1:9100/metrics | grep -E 'nora_silent_failures_total|nora_tags_total'
+   curl -s http://127.0.0.1:9100/metrics \
+     | grep -E 'nora_silent_failures_total\{audience="tag"|nora_tags_total'
    ```
 
 2. Check `GET /health` — `200` means healthy, `503` means degraded:

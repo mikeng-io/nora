@@ -94,7 +94,8 @@ async def wiring(tmp_path, pg_url):
     doctrine = DoctrineStore(pdir, canary="C", metrics=Metrics()).get()
     deliverer = Deliverer(store=store, adapter=SinkSender(), target=TARGET, doctrine=doctrine,
                           canary="C", tag_id="t1", nora_sender_id="nora",
-                          message_cap=NATIVE_TOOL_BUDGETS["send_reply"], metrics=Metrics())
+                          message_cap=NATIVE_TOOL_BUDGETS["send_reply"], audience="tag",
+                          metrics=Metrics())
     metrics = Metrics()
     persons = load_persons(persons_file)
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=persons)

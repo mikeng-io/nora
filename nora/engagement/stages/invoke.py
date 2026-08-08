@@ -91,6 +91,14 @@ async def run(
     `nora.engagement.stages.deliver.check_outcome` to label a silent turn
     with (R-23): `limit_total_tokens` and `no_send_call` are different
     failures and used to be the same metric.
+
+    **Both `nora_silent_failures_total` increments below are labelled
+    `audience="tag"` as a literal, because this stage is the TAG path's,
+    exclusively** (design spec §6.2). The heartbeat's fire path deliberately
+    does NOT call it: it needs `[heartbeat] timeout_seconds` rather than the
+    tier's, and it needs the failure mapped to one of §8.1's outcome strings so
+    the reminder row records what actually happened. It calls `runner.invoke`
+    inside its own `asyncio.wait_for` and counts its own two failures there.
     """
     started = time.perf_counter()
     ok = True
@@ -108,13 +116,14 @@ async def run(
         log.error("invocation_timeout (tag=%s)", ctx.tag_id)
         metrics.inc(
             "nora_silent_failures_total", reason="invocation_timeout",
-            platform=ctx.message.platform,
+            platform=ctx.message.platform, audience="tag",
         )
         ok = False
     except Exception:
         log.exception("llm_error (tag=%s); staying silent", ctx.tag_id)
         metrics.inc(
-            "nora_silent_failures_total", reason="llm_error", platform=ctx.message.platform,
+            "nora_silent_failures_total", reason="llm_error",
+            platform=ctx.message.platform, audience="tag",
         )
         ok = False
     finally:
