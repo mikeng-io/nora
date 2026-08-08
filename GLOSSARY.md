@@ -112,10 +112,36 @@ A capability claim in an authored file now **fails to load**.
 - **turn** — everything from admission to reply. Contains several **model
   calls**; each call is a **round trip** (~4s) and each retained tool result is
   **re-sent on every subsequent call**, which is why intake compounds.
-- **terminal verb** — a tool that ends the turn. Today only `send_reply`.
+- **fire turn** — a turn nobody asked for. The heartbeat builds it when a
+  reminder comes due: same stages, same guards, but no tag behind it. The
+  second of exactly two paths that may send (R-1b).
+- **terminal verb** — a tool that ends the turn. Today only `send_reply`, on
+  both paths — a fire turn has no way to choose silence (that waits for the
+  staleness check).
 - **prefill** — the three messages built before the tag message.
-- **context header** — the static block explaining how the turn works. Contains
-  nothing that varies between tags (prompt-cache prefix discipline).
+- **context header** — the block explaining how the turn works. Its opening
+  paragraph is the one thing that differs between a tag and a fire turn:
+  "somebody just called you" versus "nobody has, and here is why you are awake".
+
+## Reminders
+
+- **reminder** — a *deferred request*: a row holding what someone asked for and
+  when it comes due. Not a stored message to replay — at fire time it is put to
+  her as a request and she answers it, so anything she can do now she can be
+  reminded to do later.
+- **heartbeat** — the tick that wakes on an interval, finds due rows and runs
+  their turns. Knows that time passed; knows nothing about why it matters.
+  (Not `nora.obs.logging.heartbeat`, which is a 60s counters log line.)
+- **claim** — `pending → firing` as a compare-and-set inside the statement, not
+  a read-then-write. This is what makes a row fire *once, ever* (R-37).
+- **at-most-once** — the decision behind a crash. A row left `firing` by a dead
+  process resolves to `failed`, never re-queued: losing one reminder visibly
+  beats sending one twice (R-37b).
+- **the slot** — one in-flight turn per conversation, shared by both paths, so
+  a reminder and a tag can never run at once in the same room. Held by
+  `ConversationSlots`; a tick that cannot take it defers to the next one.
+- **ownership** — group-owned in a group, person-owned in a DM. Not enforced
+  separately: it falls out of cancellation being scoped to the conversation.
 
 ## Guards
 

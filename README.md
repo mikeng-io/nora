@@ -61,10 +61,19 @@ Signal group
 ② TAGGING PATH (trigger only, via the Strands Agents SDK)
    collect context (recent buffer rows, tagger's Honcho peer card, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
-   → tools: now / read_buffer / send_reply
+   → tools: now / load_transcript / send_reply
             + room-scoped: group_members / lookup_person / about
+            + reminders: remind / list_reminders / cancel_reminder
    → reply → audit row (delivery_status=pending → sent/failed) → Honcho feed
+
+③ FIRE PATH (no trigger, no tag — the heartbeat, [heartbeat] enabled)
+   tick → due rows → re-check policy → take the conversation's slot
+   → same context/prefill/guards as ②, with its own header and timeout
+   → reply → audit row → Honcho feed
 ```
+
+Path ③ is the only reason Nora ever speaks without being asked. It ships
+disabled; the set of senders is closed and enumerated at two (R-1b).
 
 Ambient traffic never touches the Strands Agent SDK — it is a pure, deterministic write
 path (Postgres + Honcho). The Agent SDK is constructed, invoked, and discarded **once per
