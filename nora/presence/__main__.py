@@ -47,7 +47,19 @@ def _metrics_app(
     DB write, so `where_is` stays a pure DB reader and no Life360 credential lands
     in Nora. 200 once a fresh fix is written, 408 on timeout / nothing fresher,
     503 when collection is disabled. Best-effort: never 500s (a failed refresh
-    leaves `where_is` reading the last stored fix)."""
+    leaves `where_is` reading the last stored fix).
+
+    ACCEPTED RISK — no rate-limit, no coalescing (operator, 2026-08-08, DEC-69).
+    Each call fires an independent Life360 location request, so N simultaneous
+    «where_is Miles» tags would fire N pings for one member (and a flapping caller
+    could hammer Life360 toward its 429 ban). This is accepted, not overlooked,
+    because the surface is INTERNAL: the endpoint binds the compose network only,
+    is reachable solely by Nora (not the internet), and `where_is`'s own budget
+    (2/tag) bounds the per-tag rate. The collector's `auth_failures` back-off is
+    the real ban guard (a 429 stops the loop); this endpoint adds no throttle on
+    top. If a second internal caller is ever added, revisit — a per-person cooldown
+    + concurrent-request coalescing is the fix, deferred until there's a caller
+    that needs it."""
     app = web.Application()
 
     async def metrics_endpoint(_: web.Request) -> web.Response:

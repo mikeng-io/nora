@@ -14,8 +14,10 @@ to turn it into a place name. That egress is the collector's alone and never the
 model's: the resolved NAME is what reaches Nora, the coordinate never does
 (DEC-24/60), and `whereis` stays a pure local-DB read that itself sends nothing.
 (The earlier «design/14 §2.2 on-host geocoding» citation was wrong — the call is
-off-host to Google; a proper decision record for the collector's coordinate
-egress is a governance follow-up flagged by the 2026-08-08 audit.)
+off-host to Google. DEC-69 is the decision record for this coordinate egress:
+R-28 governs what leaves toward the MODEL/GROUP, and the collector is neither, so
+sending the coordinate host→Google to get a name back is an accepted egress, not
+an R-28 breach — the resolved name is all Nora ever sees.)
 
 Uses the classic Geocoding API, which is a GET with the key in the query string
 (NOT the `X-Goog-Api-Key` header the Routes/Places v1 endpoints use — a different

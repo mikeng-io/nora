@@ -15,8 +15,17 @@ set -euo pipefail
 # answered 404 — real, sensitive, reachable. Nora's code blocks the direct and
 # post-redirect paths (is_global + sourceURL re-check + the allowed_urls fence),
 # but the airtight closure is to stop Firecrawl reaching private ranges AT THE
-# NETWORK, so even a rebind cannot route there. That is this script, and it is
-# the gate `config.toml [search] fetch_enabled` waits on.
+# NETWORK, so even a rebind cannot route there. That is this script.
+#
+# NOTE (2026-08-08, DEC-69): `fetch_enabled` was turned ON WITHOUT this script
+# being the persistent gate it was designed to be — the operator accepted the
+# blind-SSRF residual for the alpha, so today the live SSRF control is Nora's
+# code alone (R-34's fence + is_global precheck), NOT this network isolation.
+# This script still works when applied; the open problem is PERSISTENCE — the
+# "RE-RUN after any compose up" note below is manual and has no canary, so the
+# rules silently vanish. Making that automatic (a root systemd/docker-event
+# reapply, NOT a NOPASSWD sudoers that would weaken this root gate) is the one
+# live governance follow-up left.
 #
 # WHAT FIRECRAWL STILL NEEDS, and this preserves: its own backend services
 # (redis / postgres / rabbitmq / playwright, all on the firecrawl_backend
