@@ -686,8 +686,8 @@ class McpMountConfig(BaseModel):
 
 class ToolsConfig(BaseModel):
     """The `[tools.mcp.<name>]` mount points (spec §2.2). A second server is
-    a second `mcp` dict entry — no schema change, matching ARCHITECTURE.md's
-    documented target ("add an MCP server -> no Python")."""
+    a second `mcp` dict entry — no schema change, matching the ARCHITECTURE
+    doc's documented target ("add an MCP server -> no Python")."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
