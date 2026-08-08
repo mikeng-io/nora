@@ -137,60 +137,126 @@ a deployment one.
 **`nora/agent/mcp.py`** (new). The only module besides `factory.py` that
 touches `strands`'s MCP client machinery — consistent with the package
 table's existing rule that `agent/` is the sole package allowed to import
-`strands`. One function:
+`strands`. Built on `strands.tools.mcp.mcp_client.MCPClient.load_servers()`
+— an existing Strands classmethod, not something this spec invents — which
+takes an `mcpServers`-shaped mapping (`{name: {"url": ..., "headers": ...,
+"continue_on_error": ...}}`), auto-detects transport, and supports
+`${env:VAR}` interpolation in string values natively. `nora/agent/mcp.py`'s
+one function translates `dict[str, McpMount]` (the plain domain type §3.1
+below, never `nora.config`) into that shape — putting
+`"Authorization": "Bearer ${env:<token_env>}"` in `headers` so the token
+read happens inside Strands' own interpolation, not in Nora's code — sets
+`continue_on_error: True` on every entry (a dead Pulse server must not
+prevent Nora from starting), calls `load_servers()`, then `.start()` and
+`.list_tools_sync()` on each returned client. `continue_on_error` only
+covers connection failure (`start()`); a failure during `list_tools_sync()`
+after a successful connect still raises and must be caught explicitly (§5).
+Connection happens once at process start (`nora/app/composition.py`), the
+same lifecycle as `factory.create_client` — never per-tag.
 
-```python
-def build_mcp_tools(cfg: dict[str, McpMountConfig]) -> dict[str, McpToolGroup]:
-    ...
-```
+`build_mcp_tools(mounts: dict[str, McpMount]) -> dict[str, McpToolGroup]` is
+the module's one function, where `McpToolGroup` is a plain frozen dataclass
+(also in `nora/agent/mcp.py`): `budget: int` (copied from the `McpMount`)
+and `tools: tuple[Any, ...]` (the `MCPAgentTool` objects `list_tools_sync()`
+returned — typed `Any` rather than importing Strands' own type into a
+signature `ToolRegistry` will also use, matching how `ports.py` already
+keeps its `adapt()` return typed `Any` for the same reason). A server that
+fails to connect or returns zero tools is simply absent from the returned
+dict, never a `None` value or an empty-but-present entry — callers use
+`dict.get(name)` and treat "not present" as the one absent state, matching
+this codebase's existing avoidance of a second falsy-but-different state
+(R-22's "could not ask" vs "nothing known" distinction, applied here to
+"not configured" vs "configured, discovered, present").
 
-For each `enabled` entry: read the token from `os.environ[token_env]`
-(missing/empty is a **startup warning + that server's tools absent**, never a
-crash — see §5), open an `MCPClient` against `base_url`, call
-`list_tools_sync()`, and return the discovered Strands tool objects paired
-with that server's `budget`. Connection happens once at process start
-(`nora/app/composition.py`), the same lifecycle as `factory.create_client` —
-never per-tag.
+### 3.1 The `nora.agent` / `nora.config` layer boundary
 
-**`nora/agent/registry.py` — new surface, not a reuse of an existing merge.**
+`nora/agent/mcp.py` may not import `nora.config` — import-linter's "only app
+and __main__ read config" contract (`pyproject.toml`'s
+`[[tool.importlinter.contracts]]`, `name = "only app and __main__ read
+config"`) names `nora.agent` as a source module and `nora.config` as
+forbidden, exactly the constraint `ToolRegistry.__init__`'s
+`reminder_caps: ReminderCaps` already satisfies (`nora/agent/registry.py`,
+composition.py's comment: *"`nora.agent` may not import `nora.config`... THIS
+is the conversion point"*). This spec follows the identical shape: a plain
+frozen `McpMount` dataclass in `nora/agent/mcp.py` (`name`, `base_url`,
+`token_env`, `budget`), and `nora/app/composition.py` converts each
+`cfg.tools.mcp[name]` (`McpMountConfig`, pydantic, `nora.config`) into one
+`McpMount` before calling `build_mcp_tools()` — the same
+`SomeDomainType(**cfg.something.model_dump())` pattern already used for
+`ReminderCaps`.
+
+**`nora/agent/registry.py` — new surface, not a reuse of an existing merge,
+and narrower than the previous draft of this spec claimed.**
+`ToolRegistry` is a **process-wide singleton**, built once by the
+composition root (its own module docstring: *"a plain, constructed
+collaborator... built once per process by the composition root"* —
+`nora/app/composition.py:465`) — "per-tag" behavior comes from `.build()`/
+`.specs()` being CALLED with fresh per-tag arguments (`Room`,
+`conversation_id`, …), not from constructing a new `ToolRegistry` per tag.
 Today `ToolRegistry.budgets()` is a straight `dict(NATIVE_TOOL_BUDGETS)` read
-of a module-level constant, and the room-scoped tools (`group_members`/
-`lookup_person`/`about`) aren't "merged" at construction either — they're
-three more static entries in the same `NATIVE_TOOLS` table, and `build()`/
-`specs()` are pure pass-throughs to `build_tool_specs`, which only knows that
-table. There is no existing mechanism for combining a static native-tool
-table with a dynamically-discovered, per-instance set of MCP tool groups —
-this spec introduces that capability, it doesn't extend one that already
-exists. **Open for the plan to pin down**, not decided here: whether
-`ToolRegistry.__init__` gains a new constructor parameter for MCP tool
-groups, or whether they're composed into a combined `ToolSpec` mapping at
-the composition root before a `ToolRegistry` is built. Either way,
-`.budgets()` must fold in each MCP tool's per-server budget, and `ReplyGuard`
-(DEC-10) needs no changes — it already consumes whatever `budgets()` returns,
-regardless of where those entries came from.
+of a module-level constant, and `capability()`/`tool_names()`/
+`terminal_tools()`/`live_only_tools()` all read that same static
+`NATIVE_TOOLS` table and nothing else. There is no existing mechanism for
+combining that static table with a dynamically-discovered, per-instance set
+of MCP tool groups — this spec introduces the capability, it doesn't extend
+one that already exists:
 
-**Conversation-scoped filtering.** The room-scoped native tools are already
-built as per-tag closures (`ToolRegistry.build` closes over one `Room` per
-tag — package table, ARCHITECTURE.md:152), so a `ToolRegistry` instance is
-already a per-tag construction, not a process-wide singleton. Policy.toml's
-existing gating is enforced by the loader at `nora/policy.py` and the
-room-membership check at `nora/ingest/stages/scope.py` (DEC-18: "the ROOM is
-checked BEFORE the audit write") — **not** `nora/ingest/policy.py`, which is
-`TriggerTextPolicy`, the unrelated trigger-word engagement gate. Whatever
-resolves this tag's conversation during ingest intersects the available MCP
-tool groups against that conversation's `tools` allowlist **before** the
-tool list is handed to that tag's `ToolRegistry` construction. An
-unauthorized conversation's model call never sees a `pulse_*` schema —
-design/12 §3's "scope enforced at assembly, never at egress" rule, applied
-to a new kind of scope (server name) the same way it already applies to
-person/group scope. Because filtering happens pre-construction, whatever
-`ToolRegistry.capability()` renders into the doctrine prompt (the one
-generated capability catalogue, DEC-28/DEC-29) is scoped for free — it
-describes only the tool set that specific instance was built with, so an
-unauthorized conversation's prompt never mentions Pulse either, without
-`capability()` itself needing a conversation parameter. §6 adds a test for
-this specifically, since it's easy to get backwards (filter after
-construction instead of before) and have it silently stop holding.
+- `ToolRegistry.__init__` gains an `mcp_tools: Mapping[str, McpToolGroup] =
+  {}` collaborator parameter, held the same way `transit`/`route`/etc. are.
+- `.budgets()` folds in a flat entry per discovered MCP tool name
+  (`{tool.tool_name: group.budget for group in mcp_tools.values() for tool
+  in group.tools}`), **unconditionally, for every tag** — this dict is never
+  rendered into a prompt or otherwise disclosed (it is `ReplyGuard`'s
+  internal per-call-count ceiling, `nora/agent/guards.py`), so an entry for
+  a tool a given conversation can never actually call is inert, not a leak.
+  No conversation parameter needed here.
+- `.specs()`/`.build()` gain a new parameter, `allowed_mcp: frozenset[str] =
+  frozenset()` (server names, e.g. `{"pulse"}`), and append the Strands tool
+  objects from only the MCP groups named in it to what they already return.
+  **This is the actual enforcement point** — a tool not in the returned list
+  cannot be called, because `Agent(tools=...)` only knows what it's handed.
+- `capability()`, `tool_names()`, `terminal_tools()`, `live_only_tools()`
+  stay **completely unchanged**. MCP tools are deliberately never added to
+  `NATIVE_TOOLS` (that table is hand-authored, `when`-per-entry, no
+  default — an auto-discovered tool has no such clause to give it) and so
+  never enter the generated doctrine capability text at all. This is a
+  correction of the previous draft, which claimed `capability()` would stay
+  correctly scoped "for free" because `ToolRegistry` was (wrongly assumed to
+  be) built per-tag — it is not, `capability()` is generated ONCE at startup
+  by a throwaway `ToolRegistry()` (`nora/app/composition.py:241-242`, feeding
+  `DoctrineStore`), fully disconnected from any conversation. Excluding MCP
+  tools from that generation entirely sidesteps the question rather than
+  needing to answer it, and avoids touching DEC-28/DEC-29's tested
+  invariant ("no doctrine file may name a tool") at all. Nora relies on each
+  MCP tool's own schema (already in the request, per `capability()`'s own
+  documented reasoning — schemas are never repeated in doctrine text) for
+  "what this does"; there is no authored "when to reach for it" for an
+  auto-discovered tool, matching spec §1's decision not to build the skill
+  layer's packaging for this phase either.
+
+**Conversation-scoped filtering — `EngagementPipeline` needs a new
+dependency it does not have today.** Policy.toml's existing gating happens
+at INGEST (`nora/policy.py`'s loader; the room-membership check at
+`nora/ingest/stages/scope.py`, DEC-18: *"the ROOM is checked BEFORE the
+audit write"*) — **not** `nora/ingest/policy.py`, which is
+`TriggerTextPolicy`, the unrelated trigger-word engagement gate. By the time
+`nora/engagement/pipeline.py::EngagementPipeline._run_now` builds tools
+(`nora/engagement/pipeline.py:281`, `self._tool_registry.build(...)`), the
+tag has already passed that ingest-side room check — but `EngagementPipeline`
+itself is never handed the `Policy`/allowlist object (`nora/app/composition.py`
+threads `allowlist = load_policy(cfg.policy_file)` into the INGEST pipeline
+only, at composition.py:307/579). This spec adds `policy: Policy` to
+`EngagementPipeline.__init__`, threaded from the same `allowlist` instance
+composition.py already builds. `nora/policy.py`'s `Conversation` dataclass
+gains a `tools: frozenset[str] = frozenset()` field (populated from
+`_ConversationEntry.tools: list[str]`, §2.3); `_run_now` resolves
+`self._policy.conversation(msg.platform, msg.conversation_id)` (never `None`
+here — ingest already proved it isn't) and passes its `.tools` as
+`allowed_mcp` into `self._tool_registry.build(...)`. An unauthorized
+conversation's `allowed_mcp` is empty, so no `pulse_*` schema is ever in the
+list handed to `Agent(tools=...)` — design/12 §3's "scope enforced at
+assembly, never at egress" rule, applied to a new kind of scope (server
+name) the same way it already applies to person/group scope.
 
 ## 4. Budget: flat per-server (Approach A)
 
@@ -272,14 +338,17 @@ typing as a one-off.
 - **Assembly-time gating** (new behavioral rule — needs a `design/09`
   decision-index entry, `DEC-71`, and a named test in
   `tests/test_acceptance_rules.py::RULE_TESTS`, `R-40`): a tool from a
-  server not in a conversation's `tools` allowlist must not appear in the
-  tool list assembled for that conversation's tag — proven by asserting on
-  the assembled tool set, not by asserting the model declined to use it.
-- **`ToolRegistry`**: existing tests extended to confirm merged MCP budgets
-  appear in `.budgets()` without colliding with native tool budget keys, and
-  that an unauthorized conversation's `capability()` text never names Pulse
-  or any `pulse_*` tool — the pre-construction filtering claim in §3, made
-  concrete rather than assumed.
+  server not in a conversation's `allowed_mcp` must not appear in
+  `ToolRegistry.build()`'s returned list for that conversation's tag —
+  proven by asserting on the assembled tool set, not by asserting the model
+  declined to use it. `EngagementPipeline` correctly resolves `allowed_mcp`
+  from `Policy.conversation(...).tools` before calling `.build()`.
+- **`ToolRegistry`**: existing tests extended to confirm `.budgets()`
+  includes every discovered MCP tool's flat per-server budget unconditionally
+  (§3 — this dict is never disclosed, so it does not need conversation
+  scoping), and that `capability()`/`tool_names()`/`terminal_tools()`/
+  `live_only_tools()` are byte-for-byte unaffected by any MCP server being
+  configured — they read only `NATIVE_TOOLS`, which MCP tools never enter.
 
 ## 7. What ships with this spec vs. later
 
