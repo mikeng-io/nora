@@ -355,6 +355,16 @@ class EngagementPipeline:
                 # out — under multi-message that is the common shape, not an
                 # edge case — so this is a partial delivery, not a silent turn,
                 # and the `finally` counts it as one.
+                #
+                # DELIBERATELY NO never-silent fallback here (review 2026-08-09
+                # #1, considered and declined): unlike a budget cut-off, this path
+                # carries DEC-42 partial-reply accounting (`truncation_reason`),
+                # and delivering a fallback would forge a "partial reply" the
+                # tests here pin apart. A timeout is ALSO already surfaced as an
+                # infra failure on `nora_silent_failures_total{invocation_timeout}`
+                # — a real alert, not the silent void the budget fallback closes.
+                # Closing this path too is a larger change (DEC-42 reconciliation),
+                # left as a flagged follow-up rather than bolted on here.
                 return
 
             # NEVER-SILENT FALLBACK (operator 2026-08-09): the loop was cut off by

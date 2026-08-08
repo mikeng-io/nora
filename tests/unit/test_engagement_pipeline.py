@@ -540,6 +540,25 @@ async def test_the_never_silent_fallback_delivers_when_the_loop_is_cut_off():
     ) == 0
 
 
+async def test_the_fallback_reply_is_not_fed_to_honchos_self_model():
+    """Review 2026-08-09 #2: the fallback is a canned apology, NOT Nora's authored
+    words, so it must NOT feed her Honcho self-model card — only real replies do.
+    It still DELIVERED (the group saw it), it is just kept out of `sent_texts`."""
+    adapter = _FakeAdapter()
+    pipeline, _metrics, _audit, memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner(
+            [ScriptedTurn(tool_calls=[("now", {})], total_tokens=24_000)]
+        ),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert len(adapter.sent) == 1        # delivered — the group saw the fallback
+    assert memory.fed == []              # but nothing fed to her self-model
+
+
 async def test_latency_and_overhead_are_observed_on_every_path():
     metrics = Metrics()
     ok_pipeline, _, _, _, ok_background = _build_pipeline(metrics=metrics)

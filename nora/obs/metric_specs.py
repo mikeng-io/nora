@@ -545,7 +545,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "of going silent (operator 2026-08-09). `reason` is the stop cap that "
         "fired (limit_total_tokens/limit_turns/limit_output_tokens) — a sustained "
         "rate on one reason is the model flailing into that cap, the tell to "
-        "revisit budgets or the query shape.",
+        "revisit budgets or the query shape. (A timeout/llm_error is NOT covered "
+        "here — that stays a silent_failure; see the pipeline's `if not ok`.)",
         ("reason",),
     ),
 )

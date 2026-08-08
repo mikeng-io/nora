@@ -227,7 +227,13 @@ class Deliverer:
 
         if result.ok:
             self._delivered_count += 1
-            self._sent_texts.append(text)
+            # The never-silent fallback (`source="fallback"`) is DELIVERED to the
+            # group — so the turn counts as non-silent (`delivered`) — but it is a
+            # canned apology, NOT one of Nora's authored words, so it is kept OUT
+            # of `sent_texts` and never feeds her Honcho self-model card (review
+            # 2026-08-09). Only her real replies build that model.
+            if source != "fallback":
+                self._sent_texts.append(text)
             self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)
         else:
             self._metrics.inc("nora_replies_total", status="failed", platform=self._target.platform)
