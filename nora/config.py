@@ -664,6 +664,36 @@ class AgentConfig(BaseModel):
     name: str = "nora"
 
 
+class McpMountConfig(BaseModel):
+    """One MCP server Nora may mount as conversation tools (spec §2.1/§2.2).
+
+    Optional and defaulted like `RouteConfig`/`ShortenerConfig`: `enabled`
+    defaults False, so a section existing in a committed config doesn't mean
+    it's live. `token_env` NAMES the environment variable holding the bearer
+    token (DEC-8's `api_key_env`/`token_env` shape) — the value is never here,
+    it lives in `.env`. `budget` is the flat per-server tool-call ceiling
+    every tool this server advertises shares (spec §4) — not per-tool,
+    because auto-discovered tools have no config-time identity to key on.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    base_url: str
+    token_env: str
+    budget: int
+
+
+class ToolsConfig(BaseModel):
+    """The `[tools.mcp.<name>]` mount points (spec §2.2). A second server is
+    a second `mcp` dict entry — no schema change, matching the ARCHITECTURE
+    doc's documented target ("add an MCP server -> no Python")."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mcp: dict[str, McpMountConfig] = Field(default_factory=dict)
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -697,6 +727,9 @@ class Config(BaseModel):
     # be created, whether or not anything is firing them.
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     reminders: RemindersConfig = RemindersConfig()
+    # Optional and defaulted — see `ToolsConfig`. Empty means no MCP server is
+    # mounted; a config.toml without a `[tools]` section keeps loading.
+    tools: ToolsConfig = ToolsConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     identity_file: Path

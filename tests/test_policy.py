@@ -159,3 +159,35 @@ def test_an_also_id_colliding_with_another_room_is_refused(tmp_path):
     )
     with pytest.raises(PolicyError, match="listed twice"):
         load_policy(_write(tmp_path, body))
+
+
+# ── MCP tool allowlist (§2.3) ───────────────────────────────────────────────
+
+
+def test_conversation_tools_defaults_to_empty(tmp_path):
+    policy_file = tmp_path / "policy.toml"
+    policy_file.write_text("""
+default = "deny"
+[[conversations]]
+platform = "signal"
+id = "g1"
+persons = ["miles"]
+""")
+    policy = load_policy(policy_file)
+    convo = policy.conversation("signal", "g1")
+    assert convo.tools == frozenset()
+
+
+def test_conversation_tools_parses_allowlist(tmp_path):
+    policy_file = tmp_path / "policy.toml"
+    policy_file.write_text("""
+default = "deny"
+[[conversations]]
+platform = "signal"
+id = "g1"
+persons = ["miles"]
+tools = ["pulse"]
+""")
+    policy = load_policy(policy_file)
+    convo = policy.conversation("signal", "g1")
+    assert convo.tools == frozenset({"pulse"})

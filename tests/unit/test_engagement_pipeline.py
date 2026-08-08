@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import time
 
+from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
 from nora.doctrine.loader import Doctrine
@@ -44,6 +45,7 @@ from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages import indicate
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.policy import Conversation, Policy, permissive_policy
 from nora.tag import Debounce
 from nora.testing import (
     FakeAgentRunner,
@@ -239,6 +241,7 @@ def _build_pipeline(
     roster_source=None,
     tool_registry=None,
     queue_max: int = 16,
+    policy=None,
 ):
     audit = audit if audit is not None else FakeRecordStore()
     memory = memory if memory is not None else _FakeMemory()
@@ -270,6 +273,7 @@ def _build_pipeline(
         reactions=reactions,
         roster_source=roster_source,
         slots=ConversationSlots(maxlen=queue_max, spawn=background.spawn),
+        policy=policy if policy is not None else permissive_policy(),
     )
     return pipeline, metrics, audit, memory, background
 
@@ -290,6 +294,55 @@ async def _drain(background: BackgroundTasks) -> None:
     while len(background):
         await asyncio.gather(*list(background._tasks), return_exceptions=True)
         await asyncio.sleep(0)
+
+
+# ---------------------------------------------------------------------------
+# DEC-71 / R-40 — the conversation's policy.toml `tools` allowlist is resolved
+# and enforced HERE, at assembly (`ToolRegistry.build(..., allowed_mcp=...)`),
+# never at egress. An MCP tool a conversation is not allowlisted for must
+# never reach `Agent(tools=...)` for that tag at all.
+# ---------------------------------------------------------------------------
+
+
+def _policy_allowing(*, conversation_id: str = "g1", tools: frozenset[str] = frozenset()) -> Policy:
+    convo = Conversation(
+        platform="signal", ids=frozenset({conversation_id}), persons=None, tools=tools,
+    )
+    return Policy(conversations=(convo,), _by_id={("signal", conversation_id): convo})
+
+
+def _registry_with_pulse() -> ToolRegistry:
+    groups = {
+        "pulse": McpToolGroup(budget=5, tools=(_FakeMcpTool("pulse_server_status"),)),
+    }
+    return ToolRegistry(mcp_tools=groups)
+
+
+class _FakeMcpTool:
+    def __init__(self, tool_name: str) -> None:
+        self.tool_name = tool_name
+
+
+async def test_unauthorized_conversation_never_receives_pulse_tools():
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        tool_registry=_registry_with_pulse(),
+        policy=_policy_allowing(tools=frozenset()),  # not authorized for pulse
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+    delivered_tools = pipeline._runner.calls[-1]["tools"]
+    assert not any(t.tool_name == "pulse_server_status" for t in delivered_tools)
+
+
+async def test_authorized_conversation_receives_pulse_tools():
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        tool_registry=_registry_with_pulse(),
+        policy=_policy_allowing(tools=frozenset({"pulse"})),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+    delivered_tools = pipeline._runner.calls[-1]["tools"]
+    assert any(t.tool_name == "pulse_server_status" for t in delivered_tools)
 
 
 # ---------------------------------------------------------------------------
@@ -1119,8 +1172,8 @@ class _RaisedCap(ToolRegistry):
         super().__init__()          # DEC-41: the base now wires a TransitClient
         self._messages = messages
 
-    def budgets(self):
-        return {**super().budgets(), "send_reply": self._messages}
+    def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()):
+        return {**super().budgets(allowed_mcp=allowed_mcp), "send_reply": self._messages}
 
 
 def _multi_turns(*texts: str) -> list[ScriptedTurn]:

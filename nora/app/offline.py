@@ -87,6 +87,13 @@ def build_offline_pipeline(
         adapter=adapter, audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
+        # `permissive_policy()`, matching `ingest`'s `allowlist` above: an
+        # offline harness has no real `policy.toml` to resolve a per-conversation
+        # MCP allowlist from, and this module builds no MCP tools either
+        # (`ToolRegistry()` above takes no `mcp_tools`), so the allowlist this
+        # resolves to is never disclosed to anything real. A caller that wants
+        # to exercise MCP scoping supplies its own `EngagementPipeline`.
+        policy=permissive_policy(),
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         ai_peer=cfg.memory.ai_peer,

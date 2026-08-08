@@ -36,6 +36,7 @@ from ..infra.search import SearchClient
 from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
 from ..infra.vision import VisionCache, VisionClient
+from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
 from .room import Room
 from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs, utc_now
@@ -79,6 +80,7 @@ class ToolRegistry:
         reminders: ReminderStore | None = None,
         reminder_caps: ReminderCaps | None = None,
         clock: Callable[[], datetime] = utc_now,
+        mcp_tools: Mapping[str, McpToolGroup] | None = None,
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -160,10 +162,39 @@ class ToolRegistry:
         # them testable without sleeping — and a collaborator through `__init__`
         # is the only seam CLAUDE.md's test-seam policy allows.
         self._clock = clock
+        # Discovered MCP tool groups (spec: mcp-tool-provider-design §3),
+        # keyed by server name. `.budgets()` folds an entry in ONLY when its
+        # server name is passed in that call's `allowed_mcp` — see
+        # `.budgets()` below for why an unconditional fold was a real
+        # disclosure, not an inert one. `.specs()`/`.build()`'s `allowed_mcp`
+        # is the SAME value a caller must pass here (final-review Finding 1).
+        self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
 
-    def budgets(self) -> Mapping[str, int]:
-        """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
-        return dict(NATIVE_TOOL_BUDGETS)
+    def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
+        """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
+
+        Includes an MCP tool's budget ONLY when its server name is in
+        `allowed_mcp` — the SAME set the caller passes (or will pass) to
+        `.build()`. `budgets()` feeds `ReplyGuard`, and `ReplyGuard.evaluate`
+        renders the WHOLE dict's keys into the model-facing R-7 unknown-tool
+        veto message (`guards.py::_list_tool_names`) — so an unconditional
+        fold was a REAL disclosure: a conversation with no `pulse` allowlist
+        entry would still be told `pulse_server_status` exists the moment the
+        model hallucinated any wrong tool name, contradicting the spec's
+        claim that this dict is never rendered into a prompt. It also left
+        R-7's default-deny not actually covering those names for an
+        unauthorized conversation, since they were present in `_budgets`
+        regardless. The default (`frozenset()`) is the safe one: a caller
+        with no conversation context (`nora.app.composition`'s throwaway
+        registries) gets exactly the native table, nothing more."""
+        budgets = dict(NATIVE_TOOL_BUDGETS)
+        for name in allowed_mcp:
+            group = self._mcp_tools.get(name)
+            if group is None:
+                continue
+            for tool in group.tools:
+                budgets[tool.tool_name] = group.budget
+        return budgets
 
     def terminal_tools(self) -> frozenset[str]:
         """The verbs that END A TURN, for `ReplyGuard`'s model-call hook (DEC-32).
@@ -329,17 +360,32 @@ class ToolRegistry:
         question: str = "",
         context_window: int = 40,
         fire_turn: bool = False,
+        allowed_mcp: frozenset[str] = frozenset(),
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
         the old direct `nora.agent.tools.build_tools` import.
 
         `nora.app.fire.FirePath` is the other caller, and the only one that
-        passes `fire_turn=True`."""
+        passes `fire_turn=True`.
+
+        `allowed_mcp` (spec §3) is the enforcement point for per-conversation
+        MCP scope: only tool groups whose server name is in this set are
+        appended, and they are appended AFTER `adapt()` runs over the native
+        specs — MCP tools are already Strands tool objects (`McpToolGroup.tools`,
+        Task 2), not `ToolSpec`s, so `specs()` cannot return them and `adapt()`
+        must not be called on them. Native tools are unaffected — this
+        codebase has no per-conversation gating for them today, and this
+        change does not add one."""
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
             fire_turn=fire_turn,
         )
-        return [adapt(spec) for spec in specs]
+        tools = [adapt(spec) for spec in specs]
+        for name in allowed_mcp:
+            group = self._mcp_tools.get(name)
+            if group is not None:
+                tools.extend(group.tools)
+        return tools

@@ -308,6 +308,39 @@ def test_an_unknown_presence_key_is_still_a_startup_failure(toml_path):
         load(toml_path)
 
 
+def test_tools_mcp_is_optional_and_defaults_to_empty(toml_path):
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[tools.mcp.pulse]\n")
+    assert tail, "config.example.toml no longer declares [tools.mcp.pulse]"
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
+
+    cfg = load(toml_path)
+
+    assert cfg.tools.mcp == {}
+
+
+def test_tools_mcp_parses_a_configured_server(toml_path, monkeypatch):
+    monkeypatch.setenv("PULSE_MCP_TOKEN", "test-token")
+    toml_path.write_text(toml_path.read_text().replace(
+        "[tools.mcp.pulse]\nenabled = false", "[tools.mcp.pulse]\nenabled = true"))
+
+    cfg = load(toml_path)
+
+    assert cfg.tools.mcp["pulse"].enabled is True
+    assert cfg.tools.mcp["pulse"].base_url == "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
+    assert cfg.tools.mcp["pulse"].token_env == "PULSE_MCP_TOKEN"  # noqa: S105 — an env-var NAME
+    assert cfg.tools.mcp["pulse"].budget == 5
+
+
+def test_tools_mcp_rejects_unknown_keys(toml_path):
+    toml_path.write_text(toml_path.read_text().replace(
+        "[tools.mcp.pulse]\nenabled = false",
+        "[tools.mcp.pulse]\nenabled = false\ntypo_field = true"))
+    with pytest.raises(ConfigError, match="typo_field"):
+        load(toml_path)
+
+
 def test_a_zero_cadence_is_rejected(toml_path):
     """`ge=1` guards a busy-loop cadence nobody chose."""
     toml_path.write_text(

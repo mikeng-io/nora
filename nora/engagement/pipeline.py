@@ -52,6 +52,7 @@ from nora.agent.room import Room
 from nora.domain.ports import EngagementRequest, MemoryStore, RecordStore, RosterSource
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
+from nora.policy import Policy
 from nora.tag import Debounce
 
 from .mentions import MentionRenderer
@@ -76,6 +77,7 @@ class EngagementPipeline:
         context_assembler: Any,
         runner: AgentRunner,
         tool_registry: ToolRegistry,
+        policy: Policy,
         debounce: Debounce,
         canary: str,
         display_name: str,
@@ -99,6 +101,13 @@ class EngagementPipeline:
         self._context = context_assembler
         self._runner = runner
         self._tool_registry = tool_registry
+        # policy.toml's per-conversation MCP allowlist (spec:
+        # mcp-tool-provider-design §3). The ingest pipeline already checked
+        # this tag's conversation is admitted at all (nora.ingest.stages.scope,
+        # DEC-18) using the SAME Policy instance — this is the second read of
+        # it, for a narrower question: which MCP servers, not whether to
+        # engage at all.
+        self._policy = policy
         self._debounce = debounce
         self._canary = canary
         self._display_name = display_name
@@ -260,11 +269,28 @@ class EngagementPipeline:
                 doctrine.sha256, doctrine.versions(),
             )
 
+            # `convo is not None` is defensive, not load-bearing: by this
+            # point ingest has already proven the conversation is admitted
+            # (DEC-18), so `self._policy.conversation(...)` returning `None`
+            # here would indicate the ingest and engagement pipelines
+            # disagree about which `Policy` they were given — a wiring bug
+            # worth defaulting safely on (empty allowlist) rather than
+            # crashing the tag over.
+            #
+            # Computed BEFORE `deliver.build()` and reused for its `budgets=`
+            # (final-review Finding 1): `ToolRegistry.budgets()` only folds an
+            # MCP tool's budget in when its server name is in `allowed_mcp`,
+            # so this pipeline's `ReplyGuard` — and the R-7 unknown-tool veto
+            # message it renders — must be built from the SAME set `.build()`
+            # below uses, or an unauthorized conversation's guard would still
+            # disclose a `pulse_*` name it cannot call.
+            convo = self._policy.conversation(msg.platform, msg.conversation_id)
+            allowed_mcp = convo.tools if convo is not None else frozenset()
             handle = deliver.build(
                 store=self._audit, adapter=self._adapter, target=msg.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=request.tag_id,
                 nora_sender_id=self._nora_sender_id, conversation_id=msg.conversation_id,
-                budgets=self._tool_registry.budgets(),
+                budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
                 audience="tag",
             )
@@ -284,6 +310,7 @@ class EngagementPipeline:
                 honcho=self._memory, deliverer=handle.deliverer,
                 room=room, question=msg.body,
                 context_window=self._context_window, metrics=self._metrics,
+                allowed_mcp=allowed_mcp,
             )
             tagger_name = self._persons.display_name(msg)
             # STILL NO ROSTER IN THE PROMPT, and now there is a tool instead.

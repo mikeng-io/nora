@@ -149,6 +149,12 @@ RULE_TESTS = {
     # `ToolRegistry.build`, because a fire turn is otherwise a well-formed turn
     # in the same conversation and no tool can tell the two apart.
     "R-39": "test_remind_refuses_on_a_fire_turn",
+    # R-40: an MCP server's tools reach `Agent(tools=...)` for a tag only when
+    # `policy.toml`'s per-conversation `tools` allowlist names that server —
+    # resolved and enforced at ASSEMBLY (`EngagementPipeline._run_admitted`
+    # calling `ToolRegistry.build(..., allowed_mcp=...)`), never at egress
+    # (DEC-71).
+    "R-40": "test_unauthorized_conversation_never_receives_pulse_tools",
 }
 
 

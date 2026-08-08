@@ -27,6 +27,7 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from nora.agent import factory
+from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
@@ -462,12 +463,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # 2026-08-08).
             timeout_seconds=cfg.presence.refresh_timeout_seconds + 2.0,
         )
+    # `nora.agent` may not import `nora.config` (import-linter's "only app and
+    # __main__ read config") — this is the conversion point, the same shape
+    # `ReminderCaps(**cfg.reminders.model_dump())` already uses just below.
+    mcp_mounts = {
+        name: McpMount(
+            name=name, base_url=mount.base_url, token_env=mount.token_env, budget=mount.budget,
+        )
+        for name, mount in cfg.tools.mcp.items()
+        if mount.enabled
+    }
+    mcp_tool_groups = build_mcp_tools(mcp_mounts)
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client, blobs=blobs, search=search_client,
         presence=presence_store, circles=presence_circles,
         refresher=refresher,
         shortener=shortener_client,
         ai_peer=cfg.memory.ai_peer,
+        mcp_tools=mcp_tool_groups,
         # The SAME store the tick reads from — two would be two queues, and the
         # rows `remind` wrote would sit in one while the heartbeat watched the
         # other.
@@ -519,6 +532,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         adapter=adapter, audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
+        # `allowlist` — policy.toml, the SAME instance the ingest pipeline
+        # already checked this conversation is admitted under (DEC-18). This
+        # is the second read of it: which MCP servers, not whether to engage
+        # at all (DEC-71).
+        policy=allowlist,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         ai_peer=cfg.memory.ai_peer,

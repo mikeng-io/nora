@@ -43,6 +43,9 @@ label    = "Family"          # for humans reading this file. NEVER matched on â€
                              # changed by anyone in the group.
 persons  = ["miles", "ada"]   # only these two may trigger Nora here. A new group
                              # member is ignored until you add them.
+tools    = []                # MCP servers this room may use, e.g. ["pulse"].
+                             # Empty means none, same deny-by-default as everything
+                             # else here.
 
 [[conversations]]
 platform = "telegram"

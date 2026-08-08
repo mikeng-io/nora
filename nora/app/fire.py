@@ -320,6 +320,14 @@ class FirePath:
                 doctrine=doctrine, canary=self._canary, tag_id=ctx.tag_id,
                 nora_sender_id=self._nora_sender_id,
                 conversation_id=row.conversation_id,
+                # `allowed_mcp` left at its default (empty): `FirePath` has no
+                # `Policy`/allowlist collaborator wired in (unlike
+                # `EngagementPipeline`, which threads `self._policy` — see
+                # final-review Finding 1), so there is no per-conversation MCP
+                # scope available here to pass. Empty is the safe default —
+                # this mirrors the `.build()` call below, which likewise never
+                # passes `allowed_mcp` and so never appends an MCP tool to a
+                # fire turn.
                 budgets=self._registry.budgets(),
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
                 audience=AUDIENCE,
