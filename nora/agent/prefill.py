@@ -76,25 +76,35 @@ def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
     for everything after it. The current time used to live here, one line in,
     which meant no two tags ever shared a prefix past this point.
 
-    **This currently buys nothing on the pinned route, and is kept anyway.**
-    Measured 2026-08-06 against `opencode-zen/deepseek-v4-flash`:
+    **This ordering now genuinely pays off — the pinned route PREFIX-caches
+    (re-measured 2026-08-08).** Caching is a property of the SERVING PROVIDER and
+    MODEL, not of the prompt, and it CHANGED under us: opencode-zen went from
+    full-request-only to prefix caching between two measurements of the SAME model
+    string. So both numbers below are timestamped, and neither is to be trusted
+    without re-measuring `cache_read_input_tokens` on the live route.
 
-        long shared prefix, differing tail    cached_tokens = 0
-        byte-identical request                cached_tokens = 1837 / 1838
+        Re-measured 2026-08-08 (Langfuse, per-generation cache_read_input_tokens):
+          trace 80a1 call 1   13,182 / 13,425   98%   ← first call of a tag
+          trace b005 call 1   16,772 / 16,976   99%
+          tail-heavy last call of a turn         ~52-55% (falls to the static floor)
 
-    That is FULL-REQUEST caching, not prefix caching — a 1800-token shared
-    prefix hits zero. So no realistic pair of tags can share a cache entry on
-    this route regardless of ordering, and the reorder is unmeasurable here.
-    (It is also one more way this route differs from DeepSeek's own API, which
-    does cache on prefix; it already differs in reporting no `reasoning_tokens`.
-    Both point at a different build or a different caching layer.)
+        Superseded 2026-08-06 (kept for the record — this is how much it moved):
+          long shared prefix, differing tail    cached_tokens = 0
+          byte-identical request                cached_tokens = 1837 / 1838
+          i.e. that day it was FULL-REQUEST caching; a 1800-token prefix hit zero.
 
-    It stays because it costs nothing, because DeepSeek's real API and every
-    other major provider cache on prefix, and because the alternative is
-    re-deriving this the next time the route changes. The ordering rule for
-    this module: static instructions here, every volatile fact — the clock, the
-    transcript, the peer card — in the block `build_prefill` puts AFTER this
-    one. Do not claim a saving from it without re-measuring first.
+    The static HEAD — this block + the doctrine + the tool schemas, the bulk of a
+    ~13-17k input — now hits 95-99% cache on the first call of every tag AND every
+    within-turn loop call, so the expensive part is cached for free across tags.
+    The only uncached part is the volatile block after this one (clock, transcript,
+    peer card). Stabilising the transcript's relative ages to absolute timestamps
+    would recover a few HUNDRED tokens against the ~13k already cached — a rounding
+    error, not worth the age-semantics cost (今晚/琴日), so it is deliberately NOT done.
+
+    The ordering rule for this module stays either way: static instructions here,
+    every volatile fact — the clock, the transcript, the peer card — in the block
+    `build_prefill` puts AFTER this one. Re-measure before claiming a saving; the
+    caching layer has already changed once.
 
     The doctrine files say who Nora IS. This says how she is being RUN — that
     she is mid-conversation in a group she has been reading all along, that
