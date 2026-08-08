@@ -58,22 +58,28 @@ def _chose_not_to_reply():
 
 
 async def test_a_budget_stop_is_distinguishable_from_a_silent_model(harness_factory):
-    """R-23. The named test for the rule.
+    """R-23. The named test for the rule — UPDATED for the never-silent fallback
+    (DEC, operator 2026-08-09).
 
-    Both turns end with no reply, `ok=True`, and a ⚠️. The ONLY thing that
-    separates them is the reason label — so this asserts both directions: the
-    budget turn must not say `no_send_call`, and the benign turn must not say
-    `limit_total_tokens`. Asserting only the first would pass a change that
-    relabelled every silent turn.
+    The two turns are still DISTINGUISHABLE, which is the whole rule: a budget
+    cut-off is a turn that ran out mid-work, and it now RECOVERS with the fallback
+    line (`nora_loop_exhausted_fallbacks_total{reason=limit_total_tokens}`), NOT
+    counted a silent failure; a model that merely chose not to speak stays silent
+    and IS counted `no_send_call`. Both directions asserted — a change that
+    relabelled or dropped either would fail here.
     """
     over = await harness_factory(script=_spent_the_budget_without_replying())
     await over.handler.on_event(group_event(body="nora.000 ?"))
     await over.drain()
 
-    assert over.sink.sent == []
+    assert len(over.sink.sent) == 1        # recovered with the fallback, not silent
     assert over.metrics.get(
-        "nora_silent_failures_total", reason="limit_total_tokens") == 1
+        "nora_loop_exhausted_fallbacks_total", reason="limit_total_tokens") == 1
+    # recovered → NOT a silent failure of any reason
+    assert over.metrics.get(
+        "nora_silent_failures_total", reason="limit_total_tokens") == 0
     assert over.metrics.get("nora_silent_failures_total", reason="no_send_call") == 0
+    # the stop cap is still counted for legibility (unchanged, unconditional)
     assert over.metrics.get(
         "nora_llm_stop_reason_total", reason="limit_total_tokens") == 1
 
@@ -81,23 +87,25 @@ async def test_a_budget_stop_is_distinguishable_from_a_silent_model(harness_fact
     await quiet.handler.on_event(group_event(body="nora.000 ?"))
     await quiet.drain()
 
-    assert quiet.sink.sent == []
+    assert quiet.sink.sent == []           # a chosen silence stays silent
     assert quiet.metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
-    assert quiet.metrics.get(
-        "nora_silent_failures_total", reason="limit_total_tokens") == 0
+    assert quiet.metrics.get("nora_loop_exhausted_fallbacks_total") == 0
     assert quiet.metrics.get("nora_llm_stop_reason_total", reason="end_turn") == 1
 
 
-async def test_the_group_still_sees_nothing_when_the_budget_runs_out(harness_factory):
-    """R-5 is not weakened by R-23: naming the cause in a METRIC must not put
-    it in the room. The turn stays silent and the ⚠️ is the only thing the
-    group learns."""
+async def test_the_budget_fallback_says_nothing_diagnostic_to_the_group(harness_factory):
+    """R-5/R-23 spirit preserved through the fallback (was: the group sees NOTHING
+    — now it sees ONE generic line). Naming the cause in a METRIC must never put
+    it in the room: the fallback the group reads must be the generic apology, and
+    must NOT leak the stop reason (`limit_total_tokens`, `budget`, token counts)."""
     h = await harness_factory(script=_spent_the_budget_without_replying())
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
 
-    assert h.sink.sent == []
-    assert h.sink.texts == []
+    assert len(h.sink.texts) == 1
+    line = h.sink.texts[0]
+    for diagnostic in ("limit", "token", "budget", "total_tokens"):
+        assert diagnostic not in line.lower()
 
 
 async def test_a_reply_delivered_before_the_cap_is_still_a_success(harness_factory):
@@ -134,5 +142,10 @@ async def test_the_cap_that_binds_is_the_one_that_gets_the_blame(harness_factory
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
 
-    assert h.metrics.get("nora_silent_failures_total", reason="limit_turns") == 1
-    assert h.metrics.get("nora_silent_failures_total", reason="limit_total_tokens") == 0
+    # The blame now rides the fallback's reason label (and the stop-reason
+    # counter), both naming `limit_turns`, not `limit_total_tokens` (never a
+    # silent failure now — recovered). The precedence is what's under test.
+    assert h.metrics.get("nora_loop_exhausted_fallbacks_total", reason="limit_turns") == 1
+    assert h.metrics.get(
+        "nora_loop_exhausted_fallbacks_total", reason="limit_total_tokens") == 0
+    assert h.metrics.get("nora_llm_stop_reason_total", reason="limit_turns") == 1
