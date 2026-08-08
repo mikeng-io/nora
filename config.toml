@@ -254,7 +254,7 @@ firecrawl_url = "http://firecrawl-api-1:3002"
 # The background tick that fires due reminders — Nora's first unprompted-speech
 # path. Ships INERT, like [presence] and [search] did: turning it on is an
 # operator decision, never something a missing section decides.
-enabled = false
+enabled = true
 tick_seconds = 60          # how often she WAKES. This is the best case for
                            # lateness, not a bound on it: a tick runs its
                            # turn-groups one after another (each up to
