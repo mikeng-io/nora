@@ -1495,7 +1495,7 @@ an implementer who greps for the "convention" finds a sentence and stalls.
 Both are process-lifetime values, which is what that constructor is for
 (`registry.py:44-66`).
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```python
 async def test_remind_refuses_on_a_fire_turn():
@@ -1518,9 +1518,9 @@ async def test_remind_refuses_on_a_fire_turn():
 #   test_cancel_refuses_an_id_from_another_conversation -> store.cancel returns False
 ```
 
-- [ ] **Step 2:** Add `tagger` property to `Room`; add `reminders=` to `ToolRegistry.__init__` alongside `transit`/`route`/`search`/`presence`.
+- [x] **Step 2:** Add `tagger` property to `Room`; add `reminders=` to `ToolRegistry.__init__` alongside `transit`/`route`/`search`/`presence`.
 
-- [ ] **Step 3: Implement the three tools**
+- [x] **Step 3: Implement the three tools**
 
 Follow the closure shape already in `build_tool_specs` — each tool closes over
 `conversation_id`, `room` and the registry's collaborators; none takes a
@@ -1553,9 +1553,9 @@ reads it) and `terminal=False` — **none of these is a terminal verb**; adding 
 would break `_terminal_budget_spent`'s AND and the pinned
 `terminal_tools() == frozenset({"send_reply"})`.
 
-- [ ] **Step 4:** `nora reminders list` in `cli.py` — **read-only only**. The module opens the store through `create_readonly_sql_engine` with a `SELECT`-only grant; a `cancel` subcommand would break both. The operator's kill switch is `[heartbeat] enabled = false` plus a restart.
+- [x] **Step 4:** `nora reminders list` in `cli.py` — **read-only only**. The module opens the store through `create_readonly_sql_engine` with a `SELECT`-only grant; a `cancel` subcommand would break both. The operator's kill switch is `[heartbeat] enabled = false` plus a restart.
 
-- [ ] **Step 4b: Publish `nora_reminders_pending`, or delete it**
+- [x] **Step 4b: Publish `nora_reminders_pending`, or delete it**
 
 Task 4 declared the gauge and never published it, so it renders **`0.0`** — which
 reads as "no backlog" and is indistinguishable from "nobody is measuring". That is
@@ -1571,11 +1571,38 @@ declared and unpublished.
 Publish it the same way as the liveness gauge: `Metrics.gauge_function`, computed
 at scrape time, never from inside the tick body.
 
-- [ ] **Step 5:** Amend **R-1** in `design/09-decision-index.md` and add the replacement named test to `RULE_TESTS`: *the tag path and the fire path are the only two senders.* R-1's existing test asserts both its clauses but only over ambient input, so it stays green untouched — amending the row alone would delete the only written brake on a third send path with nothing going red.
+**DECIDED: deleted, not published.** The plan's own instruction — "use
+`Metrics.gauge_function` (scrape-time)" — is unimplementable, verified rather
+than assumed:
 
-- [ ] **Step 6:** Update `ARCHITECTURE.md` (`test_architecture_doc.py` fails on any new top-level module under `nora/`).
+* Every `ReminderStore` read is a coroutine (`all_pending`, `count_pending`),
+  and `Metrics.gauge_function` binds a **synchronous** callable that
+  prometheus-client invokes inside `CollectorRegistry.collect()`.
+* `/metrics` is an aiohttp handler (`nora.obs.health`), so that callback runs
+  **on the event loop** that would have to run the query. There is no await to
+  be had there and no second loop to hand it to. (Probed directly:
+  `asyncio.get_running_loop()` succeeds inside the callback.)
 
-- [ ] **Step 7:** All four gates, commit.
+And the fallback the plan forbids is genuinely worse than absent: the shipped
+default is `[heartbeat] enabled = false` while `remind` writes rows
+unconditionally (the store is wired outside the flag, deliberately — see
+`composition.py`), so a tick-published gauge exports `0.0` forever on precisely
+the deployment where the backlog only grows. `created_total - fired_total`
+drifts on the first cancel and resets on restart while the rows survive.
+
+So `count_all_pending()` was NOT added; `all_pending(limit)` was, for the CLI,
+with both implementations and two contract tests. The backlog is a database
+question and `nora reminders list` answers it, flagging overdue rows;
+`nora_heartbeat_last_tick_age_seconds` (scrape-time, so it climbs when the loop
+dies) remains the liveness half. The reasoning is recorded where the
+declaration used to be, in `nora/obs/metric_specs.py`, so nobody re-adds it
+blind.
+
+- [x] **Step 5:** Amend **R-1** in `design/09-decision-index.md` and add the replacement named test to `RULE_TESTS`: *the tag path and the fire path are the only two senders.* R-1's existing test asserts both its clauses but only over ambient input, so it stays green untouched — amending the row alone would delete the only written brake on a third send path with nothing going red.
+
+- [x] **Step 6:** Update `ARCHITECTURE.md` (`test_architecture_doc.py` fails on any new top-level module under `nora/`).
+
+- [x] **Step 7:** All four gates, commit.
 
 ---
 

@@ -171,6 +171,18 @@ class ReminderStore(Protocol):
         then `id`."""
         ...
 
+    async def all_pending(self, *, limit: int) -> Sequence[Reminder]:
+        """EVERY conversation's PENDING rows, ordered like `due()`.
+
+        The operator's view, and the one read `pending_for` cannot stand in for:
+        `nora reminders list` has no conversation to scope by — finding out
+        which conversations have rows waiting is the whole question it answers.
+        Bounded by `limit` for the reason `due()` is, and `check_limit` is the
+        same shared rule, so a caller cannot get "everything except the last"
+        from one store and an error from the other.
+        """
+        ...
+
     async def count_pending(self, requester_person_id: str) -> int: ...
 
     async def claim(self, reminder_id: UUID) -> bool:

@@ -1,4 +1,5 @@
-"""The read-only operator control plane: `nora groups`, `nora persons pending`.
+"""The read-only operator control plane: `nora groups`, `nora persons pending`,
+`nora presence members`, `nora reminders list`.
 
 design/10 §6, plan Task 6. This answers the operator's original complaint —
 *"I CANNOT identify that group ID belongs to which group ... there is NO
@@ -36,6 +37,7 @@ import argparse
 import asyncio
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy.engine import make_url
@@ -47,6 +49,7 @@ from nora.config import Config, ConfigError, load
 from nora.domain.models import UnattributedRow
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import SqlRecordStore, create_readonly_sql_engine
+from nora.infra.sql.reminders import SqlReminderStore
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.signal import directory
 from nora.policy import Policy, PolicyError, load_policy
@@ -55,6 +58,13 @@ from nora.policy import Policy, PolicyError, load_policy
 # recurring chore competing for SQLite's single writer, while this is one
 # operator-initiated read that should cover the whole retained backlog.
 DEFAULT_SCAN_LIMIT = 5000
+
+# Smaller than `DEFAULT_SCAN_LIMIT` by two orders of magnitude, and deliberately:
+# that one scans an audit backlog for correlation, while this prints one block
+# per row to a terminal. `max_pending_per_requester` is 20 (design spec §9), so
+# 500 is a whole household's worth of backlog several times over — a listing
+# longer than this is the runaway itself, and the truncation notice says so.
+DEFAULT_REMINDER_LIMIT = 500
 
 
 class CliError(Exception):
@@ -93,6 +103,28 @@ def add_subcommands(
         help=f"unattributed audit rows to scan (default {DEFAULT_SCAN_LIMIT})",
     )
     pending.set_defaults(func=cmd_pending)
+
+    reminders = subparsers.add_parser(
+        "reminders", parents=[parent], help="reminders the heartbeat is still holding",
+    )
+    reminders_sub = reminders.add_subparsers(dest="reminders_command", required=True)
+    # `list` and NOTHING ELSE. A `cancel` subcommand would break both of this
+    # module's guarantees at once: the engine is opened through
+    # `create_readonly_sql_engine` (`default_transaction_read_only=on`) and, in
+    # the deployment, as a `GRANT SELECT`-only role — so the write would not
+    # merely be discouraged, it would raise at the server. The operator's kill
+    # switch is `[heartbeat] enabled = false` plus a restart, which stops all
+    # firing rather than one row; cancelling ONE reminder is the model's job
+    # (`cancel_reminder`), in the conversation it was set in (design spec §7.4).
+    reminders_list = reminders_sub.add_parser(
+        "list", parents=[parent],
+        help="every reminder still pending, soonest first, with what is overdue",
+    )
+    reminders_list.add_argument(
+        "--limit", type=int, default=DEFAULT_REMINDER_LIMIT,
+        help=f"pending rows to list (default {DEFAULT_REMINDER_LIMIT})",
+    )
+    reminders_list.set_defaults(func=cmd_reminders_list)
 
     presence = subparsers.add_parser(
         "presence", parents=[parent], help="Life360 presence helpers",
@@ -208,6 +240,44 @@ async def cmd_presence_members(args: argparse.Namespace) -> int:
     return 0
 
 
+async def cmd_reminders_list(args: argparse.Namespace) -> int:
+    """`nora reminders list` — what the heartbeat is still holding, READ ONLY.
+
+    The one operator question the metrics cannot answer: which rows are waiting,
+    for whom, in which conversation, and whether any of them are overdue. It
+    opens the same read-only engine `nora persons pending` does, and there is no
+    sibling subcommand that writes (see `add_subcommands`).
+    """
+    cfg = _config(args)
+    limit = int(args.limit)
+    if limit <= 0:
+        # `check_limit` inside the store raises `ValueError` for this, which
+        # would reach the operator as a traceback. Refused here, in the same
+        # sentence-not-a-stack-trace shape `cmd_pending` uses.
+        raise CliError(f"--limit must be positive; got {limit}")
+    url = _database_url(cfg)
+    store = readonly_reminder_store(url)
+    try:
+        rows = await store.all_pending(limit=limit)
+    except Exception as exc:  # one readable line, never a traceback
+        raise CliError(
+            f"could not read the reminders in {_redacted(url)}: "
+            f"{type(exc).__name__}: {exc}. Is nora-db up, and has Nora run "
+            "against this config yet?"
+        ) from exc
+    finally:
+        await store.aclose()
+
+    for line in report.render_reminders(
+        reminders=rows,
+        now=datetime.now(UTC),
+        source=_redacted(url),
+        truncated=len(rows) >= limit,
+    ):
+        print(line)
+    return 0
+
+
 async def cmd_pending(args: argparse.Namespace) -> int:
     cfg = _config(args)
     signal = cfg.platforms.signal
@@ -301,6 +371,23 @@ def readonly_store(url: str) -> SqlRecordStore:
     issues only SELECTs changes no bytes either way.
     """
     return SqlRecordStore(create_readonly_sql_engine(url))
+
+
+def readonly_reminder_store(url: str) -> SqlReminderStore:
+    """The ONE place this package opens the reminders table.
+
+    Public and named for the reason `readonly_store` is: a test can hold the
+    actual object `nora reminders list` uses and prove a write through it is
+    refused. `cancel` is the write that matters here — it is the one this
+    module could plausibly grow a subcommand for, and design spec §7.4 says it
+    must not, so the driver refusing it is what keeps a future edit honest.
+
+    Its own engine, unlike the daemon (which shares one pool between the record
+    store, the presence reader and the reminders store): the CLI is a
+    short-lived process running ONE command, `aclose()` disposes exactly what
+    that command opened, and there is nothing else alive to share with.
+    """
+    return SqlReminderStore(create_readonly_sql_engine(url))
 
 
 async def _unattributed(url: str, *, limit: int) -> list[UnattributedRow]:

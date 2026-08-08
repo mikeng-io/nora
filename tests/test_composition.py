@@ -231,6 +231,63 @@ async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
         await deps.background.cancel_all()
 
 
+async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg, pg_url):
+    """The live `ToolRegistry` gets the reminders store, and `[heartbeat]` being
+    off does not change that.
+
+    Without `reminders=` on that constructor, `remind` answers `unavailable` in
+    production while every test in `tests/test_reminder_tools.py` passes — each
+    builds its OWN registry around the fake, so none of them can see the wiring.
+    That is the whole failure mode this test exists for, which is why it goes all
+    the way to a row in the database rather than asserting on an attribute: a
+    store held but never reached would satisfy the weaker check.
+
+    `cfg.heartbeat.enabled` is False here (the shipped default). The tick is
+    gated; the TOOLS are not — the model may set, list and cancel reminders on a
+    deployment that never fires them, and the rows wait for the flag.
+    """
+    from nora.agent.room import Room
+    from nora.domain.models import PersonRef
+    from nora.domain.reminders import ReminderCaps, ReminderState
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.infra.sql.reminders import SqlReminderStore
+
+    assert cfg.heartbeat.enabled is False
+    deps = await build_dependencies(cfg)
+    try:
+        registry = deps.engagement._tool_registry
+        # §9's caps came from `[reminders]`, converted at the composition root —
+        # `nora.agent` may not import `nora.config`, so a caps object that
+        # silently fell back to its defaults would ignore every operator value.
+        assert registry._caps == ReminderCaps(**cfg.reminders.model_dump())
+
+        miles = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+        specs = registry.specs(
+            store=deps.audit, conversation_id="g1", conversation_type="group",
+            persons=deps.persons, honcho=deps.memory, deliverer=None,
+            metrics=deps.metrics,
+            room=Room(platform="signal", conversation_id="g1", roster_source=None,
+                      persons=deps.persons, tagger=miles),
+        )
+        remind = {spec.name: spec.call for spec in specs}["remind"]
+        result = await remind(
+            when=(datetime.now(UTC) + timedelta(hours=1)).isoformat(), text="洗衫",
+        )
+        assert result["status"] == "ok", result
+    finally:
+        await deps.background.cancel_all()
+
+    check = SqlReminderStore(create_sql_engine(pg_url))
+    try:
+        rows = await check.all_pending(limit=10)
+        assert [r.text for r in rows] == ["洗衫"]
+        assert rows[0].requester_person_id == "miles"
+        assert rows[0].conversation_id == "g1"
+        assert rows[0].state is ReminderState.PENDING
+    finally:
+        await check.aclose()
+
+
 async def test_boot_recovery_counts_the_rows_it_swept(cfg, pg_url):
     """The sweep is the only path that resolves reminders with no tick running,
     and `nora_reminders_fired_total`'s spec says a reminder that vanishes must

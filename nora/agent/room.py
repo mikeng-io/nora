@@ -142,6 +142,39 @@ class Room:
         self._self_ids = frozenset(self_ids)
         self._view: RoomView | None = None
 
+    @property
+    def platform(self) -> str:
+        """Which platform this conversation is on.
+
+        Read by `remind`, which stores `(platform, conversation_id,
+        conversation_type)` because every conversation key in this codebase is a
+        tuple: a row holding `conversation_id` alone can build neither a
+        `ConversationTarget`, nor the `ConversationSlots` key, nor a
+        `Policy.is_allowed` call. It comes from here rather than from a new
+        `build_tool_specs` parameter because both constructors of this object —
+        the tag pipeline and the fire path — already pass the authoritative
+        value, and a second parameter carrying the same fact is how the two
+        drift.
+        """
+        return self._platform
+
+    @property
+    def tagger(self) -> PersonRef | None:
+        """Who this turn is FOR, or None when the sender is unmapped (§12).
+
+        `scope()` surfaces the tagger only in its degraded branch, and a
+        `None` check is not what the caller needs anyway: `remind` writes
+        `tagger.person_id` into `reminders.requester_person_id`, which is the id
+        the fire-time policy re-check then runs against. So this is a reader,
+        not a predicate — «is there a mapped requester» and «who is it» are one
+        question here, and answering the first without the second would have
+        the tool invent an owner for the row.
+
+        Read-only on purpose: the tagger is fixed for the life of the turn, and
+        this object is constructed fresh per turn.
+        """
+        return self._tagger
+
     async def members(self) -> RoomView:
         """The room as the platform reports it. `available=False` if it could not be read."""
         if self._view is None:

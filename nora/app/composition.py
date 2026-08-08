@@ -43,7 +43,7 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
-from nora.domain.reminders import ReminderStore
+from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
@@ -197,6 +197,18 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
     )
+    # The reminders store, REUSING `engine` for the reason above: a second
+    # `create_sql_engine` forks the pool and its `aclose()` would dispose the
+    # engine the record store and the presence reader are still using.
+    #
+    # Built HERE, beside the other stores, rather than down beside the heartbeat
+    # loop it feeds — because it has TWO consumers and only one of them is
+    # gated. `ToolRegistry` (below) needs it whether or not `[heartbeat] enabled`
+    # is true: the model may set, list and cancel reminders on a deployment with
+    # the tick switched off, and `remind` answering `unavailable` there would be
+    # a wiring accident that no test catches (every test builds its own registry
+    # with the fake). The tick is the only part behind the flag.
+    reminders: ReminderStore = SqlReminderStore(engine)
 
     try:
         registry = await AdapterRegistry.from_config(cfg.platforms, metrics=metrics)
@@ -456,6 +468,22 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         refresher=refresher,
         shortener=shortener_client,
         ai_peer=cfg.memory.ai_peer,
+        # The SAME store the tick reads from — two would be two queues, and the
+        # rows `remind` wrote would sit in one while the heartbeat watched the
+        # other.
+        reminders=reminders,
+        # §9's caps as the DOMAIN value. `nora.agent` may not import
+        # `nora.config` (import-linter's "only app and __main__ read config"),
+        # so THIS is the conversion point: `RemindersConfig`'s fields are
+        # `ReminderCaps`'s fields, and `model_dump()` keeps them one edit rather
+        # than three. A field added to one and not the other is a `TypeError`
+        # here, at startup, which is the failure worth having.
+        reminder_caps=ReminderCaps(**cfg.reminders.model_dump()),
+        # The same wall clock the tick runs on. `remind` compares `when` against
+        # it for three of its six refusals, and a registry clock that disagreed
+        # with the tick's would let a row be accepted as "two minutes out" and
+        # then be found already due.
+        clock=lambda: datetime.now(UTC),
     )
     # The room-scoped tools' one platform dependency. Built here rather than
     # taken off the adapter because membership is a read-only DIRECTORY query
@@ -502,11 +530,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 
-    # Reminders + the heartbeat tick. The store REUSES `engine` — this module's
-    # "ONE engine (one pool)" rule (see its construction above): a second
-    # `create_sql_engine` would fork the pool, and its `aclose()` would dispose
-    # the engine the record store and the presence reader are still using.
-    reminders: ReminderStore = SqlReminderStore(engine)
     # Boot recovery (§8.2), UNCONDITIONALLY — deliberately NOT behind
     # `cfg.heartbeat.enabled`. A crash leaves rows FIRING, and a heartbeat that
     # has been switched off is exactly the state in which a stranded row would

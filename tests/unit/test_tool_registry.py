@@ -66,6 +66,7 @@ def test_the_registry_exposes_every_declared_tool():
         "where_is",
         "media_fetch",
         "web_search", "web_fetch",
+        "remind", "list_reminders", "cancel_reminder",
     }
 
 
@@ -114,6 +115,14 @@ def test_budgets_match_todays_table():
         # result, refine — two of each leaving half the turn.
         "web_search": 4,
         "web_fetch": 4,
+        # The three reminder verbs (DEC-70), all 2 and sized by the
+        # CONVERSATION rather than by cost: none leaves the host or the
+        # database, so a call is one model round trip, and one message can
+        # genuinely set two reminders or set one after cancelling another.
+        # Raising them would buy nothing — the real bound on how many
+        # reminders exist is `max_pending_per_requester`, checked inside
+        # `remind` (§9), which no budget can substitute for.
+        "remind": 2, "list_reminders": 2, "cancel_reminder": 2,
     }
 
 

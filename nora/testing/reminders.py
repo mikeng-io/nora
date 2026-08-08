@@ -76,6 +76,13 @@ class FakeReminderStore:
             key=_order,
         )
 
+    async def all_pending(self, *, limit: int) -> Sequence[Reminder]:
+        size = check_limit(limit)
+        return sorted(
+            (r for r in self._rows.values() if r.state is ReminderState.PENDING),
+            key=_order,
+        )[:size]
+
     async def count_pending(self, requester_person_id: str) -> int:
         return sum(1 for r in self._rows.values()
                    if r.requester_person_id == requester_person_id

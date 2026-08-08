@@ -168,6 +168,22 @@ class SqlReminderStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_reminder(r) for r in rows]
 
+    async def all_pending(self, *, limit: int) -> Sequence[Reminder]:
+        """Every PENDING row, `due_at` then `id` ascending — the operator's view.
+
+        `idx_reminders_due` (`state, due_at`) serves this exactly as it serves
+        `due()`; the only difference is that there is no `due_at <= now`.
+        """
+        stmt = (
+            sa.select(REMINDERS)
+            .where(REMINDERS.c.state == ReminderState.PENDING.value)
+            .order_by(REMINDERS.c.due_at.asc(), REMINDERS.c.id.asc())
+            .limit(check_limit(limit))
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_row_to_reminder(r) for r in rows]
+
     async def count_pending(self, requester_person_id: str) -> int:
         stmt = (
             sa.select(sa.func.count())

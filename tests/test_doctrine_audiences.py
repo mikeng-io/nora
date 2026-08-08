@@ -43,7 +43,35 @@ you only ask 「幾點?」 when there is genuinely nothing sensible to assume �
 answers 「等陣提我洗衫」 with 「幾點? 15 分鐘定 30 分鐘?」 is not being careful, they are being
 a judge.
 """
-ADDED_TOKENS = set(NEW_CONDUCT_HEADING.split()) | set(NEW_VOICE_SECTION.split())
+# The three reminder verbs' capability lines (DEC-70). NOT authored doctrine —
+# the `kind: capability` section is GENERATED from `NATIVE_TOOLS` by
+# `ToolRegistry.capability()` (DEC-29), so every tool that ships adds tokens to
+# the tag audience without anybody editing a doctrine file.
+#
+# **This is the friction that makes this test scaffolding rather than an
+# invariant**, and the plan says so: DEC-29 deliberately removed a golden the
+# operator had to regenerate whenever she edited `voice.md`, and this one has to
+# be regenerated whenever a TOOL ships too. It is kept only until the merge
+# commit, where it and `tests/fixtures/tag_doctrine_bodies.txt` are deleted
+# together. The durable property — nothing is LOST from the tag audience — is
+# the `removed` assertion below, and it is the one that has caught anything.
+#
+# Written out literally, like the two blocks above, for the reason stated there:
+# a bound that reads its own value out of `NATIVE_TOOLS` would accept whatever
+# `NATIVE_TOOLS` happened to say.
+NEW_CAPABILITY_LINES = """
+- remind — somebody asks you to tell them something later — you store their own words
+  and say them back into this conversation when the time comes
+- list_reminders — somebody asks what you are still holding for this group — only this
+  conversation's, never another room's
+- cancel_reminder — somebody calls one off — takes the id list_reminders gave you, never
+  one you made up
+"""
+ADDED_TOKENS = (
+    set(NEW_CONDUCT_HEADING.split())
+    | set(NEW_VOICE_SECTION.split())
+    | set(NEW_CAPABILITY_LINES.split())
+)
 
 
 def _bodies(store: DoctrineStore, audience: str) -> str:

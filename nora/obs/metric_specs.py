@@ -557,13 +557,35 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "by construction), 0 the day someone outside the circle is in the group.",
         ("circle",),
     ),
-    # The backlog. Set from a count, not derived from the two counters above:
-    # created - fired silently drifts the day a row is cancelled, and a backlog
-    # that climbs forever is exactly what a stuck tick looks like.
-    _GaugeSpec(
-        "nora_reminders_pending",
-        "Reminders currently PENDING — the backlog waiting on the tick.",
-    ),
+    # THERE IS DELIBERATELY NO `nora_reminders_pending` HERE, and the name is
+    # left free rather than reserved. Design §13 asked for one ("runaway visible
+    # without a query"); it was declared, never published, and therefore rendered
+    # `0.0` — which reads as "no backlog" and is indistinguishable from "nobody is
+    # measuring". Declared-and-unpublished is the worse of the two states, so the
+    # declaration went rather than the honesty.
+    #
+    # **Why it cannot be published, verified rather than assumed.** The backlog is
+    # a row count, and every `ReminderStore` read is a coroutine
+    # (`all_pending`, `count_pending`). `Metrics.gauge_function` binds a
+    # SYNCHRONOUS callable that prometheus-client invokes inside
+    # `CollectorRegistry.collect()` — and `/metrics` is an aiohttp handler
+    # (`nora.obs.health`), so that callback runs ON the event loop that would have
+    # to run the query. There is no await to be had there and no second loop to
+    # hand it to.
+    #
+    # **And publishing it from the tick is worse than absent.** The shipped
+    # default is `[heartbeat] enabled = false` while `remind` still writes rows
+    # unconditionally (the store is wired outside the flag) — so a tick-published
+    # gauge exports `0.0` forever on precisely the deployment where the backlog
+    # only grows. Deriving it from `created_total - fired_total` drifts on the
+    # first cancel and resets on every restart while the rows survive.
+    #
+    # The backlog is a DATABASE question and `nora reminders list` (read-only,
+    # `nora.app.cli`) is what answers it, flagging overdue rows — the query §13
+    # hoped to avoid, kept because a gauge that means "unknown" while printing
+    # "fine" is not a substitute for one. The liveness signal below is the metric
+    # that makes a stuck tick visible without a query.
+    #
     # The heartbeat's LIVENESS, and the one gauge in this file that must not be
     # written from inside the loop it measures. It is bound to a function
     # evaluated at SCRAPE time (`Metrics.gauge_function`), so a loop that has

@@ -8,6 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 # The named test the spec's B.1 table assigns to each rule.
 RULE_TESTS = {
     "R-1": "test_ambient_never_constructs_agent",
+    # R-1b: R-1's FIRST clause, revised. `nora.app.fire.FirePath` made "only the
+    # tagging path may cause a send" false — a fire turn is a send not caused by
+    # a tag. R-1 keeps its entry rather than losing it (the DEC-40 precedent
+    # below): its test asserts BOTH clauses and the second one — ambient traffic
+    # never reaches the agent — is untouched and still enforced. But it harnesses
+    # only ambient input, so it stays green no matter how many non-tag send paths
+    # exist, which makes it no brake at all on the revised clause. R-1b is that
+    # brake: `Deliverer` is the only caller of `adapter.send`, it is constructed
+    # only by `deliver.build`, and `deliver.build` has exactly two callers — the
+    # tag pipeline and the fire path.
+    "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_send_reply_past_the_cap_is_cancelled",
     "R-2b": "test_deliverer_latch_is_single_shot",
     "R-3": "test_send_to_other_group_cannot_escape_the_tagged_conversation",
@@ -102,6 +113,42 @@ RULE_TESTS = {
     # refusal: there the subject is a person's position and silence would lie;
     # here the dictionary entry's existence is itself the secret).
     "R-35": "test_a_non_subset_room_resolves_no_saved_place",
+    # R-36…R-39: reminders + the heartbeat (DEC-70). The next free numbers after
+    # R-35; R-26 is still reserved by design/proposed/18.
+    #
+    # R-36: a reminder NEVER fires early. The tick's batch is `due_at <= now` and
+    # nothing else — no rounding, no "close enough", no catch-up window. It is
+    # the first rule because it is the one a scheduler gets wrong quietly: firing
+    # a minute early is a message that arrives before the thing it is about, and
+    # nobody reports it as a bug.
+    "R-36": "test_a_row_not_yet_due_does_not_fire",
+    # R-37: a row fires ONCE, ever. Taking a row is a compare-and-set on
+    # `state = 'pending'` inside the statement, not a read-then-write: `due()` is
+    # a query rather than a claim, and the tick awaits a turn per group before it
+    # reaches the later rows, so a cancel landing in that window must win. With
+    # `mark` doing the take it did not, and a cancelled row went
+    # CANCELLED -> FIRING -> DONE and was spoken.
+    "R-37": "test_claim_is_a_compare_and_set_from_pending",
+    # R-37b: the same rule across a CRASH, where it is a decision rather than a
+    # mechanism (§8.2). A row left FIRING resolves to FAILED and is never
+    # re-queued: nothing links a row to the message it may already have
+    # delivered, so re-queueing double-sends anything that died after egress.
+    # At-most-once — losing one reminder visibly beats saying it twice.
+    "R-37b": "test_sweep_resolves_firing_rows_to_failed",
+    # R-38: only a MAPPED person may create a reminder (§12). `requester_person_id`
+    # is what the fire-time policy re-check runs against, so an unmapped sender
+    # has no owner to write and inventing one would put unprompted speech into a
+    # room under nobody's name. Enforced at `remind()` and re-checked at fire
+    # time, because identity.toml loads once at startup and the horizon is 30 days.
+    "R-38": "test_remind_refuses_an_unmapped_requester",
+    # R-39: `remind` refuses on a FIRE TURN — the structural bar on recurrence
+    # (§7.1, §9). Without it Nora re-arms her own reminder each time one comes
+    # due, and none of §9's caps can stop her: `max_pending_per_requester` counts
+    # PENDING rows and the fire has already freed one before the replacement is
+    # written. The flag is turn PROVENANCE (`fire_turn`), threaded from
+    # `ToolRegistry.build`, because a fire turn is otherwise a well-formed turn
+    # in the same conversation and no tool can tell the two apart.
+    "R-39": "test_remind_refuses_on_a_fire_turn",
 }
 
 

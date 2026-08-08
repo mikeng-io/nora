@@ -93,6 +93,7 @@ def test_every_declared_tool_is_built(wiring):
         "where_is",
         "media_fetch",
         "web_search", "web_fetch",
+        "remind", "list_reminders", "cancel_reminder",
     }
 
 

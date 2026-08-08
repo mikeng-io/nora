@@ -148,6 +148,35 @@ async def test_pending_for_is_scoped_and_excludes_finished(store):
     assert [x.id for x in await store.pending_for("conv-1")] == [mine.id]
 
 
+async def test_all_pending_crosses_conversations_and_excludes_finished(store):
+    """The operator's read (`nora reminders list`), and the one `pending_for`
+    cannot stand in for: which conversations have rows waiting is the question,
+    so there is no conversation to scope by.
+
+    Ordered like `due()` — `due_at` then `id` — and PENDING only, or the CLI's
+    "what is still coming" would include everything that already went out. Both
+    implementations get their own test because Task 2 proved the SQL adapter and
+    the fake drift the moment one of them is not under the suite."""
+    early = _row(conversation_id="conv-1", due_at=T0 + timedelta(hours=1))
+    late = _row(conversation_id="conv-2", due_at=T0 + timedelta(hours=2))
+    done = _row(conversation_id="conv-3", state=ReminderState.DONE)
+    cancelled = _row(conversation_id="conv-4", state=ReminderState.CANCELLED)
+    for r in (late, early, done, cancelled):
+        await store.create(r)
+
+    assert [x.id for x in await store.all_pending(limit=10)] == [early.id, late.id]
+    assert [x.id for x in await store.all_pending(limit=1)] == [early.id]
+
+
+async def test_all_pending_refuses_a_non_positive_limit(store):
+    """`check_limit`'s rule reaches this read too. Unguarded, Postgres raised
+    `InvalidRowCountInLimitClauseError` on `LIMIT -1` while the fake's `[:-1]`
+    returned everything-except-the-last — plausible-looking wrong data, which is
+    the worse of the two."""
+    with pytest.raises(ValueError):
+        await store.all_pending(limit=0)
+
+
 async def test_count_pending_is_per_requester(store):
     await store.create(_row(requester_person_id="miles"))
     await store.create(_row(requester_person_id="miles"))
