@@ -11,6 +11,7 @@ from aiohttp import web
 
 from nora.domain.identity import Identifier
 from nora.domain.models import NormalizedMessage
+from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages import admission
 from nora.engagement.stages.admission import Admission
 from nora.obs.metrics import Metrics
@@ -212,6 +213,12 @@ def _self_tag(sender_id: str) -> NormalizedMessage:
     )
 
 
+def _slots() -> ConversationSlots:
+    """Empty slots — R-12 is decided before the lock is ever consulted, so
+    every admission call below starts from a free conversation."""
+    return ConversationSlots(maxlen=16, spawn=lambda coro: coro.close())
+
+
 async def test_degraded_identity_enrichment_is_counted_and_r12_still_holds(
     aiohttp_server,
 ):
@@ -250,9 +257,7 @@ async def test_degraded_identity_enrichment_is_counted_and_r12_still_holds(
         message=_self_tag(PRIMARY),
         identity=identity,
         debounce=Debounce(0.0),
-        in_flight=set(),
-        queue_depth=0,
-        queue_max=16,
+        slots=_slots(),
         metrics=metrics,
     )
     assert verdict is Admission.REJECTED
@@ -282,7 +287,7 @@ async def test_enrichment_widens_r12_to_the_aci_it_could_not_see_before(
     def _admit(identity, metrics):
         return admission.run(
             message=_self_tag(ACI), identity=identity, debounce=Debounce(0.0),
-            in_flight=set(), queue_depth=0, queue_max=16, metrics=metrics,
+            slots=_slots(), metrics=metrics,
         )
 
     # Refused (self-tag) only when enrichment saw the ACI; under the degraded

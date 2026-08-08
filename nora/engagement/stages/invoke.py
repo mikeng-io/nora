@@ -9,6 +9,11 @@ Preserves `Handler._invoke`'s timeout/exception behaviour exactly
   + return silently.
 - `finally` → always `metrics.observe("nora_llm_latency_seconds", elapsed)`.
 
+Every series this stage moves is labelled `audience="tag"` as a literal, all
+four of them: both `nora_silent_failures_total` increments, the latency
+histogram and `nora_llm_stop_reason_total`. This stage IS the tag path and the
+fire turn never enters it — see `run`'s docstring.
+
 Both reasons are R-5 cases with named tests in
 `tests/test_acceptance_rules.py::RULE_TESTS` — the strings must not change.
 
@@ -91,6 +96,17 @@ async def run(
     `nora.engagement.stages.deliver.check_outcome` to label a silent turn
     with (R-23): `limit_total_tokens` and `no_send_call` are different
     failures and used to be the same metric.
+
+    **Every series below is labelled `audience="tag"` as a literal, because
+    this stage is the TAG path's, exclusively** (design spec §6.2, §13). That is
+    both `nora_silent_failures_total` increments, `nora_llm_latency_seconds` and
+    `nora_llm_stop_reason_total` — the last two because a fire turn is bounded
+    by a DIFFERENT timeout and a mixed histogram describes neither population.
+    The heartbeat's fire path deliberately
+    does NOT call it: it needs `[heartbeat] timeout_seconds` rather than the
+    tier's, and it needs the failure mapped to one of §8.1's outcome strings so
+    the reminder row records what actually happened. It calls `runner.invoke`
+    inside its own `asyncio.wait_for` and counts its own two failures there.
     """
     started = time.perf_counter()
     ok = True
@@ -108,22 +124,23 @@ async def run(
         log.error("invocation_timeout (tag=%s)", ctx.tag_id)
         metrics.inc(
             "nora_silent_failures_total", reason="invocation_timeout",
-            platform=ctx.message.platform,
+            platform=ctx.message.platform, audience="tag",
         )
         ok = False
     except Exception:
         log.exception("llm_error (tag=%s); staying silent", ctx.tag_id)
         metrics.inc(
-            "nora_silent_failures_total", reason="llm_error", platform=ctx.message.platform,
+            "nora_silent_failures_total", reason="llm_error",
+            platform=ctx.message.platform, audience="tag",
         )
         ok = False
     finally:
         elapsed = time.perf_counter() - started
-        metrics.observe("nora_llm_latency_seconds", elapsed)
+        metrics.observe("nora_llm_latency_seconds", elapsed, audience="tag")
     if stop_reason is not None:
         # Every completed invocation, not just the ones that ran out of
         # budget: a series that only ever carries `limit_*` cannot say what
         # fraction of turns are being cut off, and `end_turn` being the
         # overwhelming majority is the thing that makes a `limit_*` legible.
-        metrics.inc("nora_llm_stop_reason_total", reason=stop_reason)
+        metrics.inc("nora_llm_stop_reason_total", reason=stop_reason, audience="tag")
     return ok, elapsed, stop_reason

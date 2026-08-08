@@ -10,14 +10,21 @@ from nora.obs.metrics import Metrics
 
 DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 
-# stem -> (kind, order). The stem, the frontmatter `name` and the section tag
-# all agree from the frontmatter commit onwards; commit 1 deliberately left the
-# names behind so the rename could be proved byte-neutral.
+# stem -> (kind, order, applies_to). The stem, the frontmatter `name` and the
+# section tag all agree from the frontmatter commit onwards; commit 1
+# deliberately left the names behind so the rename could be proved byte-neutral.
+#
+# The audience is pinned per file, not asserted as one blanket `("tag",)`,
+# because that is the whole point of `silence.md`: everything else holds however
+# the turn started, and only "you're only reading this because someone called
+# you" does not. A file quietly gaining or losing `heartbeat` is the failure
+# this column exists to catch.
 EXPECTED = {
-    "identity": ("identity", 10),
-    "voice": ("identity", 20),
-    "conduct": ("conduct", 30),
-    "constraints": ("constraint", 40),
+    "identity": ("identity", 10, ("tag", "heartbeat")),
+    "voice": ("identity", 20, ("tag", "heartbeat")),
+    "silence": ("conduct", 25, ("tag",)),
+    "conduct": ("conduct", 30, ("tag", "heartbeat")),
+    "constraints": ("constraint", 40, ("tag", "heartbeat")),
 }
 
 
@@ -26,23 +33,26 @@ def _shipped(**kw):
                          tool_names=ToolRegistry().tool_names(), metrics=Metrics(), **kw)
 
 
-def test_exactly_the_four_files_ship():
+def test_exactly_the_expected_files_ship():
     assert {p.stem for p in DOCTRINE_DIR.glob("*.md")} == set(EXPECTED)
 
 
-@pytest.mark.parametrize("stem,kind,order", sorted((s, k, o) for s, (k, o) in EXPECTED.items()))
-def test_each_file_has_the_expected_name_kind_and_order(stem, kind, order):
+@pytest.mark.parametrize(
+    "stem,kind,order,applies_to",
+    sorted((s, k, o, a) for s, (k, o, a) in EXPECTED.items()),
+)
+def test_each_file_has_the_expected_name_kind_order_and_audience(stem, kind, order, applies_to):
     section = parse_section(DOCTRINE_DIR / f"{stem}.md")
     assert section.name == stem
     assert section.kind == kind
     assert section.order == order
-    assert section.applies_to == ("tag",)
+    assert section.applies_to == applies_to
 
 
 def test_the_shipped_doctrine_assembles_in_strict_mode():
     doctrine = _shipped().get()
     assert [s.name for s in doctrine.sections] == \
-        ["identity", "voice", "conduct", "constraints"]
+        ["identity", "voice", "silence", "conduct", "constraints"]
 
 
 def test_constraints_is_last_for_recency():

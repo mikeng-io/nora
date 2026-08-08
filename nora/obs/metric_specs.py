@@ -34,6 +34,12 @@ class _HistogramSpec(NamedTuple):
     name: str
     help_text: str
     buckets: tuple[float, ...] = _DEFAULT_BUCKETS
+    # Histograms were label-free until `nora_llm_latency_seconds` gained
+    # `audience` (see its entry below). `Metrics.observe` had accepted `**labels`
+    # and recorded them only in its test-readback dict all along, so a call site
+    # passing one got a silently unlabelled sample — which is why this field, not
+    # the keyword, is what makes a labelled histogram real.
+    labelnames: tuple[str, ...] = ()
 
 
 # Every metric name below already existed before this module's prometheus-client
@@ -66,8 +72,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_silent_failures_total",
-        "Failures kept silent from the group, by reason.",
-        ("reason", "platform"),
+        "Failures kept silent from the group, by reason and by which path was "
+        "speaking (audience=\"tag\" | \"heartbeat\").",
+        # `audience` is the ONE label the heartbeat adds to an existing series
+        # (design spec §6.2, §13), and it is added rather than the fire path
+        # getting its own silent-failure series, because isolation-by-omission
+        # was tried twice and undercounted twice: `Deliverer` — which the fire
+        # path MUST use, being the only caller of `adapter.send` — increments
+        # this on five branches of its own, so any "the fire path just doesn't
+        # call the counting code" scheme is wrong by construction.
+        #
+        # **A8 is now `audience="tag"`-filtered** (`docs/runbook.md`). Without
+        # the filter a fire-path failure spends a <1% budget sized for
+        # conversation; without the LABEL at every call site, an unlabelled
+        # increment records `audience=""` (`Metrics._full_labels`) and is
+        # excluded from that filter — silently, and most damagingly at the
+        # `handler_error` site, which is R-5's last-resort signal.
+        ("reason", "platform", "audience"),
     ),
     _CounterSpec("nora_guard_vetoes_total", "ReplyGuard vetoes, by rule.", ("rule",)),
     _CounterSpec(
@@ -232,11 +253,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # an operator what fraction of turns are being cut off. Alert on any
     # sustained `limit_*`; raising a cap without this counter just moves the
     # cliff somewhere nobody is looking.
+    #
+    # **`audience` for the reason `nora_silent_failures_total` has one**, and it
+    # was missed when the heartbeat's fire path shipped. Design §13 named the
+    # tag-path series a fire turn must not silently move and this was not on the
+    # list, so a reminder's turn began sharing it unlabelled. The consequence is
+    # specific rather than tidiness: `2026-08-08-turn-budget-finding.md:224`
+    # recommends alarming on `{reason=~"limit_.*"}`, and without the label that
+    # alarm cannot say whether a tag or a reminder ran out of budget — the two
+    # have different caps, different timeouts and different fixes. Names are
+    # append-only; labels are not (see this module's header).
     _CounterSpec(
         "nora_llm_stop_reason_total",
         "How the agent loop terminated, by Strands stop_reason "
-        "(end_turn / tool_use / limit_turns / limit_total_tokens / ...).",
-        ("reason",),
+        "(end_turn / tool_use / limit_turns / limit_total_tokens / ...) and by "
+        "which path was speaking (audience=\"tag\" | \"heartbeat\").",
+        ("reason", "audience"),
     ),
     # The tools that had NO counter of their own — `now`, `load_transcript`,
     # `send_reply`, and now `calculate` (DEC-35), whose two
@@ -451,6 +483,57 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "blocked) so the design/14 §2.2 count-vs-block call can be revisited "
         "against real queries.",
     ),
+    # Reminders, the two halves. CREATED is the `remind` tool's own answer —
+    # `status` separates an accepted row from each way the tool refuses one,
+    # which is the only visibility into a cap that is set too tight; a refusal
+    # is a sentence to a human, and sentences do not aggregate.
+    #
+    # The help text lists ALL NINE values `nora.agent.tools._record_created` can
+    # emit, not just the caps. An earlier version named four, so an operator
+    # reading the metric's own documentation could not tell whether a status it
+    # omitted (`fire_turn`, `unmapped`, `unparseable`, `past`, `unavailable`)
+    # was a value this series can take or a typo somewhere — and `unavailable`
+    # in particular means reminders are not wired at all, which is the one
+    # status here that is an outage rather than a policy decision. Keep this
+    # list in step with `_record_created`'s call sites.
+    _CounterSpec(
+        "nora_reminders_created_total",
+        "Reminder creation attempts, by status: created; the caps' refusals "
+        "(too_soon / too_far / too_many); the turn-provenance refusal "
+        "(fire_turn); the input refusals (unmapped / unparseable / past); and "
+        "unavailable, which means no reminders store is wired or the write "
+        "failed.",
+        ("status",),
+    ),
+    # FIRED is the tick's outcome per reminder, and it counts the FAILURES the
+    # group never sees: `failed_policy` (trust withdrawn between setting and
+    # firing — R-5 keeps that silent in the room, so this is the only trace) and
+    # `failed_error` (the fire turn raised, or a crash left the row FIRING and
+    # boot recovery resolved it). A reminder that vanishes must never vanish
+    # from the metrics too.
+    _CounterSpec(
+        "nora_reminders_fired_total",
+        "Reminders resolved by the heartbeat, by outcome (the fire path's own "
+        "status, or failed_policy / failed_error).",
+        ("outcome",),
+    ),
+    # DEFERRALS are the third reading, and the one neither of the two above can
+    # give. A tick that finds the conversation slot held leaves its rows PENDING
+    # and moves on (§5.3) — nothing fires, nothing fails, and the tick itself
+    # completes, so `nora_reminders_fired_total` never moves and
+    # `nora_heartbeat_last_tick_age_seconds` stays at zero. A busy group can
+    # therefore starve a reminder for hours with every other signal reading
+    # healthy. Counted ONCE PER DEFERRED TURN, not per reminder and not per
+    # distinct row: the same rows are deferred again on the next tick, so this
+    # is a measure of CONTENTION over time (alert on a rate), never a count of
+    # how many reminders are late — `nora reminders list` answers that, by
+    # naming the overdue rows.
+    _CounterSpec(
+        "nora_heartbeat_deferrals_total",
+        "Fire turns the heartbeat deferred to a later tick because the "
+        "conversation slot was held by a tag. One per deferred turn per tick, "
+        "so a sustained rate means a group is starving its own reminders.",
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -502,13 +585,69 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "by construction), 0 the day someone outside the circle is in the group.",
         ("circle",),
     ),
+    # THERE IS DELIBERATELY NO `nora_reminders_pending` HERE, and the name is
+    # left free rather than reserved. Design §13 asked for one ("runaway visible
+    # without a query"); it was declared, never published, and therefore rendered
+    # `0.0` — which reads as "no backlog" and is indistinguishable from "nobody is
+    # measuring". Declared-and-unpublished is the worse of the two states, so the
+    # declaration went rather than the honesty.
+    #
+    # **Why it cannot be published, verified rather than assumed.** The backlog is
+    # a row count, and every `ReminderStore` read is a coroutine
+    # (`all_pending`, `count_pending`). `Metrics.gauge_function` binds a
+    # SYNCHRONOUS callable that prometheus-client invokes inside
+    # `CollectorRegistry.collect()` — and `/metrics` is an aiohttp handler
+    # (`nora.obs.health`), so that callback runs ON the event loop that would have
+    # to run the query. There is no await to be had there and no second loop to
+    # hand it to.
+    #
+    # **And publishing it from the tick is worse than absent.** The shipped
+    # default is `[heartbeat] enabled = false` while `remind` still writes rows
+    # unconditionally (the store is wired outside the flag) — so a tick-published
+    # gauge exports `0.0` forever on precisely the deployment where the backlog
+    # only grows. Deriving it from `created_total - fired_total` drifts on the
+    # first cancel and resets on every restart while the rows survive.
+    #
+    # The backlog is a DATABASE question and `nora reminders list` (read-only,
+    # `nora.app.cli`) is what answers it, flagging overdue rows — the query §13
+    # hoped to avoid, kept because a gauge that means "unknown" while printing
+    # "fine" is not a substitute for one. The liveness signal below is the metric
+    # that makes a stuck tick visible without a query.
+    #
+    # The heartbeat's LIVENESS, and the one gauge in this file that must not be
+    # written from inside the loop it measures. It is bound to a function
+    # evaluated at SCRAPE time (`Metrics.gauge_function`), so a loop that has
+    # STOPPED shows a climbing age rather than freezing at its last reading —
+    # the failure this signal exists to make visible. Alert on it crossing a few
+    # ticks. Contrast `nora_presence_last_collection_age_seconds` above, which
+    # IS published from inside its collector's loop and therefore only detects a
+    # collector that is up and failing, not one that is gone.
+    _GaugeSpec(
+        "nora_heartbeat_last_tick_age_seconds",
+        "Seconds since the heartbeat's last completed tick, computed at scrape "
+        "time. Climbing past a few ticks means the loop has stopped.",
+    ),
 )
 
 _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     _HistogramSpec(
         "nora_tag_latency_seconds", "End-to-end tag latency, including the model call.",
     ),
-    _HistogramSpec("nora_llm_latency_seconds", "Model invocation latency."),
+    # The one LABELLED histogram, and the label is `audience` for the same
+    # reason `nora_llm_stop_reason_total` gained it — except that here the two
+    # populations are not merely hard to tell apart, they are bounded by
+    # DIFFERENT NUMBERS. A tag's invocation is cut at `[llm] timeout_seconds`
+    # (60); a fire turn's at `[heartbeat] timeout_seconds` (120), deliberately,
+    # because nobody is waiting on it. Mixed into one histogram the tail is a
+    # blend of two distributions with two different ceilings, so neither a p95
+    # nor a bucket count means anything about either path.
+    _HistogramSpec(
+        "nora_llm_latency_seconds",
+        "Model invocation latency, by which path was speaking "
+        "(audience=\"tag\" | \"heartbeat\"). The two carry different timeouts.",
+        _DEFAULT_BUCKETS,
+        ("audience",),
+    ),
     _HistogramSpec("nora_overhead_seconds", "Tag latency excluding the model call."),
     # A COUNT, not a duration, so it carries its own buckets — the default set
     # is calibrated for seconds and would put every possible value in the first

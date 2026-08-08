@@ -173,3 +173,62 @@ PRESENCE_PLACES = sa.Table(
     # Epoch MILLISECONDS: when Nora last saw this place on the wire.
     sa.Column("updated_ms", sa.BigInteger, nullable=False),
 )
+
+
+# `reminders` — one-shot deferred requests, the heartbeat's fire queue.
+#
+# Keyed by a UUID rather than an identity column, unlike every other table here:
+# the id is minted by the `remind` tool INSIDE a turn and spoken back to the
+# requester in the same breath, so `cancel_reminder` can name it — a value that
+# has to exist before the row is written cannot come from a sequence.
+#
+# `platform` / `conversation_id` / `conversation_type` are all three stored, not
+# just the id: every conversation key in this codebase is a TUPLE, and a row
+# carrying `conversation_id` alone can build neither a `ConversationTarget`, nor
+# the `ConversationSlots` key `(platform, conversation_id)`, nor a
+# `Policy.is_allowed` call — all three of which the fire path makes before it
+# sends a word.
+#
+# `created_at`/`due_at`/`fired_at` are `DateTime(timezone=True)` (timestamptz),
+# NOT the epoch-milliseconds BIGINT `messages.ts` and `presence_fixes.ts` use.
+# Those two carry a PLATFORM's own timestamp on the wire, in the platform's
+# unit; these three are Nora's own wall-clock instants, compared against a
+# `datetime` the heartbeat's injected clock produces, and a `due_at` that has to
+# round-trip through `>= now` in SQL is far better served by the type Postgres
+# can compare directly.
+#
+# `state` is TEXT with a CHECK rather than a Postgres ENUM: the same choice
+# `messages.conversation_type` made, and for the same reason — a CHECK is edited
+# by an ordinary migration, an ENUM needs `ALTER TYPE`. The CHECK is exactly
+# what `alembic check` cannot see, which is why `0004_reminders` is hand-written
+# and `tests/infra/test_schema_parity.py` reads it from `pg_constraint`.
+REMINDERS = sa.Table(
+    "reminders",
+    METADATA,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("requester_person_id", sa.Text, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("conversation_type", sa.Text, nullable=False),
+    sa.Column("text", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("due_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("state", sa.Text, nullable=False),
+    # NULL until the row fires, and NULL forever on one that is cancelled.
+    sa.Column("fired_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("outcome", sa.Text, nullable=True),
+    sa.CheckConstraint(
+        "state IN ('pending','firing','done','cancelled','failed')",
+        name="ck_reminders_state",
+    ),
+)
+
+# Declared after the table, house style. `(state, due_at)` ASCENDING — the one
+# query the tick runs every wake is `state = 'pending' AND due_at <= now ORDER BY
+# due_at`, which this serves as a prefix scan. No DESC column, so unlike
+# `idx_messages_conv_ts` and `idx_presence_member_ts` this one has nothing
+# autogenerate is blind to; it is still authored by hand in `0004_reminders`
+# because the CHECK constraint on the same table is.
+IDX_REMINDERS_DUE = sa.Index(
+    "idx_reminders_due", REMINDERS.c.state, REMINDERS.c.due_at
+)

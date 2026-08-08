@@ -138,6 +138,33 @@ def test_the_media_ports_conform_in_both_implementations(tmp_path):
     assert isinstance(FakeMediaSource(), MediaSource)
 
 
+def test_the_reminder_stores_conform_to_the_port():
+    """`ReminderStore`'s two implementations, at the name level.
+
+    This entry was MISSING while every other port had one, and the gap was not
+    covered by anything else: mypy's scoped strict override lists
+    `nora/domain nora/config.py nora/app nora/infra nora/presence`, so
+    `nora.testing.reminders` and `tests/` are both outside it. A method renamed
+    or dropped on either side would have passed all four gates in silence —
+    including the behavioural suite, whose `store` fixture only ever reaches the
+    methods it happens to call.
+
+    Shape stays mypy's job for the SQL side, behaviour stays
+    `tests/contract/test_reminder_store_contract.py`'s for both; this is the
+    floor under them.
+    """
+    from nora.domain.reminders import ReminderStore
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.infra.sql.reminders import SqlReminderStore
+    from nora.testing.reminders import FakeReminderStore
+
+    # `create_async_engine` is lazy — no connection is opened until a statement
+    # runs, so this needs no database.
+    engine = create_sql_engine("postgresql+asyncpg://u:p@127.0.0.1:1/db")
+    assert isinstance(SqlReminderStore(engine), ReminderStore)
+    assert isinstance(FakeReminderStore(), ReminderStore)
+
+
 def test_the_reverse_geocoder_backends_conform_to_the_port():
     """Both `ReverseGeocoder` backends satisfy the port at the name level (the
     shape is mypy's, the behaviour is `tests/contract/test_geocoder_contract.py`

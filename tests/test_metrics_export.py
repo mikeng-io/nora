@@ -71,9 +71,14 @@ def test_declared_unlabeled_counters_render_at_zero_before_first_use():
 
 def test_counters_render_with_labels():
     m = Metrics()
-    m.inc("nora_silent_failures_total", reason="llm_error", platform="signal")
+    m.inc(
+        "nora_silent_failures_total", reason="llm_error", platform="signal", audience="tag",
+    )
     text = m.render()
-    assert 'nora_silent_failures_total{platform="signal",reason="llm_error"} 1.0' in text
+    assert (
+        'nora_silent_failures_total{audience="tag",platform="signal",reason="llm_error"} 1.0'
+        in text
+    )
 
 
 def test_label_values_are_escaped():
@@ -112,6 +117,47 @@ def test_the_per_tag_message_histogram_is_bucketed_for_counts_not_seconds():
     assert "nora_messages_per_tag_count 4.0" in text
 
 
+def test_a_labelled_histogram_renders_one_series_per_label_value():
+    """`nora_llm_latency_seconds` is the first histogram to carry a label, and
+    it carries it because two paths with two different timeouts observe into it
+    (`[llm] timeout_seconds` vs `[heartbeat] timeout_seconds`). A histogram that
+    accepted the keyword and dropped it — which is what `observe()` did before —
+    would leave every existing assertion green while the samples stayed mixed."""
+    m = Metrics()
+    m.observe("nora_llm_latency_seconds", 0.4, audience="tag")
+    m.observe("nora_llm_latency_seconds", 7.0, audience="heartbeat")
+    text = m.render()
+    assert 'nora_llm_latency_seconds_bucket{audience="tag",le="0.5"} 1.0' in text
+    assert 'nora_llm_latency_seconds_bucket{audience="tag",le="+Inf"} 1.0' in text
+    assert 'nora_llm_latency_seconds_bucket{audience="heartbeat",le="+Inf"} 1.0' in text
+    assert 'nora_llm_latency_seconds_count{audience="tag"} 1.0' in text
+    assert 'nora_llm_latency_seconds_count{audience="heartbeat"} 1.0' in text
+
+
+def test_observations_sum_over_the_label_dimensions_a_caller_omits():
+    """`observations()` matches labels the way `get()` does — partially — so a
+    caller that names no label still sees every sample. That is what keeps
+    "how many model calls happened at all" answerable after the split."""
+    m = Metrics()
+    m.observe("nora_llm_latency_seconds", 0.4, audience="tag")
+    m.observe("nora_llm_latency_seconds", 7.0, audience="heartbeat")
+
+    assert m.observations("nora_llm_latency_seconds") == [0.4, 7.0]
+    assert m.observations("nora_llm_latency_seconds", audience="heartbeat") == [7.0]
+
+
+def test_the_audience_label_is_on_both_shared_llm_series():
+    """Design §13 listed the tag-path series a fire turn must not silently move
+    and missed these two. Names are append-only; labels are not
+    (`metric_specs.py` records `platform` being added to four existing series)."""
+    m = Metrics()
+    m.inc("nora_llm_stop_reason_total", reason="end_turn", audience="heartbeat")
+    text = m.render()
+    assert (
+        'nora_llm_stop_reason_total{audience="heartbeat",reason="end_turn"} 1.0' in text
+    )
+
+
 def test_gauges_render_as_gauges():
     m = Metrics()
     m.gauge("nora_last_event_age_seconds", 12.5)
@@ -144,12 +190,17 @@ def test_platform_label_present_on_the_four_named_series():
     m = Metrics()
     m.inc("nora_tags_total", platform="signal")
     m.inc("nora_replies_total", status="sent", platform="signal")
-    m.inc("nora_silent_failures_total", reason="empty_reply", platform="signal")
+    m.inc(
+        "nora_silent_failures_total", reason="empty_reply", platform="signal", audience="tag",
+    )
     m.inc("nora_errors_total", stage="ambient", platform="signal")
     text = m.render()
     assert 'nora_tags_total{platform="signal"} 1.0' in text
     assert 'nora_replies_total{platform="signal",status="sent"} 1.0' in text
-    assert 'nora_silent_failures_total{platform="signal",reason="empty_reply"} 1.0' in text
+    assert (
+        'nora_silent_failures_total{audience="tag",platform="signal",reason="empty_reply"} 1.0'
+        in text
+    )
     assert 'nora_errors_total{platform="signal",stage="ambient"} 1.0' in text
 
 

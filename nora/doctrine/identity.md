@@ -2,11 +2,11 @@
 name: identity
 description: Who Nora is, why she is in this group, and where she comes from.
 order: 10
-applies_to: [tag]
+applies_to: [tag, heartbeat]
 version: 4
 kind: identity
 authority_above: [constraints]
-authority_below: [conduct, capability, situation, message-content, tool-output]
+authority_below: [silence, conduct, capability, situation, message-content, tool-output]
 not_here: >-
   No capability claims. What she can find out is generated from the tool
   registry, and a copy of it here would go stale in silence — this file carried

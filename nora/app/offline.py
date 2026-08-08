@@ -27,6 +27,7 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import MemoryStore, RecordStore, RosterSource
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
@@ -97,7 +98,9 @@ def build_offline_pipeline(
         # honestly here instead of claiming the group is empty. A harness that
         # wants to exercise them passes a `RosterSource`.
         roster_source=roster_source,
-        queue_max=cfg.engagement.queue.max_depth,
+        slots=ConversationSlots(
+            maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
+        ),
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
     return dispatcher, engagement, background

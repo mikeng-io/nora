@@ -25,10 +25,12 @@ policy) built once per process by the composition root.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from datetime import datetime
 from typing import Any
 
 from ..domain.ports import BlobStore
+from ..domain.reminders import ReminderCaps, ReminderStore
 from ..infra.routes import RouteClient
 from ..infra.search import SearchClient
 from ..infra.shortener import LinkShortener
@@ -36,7 +38,7 @@ from ..infra.transit import TransitClient
 from ..infra.vision import VisionCache, VisionClient
 from .ports import ToolSpec, adapt
 from .room import Room
-from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs
+from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs, utc_now
 from .whereis import Circle, PresenceReader
 
 
@@ -74,6 +76,9 @@ class ToolRegistry:
         refresher: Any = None,
         shortener: LinkShortener | None = None,
         ai_peer: str = "nora",
+        reminders: ReminderStore | None = None,
+        reminder_caps: ReminderCaps | None = None,
+        clock: Callable[[], datetime] = utc_now,
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -131,6 +136,30 @@ class ToolRegistry:
         # other long-lived collaborator (design/24 §4). A future `[agent] name`
         # config feeds this same seam.
         self._ai_peer = ai_peer
+        # The reminders store (design spec §7.3): a per-process collaborator
+        # like `transit` and `search`, NOT default-constructed for the reason
+        # `route` is not — there is no storeless default, so every composition
+        # that has not wired one (offline, eval, and any test that does not care)
+        # leaves `remind` answering `unavailable`, the honest "not configured"
+        # state (R-5). `nora.app.composition` passes the same `SqlReminderStore`
+        # the heartbeat's tick reads from; two would be two queues.
+        self._reminders = reminders
+        # §9's three anti-runaway caps, as the DOMAIN value — never
+        # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
+        # read config" contract names `nora.agent` as a source module and
+        # `nora.config` as forbidden, so the config type here fails
+        # `uv run lint-imports` outright (and a TYPE_CHECKING guard does not
+        # rescue it: grimp's `exclude_type_checking_imports` defaults to False
+        # and this repo does not set it). `| None` rather than a default
+        # instance because ruff's B008 rejects a call in an argument default.
+        self._caps = reminder_caps or ReminderCaps()
+        # The clock, and there was no convention here to follow: this
+        # constructor took ten collaborators and imported no `datetime`. Three
+        # of `remind`'s six refusals are clock comparisons (`when < now`,
+        # `min_lead_seconds`, `max_horizon_days`), so a fake clock is what makes
+        # them testable without sleeping — and a collaborator through `__init__`
+        # is the only seam CLAUDE.md's test-seam policy allows.
+        self._clock = clock
 
     def budgets(self) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
@@ -253,16 +282,24 @@ class ToolRegistry:
         room: Room,
         question: str = "",
         context_window: int = 40,
+        fire_turn: bool = False,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
 
         `transit_source`/`route_source`/`vision_source`/`blob_store`/
-        `vision_cache`/`search_source` are NOT in this signature and must not
-        become one: each is the registry's own long-lived collaborator (or, for
-        the cache, its own per-process state), not something a tag brings with
-        it, so every caller of `specs()`/`build()` is unchanged by their
-        arrival."""
+        `vision_cache`/`search_source`/`reminders`/`reminder_caps`/`clock` are
+        NOT in this signature and must not become one: each is the registry's
+        own long-lived collaborator (or, for the cache, its own per-process
+        state), not something a tag brings with it, so every caller of
+        `specs()`/`build()` is unchanged by their arrival. `reminder_caps` and
+        `clock` qualify for the same reason `ai_peer` does — both are
+        process-lifetime VALUES, fixed by the deployment, not by the turn.
+
+        `fire_turn` IS in this signature and does not violate that rule: it is a
+        per-turn VALUE, like `question` and `conversation_id`, not a
+        registry-owned collaborator. The heartbeat's fire path passes True; see
+        `nora.agent.tools.build_tool_specs` for what reads it."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -274,7 +311,8 @@ class ToolRegistry:
             refresher=self._refresher,
             shortener=self._shortener,
             question=question, context_window=context_window,
-            ai_peer=self._ai_peer,
+            ai_peer=self._ai_peer, fire_turn=fire_turn,
+            reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
         )
 
     def build(
@@ -290,13 +328,18 @@ class ToolRegistry:
         room: Room,
         question: str = "",
         context_window: int = 40,
+        fire_turn: bool = False,
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
-        the old direct `nora.agent.tools.build_tools` import."""
+        the old direct `nora.agent.tools.build_tools` import.
+
+        `nora.app.fire.FirePath` is the other caller, and the only one that
+        passes `fire_turn=True`."""
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
+            fire_turn=fire_turn,
         )
         return [adapt(spec) for spec in specs]

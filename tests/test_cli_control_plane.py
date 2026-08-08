@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import tomllib
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -20,7 +22,9 @@ from aiohttp import web
 from nora.__main__ import build_parser
 from nora.app import cli
 from nora.domain.models import NormalizedMessage
+from nora.domain.reminders import Reminder, ReminderState
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
+from nora.infra.sql.reminders import SqlReminderStore
 from nora.persons import load_persons
 from nora.policy import load_policy
 
@@ -444,6 +448,134 @@ async def test_an_unreachable_store_is_a_sentence_not_a_traceback(env, capsys, m
     err = capsys.readouterr().err
     assert "could not read the record store" in err
     assert "Traceback" not in err
+
+
+# ── nora reminders list ──────────────────────────────────────────────────────
+
+REMINDER_T0 = datetime(2026, 8, 8, 11, 0, tzinfo=UTC)
+
+
+async def _seed_reminder(env, **kw):
+    """One reminder written through a WRITABLE store — the CLI's own engine
+    cannot create rows, which is the property under test."""
+    base = {
+        "id": uuid.uuid4(), "requester_person_id": "miles_novak", "platform": "signal",
+        "conversation_id": GROUP_ID, "conversation_type": "group", "text": "洗衫",
+        "created_at": REMINDER_T0, "due_at": REMINDER_T0 + timedelta(hours=2),
+        "state": ReminderState.PENDING, "fired_at": None, "outcome": None,
+    }
+    base.update(kw)
+    row = Reminder(**base)
+    store = SqlReminderStore(create_sql_engine(env["url"]))
+    try:
+        await store.create(row)
+    finally:
+        await store.aclose()
+    return row
+
+
+async def test_reminders_list_shows_what_is_still_waiting(env, capsys):
+    row = await _seed_reminder(env)
+    assert await invoke(env, "reminders", "list") == 0
+    out = capsys.readouterr().out
+    assert str(row.id) in out
+    assert "miles_novak" in out
+    assert GROUP_ID in out
+    assert "洗衫" in out
+    assert "1 pending" in out
+
+
+async def test_reminders_list_never_shows_a_row_that_already_resolved(env, capsys):
+    """A reminder resolves ONCE and is never re-run (§8.2), so a `done` row in
+    the "what is still coming" listing would read as a message about to be sent
+    twice."""
+    await _seed_reminder(env, state=ReminderState.DONE, text="already gone")
+    await _seed_reminder(env, state=ReminderState.CANCELLED, text="called off")
+    assert await invoke(env, "reminders", "list") == 0
+    out = capsys.readouterr().out
+    assert "already gone" not in out
+    assert "called off" not in out
+    assert "0 pending" in out
+    assert "Nothing is waiting" in out
+
+
+async def test_reminders_list_calls_out_an_overdue_row(env, capsys):
+    """The one diagnosis this command exists for: a row whose time has passed
+    and which is STILL pending means the tick is not firing it. Silence there
+    would look identical to a quiet week."""
+    await _seed_reminder(env, due_at=datetime(2020, 1, 1, tzinfo=UTC))
+    assert await invoke(env, "reminders", "list") == 0
+    out = capsys.readouterr().out
+    assert "OVERDUE" in out
+    assert "1 pending, 1 overdue" in out
+    assert "heartbeat" in out
+
+
+async def test_reminders_list_says_truncated_only_when_it_really_is(env, capsys):
+    """`len(rows) >= limit` called a COMPLETE listing truncated.
+
+    The store answers at most what it is asked for, so a database holding
+    exactly `--limit` rows produces the same length as one that was cut off.
+    The operator was then told to re-run with a larger limit and got the
+    identical output — the report's one piece of advice, wrong every time the
+    counts happen to match. The read asks for one row more than it prints,
+    which is what makes the two states distinguishable.
+    """
+    for i in range(3):
+        await _seed_reminder(env, text=f"row-{i}",
+                             due_at=REMINDER_T0 + timedelta(hours=i + 1))
+
+    assert await invoke(env, "reminders", "list", "--limit", "3") == 0
+    out = capsys.readouterr().out
+    assert "3 pending" in out
+    assert "truncated" not in out          # exactly `limit` rows is COMPLETE
+
+    assert await invoke(env, "reminders", "list", "--limit", "2") == 0
+    out = capsys.readouterr().out
+    assert "2 pending" in out
+    assert "Listing was truncated" in out
+    # And it prints `limit` rows, never the extra one it read to find out.
+    assert "row-2" not in out
+
+
+async def test_reminders_list_refuses_a_non_positive_limit(env, capsys):
+    assert await invoke(env, "reminders", "list", "--limit", "0") == 1
+    assert "--limit must be positive" in capsys.readouterr().err
+
+
+async def test_the_reminder_store_the_cli_opens_refuses_a_write(env):
+    """`cli.readonly_reminder_store` is the one place the control plane opens
+    the reminders table, so this is the store `nora reminders list` really uses.
+
+    `cancel` is the write that matters: it is the one subcommand this module
+    could plausibly grow, and design spec §7.4 says it must not — the operator's
+    kill switch is `[heartbeat] enabled = false` plus a restart. The driver
+    refuses it, so no future edit can add it by accident.
+    """
+    row = await _seed_reminder(env)
+    store = cli.readonly_reminder_store(env["url"])
+    try:
+        assert await store.all_pending(limit=10), "the store must still READ"
+        with pytest.raises(Exception, match=r"read-only transaction"):
+            await store.cancel(row.id, conversation_id=GROUP_ID)
+    finally:
+        await store.aclose()
+    check = SqlReminderStore(create_sql_engine(env["url"]))
+    try:
+        assert (await check.get(row.id)).state is ReminderState.PENDING
+    finally:
+        await check.aclose()
+
+
+async def test_there_is_no_way_to_cancel_a_reminder_from_the_cli(env):
+    """§7.4, as a test rather than a promise. `nora reminders cancel` must not
+    parse — the read-only guarantee is structural, and a subcommand that existed
+    and then failed at the driver would be a worse answer than one that never
+    existed."""
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            ["reminders", "cancel", "x", "--config", str(env["path"])],
+        )
 
 
 # ── read-only, and the daemon-less path ──────────────────────────────────────

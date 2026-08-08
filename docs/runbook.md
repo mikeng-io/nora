@@ -7,14 +7,51 @@ Five scenarios an operator actually hits, each with the exact command to run.
 Silence is the default behavior (S1) — Nora only ever speaks when tagged, so most silence
 is correct. To tell "quiet" from "broken":
 
-1. Check the silent failure rate: `nora_silent_failures_total / nora_tags_total`, scraped
+1. Check the silent failure rate:
+   `nora_silent_failures_total{audience="tag"} / nora_tags_total`, scraped
    from `GET /metrics`. **Target < 1%** (spec E.6) — this is the escape hatch for
    "invisible when broken": failures stay invisible to the group but must stay *visible*
    to the operator. A sustained rise above 1% means tags are failing, not that nobody
    tagged her.
 
+   **The `audience="tag"` filter is load-bearing, not tidiness.** The heartbeat's
+   fire path (reminders) shares this series and is labelled `audience="heartbeat"`;
+   unfiltered, its failures are charged to a <1% budget whose denominator counts
+   only tags, so a broken heartbeat reads as a broken conversation path and a
+   handful of failed reminders can blow an alarm nobody can then diagnose. The
+   heartbeat's own health is a separate expression —
+   `nora_silent_failures_total{audience="heartbeat"}` alongside
+   `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
+
+   **A reminder can also be hours late with all three of those reading healthy.**
+   A tick that finds the conversation's slot held by a tag leaves the rows
+   `pending` and moves on: nothing fired, nothing failed, and the tick itself
+   completed, so the fired counter is flat and the tick-age gauge drops back to
+   zero. `nora_heartbeat_deferrals_total` is the only signal — a sustained rate
+   means a busy group is starving its own reminders. It counts deferred *turns
+   per tick*, so the same rows re-count each tick; `nora reminders list` is
+   where you find out which rows, and marks them `OVERDUE`.
+
    ```bash
-   curl -s http://127.0.0.1:9100/metrics | grep -E 'nora_silent_failures_total|nora_tags_total'
+   curl -s http://127.0.0.1:9100/metrics | grep nora_heartbeat_deferrals_total
+   ```
+
+   **Those two can disagree, and the disagreement is a reading, not a bug.** A
+   reminder that delivered message 1 of 3 and then timed out increments
+   `nora_silent_failures_total{audience="heartbeat",reason="invocation_timeout"}`
+   *and* resolves `nora_reminders_fired_total{outcome="sent"}` — because both are
+   true: the invocation was abandoned, and the group did hear something.
+   `nora_partial_replies_total{reason="invocation_failed"}` is the series that
+   says which one it was. Every increment there is a message the group was meant
+   to receive, so read it whenever the two above do not agree:
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep nora_partial_replies_total
+   ```
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics \
+     | grep -E 'nora_silent_failures_total\{audience="tag"|nora_tags_total'
    ```
 
 2. Check `GET /health` — `200` means healthy, `503` means degraded:

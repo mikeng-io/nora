@@ -16,13 +16,20 @@ suggestions the operator hand-edits into a file Nora never writes (D6).
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta, timezone
 
 from nora.app.pending import PendingAccount, id_kind
 from nora.domain.identity import id_kinds
+from nora.domain.reminders import Reminder
 from nora.infra.life360 import DiscoveredCircle
 from nora.platform.signal.directory import SignalGroup
 from nora.policy import Policy
+
+# The zone the operator reads in, and the one Nora's own prefill states
+# (`nora.agent.tools._HKT`). A UTC stamp in a 3am terminal is one silent
+# subtraction away from an eight-hour mistake about when something will fire.
+_HKT = timezone(timedelta(hours=8), "HKT")
 
 _SLUG_STRIP_RE = re.compile(r"[^a-zA-Z0-9_-]+")
 
@@ -127,6 +134,66 @@ def render_groups(
             "/api/v1/rpc asks the primary to re-send it."
         )
     return lines
+
+
+def render_reminders(
+    *,
+    reminders: Sequence[Reminder],
+    now: datetime,
+    source: str,
+    truncated: bool,
+) -> list[str]:
+    """Every reminder still waiting, soonest first — the operator's read.
+
+    **No paste-ready stanza, unlike the other two reports, and that is the
+    point.** `nora groups` and `nora persons pending` end in a block the
+    operator edits into a file; there is nothing equivalent here, because the
+    only actions on a reminder are model-side (`cancel_reminder`) or
+    deployment-side (`[heartbeat] enabled = false` plus a restart, which stops
+    all firing rather than one row). The control plane is read-only by
+    construction — `create_readonly_sql_engine` plus a `SELECT`-only grant — so
+    a `nora reminders cancel` would break both the module's invariant and the
+    database role, and it is not offered.
+
+    `overdue` is the diagnostic this report exists for: a row whose `due_at` has
+    passed and which is STILL pending means the tick is not running (or is not
+    reaching that conversation). It is the same question
+    `nora_heartbeat_last_tick_age_seconds` answers from the metrics side, asked
+    of the data instead.
+    """
+    lines = [
+        f"reminders from {source}",
+        f"now: {_local(now)}",
+        "",
+    ]
+    overdue = 0
+    for row in reminders:
+        late = row.due_at <= now
+        overdue += late
+        lines.append(f"{'OVERDUE' if late else 'waiting'}  {_local(row.due_at)}")
+        lines.append(f"         id   = {row.id}")
+        lines.append(f"         who  = {row.requester_person_id}")
+        lines.append(f"         where= {row.platform}:{row.conversation_id}")
+        lines.append(f"         text = {row.text}")
+        lines.append("")
+    lines.append(f"{len(reminders)} pending, {overdue} overdue.")
+    if overdue:
+        lines.append(
+            "An overdue row means the tick is not firing it. Check "
+            "`[heartbeat] enabled` in config.toml, then "
+            "nora_heartbeat_last_tick_age_seconds on /metrics — a climbing age "
+            "is a loop that has stopped."
+        )
+    if truncated:
+        lines.append("Listing was truncated — re-run with a larger --limit.")
+    if not reminders:
+        lines.append("Nothing is waiting. Reminders resolve once and are never re-run.")
+    return lines
+
+
+def _local(when: datetime) -> str:
+    """One instant, in the operator's own zone, with the offset stated."""
+    return when.astimezone(_HKT).strftime("%a %-d %b %Y %H:%M %Z")
 
 
 def render_presence_members(circles: list[DiscoveredCircle]) -> list[str]:

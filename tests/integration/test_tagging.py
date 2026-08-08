@@ -4,6 +4,11 @@ import logging
 from nora.domain.models import DeliveryStatus
 from nora.testing import ScriptedTurn, group_event
 
+# The conversation every `group_event` here lands in, as the slots key
+# `(platform, conversation_id)` — R-10's lock and R-30's queue are both keyed
+# by it (`nora/engagement/slots.py`).
+GROUP = ("signal", "g1")
+
 
 def _reply_script(text="今晚七點半得"):
     return [ScriptedTurn(tool_calls=[("send_reply", {"text": text})], final_text=text)]
@@ -121,14 +126,14 @@ async def test_lock_released_on_llm_error(harness_factory):
     h = await harness_factory(script=_reply_script(), raises=RuntimeError("boom"))
     await h.handler.on_event(group_event(body="nora.000 one"))
     await h.drain()
-    assert h.handler._in_flight == set()
+    assert h.handler.slots.held(GROUP) is False
 
 
 async def test_lock_released_on_timeout(harness_factory):
     h = await harness_factory(script=_reply_script(), delay=5.0, invocation_timeout=0.2)
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert h.handler._in_flight == set()
+    assert h.handler.slots.held(GROUP) is False
     assert h.sink.sent == []
     assert h.metrics.get("nora_silent_failures_total", reason="invocation_timeout") == 1
 
@@ -141,17 +146,22 @@ async def test_concurrent_tags_same_conversation(harness_factory):
     await h.handler.on_event(group_event(body="nora.000 one"))
     await asyncio.sleep(0.05)
     # First tag is in flight; the second arrives while it runs.
-    assert len(h.handler._in_flight) == 1
+    assert h.handler.slots.held(GROUP) is True
     await h.handler.on_event(group_event(body="nora.000 two"))
     # R-10 still holds: exactly one in-flight turn — the second is QUEUED behind
-    # it, not running concurrently.
-    assert len(h.handler._in_flight) == 1
+    # it, not running concurrently. (Only `g1` is ever tagged here, so this is
+    # the same claim the pre-hoist `len(_in_flight) == 1` made. It is not also
+    # asserted that the second tag is ALREADY queued: `Dispatcher.on_message`
+    # SPAWNS the engagement run, so at this instant it may not have reached
+    # admission yet — the drained assertions below are what prove it queued.)
+    assert h.handler.slots.held(GROUP) is True
 
     await h.drain()
 
     # R-29: both replies went out, none dropped, the queue drained empty.
     assert len(h.sink.sent) == 2
-    assert h.handler._in_flight == set()
+    assert h.handler.slots.held(GROUP) is False
+    assert len(h.handler.slots) == 0
     assert h.metrics.get("nora_tags_queued_total") == 1
     assert h.metrics.get("nora_tags_dropped_total", reason="in_flight") == 0
 

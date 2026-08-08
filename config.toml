@@ -249,3 +249,34 @@ fetch_enabled = true
 # these services publish only on host 127.0.0.1, unreachable via the gateway.
 searxng_url = "http://searxng-core:8080"
 firecrawl_url = "http://firecrawl-api-1:3002"
+
+[heartbeat]
+# The background tick that fires due reminders — Nora's first unprompted-speech
+# path. Ships INERT, like [presence] and [search] did: turning it on is an
+# operator decision, never something a missing section decides.
+enabled = false
+tick_seconds = 60          # how often she WAKES. This is the best case for
+                           # lateness, not a bound on it: a tick runs its
+                           # turn-groups one after another (each up to
+                           # timeout_seconds below), and a group whose
+                           # conversation is busy with a tag is deferred to a
+                           # later tick outright — watch
+                           # nora_heartbeat_deferrals_total. The only promise
+                           # is "at or after due_at, never before".
+# Deliberately its own knob, NOT [llm].timeout_seconds — even though master
+# raised that to 120 on 2026-08-08 (Kimi audit, "so a research turn fits") and
+# the two now happen to MATCH. They answer different questions: [llm]'s bounds a
+# turn a human is waiting on, and moves when a human's patience does; this one
+# bounds a turn nobody is waiting on, where cutting short leaves silence in a
+# group that asked nothing. Equal today, independent on purpose — if you ever
+# lower [llm] back for responsiveness, this must not follow it down.
+timeout_seconds = 120
+
+[reminders]
+# The anti-runaway caps. They apply whenever a reminder can be CREATED, which is
+# independent of whether [heartbeat] is firing them.
+max_pending_per_requester = 20
+min_lead_seconds = 120     # MUST be > heartbeat.tick_seconds, so a
+                           # minimum-lead row cannot land in the tick already
+                           # running. Nora refuses to start if it is not.
+max_horizon_days = 30

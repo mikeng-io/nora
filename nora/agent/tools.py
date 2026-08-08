@@ -48,12 +48,14 @@ import json
 import logging
 import re
 import urllib.parse
-from collections.abc import Mapping
+import uuid
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from ..domain.media import HANDLE_CHARS
 from ..domain.ports import Recollection
+from ..domain.reminders import Reminder, ReminderCaps, ReminderState, ReminderStore
 from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers
 from .ports import ToolSpec, adapt
@@ -66,6 +68,19 @@ log = logging.getLogger("nora.tools")
 # since 1979, and this keeps `nora.agent` free of a system-tzdata dependency
 # that differs between the container and a developer machine.
 _HKT = timezone(timedelta(hours=8), "HKT")
+
+
+def utc_now() -> datetime:
+    """The default clock for anything in this module that needs one.
+
+    A NAMED function, not an inline `lambda: datetime.now(UTC)` in a signature
+    and never `= datetime.now(UTC)`: ruff's `B008` rejects a call in an argument
+    default, and it is right to — that form freezes the clock at import time, so
+    every reminder set after the process booted would be measured against the
+    moment it started. `nora.agent.registry` imports this as its own default, so
+    the tool layer has ONE clock rather than two that can disagree.
+    """
+    return datetime.now(UTC)
 
 # Google Maps URLs API travelmode per Routes mode — the deep link `route`
 # returns on `ok` (keyless, cross-platform, documented-stable).
@@ -332,6 +347,33 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "web_fetch": NativeTool(4, "read the actual page behind one of the links a web_search just "
                            "returned this turn — only those links, never an address you "
                            "made up"),
+    # The three reminder verbs (design spec §7). All 2, and the number is sized
+    # by the CONVERSATION rather than by cost: none of the three leaves the host
+    # or the database, so a call is one model round trip and nothing else, and
+    # one message can genuinely set two reminders (「等陣提我洗衫同交租」) or set one
+    # after cancelling another. Higher would buy nothing — the real bound on how
+    # many reminders exist is `max_pending_per_requester`, checked inside the
+    # tool (§9), which no budget can substitute for.
+    #
+    # **`terminal=False` on all three, and it is load-bearing.** Setting a
+    # reminder is the MIDDLE of a turn — she still has to say 「好, 等陣提你」 —
+    # so a terminal verb here would end the turn silently, with the row written
+    # and nothing said. It would also break `ReplyGuard._terminal_budget_spent`,
+    # whose AND over every terminal verb's budget currently reduces to
+    # `send_reply` alone (`tests/test_guards_terminal.py` pins
+    # `terminal_tools() == frozenset({"send_reply"})`).
+    #
+    # `time_shiftable` is `None` for all three, like `calculate`: `remind` TAKES
+    # a time, which is the opposite of being asked about one — its answer does
+    # not decay and there is no "same question, different moment" to shift.
+    "remind": NativeTool(2, "somebody asks you to tell them something later — you "
+                            "store their own words and say them back into this "
+                            "conversation when the time comes"),
+    "list_reminders": NativeTool(2, "somebody asks what you are still holding for "
+                                    "this group — only this conversation's, never "
+                                    "another room's"),
+    "cancel_reminder": NativeTool(2, "somebody calls one off — takes the id "
+                                     "list_reminders gave you, never one you made up"),
     # THE ONLY TERMINAL TOOL, and **the number that caps how many messages one
     # tag may send** (verified 2026-08-06). Both facts are easy to miss from the
     # guard's side, so they are stated here, where the number is.
@@ -515,6 +557,86 @@ def _record_media(metrics, status: str, *, cached: bool = False, **detail: objec
     """
     metrics.inc("nora_media_fetch_total", status=status, cached=str(cached).lower())
     _log_call("media_fetch", status, cached=cached, **detail)
+
+
+def _record_created(metrics, status: str, **detail: object) -> None:
+    """`remind`'s two counters, incremented together.
+
+    Paired in one function for the reason `_record_room` is: a status that
+    reached one counter and not the other is a dashboard that disagrees with
+    itself. `nora_reminders_created_total{status}` carries the SPECIFIC reason
+    (that is the only visibility into a cap set too tight — a refusal is a
+    sentence to a human, and sentences do not aggregate);
+    `nora_tool_calls_total{tool,status}` keeps this module's uniform three-value
+    vocabulary, with the specific reason in the log line, exactly as
+    `web_fetch`'s `refused` does.
+    """
+    metrics.inc("nora_reminders_created_total", status=status)
+    if status == "created":
+        _record(metrics, "remind", "ok", **detail)
+    elif status == "unavailable":
+        _record(metrics, "remind", "unavailable", **detail)
+    else:
+        _record(metrics, "remind", "refused", reason=status, **detail)
+
+
+def _parse_when(raw: str) -> datetime | None:
+    """The model's `when`, as an instant — or `None` when it is not one.
+
+    THE MODEL WRITES THIS STRING, so an unparseable one is an ordinary event
+    rather than an exception: a `ValueError` escaping a tool is a silent turn
+    (R-5), and `Reminder(due_at="等陣")` would reach the port and raise there.
+
+    A value with no offset is read as `_HKT`, not refused. The prefill states
+    the time as prose — «Right now it is Saturday 8 August 2026, 19:00 (HKT)»
+    — so a model asked for ISO-8601 will sometimes hand back `2026-08-08T21:00`,
+    and `_HKT` is the zone that header itself named. Refusing would spend a
+    model round trip on punctuation; GUESSING a different zone would invent an
+    instant, which is why the answer is this one specific zone and not
+    `astimezone()` of whatever the host happens to be set to. What must never
+    happen is a naive value reaching the store — the port raises
+    `NaiveDatetimeError` on one, deliberately.
+    """
+    try:
+        parsed = datetime.fromisoformat(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=_HKT)
+    return parsed
+
+
+# A row whose `requester_person_id` no longer resolves. NOT the raw person_id:
+# that key is operator vocabulary (`identity.toml`'s table name), and handing it
+# to the model invites her to say it out loud as if it were what the group calls
+# somebody. The listing still carries the row — dropping the field, or the row,
+# would hide a reminder that is genuinely there and genuinely nobody's — so this
+# says the one true thing instead: it exists, and she cannot name who set it.
+#
+# The state is real, not defensive padding: `identity.toml` loads once at startup
+# and a pending row may be thirty days old, so the person it names may have left
+# the file in between. The fire path already reaches the same conclusion from the
+# same lookup and answers `failed_policy` (`nora/app/fire.py`, §12) — a row that
+# lists like this is one that will not fire. The operator side of the question
+# ("which id?") is `nora reminders list`, which prints `who = <person_id>` raw
+# because an operator reads identity.toml and Nora does not.
+_UNKNOWN_OWNER = "someone I can no longer name"
+
+
+def _owner_name(persons, person_id: str) -> str:
+    """The display name for a reminder's requester — `PersonRef.name`.
+
+    The SAME source and the same lookup the fire turn uses
+    (`FirePath.build_context`: `persons.by_person.get(row.requester_person_id)`),
+    so what `list_reminders` calls a person and what she is called when the
+    reminder actually goes out cannot drift apart.
+
+    `getattr(..., {})` for `_known_names`'s reason: `persons` arrives here
+    duck-typed.
+    """
+    ref = getattr(persons, "by_person", {}).get(person_id)
+    name = getattr(ref, "name", "") if ref is not None else ""
+    return name or _UNKNOWN_OWNER
 
 
 def _handle_hex(raw: str) -> str:
@@ -724,7 +846,33 @@ def build_tool_specs(
     question: str = "",
     context_window: int = 40,
     ai_peer: str = "nora",
+    fire_turn: bool = False,
+    reminders: ReminderStore | None = None,
+    reminder_caps: ReminderCaps | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> tuple[ToolSpec, ...]:
+    """Every native tool, closed over one turn's collaborators.
+
+    `fire_turn` is this turn's PROVENANCE: True when the heartbeat's fire path
+    built it (`nora.app.fire.FirePath`), False for a tag. Nothing carried that
+    before, and a tool cannot otherwise tell the two apart — the synthetic
+    message a fire turn is built from is a well-formed `NormalizedMessage` by
+    construction (design spec §6.4), which is exactly what makes it
+    indistinguishable.
+
+    It defaults False so every existing caller is unchanged, and it is threaded
+    from `ToolRegistry.build`. The consumer is `remind`, which refuses inside a
+    fire turn — a reminder that can set a reminder is a loop with no bound, and
+    the turn it would fire into is the one it is already in.
+
+    `reminders`/`reminder_caps`/`clock` come from `ToolRegistry`, which owns all
+    three for the life of the process. `reminders=None` is the honest
+    "not configured" state (R-5) the offline and eval compositions ship in, not
+    an error; the caps and the clock fall back to `ReminderCaps()` and
+    `utc_now`, so a caller that never sets a reminder needs neither.
+    """
+    caps = reminder_caps or ReminderCaps()
+    now_fn = clock or utc_now
     # The tag's conversation, captured once. It is the ONLY thing that decides
     # which rows `load_transcript` returns — see DEC-24 for why the model is no
     # longer asked for it. Task 1's cross-group read leak was this value being
@@ -2059,6 +2207,260 @@ def build_tool_specs(
         )
         return out
 
+    async def remind(when: str, text: str) -> dict:
+        """Hold something for later and say it back into this conversation when the
+        time comes.
+
+        Call this when somebody asks you to remember a thing for them — 「等陣提我洗衫」,
+        「七點提我出門」. `text` is THEIR OWN WORDS, not a script for you to read out:
+        when it comes due you get the turn back and answer it as a fresh request.
+
+        `when` is an exact moment, ISO-8601 with an offset — «2026-08-08T21:00:00+08:00».
+        Working out which moment they meant is your job, not theirs: you were told the
+        current time, so 「等陣」 and 「七點」 are yours to resolve. Say back what you took
+        it to mean, in the register they asked in, so a wrong guess dies now.
+
+        Outcomes: `ok` with the id; `refused` with a note saying what to fix (a time
+        already gone, too soon, too far off, too many already waiting, or you cannot
+        set one on this turn); `unavailable` when reminders are not configured — say
+        you can't, do not pretend you did.
+
+        Args:
+            when: the exact moment, ISO-8601 with an offset.
+            text: what they asked for, in their words.
+        """
+        # THE FIRE-TURN REFUSAL, first and before anything else (§7.1). A fire
+        # turn is a well-formed turn in the same conversation — nothing else in
+        # this closure can tell it from a tag — and without this she re-arms her
+        # own reminder every time one comes due. That is recurrence, which v1
+        # deliberately does not have, and NONE of §9's caps stop it:
+        # `max_pending_per_requester` counts PENDING rows and the fire has
+        # already freed one before the replacement is written.
+        if fire_turn:
+            _record_created(metrics, "fire_turn")
+            return {
+                "status": "refused",
+                "note": "This turn is a reminder going off, so I can't set another "
+                        "one from inside it. Just answer what was asked; if a NEW "
+                        "reminder is genuinely wanted, someone has to ask for it.",
+            }
+        if reminders is None:
+            _record_created(metrics, "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't hold anything for later — reminders aren't set up "
+                        "here. Say so plainly rather than promising.",
+            }
+        # §12: only a MAPPED person may own a row. `requester_person_id` is what
+        # the fire-time policy re-check runs against (§5.1), so there is nothing
+        # to write for a sender identity.toml does not know — and inventing an
+        # owner would put a reminder into a room under nobody's name.
+        tagger = room.tagger
+        if tagger is None:
+            _record_created(metrics, "unmapped")
+            return {
+                "status": "refused",
+                "note": "I don't know who you are well enough to hold something for "
+                        "you. Say you can't set it — do not guess.",
+            }
+        due_at = _parse_when(when)
+        if due_at is None:
+            _record_created(metrics, "unparseable")
+            return {
+                "status": "refused",
+                "note": "I couldn't read that as a time. Give me one exact moment as "
+                        "ISO-8601 with an offset, like 2026-08-08T21:00:00+08:00.",
+            }
+        now = now_fn()
+        if due_at <= now:
+            _record_created(metrics, "past")
+            return {
+                "status": "refused",
+                "note": "That moment has already gone. If they meant tomorrow, work "
+                        "out that date and try again; otherwise ask which one.",
+            }
+        if due_at - now < timedelta(seconds=caps.min_lead_seconds):
+            _record_created(metrics, "too_soon")
+            return {
+                "status": "refused",
+                "note": f"That is less than {caps.min_lead_seconds // 60} minutes "
+                        "away — near enough that I'd be saying it now. Answer them "
+                        "now instead, or set it further out.",
+            }
+        if due_at - now > timedelta(days=caps.max_horizon_days):
+            _record_created(metrics, "too_far")
+            return {
+                "status": "refused",
+                "note": f"I only hold things for {caps.max_horizon_days} days. Say "
+                        "that, and let them ask again nearer the time.",
+            }
+        try:
+            pending = await reminders.count_pending(tagger.person_id)
+            if pending >= caps.max_pending_per_requester:
+                _record_created(metrics, "too_many")
+                return {
+                    "status": "refused",
+                    "note": f"They already have {pending} waiting, which is my limit. "
+                            "Say so — list_reminders shows what is there, and one can "
+                            "be cancelled to make room.",
+                }
+            row = Reminder(
+                id=uuid.uuid4(),
+                requester_person_id=tagger.person_id,
+                # The DESTINATION, from the closure and never from the model
+                # (§7.2, DEC-24): a reminder fires into the conversation it was
+                # set in. A `target` parameter here would be an unprompted-speech
+                # lever into a room the requester may not even be in.
+                platform=room.platform,
+                conversation_id=bound_conversation_id,
+                conversation_type=conversation_type,
+                text=text,
+                created_at=now,
+                due_at=due_at,
+                state=ReminderState.PENDING,
+                fired_at=None,
+                outcome=None,
+            )
+            await reminders.create(row)
+        except Exception:
+            log.exception("remind failed")
+            _record_created(metrics, "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't write that down. Say you didn't manage to set it "
+                        "— never say you did.",
+            }
+        _record_created(metrics, "created", ahead_seconds=int((due_at - now).total_seconds()))
+        return {"status": "ok", "id": str(row.id), "due_at": due_at.astimezone(_HKT).isoformat()}
+
+    async def list_reminders() -> dict:
+        """What you are still holding for THIS conversation, soonest first.
+
+        Call this when somebody asks what's set, or before cancelling one — the ids
+        here are the only ones cancel_reminder accepts. It covers this conversation
+        only; you cannot see or touch another room's.
+
+        These are the CONVERSATION's reminders, whoever set them — not just the
+        person talking to you. Each row carries `set_by`, the name of the person who
+        asked for it, and you may say whose is whose: 「Tyler 七點嗰個」 is a fair
+        answer, and so is telling someone that the one they just called off was
+        Tyler's. `set_by` reads «someone I can no longer name» when the person who
+        set it is no longer someone you know — the reminder is still real, you just
+        cannot put a name to it.
+
+        Outcomes: `ok` with the list (empty means nothing is waiting, which is a real
+        answer); `unavailable` when reminders are not configured.
+        """
+        if reminders is None:
+            _record(metrics, "list_reminders", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "Reminders aren't set up here, so there is nothing to list.",
+            }
+        try:
+            rows = await reminders.pending_for(bound_conversation_id)
+        except Exception:
+            log.exception("list_reminders failed")
+            _record(metrics, "list_reminders", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't check what's waiting. Say so — an empty list and "
+                        "a failed look are different answers.",
+            }
+        _record(metrics, "list_reminders", "ok", count=len(rows))
+        return {
+            "status": "ok",
+            "reminders": [
+                {
+                    "id": str(r.id),
+                    "text": r.text,
+                    # WHOSE. A reminder is group-owned in a group (§7.3), so this
+                    # listing shows everybody's and anybody here may cancel any of
+                    # them — which is precisely why the name has to be on the row.
+                    # Without it 「取消 Tyler 七點嗰個」 is unanswerable, and one
+                    # person can call off another's with neither of them able to
+                    # see that that is what happened.
+                    #
+                    # `set_by`, not `owner`: the group owns it, this person asked
+                    # for it, and a field called `owner` would tell the model the
+                    # opposite of the rule cancel actually enforces.
+                    "set_by": _owner_name(persons, r.requester_person_id),
+                    # Rendered in Nora's own zone rather than UTC: the model
+                    # reasons about 「聽日七點」 against the local clock the prefill
+                    # stated, and a UTC stamp is one silent subtraction away from
+                    # an eight-hour mistake.
+                    "due_at": r.due_at.astimezone(_HKT).isoformat(),
+                }
+                for r in rows
+            ],
+        }
+
+    async def cancel_reminder(reminder_id: str) -> dict:
+        """Call off something you are holding, by the id list_reminders gave you.
+
+        Only ids from this conversation work, and only ones still waiting: something
+        that has already gone out cannot be un-sent, and this will say so rather than
+        pretend.
+
+        Anything set in this conversation can be called off by anyone in it — a
+        reminder belongs to the room it was set in, not to the person who set it.
+        Do not tell somebody a reminder is not theirs to cancel; it is. If calling
+        one off would surprise the person who set it, say whose it was (list_reminders
+        gives you the name) — that is the honest move, not a refusal.
+
+        Outcomes: `ok`; `refused` with a note (no such waiting reminder here — it may
+        already have fired, or belong to another room); `unavailable` when reminders
+        are not configured.
+
+        Args:
+            reminder_id: the id from list_reminders — never one you made up.
+        """
+        if reminders is None:
+            _record(metrics, "cancel_reminder", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "Reminders aren't set up here, so there is nothing to cancel.",
+            }
+        try:
+            parsed_id = uuid.UUID(str(reminder_id).strip())
+        except (AttributeError, TypeError, ValueError):
+            # The MODEL writes this argument, so a malformed one is ordinary.
+            # `UUID("洗衫")` raises `ValueError`, and an exception escaping a tool
+            # is a silent turn (R-5).
+            _record(metrics, "cancel_reminder", "refused", reason="not_an_id")
+            return {
+                "status": "refused",
+                "note": "That isn't an id I gave you. Call list_reminders and use one "
+                        "of those.",
+            }
+        try:
+            cancelled = await reminders.cancel(
+                parsed_id, conversation_id=bound_conversation_id,
+            )
+        except Exception:
+            log.exception("cancel_reminder failed")
+            _record(metrics, "cancel_reminder", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't cancel it. Say you're not sure it's off, rather "
+                        "than saying it is.",
+            }
+        if not cancelled:
+            # The store answers ONE bool for three situations — another
+            # conversation's row (§7.3: a uuid carries no scope, so the STORE
+            # re-checks it), a row that already resolved (§8.3), and an id that
+            # never existed. The note names all three rather than picking one,
+            # because reporting the wrong one is worse than reporting the set.
+            _record(metrics, "cancel_reminder", "refused", reason="no_pending_row")
+            return {
+                "status": "refused",
+                "note": "I have nothing waiting under that id here — it may already "
+                        "have gone out, or it belongs to another conversation. Check "
+                        "list_reminders before saying it's off.",
+            }
+        _record(metrics, "cancel_reminder", "ok")
+        return {"status": "ok"}
+
     async def send_reply(text: str) -> bool:
         """Send a message to the group. This is the only way anything you write is sent.
 
@@ -2101,6 +2503,9 @@ def build_tool_specs(
         _spec("media_fetch", media_fetch),
         _spec("web_search", web_search),
         _spec("web_fetch", web_fetch),
+        _spec("remind", remind),
+        _spec("list_reminders", list_reminders),
+        _spec("cancel_reminder", cancel_reminder),
         _spec("send_reply", send_reply),
     )
 

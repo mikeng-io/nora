@@ -4,11 +4,15 @@ receives dependencies. This test pins that property."""
 import ast
 import base64
 import os
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from nora.app.composition import Dependencies, StartupError, build_dependencies
+from nora.app.fire import FirePath
+from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.config import load
 from nora.infra.blobs import FilesystemBlobStore
 from nora.platform.signal.media import SignalMediaSource
@@ -197,6 +201,136 @@ async def test_media_disabled_is_off_even_with_a_valid_key(cfg, monkeypatch):
     deps = await build_dependencies(override_config(cfg, {"media.enabled": False}))
     assert deps.ingest._media_source is None
     assert deps.ingest._blobs is None
+
+
+async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
+    """The tick's `fire` collaborator is a `FirePath`, not a stub.
+
+    This replaces the startup refusal that guarded the stub while it existed.
+    The refusal was a statement about the stub; this is a statement about the
+    feature, and it is the assertion the whole wiring step needs: `HeartbeatLoop`
+    takes `fire` as a collaborator and calls whatever it is handed, so a stub
+    left in place claims every due row, delivers nothing, and resolves it — with
+    every unit test green, because each one supplies its own fake `fire`.
+
+    Reaching into `background._tasks` and `_fire` is the only way to see it from
+    out here: `Dependencies` deliberately exposes no heartbeat, and widening it
+    to make one test easier is exactly what its docstring refuses.
+    """
+    on = override_config(cfg, {"heartbeat.enabled": True})
+    deps = await build_dependencies(on)
+    try:
+        loops = [
+            task.get_coro().cr_frame.f_locals["self"]
+            for task in deps.background._tasks
+            if task.get_coro().__qualname__ == "HeartbeatLoop.run"
+        ]
+        assert loops, "the heartbeat loop was not spawned"
+        assert isinstance(loops[0]._fire.__self__, FirePath)
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg, pg_url):
+    """The live `ToolRegistry` gets the reminders store, and `[heartbeat]` being
+    off does not change that.
+
+    Without `reminders=` on that constructor, `remind` answers `unavailable` in
+    production while every test in `tests/test_reminder_tools.py` passes — each
+    builds its OWN registry around the fake, so none of them can see the wiring.
+    That is the whole failure mode this test exists for, which is why it goes all
+    the way to a row in the database rather than asserting on an attribute: a
+    store held but never reached would satisfy the weaker check.
+
+    `cfg.heartbeat.enabled` is False here (the shipped default). The tick is
+    gated; the TOOLS are not — the model may set, list and cancel reminders on a
+    deployment that never fires them, and the rows wait for the flag.
+    """
+    from nora.agent.room import Room
+    from nora.domain.models import PersonRef
+    from nora.domain.reminders import ReminderCaps, ReminderState
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.infra.sql.reminders import SqlReminderStore
+
+    assert cfg.heartbeat.enabled is False
+    deps = await build_dependencies(cfg)
+    try:
+        registry = deps.engagement._tool_registry
+        # §9's caps came from `[reminders]`, converted at the composition root —
+        # `nora.agent` may not import `nora.config`, so a caps object that
+        # silently fell back to its defaults would ignore every operator value.
+        assert registry._caps == ReminderCaps(**cfg.reminders.model_dump())
+
+        miles = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+        specs = registry.specs(
+            store=deps.audit, conversation_id="g1", conversation_type="group",
+            persons=deps.persons, honcho=deps.memory, deliverer=None,
+            metrics=deps.metrics,
+            room=Room(platform="signal", conversation_id="g1", roster_source=None,
+                      persons=deps.persons, tagger=miles),
+        )
+        remind = {spec.name: spec.call for spec in specs}["remind"]
+        result = await remind(
+            when=(datetime.now(UTC) + timedelta(hours=1)).isoformat(), text="洗衫",
+        )
+        assert result["status"] == "ok", result
+    finally:
+        await deps.background.cancel_all()
+
+    check = SqlReminderStore(create_sql_engine(pg_url))
+    try:
+        rows = await check.all_pending(limit=10)
+        assert [r.text for r in rows] == ["洗衫"]
+        assert rows[0].requester_person_id == "miles"
+        assert rows[0].conversation_id == "g1"
+        assert rows[0].state is ReminderState.PENDING
+    finally:
+        await check.aclose()
+
+
+async def test_boot_recovery_counts_the_rows_it_swept(cfg, pg_url):
+    """The sweep is the only path that resolves reminders with no tick running,
+    and `nora_reminders_fired_total`'s spec says a reminder that vanishes must
+    never vanish from the metrics too. It logged a count and incremented
+    nothing, so a crash that ate reminders left no trace on any dashboard.
+
+    This asserts the WIRING, with a real stranded row in the real database — the
+    counting function itself is unit-tested; a function nobody calls would pass
+    that test and leave this defect exactly where it was.
+    """
+    from nora.domain.reminders import Reminder, ReminderState
+    from nora.infra.sql import create_sql_engine, run_migrations
+    from nora.infra.sql.reminders import SqlReminderStore
+
+    run_migrations(pg_url)
+    store = SqlReminderStore(create_sql_engine(pg_url))
+    now = datetime.now(UTC)
+    await store.create(Reminder(
+        id=uuid.uuid4(), requester_person_id="miles", platform="signal",
+        conversation_id="g1", conversation_type="group", text="洗衫",
+        created_at=now - timedelta(hours=1), due_at=now - timedelta(minutes=5),
+        state=ReminderState.FIRING, fired_at=None, outcome=None,
+    ))
+    await store.aclose()
+
+    deps = await build_dependencies(cfg)
+
+    assert deps.metrics.get(
+        "nora_reminders_fired_total", outcome="failed_error",
+    ) == 1
+
+
+async def test_the_liveness_gauge_is_seeded_even_with_the_heartbeat_off(cfg):
+    """`[heartbeat] enabled = false` SHIPS, and the gauge's callback was bound
+    inside `HeartbeatLoop.__init__` — so on every default deployment the series
+    exported `0.0` forever, which reads exactly like "ticked a moment ago". The
+    one reading an operator must be able to trust is the one it could not give.
+    """
+    deps = await build_dependencies(cfg)
+    assert cfg.heartbeat.enabled is False
+    assert deps.metrics.get(
+        "nora_heartbeat_last_tick_age_seconds",
+    ) == HEARTBEAT_NOT_RUNNING
 
 
 def _resolved_module_name(rel: Path) -> str:

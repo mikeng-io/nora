@@ -21,6 +21,7 @@ under `platform=""`, never dropped or rejected).
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
@@ -76,9 +77,11 @@ class Metrics:
             spec.name: Gauge(spec.name, spec.help_text, spec.labelnames, registry=self._registry)
             for spec in _GAUGES
         }
+        self._histogram_labels = {spec.name: spec.labelnames for spec in _HISTOGRAMS}
         self._histograms = {
             spec.name: Histogram(
-                spec.name, spec.help_text, buckets=spec.buckets, registry=self._registry,
+                spec.name, spec.help_text, spec.labelnames, buckets=spec.buckets,
+                registry=self._registry,
             )
             for spec in _HISTOGRAMS
         }
@@ -115,12 +118,58 @@ class Metrics:
         else:
             gauge.set(value)
 
+    def gauge_function(self, name: str, fn: Callable[[], float]) -> None:
+        """Bind a gauge to a callback evaluated at SCRAPE time, not at call time.
+
+        For the gauges whose whole point is that they keep MOVING when the thing
+        they measure has stopped. `gauge(name, value)` writes a number once, so a
+        loop that publishes its own age freezes that age the moment it dies —
+        the reading looks healthy precisely when it isn't. `set_function` is
+        prometheus-client's own answer: the callback runs inside
+        `CollectorRegistry.collect()`, so every scrape (and every `snapshot()`,
+        `get()` and `render()` here, which all collect) recomputes it.
+
+        Unlabeled gauges only. A per-child callback would need one registration
+        per label combination, and there is no caller for that; refusing is
+        better than binding the callback to a series nobody reads.
+        """
+        if self._gauge_labels[name]:
+            raise ValueError(
+                f"{name} declares labels {self._gauge_labels[name]}; "
+                "gauge_function only supports unlabeled gauges"
+            )
+        self._gauges[name].set_function(fn)
+
     def observe(self, name: str, value: float, **labels: object) -> None:
-        self._histograms[name].observe(value)
+        """Record one sample, under whatever labels the spec declares.
+
+        `**labels` used to reach the test-readback dict ONLY — the prometheus
+        histogram itself was observed unlabelled — so a call site that passed a
+        label got a series that silently pooled every path's samples together.
+        A histogram that declares no label still takes the fast path below, so
+        the three unlabelled ones are untouched.
+        """
+        histogram = self._histograms[name]
+        labelnames = self._histogram_labels[name]
+        if labelnames:
+            histogram.labels(**_full_labels(labelnames, labels)).observe(value)
+        else:
+            histogram.observe(value)
         self._observations[_obs_key(name, labels)].append(value)
 
     def observations(self, name: str, **labels: object) -> list[float]:
-        return list(self._observations.get(_obs_key(name, labels), []))
+        """Every recorded sample whose labels match every kwarg given.
+
+        PARTIAL matching, exactly as `get` does it and for the same reason: a
+        caller that names no label must keep seeing every sample after a label
+        is added, or "how many model calls happened at all" stops being
+        answerable the day a second audience starts observing.
+        """
+        matched: list[float] = []
+        for (obs_name, obs_labels), values in self._observations.items():
+            if obs_name == name and _series_matches(obs_labels, labels):
+                matched.extend(values)
+        return matched
 
     def snapshot(self) -> dict[tuple, float]:
         """Every counter/gauge sample, keyed `(name, sorted label pairs)`.
