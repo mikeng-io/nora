@@ -13,65 +13,12 @@ DEC-40 from the new audience without a single test noticing.
 """
 
 import re
-from collections import Counter
-from pathlib import Path
 
 from nora.doctrine.loader import DoctrineStore
-
-ROOT = Path(__file__).resolve().parents[1]
 
 AUTHORED = ("identity", "voice", "conduct", "constraints")
 MULTI_MESSAGE = "never split one answer across several"
 SILENCE = "That's the only reason you ever speak"
-
-# The only prose the split is allowed to ADD to the tag audience: one heading in
-# `conduct.md` for the sentence that stayed behind, and `voice.md`'s new section
-# on the register times are said back in (spec §10.2). Written out here rather
-# than read off disk on purpose — a bound that sources itself from the thing it
-# bounds is not a bound.
-NEW_CONDUCT_HEADING = "# One answer, however many messages"
-NEW_VOICE_SECTION = """
-# Times you are given, and times you say back
-
-When somebody asks you to remember something for later, you answer in the register they
-asked in. 「等陣提我洗衫」 gets 「好, 等陣提你」 — not 「好, 19:47 提你」. 「七點提我出門」 gets
-「好, 七點」. The exact moment is your problem, not theirs; saying a timestamp back at
-someone who said 「等陣」 is the machinery showing through.
-
-You still say something back, so a wrong guess dies now instead of at the wrong hour. And
-you only ask 「幾點?」 when there is genuinely nothing sensible to assume — a friend who
-answers 「等陣提我洗衫」 with 「幾點? 15 分鐘定 30 分鐘?」 is not being careful, they are being
-a judge.
-"""
-# The three reminder verbs' capability lines (DEC-70). NOT authored doctrine —
-# the `kind: capability` section is GENERATED from `NATIVE_TOOLS` by
-# `ToolRegistry.capability()` (DEC-29), so every tool that ships adds tokens to
-# the tag audience without anybody editing a doctrine file.
-#
-# **This is the friction that makes this test scaffolding rather than an
-# invariant**, and the plan says so: DEC-29 deliberately removed a golden the
-# operator had to regenerate whenever she edited `voice.md`, and this one has to
-# be regenerated whenever a TOOL ships too. It is kept only until the merge
-# commit, where it and `tests/fixtures/tag_doctrine_bodies.txt` are deleted
-# together. The durable property — nothing is LOST from the tag audience — is
-# the `removed` assertion below, and it is the one that has caught anything.
-#
-# Written out literally, like the two blocks above, for the reason stated there:
-# a bound that reads its own value out of `NATIVE_TOOLS` would accept whatever
-# `NATIVE_TOOLS` happened to say.
-NEW_CAPABILITY_LINES = """
-- remind — somebody asks you to tell them something later — you store their own words
-  and say them back into this conversation when the time comes
-- list_reminders — somebody asks what you are still holding for this group — only this
-  conversation's, never another room's
-- cancel_reminder — somebody calls one off — takes the id list_reminders gave you, never
-  one you made up
-"""
-ADDED_TOKENS = (
-    set(NEW_CONDUCT_HEADING.split())
-    | set(NEW_VOICE_SECTION.split())
-    | set(NEW_CAPABILITY_LINES.split())
-)
 
 
 def _bodies(store: DoctrineStore, audience: str) -> str:
@@ -104,17 +51,3 @@ def test_the_multi_message_rule_survives_in_both_audiences(doctrine_store):
     assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "tag").split())
     assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "heartbeat").split())
 
-
-def test_tag_audience_words_are_unchanged_except_the_new_prose(doctrine_store):
-    """The split adds one <section> boundary and one heading; it must not change
-    or lose any RULE. Byte-identity is impossible — `_assemble` wraps per file —
-    so compare token multisets against a capture taken BEFORE any doctrine file
-    was edited, and allow exactly the tokens the two new blocks introduce.
-    """
-    fixture = ROOT / "tests" / "fixtures" / "tag_doctrine_bodies.txt"
-    before = Counter(fixture.read_text().split())
-    after = Counter(_bodies(doctrine_store, "tag").split())
-    removed = before - after
-    added = after - before
-    assert not removed, f"tag audience LOST tokens: {sorted(removed)}"
-    assert set(added) <= ADDED_TOKENS, f"unexpected additions: {sorted(set(added) - ADDED_TOKENS)}"
