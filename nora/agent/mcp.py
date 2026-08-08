@@ -1,7 +1,8 @@
 """`nora.agent.mcp` — MCP server discovery (spec: mcp-tool-provider-design
 §3). Builds Strands tool objects for every configured, reachable MCP server
-at process start. The only module besides `nora.agent.factory` that touches
-`strands`'s MCP client machinery.
+at process start. The only module that constructs `strands`'s MCP client
+objects (`MCPClient`) — `nora.agent.factory`'s own Strands construction
+responsibilities are the model/agent wiring, not MCP.
 
 Deliberately takes plain dataclasses, never `nora.config` types: import-linter's
 "only app and __main__ read config" contract forbids `nora.agent` from importing
@@ -16,6 +17,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from strands.tools.mcp.mcp_client import MCPClient
+
+from .tools import NATIVE_TOOL_BUDGETS
 
 log = logging.getLogger("nora.agent.mcp")
 
@@ -71,6 +74,12 @@ def build_mcp_tools(mounts: dict[str, McpMount]) -> dict[str, McpToolGroup]:
     per-mount failure, with no positional pairing to get wrong.
     """
     groups: dict[str, McpToolGroup] = {}
+    # Every tool name claimed so far, across EVERY server processed — a
+    # remote server names its own tools with no screening, so a name can
+    # collide either with a native tool or with an earlier server's tool
+    # (Finding 3, final-review). Seeded with the native names up front: those
+    # are never dropped in favour of a discovered tool, only the reverse.
+    claimed: set[str] = set(NATIVE_TOOL_BUDGETS)
     for mount in mounts.values():
         server_config = {
             mount.name: {
@@ -95,7 +104,7 @@ def build_mcp_tools(mounts: dict[str, McpMount]) -> dict[str, McpToolGroup]:
             )
             continue
         try:
-            tools = client.list_tools_sync()
+            discovered = client.list_tools_sync()
         except Exception:
             log.warning(
                 "mcp server %r connected but tool discovery failed, its tools are absent",
@@ -103,5 +112,24 @@ def build_mcp_tools(mounts: dict[str, McpMount]) -> dict[str, McpToolGroup]:
                 exc_info=True,
             )
             continue
-        groups[mount.name] = McpToolGroup(budget=mount.budget, tools=tuple(tools))
+        # Collision resolution: first server PROCESSED wins (`mounts` is a
+        # plain dict, so this iterates in insertion order and is therefore
+        # deterministic). A tool whose name collides — with a native tool, or
+        # with a tool an earlier server in this same call already claimed —
+        # is dropped: this whole server does not fail, only that one tool is
+        # absent from it, the same "never raise, make the piece absent"
+        # posture the three `except` blocks above already have.
+        kept = []
+        for tool in discovered:
+            if tool.tool_name in claimed:
+                log.warning(
+                    "mcp server %r tool %r collides with an already-registered "
+                    "tool name, dropping it (that server's other tools are "
+                    "unaffected)",
+                    mount.name, tool.tool_name,
+                )
+                continue
+            claimed.add(tool.tool_name)
+            kept.append(tool)
+        groups[mount.name] = McpToolGroup(budget=mount.budget, tools=tuple(kept))
     return groups
