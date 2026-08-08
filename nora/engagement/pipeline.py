@@ -286,6 +286,11 @@ class EngagementPipeline:
             # disclose a `pulse_*` name it cannot call.
             convo = self._policy.conversation(msg.platform, msg.conversation_id)
             allowed_mcp = convo.tools if convo is not None else frozenset()
+            # DEC-74: the per-conversation location-disclosure trust, sourced the
+            # same way `allowed_mcp` is. False (the default) keeps `where_is`'s
+            # circle-subset gate strict; a conversation with `location = true`
+            # relaxes it for that room only.
+            location_trusted = convo.location if convo is not None else False
             handle = deliver.build(
                 store=self._audit, adapter=self._adapter, target=msg.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=request.tag_id,
@@ -310,7 +315,7 @@ class EngagementPipeline:
                 honcho=self._memory, deliverer=handle.deliverer,
                 room=room, question=msg.body,
                 context_window=self._context_window, metrics=self._metrics,
-                allowed_mcp=allowed_mcp,
+                allowed_mcp=allowed_mcp, location_trusted=location_trusted,
             )
             tagger_name = self._persons.display_name(msg)
             # STILL NO ROSTER IN THE PROMPT, and now there is a tool instead.

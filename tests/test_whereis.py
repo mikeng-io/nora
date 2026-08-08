@@ -88,10 +88,11 @@ def _room(persons, *, members, fail=False, tagger=None):
 
 
 def _whereis(persons, store, *, members, fail=False, tagger=None, metrics=None,
-             refresher=None):
+             refresher=None, location_trusted=False):
     return Whereis(
         room=_room(persons, members=members, fail=fail, tagger=tagger),
-        circle=CIRCLE, presence=store, refresher=refresher, metrics=metrics,
+        circle=CIRCLE, presence=store, refresher=refresher,
+        location_trusted=location_trusted, metrics=metrics,
     )
 
 
@@ -187,6 +188,39 @@ async def test_whereis_refuses_when_the_room_holds_an_unmapped_account(persons, 
     )
     out = await w.locate("Miles", now_ms=NOW)
     assert out["status"] == "refused"
+    assert "lat" not in out and "address" not in out
+    assert metrics.get("nora_presence_disclosure_refusals_total") == 1
+
+
+async def test_a_location_trusted_room_discloses_outside_the_circle(persons, store):
+    """DEC-74: with `location = true` on the conversation, the SUBSET check is
+    relaxed — the operator trusts THIS room with the circle's positions even
+    though a mapped member here (the stranger) is outside the circle. The exact
+    room that REFUSES in `test_whereis_refuses_to_disclose_outside_the_circle`
+    now DISCLOSES. Revert the `self._location_trusted or …` clause and this reds."""
+    await _record(store, person="miles_novak", ts=NOW)
+    w = _whereis(
+        persons, store, members=(MILES, GRANT, STRANGER, NORA), location_trusted=True,
+    )
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "ok"          # disclosed, not refused
+
+
+async def test_a_location_trusted_room_still_refuses_an_unmapped_account(persons, store):
+    """Trust extends to the KNOWN roster, NEVER to an unknown outsider (DEC-74):
+    `location = true` relaxes the subset check but NOT the `view.unnamed > 0`
+    refusal, so an account not in identity.toml still fails-closed. The same room
+    that refuses in `test_whereis_refuses_when_the_room_holds_an_unmapped_account`
+    STILL refuses here, trusted or not."""
+    await _record(store, person="miles_novak", ts=NOW)
+    metrics = Metrics()
+    unmapped = frozenset({"+85299999999"})
+    w = _whereis(
+        persons, store, members=(MILES, GRANT, unmapped, NORA),
+        location_trusted=True, metrics=metrics,
+    )
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "refused"     # trust does not reach an unknown
     assert "lat" not in out and "address" not in out
     assert metrics.get("nora_presence_disclosure_refusals_total") == 1
 

@@ -46,6 +46,12 @@ persons  = ["miles", "ada"]   # only these two may trigger Nora here. A new grou
 tools    = []                # MCP servers this room may use, e.g. ["pulse"].
                              # Empty means none, same deny-by-default as everything
                              # else here.
+# location = true            # (default false) relax where_is's disclosure gate for
+                             # THIS room: normally Nora refuses to say where someone
+                             # is unless the room is a subset of their Life360 circle.
+                             # Set true when you trust the mapped people here with the
+                             # circle's positions even though they aren't all in it.
+                             # An UNKNOWN person in the room still blocks it (DEC-74).
 
 [[conversations]]
 platform = "telegram"

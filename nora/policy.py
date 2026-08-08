@@ -44,6 +44,14 @@ class Conversation:
     # mcp-tool-provider-design §2.3). Empty means none — deny-by-default,
     # the same posture as the rest of this file (R-5).
     tools: frozenset[str] = frozenset()
+    # LOCATION-DISCLOSURE TRUST (DEC-74). Default False: `where_is` refuses to
+    # disclose a member's position unless this conversation is a verified SUBSET
+    # of that member's Life360 circle (R-31/DisclosureGuard). Setting `location =
+    # true` is the operator saying "I trust the mapped people in THIS room with my
+    # location even though they are not all in my Life360 circle" — it relaxes the
+    # SUBSET check ONLY; the room must still be fully placed (no unnamed/degraded
+    # view), so an unknown outsider still blocks disclosure.
+    location: bool = False
 
 
 @dataclass(frozen=True)
@@ -118,6 +126,9 @@ class _ConversationEntry(BaseModel):
     label: str = ""
     persons: list[str] | str = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
+    # See `Conversation.location` (DEC-74): relaxes `where_is`'s circle-subset
+    # gate for this room. Default False — the disclosure guard stays strict.
+    location: bool = False
 
     @field_validator("persons")
     @classmethod
@@ -174,7 +185,7 @@ def load_policy(path: Path) -> Policy:
         persons = None if entry.persons == EVERYONE else frozenset(entry.persons)
         convo = Conversation(
             platform=entry.platform, ids=ids, persons=persons, label=entry.label,
-            tools=frozenset(entry.tools),
+            tools=frozenset(entry.tools), location=entry.location,
         )
         conversations.append(convo)
         for cid in ids:

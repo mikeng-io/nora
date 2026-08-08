@@ -319,6 +319,7 @@ class ToolRegistry:
         question: str = "",
         context_window: int = 40,
         fire_turn: bool = False,
+        location_trusted: bool = False,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -344,6 +345,7 @@ class ToolRegistry:
             vision_cache=self._vision_cache,
             search_source=self._search, weather_source=self._weather,
             presence_source=self._presence, presence_circles=self._circles,
+            location_trusted=location_trusted,
             refresher=self._refresher,
             shortener=self._shortener,
             question=question, context_window=context_window,
@@ -366,6 +368,7 @@ class ToolRegistry:
         context_window: int = 40,
         fire_turn: bool = False,
         allowed_mcp: frozenset[str] = frozenset(),
+        location_trusted: bool = False,
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
@@ -386,7 +389,7 @@ class ToolRegistry:
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
-            fire_turn=fire_turn,
+            fire_turn=fire_turn, location_trusted=location_trusted,
         )
         tools = [adapt(spec) for spec in specs]
         for name in allowed_mcp:

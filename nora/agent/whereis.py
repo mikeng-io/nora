@@ -272,6 +272,7 @@ class Whereis:
         circle: Circle,
         presence: PresenceReader,
         refresher: LocationRefresher | None = None,
+        location_trusted: bool = False,
         metrics: Any = None,
     ) -> None:
         self._room = room
@@ -282,6 +283,12 @@ class Whereis:
         # read-only behaviour (the last stored fix), unchanged.
         self._refresher = refresher
         self._guard = DisclosureGuard(circle)
+        # LOCATION-DISCLOSURE TRUST (DEC-74): sourced from this conversation's
+        # `policy.toml` `location` flag. True relaxes the SUBSET check below — the
+        # operator trusts this room with the circle's positions even though it is
+        # not a subset — but NOT the unnamed/degraded refusal, so an unknown
+        # outsider in the room still blocks disclosure.
+        self._location_trusted = location_trusted
         self._metrics = metrics
 
     async def locate(self, person: str, *, now_ms: int | None = None) -> dict[str, Any]:
@@ -321,7 +328,12 @@ class Whereis:
         #   - a DEGRADED view (tagger-only, roster unreadable) that cannot verify
         #     the subset at all.
         room_person_ids = frozenset(p.person_id for p in view.people)
-        if view.degraded or view.unnamed > 0 or not self._guard.permits(room_person_ids):
+        # The SUBSET check is relaxed when the operator trusts this room with the
+        # circle's locations (DEC-74). The unnamed/degraded refusals are NOT: a
+        # room with anyone Nora cannot place still fails-closed, trusted or not —
+        # trust extends to the KNOWN roster, never to an unknown outsider.
+        subset_ok = self._location_trusted or self._guard.permits(room_person_ids)
+        if view.degraded or view.unnamed > 0 or not subset_ok:
             if self._metrics is not None:
                 self._metrics.inc("nora_presence_disclosure_refusals_total")
             log.warning(

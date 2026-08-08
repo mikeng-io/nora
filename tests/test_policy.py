@@ -191,3 +191,16 @@ tools = ["pulse"]
     policy = load_policy(policy_file)
     convo = policy.conversation("signal", "g1")
     assert convo.tools == frozenset({"pulse"})
+
+
+def test_location_flag_defaults_false_and_parses_true(policy, tmp_path):
+    """DEC-74: `location` gates where_is's circle-subset relaxation. It DEFAULTS
+    False (the fixture rooms set none), so the disclosure guard stays strict; a
+    room with `location = true` carries it through to `Conversation.location`."""
+    assert policy.conversation("signal", GROUP).location is False
+    body = (
+        'default = "deny"\n[[conversations]]\nplatform="signal"\n'
+        f'id="{GROUP}"\npersons=["miles"]\nlocation=true\n'
+    )
+    trusted = load_policy(_write(tmp_path, body))
+    assert trusted.conversation("signal", GROUP).location is True
