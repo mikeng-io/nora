@@ -249,6 +249,14 @@ fetch_enabled = true
 # these services publish only on host 127.0.0.1, unreachable via the gateway.
 searxng_url = "http://searxng-core:8080"
 firecrawl_url = "http://firecrawl-api-1:3002"
+# 10000 → 3000 (2026-08-08, Langfuse root-cause). A scraped page rides in the
+# INPUT and is RE-SENT every subsequent loop turn, and total_tokens is the SUM
+# across all 20 turns. At 10000 chars (~3k tokens) × 4 fetches × a flailing
+# ~15-turn weather search, the turn hit total_tokens=128000 and Strands cut it
+# off with an EMPTY reply (finish_reason=limit_total_tokens) — two real dropped
+# replies on 08-08 06:32/06:33. 3000 still carries a forecast/answer but cuts
+# ~8k tokens/turn, which is the overflow. See DEC-57 (fetch is INPUT-resident).
+fetch_max_chars = 3000
 
 [heartbeat]
 # The background tick that fires due reminders — Nora's first unprompted-speech
