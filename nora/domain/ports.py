@@ -171,6 +171,7 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
     UnattributedRow,
+    WeatherObservation,
 )
 
 # `PlatformIdentity` is re-exported, not declared here — it moved next to
@@ -459,6 +460,41 @@ class ReverseGeocoder(Protocol):
     a port with a shared contract suite both pass (tests/contract/, CLAUDE.md)."""
 
     async def address_for(self, *, lat: float, lng: float) -> str | None: ...
+
+
+@runtime_checkable
+class WeatherProvider(Protocol):
+    """Current weather for a place, as a `WeatherObservation`, or None. NEVER
+    raises — a failure is a missing reading, and the `weather` tool says so
+    rather than the loop paying for an exception (R-5, the grounding discipline).
+
+    HK-only today (`HkoWeatherProvider`, the keyless HK Observatory open data),
+    but a PORT because the region set will grow: another provider (a global
+    weather API for somewhere the HKO does not cover) plugs in behind the same
+    `weather` tool with no tool change. A second implementation means a shared
+    contract suite both pass (tests/contract/, CLAUDE.md). `place` is what the
+    model asked about; a provider that reports the whole region (HKO returns all
+    26 stations) may ignore it and let the model pick the nearest — the DEC-24
+    division — while a point provider uses it to locate."""
+
+    async def current(
+        self, *, place: str | None = None, forecast: bool = False,
+    ) -> WeatherObservation | None: ...
+
+
+@runtime_checkable
+class SearchProvider(Protocol):
+    """`query -> {status, results}` web search behind the one `web_search` tool
+    (DEC-73). NEVER raises — a transport/auth failure is `{"status": "unavailable"}`,
+    never an exception into the loop (R-5). `TavilySearchProvider` today; a PORT
+    (operator: "same as web_search — adaptor") so another search backend plugs in
+    with no tool change. Returns ranked results, each `{url, content}` with the
+    content `untrusted`-wrapped and clamped; a second implementation means a shared
+    contract suite both pass (tests/contract/). There is no `fetch` verb and no
+    SSRF surface — the provider searches from ITS servers and is never handed a
+    model-chosen URL, so the old `is_global`/`allowed_urls` apparatus is gone."""
+
+    async def search(self, *, query: str) -> dict[str, Any]: ...
 
 
 @runtime_checkable

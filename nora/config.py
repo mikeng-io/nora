@@ -432,60 +432,64 @@ class PresenceConfig(BaseModel):
 
 
 class SearchConfig(BaseModel):
-    """SearXNG search + Firecrawl fetch for the `search`/`fetch` tools (DEC-57,
-    design/proposed/22, design/14 §2.1/§3).
+    """Web search for the `web_search` tool — Tavily (DEC-73).
 
-    **The whole section is optional and every field defaults**, like
-    `RouteConfig` and `MediaConfig`: a `config.toml` written before this existed
-    keeps loading, which `extra="forbid"` makes a real constraint rather than a
-    courtesy.
+    **Optional and every field defaults**, the `RouteConfig` shape. `enabled`
+    defaults **False** and ships that way: `web_search` reaches a third party and
+    spends credits, so it is off until an operator turns it on AND a key is
+    present. Off (or keyless) leaves the registry without a provider and
+    `web_search` answers `unavailable` (R-5), never a silent empty.
 
-    `enabled` defaults to **False** and it ships that way. These two verbs are
-    the only grounding whose inbound content is untrusted (a page may be written
-    to be retrieved by an agent) AND whose outbound call is an SSRF surface (a
-    self-hosted fetcher against a model-chosen URL). The registry holds no client
-    while off, so both tools answer `unavailable` — never a silent empty (R-5) —
-    and the operator turns this on ONLY once Firecrawl's egress network isolation
-    is in place (design/22 §0/§5, the primary SSRF control, a deployment change
-    this build does not and cannot provide).
+    SearXNG + Firecrawl and the `web_fetch` verb are RETIRED (DEC-73): Tavily
+    returns ranked results WITH a content snippet each in one call, from ITS
+    servers, so there is no self-hosted fetcher, no model-chosen-URL fetch, and no
+    SSRF surface — the `is_global`/`allowed_urls`/`deploy/egress.sh` apparatus is
+    gone with them.
 
-    The URLs point at the two co-located local services (SearXNG `:8080`,
-    Firecrawl `:3002`). `firecrawl_api_version` is PINNED to the deployed
-    instance's scrape route — verified `v1` against the running `firecrawl-api`
-    container (both `/v1/scrape` and `/v2/scrape` answer with an identical
-    `{success, data:{markdown, metadata}}` envelope; `v1` matches design/14's
-    measurement). The three caps bound the input-token cost of retrieved text,
-    which is re-sent on every subsequent model call (design/14 §4).
+    `api_key_env` NAMES the env var holding the Tavily key (DEC-8), never the key
+    itself. `search_depth` is `"basic"` (1 credit) or `"advanced"` (2, richer
+    extraction); `max_results` bounds the count (Tavily allows ≤20);
+    `content_max_chars` clamps each result's snippet — a tool result is re-sent on
+    every subsequent model call, so what accumulates must be bounded (the
+    fetch-token lesson, 2026-08-08).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
-    # `web_fetch` (Firecrawl) split from `web_search` (SearXNG) — 2026-08-07.
-    # SearXNG queries fixed engines and fetches no model-chosen page, so
-    # `web_search` is safe to run once the query egress is screened; Firecrawl
-    # fetches a model-chosen URL and is the SSRF surface that needs the egress
-    # deny-rule (design/22 §0). So `web_search` rides `enabled`, and `web_fetch`
-    # ALSO needs `fetch_enabled` — letting an operator turn search on before the
-    # Firecrawl egress isolation is in place, with `web_fetch` still `unavailable`.
-    # Defaults FALSE (Kimi audit 2026-08-08): the SSRF surface must be OPT-IN, or a
-    # fresh config that only flips `enabled=true` gets a model-chosen fetcher live
-    # with no egress isolation. A deployment that has done the egress work (or
-    # accepts the blind-SSRF residual) sets it true explicitly.
-    fetch_enabled: bool = False
-    searxng_url: str = "http://127.0.0.1:8080"
-    firecrawl_url: str = "http://127.0.0.1:3002"
-    # "v1" or "v2" — the scrape route on the DEPLOYED Firecrawl. Verified v1 on
-    # the running container (design/22 §2). A string, not a Literal, so a future
-    # instance on a third route needs no code change.
-    firecrawl_api_version: str = "v1"
-    # Hard caps (design/14 §4). `search_max_results` bounds the result COUNT
-    # SearXNG's format=json returns whole (measured 27); `snippet_max_bytes`
-    # clamps each returned snippet; `fetch_max_chars` clamps a scraped page.
-    search_max_results: int = Field(default=6, ge=1)
-    snippet_max_bytes: int = Field(default=500, ge=1)
-    fetch_max_chars: int = Field(default=10000, ge=1)
-    timeout_seconds: float = 15.0
+    api_key_env: str = "TAVILY_API_KEY"
+    url: str = "https://api.tavily.com/search"
+    search_depth: Literal["basic", "advanced"] = "basic"
+    max_results: int = Field(default=5, ge=1, le=20)
+    content_max_chars: int = Field(default=1500, ge=1)
+    timeout_seconds: float = 12.0
+
+
+class WeatherConfig(BaseModel):
+    """Current weather + forecast for the `weather` tool (DEC-72).
+
+    **Optional and every field defaults**, the `RouteConfig` shape. UNLIKE the
+    other grounding sections it can safely default `enabled=True` in a fresh
+    config because the HK Observatory provider is KEYLESS, FREE, and leaks
+    nothing (no user data egresses — the request carries no location) — there is
+    nothing to gate on. It still ships `enabled=False` in `config.example.toml`
+    for the "off until explicitly on" house rule; a real deployment flips it.
+
+    `provider` selects the `WeatherProvider` adapter — `Literal["hko"]` today, the
+    `[presence] geocode_provider` precedent (also a `Literal`, not a bare string):
+    a typo is a startup `ConfigError`, not a daemon that boots with `weather`
+    silently dead, and adding a region extends the literal by one value — the same
+    one-line change every switchable adapter here costs. `url`/`lang` are the HKO
+    Open Data endpoint and language; `lang="tc"` for a Cantonese group.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    provider: Literal["hko"] = "hko"
+    url: str = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php"
+    lang: str = "tc"
+    timeout_seconds: float = Field(default=8.0, gt=0)
 
 
 class HeartbeatConfig(BaseModel):
@@ -722,6 +726,9 @@ class Config(BaseModel):
     # turns it on AND Firecrawl's egress is isolated; a config.toml without a
     # `[search]` section keeps loading.
     search: SearchConfig = SearchConfig()
+    # Optional and defaulted — see `WeatherConfig`. Keyless (HK Observatory), so
+    # safe to enable; ships off in the example, on in this deployment (DEC-70).
+    weather: WeatherConfig = WeatherConfig()
     # Optional and defaulted — see `HeartbeatConfig`/`RemindersConfig`. The tick
     # ships INERT (`enabled = false`); the caps apply the moment a reminder can
     # be created, whether or not anything is firing them.

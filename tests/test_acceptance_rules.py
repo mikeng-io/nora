@@ -98,14 +98,11 @@ RULE_TESTS = {
     # [media] enabled. Next free number after the presence pair R-31/R-32
     # (R-26 is still reserved by design/proposed/18). See DEC-56.
     "R-33": "test_a_stored_image_is_read_only_within_scope_and_screened_on_serve",
-    # R-34: the defence-in-depth boundary for `fetch` (DEC-57, design/22). `fetch`
-    # may open only a URL a `search` returned this turn — a model-invented URL
-    # reaches Firecrawl through nothing. This is NOT the SSRF guarantee (that is
-    # Firecrawl's network-isolated egress, an operator deployment gate, §0/§5.1);
-    # it is the fence Nora's own code enforces, alongside the `is_global`
-    # precheck and the untrusted wrap. Next free number after the presence pair
-    # (R-31/R-32) and media_fetch (R-33); R-26 stays reserved by design/proposed/18.
-    "R-34": "test_web_fetch_refuses_a_url_no_web_search_returned",
+    # R-34 RETIRED (DEC-73, 2026-08-08): it was the `fetch` fence — "may open only
+    # a URL a search returned this turn" — defence-in-depth for the SSRF surface a
+    # self-hosted Firecrawl created by fetching a model-chosen URL. `web_fetch` and
+    # Firecrawl are gone (Tavily searches from its own servers and is never handed
+    # a URL), so there is no fence and no rule; the number is not reused.
     # R-35: saved-place resolution is subset-scoped and falls through, never
     # refuses (design/23 §4.1, DEC-60). A room that is not a verified subset of
     # the circle resolves NO household place name — silently, so an outsider

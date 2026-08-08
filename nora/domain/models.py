@@ -218,3 +218,42 @@ class TagContext:
     transcript: tuple[TranscriptRow, ...]   # oldest-first rows from db.recent
     peer_card: tuple[str, ...]
     started_at: float              # perf_counter, for the latency histogram
+
+
+@dataclass(frozen=True)
+class DailyForecast:
+    """One day of a multi-day forecast — a row of `WeatherObservation.forecast_days`."""
+
+    date: str                  # provider date string, e.g. "20260809"
+    weekday: str               # e.g. 「星期日」
+    weather: str               # the day's forecast sentence
+    wind: str                  # wind description ("" if the provider omits it)
+    max_c: float | None
+    min_c: float | None
+    rain_probability: str      # PSR bucket 「低」/「中」/「高」, or "" if absent
+
+
+@dataclass(frozen=True)
+class WeatherObservation:
+    """The weather picture a `WeatherProvider` returns — current, warnings, the
+    day's outlook, and (only when asked) a multi-day forecast. NEVER a coordinate.
+
+    Region-neutral on purpose (the port has more than one provider ahead): a
+    provider fills what it has and leaves the rest empty (`""`/`None`/`()`), and
+    the `weather` tool renders whatever is present. `temperatures` is (place, °C)
+    pairs — a region may report many stations (HK reports 26) or one; the MODEL
+    picks the station nearest the place it was asked about (DEC-24, the division
+    `where_is`/`transit` draw). `warnings` and `typhoon` are always carried
+    because a signal in force is relevant to EVERY weather answer — Nora must not
+    say 「天氣幾好」 with a T8 up. `forecast_days` is empty unless the caller asked
+    for the multi-day forecast (`forecast=True`), keeping the default payload lean."""
+
+    as_of: str                                      # provider timestamp, ISO-8601
+    temperatures: tuple[tuple[str, float], ...]     # (station/place name, celsius)
+    humidity_pct: int | None                        # None if the provider omits it
+    warnings: tuple[str, ...]                        # active warnings, verbatim
+    general_situation: str                          # the broad synoptic picture
+    today_forecast: str                             # today/tonight forecast sentence
+    outlook: str                                    # the days-ahead outlook line
+    typhoon: str                                    # tropical-cyclone track note, "" if none
+    forecast_days: tuple[DailyForecast, ...]        # empty unless forecast requested

@@ -178,3 +178,27 @@ def test_the_reverse_geocoder_backends_conform_to_the_port():
         HKGovGeocoder(service_url="http://x/rev", token="t"),  # noqa: S106
         ReverseGeocoder,
     )
+
+
+def test_hko_provider_satisfies_the_weather_provider_port():
+    """`HkoWeatherProvider` is `WeatherProvider`'s only implementation today; the
+    port exists so another region's provider plugs in behind the `weather` tool
+    with a shared contract. `isinstance` against the `runtime_checkable` Protocol
+    checks the `current` method name; the behavioural contract (fail-soft, the
+    current-required rule) is `tests/test_weather.py`."""
+    from nora.domain.ports import WeatherProvider
+    from nora.infra.weather import HkoWeatherProvider
+
+    assert isinstance(HkoWeatherProvider(), WeatherProvider)
+
+
+def test_tavily_provider_satisfies_the_search_provider_port():
+    """`TavilySearchProvider` is `SearchProvider`'s only implementation today; the
+    port (DEC-73) exists so another search backend plugs in behind `web_search`
+    with a shared contract. `isinstance` against the `runtime_checkable` Protocol
+    checks the `search` method name; the behavioural contract (fail-soft,
+    untrusted wrap, clamp) is `tests/test_tavily.py`."""
+    from nora.domain.ports import SearchProvider
+    from nora.infra.search import TavilySearchProvider
+
+    assert isinstance(TavilySearchProvider(api_key="k"), SearchProvider)

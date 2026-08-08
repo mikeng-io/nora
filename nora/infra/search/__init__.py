@@ -1,5 +1,9 @@
-"""Web search + page fetch — the fourth grounding capability (design/14 §2.1/§3, design/22)."""
+"""Web search — the grounding capability behind the one `web_search` tool.
 
-from .client import SearchClient
+Tavily since 2026-08-08 (DEC-73): SearXNG + Firecrawl and the `web_fetch` verb are
+retired, and the SSRF apparatus with them (Tavily searches from its own servers,
+never Nora's, and is never handed a model-chosen URL)."""
 
-__all__ = ["SearchClient"]
+from .tavily import TavilySearchProvider
+
+__all__ = ["TavilySearchProvider"]

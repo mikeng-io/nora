@@ -29,10 +29,9 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
 
-from ..domain.ports import BlobStore
+from ..domain.ports import BlobStore, SearchProvider, WeatherProvider
 from ..domain.reminders import ReminderCaps, ReminderStore
 from ..infra.routes import RouteClient
-from ..infra.search import SearchClient
 from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
 from ..infra.vision import VisionCache, VisionClient
@@ -71,7 +70,8 @@ class ToolRegistry:
         route: RouteClient | None = None,
         vision: VisionClient | None = None,
         blobs: BlobStore | None = None,
-        search: SearchClient | None = None,
+        search: SearchProvider | None = None,
+        weather: WeatherProvider | None = None,
         presence: PresenceReader | None = None,
         circles: tuple[Circle, ...] = (),
         refresher: Any = None,
@@ -106,14 +106,19 @@ class ToolRegistry:
         # forbids. Held even when `media_fetch` is inert — it costs an empty
         # dict and means turning custody on wires nothing new here.
         self._vision_cache = VisionCache()
-        # `search` (SearXNG + Firecrawl, DEC-57) is NOT default-constructed, for
-        # the same reason `route` is not: the two web verbs ship INERT behind
-        # `[search] enabled` (and the operator's Firecrawl-egress isolation), so
-        # every composition that has not wired one — offline, eval, and any
-        # deployment with `[search]` off — leaves this None, and `search`/`fetch`
-        # answer `unavailable` (the honest «not configured» state, R-5). The
-        # composition root passes one built from `[search]` only when enabled.
+        # `search` (Tavily, DEC-73) is NOT default-constructed, for the same
+        # reason `route` is not: `web_search` ships INERT behind `[search] enabled`
+        # AND a key, so every composition that has not wired one — offline, eval,
+        # keyless — leaves this None and `web_search` answers `unavailable` (the
+        # honest «not configured» state, R-5). No `web_fetch` and no SSRF gate:
+        # Tavily searches from its own servers and is never handed a URL.
         self._search = search
+        # `weather` (HKO, DEC-72) is NOT default-constructed either, for symmetry
+        # with `route`/`search`: it ships behind `[weather] enabled`, and every
+        # composition that has not wired one leaves this None and `weather` answers
+        # `unavailable`. Keyless, so the composition root wires one on `enabled`
+        # alone — no key to resolve.
+        self._weather = weather
         # `presence`/`circles` are `whereis`'s collaborators (DEC-59, activating
         # DEC-54's inert seam): the local `presence_fixes` reader and the circle
         # rosters derived from identity.toml (`circles_from_persons`). NOT
@@ -337,7 +342,7 @@ class ToolRegistry:
             room=room, transit_source=self._transit, route_source=self._route,
             vision_source=self._vision, blob_store=self._blobs,
             vision_cache=self._vision_cache,
-            search_source=self._search,
+            search_source=self._search, weather_source=self._weather,
             presence_source=self._presence, presence_circles=self._circles,
             refresher=self._refresher,
             shortener=self._shortener,

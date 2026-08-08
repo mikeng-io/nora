@@ -66,7 +66,8 @@ def test_the_registry_exposes_every_declared_tool():
         "place_info", "saved_places",
         "where_is",
         "media_fetch",
-        "web_search", "web_fetch",
+        "web_search",
+        "weather",
         "remind", "list_reminders", "cancel_reminder",
     }
 
@@ -112,10 +113,13 @@ def test_budgets_match_todays_table():
         # per-call vision timeout, not this number, is what keeps two describe
         # calls inside the loop budget (DEC-56).
         "media_fetch": 4,
-        # The two web verbs (DEC-57): sized by model round trips — search, read a
-        # result, refine — two of each leaving half the turn.
+        # One web verb (DEC-73, Tavily): sized by model round trips — search,
+        # then refine once or twice; the doctrine says a couple is plenty.
         "web_search": 4,
-        "web_fetch": 4,
+        # One weather verb (DEC-72): current + warnings + outlook always, the
+        # 9-day forecast on a flag. 2 — one HKO round usually answers, a second
+        # covers a follow-up.
+        "weather": 2,
         # The three reminder verbs (DEC-70), all 2 and sized by the
         # CONVERSATION rather than by cost: none leaves the host or the
         # database, so a call is one model round trip, and one message can

@@ -230,33 +230,22 @@ refresh_url = "http://presence:9101"
 refresh_timeout_seconds = 8
 
 [search]
-# SearXNG web_search + Firecrawl web_fetch (DEC-57, design/22). Turned ON
-# 2026-08-07 in the SPLIT shape: web_search is live (SearXNG queries fixed
-# engines, fetches no model-chosen page; the query egress is coordinate- and
-# identifier-screened). web_fetch turned ON 2026-08-08 at the operator's call,
-# accepting the documented residual: Firecrawl fetches a model-chosen URL (the
-# SSRF surface, design/22 §0) and its packet-layer egress deny-rule is NOT yet
-# in place. The code-side guards that ship the CONTENT boundary are live —
-# is_global pre-check + post-redirect sourceURL re-validation (Hermes study,
-# refuses the body if Firecrawl's FINAL host is non-global) + the per-tag
-# allowed_urls fence + the untrusted wrap — so an internal service's content
-# cannot reach the model or the group; the residual is blind-SSRF side effects
-# only (a request reaching an internal host, its body withheld). URLs point at
-# the co-located local services.
+# web_search via Tavily (DEC-73). SearXNG + Firecrawl + the web_fetch verb are
+# RETIRED: Tavily returns ranked results WITH a content snippet each in ONE call,
+# from its own servers, so there is no self-hosted fetcher, no model-chosen-URL
+# fetch, and no SSRF surface (deploy/egress.sh is gone with them). The old
+# runaway-rounds failure — a weather tag spending its whole token budget fetching
+# pages and never answering — is dissolved by the one-call shape.
 enabled = true
-fetch_enabled = true
-# Container names on the joined external networks (see docker-compose.yml) —
-# these services publish only on host 127.0.0.1, unreachable via the gateway.
-searxng_url = "http://searxng-core:8080"
-firecrawl_url = "http://firecrawl-api-1:3002"
-# 10000 → 3000 (2026-08-08, Langfuse root-cause). A scraped page rides in the
-# INPUT and is RE-SENT every subsequent loop turn, and total_tokens is the SUM
-# across all 20 turns. At 10000 chars (~3k tokens) × 4 fetches × a flailing
-# ~15-turn weather search, the turn hit total_tokens=128000 and Strands cut it
-# off with an EMPTY reply (finish_reason=limit_total_tokens) — two real dropped
-# replies on 08-08 06:32/06:33. 3000 still carries a forecast/answer but cuts
-# ~8k tokens/turn, which is the overflow. See DEC-57 (fetch is INPUT-resident).
-fetch_max_chars = 3000
+# api_key_env defaults to TAVILY_API_KEY; the key lives in .env (DEC-8, never
+# here). url / search_depth ("basic") / max_results (5) / content_max_chars
+# default in SearchConfig.
+
+[weather]
+# The `weather` tool (DEC-72). HK Observatory Open Data — KEYLESS, free, leaks
+# nothing (no location egresses), so it ships ON here: there is nothing to gate.
+enabled = true
+provider = "hko"
 
 [heartbeat]
 # The background tick that fires due reminders — Nora's first unprompted-speech

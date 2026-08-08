@@ -390,25 +390,46 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             budget=NATIVE_TOOL_BUDGETS["media_fetch"],
         ),
     )
-    # `search`/`fetch` (SearXNG + Firecrawl, DEC-57) are wired ONLY when
-    # `[search] enabled` — inert by default (design/22). Off leaves the registry
-    # without a SearchClient, so both verbs answer `unavailable` and NOTHING
-    # reaches SearXNG or Firecrawl. Enabling it is an OPERATOR decision gated on
-    # Firecrawl's egress network isolation being in place (the primary SSRF
-    # control, design/22 §0/§5) — a deployment change this build does not make.
+    # `web_search` (Tavily, DEC-73) is wired ONLY when `[search] enabled` AND a
+    # key is present — the `route`-keyless gate. Off (or keyless) leaves the
+    # registry without a provider and `web_search` answers `unavailable` (R-5),
+    # never a silent empty. The key is resolved from the environment here (DEC-8),
+    # never read inside the adapter. No SearXNG/Firecrawl and no `web_fetch`.
     search_client = None
     if cfg.search.enabled:
-        from nora.infra.search import SearchClient
-        search_client = SearchClient(
-            searxng_url=cfg.search.searxng_url,
-            firecrawl_url=cfg.search.firecrawl_url,
-            firecrawl_api_version=cfg.search.firecrawl_api_version,
-            search_max_results=cfg.search.search_max_results,
-            snippet_max_bytes=cfg.search.snippet_max_bytes,
-            fetch_max_chars=cfg.search.fetch_max_chars,
-            timeout_seconds=cfg.search.timeout_seconds,
-            fetch_enabled=cfg.search.fetch_enabled,
-        )
+        search_key = os.environ.get(cfg.search.api_key_env, "")
+        if search_key:
+            from nora.infra.search import TavilySearchProvider
+            search_client = TavilySearchProvider(
+                api_key=search_key,
+                url=cfg.search.url,
+                max_results=cfg.search.max_results,
+                search_depth=cfg.search.search_depth,
+                content_max_chars=cfg.search.content_max_chars,
+                timeout_seconds=cfg.search.timeout_seconds,
+            )
+        else:
+            log.warning(
+                "search enabled but %s is unset — web_search stays unavailable",
+                cfg.search.api_key_env,
+            )
+    # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
+    # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
+    # off leaves the registry without a provider and `weather` answers
+    # `unavailable` (R-5). `provider` selects the adapter — "hko" today.
+    weather_client = None
+    if cfg.weather.enabled:
+        if cfg.weather.provider == "hko":
+            from nora.infra.weather import HkoWeatherProvider
+            weather_client = HkoWeatherProvider(
+                url=cfg.weather.url, lang=cfg.weather.lang,
+                timeout_seconds=cfg.weather.timeout_seconds,
+            )
+        else:
+            log.warning(
+                "weather enabled but provider %r is unknown — weather stays unavailable",
+                cfg.weather.provider,
+            )
     # `whereis` (DEC-59, activating DEC-54's inert seam) is wired ONLY when
     # `[presence] enabled` AND identity.toml yields at least one circle — the
     # enabled-AND-configured gate `route` and media custody use. Off, or
@@ -476,6 +497,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     mcp_tool_groups = build_mcp_tools(mcp_mounts)
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client, blobs=blobs, search=search_client,
+        weather=weather_client,
         presence=presence_store, circles=presence_circles,
         refresher=refresher,
         shortener=shortener_client,

@@ -92,7 +92,8 @@ def test_every_declared_tool_is_built(wiring):
         "place_info", "saved_places",
         "where_is",
         "media_fetch",
-        "web_search", "web_fetch",
+        "web_search",
+        "weather",
         "remind", "list_reminders", "cancel_reminder",
     }
 
@@ -463,6 +464,16 @@ async def test_calculate_needs_none_of_the_tags_collaborators(wiring):
     out = await _call(wiring["tools"]["calculate"], expression="1485/7")
     assert out["status"] == "ok"
     assert out["split"]["leftover"] == "0.02"
+
+
+async def test_weather_is_unavailable_without_a_provider(wiring):
+    """The wiring path the review flagged: this fixture wires no `weather_source`
+    (the offline/`[weather]` off shape), so the closure must answer `unavailable`
+    — never crash, never a bare empty — the same inert-by-config state keyless
+    `route` gives (R-5)."""
+    out = await _call(wiring["tools"]["weather"])
+    assert out["status"] == "unavailable"
+    assert "note" in out
 
 
 async def _call(tool, **kwargs):

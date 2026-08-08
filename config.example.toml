@@ -247,20 +247,25 @@ metrics_port = 9101
 # identically today; v1 matches design/14's measurement). The three caps bound
 # the input-token cost of retrieved text, re-sent on every subsequent model call.
 [search]
+# web_search via Tavily (DEC-73) — one call returns ranked results with content,
+# no SSRF surface. Off here for the "explicitly on" house rule; a real deployment
+# sets enabled=true AND exports the key named by api_key_env.
 enabled = false
-# web_fetch is a SEPARATE opt-in from web_search: Firecrawl fetches a
-# model-chosen URL and is the SSRF surface (design/22 §0). It stays OFF
-# (`fetch_enabled = false`, the default) until the Firecrawl egress is
-# network-isolated OR you accept the blind-SSRF residual — turning `enabled =
-# true` alone leaves web_fetch unavailable, which is the honest inert state.
-fetch_enabled = false
-searxng_url = "http://127.0.0.1:8080"
-firecrawl_url = "http://127.0.0.1:3002"
-firecrawl_api_version = "v1"
-search_max_results = 6      # SearXNG format=json returns the whole set (measured 27)
-snippet_max_bytes = 500     # per-snippet byte clamp; truncation stated in the result
-fetch_max_chars = 10000     # a scraped page's char ceiling
-timeout_seconds = 15.0
+api_key_env = "TAVILY_API_KEY"   # NAMES the env var; the key never lives here (DEC-8)
+# url = "https://api.tavily.com/search"
+# search_depth = "basic"         # "basic" (1 credit) | "advanced" (2, richer)
+# max_results = 5                 # ≤ 20
+# content_max_chars = 1500        # per-result snippet clamp (bounds re-sent tokens)
+# timeout_seconds = 12.0
+
+[weather]
+# The `weather` tool (DEC-72) — HK Observatory Open Data, KEYLESS. Off here for
+# the "explicitly on" house rule; safe to enable (no key, no cost, no egress).
+enabled = false
+provider = "hko"           # the WeatherProvider adapter; "hko" is the only one today
+# url = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php"
+# lang = "tc"              # HKO language: tc | en | sc
+# timeout_seconds = 8.0
 
 [heartbeat]
 # The background tick that fires due reminders — Nora's first unprompted-speech
