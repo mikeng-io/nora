@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from nora.agent import factory
 from nora.agent.guards import Deliverer, ReplyGuard
+from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
@@ -261,3 +262,55 @@ def test_skills_declares_terminal_false_and_no_time_dimension():
     assert spec.plugin is True
     assert spec.terminal is False
     assert spec.time_shiftable is None
+
+
+# ---- discovered MCP tools (spec §3, Task 4) -----------------------------------
+
+class _FakeMcpTool:
+    def __init__(self, tool_name: str) -> None:
+        self.tool_name = tool_name
+
+
+def _mcp_groups() -> dict[str, McpToolGroup]:
+    return {
+        "pulse": McpToolGroup(
+            budget=5,
+            tools=(_FakeMcpTool("pulse_server_status"), _FakeMcpTool("pulse_weekly")),
+        ),
+    }
+
+
+def test_budgets_include_every_discovered_mcp_tool_unconditionally():
+    registry = ToolRegistry(mcp_tools=_mcp_groups())
+    budgets = registry.budgets()
+    assert budgets["pulse_server_status"] == 5
+    assert budgets["pulse_weekly"] == 5
+    # native budgets are untouched
+    assert budgets["now"] == 4
+
+
+def test_capability_and_friends_are_unaffected_by_mcp_tools():
+    plain = ToolRegistry()
+    with_mcp = ToolRegistry(mcp_tools=_mcp_groups())
+    assert with_mcp.capability() == plain.capability()
+    assert with_mcp.tool_names() == plain.tool_names()
+    assert with_mcp.terminal_tools() == plain.terminal_tools()
+    assert with_mcp.live_only_tools() == plain.live_only_tools()
+
+
+def test_build_omits_mcp_tools_when_allowed_mcp_is_empty():
+    tools = _built_tools(ToolRegistry(mcp_tools=_mcp_groups()))
+    names = {t.tool_name for t in tools}
+    assert "pulse_server_status" not in names
+    assert "pulse_weekly" not in names
+
+
+def test_build_includes_only_the_allowed_mcp_servers_tools():
+    registry = ToolRegistry(mcp_tools=_mcp_groups())
+    tools = registry.build(
+        store=_FakeStore(), conversation_id="g1", conversation_type="group",
+        persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
+        metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"pulse"}),
+    )
+    names = {t.tool_name for t in tools}
+    assert {"pulse_server_status", "pulse_weekly"} <= names

@@ -36,6 +36,7 @@ from ..infra.search import SearchClient
 from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
 from ..infra.vision import VisionCache, VisionClient
+from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
 from .room import Room
 from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs, utc_now
@@ -79,6 +80,7 @@ class ToolRegistry:
         reminders: ReminderStore | None = None,
         reminder_caps: ReminderCaps | None = None,
         clock: Callable[[], datetime] = utc_now,
+        mcp_tools: Mapping[str, McpToolGroup] | None = None,
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -160,10 +162,27 @@ class ToolRegistry:
         # them testable without sleeping — and a collaborator through `__init__`
         # is the only seam CLAUDE.md's test-seam policy allows.
         self._clock = clock
+        # Discovered MCP tool groups (spec: mcp-tool-provider-design §3),
+        # keyed by server name. `.budgets()` folds every entry in
+        # UNCONDITIONALLY — it is never disclosed to a model or user, so an
+        # entry for a server a given conversation cannot call is inert, not
+        # a leak. `.specs()`/`.build()`'s `allowed_mcp` parameter is the
+        # actual enforcement point.
+        self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
 
     def budgets(self) -> Mapping[str, int]:
-        """The per-tool call-count ceiling `ReplyGuard` enforces under R-7."""
-        return dict(NATIVE_TOOL_BUDGETS)
+        """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
+
+        Includes every discovered MCP tool's budget UNCONDITIONALLY (spec
+        §3) — regardless of which conversations may actually call it. This
+        mirrors `skills` above: a budget admits a call under R-7's
+        default-deny, it does not disclose the tool. Per-conversation MCP
+        scope is enforced in `build()`'s `allowed_mcp`, not here."""
+        budgets = dict(NATIVE_TOOL_BUDGETS)
+        for group in self._mcp_tools.values():
+            for tool in group.tools:
+                budgets[tool.tool_name] = group.budget
+        return budgets
 
     def terminal_tools(self) -> frozenset[str]:
         """The verbs that END A TURN, for `ReplyGuard`'s model-call hook (DEC-32).
@@ -329,17 +348,32 @@ class ToolRegistry:
         question: str = "",
         context_window: int = 40,
         fire_turn: bool = False,
+        allowed_mcp: frozenset[str] = frozenset(),
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
         the old direct `nora.agent.tools.build_tools` import.
 
         `nora.app.fire.FirePath` is the other caller, and the only one that
-        passes `fire_turn=True`."""
+        passes `fire_turn=True`.
+
+        `allowed_mcp` (spec §3) is the enforcement point for per-conversation
+        MCP scope: only tool groups whose server name is in this set are
+        appended, and they are appended AFTER `adapt()` runs over the native
+        specs — MCP tools are already Strands tool objects (`McpToolGroup.tools`,
+        Task 2), not `ToolSpec`s, so `specs()` cannot return them and `adapt()`
+        must not be called on them. Native tools are unaffected — this
+        codebase has no per-conversation gating for them today, and this
+        change does not add one."""
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
             fire_turn=fire_turn,
         )
-        return [adapt(spec) for spec in specs]
+        tools = [adapt(spec) for spec in specs]
+        for name in allowed_mcp:
+            group = self._mcp_tools.get(name)
+            if group is not None:
+                tools.extend(group.tools)
+        return tools
