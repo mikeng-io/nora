@@ -84,6 +84,53 @@ async def test_mark_moves_state_and_reports_the_change(store):
     assert await store.mark(uuid.uuid4(), ReminderState.DONE) is False
 
 
+async def test_claim_is_a_compare_and_set_from_pending(store):
+    """`claim` is the ONE transition the heartbeat must not lose a race on.
+
+    `mark` moves a row by id alone, whatever state it is in — which is right for
+    closing out a row the tick already owns, and wrong for TAKING one. `due()`
+    is a query, not a claim, and a turn awaits: between the batch being read and
+    a row being fired, a human may cancel it. With `mark` doing the take, that
+    cancel was overwritten (CANCELLED -> FIRING) and the reminder was spoken
+    anyway; the caller's `if not moved: already resolved` branch could never run
+    because `UPDATE ... WHERE id = :id` always matches a row that still exists,
+    and nothing deletes reminders.
+
+    So: True only from PENDING, and the second caller of the same row gets
+    False with the row untouched.
+    """
+    r = _row()
+    await store.create(r)
+
+    assert await store.claim(r.id) is True
+    assert (await store.get(r.id)).state is ReminderState.FIRING
+    # Idempotence is not the point — EXCLUSIVITY is. The second claim loses.
+    assert await store.claim(r.id) is False
+
+    # Every non-PENDING state refuses, and the row is left exactly as it was.
+    for state in (ReminderState.CANCELLED, ReminderState.DONE,
+                  ReminderState.FAILED, ReminderState.FIRING):
+        other = _row(state=state)
+        await store.create(other)
+        assert await store.claim(other.id) is False, state
+        assert (await store.get(other.id)).state is state
+
+    assert await store.claim(uuid.uuid4()) is False
+
+
+async def test_a_cancel_beats_a_later_claim(store):
+    """The race from the heartbeat's side, end to end: a row selected by `due()`
+    and cancelled before the tick gets to it is never fired."""
+    r = _row()
+    await store.create(r)
+    selected = await store.due(now=LATER, limit=10)
+    assert [x.id for x in selected] == [r.id]
+
+    assert await store.cancel(r.id, conversation_id="conv-1") is True
+    assert await store.claim(r.id) is False
+    assert (await store.get(r.id)).state is ReminderState.CANCELLED
+
+
 async def test_cancel_is_scoped_to_the_conversation(store):
     r = _row(conversation_id="conv-1")
     await store.create(r)

@@ -6,12 +6,17 @@ Shaped like `nora.infra.sql.audit`: the engine comes through `__init__`, every
 write is one statement inside `async with self._engine.begin()`, and every read
 is one statement inside `async with self._engine.connect()`.
 
-TWO STATE TRANSITIONS ARE DELIBERATELY NARROWER THAN `mark`
------------------------------------------------------------
+THREE STATE TRANSITIONS ARE DELIBERATELY NARROWER THAN `mark`
+------------------------------------------------------------
 `mark` moves any row that still exists, whatever state it is in — the heartbeat
-owns a row it has already selected and must be able to close it out. `cancel`
-and `sweep_firing` both add a state predicate to the WHERE clause instead:
+owns a row it has already CLAIMED and must be able to close it out. `claim`,
+`cancel` and `sweep_firing` all add a state predicate to the WHERE clause
+instead:
 
+- `claim` matches `state = 'pending'`, which is what makes taking a row a
+  compare-and-set. `due()` is a query, not a claim, and the tick awaits a turn
+  per group before it reaches the later rows — so a cancel landing in that
+  window must win, and it only can if the predicate is in the statement.
 - `cancel` matches `state = 'pending'` so a reminder that already fired cannot
   be retroactively "cancelled", and matches `conversation_id` because a uuid
   carries no scope of its own — the STORE enforces the scope, not the tool that
@@ -175,6 +180,28 @@ class SqlReminderStore:
         async with self._engine.connect() as conn:
             total = (await conn.execute(stmt)).scalar_one()
         return int(total)
+
+    async def claim(self, reminder_id: UUID) -> bool:
+        """`PENDING -> FIRING`, decided by the statement itself.
+
+        The third narrowed transition, and the one whose absence was a bug:
+        `mark` was doing the take, and `mark` matches on id alone, so a cancel
+        that landed while an earlier group's turn was in flight was overwritten
+        and the reminder spoken anyway. `rowcount` is the answer — the taker
+        learns whether it won without a read-back, which is what makes this a
+        compare-and-set rather than a check the next statement can invalidate.
+        """
+        stmt = (
+            sa.update(REMINDERS)
+            .where(
+                REMINDERS.c.id == reminder_id,
+                REMINDERS.c.state == ReminderState.PENDING.value,
+            )
+            .values(state=ReminderState.FIRING.value)
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return bool(result.rowcount)
 
     async def mark(
         self, reminder_id: UUID, state: ReminderState, *,

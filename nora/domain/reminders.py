@@ -173,11 +173,35 @@ class ReminderStore(Protocol):
 
     async def count_pending(self, requester_person_id: str) -> int: ...
 
+    async def claim(self, reminder_id: UUID) -> bool:
+        """`PENDING -> FIRING`, as a COMPARE-AND-SET. True iff this caller took
+        the row; False leaves it exactly as it was.
+
+        Separate from `mark` because the predicate is the whole point. `mark`
+        moves a row by id alone — right for CLOSING OUT a row the caller already
+        owns, and wrong for TAKING one, because `due()` is a query rather than a
+        claim: the batch it returns is a snapshot of a past moment, and the tick
+        awaits a turn per group before it reaches the later rows. A cancel
+        landing in that window must win.
+
+        With `mark` doing the take it did not. `UPDATE ... WHERE id = :id`
+        matches any row that still exists, nothing ever deletes reminders, so
+        the caller's "False means already resolved" branch was unreachable and
+        a cancelled row went CANCELLED -> FIRING -> DONE and was spoken. The
+        state predicate belongs in the statement, like `cancel`'s and
+        `sweep_firing`'s, where it is one atomic decision instead of a
+        read-then-write both stores would race.
+        """
+        ...
+
     async def mark(
         self, reminder_id: UUID, state: ReminderState, *,
         fired_at: datetime | None = None, outcome: str | None = None,
     ) -> bool:
         """True if a row changed. False means it was already resolved.
+
+        Moves a row by id alone, whatever state it is in — the terminal write
+        for a row the caller has already claimed. Use `claim` to TAKE a row.
 
         `fired_at`, when given, must be timezone-aware and is stored as UTC."""
         ...

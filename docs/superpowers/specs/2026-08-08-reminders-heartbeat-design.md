@@ -175,11 +175,11 @@ Index `idx_reminders_due` on `(state, due_at)`, named explicitly.
 ```
 every [heartbeat] tick_seconds:
     rows = SELECT … WHERE state='pending' AND due_at <= now() ORDER BY due_at
-    group rows by (platform, conversation_id)          # §5.2
+    group rows by (platform, conversation_id, requester_person_id)     # §5.2
     for each group:
         if not Policy.is_allowed(...): mark failed_policy; continue   # §5.1
         acquire the conversation slot, or skip to next tick           # §5.3
-        mark firing → run ONE turn → record outcome → done|failed
+        claim pending→firing → run ONE turn → record outcome → done|failed
 ```
 
 It **reuses** the stage functions that fit and **explicitly does not use** the
@@ -222,11 +222,37 @@ the ingest *sender* check (`nora/ingest/pipeline.py:140-144`) wraps `is_allowed`
 Why re-check at all: `policy.toml` is loaded once at startup and a row may be 30
 days old. Trust withdrawn between `remind()` and `due_at` must bite.
 
-### 5.2 One turn per conversation, never across
+### 5.2 One turn per conversation AND per requester, never across either
 
 A turn has one conversation scope — one `Room`, one policy decision, one
 `Deliverer` binding (R-3). Rows for two conversations cannot share a turn without
-leaking one room's reminder into the other. Group by `(platform, conversation_id)`.
+leaking one room's reminder into the other.
+
+**And it has one requester.** §6.4 derives the entire turn from a single
+`requester_person_id`: the `tagger` `PersonRef`, the `Room` scope that tagger
+grants, the peer card read for that person, and the `sender_name` on the
+synthetic `NormalizedMessage`. Two people's rows in one turn would put person
+B's sentence into a turn wearing person A's identity, A's memory and A's room —
+and §6.4's table has no second slot to put B in.
+
+So the grouping key is **`(platform, conversation_id, requester_person_id)`**.
+Two people with reminders due in the same group in the same tick become two
+turns, serialised by the conversation slot (§5.3) exactly as a tag and a fire
+turn are — the second simply takes the slot after the first releases it, or
+defers to the next tick if a tag took it in between.
+
+*(v3 said `(platform, conversation_id)`. That contradicted §6.4, which was
+written later; the key above is the one §6.4 requires. `nora.app.heartbeat._by_turn`,
+`test_rows_are_grouped_by_conversation_and_requester_one_turn_each`.)*
+
+**Taking a row is a compare-and-set, not an update.** `due()` is a query, and
+the tick awaits a whole turn per group before reaching the later groups — so a
+row selected by `due()` may be cancelled before the tick gets to it. The
+`pending → firing` transition is therefore `ReminderStore.claim`, whose
+statement carries `state = 'pending'` in its WHERE clause and reports through
+`rowcount`. `mark` matches on id alone (which is right for closing out a row the
+tick already owns) and, used for the take, silently resurrected cancelled rows
+`cancelled → firing → done`.
 
 ### 5.3 Serialisation requires hoisting the queue — a prerequisite refactor
 
@@ -553,6 +579,13 @@ when admission merely **queued** it — so a tick that reused it would mark rows
 `done` before the turn had run. The fire path is ours and returns
 `sent | failed_policy | failed_timeout | failed_error`.
 
+**The row's state is DERIVED from that outcome — `sent` is the only `done`.**
+Stated because the first implementation did not: it resolved every non-raising
+return `done` and reached `failed` only through an exception, so a timed-out
+turn and a turn that reported its own error were both recorded as delivered,
+with the truth surviving only in the free-text `outcome` column that nothing
+queries on (`nora.app.heartbeat._state_for`).
+
 ### 8.2 Boot recovery is at-most-once, by decision
 
 Rows left `firing` by a crash resolve to **`failed`**. They are never re-fired.
@@ -568,6 +601,13 @@ So the honest choice is **at-most-once**: a crash mid-fire loses that reminder,
 visibly (`outcome=failed_error`, a metric, a log line). Losing one reminder to a
 crash beats double-sending, and "either re-queued or reported" was never a
 decision.
+
+**"A metric" means the sweep increments one**, `nora_reminders_fired_total{outcome="failed_error"}`,
+once per row swept — `nora.app.heartbeat.recover`, called unconditionally by the
+composition root. The first implementation logged the count and incremented
+nothing, which made the "visibly" above false: the boot sweep is the one path
+that resolves reminders with no tick running, so the rows a crash ate appeared
+on no dashboard and in no alert.
 
 ### 8.3 Cancel does not stop a turn in flight
 

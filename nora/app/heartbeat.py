@@ -8,7 +8,13 @@ Four things, and deliberately not a fifth:
 2. **Whether** — `policy.toml` re-checked at FIRE time, per row.
 3. **Where the turn may run** — the conversation's serialisation slot, taken
    with `try_acquire`: never queued, never waited on.
-4. **What happened** — the row's terminal state, and one counter per reminder.
+4. **What happened** — the row's terminal state, DERIVED FROM the outcome `fire`
+   answered (`_state_for`: only `sent` is DONE), and one counter per reminder.
+
+`recover` and `publish_idle_gauge` are module-level functions rather than
+methods, because both must run when the loop does NOT exist: boot recovery is
+most needed on the deployment that has the tick switched off, and a liveness
+gauge that is only bound when the loop is alive cannot report that it isn't.
 
 It does NOT know what a fire turn IS. `fire` is a collaborator taking one
 conversation's due rows and answering an outcome string; `nora.app.fire.FirePath`
@@ -57,6 +63,22 @@ from nora.engagement.slots import ConversationSlots, Key
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.heartbeat")
+
+# A TURN's key: one conversation AND one requester. Wider than `Key`, the
+# conversation slot's key, and the difference is deliberate — see `_by_turn`.
+TurnKey = tuple[str, str, str]
+
+# The ONE outcome that means the group heard something. Everything else the fire
+# path can answer (§8.1: `failed_policy`, `failed_timeout`, `failed_error`) is a
+# reminder that did NOT arrive, and the row must say so.
+SENT = "sent"
+
+# What the liveness gauge reads when there is no loop to be live. Negative
+# because no real tick age can be: `0.0` is what an unbound gauge exports and
+# also what a gauge read one instant after a tick exports, so an operator (or an
+# alert expression) cannot tell "just ticked" from "never started" — which is
+# the single reading this series exists to give. See `publish_idle_gauge`.
+HEARTBEAT_NOT_RUNNING = -1.0
 
 # One tick's batch ceiling. Bounds a single tick's work when a backlog builds
 # (a long outage, a clock jump); the remainder is still due next tick, in the
@@ -126,33 +148,35 @@ class HeartbeatLoop:
         return (self._clock() - self._last_tick_at).total_seconds()
 
     async def tick(self) -> None:
-        """One pass: due rows, grouped by conversation, one turn each.
+        """One pass: due rows, grouped by conversation AND requester (§5.2), one
+        turn each.
 
-        Raises nothing a caller must handle for a single conversation's sake —
-        a conversation whose fire turn explodes is resolved, counted and stepped
-        over, because one bad reminder must not strand the others due in the
-        same tick.
+        Raises nothing a caller must handle for a single group's sake — a group
+        whose turn explodes ANYWHERE (screening, claiming, firing, resolving) is
+        resolved as far as it can be, counted, and stepped over, because one bad
+        reminder must not strand the others due in the same tick.
         """
         now = self._clock()
         due = await self._store.due(now=now, limit=DUE_BATCH_LIMIT)
-        for key, rows in _by_conversation(due).items():
-            allowed = await self._screen(rows, now=now)
-            if not allowed:
-                continue
-            if not self._slots.try_acquire(key):
-                # A tag owns this conversation. The rows stay PENDING and the
-                # next tick finds them again — never queued, never shed.
-                log.info("heartbeat deferred %d reminder(s) in %s: slot held",
-                         len(allowed), key[1])
-                continue
+        for turn_key, rows in _by_turn(due).items():
+            # The SLOT is per conversation, not per turn: two requesters with
+            # rows due in one group are two turns contending for one lock, and
+            # the second simply finds it free after the first releases.
+            slot: Key = (turn_key[0], turn_key[1])
             try:
-                await self._run_turn(allowed, now=now)
-            finally:
-                # ONE call, in a `finally`, for the same reason the tag path's
-                # release is: a fire turn that dies must not strand whatever
-                # queued behind it, and a queued tag must not have to wait for
-                # the NEXT tag to be dispatched.
-                self._slots.release_and_dispatch(key)
+                await self._one_turn(rows, slot=slot, now=now)
+            except Exception:
+                # The docstring's promise, made true. Anything this group's
+                # screening, claiming or resolving raises stops HERE — every
+                # conversation ordered after it in the same batch still gets its
+                # tick, and the batch's tail is not silently skipped until the
+                # fault clears.
+                log.exception(
+                    "heartbeat: %d reminder(s) for %s in %s failed; "
+                    "the rest of the tick continues",
+                    len(rows), turn_key[2], turn_key[1],
+                )
+                self._metrics.inc("nora_errors_total", stage="heartbeat")
         # Only a tick that got here counts as a tick. A pass that raised leaves
         # this stamp alone, so the liveness gauge climbs through a failing loop
         # exactly as it does through a stopped one.
@@ -164,8 +188,8 @@ class HeartbeatLoop:
         `prune_loop`'s never-die discipline (`nora.app.runtime`): a failing pass
         is logged and counted, never fatal to the loop and never fatal to the
         process. Sleep FIRST — startup is the least useful moment to speak, and
-        the boot sweep (`store.sweep_firing()`, in the composition root) has
-        only just resolved whatever the last crash stranded.
+        the boot sweep (`recover()`, called by the composition root) has only
+        just resolved whatever the last crash stranded.
         """
         log.info("heartbeat started: tick every %.1fs", self._tick_seconds)
         while True:
@@ -176,15 +200,47 @@ class HeartbeatLoop:
                 log.exception("heartbeat tick failed")
                 self._metrics.inc("nora_errors_total", stage="heartbeat")
 
+    async def _one_turn(
+        self, rows: Sequence[Reminder], *, slot: Key, now: datetime,
+    ) -> None:
+        """One group: screened, then given the conversation's slot, or deferred.
+
+        Split out of `tick()` so the per-group `try/except` there wraps ALL of a
+        group's work — the policy screen and the terminal writes included, not
+        just the fire call. The earlier shape guarded `fire` alone, so a store
+        that failed while claiming left rows FIRING with no counter and took the
+        whole tick down with them.
+        """
+        allowed = await self._screen(rows, now=now)
+        if not allowed:
+            return
+        if not self._slots.try_acquire(slot):
+            # A tag owns this conversation. The rows stay PENDING and the next
+            # tick finds them again — never queued, never shed.
+            log.info("heartbeat deferred %d reminder(s) in %s: slot held",
+                     len(allowed), slot[1])
+            return
+        try:
+            await self._run_turn(allowed, now=now)
+        finally:
+            # ONE call, in a `finally`, for the same reason the tag path's
+            # release is: a fire turn that dies must not strand whatever
+            # queued behind it, and a queued tag must not have to wait for
+            # the NEXT tag to be dispatched.
+            self._slots.release_and_dispatch(slot)
+
     async def _screen(
         self, rows: Sequence[Reminder], *, now: datetime,
     ) -> list[Reminder]:
         """§5.1's fire-time policy check, per ROW.
 
-        Per row rather than per conversation because the grant is
-        (room, person): two people may have set reminders in the same group and
-        only one of them may since have lost the room. Screening the group as a
-        whole would either fire the revoked one or silence the other.
+        The grant is (room, person), and two people may have reminders due in
+        the same group with only one of them having since lost the room — which
+        is why the whole tick can never screen a CONVERSATION as a unit. Since
+        §5.2 the group is already one requester's, so every row here gets the
+        same answer; the loop stays per row because that is what the predicate
+        is about, and because it is what keeps the revoked person's row failing
+        without touching the other person's group.
         """
         allowed: list[Reminder] = []
         for row in rows:
@@ -199,35 +255,83 @@ class HeartbeatLoop:
                 "reminder %s not fired: %s is no longer allowed in %s",
                 row.id, row.requester_person_id, row.conversation_id,
             )
-            await self._resolve(row, ReminderState.FAILED, outcome="failed_policy", now=now)
+            await self._resolve_all(
+                [row], ReminderState.FAILED, outcome="failed_policy", now=now,
+            )
         return allowed
 
     async def _run_turn(self, rows: Sequence[Reminder], *, now: datetime) -> None:
         """One conversation's fire turn, from FIRING to a terminal state.
 
-        The rows are marked FIRING BEFORE `fire` is called, which is what makes
-        §8.2's at-most-once real: a crash mid-turn leaves them FIRING, and boot
-        recovery resolves those to FAILED rather than re-queueing them. Nothing
-        links a row to a delivered message, so a retry would double-send
-        anything that died after egress.
+        The rows are CLAIMED — `PENDING -> FIRING`, compare-and-set — before
+        `fire` is called, which is what makes §8.2's at-most-once real: a crash
+        mid-turn leaves them FIRING, and boot recovery resolves those to FAILED
+        rather than re-queueing them. Nothing links a row to a delivered
+        message, so a retry would double-send anything that died after egress.
+
+        `claim`, not `mark`: `due()`'s batch is a snapshot, and this coroutine
+        awaits a whole turn for the groups ahead of it, so a row here may since
+        have been cancelled. `mark` matched on id alone and would resurrect it.
         """
         firing: list[Reminder] = []
-        for row in rows:
-            if await self._store.mark(row.id, ReminderState.FIRING):
-                # `replace`, so what `fire` receives says what is true of the
-                # row it is about to speak for.
-                firing.append(replace(row, state=ReminderState.FIRING))
+        try:
+            for row in rows:
+                if await self._store.claim(row.id):
+                    # `replace`, so what `fire` receives says what is true of the
+                    # row it is about to speak for.
+                    firing.append(replace(row, state=ReminderState.FIRING))
+                else:
+                    # Cancelled (or otherwise resolved) since `due()` read it.
+                    # Not ours to fire, and not ours to write a terminal state
+                    # over either — whoever moved it already recorded one.
+                    log.info("reminder %s was resolved before it could be "
+                             "claimed; skipping", row.id)
+        except Exception:
+            # Whatever this raised, the rows already moved to FIRING are ours
+            # and nothing else will close them out before the next boot. Resolve
+            # them here, then let `tick()`'s per-group guard count the failure.
+            await self._resolve_all(
+                firing, ReminderState.FAILED, outcome="failed_error", now=now,
+            )
+            raise
         if not firing:
             return
         try:
             outcome = await self._fire(firing)
         except Exception:
             log.exception("fire turn failed in %s", firing[0].conversation_id)
-            for row in firing:
-                await self._resolve(row, ReminderState.FAILED, outcome="failed_error", now=now)
+            await self._resolve_all(
+                firing, ReminderState.FAILED, outcome="failed_error", now=now,
+            )
             return
-        for row in firing:
-            await self._resolve(row, ReminderState.DONE, outcome=outcome, now=now)
+        # §8.1: the STATE comes from the OUTCOME. Only `sent` is DONE — a turn
+        # that timed out or reported its own error answers without raising, and
+        # writing those `done` records a delivery that never happened.
+        await self._resolve_all(firing, _state_for(outcome), outcome=outcome, now=now)
+
+    async def _resolve_all(
+        self, rows: Sequence[Reminder], state: ReminderState, *,
+        outcome: str, now: datetime,
+    ) -> None:
+        """`_resolve` over a turn's rows, where one failure costs ONE row.
+
+        Per row rather than per loop because the alternative is what the
+        unguarded version did: a store that failed writing the first row's
+        terminal state skipped every row after it, leaving them FIRING — and
+        FIRING is only recoverable at the next boot, so the reminders after the
+        first one were lost for as long as the process kept running. The row
+        whose write failed is still FIRING here too, but it is the only one, and
+        `recover()` sweeps it.
+        """
+        for row in rows:
+            try:
+                await self._resolve(row, state, outcome=outcome, now=now)
+            except Exception:
+                log.exception(
+                    "reminder %s could not be resolved to %s; it stays FIRING "
+                    "and boot recovery will sweep it (§8.2)", row.id, state,
+                )
+                self._metrics.inc("nora_errors_total", stage="heartbeat")
 
     async def _resolve(
         self, row: Reminder, state: ReminderState, *, outcome: str, now: datetime,
@@ -242,16 +346,93 @@ class HeartbeatLoop:
         self._metrics.inc("nora_reminders_fired_total", outcome=outcome)
 
 
-def _by_conversation(rows: Sequence[Reminder]) -> dict[Key, list[Reminder]]:
-    """Group into ONE turn per conversation, preserving `due()`'s order.
+def _state_for(outcome: str) -> ReminderState:
+    """§8.1's outcome, as §5's `done|failed`.
 
-    §5.2: a turn has one conversation scope — one Room, one policy decision, one
-    Deliverer binding. Two conversations due in the same tick are two turns;
-    sharing one would leak one room's reminder into the other. The key is
-    `(platform, conversation_id)`, the same tuple `ConversationSlots` locks on,
-    because a conversation id alone is not unique across platforms.
+    The loop owns this state machine and used to ignore the outcome it was
+    handed: only an EXCEPTION produced FAILED, so `failed_timeout`,
+    `failed_error` and the `not_wired` stub all wrote `state=done`. The row then
+    reads "delivered" to every query that filters on state, with the truth
+    surviving only in a free-text column nothing joins on.
     """
-    groups: dict[Key, list[Reminder]] = {}
+    return ReminderState.DONE if outcome == SENT else ReminderState.FAILED
+
+
+def _by_turn(rows: Sequence[Reminder]) -> dict[TurnKey, list[Reminder]]:
+    """Group into ONE turn per (conversation, requester), preserving `due()`'s
+    order.
+
+    §5.2, both halves:
+
+    - One CONVERSATION, because a turn has one Room, one policy decision and one
+      Deliverer binding. Rows for two conversations sharing a turn would leak
+      one room's reminder into the other. `(platform, conversation_id)` because
+      a conversation id alone is not unique across platforms.
+    - One REQUESTER, because §6.4 derives the entire turn from a single
+      `requester_person_id` — the `tagger`, the `Room` scope that tagger grants,
+      the peer card, and the synthetic message's `sender_name`. Two people's
+      rows in one turn would put person B's sentence into a turn wearing person
+      A's identity, A's memory and A's room.
+
+    Two requesters due in the same group are therefore two turns. They are safe
+    precisely because they are separate: each takes the conversation slot in
+    turn, so they are serialised exactly as a tag and a fire turn are.
+    """
+    groups: dict[TurnKey, list[Reminder]] = {}
     for row in rows:
-        groups.setdefault((row.platform, row.conversation_id), []).append(row)
+        key = (row.platform, row.conversation_id, row.requester_person_id)
+        groups.setdefault(key, []).append(row)
     return groups
+
+
+def publish_idle_gauge(metrics: Metrics) -> None:
+    """Bind `nora_heartbeat_last_tick_age_seconds` to the "not running" sentinel.
+
+    Called unconditionally at startup, because the gauge's whole purpose is to
+    be readable when the loop is NOT. Bound only inside `HeartbeatLoop.__init__`
+    it was absent from every deployment running the shipped default
+    (`[heartbeat] enabled = false`), and an unbound prometheus gauge exports
+    `0.0` — the same number a healthy loop exports a moment after it ticks. The
+    series existed to distinguish exactly those two states and reported the
+    healthy one for both.
+
+    A climbing age would be the other option and is worse: a deliberately
+    disabled heartbeat would page someone every time the threshold passed. The
+    sentinel says "off", not "stalled", and no real tick age can be negative.
+
+    `HeartbeatLoop.__init__` rebinds the same series when the loop IS built
+    (`Gauge.set_function` replaces its callback), so the order of the two calls
+    does not matter.
+    """
+    metrics.gauge_function(
+        "nora_heartbeat_last_tick_age_seconds", lambda: HEARTBEAT_NOT_RUNNING,
+    )
+
+
+async def recover(*, store: ReminderStore, metrics: Metrics) -> int:
+    """Boot recovery (§8.2): rows a crash left FIRING resolve to FAILED, counted.
+
+    A module-level function, not a method on `HeartbeatLoop`, and called
+    UNCONDITIONALLY — a heartbeat that has been switched off is exactly the
+    state in which a stranded FIRING row would otherwise sit forever, so
+    at-most-once must not stop applying on the config that looks safest. Only
+    the LOOP is gated by `[heartbeat] enabled`.
+
+    The counter is not decoration. `nora_reminders_fired_total`'s spec says a
+    reminder that vanishes must never vanish from the metrics too, and the sweep
+    is the ONE path that resolves reminders with no tick running: without this
+    the rows a crash ate appeared on no dashboard and in no alert, only in a log
+    line nobody greps for.
+    """
+    swept = await store.sweep_firing()
+    if not swept:
+        return 0
+    log.warning(
+        "boot recovery: %d reminder(s) were left FIRING by a previous run and "
+        "are now FAILED — at-most-once, never re-fired (§8.2)", swept,
+    )
+    # One increment per REMINDER, matching every other site on this series: the
+    # metric counts reminders resolved, so a sweep of three must move it by
+    # three or the totals stop reconciling.
+    metrics.inc("nora_reminders_fired_total", swept, outcome="failed_error")
+    return swept

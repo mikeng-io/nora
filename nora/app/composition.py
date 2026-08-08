@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Coroutine, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -73,7 +73,7 @@ from nora.tag import Debounce
 
 from .agent_runner import LiveAgentRunner
 from .dispatch import Dispatcher
-from .heartbeat import HeartbeatLoop
+from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .runtime import BackgroundTasks
 
 log = logging.getLogger("nora.app.composition")
@@ -511,13 +511,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # has been switched off is exactly the state in which a stranded row would
     # otherwise sit there forever: at-most-once would silently stop applying on
     # the very config that looks safest. Only the LOOP is gated.
-    swept = await reminders.sweep_firing()
-    if swept:
-        log.warning(
-            "boot recovery: %d reminder(s) were left FIRING by a previous run and "
-            "are now FAILED — at-most-once, never re-fired (§8.2)", swept,
-        )
+    #
+    # `recover` counts what it sweeps; this call site logged and counted nothing,
+    # which made a crash that ate reminders invisible to every dashboard.
+    await recover(store=reminders, metrics=metrics)
+    # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
+    # otherwise every deployment on the shipped default (`enabled = false`)
+    # exports 0.0 forever, which reads identically to "ticked a moment ago".
+    publish_idle_gauge(metrics)
     if cfg.heartbeat.enabled:
+        # `_stub_fire` resolves rows without delivering anything, so running the
+        # tick against it SPENDS every reminder that comes due. Refuse to start
+        # instead — see `_refuse_unwired_heartbeat`.
+        _refuse_unwired_heartbeat(fire=_stub_fire)
         heartbeat = HeartbeatLoop(
             store=reminders,
             # The SAME `slots` the engagement pipeline holds. Two instances
@@ -543,6 +549,33 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client,
     )
+
+
+def _refuse_unwired_heartbeat(
+    *, fire: Callable[[Sequence[Reminder]], Awaitable[str]],
+) -> None:
+    """`[heartbeat] enabled = true` with no fire path is a startup failure.
+
+    Not a degraded start: the tick would claim every due row, hand it to a stub
+    that speaks to nobody, and resolve it. The group hears nothing and the row
+    is spent — a data-loss path dressed as a working feature, and the loudest
+    trace it leaves is a WARNING in a log nobody is reading at 03:00.
+
+    A startup refusal costs one config edit. Reminders consumed by a stub cannot
+    be got back at all, so the asymmetry decides it. This guard is belt and
+    braces over the state-machine fix (`not_wired` now resolves rows FAILED
+    rather than DONE) — FAILED is still terminal, so the reminder is still never
+    delivered; the row merely says so afterwards.
+
+    DELETE THIS when `nora.app.fire.FirePath.run` is wired in `_stub_fire`'s
+    place: the check is a statement about the stub, not about the feature.
+    """
+    if fire is _stub_fire:
+        raise StartupError(
+            "[heartbeat] enabled = true but no fire path is wired yet — the "
+            "tick would resolve every due reminder without delivering it. "
+            "Set enabled = false until nora.app.fire.FirePath is wired in."
+        )
 
 
 async def _stub_fire(reminders: Sequence[Reminder]) -> str:

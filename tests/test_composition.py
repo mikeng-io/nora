@@ -4,11 +4,14 @@ receives dependencies. This test pins that property."""
 import ast
 import base64
 import os
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from nora.app.composition import Dependencies, StartupError, build_dependencies
+from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.config import load
 from nora.infra.blobs import FilesystemBlobStore
 from nora.platform.signal.media import SignalMediaSource
@@ -197,6 +200,66 @@ async def test_media_disabled_is_off_even_with_a_valid_key(cfg, monkeypatch):
     deps = await build_dependencies(override_config(cfg, {"media.enabled": False}))
     assert deps.ingest._media_source is None
     assert deps.ingest._blobs is None
+
+
+async def test_the_heartbeat_refuses_to_start_while_the_fire_path_is_a_stub(cfg):
+    """`enabled = true` with no fire path wired is a DATA-LOSS path, not a
+    degraded one: every due row is claimed, handed to a stub that delivers
+    nothing, and resolved. Nobody hears the reminder and the row is spent.
+
+    So the root refuses to start rather than shredding reminders quietly. A loud
+    startup failure is recoverable in one edit; rows consumed by a stub are not
+    recoverable at all. This check goes away when `nora.app.fire.FirePath` is
+    wired in its place — deleting it is part of that task.
+    """
+    on = override_config(cfg, {"heartbeat.enabled": True})
+    with pytest.raises(StartupError, match="no fire path is wired"):
+        await build_dependencies(on)
+
+
+async def test_boot_recovery_counts_the_rows_it_swept(cfg, pg_url):
+    """The sweep is the only path that resolves reminders with no tick running,
+    and `nora_reminders_fired_total`'s spec says a reminder that vanishes must
+    never vanish from the metrics too. It logged a count and incremented
+    nothing, so a crash that ate reminders left no trace on any dashboard.
+
+    This asserts the WIRING, with a real stranded row in the real database — the
+    counting function itself is unit-tested; a function nobody calls would pass
+    that test and leave this defect exactly where it was.
+    """
+    from nora.domain.reminders import Reminder, ReminderState
+    from nora.infra.sql import create_sql_engine, run_migrations
+    from nora.infra.sql.reminders import SqlReminderStore
+
+    run_migrations(pg_url)
+    store = SqlReminderStore(create_sql_engine(pg_url))
+    now = datetime.now(UTC)
+    await store.create(Reminder(
+        id=uuid.uuid4(), requester_person_id="miles", platform="signal",
+        conversation_id="g1", conversation_type="group", text="洗衫",
+        created_at=now - timedelta(hours=1), due_at=now - timedelta(minutes=5),
+        state=ReminderState.FIRING, fired_at=None, outcome=None,
+    ))
+    await store.aclose()
+
+    deps = await build_dependencies(cfg)
+
+    assert deps.metrics.get(
+        "nora_reminders_fired_total", outcome="failed_error",
+    ) == 1
+
+
+async def test_the_liveness_gauge_is_seeded_even_with_the_heartbeat_off(cfg):
+    """`[heartbeat] enabled = false` SHIPS, and the gauge's callback was bound
+    inside `HeartbeatLoop.__init__` — so on every default deployment the series
+    exported `0.0` forever, which reads exactly like "ticked a moment ago". The
+    one reading an operator must be able to trust is the one it could not give.
+    """
+    deps = await build_dependencies(cfg)
+    assert cfg.heartbeat.enabled is False
+    assert deps.metrics.get(
+        "nora_heartbeat_last_tick_age_seconds",
+    ) == HEARTBEAT_NOT_RUNNING
 
 
 def _resolved_module_name(rel: Path) -> str:

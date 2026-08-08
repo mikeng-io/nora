@@ -81,6 +81,17 @@ class FakeReminderStore:
                    if r.requester_person_id == requester_person_id
                    and r.state is ReminderState.PENDING)
 
+    async def claim(self, reminder_id: UUID) -> bool:
+        """`PENDING -> FIRING` or nothing. The dict's version of SQL's
+        `WHERE id = :id AND state = 'pending'`: there is no await between the
+        read and the write here, so the check and the move are as atomic as one
+        statement is in Postgres."""
+        row = self._rows.get(reminder_id)
+        if row is None or row.state is not ReminderState.PENDING:
+            return False
+        self._put(replace(row, state=ReminderState.FIRING))
+        return True
+
     async def mark(
         self, reminder_id: UUID, state: ReminderState, *,
         fired_at: datetime | None = None, outcome: str | None = None,
