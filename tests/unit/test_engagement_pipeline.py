@@ -1172,8 +1172,8 @@ class _RaisedCap(ToolRegistry):
         super().__init__()          # DEC-41: the base now wires a TransitClient
         self._messages = messages
 
-    def budgets(self):
-        return {**super().budgets(), "send_reply": self._messages}
+    def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()):
+        return {**super().budgets(allowed_mcp=allowed_mcp), "send_reply": self._messages}
 
 
 def _multi_turns(*texts: str) -> list[ScriptedTurn]:

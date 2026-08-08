@@ -163,23 +163,35 @@ class ToolRegistry:
         # is the only seam CLAUDE.md's test-seam policy allows.
         self._clock = clock
         # Discovered MCP tool groups (spec: mcp-tool-provider-design §3),
-        # keyed by server name. `.budgets()` folds every entry in
-        # UNCONDITIONALLY — it is never disclosed to a model or user, so an
-        # entry for a server a given conversation cannot call is inert, not
-        # a leak. `.specs()`/`.build()`'s `allowed_mcp` parameter is the
-        # actual enforcement point.
+        # keyed by server name. `.budgets()` folds an entry in ONLY when its
+        # server name is passed in that call's `allowed_mcp` — see
+        # `.budgets()` below for why an unconditional fold was a real
+        # disclosure, not an inert one. `.specs()`/`.build()`'s `allowed_mcp`
+        # is the SAME value a caller must pass here (final-review Finding 1).
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
 
-    def budgets(self) -> Mapping[str, int]:
+    def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
 
-        Includes every discovered MCP tool's budget UNCONDITIONALLY (spec
-        §3) — regardless of which conversations may actually call it. This
-        mirrors `skills` above: a budget admits a call under R-7's
-        default-deny, it does not disclose the tool. Per-conversation MCP
-        scope is enforced in `build()`'s `allowed_mcp`, not here."""
+        Includes an MCP tool's budget ONLY when its server name is in
+        `allowed_mcp` — the SAME set the caller passes (or will pass) to
+        `.build()`. `budgets()` feeds `ReplyGuard`, and `ReplyGuard.evaluate`
+        renders the WHOLE dict's keys into the model-facing R-7 unknown-tool
+        veto message (`guards.py::_list_tool_names`) — so an unconditional
+        fold was a REAL disclosure: a conversation with no `pulse` allowlist
+        entry would still be told `pulse_server_status` exists the moment the
+        model hallucinated any wrong tool name, contradicting the spec's
+        claim that this dict is never rendered into a prompt. It also left
+        R-7's default-deny not actually covering those names for an
+        unauthorized conversation, since they were present in `_budgets`
+        regardless. The default (`frozenset()`) is the safe one: a caller
+        with no conversation context (`nora.app.composition`'s throwaway
+        registries) gets exactly the native table, nothing more."""
         budgets = dict(NATIVE_TOOL_BUDGETS)
-        for group in self._mcp_tools.values():
+        for name in allowed_mcp:
+            group = self._mcp_tools.get(name)
+            if group is None:
+                continue
             for tool in group.tools:
                 budgets[tool.tool_name] = group.budget
         return budgets

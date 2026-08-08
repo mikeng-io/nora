@@ -280,13 +280,45 @@ def _mcp_groups() -> dict[str, McpToolGroup]:
     }
 
 
-def test_budgets_include_every_discovered_mcp_tool_unconditionally():
+def test_budgets_excludes_mcp_tools_not_in_allowed_mcp():
+    """R-7's default-deny must actually cover an unauthorized server's tool
+    names (Finding 1, final-review): `budgets()` called with no `allowed_mcp`
+    (the default, matching an unauthorized conversation) must not admit
+    `pulse_server_status`/`pulse_weekly` at all — not merely leave them
+    un-callable elsewhere."""
     registry = ToolRegistry(mcp_tools=_mcp_groups())
     budgets = registry.budgets()
+    assert "pulse_server_status" not in budgets
+    assert "pulse_weekly" not in budgets
+    # native budgets are untouched
+    assert budgets["now"] == 4
+
+
+def test_budgets_includes_mcp_tools_only_for_allowed_servers():
+    registry = ToolRegistry(mcp_tools=_mcp_groups())
+    budgets = registry.budgets(allowed_mcp=frozenset({"pulse"}))
     assert budgets["pulse_server_status"] == 5
     assert budgets["pulse_weekly"] == 5
     # native budgets are untouched
     assert budgets["now"] == 4
+
+
+def test_unauthorized_conversations_veto_message_never_names_mcp_tools():
+    """The R-7 unknown-tool veto message is built from `ReplyGuard`'s
+    `budgets` dict (`guards.py::_list_tool_names`). A conversation not
+    authorized for `pulse` must never have that server's tool names appear in
+    the message the MODEL sees when it hallucinates a wrong tool name —
+    the spec's non-disclosure claim, concretely (Finding 1)."""
+    registry = ToolRegistry(mcp_tools=_mcp_groups())
+    budgets = registry.budgets()  # allowed_mcp defaults empty: unauthorized
+    guard = ReplyGuard(
+        conversation_id="g1", budgets=budgets, terminal=registry.terminal_tools(),
+        metrics=Metrics(),
+    )
+    message = guard.evaluate("totally_made_up_tool", {})
+    assert message is not None
+    assert "pulse_server_status" not in message
+    assert "pulse_weekly" not in message
 
 
 def test_capability_and_friends_are_unaffected_by_mcp_tools():

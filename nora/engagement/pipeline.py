@@ -269,11 +269,28 @@ class EngagementPipeline:
                 doctrine.sha256, doctrine.versions(),
             )
 
+            # `convo is not None` is defensive, not load-bearing: by this
+            # point ingest has already proven the conversation is admitted
+            # (DEC-18), so `self._policy.conversation(...)` returning `None`
+            # here would indicate the ingest and engagement pipelines
+            # disagree about which `Policy` they were given — a wiring bug
+            # worth defaulting safely on (empty allowlist) rather than
+            # crashing the tag over.
+            #
+            # Computed BEFORE `deliver.build()` and reused for its `budgets=`
+            # (final-review Finding 1): `ToolRegistry.budgets()` only folds an
+            # MCP tool's budget in when its server name is in `allowed_mcp`,
+            # so this pipeline's `ReplyGuard` — and the R-7 unknown-tool veto
+            # message it renders — must be built from the SAME set `.build()`
+            # below uses, or an unauthorized conversation's guard would still
+            # disclose a `pulse_*` name it cannot call.
+            convo = self._policy.conversation(msg.platform, msg.conversation_id)
+            allowed_mcp = convo.tools if convo is not None else frozenset()
             handle = deliver.build(
                 store=self._audit, adapter=self._adapter, target=msg.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=request.tag_id,
                 nora_sender_id=self._nora_sender_id, conversation_id=msg.conversation_id,
-                budgets=self._tool_registry.budgets(),
+                budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
                 audience="tag",
             )
@@ -287,15 +304,6 @@ class EngagementPipeline:
                 roster_source=self._roster_source, persons=self._persons,
                 tagger=ctx.tagger, self_ids=frozenset(getattr(identity, "aliases", ())),
             )
-            # `convo is not None` is defensive, not load-bearing: by this
-            # point ingest has already proven the conversation is admitted
-            # (DEC-18), so `self._policy.conversation(...)` returning `None`
-            # here would indicate the ingest and engagement pipelines
-            # disagree about which `Policy` they were given — a wiring bug
-            # worth defaulting safely on (empty allowlist) rather than
-            # crashing the tag over.
-            convo = self._policy.conversation(msg.platform, msg.conversation_id)
-            allowed_mcp = convo.tools if convo is not None else frozenset()
             tools = self._tool_registry.build(
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
