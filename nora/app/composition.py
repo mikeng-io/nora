@@ -519,6 +519,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         adapter=adapter, audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
+        # `allowlist` — policy.toml, the SAME instance the ingest pipeline
+        # already checked this conversation is admitted under (DEC-18). This
+        # is the second read of it: which MCP servers, not whether to engage
+        # at all (DEC-71).
+        policy=allowlist,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         nora_sender_id=cfg.platforms.signal.nora_sender_id,
         ai_peer=cfg.memory.ai_peer,

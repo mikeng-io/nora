@@ -52,6 +52,7 @@ from nora.agent.room import Room
 from nora.domain.ports import EngagementRequest, MemoryStore, RecordStore, RosterSource
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
+from nora.policy import Policy
 from nora.tag import Debounce
 
 from .mentions import MentionRenderer
@@ -76,6 +77,7 @@ class EngagementPipeline:
         context_assembler: Any,
         runner: AgentRunner,
         tool_registry: ToolRegistry,
+        policy: Policy,
         debounce: Debounce,
         canary: str,
         display_name: str,
@@ -99,6 +101,13 @@ class EngagementPipeline:
         self._context = context_assembler
         self._runner = runner
         self._tool_registry = tool_registry
+        # policy.toml's per-conversation MCP allowlist (spec:
+        # mcp-tool-provider-design §3). The ingest pipeline already checked
+        # this tag's conversation is admitted at all (nora.ingest.stages.scope,
+        # DEC-18) using the SAME Policy instance — this is the second read of
+        # it, for a narrower question: which MCP servers, not whether to
+        # engage at all.
+        self._policy = policy
         self._debounce = debounce
         self._canary = canary
         self._display_name = display_name
@@ -278,12 +287,22 @@ class EngagementPipeline:
                 roster_source=self._roster_source, persons=self._persons,
                 tagger=ctx.tagger, self_ids=frozenset(getattr(identity, "aliases", ())),
             )
+            # `convo is not None` is defensive, not load-bearing: by this
+            # point ingest has already proven the conversation is admitted
+            # (DEC-18), so `self._policy.conversation(...)` returning `None`
+            # here would indicate the ingest and engagement pipelines
+            # disagree about which `Policy` they were given — a wiring bug
+            # worth defaulting safely on (empty allowlist) rather than
+            # crashing the tag over.
+            convo = self._policy.conversation(msg.platform, msg.conversation_id)
+            allowed_mcp = convo.tools if convo is not None else frozenset()
             tools = self._tool_registry.build(
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer,
                 room=room, question=msg.body,
                 context_window=self._context_window, metrics=self._metrics,
+                allowed_mcp=allowed_mcp,
             )
             tagger_name = self._persons.display_name(msg)
             # STILL NO ROSTER IN THE PROMPT, and now there is a tool instead.
