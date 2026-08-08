@@ -684,6 +684,21 @@ async def _presence_preflight(
                     "names them (`nora persons pending`)",
                     view.unnamed,
                 )
+            if conv.location:
+                # DEC-74: this room is location-TRUSTED, so its group is
+                # DELIBERATELY not a subset of the circle. Running the subset
+                # invariant here would log a permanent false «R-21 FAILED …
+                # whereis must refuse» and pin `nora_presence_circle_subset_ok=0`
+                # for the circle — masking a REAL subset failure in another,
+                # non-trusted room mapped to the same circle. Skip it: `where_is`
+                # discloses here on purpose, and the `unnamed` warning above (an
+                # unmapped account still blocks disclosure, trusted or not) plus
+                # the per-call guard still hold.
+                log.info(
+                    "presence pre-flight: conversation is location-trusted (DEC-74) "
+                    "— the circle-subset invariant is intentionally skipped here"
+                )
+                continue
             group_person_ids = frozenset(p.person_id for p in view.people)
             for circle in circles:
                 check_disclosure_invariant(

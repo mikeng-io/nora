@@ -292,13 +292,14 @@ from nora.agent.whereis import circles_from_persons  # noqa: E402
 
 
 def _whereis_tool(persons, *, room, presence_source=None, presence_circles=(),
-                  metrics=None):
+                  metrics=None, location_trusted=False):
     specs = build_tool_specs(
         store=None, conversation_id=GROUP, conversation_type="group",
         persons=persons, honcho=None, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
         room=room, transit_source=None,
         presence_source=presence_source, presence_circles=presence_circles,
+        location_trusted=location_trusted,
     )
     return next(s for s in specs if s.name == "where_is")
 
@@ -352,6 +353,51 @@ async def test_the_whereis_tool_refuses_when_no_wired_circle_contains_the_room(
     out = await spec.call("Miles")
     assert out["status"] == "refused"
     assert "Yoho" not in str(out)
+
+
+async def test_location_trust_threads_through_build_tool_specs_to_the_tool(persons, store):
+    """DEC-74 middle-hop coverage (review 2026-08-08): the flag must survive the
+    `build_tool_specs → Whereis` hop, NOT just the two endpoints. Same non-subset
+    room (the stranger is mapped but outside the circle) built two ways: trusted
+    DISCLOSES, untrusted REFUSES. This reds if `build_tool_specs` drops the
+    argument OR hardcodes it either direction — the exact silent regressions the
+    endpoint-only tests could not catch."""
+    await _record(store, person="miles_novak", ts=NOW, address="Trust Tower")
+    room = _room(persons, members=(MILES, GRANT, STRANGER, NORA))
+    trusted = await _whereis_tool(
+        persons, room=room, presence_source=store, presence_circles=(CIRCLE,),
+        location_trusted=True,
+    ).call("Miles")
+    assert trusted["status"] == "ok" and trusted["address"] == "Trust Tower"
+    strict = await _whereis_tool(
+        persons, room=room, presence_source=store, presence_circles=(CIRCLE,),
+        location_trusted=False,
+    ).call("Miles")
+    assert strict["status"] == "refused" and "Trust Tower" not in str(strict)
+
+
+async def test_location_trust_threads_through_the_registry_build(persons, store):
+    """The registry hop (`ToolRegistry.build(location_trusted=…) → specs()`): the
+    same policy-driven bool must reach the built `where_is` tool. Trusted builds
+    disclose, the default (strict) build refuses — catches a drop in `build()`/
+    `specs()`."""
+    from nora.agent.registry import ToolRegistry
+
+    await _record(store, person="miles_novak", ts=NOW, address="Registry Rd")
+    reg = ToolRegistry(presence=store, circles=(CIRCLE,))
+    room = _room(persons, members=(MILES, GRANT, STRANGER, NORA))
+    common = {
+        "store": None, "conversation_id": GROUP, "conversation_type": "group",
+        "persons": persons, "honcho": None, "deliverer": None, "room": room,
+        "metrics": Metrics(),
+    }
+    def _where_is(tools):
+        return next(t for t in tools if t.tool_name == "where_is")
+
+    trusted = _where_is(reg.build(**common, location_trusted=True))
+    strict = _where_is(reg.build(**common))            # default location_trusted=False
+    assert (await trusted._tool_func(person="Miles"))["status"] == "ok"
+    assert (await strict._tool_func(person="Miles"))["status"] == "refused"
 
 
 def test_circles_from_persons_groups_by_circle_and_skips_unplaced(tmp_path):
