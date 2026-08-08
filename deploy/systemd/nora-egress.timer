@@ -1,0 +1,15 @@
+[Unit]
+# The backstop: reapply the cage every 2 min so container-IP drift or any rule
+# that reopened is caught within one tick, even if the event-watcher missed it.
+# nora-egress-watch.service is the fast path (reapplies the instant a container
+# starts); this timer is the belt-and-suspenders that also refreshes the canary
+# metric on a fixed cadence.
+Description=Reapply Nora's Firecrawl egress cage periodically (DEC-69 backstop)
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=2min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

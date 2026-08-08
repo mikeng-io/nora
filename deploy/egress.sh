@@ -21,11 +21,13 @@ set -euo pipefail
 # being the persistent gate it was designed to be — the operator accepted the
 # blind-SSRF residual for the alpha, so today the live SSRF control is Nora's
 # code alone (R-34's fence + is_global precheck), NOT this network isolation.
-# This script still works when applied; the open problem is PERSISTENCE — the
-# "RE-RUN after any compose up" note below is manual and has no canary, so the
-# rules silently vanish. Making that automatic (a root systemd/docker-event
-# reapply, NOT a NOPASSWD sudoers that would weaken this root gate) is the one
-# live governance follow-up left.
+# This script still works when applied; the problem it did NOT solve was
+# PERSISTENCE — the rules match Firecrawl by IP and silently vanish on the next
+# `docker compose up`. That is now AUTOMATED: `deploy/systemd/` holds a timer +
+# a docker-event watcher that run `reapply` (below) as root and a `canary` that
+# makes a reopened cage observable. Install once: `sudo deploy/install-egress-units.sh`.
+# The root gate stays — only the reapplication is automatic (a NOPASSWD sudoers
+# would weaken exactly the firewall this cages). See DEC-69.
 #
 # WHAT FIRECRAWL STILL NEEDS, and this preserves: its own backend services
 # (redis / postgres / rabbitmq / playwright, all on the firecrawl_backend
@@ -37,7 +39,9 @@ set -euo pipefail
 #   sudo ./deploy/egress.sh verify    # print the three checks to run
 #
 # RE-RUN after any `docker compose up` of Firecrawl OR Nora: container IPs can
-# change, and the DOCKER-USER hooks match the SSRF-surface containers by IP.
+# change, and the rules match the SSRF-surface containers by IP. Once the systemd
+# units are installed this happens automatically (event watcher + 2-min timer);
+# this manual re-run is the fallback / first-time apply.
 
 # Filtering happens in the `raw` table's PREROUTING chain, matched by the
 # Firecrawl containers' source IPs — NOT DOCKER-USER. DOCKER-USER lives in
@@ -145,9 +149,72 @@ Run these THREE checks (the policy is correct iff all three hold):
 CHECKS
 }
 
+# ── Persistence + canary (DEC-69, the systemd path) ──────────────────────────
+#
+# `apply` is manual and STRICT (exits 1 if Firecrawl is down). systemd needs a
+# lenient, self-verifying entry that a timer/event can call safely at any moment,
+# and a machine-checkable probe so a reopened cage is OBSERVABLE, not silent.
+
+# Prometheus node_exporter textfile: set NORA_EGRESS_TEXTFILE to the collector's
+# dir + a file (e.g. /var/lib/node_exporter/textfile_collector/nora_egress.prom)
+# and the canary publishes `nora_egress_cage_intact`. Unset → journal + the
+# systemd unit's own success/failure state are the signal (a failed unit alerts).
+TEXTFILE="${NORA_EGRESS_TEXTFILE:-}"
+
+container_running() {
+  [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null || echo false)" = true ]
+}
+
+emit_metric() {
+  # $1 = 1 (intact) | 0 (open). Written atomically; a no-op unless configured.
+  [ -n "$TEXTFILE" ] || return 0
+  local tmp="${TEXTFILE}.$$"
+  {
+    echo "# HELP nora_egress_cage_intact Firecrawl SSRF egress cage present (1) or reopened (0)."
+    echo "# TYPE nora_egress_cage_intact gauge"
+    echo "nora_egress_cage_intact $1"
+  } >"$tmp" && mv -f "$tmp" "$TEXTFILE"
+}
+
+canary() {
+  # Is the cage actually closed RIGHT NOW? Probe from inside Firecrawl to a host
+  # service (OmniRoute on the docker gateway). The DROP rule is SILENT, so:
+  #   TIMEOUT  → the packet was dropped → cage INTACT (exit 0)
+  #   REACHED  → a host service answered → cage OPEN (exit 1)
+  #   ERR …    → the packet reached the host and was refused → a DROP would have
+  #              timed out, so the rule is ABSENT → cage OPEN (exit 1)
+  # (Firecrawl down → nothing to cage → intact by vacuity, exit 0.)
+  local c="${FC_CONTAINERS[0]}"
+  if ! container_running "$c"; then
+    echo "canary: $c not running — nothing to cage"; emit_metric 1; return 0
+  fi
+  local out
+  out=$(docker exec "$c" sh -c 'node -e "const s=require(\"http\").get({host:\"172.17.0.1\",port:20128,timeout:3000},r=>{console.log(\"REACHED\");process.exit(0)});s.on(\"error\",e=>{console.log(\"ERR \"+e.code);process.exit(0)});s.on(\"timeout\",function(){this.destroy();console.log(\"TIMEOUT\");process.exit(0)})"' 2>/dev/null || true)
+  if [ "$out" = "TIMEOUT" ]; then
+    echo "canary: cage intact — Firecrawl is blocked from host services"
+    emit_metric 1; return 0
+  fi
+  echo "canary: CAGE OPEN — Firecrawl reached the host ($out). Rules are gone. Run: sudo $0 apply" >&2
+  emit_metric 0; return 1
+}
+
+reapply() {
+  # The systemd entry: apply IF Firecrawl is up (nothing to cage if it is not —
+  # a clean exit 0, never a failed unit), then verify with the canary so the
+  # unit's own state reflects whether the cage actually closed.
+  need_root
+  if ! container_running "${FC_CONTAINERS[0]}"; then
+    echo "reapply: Firecrawl not running — nothing to cage"; emit_metric 1; exit 0
+  fi
+  apply
+  canary || { echo "reapply: canary still reports OPEN after apply — investigate" >&2; exit 1; }
+}
+
 case "${1:-apply}" in
-  apply)  apply ;;
-  down)   down ;;
-  verify) verify ;;
-  *) echo "usage: $0 {apply|down|verify}" >&2; exit 2 ;;
+  apply)   apply ;;
+  reapply) reapply ;;
+  canary)  canary ;;
+  down)    down ;;
+  verify)  verify ;;
+  *) echo "usage: $0 {apply|reapply|canary|down|verify}" >&2; exit 2 ;;
 esac

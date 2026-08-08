@@ -1,0 +1,19 @@
+[Unit]
+# The fast path: reapply the cage the INSTANT a Firecrawl surface container
+# (re)starts, closing the window between a `docker compose up` and the next
+# 2-min timer tick — because container IPs change on recreate and the
+# raw/PREROUTING rules match by IP (DEC-69). Restart=always so a docker daemon
+# restart (which ends `docker events`) brings the watcher straight back.
+Description=Nora Firecrawl egress cage — reapply on container start (DEC-69)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+# Path rewritten to the installing checkout by install-egress-units.sh.
+ExecStart=/home/norty/workspace/nora/deploy/nora-egress-watch.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

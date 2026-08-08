@@ -1,0 +1,20 @@
+[Unit]
+# Apply + self-verify Nora's Firecrawl egress cage (DEC-69). One-shot: called at
+# boot, every 2 min by nora-egress.timer, and the instant a surface container
+# starts by nora-egress-watch.service. Keeps the ROOT gate (iptables needs root)
+# but makes reapplication automatic — the alternative (a NOPASSWD sudoers) would
+# let a compromised container rewrite the host firewall, the exact SSRF this cages.
+Description=Nora Firecrawl egress cage — apply + canary-verify (DEC-69)
+Documentation=file:///home/norty/workspace/nora/deploy/egress.sh
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Path rewritten to the installing checkout by install-egress-units.sh.
+ExecStart=/home/norty/workspace/nora/deploy/egress.sh reapply
+# Publish the canary metric to node_exporter's textfile collector if you run one:
+# Environment=NORA_EGRESS_TEXTFILE=/var/lib/node_exporter/textfile_collector/nora_egress.prom
+
+[Install]
+WantedBy=multi-user.target
