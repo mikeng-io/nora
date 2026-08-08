@@ -6,6 +6,57 @@ values behind these rules live in **`docs/CONVENTIONS.md`** — read it when a r
 needs its "why"; every terse rule below is only safe because that detail is
 preserved.
 
+## The spine: comprehend → measure → serialize
+
+Every path in this repo already runs this loop; it is named here so new work — a
+tool, a stage, an **eval** — keeps to it rather than reinventing a weaker shape.
+It is a **constraint, not a procedure**: not *how* to build a thing, but what
+every step must preserve. (This is UACP's CMS applied to Nora; the three verbs
+are the same everywhere the codebase reasons, decides, or commits state.)
+
+- **Comprehend** — turn raw input into a *computable model*, and interpret it
+  **once**. A Signal message becomes a `NormalizedMessage` → `TagContext` (tagger
+  resolved, transcript, peer card, the prefill blocks); everything downstream
+  computes on that fixed model and never re-parses the raw text. Interpreting
+  twice is how two copies drift.
+- **Measure** — reduce the model to a **decidable signal**: grounded, and
+  **fail-closed**. This repo's signature is the R-27 three-state tool result —
+  `ok` / `nothing_found` / `unavailable` — where an ERROR is never a PASS: a
+  wiring gap is `unavailable` («I couldn't check»), never `nothing_found`
+  («there's nothing»), and a stale/absent fix is `unavailable`, never a guessed
+  point. The guards are the *negative* measurement — R-5 (silence beats a wrong
+  answer), R-18/R-28 (no identifier or coordinate egresses), the disclosure
+  subset (R-31 fails closed on any unknown in the room). **Bind to the real
+  property** — a `where_is` fix is a live GPS read, a `weather` reading is HKO's
+  own — never a proxy, and never assert what you cannot ground.
+- **Serialize** — fix the result into **canonical, typed state with provenance**.
+  Her reply is the one authored surface (strict-silence: only a `send_reply` tool
+  call delivers; the never-silent fallback is delivered but explicitly kept out
+  of her authored `sent_texts`). The audit rows and the Honcho feed carry her
+  words under the Nora aiPeer with their `doctrine_sha256`/`tag_id`; the Langfuse
+  trace is the provenance every claim about a turn re-derives from.
+
+**The three rules that make it hold** (UACP's, and they are load-bearing here):
+
+1. **The discipline IS the engineering.** A `measure` that isn't fail-closed, or
+   a `serialize` without provenance, is *decoration* — the narrative reads
+   systematic while the result rots back into re-judgment.
+2. **No self-attestation.** "Done" is never decided by the doer — it is
+   **measured against evidence** (a green gate, a moved metric, a read-back
+   trace) judged by something else. This is exactly the "Never claim a merge,
+   deploy or fix without reading back the state" rule below.
+3. **Re-derivable, so no actor is trusted.** Every step binds to reality and
+   carries provenance, so a turn — or an eval verdict — can be reconstructed and
+   checked *without trusting the producer*.
+
+**Apply it at every grain** — the whole turn AND each sub-step, down to one tool
+call. `serialize(N)` is the input you `comprehend(N+1)`. The **eval layer is this
+same loop one level up**: comprehend a real user-journey into a typed case,
+measure the LIVE model's trajectory fail-closed (empty reply / wrong path /
+budget blown = FAIL; timeout = ERROR ≠ PASS), serialize a verdict bound to its
+Langfuse trace. Same three verbs, same mindset — that is how a new capability's
+evaluation reuses this framework instead of growing a bespoke one.
+
 ## Reading order
 
 1. `README.md` — what Nora is, how to run her.
