@@ -723,8 +723,8 @@ class Config(BaseModel):
     # same tree.
     presence: PresenceConfig = PresenceConfig()
     # Optional and defaulted — see `SearchConfig`. Off (inert) unless an operator
-    # turns it on AND Firecrawl's egress is isolated; a config.toml without a
-    # `[search]` section keeps loading.
+    # turns it on AND a Tavily key is present (`api_key_env`, DEC-8/DEC-73); a
+    # config.toml without a `[search]` section keeps loading.
     search: SearchConfig = SearchConfig()
     # Optional and defaulted — see `WeatherConfig`. Keyless (HK Observatory), so
     # safe to enable; ships off in the example, on in this deployment (DEC-70).

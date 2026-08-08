@@ -45,7 +45,7 @@ class _Tavily:
 
 
 @pytest.fixture
-async def tavily(monkeypatch):
+async def tavily():
     fake = _Tavily()
     app = web.Application()
     app.router.add_post("/search", fake.search)

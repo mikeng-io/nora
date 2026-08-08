@@ -85,10 +85,9 @@ services:
     # db and signal-cli BY NAME (db:5432, signal-cli:18080), and the
     # host-side externals — Honcho :8000, OmniRoute :20128, Langfuse :3100 — via
     # host.docker.internal (they publish 0.0.0.0, so host-gateway reaches them).
-    # config.toml's base_urls were switched to match. Also on searxng_default +
-    # firecrawl_backend (external) so web_search/web_fetch reach those services
-    # by container name — they publish only on host loopback (see networks:).
-    networks: [nora, searxng_default, firecrawl_backend]
+    # config.toml's base_urls were switched to match. (SearXNG/Firecrawl network
+    # joins removed 2026-08-08, DEC-73 — web_search is Tavily, a public API.)
+    networks: [nora]
     extra_hosts: ["host.docker.internal:host-gateway"]
     # :9100 on loopback so deploy/watchdog.sh (host) still reads /health; the
     # in-container healthcheck below hits the container's own 127.0.0.1:9100.
@@ -246,16 +245,9 @@ services:
 
 networks:
   nora:
-  # SearXNG + Firecrawl publish only on the host's 127.0.0.1, which a container
-  # cannot reach via the gateway. Nora JOINS their compose networks (declared
-  # external — they are owned by those other projects) so it reaches them by
-  # container name (searxng-core:8080, firecrawl-api-1:3002). This is INBOUND
-  # only — Nora calling them — and does not change Firecrawl's own OUTBOUND
-  # egress, which is the SSRF surface web_fetch's `fetch_enabled` gate is about.
-  searxng_default:
-    external: true
-  firecrawl_backend:
-    external: true
+  # SearXNG + Firecrawl network joins REMOVED (DEC-73, 2026-08-08): web_search is
+  # Tavily (a public API reached over the default network), web_fetch is gone, so
+  # Nora no longer calls the co-located SearXNG/Firecrawl containers.
 
 volumes:
   db-data:

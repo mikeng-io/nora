@@ -79,7 +79,7 @@ class TavilySearchProvider:
             # The never-raises backstop: a contract violation degrades to
             # unavailable, never propagates into the loop (R-5).
             log.exception("tavily search failed")
-            return _UNAVAILABLE_SEARCH
+            return dict(_UNAVAILABLE_SEARCH)
 
     async def _search(self, query: str) -> dict[str, Any]:
         body = {
@@ -100,12 +100,12 @@ class TavilySearchProvider:
                 # 401 (bad key), 422 (bad param), 429 (rate limit) all land here —
                 # the key never rides in a log line.
                 log.warning("tavily answered %s", response.status)
-                return _UNAVAILABLE_SEARCH
+                return dict(_UNAVAILABLE_SEARCH)
         try:
             payload: Any = json.loads(text)
         except ValueError:
             log.warning("tavily did not return JSON")
-            return _UNAVAILABLE_SEARCH
+            return dict(_UNAVAILABLE_SEARCH)
         results = payload.get("results") if isinstance(payload, dict) else None
         if not isinstance(results, list) or not results:
             return {"status": "nothing_found", "results": []}

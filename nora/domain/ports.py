@@ -475,7 +475,14 @@ class WeatherProvider(Protocol):
     contract suite both pass (tests/contract/, CLAUDE.md). `place` is what the
     model asked about; a provider that reports the whole region (HKO returns all
     26 stations) may ignore it and let the model pick the nearest — the DEC-24
-    division — while a point provider uses it to locate."""
+    division — while a point provider uses it to locate.
+
+    SCREENING OBLIGATION (Kimi audit 2026-08-08): `HkoWeatherProvider` never
+    TRANSMITS `place` (HKO reports the whole territory), so the `weather` tool does
+    not screen it. Any future provider that DOES send `place` upstream (a geocoding
+    weather API) MUST identifier/coordinate-screen it at the tool layer first — the
+    same egress guard `web_search`/`route` apply — or a model-invented identifier
+    in `place` would leak. Pinned here so that provider inherits the obligation."""
 
     async def current(
         self, *, place: str | None = None, forecast: bool = False,

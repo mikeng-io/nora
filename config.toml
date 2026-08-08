@@ -67,12 +67,12 @@ reasoning_effort = "low"
 # and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
 # so every real image timed out while the tiny probe PNG passed.
 # 60 → 120 (2026-08-08, Kimi audit): this is the WHOLE-TURN wall-clock
-# (`asyncio.wait_for` in the invoke stage), and a research turn can spend 4×15 s
-# on web_fetch alone — the doubled budgets meant a genuine «幫我搵下邊間餐廳好»
-# turn hit 60 s and died silent. 120 lets a full research turn (fetches + searches
-# + model round-trips) finish; a normal turn is still ~10 s, so this only affects
-# the rare slow research turn (the operator: a longer wait is fine, a person
-# reading a reply needs time too). Vision still derives min(configured 20, 120×0.5).
+# (`asyncio.wait_for` in the invoke stage). It was sized when the web pair could
+# spend 4×15 s fetching pages (web_fetch, now retired, DEC-73); Tavily's one-call
+# web_search is ~12 s, so a research turn is far cheaper now. 120 is kept as
+# comfortable headroom for a multi-tool turn (web_search + weather + model
+# round-trips); a normal turn is still ~10 s, so this only bounds the rare slow
+# turn (the operator: a longer wait is fine). Vision derives min(configured 20, 120×0.5).
 timeout_seconds = 120
 
 # The three caps around the WHOLE agent loop for one tag — all measured
