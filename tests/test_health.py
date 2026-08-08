@@ -124,3 +124,26 @@ async def test_health_never_raises_on_a_broken_dependency(client, store, monkeyp
 
     monkeypatch.setattr(store, "stats", boom)
     assert (await client.get("/health")).status == 503
+
+
+def test_config_staleness_flags_a_file_edited_after_start(tmp_path):
+    """The inode-gotcha canary (obs review 2026-08-08): a config file whose disk
+    mtime is NEWER than the process start is STALE — the operator's edit is not
+    the one this process loaded (a recreate is needed, not a restart)."""
+    from nora.obs.health import config_staleness
+
+    f = tmp_path / "identity.toml"
+    f.write_text("x = 1\n")
+    mtime = f.stat().st_mtime
+    stale = config_staleness({"identity": f}, started_at=mtime - 10)   # started BEFORE the edit
+    fresh = config_staleness({"identity": f}, started_at=mtime + 10)   # started AFTER
+    assert stale["identity"]["stale"] is True
+    assert fresh["identity"]["stale"] is False
+    assert stale["identity"]["disk_mtime"] is not None
+
+
+def test_config_staleness_missing_file_never_raises_and_is_not_stale():
+    from nora.obs.health import config_staleness
+
+    out = config_staleness({"identity": "/nonexistent/identity.toml"}, started_at=0.0)
+    assert out["identity"] == {"disk_mtime": None, "stale": False}

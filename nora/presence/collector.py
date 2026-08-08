@@ -132,6 +132,16 @@ class PresenceCollector:
         # interval from the moving floor toward the still ceiling (§4.1).
         self._still_cycles: dict[str, int] = {}
 
+    def circle_summary(self) -> list[dict[str, object]]:
+        """The circles this collector is configured to poll, with the count of
+        member→person mappings each carries — for the `/health` endpoint. The
+        diagnostic that made a stale identity.toml obvious (obs review 2026-08-08):
+        `1 circle, 1 member` is instantly wrong for a 10-person circle."""
+        return [
+            {"circle_id": c.circle_id, "members": len(c.members)}
+            for c in self._circles
+        ]
+
     async def collect_once(self, circle: CircleSpec, *, now_ms: int) -> CircleRead:
         """One collection cycle for one circle. NEVER raises.
 

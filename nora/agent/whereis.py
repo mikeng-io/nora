@@ -334,13 +334,24 @@ class Whereis:
         # trust extends to the KNOWN roster, never to an unknown outsider.
         subset_ok = self._location_trusted or self._guard.permits(room_person_ids)
         if view.degraded or view.unnamed > 0 or not subset_ok:
+            # WHICH of the three conditions fired — so a refusal is diagnosable
+            # from the trace/metric instead of inferred (obs review 2026-08-08).
+            # Precedence matches the disjunction: degraded first (can verify
+            # nothing), then an unmapped account, then the subset itself.
+            reason = (
+                "degraded" if view.degraded
+                else "unnamed" if view.unnamed > 0
+                else "not_subset"
+            )
             if self._metrics is not None:
-                self._metrics.inc("nora_presence_disclosure_refusals_total")
+                self._metrics.inc(
+                    "nora_presence_disclosure_refusals_total", reason=reason
+                )
             log.warning(
-                "whereis refused: conversation is not a verified subset of circle %s "
-                "(degraded=%s)",
-                self._circle.circle_id,
-                view.degraded,
+                "whereis refused (%s): circle=%s degraded=%s unnamed=%d subset_ok=%s "
+                "location_trusted=%s",
+                reason, self._circle.circle_id, view.degraded, view.unnamed,
+                subset_ok, self._location_trusted,
             )
             return {
                 "status": "refused",

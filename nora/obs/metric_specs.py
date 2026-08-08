@@ -448,8 +448,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the day-group-⊄-circle event made observable, never a silent omission.
     _CounterSpec(
         "nora_presence_disclosure_refusals_total",
-        "whereis disclosures refused because the conversation was not a subset "
-        "of the circle (R-21 fail-closed seam, design/19 §5).",
+        "whereis disclosures refused (R-21 fail-closed seam, design/19 §5). "
+        "`reason` names WHICH of the three conditions fired so a refusal is "
+        "diagnosable: `degraded` (roster unverifiable), `unnamed` (an account in "
+        "the room maps to no person_id), `not_subset` (a mapped member is outside "
+        "the circle and the room is not location-trusted).",
+        ("reason",),
     ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
     # never actually called" impossible to read from silence: a cache hit and a

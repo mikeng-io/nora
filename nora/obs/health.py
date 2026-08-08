@@ -3,9 +3,32 @@
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import time
+from datetime import UTC, datetime
+from pathlib import Path
 
 from aiohttp import web
+
+
+def config_staleness(paths: dict[str, str | Path], started_at: float) -> dict:
+    """For each named bind-mounted config file, whether it changed on disk AFTER
+    this process started — the tell for the single-file bind-mount inode gotcha
+    that silently served a stale identity.toml/policy.toml TWICE on 2026-08-08
+    (a recreate is needed, not a restart). `stale=True` means: the file the
+    operator edited is NOT the one this process loaded — recreate the container.
+    Never raises: a missing/unreadable file reports `mtime=None, stale=False`."""
+    out: dict[str, dict] = {}
+    for name, path in paths.items():
+        try:
+            mtime = os.path.getmtime(path)
+            out[name] = {
+                "disk_mtime": datetime.fromtimestamp(mtime, UTC).isoformat(),
+                "stale": mtime > started_at,
+            }
+        except OSError:
+            out[name] = {"disk_mtime": None, "stale": False}
+    return out
 
 
 class LLMState:
@@ -26,6 +49,7 @@ def _sum_series(metrics, name: str) -> float:
 def build_health_app(
     *, adapter, store, honcho, doctrine_store, metrics, started_at: float,
     llm_state: LLMState,
+    identity_file: str | Path | None = None, policy_file: str | Path | None = None,
 ) -> web.Application:
     app = web.Application()
     app["adapter"] = adapter
@@ -35,6 +59,11 @@ def build_health_app(
     app["metrics"] = metrics
     app["started_at"] = started_at
     app["llm_state"] = llm_state
+    # The bind-mounted, load-once config files — for the staleness canary below.
+    app["config_files"] = {
+        name: path for name, path in
+        (("identity", identity_file), ("policy", policy_file)) if path is not None
+    }
 
     async def health(request: web.Request) -> web.Response:
         a = request.app
@@ -93,6 +122,13 @@ def build_health_app(
             "doctrine_sha256": doctrine_sha256,
             "strands_version": _strands_version(),
         }
+        # Staleness canary (obs review 2026-08-08): identity.toml/policy.toml are
+        # bind-mounted and loaded ONCE at startup, and an atomic edit changes the
+        # inode so a restart keeps serving the OLD file — a recreate is needed.
+        # `config.<file>.stale=true` says the operator's edit hasn't taken; it
+        # silently served a stale policy.toml AND identity.toml the same day.
+        if a["config_files"]:
+            body["config"] = config_staleness(a["config_files"], a["started_at"])
         return web.json_response(body, status=200 if healthy else 503)
 
     async def metrics_endpoint(request: web.Request) -> web.Response:

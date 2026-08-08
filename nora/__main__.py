@@ -98,6 +98,7 @@ class App:
             adapter=deps.adapter, store=deps.audit, honcho=deps.memory,
             doctrine_store=deps.doctrine_store, metrics=deps.metrics,
             started_at=time.time(), llm_state=deps.llm_state,
+            identity_file=self.cfg.identity_file, policy_file=self.cfg.policy_file,
         )
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 

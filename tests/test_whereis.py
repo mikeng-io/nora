@@ -223,6 +223,30 @@ async def test_a_location_trusted_room_still_refuses_an_unmapped_account(persons
     assert out["status"] == "refused"     # trust does not reach an unknown
     assert "lat" not in out and "address" not in out
     assert metrics.get("nora_presence_disclosure_refusals_total") == 1
+    # and the reason is the UNNAMED account, not the subset (obs review 2026-08-08)
+    assert metrics.get("nora_presence_disclosure_refusals_total", reason="unnamed") == 1
+
+
+async def test_disclosure_refusal_metric_names_which_condition(persons, store):
+    """obs review 2026-08-08: `nora_presence_disclosure_refusals_total` now carries
+    WHICH of the three conditions fired, so a refusal is diagnosable from the
+    metric alone instead of inferred. `not_subset` and `unnamed` are distinct."""
+    await _record(store, person="miles_novak", ts=NOW)
+    # not_subset — a mapped member (the stranger) is outside the circle, room untrusted
+    m1 = Metrics()
+    await _whereis(
+        persons, store, members=(MILES, GRANT, STRANGER, NORA), metrics=m1,
+    ).locate("Miles", now_ms=NOW)
+    assert m1.get("nora_presence_disclosure_refusals_total", reason="not_subset") == 1
+    assert m1.get("nora_presence_disclosure_refusals_total", reason="unnamed") == 0
+    # unnamed — an account in the room resolves to no person_id
+    m2 = Metrics()
+    await _whereis(
+        persons, store, members=(MILES, GRANT, frozenset({"+85299999999"}), NORA),
+        metrics=m2,
+    ).locate("Miles", now_ms=NOW)
+    assert m2.get("nora_presence_disclosure_refusals_total", reason="unnamed") == 1
+    assert m2.get("nora_presence_disclosure_refusals_total", reason="not_subset") == 0
 
 
 async def test_whereis_is_unavailable_and_never_null_island_without_a_fix(persons, store):

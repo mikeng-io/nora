@@ -18,6 +18,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,7 @@ from aiohttp import web
 
 from .. import config
 from ..config import ConfigError
-from ..obs.health import serve
+from ..obs.health import config_staleness, serve
 from ..obs.logging import setup_logging
 from ..obs.metrics import Metrics
 from .composition import PresenceStartupError, build_collector
@@ -37,6 +38,7 @@ __all__ = ["build_parser", "main"]
 
 def _metrics_app(
     metrics: Metrics, collector: Any = None, refresh_timeout_seconds: float = 8.0,
+    identity_file: str | None = None, started_at: float | None = None,
 ) -> web.Application:
     """A minimal /metrics + /health app for the collector process — it has no
     adapter or record store to report on, only its own metrics registry (which
@@ -69,7 +71,19 @@ def _metrics_app(
         )
 
     async def health(_: web.Request) -> web.Response:
-        return web.json_response({"status": "ok"})
+        # The LOADED-config summary (obs review 2026-08-08): the circles this
+        # collector actually polls + whether identity.toml changed on disk since
+        # it started. `1 circle, 1 member` or `identity.stale=true` is the whole
+        # "only miles gets a fix" root cause, visible in one GET instead of a
+        # 20-minute investigation.
+        body: dict[str, object] = {"status": "ok"}
+        if collector is not None:
+            body["circles"] = collector.circle_summary()
+        if identity_file is not None:
+            body["config"] = config_staleness(
+                {"identity": identity_file}, started_at or 0.0
+            )
+        return web.json_response(body)
 
     async def refresh(request: web.Request) -> web.Response:
         person_id = request.query.get("person_id", "")
@@ -123,6 +137,7 @@ async def _run(config_path: Path) -> None:
     runner = await serve(
         _metrics_app(
             deps.metrics, deps.collector, cfg.presence.refresh_timeout_seconds,
+            identity_file=str(cfg.identity_file), started_at=time.time(),
         ),
         deps.metrics_port,
     )
