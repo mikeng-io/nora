@@ -125,20 +125,35 @@ async def _drain(background) -> None:
         await asyncio.sleep(0)
 
 
+# The counters that carry a per-tool `tool` label, so a live call's tool NAME can
+# be read back. `nora.agent.tools` does NOT record every tool through one series:
+# native tools use `nora_tool_calls_total{tool,status}` (`_record`), but the
+# room/memory tools — group_members, lookup_person, about, ask_memory,
+# search_memory — use `nora_room_lookups_total{tool,status}` (`_record_room`), a
+# SEPARATE series (`tests/test_tools.py::test_the_new_counter_never_double_counts_a
+# _room_scoped_tool` pins the split, asserting `nora_tool_calls_total == 0` and
+# `nora_room_lookups_total == 3` for a room tool). Reading only the first would be
+# BLIND to the whole MEMORY cluster of `SEED_INTENT_GRAPH`, silently false-PASSing
+# a `NoSiblingLeakage` leak into `about`/`ask_memory`. `media_fetch` records
+# `nora_media_fetch_total` which carries NO `tool` label and so cannot be
+# reconstructed by name — it is deliberately not an intent-graph node, and
+# `evals.evaluators.UNMEASURABLE_LIVE` + its guard test fail closed if one is added.
+_TOOL_CALL_METRICS = ("nora_tool_calls_total", "nora_room_lookups_total")
+
+
 def _tool_calls_from_metrics(metrics: Metrics) -> list[str]:
     """Reconstruct which tools the LIVE model actually called, from the
-    `nora_tool_calls_total{tool,status}` counter every tool in
-    `nora.agent.tools` emits (`tests/test_tools.py` pins the emission).
+    per-tool call counters (`_TOOL_CALL_METRICS`).
 
     In scripted mode the harness knows the tool sequence up front — it is what
     the script tries to call. A live run has no script, so the tool names are
-    read back off the one signal that records every real invocation. This is a
-    MULTISET, not an ordered trace: Prometheus counters carry a value per label
-    set, not an event log, so a tool called twice appears as two list entries
-    but the interleaving with other tools is lost. That is enough for the
-    tool-CHOICE evaluators D2 grades ("did she reach for weather or where_is?"),
-    which is the "same same but different" signal; a strict path-order evaluator
-    would need a separate ordered trace and is out of scope here.
+    read back off the counters that record real invocations. This is a MULTISET,
+    not an ordered trace: Prometheus counters carry a value per label set, not an
+    event log, so a tool called twice appears as two list entries but the
+    interleaving with other tools is lost. That is enough for the tool-CHOICE
+    evaluators D2 grades ("did she reach for weather or where_is?"), which is the
+    "same same but different" signal; a strict path-order evaluator would need a
+    separate ordered trace and is out of scope here.
 
     `status` ("ok"/"refused"/"unavailable") is summed over on purpose: a tool
     the model TRIED to call is a tool it reached for, whether or not the guard
@@ -147,7 +162,7 @@ def _tool_calls_from_metrics(metrics: Metrics) -> list[str]:
     """
     calls: list[str] = []
     for (name, labels), value in metrics.snapshot().items():
-        if name != "nora_tool_calls_total":
+        if name not in _TOOL_CALL_METRICS:
             continue
         tool = dict(labels).get("tool")
         if tool is None:

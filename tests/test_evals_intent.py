@@ -9,13 +9,16 @@ pins the mechanism.
 """
 
 from evals.evaluators import (
+    SEED_INTENT_GRAPH,
+    UNMEASURABLE_LIVE,
     ConvergesInBudget,
     Intent,
     IntentGraph,
     NoSiblingLeakage,
     PathMatchesIntent,
 )
-from evals.harness import Trajectory
+from evals.harness import Trajectory, _tool_calls_from_metrics
+from nora.app.eval_support import Metrics
 
 
 def _t(tool_calls=()) -> Trajectory:
@@ -36,6 +39,31 @@ def test_graph_is_undirected():
     g = IntentGraph([("a", "b")])
     assert g.neighbours("a") == frozenset({"b"})
     assert g.neighbours("b") == frozenset({"a"})
+
+
+# --- live tool_calls reconstruction (offline, deterministic) ---------------
+
+
+def test_tool_calls_reconstructed_from_both_counters():
+    """`_tool_calls_from_metrics` must read BOTH per-tool counters: native tools
+    record `nora_tool_calls_total`, but the room/memory tools record the SEPARATE
+    `nora_room_lookups_total`. Reading only the first is blind to the memory
+    cluster — reverting the union in the helper reddens this (the `about` call
+    would vanish)."""
+    m = Metrics()
+    m.inc("nora_tool_calls_total", tool="weather", status="ok")
+    m.inc("nora_tool_calls_total", tool="weather", status="ok")  # multiset: twice
+    m.inc("nora_room_lookups_total", tool="about", status="ok")
+    calls = _tool_calls_from_metrics(m)
+    assert sorted(calls) == ["about", "weather", "weather"]
+
+
+def test_no_intent_graph_tool_is_live_unmeasurable():
+    """Every tool the seed graph grades must be reconstructable from metrics in a
+    live run (the CLAUDE.md instrument rule: don't grade what you can't measure).
+    A tool in `UNMEASURABLE_LIVE` (media_fetch — its counter carries no `tool`
+    label) as a graph node would let the live gate read a blindness as a verdict."""
+    assert SEED_INTENT_GRAPH.nodes().isdisjoint(UNMEASURABLE_LIVE)
 
 
 def test_graph_ignores_self_edges():

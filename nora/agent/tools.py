@@ -146,7 +146,7 @@ class NativeTool:
     # "remembered" (what this household saved or told her), "web" (the open web,
     # last resort). `None` means the tool is not a fact SOURCE at all — an action
     # (`send_reply`, `remind`) or a pure function (`calculate`) — and is left out
-    # of the priority nudge. Read through `ToolRegistry.tiers()` and rendered as
+    # of the priority nudge. Read through `ToolRegistry.web_tier_tools()` and rendered as
     # one sentence into the capability block, the same way `time_shiftable`
     # renders the clock line — so declaring it is not bookkeeping: it changes
     # what the always-on block tells the model to reach for first.

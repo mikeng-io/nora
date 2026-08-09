@@ -60,6 +60,16 @@ def test_every_journey_message_is_nonempty_and_distinct():
     assert len(set(messages)) == len(messages)
 
 
+def test_no_journey_tool_is_live_unmeasurable():
+    """Every tool a journey requires OR names as a trap must be reconstructable in
+    a live run — else the live gate reads an instrument blindness as a verdict.
+    Fails closed if a journey (or a TRAP) ever names an `UNMEASURABLE_LIVE` tool."""
+    from evals.evaluators import UNMEASURABLE_LIVE
+
+    used = {t for j in JOURNEYS for t in j.intent.required} | set(TRAPS.values())
+    assert used.isdisjoint(UNMEASURABLE_LIVE), used & UNMEASURABLE_LIVE
+
+
 # --- journeys_gate (D4 tier 2 gate logic) ----------------------------------
 
 
@@ -109,8 +119,10 @@ async def test_live_journey_routes_correctly(journey):
     trajectory = await run_case(Case(name=journey.intent.name, input=journey.message), live=True)
     results = grade(journey, trajectory)
     failed = {k: r.reason for k, r in results.items() if not r.passed}
-    # PathMatchesIntent and NoSiblingLeakage are correctness; a failure here is a
-    # real routing regression in the live model. ConvergesInBudget is advisory
-    # (a slow-but-correct turn still answered), so it is reported, not asserted.
-    assert results["PathMatchesIntent"].passed, (journey.intent.name, trajectory.tool_calls, failed)
-    assert results["NoSiblingLeakage"].passed, (journey.intent.name, trajectory.tool_calls, failed)
+    # Assert exactly what the gate asserts — the HARD routing checks
+    # (`journeys_gate` → PathMatchesIntent today), no more. NoSiblingLeakage and
+    # ConvergesInBudget are ADVISORY in the gate because a down offline backend
+    # drives fallback calls that inflate them (the D3 confound recorded in
+    # DEC-76); asserting them here would flake this test on exactly the runs the
+    # gate is designed to tolerate.
+    assert journeys_gate(results), (journey.intent.name, trajectory.tool_calls, failed)

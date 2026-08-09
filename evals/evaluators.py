@@ -111,6 +111,11 @@ class IntentGraph:
             self._adj.setdefault(a, set()).add(b)
             self._adj.setdefault(b, set()).add(a)
 
+    def nodes(self) -> frozenset[str]:
+        """Every tool named anywhere in the graph — for the measurability guard
+        (`UNMEASURABLE_LIVE`) that keeps an unreconstructable tool out of it."""
+        return frozenset(self._adj)
+
     def neighbours(self, tool: str) -> frozenset[str]:
         return frozenset(self._adj.get(tool, set()))
 
@@ -125,6 +130,17 @@ class IntentGraph:
         for tool in req:
             near |= self._adj.get(tool, set())
         return frozenset(near - req)
+
+
+# Tools whose live calls the harness CANNOT reconstruct by name, so they must not
+# be graded as intent-graph nodes. `evals.harness._tool_calls_from_metrics` reads
+# the two per-tool call counters (`nora_tool_calls_total`, `nora_room_lookups_total`),
+# both of which carry a `tool` label. `media_fetch` records `nora_media_fetch_total`,
+# which has NO `tool` label — a media_fetch call is invisible to the reconstruction,
+# so grading it would read a blindness as a verdict (the CLAUDE.md instrument rule).
+# `test_no_intent_graph_tool_is_live_unmeasurable` fails closed if a graph node or a
+# journey ever names one of these.
+UNMEASURABLE_LIVE = frozenset({"media_fetch"})
 
 
 # The seed confusability graph for Nora's live tool set. The clusters are the
