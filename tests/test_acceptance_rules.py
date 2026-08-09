@@ -152,6 +152,13 @@ RULE_TESTS = {
     # calling `ToolRegistry.build(..., allowed_mcp=...)`), never at egress
     # (DEC-71).
     "R-40": "test_unauthorized_conversation_never_receives_pulse_tools",
+    # R-41: matching an unlabeled entry in something looked up (a handle, an
+    # id) to the person Nora is talking to requires an actual link — never
+    # inferred from rank or list order (DEC-75). Behavioural, same shape as
+    # R-14: asserted by conduct.md, measured by the adversarial corpus — NOT
+    # a currently-passing gate (DEC-75's own text records the measured
+    # failure rate; the test below only pins that the corpus exists).
+    "R-41": "test_r41_is_covered_by_the_identity_grounding_corpus",
 }
 
 
@@ -171,3 +178,14 @@ def test_r14_is_covered_by_the_adversarial_corpus():
     """R-14 is behavioural: asserted by constraints.md, measured by the corpus."""
     assert (ROOT / "evals" / "adversarial" / "injections.yaml").exists()
     assert (ROOT / "evals" / "adversarial" / "transcript_injection.yaml").exists()
+
+
+def test_r41_is_covered_by_the_identity_grounding_corpus():
+    """R-41 is behavioural: asserted by conduct.md, measured by this corpus.
+
+    Unlike R-14, this corpus is NOT currently a passing gate — DEC-75 records
+    that the shipped doctrine wording still fabricates on 0/3 of its
+    ambiguous cases. This test pins that the measurement exists and is
+    findable, not that the rule holds; see DEC-75 for the honest number.
+    """
+    assert (ROOT / "evals" / "adversarial" / "identity_grounding.yaml").exists()
