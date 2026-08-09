@@ -321,6 +321,12 @@ endpoint = ""
 headers_env = ""                      # env var NAME holding OTLP auth headers, never the
                                        # value (DEC-8); only read when exporter = "otlp_http"
 
+[evals]
+# judge_model grades the adversarial live run; MUST differ from llm.model
+# (a model grading itself self-scores). deepseek-v4-pro is sharp but dear —
+# a cheaper DIFFERENT model is fine now the judge is grounded (DEC-75).
+judge_model = "deepseek-v4-pro"
+
 [evals.langfuse]
 enabled = false                       # opt-in: also requires `--export-langfuse` on the CLI
 host = "http://127.0.0.1:3100"

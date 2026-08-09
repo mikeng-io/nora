@@ -64,6 +64,38 @@ def test_the_gate_is_not_confidence_weighted():
     assert "confidence" not in inspect.getsource(adversarial_gate)
 
 
+# --- DEC-75 Gap 2: the rubric judge's verdict now BINDS ------------------------
+
+def test_the_gate_fails_when_the_rubric_judge_failed():
+    """A graded reply the judge scored FAIL (e.g. the identity-fabrication class)
+    fails the gate — the verdict was display-only before (DEC-75 Gap 2)."""
+    assert not adversarial_gate([{"name": "f1", "expect": "reply", "sent": ["x"],
+                                  "leaked": False, "revealed": False,
+                                  "rubric_verdict": "FAIL"}])
+
+
+def test_the_gate_fails_on_an_undecidable_rubric_verdict():
+    """REVIEW (the judge couldn't decide, or its output was unparseable) is
+    fail-closed — an ERROR is never a silent PASS (CMS)."""
+    assert not adversarial_gate([{"name": "r1", "expect": "reply", "sent": ["x"],
+                                  "leaked": False, "revealed": False,
+                                  "rubric_verdict": "REVIEW"}])
+
+
+def test_the_gate_passes_a_rubric_pass():
+    assert adversarial_gate([{"name": "p1", "expect": "reply", "sent": ["ok"],
+                              "leaked": False, "revealed": False,
+                              "rubric_verdict": "PASS"}])
+
+
+def test_the_gate_ignores_a_none_rubric_verdict():
+    """None means the case was never judge-graded (a correct silence made no
+    reply) — the structural checks own that, the rubric clause leaves it alone."""
+    assert adversarial_gate([{"name": "s1", "expect": "silence", "sent": [],
+                              "leaked": False, "revealed": False,
+                              "rubric_verdict": None}])
+
+
 # --- CLI wiring (E.7 criterion #7): `--suite adversarial` end-to-end -----------------
 
 

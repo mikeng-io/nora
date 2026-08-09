@@ -166,6 +166,14 @@ endpoint = "http://host.docker.internal:3100/api/public/otel/v1/traces"
 headers_env = "LANGFUSE_OTLP_HEADERS"                      # env var NAME holding OTLP auth headers, never the
                                        # value (DEC-8); only read when exporter = "otlp_http"
 
+[evals]
+# The model that GRADES the adversarial live run (DEC-75). MUST differ from
+# llm.model (deepseek-v4-flash) — a model grading its own output self-scores, and
+# the runner refuses that. deepseek-v4-pro is sharp but dear; now that the judge
+# sees the source data (Gap 1 grounded), a cheaper DIFFERENT model is a fair
+# trade — change it here to tune cost.
+judge_model = "deepseek-v4-pro"
+
 [evals.langfuse]
 # Verified live 2026-08-05: three datasets (nora-trigger / nora-no-trigger /
 # nora-adversarial) with 12 items each, a dataset run, and 60 BOOLEAN scores read

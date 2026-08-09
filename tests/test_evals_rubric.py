@@ -80,3 +80,31 @@ def test_the_judge_model_is_the_deep_tier():
 
     # deepseek-v4-pro; grading with the tested model is circular
     assert JUDGE_MODEL_TIER == "deep"
+
+
+# --- DEC-75 Gap 1: the judge must SEE the source data the reply grounds against ---
+
+def test_the_judge_prompt_includes_the_source_data_when_given():
+    """Without the source list the judge grades grounding blind — it can't tell a
+    correct match from a fabrication (DEC-75 Gap 1). When a case carries source
+    data it must reach the judge, with the fabrication instruction."""
+    from evals.judge import _build_judge_prompt
+
+    src = '{"players": [{"player": "riftwalker.jo", "deaths": 39}]}'
+    prompt = _build_judge_prompt(
+        tag_input="nora.000 我 KD 差唔差呀？", reply_text="你 39 次死亡",
+        doctrine_text="be honest", source_data=src,
+    )
+    assert "Source data" in prompt
+    assert "riftwalker.jo" in prompt          # the actual ground truth reached the judge
+    assert "FABRICATION" in prompt            # the grounding instruction is present
+
+
+def test_the_judge_prompt_omits_the_source_block_when_absent():
+    """A case with no source data keeps the old shape — no empty section."""
+    from evals.judge import _build_judge_prompt
+
+    prompt = _build_judge_prompt(
+        tag_input="nora.000 hi", reply_text="hi", doctrine_text="be honest",
+    )
+    assert "Source data" not in prompt

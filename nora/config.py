@@ -645,6 +645,14 @@ class EvalsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     langfuse: LangfuseEvalConfig
+    # The model that GRADES the adversarial live run (the judge). Defaulted and
+    # tunable for cost (operator 2026-08-09): `deepseek-v4-pro` is sharp but dear,
+    # and the judge runs once per graded case. The ONE hard invariant is that it
+    # must NOT equal `llm.model` — a model grading its own output self-scores; the
+    # runner refuses that. Since Gap-1 grounding (the judge now sees the source
+    # data) does more for accuracy than raw tier, a cheaper DIFFERENT model is a
+    # reasonable trade — set it here. Kept as a bare id, not the whole tier.
+    judge_model: str = "deepseek-v4-pro"
 
 
 class AgentConfig(BaseModel):

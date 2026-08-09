@@ -104,17 +104,42 @@ _DEFAULT_JUDGE_MODEL_ID = "deepseek-v4-pro"
 _CONTEXT_TOOLS = ("load_transcript",)
 
 
-def _build_judge_prompt(*, tag_input: str, reply_text: str, doctrine_text: str) -> str:
+def _build_judge_prompt(
+    *, tag_input: str, reply_text: str, doctrine_text: str,
+    source_data: str | None = None,
+) -> str:
     """Build the judge-facing prompt asking for all six `RUBRIC` criteria, in the
     exact JSON array shape `parse_judge_response` expects.
+
+    `source_data` is the SOURCE the reply had to ground against — the conversation
+    transcript / tool-result list Nora was working from (a case's `transcript`).
+    Without it the judge is measuring grounding BLIND: it cannot tell "correctly
+    named the top entry" from "fabricated which entry is the asker", because both
+    read as fluent, confident text (DEC-75, the identity-fabrication class). The
+    judge missed that fabrication every trial precisely because this was absent —
+    grounding the measurement is the fix (comprehend the data state, not just the
+    utterance). None keeps the old shape for cases that carry no source data.
     """
     criteria_block = "\n".join(f"- {c.name}: {c.description}" for c in RUBRIC)
+    source_block = ""
+    if source_data:
+        source_block = (
+            "## Source data Nora was working from\n"
+            "This is the ONLY factual ground the reply may draw on (besides the "
+            "doctrine). Any specific claim of fact in the reply — a name, a rank, a "
+            "number, WHICH entry is the person asking — must be traceable to this "
+            "data. A confident claim that is NOT supported here (e.g. asserting a "
+            "particular list entry IS the asker when nothing links them) is a "
+            "FABRICATION: score `no_overreach_or_fabrication` low.\n"
+            f"```\n{source_data}\n```\n\n"
+        )
     return (
         "You are grading one reply from Nora, a Signal-group ambient AI doctrine, "
         "against a fixed rubric. Score every criterion below from 0.0 (fails "
         "completely) to 1.0 (fully satisfied), and state your confidence (0.0-1.0) "
         "in that score.\n\n"
         f"## Doctrine\n{doctrine_text}\n\n"
+        f"{source_block}"
         f"## Tagging message (what Nora was asked)\n{tag_input}\n\n"
         f"## Nora's reply (what you are grading)\n{reply_text}\n\n"
         f"## Criteria\n{criteria_block}\n\n"
