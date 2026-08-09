@@ -12,8 +12,9 @@ import os
 
 import pytest
 
+from evals.evaluators import Result
 from evals.harness import Case, Trajectory, run_case
-from evals.journeys import JOURNEYS, grade
+from evals.journeys import HARD_ROUTING_CHECKS, JOURNEYS, grade, journeys_gate
 
 # The trap tool each journey must NOT take — the near-identical-question sibling.
 TRAPS = {
@@ -57,6 +58,45 @@ def test_every_journey_message_is_nonempty_and_distinct():
     messages = [j.message for j in JOURNEYS]
     assert all(m.strip() for m in messages)
     assert len(set(messages)) == len(messages)
+
+
+# --- journeys_gate (D4 tier 2 gate logic) ----------------------------------
+
+
+def _graded(**overrides) -> dict[str, Result]:
+    base = {
+        "PathMatchesIntent": Result(True),
+        "NoSiblingLeakage": Result(True),
+        "ConvergesInBudget": Result(True),
+    }
+    base.update(overrides)
+    return base
+
+
+def test_gate_passes_when_hard_checks_pass():
+    assert journeys_gate(_graded())
+
+
+def test_gate_fails_when_a_hard_check_fails():
+    assert not journeys_gate(_graded(PathMatchesIntent=Result(False, "missing weather")))
+
+
+def test_gate_ignores_advisory_failures():
+    # NoSiblingLeakage is advisory today (backend-confounded) — its failure must
+    # NOT fail the gate.
+    assert "NoSiblingLeakage" not in HARD_ROUTING_CHECKS
+    assert journeys_gate(_graded(NoSiblingLeakage=Result(False, "leaked into place_info")))
+
+
+def test_gate_is_fail_closed_on_missing_check():
+    # A hard check that was never run counts as a failure, not a silent pass.
+    assert not journeys_gate({"NoSiblingLeakage": Result(True)})
+
+
+def test_journeys_is_a_registered_suite():
+    from evals.run import SUITES
+
+    assert "journeys" in SUITES
 
 
 # --- live regression gate (network-marked) ---------------------------------

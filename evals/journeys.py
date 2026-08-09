@@ -94,3 +94,23 @@ def grade(journey: Journey, trajectory) -> dict[str, Result]:
         "NoSiblingLeakage": NoSiblingLeakage(intent, SEED_INTENT_GRAPH).evaluate(trajectory),
         "ConvergesInBudget": ConvergesInBudget(intent).evaluate(trajectory),
     }
+
+
+#: The routing checks that HARD-FAIL the live journeys gate. Only
+#: `PathMatchesIntent` for now: it is backend-independent — "did she reach for
+#: the right tool at all" is true or false whether or not that tool's backend was
+#: up. `NoSiblingLeakage` and `ConvergesInBudget` are REPORTED but advisory,
+#: because a down backend drives fallback calls that inflate both (the D3
+#: measurement saw carpark fall back into `place_info` only because `web_search`
+#: had failed). Promote them to hard once the live journeys run wires real tool
+#: backends — see `docs/eval-sop.md`.
+HARD_ROUTING_CHECKS = ("PathMatchesIntent",)
+
+
+def journeys_gate(graded: dict[str, Result]) -> bool:
+    """Pass/fail one journey's graded routing for the live gate (D4 tier 2).
+
+    Hard-fails iff any `HARD_ROUTING_CHECKS` result failed. Fail-closed: a missing
+    key counts as a failure, so a caller that forgot to run a hard check cannot
+    pass by omission."""
+    return all(graded.get(name, Result(False, "not run")).passed for name in HARD_ROUTING_CHECKS)

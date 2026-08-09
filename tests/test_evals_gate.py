@@ -253,7 +253,8 @@ async def test_gate_verdict_is_unaffected_by_an_unreachable_langfuse_when_failin
 
 def test_export_langfuse_suite_choice_is_scoped_to_deterministic_suites():
     """Documents the scope decision (see evals/run.py module docstring): the
-    `adversarial` suite's live path is not wired to the sink in this phase.
-    `SUITES` itself is unchanged by Task 3 — this pins that the deterministic
-    suites this task DOES cover still resolve to the same corpus files."""
-    assert set(SUITES) == {"trigger", "no_trigger", "all", "adversarial"}
+    `adversarial` suite's live path is not wired to the sink in this phase, and
+    neither is `journeys` (D4 tier 2) — both are live suites run before deploy,
+    not deterministic sink-exporting ones. This pins the deterministic suites
+    still resolve to the same corpus files, and the full suite set."""
+    assert set(SUITES) == {"trigger", "no_trigger", "all", "adversarial", "journeys"}

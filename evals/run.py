@@ -58,6 +58,7 @@ from evals.evaluators import (
     ToolBudget,
 )
 from evals.harness import Case, load_cases, run_case
+from evals.journeys import HARD_ROUTING_CHECKS, JOURNEYS, grade, journeys_gate
 from evals.judge import _build_judge_prompt, evaluate_raw, majority_verdict, safety_verdict
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
@@ -87,6 +88,10 @@ SUITES = {
     "all": (CASES_DIR / "trigger.yaml", CASES_DIR / "no_trigger.yaml"),
     "adversarial": (ADVERSARIAL_DIR / "injections.yaml", ADVERSARIAL_DIR / "near_miss.yaml",
                     ADVERSARIAL_DIR / "transcript_injection.yaml"),
+    # D4 tier 2: the four seed journeys, graded on ROUTING. No case files — the
+    # journeys live in `evals/journeys.py` — so this maps to () and `main`
+    # special-cases it, the same way `adversarial` runs its own live path.
+    "journeys": (),
 }
 
 # Evaluator class -> the Langfuse score `name` it exports under. All five verdicts
@@ -477,6 +482,37 @@ async def _run_suite(paths: tuple[Path, ...], *, sink: EvalSink, run_name: str) 
     return all_passed
 
 
+async def _run_journeys_live(journeys=JOURNEYS) -> tuple[bool, list[dict]]:
+    """D4 tier 2: live-run each seed journey through Nora's REAL model and grade
+    its ROUTING (the intent graph, D2). This is the gate the operator runs before
+    a change lands — the "intercept before live" step — and it needs the network
+    (`run_case(..., live=True)`; the LLM key env must be set).
+
+    Hard-fails on `HARD_ROUTING_CHECKS` (PathMatchesIntent today) via
+    `journeys_gate`; the other routing checks are printed but advisory, because a
+    down tool backend inflates them (see `docs/eval-sop.md` and D3's finding). All
+    checks are always PRINTED, passed or not — an advisory FAIL is a signal to the
+    operator even when it does not fail the gate.
+    """
+    all_passed = True
+    results: list[dict] = []
+    for journey in journeys:
+        trajectory = await run_case(
+            Case(name=journey.intent.name, input=journey.message), live=True
+        )
+        graded = grade(journey, trajectory)
+        passed = journeys_gate(graded)
+        all_passed = all_passed and passed
+        results.append({"journey": journey.intent.name, "graded": graded, "passed": passed})
+        for name, result in graded.items():
+            hard = name in HARD_ROUTING_CHECKS
+            status = "PASS" if result.passed else ("FAIL" if hard else "warn")
+            tier = "hard" if hard else "advisory"
+            print(f"[{status}] journeys/{journey.intent.name} — {name} ({tier})"
+                  + (f": {result.reason}" if result.reason else ""))
+    return all_passed, results
+
+
 #: B1 default verdict-cache location — gitignored, per-suite.
 _CACHE_DIR = REPO_ROOT / ".eval-cache"
 
@@ -487,7 +523,11 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
     if paths is None:
         print(f"unknown suite {suite!r}; expected one of {sorted(SUITES)}", file=sys.stderr)
         return 1
-    if suite == "adversarial":
+    if suite == "journeys":
+        # D4 tier 2: live routing gate. No case files, no verdict cache (routing is
+        # cheap and the whole point is to see what the CURRENT model does).
+        ok, _results = asyncio.run(_run_journeys_live())
+    elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
         # calls. --no-cache disables it; --force re-runs every case (and refreshes it).
         verdict_cache_path = None if no_cache else _CACHE_DIR / "adversarial.json"
