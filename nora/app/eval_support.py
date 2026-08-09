@@ -14,8 +14,10 @@ itself is allowed to reach.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+from nora.agent import factory
 from nora.agent.factory import create_client, create_model_provider
 from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
@@ -25,6 +27,8 @@ from nora.doctrine.loader import Doctrine, DoctrineStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
 from nora.tag import is_tagged
+
+from .agent_runner import LiveAgentRunner
 
 REPLY_GUARD_BUDGETS = ToolRegistry().budgets()
 # What the doctrine loader's tool-catalogue gate checks backticked prose
@@ -46,6 +50,7 @@ __all__ = [
     "LeakGuard",
     "Metrics",
     "Persons",
+    "build_live_runner",
     "create_client",
     "create_model_provider",
     "is_tagged",
@@ -69,3 +74,47 @@ def load_eval_config(candidates: tuple[Path, ...]) -> Config:
     if last_error is None:
         raise ValueError("no config candidates provided")
     raise last_error
+
+
+def build_live_runner(cfg: Config) -> LiveAgentRunner:
+    """Build the REAL, networked `LiveAgentRunner` — Nora's actual model — for
+    the eval harness's live path (`evals.harness.run_case(..., live=True)`).
+
+    This is the one place `evals/` reaches a live model, and it exists HERE, in
+    `nora.app`, rather than in `evals/` for the boundary reason the whole module
+    exists (`tests/test_boundaries.py`): only `nora.app` may import
+    `nora.agent.factory` and `nora.app.agent_runner`. It mirrors
+    `nora.app.composition.build_dependencies`'s runner tail EXACTLY — same
+    `cfg.llm` tier, same `ModelSource` over one client, same retry policy — so a
+    live eval drives the SAME model configuration production does. The one
+    deliberate difference is `skills_dir=None`: the eval/offline runners leave the
+    on-demand skill layer INERT (`nora.app.agent_runner.LiveAgentRunner.__init__`
+    documents this convention), so a live eval measures the doctrine+tools loop
+    without the DEC-50 skill layer. Exercising skills live is future work.
+
+    The model under test is `cfg.llm` (Nora's production model), NOT
+    `cfg.evals.judge_model` — the judge is a separate, cheaper grader built
+    elsewhere. Raises if the LLM key env (`cfg.llm.api_key_env`) is unset, so a
+    live run fails loudly at construction rather than at the first token.
+    """
+    api_key = os.environ.get(cfg.llm.api_key_env, "")
+    if not api_key:
+        raise ValueError(
+            f"live eval runner needs the LLM key: environment variable "
+            f"{cfg.llm.api_key_env} is not set"
+        )
+    tier = cfg.llm
+    client = create_client(base_url=tier.base_url, api_key=api_key)
+    models = factory.ModelSource(
+        client=client,
+        spec=factory.ModelSpec(
+            model=tier.model, max_tokens=tier.max_tokens, temperature=tier.temperature,
+            reasoning_effort=tier.reasoning_effort,
+        ),
+    )
+    return LiveAgentRunner(
+        models=models,
+        retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+        skills_dir=None,
+        agent_name=cfg.agent.name,
+    )

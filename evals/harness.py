@@ -38,6 +38,7 @@ from nora.app.eval_support import (
     TOOL_NAMES,
     DoctrineStore,
     Metrics,
+    build_live_runner,
     load_eval_config,
     load_persons,
 )
@@ -124,6 +125,37 @@ async def _drain(background) -> None:
         await asyncio.sleep(0)
 
 
+def _tool_calls_from_metrics(metrics: Metrics) -> list[str]:
+    """Reconstruct which tools the LIVE model actually called, from the
+    `nora_tool_calls_total{tool,status}` counter every tool in
+    `nora.agent.tools` emits (`tests/test_tools.py` pins the emission).
+
+    In scripted mode the harness knows the tool sequence up front — it is what
+    the script tries to call. A live run has no script, so the tool names are
+    read back off the one signal that records every real invocation. This is a
+    MULTISET, not an ordered trace: Prometheus counters carry a value per label
+    set, not an event log, so a tool called twice appears as two list entries
+    but the interleaving with other tools is lost. That is enough for the
+    tool-CHOICE evaluators D2 grades ("did she reach for weather or where_is?"),
+    which is the "same same but different" signal; a strict path-order evaluator
+    would need a separate ordered trace and is out of scope here.
+
+    `status` ("ok"/"refused"/"unavailable") is summed over on purpose: a tool
+    the model TRIED to call is a tool it reached for, whether or not the guard
+    or the tool body let it through — the trajectory is about intent, and a
+    refused call is still evidence of the model's routing choice.
+    """
+    calls: list[str] = []
+    for (name, labels), value in metrics.snapshot().items():
+        if name != "nora_tool_calls_total":
+            continue
+        tool = dict(labels).get("tool")
+        if tool is None:
+            continue
+        calls.extend([tool] * int(value))
+    return calls
+
+
 def _build_body(case: Case) -> str:
     """Prefix `case.input` with the trigger text for trigger cases (unless the author
     already embedded it plausibly in the message), pass no-trigger cases through as-is.
@@ -135,15 +167,28 @@ def _build_body(case: Case) -> str:
     return f"{TRIGGER_TEXT} {case.input}"
 
 
-async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> Trajectory:
+async def run_case(
+    case: Case, *, script: list[ScriptedTurn] | None = None, live: bool = False,
+) -> Trajectory:
     """Run one eval `Case` through a real pipeline graph and return the resulting
     `Trajectory`.
 
-    `script` is the scripted model turn sequence (offline mode — see module docstring).
-    The tool names it *attempts* become `Trajectory.tool_calls`: in scripted mode we
-    already know exactly which tools the script tries to call, whether or not
-    `ReplyGuard` ends up vetoing any given call, and that's the simplest, most direct
-    signal of "what did the model try to do" for the evaluators to grade.
+    Two mutually exclusive drive modes:
+
+    - **Scripted (default, `live=False`)** — `script` is the scripted model turn
+      sequence (offline, no network — see module docstring). The tool names it
+      *attempts* become `Trajectory.tool_calls`: in scripted mode we already know
+      exactly which tools the script tries to call, whether or not `ReplyGuard`
+      ends up vetoing any given call, and that's the simplest, most direct signal
+      of "what did the model try to do" for the evaluators to grade.
+
+    - **Live (`live=True`)** — drives Nora's REAL model
+      (`nora.app.eval_support.build_live_runner`, `cfg.llm`) through the same
+      real pipeline, reaching the network. `script` is ignored. There is no
+      scripted tool list to read, so `Trajectory.tool_calls` is reconstructed
+      after the run from the `nora_tool_calls_total` metric the tools emit (see
+      `_tool_calls_from_metrics` for the multiset-not-trace caveat). A live run
+      needs the LLM key env set; `build_live_runner` raises otherwise.
     """
     turns = script or []
     tool_calls = [name for turn in turns for name, _ in turn.tool_calls]
@@ -165,7 +210,11 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
         audit = FakeRecordStore()
         memory = FakeMemoryStore()
         adapter = FakeAdapter()
-        runner = FakeAgentRunner(turns)
+        # Live mode swaps the scripted double for Nora's real, networked model;
+        # everything else in the graph (db, memory, adapter) stays a fake, so a
+        # live run measures the MODEL's behaviour against real doctrine+tools
+        # without touching a real platform or store.
+        runner = build_live_runner(cfg) if live else FakeAgentRunner(turns)
         try:
             dispatcher, _engagement, background = build_offline_pipeline(
                 cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
@@ -185,6 +234,10 @@ async def run_case(case: Case, *, script: list[ScriptedTurn] | None = None) -> T
 
         feeds = len([f for f in memory.fed if "[Nora]" in f[1]])
         sent = list(adapter.texts)
+        # Live mode has no script to read tool intent from — reconstruct it from
+        # what the tools actually recorded this run (see the helper's caveat).
+        if live:
+            tool_calls = _tool_calls_from_metrics(metrics)
         return Trajectory(
             tool_calls=tool_calls,
             sent=sent,
