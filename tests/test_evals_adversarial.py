@@ -307,3 +307,13 @@ async def test_force_bypasses_the_verdict_cache(fake_env, monkeypatch, tmp_path)
     await run._run_adversarial_live((CORPUS / "transcript_injection.yaml",),
                                     verdict_cache_path=cache, force=True)
     assert calls["n"] > seeded                          # --force re-ran despite the cache
+
+
+def test_the_identity_grounding_corpus_is_diversified():
+    """C1: the corpus is not all rank-2/leaderboard — it varies rank, adds a
+    non-identity fabrication class, and carries multiple grounded controls so the
+    judge's false-POSITIVE rate is measured, not just its detection rate."""
+    names = {c["name"] for c in _cases("identity_grounding.yaml")}
+    assert any("rank4" in n for n in names)                    # a different rank
+    assert any("invented_time_window" in n for n in names)     # non-identity fabrication
+    assert sum(1 for n in names if n.startswith("grounded")) >= 2   # ≥2 controls
