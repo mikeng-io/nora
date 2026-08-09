@@ -38,6 +38,7 @@ from nora.app.eval_support import (
     TOOL_NAMES,
     DoctrineStore,
     Metrics,
+    build_eval_tool_registry,
     build_live_runner,
     load_eval_config,
     load_persons,
@@ -48,6 +49,7 @@ from nora.testing import (
     FakeAgentRunner,
     FakeMemoryStore,
     FakeRecordStore,
+    FakeRosterSource,
     ScriptedTurn,
     group_event,
 )
@@ -65,6 +67,15 @@ _IDENTITY_TOML = (
 # Kept in sync with config.example.toml's engagement.trigger.text — the single real
 # trigger string every case file and the harness itself must agree on.
 TRIGGER_TEXT = "nora.000"
+
+# The harness drives `group_event(body=...)` with its DEFAULTS — conversation "g1",
+# sender "+852111" — and `_IDENTITY_TOML` maps that sender to person "miles". The
+# live-mode roster below names that one member so the room resolves to {miles}, a
+# verified subset of the eval circle (`nora.app.eval_support`), which is what lets
+# `saved_places`/`where_is` disclose instead of degrading (F4). If `group_event`'s
+# defaults change, these must change with them.
+_EVAL_GROUP_ID = "g1"
+_EVAL_MEMBER_ID = "+852111"
 
 
 @dataclass
@@ -237,10 +248,22 @@ async def run_case(
         # live run measures the MODEL's behaviour against real doctrine+tools
         # without touching a real platform or store.
         runner = build_live_runner(cfg) if live else FakeAgentRunner(turns)
+        # Live mode wires the canned backends (F4) so the routing gate's siblings
+        # answer `ok` and a leak is a real choice, not a fallback artifact. Scripted
+        # mode keeps the bare registry — its tool_calls come from the script.
+        tool_registry = build_eval_tool_registry() if live else None
+        # Live mode also names the room so `saved_places`/`where_is` clear the R-31
+        # subset gate (the room {miles} ⊆ the eval circle {miles}); scripted mode
+        # leaves the room unavailable, as before.
+        roster = (
+            FakeRosterSource(groups={_EVAL_GROUP_ID: (frozenset({_EVAL_MEMBER_ID}),)})
+            if live else None
+        )
         try:
             dispatcher, _engagement, background = build_offline_pipeline(
                 cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
                 doctrine_store=doctrine_store, runner=runner, metrics=metrics,
+                tool_registry=tool_registry, roster_source=roster,
             )
             body = _build_body(case)
             # Mirrors tests/integration/harness.py::_HandlerView.on_event: parse the

@@ -50,6 +50,7 @@ def build_offline_pipeline(
     runner: Any,
     metrics: Metrics | None = None,
     roster_source: RosterSource | None = None,
+    tool_registry: ToolRegistry | None = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -82,7 +83,10 @@ def build_offline_pipeline(
         turns=tier.limits.turns,
         total_tokens=tier.limits.total_tokens,
     )
-    tool_registry = ToolRegistry()
+    # Default: a bare registry (every tool inert/`unavailable`). The eval's live
+    # routing gate passes one wired with canned backends (F4) so `weather`/
+    # `web_search`/`place_info`/… answer `ok`, removing the fallback confound.
+    tool_registry = tool_registry if tool_registry is not None else ToolRegistry()
     engagement = EngagementPipeline(
         adapter=adapter, audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,

@@ -16,19 +16,36 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, cast
 
 from nora.agent import factory
 from nora.agent.factory import create_client, create_model_provider
 from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
+from nora.agent.whereis import Circle
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
 from nora.tag import is_tagged
+from nora.testing import (
+    BACKED_TOOLS,
+    EVAL_CIRCLE_ID,
+    CannedPresenceReader,
+    CannedRouteSource,
+    CannedSearchProvider,
+    CannedTransitSource,
+    CannedWeatherProvider,
+)
 
 from .agent_runner import LiveAgentRunner
+
+#: The single person the eval harness identity (`_IDENTITY_TOML`) maps — the
+#: harness's `+852111` sender resolves to this person_id. The eval `Circle`'s
+#: roster is exactly this, so the harness room (also just this person) is a
+#: verified subset and the R-31 disclosure gate PERMITS `where_is`/`saved_places`.
+_EVAL_PERSON_ID = "miles"
 
 REPLY_GUARD_BUDGETS = ToolRegistry().budgets()
 # What the doctrine loader's tool-catalogue gate checks backticked prose
@@ -40,6 +57,7 @@ TOOL_NAMES = ToolRegistry().tool_names()
 CAPABILITY_BLOCK = ToolRegistry().capability()
 
 __all__ = [
+    "BACKED_TOOLS",
     "CAPABILITY_BLOCK",
     "REPLY_GUARD_BUDGETS",
     "TOOL_NAMES",
@@ -50,6 +68,7 @@ __all__ = [
     "LeakGuard",
     "Metrics",
     "Persons",
+    "build_eval_tool_registry",
     "build_live_runner",
     "create_client",
     "create_model_provider",
@@ -117,4 +136,29 @@ def build_live_runner(cfg: Config) -> LiveAgentRunner:
         retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
         skills_dir=None,
         agent_name=cfg.agent.name,
+    )
+
+
+def build_eval_tool_registry() -> ToolRegistry:
+    """A `ToolRegistry` wired with the canned eval backends (F4): `weather`,
+    `web_search`, `place_info`, `route`, `transit`, `where_is` and `saved_places`
+    answer `ok` instead of `unavailable`, so the live routing gate no longer
+    confounds a real leak with a fallback-on-failure. `BACKED_TOOLS` names exactly
+    what this backs. The presence tools clear the R-31 subset gate because the
+    eval `Circle`'s roster is the one eval person and the harness room is that same
+    person (a verified subset). Lives here, not in `evals/`, for the boundary
+    reason `build_live_runner` does: only `nora.app` may import
+    `nora.agent.registry`, `nora.agent.whereis` and `nora.testing`'s doubles.
+
+    `route`/`transit` are `cast` because `ToolRegistry` types them as the concrete
+    `RouteClient`/`TransitClient`, not a port — the canned doubles match the one
+    method each tool calls (`place_info`/`route`, `arrivals`) but not the class.
+    """
+    return ToolRegistry(
+        weather=CannedWeatherProvider(),
+        search=CannedSearchProvider(),
+        route=cast(Any, CannedRouteSource()),
+        transit=cast(Any, CannedTransitSource()),
+        presence=CannedPresenceReader(),
+        circles=(Circle(circle_id=EVAL_CIRCLE_ID, person_ids=frozenset({_EVAL_PERSON_ID})),),
     )

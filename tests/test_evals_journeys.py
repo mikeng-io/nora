@@ -75,6 +75,20 @@ def test_no_journey_tool_is_live_unmeasurable():
     assert used.isdisjoint(UNMEASURABLE_LIVE), used & UNMEASURABLE_LIVE
 
 
+def test_all_journeys_are_fully_backed_so_every_check_is_hard():
+    """F4's payoff: with the canned eval backends, every journey's tools (required
+    + siblings) are backed, so NoSiblingLeakage and ConvergesInBudget are HARD for
+    all of them — not just PathMatchesIntent. If a new journey touches an unbacked
+    tool (e.g. a future MCP tool), this reddens and its leakage silently drops to
+    advisory instead of the confound being hidden."""
+    from evals.journeys import hard_checks_for
+
+    for journey in JOURNEYS:
+        hard = hard_checks_for(journey)
+        assert "NoSiblingLeakage" in hard, journey.intent.name
+        assert "ConvergesInBudget" in hard, journey.intent.name
+
+
 def test_every_journey_required_tool_is_in_the_graph():
     """A required tool with NO graph edges makes `NoSiblingLeakage` vacuous — it
     passes no matter what she leaks into (external review, 2026-08-10). Forcing

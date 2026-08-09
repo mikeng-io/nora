@@ -34,6 +34,15 @@ AgentRunner`, a stage-level `Protocol`, not one of `nora/domain/ports.py`'s
 ports — also exempt; see their docstrings.
 """
 
+from nora.testing.eval_backends import (
+    BACKED_TOOLS,
+    EVAL_CIRCLE_ID,
+    CannedPresenceReader,
+    CannedRouteSource,
+    CannedSearchProvider,
+    CannedTransitSource,
+    CannedWeatherProvider,
+)
 from nora.testing.fakes import (
     FakeAdapter,
     FakeBlobStore,
@@ -52,7 +61,14 @@ from nora.testing.scripted_agent import (
 )
 
 __all__ = [
+    "BACKED_TOOLS",
+    "EVAL_CIRCLE_ID",
     "TOOL_CHOICE_FIRST_CALL",
+    "CannedPresenceReader",
+    "CannedRouteSource",
+    "CannedSearchProvider",
+    "CannedTransitSource",
+    "CannedWeatherProvider",
     "FakeAdapter",
     "FakeAgentRunner",
     "FakeBlobStore",

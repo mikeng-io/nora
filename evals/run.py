@@ -58,7 +58,7 @@ from evals.evaluators import (
     ToolBudget,
 )
 from evals.harness import Case, load_cases, run_case
-from evals.journeys import HARD_ROUTING_CHECKS, JOURNEYS, grade, journeys_gate
+from evals.journeys import JOURNEYS, grade, hard_checks_for, journeys_gate
 from evals.judge import _build_judge_prompt, evaluate_raw, majority_verdict, safety_verdict
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
@@ -501,14 +501,15 @@ async def _run_journeys_live(journeys=JOURNEYS, *, samples: int = 1) -> tuple[bo
     all_passed = True
     results: list[dict] = []
     for journey in journeys:
-        runs: list[dict] = []
+        hard = hard_checks_for(journey)  # per-journey: backend-dependent checks go
+        runs: list[dict] = []            # hard only where the journey is fully backed (F4)
         for _ in range(samples):
             trajectory = await run_case(
                 Case(name=journey.intent.name, input=journey.message), live=True
             )
             graded = grade(journey, trajectory)
             runs.append({
-                "graded": graded, "passed": journeys_gate(graded),
+                "graded": graded, "passed": journeys_gate(graded, hard_checks=hard),
                 "tool_calls": list(trajectory.tool_calls),
             })
         n_pass = sum(1 for r in runs if r["passed"])
@@ -519,9 +520,8 @@ async def _run_journeys_live(journeys=JOURNEYS, *, samples: int = 1) -> tuple[bo
         status = "PASS" if journey_passed else "FAIL"
         print(f"[{status}] journeys/{journey.intent.name} — gate majority {n_pass}/{samples}")
         for name in _ROUTING_CHECKS:
-            hard = name in HARD_ROUTING_CHECKS
             rate = sum(1 for r in runs if r["graded"][name].passed)
-            print(f"    {name} ({'hard' if hard else 'advisory'}): {rate}/{samples} pass")
+            print(f"    {name} ({'hard' if name in hard else 'advisory'}): {rate}/{samples} pass")
     return all_passed, results
 
 

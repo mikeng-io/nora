@@ -139,21 +139,47 @@ def grade(journey: Journey, trajectory) -> dict[str, Result]:
     }
 
 
-#: The routing checks that HARD-FAIL the live journeys gate. Only
-#: `PathMatchesIntent` for now: it is backend-independent — "did she reach for
-#: the right tool at all" is true or false whether or not that tool's backend was
-#: up. `NoSiblingLeakage` and `ConvergesInBudget` are REPORTED but advisory,
-#: because a down backend drives fallback calls that inflate both (the D3
-#: measurement saw carpark fall back into `place_info` only because `web_search`
-#: had failed). Promote them to hard once the live journeys run wires real tool
-#: backends — see `docs/eval-sop.md`.
+#: `PathMatchesIntent` is ALWAYS hard: it is backend-independent — "did she reach
+#: for the right tool at all" is true or false whether or not that tool's backend
+#: was up.
 HARD_ROUTING_CHECKS = ("PathMatchesIntent",)
 
+#: These two are backend-DEPENDENT: a down backend drives fallback calls that
+#: inflate both (a leak into a sibling might just be "tried it, it failed, moved
+#: on"). They are hard ONLY for a journey whose every tool (required + siblings)
+#: is backed by a canned provider (`BACKED_TOOLS`, F4) — then a leak is a real
+#: choice, not a fallback artifact. Otherwise advisory. See `docs/eval-sop.md`.
+BACKEND_DEPENDENT_CHECKS = ("NoSiblingLeakage", "ConvergesInBudget")
 
-def journeys_gate(graded: dict[str, Result]) -> bool:
+
+def _fully_backed(journey: Journey) -> bool:
+    """True iff every tool this journey's routing touches — its required tools AND
+    the siblings `NoSiblingLeakage` forbids — is backed by a canned eval provider,
+    so none of them can return `unavailable` and drive a confounding fallback."""
+    from nora.app.eval_support import BACKED_TOOLS
+
+    required = journey.intent.required
+    touched = required | SEED_INTENT_GRAPH.siblings_of(required)
+    return touched <= (BACKED_TOOLS | {"send_reply"})
+
+
+def hard_checks_for(journey: Journey) -> tuple[str, ...]:
+    """The checks that HARD-fail the gate for THIS journey: always
+    `HARD_ROUTING_CHECKS`, plus the backend-dependent ones when the journey is
+    `_fully_backed` (F4). A journey touching an unbacked tool (e.g. `where_work`,
+    whose `saved_places`/`where_is` are unwired) keeps those checks advisory."""
+    if _fully_backed(journey):
+        return HARD_ROUTING_CHECKS + BACKEND_DEPENDENT_CHECKS
+    return HARD_ROUTING_CHECKS
+
+
+def journeys_gate(
+    graded: dict[str, Result], *, hard_checks: tuple[str, ...] = HARD_ROUTING_CHECKS
+) -> bool:
     """Pass/fail one journey's graded routing for the live gate (D4 tier 2).
 
-    Hard-fails iff any `HARD_ROUTING_CHECKS` result failed. Fail-closed: a missing
-    key counts as a failure, so a caller that forgot to run a hard check cannot
-    pass by omission."""
-    return all(graded.get(name, Result(False, "not run")).passed for name in HARD_ROUTING_CHECKS)
+    Hard-fails iff any check in `hard_checks` failed. Callers pass
+    `hard_checks_for(journey)` to get the per-journey set (F4); the default is the
+    always-hard subset. Fail-closed: a missing key counts as a failure, so a
+    caller that forgot to run a hard check cannot pass by omission."""
+    return all(graded.get(name, Result(False, "not run")).passed for name in hard_checks)

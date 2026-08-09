@@ -62,20 +62,32 @@ source is wrong. A frozen-reply judge cannot see that; the tool path can.
   whether or not that tool's backend was up.
 - **NoSiblingLeakage** — she did *not* reach a plausible-but-wrong neighbour, where
   "neighbour" is an edge in the `IntentGraph` (tool *confusability*, declared once,
-  centrally). **Advisory today** (see below).
+  centrally). **Hard for a fully-backed journey** (F4, see below).
 - **ConvergesInBudget** — she answered within a work-tool-call budget (excludes the
-  terminal `send_reply`). Catches the runaway-search flail. **Advisory.**
+  terminal `send_reply`). Catches the runaway-search flail. **Hard for a
+  fully-backed journey.**
+
+Each journey runs `[evals] journey_samples` (default 3) times and the gate binds
+the strict-MAJORITY per-journey verdict (F8a); ties fail closed. And `JOURNEYS`
+now pairs each tuning incident with a **held-out paraphrase** (same intent, none
+of the doctrine's trigger words), so passing the seed but failing its paraphrase
+exposes memorization rather than routing (F2).
 
 ## Known limitations — read before you trust a number
 
-1. **Tool backends are unwired in the offline pipeline.** The live tier drives the
-   real *model* but the *tools* (HKO weather, Tavily search, place info) report
-   unavailable. A down backend makes the model try fallbacks, which inflates
-   `NoSiblingLeakage` and `ConvergesInBudget` — the D3 measurement saw a carpark
-   query fall into `place_info` only *because* `web_search` had failed. That is why
-   only `PathMatchesIntent` is a hard gate. **To promote the other two to hard:
-   wire real tool backends into the live journeys run, then move them into
-   `HARD_ROUTING_CHECKS`.**
+1. **Backend confound — RESOLVED for backed tools (F4).** The live tier drives the
+   real *model*; the eval used to leave every *tool* backend unwired, so a tool
+   returning `unavailable` drove fallback calls that made `[web_search →
+   unavailable → place_info]` grade identically to `[place_info]` — a leak
+   indistinguishable from a fallback. `nora.app.eval_support.build_eval_tool_registry`
+   now wires **canned** providers for `weather`, `web_search`, `place_info`,
+   `route`, `transit`, `where_is` and `saved_places` (`BACKED_TOOLS`), so each
+   answers `ok` and a leak is a real choice. `NoSiblingLeakage`/`ConvergesInBudget`
+   are therefore **hard for any journey whose tools (required + siblings) are all
+   backed** (`hard_checks_for`), which today is all of them; a journey touching an
+   unbacked tool (a future MCP tool) keeps those two advisory automatically. The
+   presence tools clear the R-31 subset gate because the eval `Circle` roster and
+   the harness room are the same single person.
 2. **Judge detection on diverse fabrications is ~3/5, not 3/3** (DEC-75, C1). The
    adversarial gate's *mechanism* and controls are clean; the judge's *detection*
    of invented-data fabrication on a diverse corpus is the open frontier. Do not
