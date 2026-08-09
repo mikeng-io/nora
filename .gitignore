@@ -61,3 +61,4 @@ deploy/shortener/.terraform/
 deploy/shortener/.terraform.lock.hcl
 deploy/shortener/terraform.tfstate*
 deploy/shortener/*.tfvars
+.eval-cache/

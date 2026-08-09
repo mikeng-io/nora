@@ -200,12 +200,12 @@ async def test_run_adversarial_live_fails_the_gate_on_a_leaky_reply(fake_env, mo
 
 def test_main_exits_zero_for_a_clean_adversarial_run(fake_env, monkeypatch):
     monkeypatch.setattr(run, "_invoke_agent", _fake_invoke_clean)
-    assert run.main("adversarial") == 0
+    assert run.main("adversarial", no_cache=True) == 0
 
 
 def test_main_exits_nonzero_for_a_leaky_adversarial_run(fake_env, monkeypatch):
     monkeypatch.setattr(run, "_invoke_agent", _fake_invoke_leaky)
-    assert run.main("adversarial") == 1
+    assert run.main("adversarial", no_cache=True) == 1
 
 
 # --- integration: the two remediation wirings actually fire (review 2026-08-09) ---
@@ -263,3 +263,47 @@ async def test_frozen_replies_are_seeded_then_replayed(fake_env, monkeypatch, tm
     assert reply_calls["n"] == 1 and cache.exists()          # seeded
     await run._run_adversarial_live((CORPUS / "transcript_injection.yaml",), reply_cache_path=cache)
     assert reply_calls["n"] == 1                              # replayed — no new reply call
+
+
+# --- B1: the content-addressed verdict cache re-runs only what changed -----------
+
+async def test_verdict_cache_hit_reruns_nothing(fake_env, monkeypatch, tmp_path):
+    """An unchanged re-run reuses cached verdicts and makes ZERO model calls; a
+    changed cache-key input (harness version) invalidates and re-runs (B1)."""
+    cache = tmp_path / "verdicts.json"
+    calls = {"n": 0}
+
+    async def _counting(model, system_prompt, message, *, role):
+        calls["n"] += 1
+        return "今晚食飯" if role == "reply" else RUBRIC_OK
+
+    monkeypatch.setattr(run, "_invoke_agent", _counting)
+    await run._run_adversarial_live(
+        (CORPUS / "transcript_injection.yaml",), verdict_cache_path=cache)
+    first = calls["n"]
+    assert first > 0 and cache.exists()                 # seeded
+    await run._run_adversarial_live(
+        (CORPUS / "transcript_injection.yaml",), verdict_cache_path=cache)
+    assert calls["n"] == first                          # cache hit — no new calls
+    # bumping the harness version changes the key → cache miss → re-run
+    monkeypatch.setattr(run, "HARNESS_VERSION", "999")
+    await run._run_adversarial_live(
+        (CORPUS / "transcript_injection.yaml",), verdict_cache_path=cache)
+    assert calls["n"] > first
+
+
+async def test_force_bypasses_the_verdict_cache(fake_env, monkeypatch, tmp_path):
+    cache = tmp_path / "verdicts.json"
+    calls = {"n": 0}
+
+    async def _counting(model, system_prompt, message, *, role):
+        calls["n"] += 1
+        return "今晚食飯" if role == "reply" else RUBRIC_OK
+
+    monkeypatch.setattr(run, "_invoke_agent", _counting)
+    await run._run_adversarial_live(
+        (CORPUS / "transcript_injection.yaml",), verdict_cache_path=cache)
+    seeded = calls["n"]
+    await run._run_adversarial_live((CORPUS / "transcript_injection.yaml",),
+                                    verdict_cache_path=cache, force=True)
+    assert calls["n"] > seeded                          # --force re-ran despite the cache

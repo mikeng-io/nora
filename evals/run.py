@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -185,6 +186,44 @@ def _resolve_judge_model_id(cfg) -> str:
     return judge_model_id
 
 
+# B1: bump when the grading LOGIC changes (judge prompt, rubric, gate, verdict
+# arithmetic) — a cached verdict computed under old logic must not be reused.
+# Not the doctrine or the models (those are keyed separately, below).
+HARNESS_VERSION = "1"
+
+
+def _cache_key(case: dict, *, doctrine_sha256: str, reply_model: str,
+               judge_model: str, judge_samples: int) -> str:
+    """The content-address of ONE case's verdict (B1). It is a pure function of
+    everything that determines the verdict, so an unchanged run hits the cache
+    and re-runs nothing: the case content, the DOCTRINE (what is being tested),
+    both models, the sample count, and the harness version. Change any one and
+    the key changes — a doctrine edit invalidates every case, a single case edit
+    invalidates only that case."""
+    material = json.dumps(
+        {
+            "case": case, "doctrine": doctrine_sha256, "reply_model": reply_model,
+            "judge_model": judge_model, "judge_samples": judge_samples,
+            "harness": HARNESS_VERSION,
+        },
+        sort_keys=True, ensure_ascii=False,
+    )
+    return hashlib.sha256(material.encode()).hexdigest()
+
+
+def _load_verdict_cache(path: Path | None) -> dict[str, dict] | None:
+    """B1 verdict cache: `{cache_key: result_dict}`, or None when no path is given
+    (caching off). A missing file is an empty cache."""
+    if path is None:
+        return None
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def _save_verdict_cache(path: Path | None, cache: dict[str, dict] | None) -> None:
+    if path is not None and cache is not None:
+        path.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
+
+
 def _load_reply_cache(path: Path | None) -> dict[str, str] | None:
     """A3 frozen replies: `{case_name: reply_text}`, or None when no path is given
     (the ordinary live gate — always fresh replies). A missing file is an empty
@@ -249,6 +288,7 @@ async def _invoke_agent(model, system_prompt: str, message: str, *,
 
 async def _run_adversarial_live(
     paths: tuple[Path, ...], *, reply_cache_path: Path | None = None,
+    verdict_cache_path: Path | None = None, force: bool = False,
 ) -> tuple[bool, list[dict]]:
     """Run the adversarial corpus against a REAL judge (deepseek-v4-pro/
     a separate judge model via OmniRoute; spec E.7 criterion #7). the configured model
@@ -302,9 +342,23 @@ async def _run_adversarial_live(
         # saved — so a judge experiment (compare judges/prompts) re-runs against the
         # SAME replies, removing reply stochasticity as a confound.
         reply_cache = _load_reply_cache(reply_cache_path)
+        # B1: a case's verdict is a pure function of its content + doctrine + models
+        # + samples + harness version, so a cached hit re-runs NOTHING (no reply, no
+        # judge). Only a case whose inputs changed re-runs; --force bypasses.
+        verdict_cache = _load_verdict_cache(verdict_cache_path)
 
         results = []
         for case in _load_adversarial_cases(paths):
+            key = _cache_key(
+                case, doctrine_sha256=doctrine.sha256, reply_model=cfg.llm.model,
+                judge_model=judge_model_id, judge_samples=cfg.evals.judge_samples,
+            )
+            if verdict_cache is not None and not force and key in verdict_cache:
+                result = verdict_cache[key]
+                results.append(result)
+                print(f"[cached] {result['name']} — safety={result.get('safety_verdict')} "
+                      f"(reused; no model call)")
+                continue
             reply_text = ""
             rubric_verdict = None
             safety = None
@@ -355,14 +409,17 @@ async def _run_adversarial_live(
                 "safety_verdict": safety,
                 "rubric_verdict": rubric_verdict,
             }
+            if verdict_cache is not None:
+                verdict_cache[key] = result       # B1: store the fresh verdict
             results.append(result)
             status = "PASS" if adversarial_gate([result]) else "FAIL"
             print(f"[{status}] {result['name']} — expect={result['expect']} "
                   f"sent={bool(result['sent'])} leaked={result['leaked']} "
                   f"revealed={result['revealed']} safety={safety} rubric={rubric_verdict} "
                   f"reply={reply_text[:80]!r}")
-        # A3: persist any newly-generated frozen replies for the next run.
+        # persist the frozen replies (A3) and the verdict cache (B1) for next time.
         _save_reply_cache(reply_cache_path, reply_cache)
+        _save_verdict_cache(verdict_cache_path, verdict_cache)
         return adversarial_gate(results), results
     finally:
         await client.close()
@@ -420,13 +477,24 @@ async def _run_suite(paths: tuple[Path, ...], *, sink: EvalSink, run_name: str) 
     return all_passed
 
 
-def main(suite: str, *, export_langfuse: bool = False) -> int:
+#: B1 default verdict-cache location — gitignored, per-suite.
+_CACHE_DIR = REPO_ROOT / ".eval-cache"
+
+
+def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
+         force: bool = False) -> int:
     paths = SUITES.get(suite)
     if paths is None:
         print(f"unknown suite {suite!r}; expected one of {sorted(SUITES)}", file=sys.stderr)
         return 1
     if suite == "adversarial":
-        ok, _results = asyncio.run(_run_adversarial_live(paths))
+        # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
+        # calls. --no-cache disables it; --force re-runs every case (and refreshes it).
+        verdict_cache_path = None if no_cache else _CACHE_DIR / "adversarial.json"
+        if verdict_cache_path is not None:
+            _CACHE_DIR.mkdir(exist_ok=True)
+        ok, _results = asyncio.run(_run_adversarial_live(
+            paths, verdict_cache_path=verdict_cache_path, force=force))
     else:
         cfg = _load_eval_config()
         sink = _build_sink(cfg, export=export_langfuse)
@@ -445,5 +513,14 @@ if __name__ == "__main__":
              "(also requires [evals.langfuse].enabled = true in config; the gate's "
              "verdict never depends on this succeeding).",
     )
+    parser.add_argument(
+        "--no-cache", action="store_true",
+        help="Disable the adversarial verdict cache — re-run every case live (B1).",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Ignore cached verdicts and re-run every case, refreshing the cache (B1).",
+    )
     args = parser.parse_args()
-    sys.exit(main(args.suite, export_langfuse=args.export_langfuse))
+    sys.exit(main(args.suite, export_langfuse=args.export_langfuse,
+                  no_cache=args.no_cache, force=args.force))
