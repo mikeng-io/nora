@@ -182,6 +182,10 @@ judge_model = "deepseek/deepseek-v4-flash"
 # 3/3 across runs), so the gate binds the MAJORITY of 3 grades. Odd so a majority
 # always exists.
 judge_samples = 3
+# journey_samples (F8a): --suite journeys runs each journey k times, majority-gated
+# — routing is stochastic, n=1 both flakes a good model and passes a lucky broken
+# one. Odd so a majority always exists; ties fail closed.
+journey_samples = 3
 
 [evals.langfuse]
 # Verified live 2026-08-05: three datasets (nora-trigger / nora-no-trigger /

@@ -39,7 +39,11 @@ class Journey:
     note: str
 
 
-JOURNEYS: tuple[Journey, ...] = (
+# The tuning set — the four incidents the E1/E2 fix was written from. Grading a
+# fix on ONLY these is the C1/DEC-75 overfitting trap (the eval can no longer tell
+# rule-adherence from memorization of the incident's exact words), which is why
+# `PARAPHRASE_JOURNEYS` below exists.
+SEED_JOURNEYS: tuple[Journey, ...] = (
     Journey(
         intent=Intent(name="weather", required=frozenset({"weather"}), budget=1),
         message="今日凍唔凍呀?",  # "is it cold today?"
@@ -80,6 +84,45 @@ JOURNEYS: tuple[Journey, ...] = (
         ),
     ),
 )
+
+
+# HELD-OUT paraphrases (F2, external review 2026-08-10): the SAME routing intent
+# as a seed journey, phrased so it does NOT reuse the doctrine's or the seed's
+# literal trigger words ("天氣", "返工", "屋企", "車位", "關門"). conduct.md E2 now
+# literally teaches "their home, their work, «屋企»… look for it before you decide
+# you don't know it"; grading only the verbatim incident measures memorization.
+# These test whether the ROUTING generalizes — a model that passes the seed but
+# fails its paraphrase has learned the phrase, not the rule.
+PARAPHRASE_JOURNEYS: tuple[Journey, ...] = (
+    Journey(
+        intent=Intent(name="weather_alt", required=frozenset({"weather"}), budget=1),
+        message="出街使唔使帶遮呀?",  # "do I need to bring an umbrella out?" — no "天氣"
+        note="Weather intent without the word weather — routes to `weather`, trap `web_search`.",
+    ),
+    Journey(
+        intent=Intent(name="carpark_alt", required=frozenset({"web_search"}), budget=3),
+        message="銅鑼灣時代廣場泊車貴唔貴呀而家?",  # parking price/availability, different mall
+        note="Carpark/parking lookup, no dedicated tool → `web_search`; trap `place_info`.",
+    ),
+    Journey(
+        intent=Intent(name="mall_alt", required=frozenset({"place_info"}), budget=2),
+        message="海港城宜家仲營業緊嗎?",  # "is Harbour City still open now?" — no "關門"
+        note="Is-a-place-open, different mall, no 'close' word → `place_info`; trap `web_search`.",
+    ),
+    Journey(
+        intent=Intent(name="where_work_alt", required=frozenset({"saved_places"}), budget=2),
+        message="我間公司個地址係邊嚟?",  # "what's my company's address?" — no "返工"/"屋企"
+        note=(
+            "A saved-place question (the company/office this household saved) phrased "
+            "as «公司地址», not «返工» — routes to `saved_places`, trap `where_is`."
+        ),
+    ),
+)
+
+
+# The full gated set: tuning incidents PLUS their held-out paraphrases. A fix that
+# passes the seeds but fails the paraphrases has overfit to the incident's words.
+JOURNEYS: tuple[Journey, ...] = SEED_JOURNEYS + PARAPHRASE_JOURNEYS
 
 
 def grade(journey: Journey, trajectory) -> dict[str, Result]:

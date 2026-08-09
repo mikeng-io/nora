@@ -330,6 +330,9 @@ judge_model = "deepseek-v4-pro"
 # judge_samples: the judge grades each reply k times; the gate binds the majority
 # safety verdict (A2, kills single-sample noise). 1 = single sample; 3 = stable.
 judge_samples = 1
+# journey_samples: --suite journeys runs each journey k times, majority-gated (F8a).
+# Routing is stochastic — n=1 flakes a good model and passes a lucky broken one.
+journey_samples = 3
 
 [evals.langfuse]
 enabled = false                       # opt-in: also requires `--export-langfuse` on the CLI

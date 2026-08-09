@@ -22,6 +22,11 @@ TRAPS = {
     "carpark": "place_info",
     "mall": "web_search",
     "where_work": "where_is",
+    # F2 held-out paraphrases — same intent, same trap, different words.
+    "weather_alt": "web_search",
+    "carpark_alt": "place_info",
+    "mall_alt": "web_search",
+    "where_work_alt": "where_is",
 }
 
 
@@ -121,6 +126,53 @@ def test_journeys_is_a_registered_suite():
     from evals.run import SUITES
 
     assert "journeys" in SUITES
+
+
+# --- F8a: majority-of-k journeys gate ---------------------------------------
+
+
+def _weather_journey():
+    from evals.evaluators import Intent
+    from evals.journeys import Journey
+
+    return Journey(
+        intent=Intent(name="w", required=frozenset({"weather"}), budget=1),
+        message="x", note="",
+    )
+
+
+async def _run_with_scripted(monkeypatch, trajectories, *, samples):
+    """Drive `_run_journeys_live` offline by scripting what `run_case` returns."""
+    from evals import run as run_mod
+
+    seq = iter(trajectories)
+
+    async def fake_run_case(case, *, live=False):
+        return next(seq)
+
+    monkeypatch.setattr(run_mod, "run_case", fake_run_case)
+    return await run_mod._run_journeys_live([_weather_journey()], samples=samples)
+
+
+async def test_journey_passes_on_majority(monkeypatch):
+    # 2 of 3 runs reach weather → strict majority → journey PASSES.
+    ok, results = await _run_with_scripted(monkeypatch, [
+        _traj(["weather", "send_reply"]),
+        _traj(["weather", "send_reply"]),
+        _traj(["web_search", "send_reply"]),  # missed weather this run
+    ], samples=3)
+    assert ok
+    assert results[0]["gate_pass"] == 2
+
+
+async def test_journey_ties_fail_closed(monkeypatch):
+    # 1 of 2 runs pass — a tie — must FAIL (strict majority, n_pass*2 > samples).
+    ok, results = await _run_with_scripted(monkeypatch, [
+        _traj(["weather", "send_reply"]),
+        _traj(["web_search", "send_reply"]),
+    ], samples=2)
+    assert not ok
+    assert results[0]["gate_pass"] == 1
 
 
 # --- live regression gate (network-marked) ---------------------------------

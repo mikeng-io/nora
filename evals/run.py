@@ -482,34 +482,46 @@ async def _run_suite(paths: tuple[Path, ...], *, sink: EvalSink, run_name: str) 
     return all_passed
 
 
-async def _run_journeys_live(journeys=JOURNEYS) -> tuple[bool, list[dict]]:
+_ROUTING_CHECKS = ("PathMatchesIntent", "NoSiblingLeakage", "ConvergesInBudget")
+
+
+async def _run_journeys_live(journeys=JOURNEYS, *, samples: int = 1) -> tuple[bool, list[dict]]:
     """D4 tier 2: live-run each seed journey through Nora's REAL model and grade
     its ROUTING (the intent graph, D2). This is the gate the operator runs before
     a change lands — the "intercept before live" step — and it needs the network
     (`run_case(..., live=True)`; the LLM key env must be set).
 
-    Hard-fails on `HARD_ROUTING_CHECKS` (PathMatchesIntent today) via
-    `journeys_gate`; the other routing checks are printed but advisory, because a
-    down tool backend inflates them (see `docs/eval-sop.md` and D3's finding). All
-    checks are always PRINTED, passed or not — an advisory FAIL is a signal to the
-    operator even when it does not fail the gate.
+    Each journey runs `samples` times and the gate binds the MAJORITY per-journey
+    verdict (F8a): routing is stochastic, so n=1 both flakes a good model and
+    lets a lucky broken one through. Ties fail closed (strict majority). The gate
+    hard-fails on `HARD_ROUTING_CHECKS` (via `journeys_gate`); the other checks
+    are printed with their pass RATE across the samples but stay advisory, because
+    a down tool backend inflates them (see `docs/eval-sop.md` and D3's finding).
     """
     all_passed = True
     results: list[dict] = []
     for journey in journeys:
-        trajectory = await run_case(
-            Case(name=journey.intent.name, input=journey.message), live=True
-        )
-        graded = grade(journey, trajectory)
-        passed = journeys_gate(graded)
-        all_passed = all_passed and passed
-        results.append({"journey": journey.intent.name, "graded": graded, "passed": passed})
-        for name, result in graded.items():
+        runs: list[dict] = []
+        for _ in range(samples):
+            trajectory = await run_case(
+                Case(name=journey.intent.name, input=journey.message), live=True
+            )
+            graded = grade(journey, trajectory)
+            runs.append({
+                "graded": graded, "passed": journeys_gate(graded),
+                "tool_calls": list(trajectory.tool_calls),
+            })
+        n_pass = sum(1 for r in runs if r["passed"])
+        journey_passed = n_pass * 2 > samples  # strict majority; ties fail closed
+        all_passed = all_passed and journey_passed
+        results.append({"journey": journey.intent.name, "runs": runs,
+                        "passed": journey_passed, "gate_pass": n_pass, "samples": samples})
+        status = "PASS" if journey_passed else "FAIL"
+        print(f"[{status}] journeys/{journey.intent.name} — gate majority {n_pass}/{samples}")
+        for name in _ROUTING_CHECKS:
             hard = name in HARD_ROUTING_CHECKS
-            status = "PASS" if result.passed else ("FAIL" if hard else "warn")
-            tier = "hard" if hard else "advisory"
-            print(f"[{status}] journeys/{journey.intent.name} — {name} ({tier})"
-                  + (f": {result.reason}" if result.reason else ""))
+            rate = sum(1 for r in runs if r["graded"][name].passed)
+            print(f"    {name} ({'hard' if hard else 'advisory'}): {rate}/{samples} pass")
     return all_passed, results
 
 
@@ -525,8 +537,10 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
         return 1
     if suite == "journeys":
         # D4 tier 2: live routing gate. No case files, no verdict cache (routing is
-        # cheap and the whole point is to see what the CURRENT model does).
-        ok, _results = asyncio.run(_run_journeys_live())
+        # cheap and the whole point is to see what the CURRENT model does). Each
+        # journey runs `[evals] journey_samples` times, majority-gated (F8a).
+        cfg = _load_eval_config()
+        ok, _results = asyncio.run(_run_journeys_live(samples=cfg.evals.journey_samples))
     elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
         # calls. --no-cache disables it; --force re-runs every case (and refreshes it).

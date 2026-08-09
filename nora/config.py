@@ -658,6 +658,12 @@ class EvalsConfig(BaseModel):
     # across runs); 3 kills that single-sample noise. Odd is preferable so a
     # majority always exists.
     judge_samples: int = Field(default=1, ge=1)
+    # How many times `--suite journeys` runs EACH journey; the gate binds the
+    # MAJORITY per-journey verdict (F8a, external review 2026-08-10). Routing is
+    # stochastic — a single run passes an 85%-per-journey model only ~52% of the
+    # time and lets a lucky broken model through — so n=1 is too noisy to gate on.
+    # Odd is preferable so a majority always exists.
+    journey_samples: int = Field(default=3, ge=1)
 
 
 class AgentConfig(BaseModel):
