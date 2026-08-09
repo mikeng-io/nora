@@ -137,6 +137,20 @@ class NativeTool:
     terminal: bool = False
     time_shiftable: bool | None = None
     plugin: bool = False
+    # `source_tier` is the sixth (E1/DEC-77). It answers "where does this tool's
+    # answer COME from", and it exists because the model was reaching past a
+    # closer source for the open web — a mall's hours web-searched instead of
+    # asked of `place_info`, a saved «work» place answered "dunno" instead of
+    # read from `saved_places`. Three ranks, closest first: "confirmed" (Nora's
+    # own live/data tools — the weather feed, a bus, a route, a place, a fix),
+    # "remembered" (what this household saved or told her), "web" (the open web,
+    # last resort). `None` means the tool is not a fact SOURCE at all — an action
+    # (`send_reply`, `remind`) or a pure function (`calculate`) — and is left out
+    # of the priority nudge. Read through `ToolRegistry.tiers()` and rendered as
+    # one sentence into the capability block, the same way `time_shiftable`
+    # renders the clock line — so declaring it is not bookkeeping: it changes
+    # what the always-on block tells the model to reach for first.
+    source_tier: str | None = None
 
 
 # ONE line per tool, in the order the capability block renders them. Keep each
@@ -164,7 +178,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # rather than letting `transit` look like a special case.
     "now": NativeTool(4, "anything that depends on when it is — never guess the "
                          "date or time from the transcript",
-                      time_shiftable=False),
+                      time_shiftable=False, source_tier="confirmed"),
     # 4, and the only budget here NOT sized by what a call costs. This is the
     # cheapest tool in the set by a wide margin — a pure function over a
     # string, no network, no clock, no daemon, measured at well under a
@@ -197,7 +211,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "transit": NativeTool(4, "a Hong Kong bus or feeder route somebody named by number "
                              "— never state a bus time you did not get from here, and "
                              "never use it for a bus later than now",
-                          time_shiftable=False),
+                          time_shiftable=False, source_tier="confirmed"),
     # 2, sized like `transit`: one message can name a route to plan for two
     # people leaving from two places, and two calls plus a reply still leave
     # half the turn. Each call is one or two Google Places lookups plus one
@@ -212,7 +226,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "route": NativeTool(4, "how to travel between two places, or how long a journey "
                            "takes — the only tool that can answer about a trip at a "
                            "later time",
-                        time_shiftable=True),
+                        time_shiftable=True, source_tier="confirmed"),
     # 2, and HELD at 2 through the budget doubling (Kimi audit 2026-08-08): each
     # call is no longer a cheap local read — with the DEC-67 live refresh it can
     # BLOCK up to `refresh_timeout_seconds` (~8-10s) pinging the phone, so a
@@ -227,7 +241,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # an answer, never the end of one.
     "where_is": NativeTool(2, "where somebody in this conversation is — never state "
                              "or guess a location you did not get from here",
-                          time_shiftable=False),
+                          time_shiftable=False, source_tier="confirmed"),
     # 2, sized like `route`: one message can ask after two spots («邊間好啲»),
     # each a single Google Places lookup. `time_shiftable=None`: a place's rating
     # has no time dimension the way `route` does — «幾好食» is the same question
@@ -235,13 +249,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # fresh per call). `terminal=False`: a rating is the middle of an answer.
     "place_info": NativeTool(4, "how good or how pricey a place is — a shop, a "
                                 "restaurant, a clinic — its rating and whether it's "
-                                "open; never guess a rating you did not get from here"),
+                                "open; never guess a rating you did not get from here",
+                             source_tier="confirmed"),
     # 1, like `group_members`: it lists a small fixed set for THIS room, and
     # calling it twice in a turn returns the same list. `time_shiftable=None`:
     # the household's saved names don't decay. Not terminal.
     "saved_places": NativeTool(1, "the names this household has saved for places "
                                   "(«Home», «Miles Home») — check before routing to a "
-                                  "place someone calls by a personal name"),
+                                  "place someone calls by a personal name",
+                               source_tier="remembered"),
     # **`load_transcript`, not `read_buffer`, and that was MEASURED, not argued
     # (DEC-58, same harness as DEC-39).** The old name was a lie — nothing is
     # buffered; it reads durable rows off disk (GLOSSARY). With the docstring
@@ -260,7 +276,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # threshold). A name is not documentation; it is the feature the router
     # matches on.
     "load_transcript": NativeTool(4, "something was said further back than the messages "
-                                 "you were shown"),
+                                 "you were shown",
+                                  source_tier="remembered"),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
     # `llm.limits.turns = 8` is the real global ceiling — these numbers only
@@ -272,13 +289,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # nothing and can only crowd out `send_reply`.
     "group_members": NativeTool(1, "who is in this conversation. People who have not "
                                    "spoken are still here, and people a message names "
-                                   "may not be"),
+                                   "may not be",
+                                source_tier="confirmed"),
     # 2: one message routinely names two people (「阿豹同峰哥去咗邊」). The call
     # itself is a dict lookup over the cached roster — free — so the budget is
     # sized by round trips, not by work, and two lookups plus a reply still
     # leaves half the turn budget. A third name is rare enough to be worth
     # answering from what she has.
-    "lookup_person": NativeTool(4, "who a name or nickname in a message refers to"),
+    "lookup_person": NativeTool(4, "who a name or nickname in a message refers to",
+                                source_tier="remembered"),
     # 2: same shape, but each call is also an HTTP request (~0.2 s measured).
     # Two covers the question this exists for — "what is this person like" for
     # the person who asked plus one person they asked about — and caps how much
@@ -305,7 +324,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "about": NativeTool(4, "what someone is LIKE, when the answer is not in the "
                            "conversation. «I know nothing about them yet» and «I could "
                            "not check» are different answers; never report the second "
-                           "as the first"),
+                           "as the first",
+                        source_tier="remembered"),
     # 1, not 2: `ask_memory` REASONS (a slow dialectic call, ~14-19s), so one per
     # turn is the ceiling — a second would blow the loop budget on its own. It is
     # the escalation from `about` (retrieve), reached only when a profile lookup
@@ -313,11 +333,13 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "ask_memory": NativeTool(1, "REASON about someone to answer a specific "
                                 "question that has to be pieced together, when a "
                                 "plain profile («about») is not enough — slower and "
-                                "deeper; use sparingly"),
+                                "deeper; use sparingly",
+                             source_tier="remembered"),
     "search_memory": NativeTool(4, "find the exact WORDS somebody said in this "
                                    "group, further back than load_transcript "
                                    "reaches — a phrase or a topic; not a profile "
-                                   "(«about») and not a reasoned answer («ask_memory»)"),
+                                   "(«about») and not a reasoned answer («ask_memory»)",
+                                source_tier="remembered"),
     # 2, sized like the other look-it-up tools: one message can name two images
     # (a photo AND a screenshot), and two describe calls plus a reply still leave
     # the turn. The number is not what keeps two calls inside the loop budget —
@@ -339,14 +361,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "web_search": NativeTool(4, "look something up on the web when the answer isn't in "
                             "the conversation and isn't a bus, a route, the weather or a "
                             "person you know — you get ranked results, each a title, a "
-                            "link and a content snippet"),
+                            "link and a content snippet",
+                             source_tier="web"),
     # ONE weather verb, a flag for depth (DEC-72): current conditions + warnings
     # (typhoon/rainstorm) + today's outlook always; the 9-day forecast on request.
     # Warnings ride EVERY answer so a signal in force is never missed. Budget 2 —
     # one HKO round is usually enough; a second covers a follow-up.
     "weather": NativeTool(2, "the weather in Hong Kong — current temperature and humidity, "
                           "any warnings in force (typhoon signal, rainstorm, very hot), "
-                          "today's outlook, and the multi-day forecast when asked"),
+                          "today's outlook, and the multi-day forecast when asked",
+                          source_tier="confirmed"),
     # The three reminder verbs (design spec §7). All 2, and the number is sized
     # by the CONVERSATION rather than by cost: none of the three leaves the host
     # or the database, so a call is one model round trip and nothing else, and

@@ -237,6 +237,23 @@ class ToolRegistry:
             name for name, spec in NATIVE_TOOLS.items() if spec.time_shiftable is False
         )
 
+    def web_tier_tools(self) -> tuple[str, ...]:
+        """The tools whose answer comes from the OPEN WEB (`source_tier == "web"`),
+        in table order (E1/DEC-77).
+
+        Read by `capability()` to render the sourcing sentence — the one nudge
+        that names the last-resort tier explicitly so the priority
+        confirmed → remembered → web is stated, not merely implied. Table order,
+        a tuple, for the same reason `live_only_tools` is: its only consumer
+        renders it into a sentence and a set would reorder that sentence between
+        builds. `web` rather than the whole `source_tier` partition because the
+        sentence only needs to NAME the tier the model over-reached into; the
+        closer tiers it describes by category, and a tool that grows a second web
+        verb joins this set (and the sentence) for free."""
+        return tuple(
+            name for name, spec in NATIVE_TOOLS.items() if spec.source_tier == "web"
+        )
+
     def tool_names(self) -> tuple[str, ...]:
         """Every registered tool's name, for the doctrine loader's catalogue gate.
 
@@ -296,10 +313,24 @@ class ToolRegistry:
             "already wrong for any other time, so never quote one to answer about "
             "later.\n" if live_only else ""
         )
+        # The sourcing nudge (E1/DEC-77): state the priority confirmed → remembered
+        # → web so a closer source is reached BEFORE the open web. Named from the
+        # `web` tier (rendered, so it cannot rot); the two closer tiers are
+        # described by category rather than enumerated, to stay one sentence in a
+        # block paid on every call. The model was web-searching a mall's hours and
+        # answering "dunno" about a saved place — a closer source existed for both.
+        web = self.web_tier_tools()
+        sourcing = (
+            f"When a fact could come from more than one place, prefer your own: a "
+            f"Hong Kong thing you can confirm (the weather, a place, a bus, a route) "
+            f"and a place or person this household has named or saved both come before "
+            f"{' or '.join(web)}, which reaches the open web and is the last resort, "
+            f"not the first move.\n" if web else ""
+        )
         return (
             "These are the tools you were given. Their schemas say what each one "
             "takes; this says when to reach for it.\n" + "\n".join(lines) + "\n"
-            + clock +
+            + clock + sourcing +
             "The things here that reach outside this conversation are live bus data "
             "and routing (a paid map service). When you cannot find something out, say "
             "so in one clause and move on."

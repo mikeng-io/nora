@@ -237,6 +237,36 @@ def test_transit_is_declared_live_only_and_not_terminal():
     assert "transit" not in ToolRegistry().terminal_tools()
 
 
+def test_web_search_is_the_only_web_tier_tool():
+    """E1/DEC-77: the web tier is the last-resort rank the sourcing nudge names.
+    `web_tier_tools` is derived from the table, so a second web verb would join it
+    (and the rendered sentence) automatically."""
+    assert ToolRegistry().web_tier_tools() == ("web_search",)
+
+
+def test_the_capability_block_states_the_sourcing_priority():
+    """A declared `source_tier` nothing renders is decoration (same argument as
+    the clock line). The gate found the model web-searching a fact with a closer
+    source; the only place a priority can reach her is the prompt."""
+    block = ToolRegistry().capability()
+    assert "prefer your own" in block
+    assert "web_search, which reaches the open web and is the last resort" in block
+
+
+def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
+    """The taxonomy must stay COMPLETE over the tools routing actually confuses —
+    a new local tool added untagged would silently sit outside the priority. Pins
+    the tier of each tool in the seed confusability clusters (D2)."""
+    from nora.agent.tools import NATIVE_TOOLS
+    expected = {
+        "weather": "confirmed", "transit": "confirmed", "route": "confirmed",
+        "place_info": "confirmed", "where_is": "confirmed",
+        "saved_places": "remembered", "web_search": "web",
+    }
+    for name, tier in expected.items():
+        assert NATIVE_TOOLS[name].source_tier == tier, name
+
+
 # ---- the plugin-provided activation tool (DEC-50, activating DEC-48) ----------
 
 def test_skills_is_budgeted_so_r7_admits_it_but_the_registry_does_not_build_it():
