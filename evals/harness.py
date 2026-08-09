@@ -155,10 +155,17 @@ def _tool_calls_from_metrics(metrics: Metrics) -> list[str]:
     "same same but different" signal; a strict path-order evaluator would need a
     separate ordered trace and is out of scope here.
 
-    `status` ("ok"/"refused"/"unavailable") is summed over on purpose: a tool
-    the model TRIED to call is a tool it reached for, whether or not the guard
-    or the tool body let it through — the trajectory is about intent, and a
-    refused call is still evidence of the model's routing choice.
+    `status` ("ok"/"refused"/"unavailable") is summed over on purpose: a call the
+    tool BODY saw is a routing choice whether or not it succeeded — a `place_info`
+    that refused a person name still reached for place_info. But this counts only
+    calls that reached the tool body: a call `ReplyGuard` VETOES first (R-7 budget,
+    an unknown/hallucinated name) records `nora_guard_vetoes_total{rule}` — NO
+    `tool` label — and is invisible here (external review, 2026-08-10). So the
+    reconstructed count is a LOWER BOUND on attempts, capped by the ReplyGuard
+    budgets: `ConvergesInBudget` therefore cannot see the worst flail (a tool
+    hammered past its budget), and a journey budget ≥ a tool's guard budget can
+    never fail on that tool. Good enough for tool-CHOICE grading, not for a true
+    attempt count.
     """
     calls: list[str] = []
     for (name, labels), value in metrics.snapshot().items():

@@ -70,6 +70,20 @@ def test_no_journey_tool_is_live_unmeasurable():
     assert used.isdisjoint(UNMEASURABLE_LIVE), used & UNMEASURABLE_LIVE
 
 
+def test_every_journey_required_tool_is_in_the_graph():
+    """A required tool with NO graph edges makes `NoSiblingLeakage` vacuous — it
+    passes no matter what she leaks into (external review, 2026-08-10). Forcing
+    every journey's required tool to be a graph node means its confusability was
+    declared, not forgotten; a new journey whose tool has no edges fails here
+    rather than silently weakening the leakage check."""
+    from evals.evaluators import SEED_INTENT_GRAPH
+
+    nodes = SEED_INTENT_GRAPH.nodes()
+    for journey in JOURNEYS:
+        missing = journey.intent.required - nodes
+        assert not missing, f"{journey.intent.name}: required tool(s) not in graph: {missing}"
+
+
 # --- journeys_gate (D4 tier 2 gate logic) ----------------------------------
 
 

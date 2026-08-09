@@ -313,12 +313,20 @@ class ToolRegistry:
             "already wrong for any other time, so never quote one to answer about "
             "later.\n" if live_only else ""
         )
-        # The sourcing nudge (E1/DEC-77): state the priority confirmed → remembered
-        # → web so a closer source is reached BEFORE the open web. Named from the
+        # The sourcing nudge (E1/DEC-77): a TWO-level ordering — your own sources
+        # (confirmed AND remembered, together) before the open web. Named from the
         # `web` tier (rendered, so it cannot rot); the two closer tiers are
         # described by category rather than enumerated, to stay one sentence in a
         # block paid on every call. The model was web-searching a mall's hours and
         # answering "dunno" about a saved place — a closer source existed for both.
+        #
+        # Deliberately NOT "confirmed → remembered → web": confirmed vs remembered
+        # is PROVENANCE, not precedence. Within the location cluster remembered
+        # must sometimes OUTRANK confirmed — "我邊度返工" wants the saved «work»
+        # (remembered `saved_places`) over a live GPS fix (confirmed `where_is`) —
+        # so ranking confirmed above remembered would push toward that exact trap
+        # (external review, 2026-08-10). The precedence the model needs is only
+        # own-over-web; which own source fits is the tool's own `when` clause.
         web = self.web_tier_tools()
         sourcing = (
             f"When a fact could come from more than one place, prefer your own: a "

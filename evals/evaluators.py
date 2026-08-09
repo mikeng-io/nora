@@ -162,6 +162,10 @@ SEED_INTENT_GRAPH = IntentGraph(
         ("transit", "web_search"),
         ("place_info", "web_search"),
         ("saved_places", "web_search"),
+        # the ambient-short-question pair: "外面凍唔凍?" → weather vs "我而家喺邊?"
+        # → where_is is the graph's own motivating example, and it needs its edge
+        # or that exact confusion is unpoliced (external review, 2026-08-10).
+        ("weather", "where_is"),
         # the location cluster
         ("where_is", "saved_places"),
         ("where_is", "place_info"),
