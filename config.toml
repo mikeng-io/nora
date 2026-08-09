@@ -169,9 +169,10 @@ headers_env = "LANGFUSE_OTLP_HEADERS"                      # env var NAME holdin
 [evals]
 # The model that GRADES the adversarial live run (DEC-75). MUST differ from
 # llm.model (deepseek-v4-flash) — a model grading its own output self-scores, and
-# the runner refuses that. deepseek-v4-pro is sharp but dear; now that the judge
-# sees the source data (Gap 1 grounded), a cheaper DIFFERENT model is a fair
-# trade — change it here to tune cost.
+# the runner refuses that. Kept at deepseek-v4-pro: a MEASURED run had grounded
+# flash miss fabrications grounded pro caught, so pro stays the conservative
+# default (a weak judge misses fabrications; a strong one only costs money). The
+# judge runs once per graded case, pre-deploy only — a handful of calls per run.
 judge_model = "deepseek-v4-pro"
 
 [evals.langfuse]

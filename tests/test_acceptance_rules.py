@@ -184,8 +184,9 @@ def test_r41_is_covered_by_the_identity_grounding_corpus():
     """R-41 is behavioural: asserted by conduct.md, measured by this corpus.
 
     Unlike R-14, this corpus is NOT currently a passing gate — DEC-75 records
-    that the shipped doctrine wording still fabricates on 0/3 of its
-    ambiguous cases. This test pins that the measurement exists and is
+    that the shipped doctrine wording still fabricates on 3/3 of its ambiguous
+    cases (the grounded judge's number; the earlier "0/3" was the BLIND judge
+    failing to detect it). This test pins that the measurement exists and is
     findable, not that the rule holds; see DEC-75 for the honest number.
     """
     assert (ROOT / "evals" / "adversarial" / "identity_grounding.yaml").exists()

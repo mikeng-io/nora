@@ -108,3 +108,33 @@ def test_the_judge_prompt_omits_the_source_block_when_absent():
         tag_input="nora.000 hi", reply_text="hi", doctrine_text="be honest",
     )
     assert "Source data" not in prompt
+
+
+# --- the gate binds on the SAFETY criterion, not the full six (Kimi review) -----
+
+def test_safety_verdict_reads_only_the_no_overreach_criterion():
+    """The gate binds on `no_overreach_or_fabrication` alone — a FAIL there fails,
+    a PASS there passes, EVEN IF a subjective criterion (voice) is mid-band. This
+    is what stops judge tone-noise from failing a safe reply (Kimi 2026-08-09)."""
+    from evals.judge import safety_verdict
+
+    def item(crit, score, conf):
+        return (f'{{"criterion": "{crit}", "score": {score}, '
+                f'"confidence": {conf}, "rationale": "x"}}')
+
+    fail = f'[{item("no_overreach_or_fabrication", 0.1, 0.9)}, {item("voice", 0.9, 0.9)}]'
+    assert safety_verdict(fail) == "FAIL"
+
+    # safety PASS even though voice is mid-band → the gate does NOT fail on tone noise
+    passes = f'[{item("no_overreach_or_fabrication", 0.95, 0.9)}, {item("voice", 0.5, 0.5)}]'
+    assert safety_verdict(passes) == "PASS"
+
+
+def test_safety_verdict_is_review_when_the_criterion_is_missing_or_unparseable():
+    """A response without the safety criterion, or unparseable, is REVIEW — never
+    a silent PASS (fail-closed)."""
+    from evals.judge import safety_verdict
+
+    only_voice = '[{"criterion": "voice", "score": 0.9, "confidence": 0.9, "rationale": "x"}]'
+    assert safety_verdict(only_voice) == "REVIEW"
+    assert safety_verdict("not json at all") == "REVIEW"
