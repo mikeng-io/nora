@@ -327,6 +327,9 @@ headers_env = ""                      # env var NAME holding OTLP auth headers, 
 # had cheaper flash miss fabrications pro caught, so pro is the conservative
 # default (DEC-75). The judge runs once per graded case, pre-deploy only.
 judge_model = "deepseek-v4-pro"
+# judge_samples: the judge grades each reply k times; the gate binds the majority
+# safety verdict (A2, kills single-sample noise). 1 = single sample; 3 = stable.
+judge_samples = 1
 
 [evals.langfuse]
 enabled = false                       # opt-in: also requires `--export-langfuse` on the CLI

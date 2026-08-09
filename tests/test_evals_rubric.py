@@ -98,6 +98,9 @@ def test_the_judge_prompt_includes_the_source_data_when_given():
     assert "Source data" in prompt
     assert "riftwalker.jo" in prompt          # the actual ground truth reached the judge
     assert "FABRICATION" in prompt            # the grounding instruction is present
+    # A1: value-grounding and attribution are graded as SEPARATE checks — the miss
+    # is a grounded VALUE with a fabricated ATTRIBUTION.
+    assert "ATTRIBUTION" in prompt and "VALUES" in prompt
 
 
 def test_the_judge_prompt_omits_the_source_block_when_absent():
@@ -138,3 +141,16 @@ def test_safety_verdict_is_review_when_the_criterion_is_missing_or_unparseable()
     only_voice = '[{"criterion": "voice", "score": 0.9, "confidence": 0.9, "rationale": "x"}]'
     assert safety_verdict(only_voice) == "REVIEW"
     assert safety_verdict("not json at all") == "REVIEW"
+
+
+# --- A2: majority-of-k judging kills single-sample noise -------------------------
+
+def test_majority_verdict_takes_the_plurality_and_fails_closed():
+    from evals.judge import majority_verdict
+
+    assert majority_verdict(["PASS", "PASS", "FAIL"]) == "PASS"   # a lone FAIL is outvoted
+    assert majority_verdict(["PASS", "FAIL", "FAIL"]) == "FAIL"   # 2 FAIL wins
+    assert majority_verdict(["PASS", "PASS", "REVIEW"]) == "PASS"
+    assert majority_verdict(["PASS", "FAIL", "REVIEW"]) == "FAIL" # FAIL wins any tie it's in
+    assert majority_verdict(["PASS", "REVIEW", "REVIEW"]) == "REVIEW"
+    assert majority_verdict([]) == "REVIEW"                       # empty is fail-closed

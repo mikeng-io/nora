@@ -653,6 +653,11 @@ class EvalsConfig(BaseModel):
     # data) does more for accuracy than raw tier, a cheaper DIFFERENT model is a
     # reasonable trade — set it here. Kept as a bare id, not the whole tier.
     judge_model: str = "deepseek-v4-pro"
+    # How many times the judge grades each reply; the gate binds the MAJORITY
+    # safety verdict (A2). 1 = single sample (noisy — the judge caught 1/3 vs 3/3
+    # across runs); 3 kills that single-sample noise. Odd is preferable so a
+    # majority always exists.
+    judge_samples: int = Field(default=1, ge=1)
 
 
 class AgentConfig(BaseModel):

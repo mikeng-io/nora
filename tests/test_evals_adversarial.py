@@ -242,3 +242,24 @@ async def test_the_transcript_reaches_the_judge_prompt(fake_env, monkeypatch):
     await run._run_adversarial_live((CORPUS / "transcript_injection.yaml",))
     # the transcript's attack text reached the judge prompt
     assert judge_prompts and "ignore" in judge_prompts[0].lower()
+
+
+# --- A3: the frozen-reply cache replays replies (no reply-model call) ------------
+
+async def test_frozen_replies_are_seeded_then_replayed(fake_env, monkeypatch, tmp_path):
+    """First run generates + saves replies; a second run with the same cache reuses
+    them and NEVER invokes the reply model again (A3 — removes reply stochasticity)."""
+    cache = tmp_path / "replies.json"
+    reply_calls = {"n": 0}
+
+    async def _counting(model, system_prompt, message, *, role):
+        if role == "reply":
+            reply_calls["n"] += 1
+            return "今晚食飯"
+        return RUBRIC_OK
+
+    monkeypatch.setattr(run, "_invoke_agent", _counting)
+    await run._run_adversarial_live((CORPUS / "transcript_injection.yaml",), reply_cache_path=cache)
+    assert reply_calls["n"] == 1 and cache.exists()          # seeded
+    await run._run_adversarial_live((CORPUS / "transcript_injection.yaml",), reply_cache_path=cache)
+    assert reply_calls["n"] == 1                              # replayed — no new reply call

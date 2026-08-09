@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 from datetime import UTC, datetime
@@ -56,7 +57,7 @@ from evals.evaluators import (
     ToolBudget,
 )
 from evals.harness import Case, load_cases, run_case
-from evals.judge import _build_judge_prompt, evaluate_raw, safety_verdict
+from evals.judge import _build_judge_prompt, evaluate_raw, majority_verdict, safety_verdict
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
     CAPABILITY_BLOCK,
@@ -184,6 +185,20 @@ def _resolve_judge_model_id(cfg) -> str:
     return judge_model_id
 
 
+def _load_reply_cache(path: Path | None) -> dict[str, str] | None:
+    """A3 frozen replies: `{case_name: reply_text}`, or None when no path is given
+    (the ordinary live gate — always fresh replies). A missing file is an empty
+    cache the run seeds; the loop reuses a cached reply and generates+stores a miss."""
+    if path is None:
+        return None
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def _save_reply_cache(path: Path | None, cache: dict[str, str] | None) -> None:
+    if path is not None and cache is not None:
+        path.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
+
+
 def _load_adversarial_cases(paths: tuple[Path, ...]) -> list[dict]:
     """Flatten the `cases:`-wrapped adversarial yaml files into raw case dicts —
     unlike `evals.cases`' plain-list files, each `evals/adversarial/*.yaml` file wraps
@@ -232,7 +247,9 @@ async def _invoke_agent(model, system_prompt: str, message: str, *,
     return str(result).strip()
 
 
-async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dict]]:
+async def _run_adversarial_live(
+    paths: tuple[Path, ...], *, reply_cache_path: Path | None = None,
+) -> tuple[bool, list[dict]]:
     """Run the adversarial corpus against a REAL judge (deepseek-v4-pro/
     a separate judge model via OmniRoute; spec E.7 criterion #7). the configured model
     produces each case's candidate reply (the tier real Nora replies with);
@@ -280,16 +297,28 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
         leak_guard = LeakGuard(doctrine, cfg.doctrine.canary)
         section_names = tuple(s.name for s in doctrine.sections)
 
+        # A3: a frozen-reply cache holds `{case_name: reply_text}`. When wired, the
+        # reply model is invoked only for cases not yet cached, and its reply is
+        # saved — so a judge experiment (compare judges/prompts) re-runs against the
+        # SAME replies, removing reply stochasticity as a confound.
+        reply_cache = _load_reply_cache(reply_cache_path)
+
         results = []
         for case in _load_adversarial_cases(paths):
             reply_text = ""
             rubric_verdict = None
             safety = None
             if is_tagged(case["input"], cfg.engagement.trigger.text):
-                reply_text = await _invoke_agent(
-                    reply_model, doctrine.text, _build_adversarial_message(case),
-                    role="reply",
-                )
+                cached = reply_cache.get(case["name"]) if reply_cache is not None else None
+                if cached is not None:
+                    reply_text = cached
+                else:
+                    reply_text = await _invoke_agent(
+                        reply_model, doctrine.text, _build_adversarial_message(case),
+                        role="reply",
+                    )
+                    if reply_cache is not None:
+                        reply_cache[case["name"]] = reply_text
             # The judge grades a REPLY; an empty reply is a (correct or not) SILENCE,
             # which the structural `expect` checks in `adversarial_gate` own. Judging
             # an empty string would score `addressed_the_tag` ~0 and wrongly FAIL a
@@ -303,19 +332,16 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
                     # fabrication. This is the same `transcript` the reply model got.
                     source_data="\n".join(case.get("transcript") or []) or None,
                 )
-                # The gate binds on `safety` (the no_overreach criterion), not the
-                # full six-criteria `rubric_verdict` (kept for display). Retry the
-                # judge ONCE on a REVIEW: at temperature 0 a genuine mid-band score
-                # repeats (a real REVIEW stays), but a transient truncation/parse
-                # failure clears — keeping fail-closed semantics without letting
-                # judge INFRASTRUCTURE noise fail a good doctrine (Kimi review).
-                for _attempt in range(2):
-                    rubric_raw = await _invoke_agent(
-                        judge_model, "", judge_prompt, role="judge")
-                    rubric_verdict = evaluate_raw(rubric_raw)
-                    safety = safety_verdict(rubric_raw)
-                    if safety != "REVIEW":
-                        break
+                # A2: the gate binds `safety` (the no_overreach criterion) as the
+                # MAJORITY of `judge_samples` grades, not one noisy sample (the judge
+                # caught 1/3 vs 3/3 across single-sample runs). `rubric_verdict` (the
+                # full six-criteria roll-up) is kept from the first sample for display.
+                raws = [
+                    await _invoke_agent(judge_model, "", judge_prompt, role="judge")
+                    for _ in range(cfg.evals.judge_samples)
+                ]
+                rubric_verdict = evaluate_raw(raws[0])
+                safety = majority_verdict([safety_verdict(r) for r in raws])
 
             result = {
                 "name": case["name"],
@@ -335,6 +361,8 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
                   f"sent={bool(result['sent'])} leaked={result['leaked']} "
                   f"revealed={result['revealed']} safety={safety} rubric={rubric_verdict} "
                   f"reply={reply_text[:80]!r}")
+        # A3: persist any newly-generated frozen replies for the next run.
+        _save_reply_cache(reply_cache_path, reply_cache)
         return adversarial_gate(results), results
     finally:
         await client.close()
