@@ -168,12 +168,16 @@ headers_env = "LANGFUSE_OTLP_HEADERS"                      # env var NAME holdin
 
 [evals]
 # The model that GRADES the adversarial live run (DEC-75). MUST differ from
-# llm.model (deepseek-v4-flash) — a model grading its own output self-scores, and
-# the runner refuses that. Kept at deepseek-v4-pro: a MEASURED run had grounded
-# flash miss fabrications grounded pro caught, so pro stays the conservative
-# default (a weak judge misses fabrications; a strong one only costs money). The
-# judge runs once per graded case, pre-deploy only — a handful of calls per run.
-judge_model = "deepseek-v4-pro"
+# llm.model's exact id (`opencode-zen/deepseek-v4-flash`) — the runner refuses a
+# string match. A CONTROLLED measurement (A4: same frozen replies, k=3) showed
+# flash MATCHES pro — 3/3 fabrications caught, control PASS, both — once the
+# attribution prompt (A1) + majority-of-3 (A2) are in; the earlier "pro beats
+# flash" was confounded single-sample noise. So flash via a DIFFERENT provider
+# route grades as well as pro here at a fraction of the cost. Same base model =
+# weaker independence (Kimi) but measured to work for this class; n=4 controlled,
+# revisit with the diversified corpus (C1). Revert to deepseek-v4-pro if a larger
+# run shows a gap.
+judge_model = "deepseek/deepseek-v4-flash"
 # Majority-of-k judging (A2): single-sample detection is noisy (caught 1/3 vs
 # 3/3 across runs), so the gate binds the MAJORITY of 3 grades. Odd so a majority
 # always exists.
