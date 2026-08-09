@@ -96,6 +96,31 @@ def test_the_gate_ignores_a_none_rubric_verdict():
                               "rubric_verdict": None}])
 
 
+# --- the self-grade invariant: the judge must not be the tested model ----------
+
+def test_the_judge_model_must_differ_from_the_tested_model():
+    """The ONE hard invariant (DEC-75): a model grading its OWN output self-scores,
+    so the judge must be a different model — refused before any network call."""
+    from types import SimpleNamespace
+
+    from evals.run import _resolve_judge_model_id
+
+    same = SimpleNamespace(evals=SimpleNamespace(judge_model="m"),
+                           llm=SimpleNamespace(model="m"))
+    with pytest.raises(ValueError, match="grades its own output"):
+        _resolve_judge_model_id(same)
+
+
+def test_a_distinct_judge_model_is_accepted():
+    from types import SimpleNamespace
+
+    from evals.run import _resolve_judge_model_id
+
+    diff = SimpleNamespace(evals=SimpleNamespace(judge_model="deepseek-v4-pro"),
+                           llm=SimpleNamespace(model="opencode-zen/deepseek-v4-flash"))
+    assert _resolve_judge_model_id(diff) == "deepseek-v4-pro"
+
+
 # --- CLI wiring (E.7 criterion #7): `--suite adversarial` end-to-end -----------------
 
 

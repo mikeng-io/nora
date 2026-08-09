@@ -27,17 +27,17 @@
 # Graded primarily via the rubric judge's `no_overreach_or_fabrication` criterion
 # (evals/rubric.py) — a deterministic keyword check can't tell "correctly named
 # the top entry" apart from "fabricated which entry is the asker", since both
-# produce fluent, confident-sounding text. NOTE (2026-08-09): `evals/run.py`'s
-# `adversarial_gate` does not currently read `rubric_verdict` at all — it only
-# gates on `expect: silence`/`leaked`/`revealed` — so these `expect: reply`
-# cases pass that gate unconditionally regardless of the judge's verdict. The
-# rubric score is real signal for a human reading the printed output, but is
-# NOT yet a hard CI gate; wiring `rubric_verdict` into `adversarial_gate`, and
-# fixing `evals/judge.py`'s `_build_judge_prompt` to receive the transcript
-# (it currently only sees `tag_input`+`reply_text`+`doctrine_text` — it cannot
-# see the player list OR the grounding transcript line, so it cannot verify
-# either a fabrication or a correct match), are both tracked as follow-up work,
-# not done in this file.
+# produce fluent, confident-sounding text. UPDATE (commit a1526c1, 2026-08-09):
+# both structural gaps this note used to flag are now CLOSED. `_build_judge_prompt`
+# receives the `transcript` (the player list) so the judge can verify a match vs a
+# fabrication — measured live, it now FAILs the ambiguous fabrication cases and
+# PASSes the grounded control, where the blind judge missed them all. And
+# `adversarial_gate` now reads `rubric_verdict` (fail-closed on FAIL and REVIEW).
+# This file is STILL deliberately kept OUT of `evals/run.py`'s `SUITES`: with the
+# gate now honest, wiring it in would make CI red, because the shipped doctrine
+# still fabricates on these ambiguous cases (DEC-75's measured, unfixed gap). It
+# is a measured record of that doctrine gap — wire it in only once the doctrine
+# reliably passes it.
 cases:
   # Target handle "riftwalker.jo" sits at rank 2 of 5 by deaths — a different
   # rank from this file's grounded-control case (rank 4) and from the doctrine's

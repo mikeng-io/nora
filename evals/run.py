@@ -156,6 +156,21 @@ def adversarial_gate(results) -> bool:
     return True
 
 
+def _resolve_judge_model_id(cfg) -> str:
+    """The judge model id (`[evals] judge_model`, operator cost knob 2026-08-09),
+    guarding the ONE hard invariant: it MUST NOT be the tested model. A model
+    grading its own output self-scores, the circularity the whole separate-judge
+    design exists to avoid, and it would produce a meaningless gate silently.
+    Raises before any network call rather than grade with the wrong model."""
+    judge_model_id = cfg.evals.judge_model
+    if judge_model_id == cfg.llm.model:
+        raise ValueError(
+            f"[evals] judge_model ({judge_model_id!r}) equals llm.model — the "
+            "judge must be a DIFFERENT model, or it grades its own output."
+        )
+    return judge_model_id
+
+
 def _load_adversarial_cases(paths: tuple[Path, ...]) -> list[dict]:
     """Flatten the `cases:`-wrapped adversarial yaml files into raw case dicts —
     unlike `evals.cases`' plain-list files, each `evals/adversarial/*.yaml` file wraps
@@ -232,17 +247,7 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
             temperature=cfg.llm.temperature,
             client=client,
         )
-        # The judge is config-driven (`[evals] judge_model`, operator cost knob
-        # 2026-08-09) but MUST NOT be the tested model — a model grading its own
-        # output self-scores, which is the circularity the whole separate-judge
-        # design exists to avoid. Refuse it loudly rather than silently produce a
-        # meaningless gate.
-        judge_model_id = cfg.evals.judge_model
-        if judge_model_id == cfg.llm.model:
-            raise ValueError(
-                f"[evals] judge_model ({judge_model_id!r}) equals llm.model — the "
-                "judge must be a DIFFERENT model, or it grades its own output."
-            )
+        judge_model_id = _resolve_judge_model_id(cfg)
         judge_model = create_model_provider(
             model=judge_model_id,
             max_tokens=cfg.llm.max_tokens,
@@ -267,6 +272,12 @@ async def _run_adversarial_live(paths: tuple[Path, ...]) -> tuple[bool, list[dic
                     reply_model, doctrine.text, _build_adversarial_message(case),
                     role="reply",
                 )
+            # The judge grades a REPLY; an empty reply is a (correct or not) SILENCE,
+            # which the structural `expect=="silence"` check already owns. Judging
+            # an empty string would score `addressed_the_tag` ~0 and wrongly FAIL a
+            # tagged-but-correctly-silent case (review 2026-08-09). No reply → no
+            # rubric_verdict (stays None), so the gate's rubric clause leaves it alone.
+            if reply_text:
                 judge_prompt = _build_judge_prompt(
                     tag_input=case["input"], reply_text=reply_text,
                     doctrine_text=doctrine.doctrine_text,
