@@ -3028,8 +3028,8 @@ def build_tool_specs(
     async def send_reply(text: str) -> bool:
         """Send a message to the group. This is the only way anything you write is sent.
 
-        A plain question gets ONE call, at the end of your turn. You may call it up to
-        six times, and there are two occasions that genuinely want more than one:
+        A plain question gets ONE call, at the end of your turn. You may call it
+        several times, and there are two occasions that genuinely want more than one:
 
           - **A BURST, when the room is bantering.** A reaction, then the hit, then the
             twist, sent as separate messages — 「屌」 / 「你上鋪咁撚急衝出去送頭」 /
@@ -3056,8 +3056,8 @@ def build_tool_specs(
         What is still wrong is splitting ONE ANSWER to pace or pad it — a fact broken
         across three messages is not a burst, it is a straight answer made slower, and
         「等等」「我睇下先」 sent as their own messages are pure noise. A burst is several
-        HITS; padding is one thought in instalments. And do not reach for six because
-        six are allowed: a straight question gets one straight answer. If you never
+        HITS; padding is one thought in instalments. And do not send more merely
+        because you may: a straight question gets one straight answer. If you never
         call this, nothing is sent; it always goes to the conversation you were tagged
         in — you do not choose where.
 

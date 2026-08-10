@@ -201,3 +201,36 @@ async def test_an_empty_answer_is_a_failure_not_a_blank_description(mimo):
     result = await _client(mimo).describe(data=RED_PNG, media_type="image/png")
     assert result.available is False
     assert result.reason == "error"
+
+
+def test_the_vision_timeout_divides_by_the_resolved_budget_not_the_table():
+    """R-33's invariant — `budget * per_call < loop_timeout_seconds` — survives
+    a `[llm.budgets]` override.
+
+    `derive_vision_timeout`'s own docstring says the invariant "is one nobody
+    can violate if it is never written down twice". `[llm.budgets]` wrote it
+    twice: `nora/app/composition.py` read `NATIVE_TOOL_BUDGETS["media_fetch"]`
+    straight off the table while R-7's ceiling came from
+    `ToolRegistry.budgets()`, which the new knob moves.
+
+    The failure that produces is the one R-33 exists to prevent, not a wrong
+    number: `media_fetch = 8` permits eight vision calls while the per-call
+    ceiling stays derived from four, so 8 x 18 s = 144 s against a 120 s loop.
+    The turn dies on the loop's `wait_for` and surfaces as a silent
+    `invocation_timeout` — no reply, and nothing that says why.
+
+    Asserts the PROPERTY across overrides rather than a specific number, so it
+    keeps holding when the table's default moves."""
+    from nora.agent.registry import ToolRegistry
+
+    loop = 120.0
+    for override in ({}, {"media_fetch": 2}, {"media_fetch": 8}, {"media_fetch": 20}):
+        budget = ToolRegistry(budget_overrides=override).budgets()["media_fetch"]
+        per_call = derive_vision_timeout(
+            loop_timeout_seconds=loop, configured=20.0, budget=budget)
+
+        assert budget * per_call < loop, (
+            f"override {override} gives budget={budget} x {per_call}s = "
+            f"{budget * per_call}s, which exceeds the {loop}s loop — R-33"
+        )
+        assert per_call > 0

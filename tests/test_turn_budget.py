@@ -33,7 +33,8 @@ from pathlib import Path
 import pytest
 
 from nora.agent import tools
-from nora.agent.tools import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX, NATIVE_TOOL_BUDGETS
+from nora.agent.registry import ToolRegistry
+from nora.agent.tools import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = ("config.toml", "config.example.toml")
@@ -83,11 +84,21 @@ def test_no_single_call_can_spend_the_whole_turn_budget(config_name):
     # 4. One `load_transcript` result — the only tool whose size the MODEL picks —
     #    cannot be a third of the turn. At the old ceiling of 200, two calls
     #    (its R-7 budget) were 13,184 tokens.
+    #    The budget is RESOLVED through the registry, not read off the table:
+    #    `[llm.budgets]` can move it per deployment, and reading the table would
+    #    leave this proof green while the property it proves stopped holding in
+    #    production — the same second-reader defect the vision timeout had
+    #    (verification pass, 2026-08-11). `budget_overrides` comes from the
+    #    config file under test, so each config is checked against ITS OWN caps.
+    effective = ToolRegistry(
+        budget_overrides=llm.get("budgets", {})).budgets()["load_transcript"]
     worst_load_transcript = (
-        LOAD_TRANSCRIPT_MAX * MEASURED_TOKENS_PER_LOAD_TRANSCRIPT_ROW
-        * NATIVE_TOOL_BUDGETS["load_transcript"]
+        LOAD_TRANSCRIPT_MAX * MEASURED_TOKENS_PER_LOAD_TRANSCRIPT_ROW * effective
     )
-    assert worst_load_transcript < limits["total_tokens"] / 3, config_name
+    assert worst_load_transcript < limits["total_tokens"] / 3, (
+        f"{config_name}: load_transcript budget {effective} x "
+        f"{LOAD_TRANSCRIPT_MAX} rows exceeds a third of the turn"
+    )
 
 
 @pytest.mark.parametrize("config_name", CONFIGS)

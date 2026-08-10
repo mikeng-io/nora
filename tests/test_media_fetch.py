@@ -366,3 +366,26 @@ async def test_a_stored_image_is_read_only_within_scope_and_screened_on_serve(wi
     cached = await _call(tool, code=PNG_SHA[:6])       # cache hit, screened all the same
     assert uuid not in repr(cached)
     assert wiring["vision"].calls == 1
+
+
+def test_the_advertised_schema_names_the_parameter_code(wiring):
+    """The regression guard for the defect that motivated the rename.
+
+    A live trace (Langfuse, 2026-08-10) shows the model calling this tool with
+    `{"code": "bae370"}` and failing schema validation, because the parameter
+    was `handle` while the docstring says "the short code" four times. The model
+    used the word the prose uses.
+
+    Every other test here calls `tool._tool_func(**kw)` directly, which bypasses
+    Strands and therefore bypasses the SCHEMA — the exact surface that failed.
+    Renaming the parameter back turns those tests red on a TypeError, so the
+    rename is guarded, but nothing asserted what is actually advertised to the
+    model. This does."""
+    spec = wiring["build"]().tool_spec
+    schema = spec["inputSchema"]["json"]
+
+    assert schema["required"] == ["code"]
+    assert "handle" not in schema["properties"]
+    # The description the model reads must use the same word as the parameter,
+    # or the mismatch simply returns in a new place.
+    assert "code" in schema["properties"]["code"]["description"]

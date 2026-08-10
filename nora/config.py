@@ -189,10 +189,18 @@ class LLMConfig(BaseModel):
 
     @model_validator(mode="after")
     def _budget_names_and_values_are_real(self) -> LLMConfig:
-        # Imported here, not at module scope: `nora.config` is imported by
-        # everything and `nora.agent.registry` pulls in the whole tool tree,
-        # so a top-level import would invert the layering `lint-imports`
-        # enforces (config must not depend on agent).
+        # Imported at call time, not module scope. NOT because a contract
+        # forbids it — no `lint-imports` rule covers this edge, and the claim
+        # that one does was wrong (verification pass, 2026-08-11). The reason
+        # is plainer: `nora.config` is imported by everything including tools
+        # that never build an agent, and `nora.agent.tools` pulls in the whole
+        # tool tree. Deferring keeps that cost on `Config` construction, which
+        # is the one moment the tree is loading anyway.
+        #
+        # Safe from cycles by the contract that DOES exist: nothing under
+        # `nora.agent` may import `nora.config`, so this edge has no return
+        # path. And it validates against the LIVE table, so adding or removing
+        # a tool changes what is accepted with no second list to maintain.
         from nora.agent.tools import NATIVE_TOOLS
 
         for name, value in self.budgets.items():

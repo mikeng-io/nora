@@ -30,7 +30,6 @@ from nora.agent import factory
 from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
@@ -393,7 +392,21 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # The tool's OWN budget (DEC-10, one number): `budget` calls share the
             # loop, so the per-call ceiling divides by it — two image reads still
             # leave headroom for the text turns (both reviews 2026-08-07).
-            budget=NATIVE_TOOL_BUDGETS["media_fetch"],
+            #
+            # RESOLVED, not read off the table. This said
+            # `NATIVE_TOOL_BUDGETS["media_fetch"]` until `[llm.budgets]` shipped,
+            # at which point it became the SECOND reader of a number the new
+            # config knob could move — and `derive_vision_timeout`'s whole
+            # argument is that `budget * derived < loop_timeout_seconds` "is one
+            # nobody can violate if it is never written down twice". An operator
+            # setting `media_fetch = 8` would have raised R-7's ceiling to 8
+            # while the per-call timeout stayed derived from 4: 8 x 18 s = 144 s
+            # against a 120 s loop, which is R-33's silent `invocation_timeout`
+            # coming back. A throwaway registry is how this file already reads
+            # `tool_names()`/`capability()` above; `budgets()` is the one
+            # resolver, so this asks it.
+            budget=ToolRegistry(
+                budget_overrides=cfg.llm.budgets).budgets()["media_fetch"],
         ),
     )
     # `web_search` (Tavily, DEC-73) is wired ONLY when `[search] enabled` AND a
