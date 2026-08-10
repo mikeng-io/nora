@@ -51,12 +51,22 @@ import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 
 from ..domain.media import HANDLE_CHARS
 from ..domain.models import WeatherObservation
 from ..domain.ports import Recollection
-from ..domain.reminders import Reminder, ReminderCaps, ReminderState, ReminderStore
+from ..domain.reminders import (
+    Recurrence,
+    RecurrenceRule,
+    Reminder,
+    ReminderCaps,
+    ReminderState,
+    ReminderStore,
+    Series,
+    UnknownRecurrenceZoneError,
+    remaining_occurrences,
+)
 from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers
 from .ports import ToolSpec, adapt
@@ -393,9 +403,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `time_shiftable` is `None` for all three, like `calculate`: `remind` TAKES
     # a time, which is the opposite of being asked about one — its answer does
     # not decay and there is no "same question, different moment" to shift.
+    # The capability block is generated from this table (DEC-29), so the second
+    # clause is the ONLY place the model is told recurrence exists at all
+    # before it opens the tool. It was the missing half of the two asks DEC-84
+    # came from: she answered 「我 set 唔到 recurring 每日提嘅 reminder」 about a
+    # tool she had, because nothing here said she had it.
     "remind": NativeTool(2, "somebody asks you to tell them something later — you "
                             "store their own words and say them back into this "
-                            "conversation when the time comes"),
+                            "conversation when the time comes; once, or every "
+                            "day/week/month/year until a date or a number of times"),
     "list_reminders": NativeTool(2, "somebody asks what you are still holding for "
                                     "this group — only this conversation's, never "
                                     "another room's"),
@@ -631,6 +647,151 @@ def _parse_when(raw: str) -> datetime | None:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return parsed.replace(tzinfo=_HKT)
     return parsed
+
+
+# One period of each recurrence, in days, and every one of them ROUNDS UP (31
+# for a month, 366 for a year). It is the headroom `remind` grants the horizon
+# check, so rounding up admits a legitimate first occurrence at the far edge of
+# a period; rounding down would refuse a 29 Feb yearly reminder set on 1 March.
+_PERIOD_DAYS = {
+    Recurrence.DAILY: 1,
+    Recurrence.WEEKLY: 7,
+    Recurrence.MONTHLY: 31,
+    Recurrence.YEARLY: 366,
+}
+
+
+@dataclass(frozen=True)
+class _RepeatRefusal:
+    """A `repeat`/`times`/`until` triple that cannot be honoured, as a value.
+
+    Returned rather than raised because the MODEL writes all three, so a bad one
+    is an ordinary event and an exception inside a tool is a silent turn (R-5) —
+    the same argument `_parse_when` makes about `when`. It carries the metric
+    status as well as the sentence, so a cap set too tight and a model that
+    keeps writing 「每兩日」 are different series on the same counter.
+    """
+
+    status: str
+    note: str
+    # The three-value tool vocabulary (R-27). Every one of these is `refused` —
+    # the model can fix its own arguments — except the unresolvable-timezone
+    # case, which is a deployment fault no sentence in the room can repair.
+    outcome: str = "refused"
+
+
+def _parse_until(raw: str) -> datetime | None:
+    """`until` as an instant — and a BARE DATE means the END of that day.
+
+    「提到10月11號為止」 names a day, not midnight at the start of it. Read as
+    00:00 the bound would exclude every occurrence on the last day the person
+    actually named, so a fourteen-day countdown would silently stop after
+    thirteen — the off-by-one that is hardest to see, because the reminder that
+    goes missing is the one nearest the thing it is about.
+
+    A value WITH a time is taken exactly as given (and, like `when`, read in
+    `_HKT` when it carries no offset).
+    """
+    text = str(raw).strip()
+    try:
+        day = date.fromisoformat(text)
+    except (TypeError, ValueError):
+        return _parse_when(text)
+    return datetime.combine(day, time.max).replace(tzinfo=_HKT)
+
+
+def _parse_repeat(
+    *, repeat: object, times: object, until: object,
+    due_at: datetime, caps: ReminderCaps,
+) -> RecurrenceRule | _RepeatRefusal | None:
+    """The model's three recurrence arguments as one rule — or None, or a refusal.
+
+    `None` is «this does not repeat», and it is the default, so nothing about a
+    one-shot reminder passes through a single new decision here.
+
+    EVERY SERIES IS BOUNDED, and this is where that becomes true rather than
+    merely intended. `RecurrenceRule.count` is required by the type, so the only
+    question left is what the number is: the model's `times` if it gave one,
+    clamped to `caps.max_occurrences_per_series`; the cap itself if it did not.
+    `until` narrows further and never widens — a series ends at whichever bound
+    comes first — so «every day until the 11th» is fourteen rows and «every
+    year» is sixty, not infinity.
+
+    A bound with no repeat is REFUSED rather than ignored. `times=14` with
+    `repeat="none"` is a model that meant to ask for a recurrence and did not;
+    silently writing one reminder and reporting success is the reading that
+    cannot be recovered from, because she then tells them it is set.
+    """
+    word = str(repeat or Recurrence.NONE.value).strip().lower()
+    try:
+        every = Recurrence(word)
+    except ValueError:
+        return _RepeatRefusal(
+            "bad_repeat",
+            f"I can't repeat something {word!r}. I do daily, weekly, monthly or "
+            "yearly — say which of those is closest, or set separate reminders.",
+        )
+    if every is Recurrence.NONE:
+        if times is not None or until is not None:
+            return _RepeatRefusal(
+                "bad_bound",
+                "You gave me how long to keep repeating but not what to repeat. "
+                "Set `repeat` to daily/weekly/monthly/yearly, or drop the limit "
+                "if it really is a one-off.",
+            )
+        return None
+
+    ends_at: datetime | None = None
+    if until is not None:
+        ends_at = _parse_until(str(until))
+        if ends_at is None:
+            return _RepeatRefusal(
+                "bad_bound",
+                "I couldn't read the end date. Give it as a date like 2026-10-11, "
+                "or say how many times instead.",
+            )
+        if ends_at < due_at:
+            return _RepeatRefusal(
+                "bad_bound",
+                "That end date is before the first one would even go off. Check "
+                "which date they meant — one of the two is wrong.",
+            )
+
+    count = caps.max_occurrences_per_series
+    if times is not None:
+        try:
+            # `str(...)` first, because the MODEL writes this: a JSON tool call
+            # can land it as `14`, `"14"` or `14.0`, and `int(14.0)` silently
+            # truncates while `int("14.7")` raises. One route in, one refusal.
+            asked = int(str(times).strip())
+        except (TypeError, ValueError):
+            return _RepeatRefusal(
+                "bad_bound",
+                "I couldn't read how many times. Give me a plain number, or an "
+                "end date instead.",
+            )
+        if asked < 1:
+            return _RepeatRefusal(
+                "bad_bound",
+                "Fewer than one time is not a reminder. Say how many they meant, "
+                "or set it as a one-off.",
+            )
+        count = min(asked, caps.max_occurrences_per_series)
+    try:
+        return RecurrenceRule(
+            every=every, tz=caps.timezone, count=count, until=ends_at,
+        )
+    except UnknownRecurrenceZoneError:
+        # A DEPLOYMENT fault, not a model one: `caps.timezone` comes from
+        # `[reminders]`. `unavailable` is the honest status for it — she cannot
+        # hold this, and nothing the person says would fix it.
+        log.exception("recurrence timezone %r is not resolvable", caps.timezone)
+        return _RepeatRefusal(
+            "unavailable",
+            "I can't set a repeating one right now — my calendar isn't set up "
+            "properly. Say so plainly rather than promising.",
+            outcome="unavailable",
+        )
 
 
 # A row whose `requester_person_id` no longer resolves. NOT the raw person_id:
@@ -2262,27 +2423,49 @@ def build_tool_specs(
         _record(metrics, "weather", "ok", forecast=forecast, warned=bool(obs.warnings))
         return _weather_result(obs)
 
-    async def remind(when: str, text: str) -> dict:
+    async def remind(
+        when: str, text: str, repeat: str = "none",
+        times: int | None = None, until: str | None = None,
+    ) -> dict:
         """Hold something for later and say it back into this conversation when the
-        time comes.
+        time comes — once, or every day / week / month / year.
 
         Call this when somebody asks you to remember a thing for them — 「等陣提我洗衫」,
         「七點提我出門」. `text` is THEIR OWN WORDS, not a script for you to read out:
         when it comes due you get the turn back and answer it as a fresh request.
 
-        `when` is an exact moment, ISO-8601 with an offset — «2026-08-08T21:00:00+08:00».
-        Working out which moment they meant is your job, not theirs: you were told the
-        current time, so 「等陣」 and 「七點」 are yours to resolve. Say back what you took
-        it to mean, in the register they asked in, so a wrong guess dies now.
+        `when` is an exact moment, ISO-8601 with an offset — «2026-08-08T21:00:00+08:00»
+        — and for a repeating one it is the FIRST time it should go off, not the date
+        it is about. Working out which moment they meant is your job, not theirs: you
+        were told the current time, so 「等陣」, 「七點」, 「前兩個星期」 and 「前一個禮拜」
+        are all yours to resolve into a date. Say back what you took it to mean, in
+        the register they asked in, so a wrong guess dies now.
 
-        Outcomes: `ok` with the id; `refused` with a note saying what to fix (a time
-        already gone, too soon, too far off, too many already waiting, or you cannot
-        set one on this turn); `unavailable` when reminders are not configured — say
-        you can't, do not pretend you did.
+        LEAD TIME IS JUST ARITHMETIC ON `when`. 「結婚日期係10月11日, 接近日期前兩個
+        星期每日提一提」 is `when` = 27 September, `repeat="daily"`, `times=14`.
+        「前一個禮拜講一次」 is `when` = the date minus seven days and no repeat at all.
+        Do not ask them to restate it as a time — you have the target date, so count.
+
+        `repeat` is `none` (the default), `daily`, `weekly`, `monthly` or `yearly`.
+        A repeating reminder ALWAYS ends: give `times` (how many times in total,
+        counting the first) or `until` (the last date it may go off), and if you give
+        neither it runs for a limit I choose and I will tell you what it is. Say the
+        limit back to them — 「每日提到10月11號為止」 — because they cannot see it and
+        it is the part a person is most surprised by later. A repeating reminder keeps
+        its LOCAL time of day, so 「每朝八點」 stays 08:00 all year.
+
+        Outcomes: `ok` with the id (and, when it repeats, how many are left);
+        `refused` with a note saying what to fix (a time already gone, too soon, too
+        far off, too many already waiting, a repeat I don't know, a bound that makes
+        no sense, or you cannot set one on this turn); `unavailable` when reminders
+        are not configured — say you can't, do not pretend you did.
 
         Args:
-            when: the exact moment, ISO-8601 with an offset.
+            when: the FIRST moment it should go off, ISO-8601 with an offset.
             text: what they asked for, in their words.
+            repeat: none | daily | weekly | monthly | yearly. Default none.
+            times: how many times in total, including the first. Repeats only.
+            until: the last date/moment it may go off, ISO-8601. Repeats only.
         """
         # THE FIRE-TURN REFUSAL, first and before anything else (§7.1). A fire
         # turn is a well-formed turn in the same conversation — nothing else in
@@ -2342,11 +2525,30 @@ def build_tool_specs(
                         "away — near enough that I'd be saying it now. Answer them "
                         "now instead, or set it further out.",
             }
-        if due_at - now > timedelta(days=caps.max_horizon_days):
+        # The recurrence, BEFORE the horizon check, because the rule is what
+        # says how far out the first occurrence may legitimately be.
+        rule = _parse_repeat(
+            repeat=repeat, times=times, until=until, due_at=due_at, caps=caps,
+        )
+        if isinstance(rule, _RepeatRefusal):
+            _record_created(metrics, rule.status)
+            return {"status": rule.outcome, "note": rule.note}
+        # ONE PERIOD OF HEADROOM for a recurrence whose own period is longer
+        # than the horizon. `max_horizon_days` exists so she does not hold one
+        # opaque row for years; a yearly birthday's FIRST occurrence is up to a
+        # year out by definition, so measuring it against a 30-day horizon does
+        # not bound the recurrence, it forbids it — and 「記住我嘅生日」 is one of
+        # the three asks this feature was built from. A series is bounded by
+        # `max_occurrences_per_series` instead, and re-affirmed every time it
+        # fires, which a single far-future row never is.
+        horizon = timedelta(days=caps.max_horizon_days)
+        if rule is not None:
+            horizon = max(horizon, timedelta(days=_PERIOD_DAYS[rule.every]))
+        if due_at - now > horizon:
             _record_created(metrics, "too_far")
             return {
                 "status": "refused",
-                "note": f"I only hold things for {caps.max_horizon_days} days. Say "
+                "note": f"I only hold things for {horizon.days} days. Say "
                         "that, and let them ask again nearer the time.",
             }
         try:
@@ -2359,8 +2561,19 @@ def build_tool_specs(
                             "Say so — list_reminders shows what is there, and one can "
                             "be cancelled to make room.",
                 }
+            # The series id is minted first and the ROW's id is derived from it
+            # (`uuid5(series_id, "0")`), so every occurrence in a series —
+            # this one and every successor `plan_successor` computes — is named
+            # the same way. A `uuid4` here would make occurrence 0 the one row
+            # whose id says nothing about where it sits, and minting the same
+            # occurrence twice would then be a duplicate reminder rather than
+            # the primary-key collision it is now.
+            series_id = uuid.uuid4()
+            series = None if rule is None else Series(
+                id=series_id, anchor_at=due_at, occurrence=0, rule=rule,
+            )
             row = Reminder(
-                id=uuid.uuid4(),
+                id=uuid.uuid4() if series is None else uuid.uuid5(series_id, "0"),
                 requester_person_id=tagger.person_id,
                 # The DESTINATION, from the closure and never from the model
                 # (§7.2, DEC-24): a reminder fires into the conversation it was
@@ -2375,6 +2588,7 @@ def build_tool_specs(
                 state=ReminderState.PENDING,
                 fired_at=None,
                 outcome=None,
+                series=series,
             )
             await reminders.create(row)
         except Exception:
@@ -2385,8 +2599,25 @@ def build_tool_specs(
                 "note": "I couldn't write that down. Say you didn't manage to set it "
                         "— never say you did.",
             }
-        _record_created(metrics, "created", ahead_seconds=int((due_at - now).total_seconds()))
-        return {"status": "ok", "id": str(row.id), "due_at": due_at.astimezone(_HKT).isoformat()}
+        _record_created(
+            metrics, "created", ahead_seconds=int((due_at - now).total_seconds()),
+            repeat=Recurrence.NONE.value if rule is None else rule.every.value,
+        )
+        result: dict[str, object] = {
+            "status": "ok", "id": str(row.id),
+            "due_at": due_at.astimezone(_HKT).isoformat(),
+        }
+        # Added only when it repeats, so a one-shot's answer is byte-identical
+        # to the pre-DEC-84 one. `repeat_left` is the bound she has to SAY —
+        # they asked for «every day», I clamped it to a number, and a limit
+        # nobody was told about is the part a person is most surprised by later.
+        if rule is not None:
+            result["repeat"] = rule.every.value
+            result["repeat_left"] = rule.count - 1
+            result["repeat_until"] = (
+                None if rule.until is None else rule.until.astimezone(_HKT).isoformat()
+            )
+        return result
 
     async def list_reminders() -> dict:
         """What you are still holding for THIS conversation, soonest first.
@@ -2402,6 +2633,14 @@ def build_tool_specs(
         Tyler's. `set_by` reads «someone I can no longer name» when the person who
         set it is no longer someone you know — the reminder is still real, you just
         cannot put a name to it.
+
+        `repeat` says whether a row is a one-off (`none`) or a standing arrangement
+        (`daily`/`weekly`/`monthly`/`yearly`); a repeating row also carries
+        `repeat_left` — how many more times it will go off after the one shown —
+        and `repeat_until` if it has an end date. A repeating reminder is ONE row
+        here even when it has months to run, because only the next time it goes off
+        is actually waiting. Say it as what it is: 「每日提到10月11號」, not 「一個
+        提醒」.
 
         Outcomes: `ok` with the list (empty means nothing is waiting, which is a real
         answer); `unavailable` when reminders are not configured.
@@ -2429,6 +2668,26 @@ def build_tool_specs(
                 {
                     "id": str(r.id),
                     "text": r.text,
+                    # A REPEATING reminder shows as ONE row, because that is
+                    # what it is here: a series keeps exactly one waiting
+                    # occurrence and the rest do not exist yet (DEC-84). So
+                    # `repeat` is the difference between «洗衫 at 21:00» and
+                    # 「每日都會提」 — without it she reads a fourteen-day
+                    # countdown as a single reminder and tells them so.
+                    #
+                    # Cancelling this row cancels the SERIES. There is nothing
+                    # else to cancel: no later occurrence has been written.
+                    "repeat": (
+                        Recurrence.NONE.value if r.series is None
+                        else r.series.rule.every.value
+                    ),
+                    **({} if r.series is None else {
+                        "repeat_left": remaining_occurrences(r.series),
+                        "repeat_until": (
+                            None if r.series.rule.until is None
+                            else r.series.rule.until.astimezone(_HKT).isoformat()
+                        ),
+                    }),
                     # WHOSE. A reminder is group-owned in a group (§7.3), so this
                     # listing shows everybody's and anybody here may cancel any of
                     # them — which is precisely why the name has to be on the row.
@@ -2456,6 +2715,12 @@ def build_tool_specs(
         Only ids from this conversation work, and only ones still waiting: something
         that has already gone out cannot be un-sent, and this will say so rather than
         pretend.
+
+        On a REPEATING reminder this calls off the whole thing — every time it would
+        have gone off from now on, not just the next one. There is no way to skip one
+        day and keep the rest, so if that is what they asked for, say so and offer to
+        call the whole thing off instead. Times that have already gone out stay gone
+        out.
 
         Anything set in this conversation can be called off by anyone in it — a
         reminder belongs to the room it was set in, not to the person who set it.

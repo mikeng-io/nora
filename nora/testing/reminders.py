@@ -17,6 +17,13 @@ and each one was a real divergence before it was:
   in dict INSERTION order — an order Postgres has no notion of.
 - **Insert-only `create`.** `dict[key] = value` overwrites; a primary key does
   not.
+- **The successor a `claim` mints** (DEC-84). Postgres gets all-or-nothing free
+  from the transaction wrapping the UPDATE and the INSERT; here it comes from
+  there being no `await` between the two, and from `create`'s duplicate check
+  being the same check the primary key performs. The ARITHMETIC is not this
+  store's to reimplement — `plan_successor` is the domain's, and both stores
+  call it, because two stores computing a calendar independently is two
+  calendars.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ from nora.domain.reminders import (
     check_limit,
     ensure_utc,
     normalise_reminder,
+    plan_successor,
 )
 
 
@@ -88,14 +96,28 @@ class FakeReminderStore:
                    if r.requester_person_id == requester_person_id
                    and r.state is ReminderState.PENDING)
 
-    async def claim(self, reminder_id: UUID) -> bool:
-        """`PENDING -> FIRING` or nothing. The dict's version of SQL's
-        `WHERE id = :id AND state = 'pending'`: there is no await between the
-        read and the write here, so the check and the move are as atomic as one
-        statement is in Postgres."""
+    async def claim(self, reminder_id: UUID, *, now: datetime) -> bool:
+        """`PENDING -> FIRING` or nothing, plus a recurring row's successor.
+
+        The dict's version of SQL's `WHERE id = :id AND state = 'pending'`:
+        there is no await between the read and the write here, so the check, the
+        move and the successor's insert are as atomic as one transaction is in
+        Postgres — which is what the SQL side needs a transaction to achieve and
+        this side gets from the event loop.
+
+        The duplicate check is explicit rather than `self._rows[...] = ...`, so
+        a successor whose id already exists raises `DuplicateReminderError` here
+        exactly as the primary key raises it there. Without it the fake would
+        silently overwrite the very row the derived id exists to protect.
+        """
         row = self._rows.get(reminder_id)
         if row is None or row.state is not ReminderState.PENDING:
             return False
+        successor = plan_successor(row, now=now)
+        if successor is not None:
+            if successor.id in self._rows:
+                raise DuplicateReminderError(successor.id)
+            self._put(successor)
         self._put(replace(row, state=ReminderState.FIRING))
         return True
 

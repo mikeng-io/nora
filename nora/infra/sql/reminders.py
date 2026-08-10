@@ -16,7 +16,10 @@ instead:
 - `claim` matches `state = 'pending'`, which is what makes taking a row a
   compare-and-set. `due()` is a query, not a claim, and the tick awaits a turn
   per group before it reaches the later rows — so a cancel landing in that
-  window must win, and it only can if the predicate is in the statement.
+  window must win, and it only can if the predicate is in the statement. It is
+  also the one write that INSERTS: a recurring row's successor is minted in the
+  same transaction (DEC-84), because the claim is the only exactly-once point in
+  a reminder's life and the successor has to inherit that.
 - `cancel` matches `state = 'pending'` so a reminder that already fired cannot
   be retroactively "cancelled", and matches `conversation_id` because a uuid
   carries no scope of its own — the STORE enforces the scope, not the tool that
@@ -48,11 +51,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.reminders import (
     DuplicateReminderError,
+    Recurrence,
+    RecurrenceRule,
     Reminder,
     ReminderState,
+    Series,
     check_limit,
     ensure_utc,
     normalise_reminder,
+    plan_successor,
 )
 from nora.infra.sql.schema import REMINDERS
 
@@ -61,6 +68,31 @@ from nora.infra.sql.schema import REMINDERS
 # `ck_reminders_state`, and a bad state value arrives as an `IntegrityError`
 # too — reporting that as "duplicate id" would name the wrong defect.
 _PG_UNIQUE_VIOLATION = "23505"
+
+
+def _row_to_series(r: Row[Any]) -> Series | None:
+    """The seven recurrence columns, back as the one optional value object.
+
+    `recurrence = 'none'` is the ONLY thing read to decide: the all-or-nothing
+    CHECK (`ck_reminders_recurrence`) is what makes that safe, so this does not
+    re-derive the invariant from six `IS NULL` tests the database already
+    refuses to violate. `Series`/`RecurrenceRule` then validate what they were
+    handed — an unknown zone or an out-of-range occurrence raises here rather
+    than becoming a reminder nobody can compute a successor for.
+    """
+    if r.recurrence == Recurrence.NONE.value:
+        return None
+    return Series(
+        id=r.series_id,
+        anchor_at=r.series_anchor_at,
+        occurrence=r.occurrence,
+        rule=RecurrenceRule(
+            every=Recurrence(r.recurrence),
+            tz=r.recurrence_tz,
+            count=r.recurrence_count,
+            until=r.recurrence_until,
+        ),
+    )
 
 
 def _row_to_reminder(r: Row[Any]) -> Reminder:
@@ -84,8 +116,43 @@ def _row_to_reminder(r: Row[Any]) -> Reminder:
             state=ReminderState(r.state),
             fired_at=r.fired_at,
             outcome=r.outcome,
+            series=_row_to_series(r),
         )
     )
+
+
+def _insert_values(row: Reminder) -> dict[str, Any]:
+    """One row's INSERT payload — shared by `create` and by `claim`'s successor.
+
+    ONE builder, not two, and that is the point: the successor is written by a
+    different method than the first occurrence, and a column added to one path
+    but not the other would produce a series whose second occurrence quietly
+    lost its recurrence and stopped. `series` is destructured here rather than
+    in each caller for the same reason.
+    """
+    series = row.series
+    return {
+        "id": row.id,
+        "requester_person_id": row.requester_person_id,
+        "platform": row.platform,
+        "conversation_id": row.conversation_id,
+        "conversation_type": row.conversation_type,
+        "text": row.text,
+        "created_at": row.created_at,
+        "due_at": row.due_at,
+        "state": row.state.value,
+        "fired_at": row.fired_at,
+        "outcome": row.outcome,
+        "recurrence": (
+            Recurrence.NONE.value if series is None else series.rule.every.value
+        ),
+        "recurrence_tz": None if series is None else series.rule.tz,
+        "recurrence_count": None if series is None else series.rule.count,
+        "recurrence_until": None if series is None else series.rule.until,
+        "series_id": None if series is None else series.id,
+        "series_anchor_at": None if series is None else series.anchor_at,
+        "occurrence": 0 if series is None else series.occurrence,
+    }
 
 
 class SqlReminderStore:
@@ -99,19 +166,7 @@ class SqlReminderStore:
         to `DuplicateReminderError` so the in-memory store can be held to the
         same observable behaviour (it used to overwrite silently)."""
         row = normalise_reminder(reminder)
-        stmt = sa.insert(REMINDERS).values(
-            id=row.id,
-            requester_person_id=row.requester_person_id,
-            platform=row.platform,
-            conversation_id=row.conversation_id,
-            conversation_type=row.conversation_type,
-            text=row.text,
-            created_at=row.created_at,
-            due_at=row.due_at,
-            state=row.state.value,
-            fired_at=row.fired_at,
-            outcome=row.outcome,
-        )
+        stmt = sa.insert(REMINDERS).values(**_insert_values(row))
         try:
             async with self._engine.begin() as conn:
                 await conn.execute(stmt)
@@ -197,8 +252,9 @@ class SqlReminderStore:
             total = (await conn.execute(stmt)).scalar_one()
         return int(total)
 
-    async def claim(self, reminder_id: UUID) -> bool:
-        """`PENDING -> FIRING`, decided by the statement itself.
+    async def claim(self, reminder_id: UUID, *, now: datetime) -> bool:
+        """`PENDING -> FIRING`, decided by the statement itself — and, for a
+        recurring row, the successor written in the SAME TRANSACTION.
 
         The third narrowed transition, and the one whose absence was a bug:
         `mark` was doing the take, and `mark` matches on id alone, so a cancel
@@ -206,8 +262,25 @@ class SqlReminderStore:
         and the reminder spoken anyway. `rowcount` is the answer — the taker
         learns whether it won without a read-back, which is what makes this a
         compare-and-set rather than a check the next statement can invalidate.
+
+        THE SELECT DOES NOT DECIDE ANYTHING (DEC-84). It only supplies the
+        series the successor is computed from; the UPDATE's `state = 'pending'`
+        predicate is still the whole decision, and the INSERT is reached only
+        after `rowcount` says this caller won. Two concurrent claims under READ
+        COMMITTED both read the row, then one blocks on the other's row lock and
+        re-evaluates the predicate against the committed version — finds
+        `firing`, matches nothing, inserts nothing. Exactly one successor,
+        without a lock this module has to name.
+
+        ONE TRANSACTION, so the pair is all-or-nothing: a crash between them
+        cannot leave a claimed row with no successor (a series that ends at the
+        first crash) or a successor with no claim (the same reminder twice).
+        `plan_successor` derives the successor's id from `(series_id,
+        occurrence)`, so even a double-mint is a primary-key violation rather
+        than a duplicate reminder — the transaction rolls back, the row stays
+        PENDING, and `nora_errors_total{stage="heartbeat"}` carries the fault.
         """
-        stmt = (
+        take = (
             sa.update(REMINDERS)
             .where(
                 REMINDERS.c.id == reminder_id,
@@ -215,9 +288,22 @@ class SqlReminderStore:
             )
             .values(state=ReminderState.FIRING.value)
         )
+        read = sa.select(REMINDERS).where(REMINDERS.c.id == reminder_id)
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return bool(result.rowcount)
+            before = (await conn.execute(read)).one_or_none()
+            result = await conn.execute(take)
+            if not result.rowcount:
+                return False
+            successor = None if before is None else plan_successor(
+                _row_to_reminder(before), now=now,
+            )
+            if successor is not None:
+                await conn.execute(
+                    sa.insert(REMINDERS).values(
+                        **_insert_values(normalise_reminder(successor)),
+                    )
+                )
+        return True
 
     async def mark(
         self, reminder_id: UUID, state: ReminderState, *,

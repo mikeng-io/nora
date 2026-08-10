@@ -217,9 +217,52 @@ REMINDERS = sa.Table(
     # NULL until the row fires, and NULL forever on one that is cancelled.
     sa.Column("fired_at", sa.DateTime(timezone=True), nullable=True),
     sa.Column("outcome", sa.Text, nullable=True),
+    # ── recurrence (DEC-84) ──────────────────────────────────────────────────
+    # A recurring reminder is a CHAIN of these rows, one per occurrence, and
+    # only one of them is ever `pending`. `recurrence = 'none'` is the whole of
+    # the pre-DEC-84 table, which is why every column here is nullable with a
+    # server default: the migration adds them to live rows without touching one.
+    sa.Column(
+        "recurrence", sa.Text, nullable=False, server_default=sa.text("'none'"),
+    ),
+    # An IANA zone NAME, never an offset — a recurrence keeps a local wall
+    # clock across DST, which an offset cannot express (`RecurrenceRule.tz`).
+    sa.Column("recurrence_tz", sa.Text, nullable=True),
+    sa.Column("recurrence_count", sa.Integer, nullable=True),
+    sa.Column("recurrence_until", sa.DateTime(timezone=True), nullable=True),
+    # The join key across a series' occurrences, and the namespace their ids are
+    # derived from (`uuid5(series_id, occurrence)`).
+    sa.Column("series_id", sa.Uuid, nullable=True),
+    # The FIRST occurrence's `due_at`. Every later one is computed from this,
+    # never from its predecessor, so monthly/yearly clamping cannot compound.
+    sa.Column("series_anchor_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column(
+        "occurrence", sa.Integer, nullable=False, server_default=sa.text("0"),
+    ),
     sa.CheckConstraint(
         "state IN ('pending','firing','done','cancelled','failed')",
         name="ck_reminders_state",
+    ),
+    sa.CheckConstraint(
+        "recurrence IN ('none','daily','weekly','monthly','yearly')",
+        name="ck_reminders_recurrence_kind",
+    ),
+    # ALL-OR-NOTHING, and the database's copy of `Series | None`. The domain
+    # cannot represent a half-set recurrence (the fields live on one optional
+    # value object); without this constraint the TABLE could, and a row with a
+    # `recurrence` but no `series_anchor_at` would read back as a reminder whose
+    # next occurrence is uncomputable — one that fires once and then vanishes
+    # with nothing anywhere saying why. `alembic check` is blind to this, which
+    # is why 0005 is hand-written like 0004.
+    sa.CheckConstraint(
+        "(recurrence = 'none' AND recurrence_tz IS NULL "
+        "AND recurrence_count IS NULL AND recurrence_until IS NULL "
+        "AND series_id IS NULL AND series_anchor_at IS NULL AND occurrence = 0) "
+        "OR (recurrence <> 'none' AND recurrence_tz IS NOT NULL "
+        "AND recurrence_count >= 1 AND series_id IS NOT NULL "
+        "AND series_anchor_at IS NOT NULL AND occurrence >= 0 "
+        "AND occurrence < recurrence_count)",
+        name="ck_reminders_recurrence",
     ),
 )
 

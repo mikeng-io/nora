@@ -11,9 +11,12 @@ import pytest
 from nora.domain.reminders import (
     DuplicateReminderError,
     NaiveDatetimeError,
+    Recurrence,
+    RecurrenceRule,
     Reminder,
     ReminderState,
     ReminderStore,
+    Series,
 )
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -102,20 +105,20 @@ async def test_claim_is_a_compare_and_set_from_pending(store):
     r = _row()
     await store.create(r)
 
-    assert await store.claim(r.id) is True
+    assert await store.claim(r.id, now=LATER) is True
     assert (await store.get(r.id)).state is ReminderState.FIRING
     # Idempotence is not the point — EXCLUSIVITY is. The second claim loses.
-    assert await store.claim(r.id) is False
+    assert await store.claim(r.id, now=LATER) is False
 
     # Every non-PENDING state refuses, and the row is left exactly as it was.
     for state in (ReminderState.CANCELLED, ReminderState.DONE,
                   ReminderState.FAILED, ReminderState.FIRING):
         other = _row(state=state)
         await store.create(other)
-        assert await store.claim(other.id) is False, state
+        assert await store.claim(other.id, now=LATER) is False, state
         assert (await store.get(other.id)).state is state
 
-    assert await store.claim(uuid.uuid4()) is False
+    assert await store.claim(uuid.uuid4(), now=LATER) is False
 
 
 async def test_a_cancel_beats_a_later_claim(store):
@@ -127,7 +130,7 @@ async def test_a_cancel_beats_a_later_claim(store):
     assert [x.id for x in selected] == [r.id]
 
     assert await store.cancel(r.id, conversation_id="conv-1") is True
-    assert await store.claim(r.id) is False
+    assert await store.claim(r.id, now=LATER) is False
     assert (await store.get(r.id)).state is ReminderState.CANCELLED
 
 
@@ -336,6 +339,281 @@ async def test_equal_due_at_is_broken_deterministically_by_id(store):
     assert [x.id for x in await store.due(now=LATER, limit=10)] == ids
     assert [x.id for x in await store.pending_for("conv-1")] == ids
     assert [x.id for x in await store.due(now=LATER, limit=2)] == ids[:2]
+
+
+# --------------------------------------------------------------------------
+# Recurrence (DEC-84). A recurring reminder is a CHAIN of one-shot rows, and
+# `claim` is the ONE place a link is forged: these hold both stores to the same
+# chain, the same catch-up rule and the same refusal to forge a second link.
+# --------------------------------------------------------------------------
+
+SERIES = uuid.UUID("11111111-1111-5111-9111-111111111111")
+
+
+def _daily(**kw) -> Reminder:
+    """A daily row, occurrence 0, anchored on its own `due_at`.
+
+    HKT, not UTC, and not a fixed offset used as a zone: `RecurrenceRule.tz`
+    takes an IANA NAME because the local wall clock is what a recurrence keeps.
+    The anchor is 20:40 HKT (12:40 UTC) so the daily step is visible in both.
+    """
+    rule = RecurrenceRule(
+        every=kw.pop("every", Recurrence.DAILY), tz="Asia/Hong_Kong",
+        count=kw.pop("count", 3), until=kw.pop("until", None),
+    )
+    occurrence = kw.pop("occurrence", 0)
+    anchor = kw.pop("anchor_at", T0 + timedelta(minutes=40))
+    kw.setdefault("due_at", anchor)
+    return _row(
+        id=uuid.uuid5(SERIES, str(occurrence)),
+        series=Series(
+            id=SERIES, anchor_at=anchor, occurrence=occurrence, rule=rule,
+        ),
+        **kw,
+    )
+
+
+async def test_a_recurring_row_round_trips_every_field_of_its_series(store):
+    """Seven columns on one side, one optional value object on the other.
+
+    Asserted field by field rather than by `==` on the whole row, because the
+    two stores fail this differently and both failures are silent: the SQL side
+    can drop a column from one of its two INSERT paths, and the fake can hand
+    back an object it never normalised. A series missing its `rule.count` reads
+    as a series with no bound; one missing its `anchor_at` cannot compute a
+    successor at all.
+    """
+    ends = T0 + timedelta(days=10)
+    r = _daily(count=5, until=ends)
+    await store.create(r)
+
+    got = await store.get(r.id)
+    assert got is not None
+    assert got.series is not None
+    assert got.series.id == SERIES
+    assert got.series.occurrence == 0
+    assert got.series.anchor_at == r.series.anchor_at
+    assert got.series.rule.every is Recurrence.DAILY
+    assert got.series.rule.tz == "Asia/Hong_Kong"
+    assert got.series.rule.count == 5
+    assert got.series.rule.until == ends
+    # The port's UTC rule reaches the two new datetimes as well.
+    assert got.series.anchor_at.utcoffset() == timedelta(0)
+    assert got.series.rule.until.utcoffset() == timedelta(0)
+
+
+async def test_a_one_shot_row_carries_no_series(store):
+    """The other half, and not a formality: `series=None` is what every row
+    written before DEC-84 has, so a store that invented an empty series for one
+    would turn every historical reminder into a chain that never ends."""
+    r = _row()
+    await store.create(r)
+    got = await store.get(r.id)
+    assert got is not None
+    assert got.series is None
+
+
+async def test_claiming_a_recurring_row_mints_exactly_one_successor(store):
+    """THE CHAIN, forged in the claim (DEC-84).
+
+    Four facts, and each is a different way this goes wrong:
+
+    * the successor EXISTS and is PENDING — without it the series ends at its
+      first occurrence and nothing says so;
+    * it is due one LOCAL day later, from the anchor;
+    * it carries the same series, the same rule and `occurrence + 1`, so the
+      third link can be forged from it in turn;
+    * the claimed row is FIRING, unchanged in every other respect — the
+      successor is an addition, never a reset of the row that fired. R-37 ("a
+      row fires once, ever") is what that last one protects.
+    """
+    r = _daily(count=3)
+    await store.create(r)
+
+    assert await store.claim(r.id, now=r.due_at) is True
+
+    pending = await store.pending_for("conv-1")
+    assert len(pending) == 1, "exactly one successor, and only one"
+    successor = pending[0]
+    assert successor.id != r.id
+    assert successor.due_at == r.due_at + timedelta(days=1)
+    assert successor.state is ReminderState.PENDING
+    assert successor.text == r.text
+    assert successor.requester_person_id == r.requester_person_id
+    assert successor.conversation_id == r.conversation_id
+    assert successor.fired_at is None and successor.outcome is None
+    assert successor.series is not None
+    assert successor.series.id == SERIES
+    assert successor.series.occurrence == 1
+    assert successor.series.anchor_at == r.series.anchor_at
+    assert successor.series.rule == r.series.rule
+
+    fired = await store.get(r.id)
+    assert fired is not None
+    assert fired.state is ReminderState.FIRING
+
+
+async def test_a_one_shot_claim_mints_nothing(store):
+    """The control, and the reason this file can claim the change is additive:
+    a claim that minted a successor for every row would pass every assertion
+    above and turn every one-shot reminder into an unbounded series."""
+    r = _row()
+    await store.create(r)
+
+    assert await store.claim(r.id, now=LATER) is True
+
+    assert await store.pending_for("conv-1") == []
+
+
+async def test_the_last_occurrence_of_a_series_mints_nothing(store):
+    """`count` is a bound on the SERIES, so the final link forges nothing.
+
+    Without this a series would run forever and the bound would be decoration —
+    which is precisely the failure `RecurrenceRule.count` being REQUIRED exists
+    to make unreachable. `count=3` with `occurrence=2` is the third and last.
+    """
+    r = _daily(count=3, occurrence=2, anchor_at=T0, due_at=T0 + timedelta(days=2))
+    await store.create(r)
+
+    assert await store.claim(r.id, now=r.due_at) is True
+
+    assert await store.pending_for("conv-1") == []
+
+
+async def test_an_until_bound_ends_the_series_before_the_count_does(store):
+    """Two bounds, and the series ends at whichever comes FIRST.
+
+    `count=10` would run ten days; `until` is set two days past the anchor, so
+    the occurrence after that one is refused. A store that honoured only the
+    count would keep a «提到10月11號為止」 reminder going for another week.
+    """
+    anchor = T0 + timedelta(minutes=40)
+    r = _daily(
+        count=10, occurrence=1, anchor_at=anchor,
+        due_at=anchor + timedelta(days=1),
+        until=anchor + timedelta(days=1, hours=1),
+    )
+    await store.create(r)
+
+    assert await store.claim(r.id, now=r.due_at) is True
+
+    assert await store.pending_for("conv-1") == []
+
+
+async def test_a_late_claim_resumes_at_the_next_future_occurrence(store):
+    """THE CATCH-UP RULE: skip, never burst (DEC-84).
+
+    The process was down for three days. The one overdue row fires once — that
+    is `due()`'s ordinary behaviour and unchanged — and its successor is the
+    next occurrence STRICTLY AFTER `now`, not the day after the row that just
+    fired. A store that stepped from `due_at` instead would leave three more
+    overdue rows behind it, and the next three ticks would fire them one after
+    another into a group where every one of them is about a moment that has
+    passed.
+
+    `count=10`, so the skipped occurrences are visible in the INDEX as well:
+    they are consumed (occurrence 4, not occurrence 1), because an outage must
+    not lengthen a series' calendar footprint.
+    """
+    anchor = T0 + timedelta(minutes=40)
+    r = _daily(count=10, anchor_at=anchor, due_at=anchor)
+    await store.create(r)
+
+    now = anchor + timedelta(days=3, hours=2)
+    assert await store.claim(r.id, now=now) is True
+
+    (successor,) = await store.pending_for("conv-1")
+    assert successor.due_at > now
+    assert successor.due_at == anchor + timedelta(days=4)
+    assert successor.series is not None
+    assert successor.series.occurrence == 4
+
+
+async def test_a_losing_claim_mints_no_second_successor(store):
+    """EXCLUSIVITY reaches the chain too.
+
+    The second claim of the same row loses the compare-and-set, and a store that
+    computed the successor before consulting `rowcount` would write it anyway —
+    two pending occurrences for one series, so the same reminder twice. The
+    derived id (`uuid5(series_id, occurrence)`) makes that a primary-key
+    collision rather than a silent duplicate, and this asserts the state either
+    way: still exactly one successor, still `occurrence == 1`.
+    """
+    r = _daily(count=5)
+    await store.create(r)
+
+    assert await store.claim(r.id, now=r.due_at) is True
+    assert await store.claim(r.id, now=r.due_at) is False
+
+    (successor,) = await store.pending_for("conv-1")
+    assert successor.series is not None
+    assert successor.series.occurrence == 1
+
+
+async def test_cancelling_the_pending_occurrence_ends_the_series(store):
+    """Cancelling a recurring reminder cancels the SERIES, with no extra verb.
+
+    The chain's next link is only ever forged by `claim`, so a row that is
+    cancelled rather than claimed forges nothing: after this there is no pending
+    row for the series and nothing will ever create one. That is the whole of
+    DEC-84's cancel story, and it is asserted rather than argued because the
+    alternative failure is unrecoverable — a person told a daily reminder is off
+    and told again tomorrow that it is not.
+    """
+    r = _daily(count=10)
+    await store.create(r)
+
+    assert await store.cancel(r.id, conversation_id="conv-1") is True
+    assert await store.claim(r.id, now=r.due_at) is False
+
+    assert await store.pending_for("conv-1") == []
+    cancelled = await store.get(r.id)
+    assert cancelled is not None
+    assert cancelled.state is ReminderState.CANCELLED
+
+
+async def test_a_recurring_series_costs_one_against_the_pending_count(store):
+    """The cap decision, held by the STORE rather than argued in a docstring.
+
+    `max_pending_per_requester` counts pending rows, and a series only ever has
+    one — before the claim it is the occurrence that is waiting, after it the
+    successor. If the chain ever wrote its successor without the claim
+    resolving the predecessor, a daily reminder would eat the requester's whole
+    allowance in three weeks.
+    """
+    r = _daily(count=10)
+    await store.create(r)
+    assert await store.count_pending("miles") == 1
+
+    assert await store.claim(r.id, now=r.due_at) is True
+    assert await store.count_pending("miles") == 1
+
+
+async def test_a_daily_series_keeps_its_local_time_across_a_dst_boundary(store):
+    """08:00 LOCAL stays 08:00 local, and the UTC instant is what moves.
+
+    New York rather than Hong Kong deliberately: Hong Kong has had no DST since
+    1979, so a store that added a flat 24 hours would pass every other test in
+    this file and be wrong the first time Nora is deployed anywhere that does.
+    2026-03-08 is the US spring-forward, so 08:00 EST (13:00 UTC) becomes 08:00
+    EDT (12:00 UTC) — a 23-hour step in absolute time, which is the arithmetic
+    `due_at + timedelta(days=1)` cannot produce.
+    """
+    anchor = datetime(2026, 3, 7, 13, 0, tzinfo=UTC)      # 08:00 EST
+    rule = RecurrenceRule(
+        every=Recurrence.DAILY, tz="America/New_York", count=5,
+    )
+    r = _row(
+        id=uuid.uuid5(SERIES, "0"), due_at=anchor,
+        series=Series(id=SERIES, anchor_at=anchor, occurrence=0, rule=rule),
+    )
+    await store.create(r)
+
+    assert await store.claim(r.id, now=anchor) is True
+
+    (successor,) = await store.pending_for("conv-1")
+    assert successor.due_at == datetime(2026, 3, 8, 12, 0, tzinfo=UTC)
+    assert successor.due_at - anchor == timedelta(hours=23)
 
 
 async def test_create_refuses_a_duplicate_id(store):

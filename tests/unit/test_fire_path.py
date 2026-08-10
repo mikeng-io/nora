@@ -553,3 +553,58 @@ def test_the_audience_label_is_the_one_constant_every_fire_counter_carries() -> 
     """A spelling check, because every assertion above depends on it and a typo
     would make them all pass against a series nobody alerts on."""
     assert fire_module.AUDIENCE == "heartbeat"
+
+
+# ---- DEC-84: the header says a repeat is a repeat -----------------------------
+
+def _series(occurrence: int = 2, count: int = 14):
+    from nora.domain.reminders import Recurrence, RecurrenceRule, Series
+
+    anchor = T0 - timedelta(days=occurrence)
+    return Series(
+        id=uuid.uuid5(uuid.NAMESPACE_URL, "series"), anchor_at=anchor,
+        occurrence=occurrence,
+        rule=RecurrenceRule(
+            every=Recurrence.DAILY, tz="Asia/Hong_Kong", count=count,
+        ),
+    )
+
+
+def test_a_one_shot_fire_header_is_unchanged_by_recurrence() -> None:
+    """The control, and the promise DEC-84 made: a one-shot turn's prompt is
+    byte-identical to the pre-recurrence one. Every clause the recurring header
+    adds is asserted ABSENT here, so a clause that leaked into the ordinary path
+    — telling her every reminder is a standing arrangement — is caught by the
+    test that says the ordinary path did not change."""
+    header = fire_module._fire_header([_reminder()], MILES, T0)
+
+    assert "every" not in header
+    assert "repeat" not in header
+    assert header.startswith("You are in a group chat")
+
+
+def test_a_recurring_fire_header_says_it_repeats_and_how_much_is_left() -> None:
+    """Third of fourteen, and she is told so.
+
+    Without it she has no way to know this is a standing arrangement, and the
+    failure is specific rather than vague: she announces the reminder as if it
+    were new («記住喇, 我會日日提你») on every one of the fourteen days, which is
+    how a daily reminder becomes a thing people mute. The COUNT is in the line
+    as well because «11 more» and «last one» are different things to say.
+    """
+    row = _reminder(series=_series(occurrence=2, count=14))
+
+    header = fire_module._fire_header([row], MILES, T0)
+
+    assert "(every day, 11 more after this)" in header
+    assert "A repeat is not a new arrangement" in header
+
+
+def test_the_final_occurrence_says_so_rather_than_counting_zero() -> None:
+    """«0 more after this» is a sentence about arithmetic; «last one» is a
+    sentence about the thing. She is being asked to speak, not to report."""
+    row = _reminder(series=_series(occurrence=13, count=14))
+
+    header = fire_module._fire_header([row], MILES, T0)
+
+    assert "(every day, last one)" in header

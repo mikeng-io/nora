@@ -282,11 +282,21 @@ class HeartbeatLoop:
         `claim`, not `mark`: `due()`'s batch is a snapshot, and this coroutine
         awaits a whole turn for the groups ahead of it, so a row here may since
         have been cancelled. `mark` matched on id alone and would resurrect it.
+
+        A recurring row's SUCCESSOR is written by the same `claim` (DEC-84), and
+        this loop is deliberately unchanged by that: the tick owns *when* a
+        reminder fires and *what the row then says*, never the calendar. Putting
+        the successor here instead would have put it after the turn, where a
+        crash mid-fire — the one case `recover()` exists for — would end the
+        series silently. `now` is the tick's instant, threaded through for the
+        same reason it is threaded to `due()`: the catch-up rule is a comparison
+        against it, and a store reading its own clock would put that beyond
+        this module's tests.
         """
         firing: list[Reminder] = []
         try:
             for row in rows:
-                if await self._store.claim(row.id):
+                if await self._store.claim(row.id, now=now):
                     # `replace`, so what `fire` receives says what is true of the
                     # row it is about to speak for.
                     firing.append(replace(row, state=ReminderState.FIRING))

@@ -175,6 +175,21 @@ def render_reminders(
         lines.append(f"         who  = {row.requester_person_id}")
         lines.append(f"         where= {row.platform}:{row.conversation_id}")
         lines.append(f"         text = {row.text}")
+        # DEC-84. A recurring series shows as ONE pending row — the next
+        # occurrence — so without this line an operator counting rows would
+        # read a fourteen-day countdown as a single reminder, and «1 pending»
+        # would be true and misleading at once. `occurrence` is 0-based in the
+        # row and 1-based here: the operator is being told which one this is.
+        if row.series is not None:
+            rule = row.series.rule
+            ends = (
+                "" if rule.until is None else f", until {_local(rule.until)}"
+            )
+            lines.append(
+                f"         every= {rule.every.value} "
+                f"({row.series.occurrence + 1} of {rule.count}{ends})"
+            )
+            lines.append(f"         series={row.series.id}")
         lines.append("")
     lines.append(f"{len(reminders)} pending, {overdue} overdue.")
     if overdue:
@@ -187,6 +202,10 @@ def render_reminders(
     if truncated:
         lines.append("Listing was truncated — re-run with a larger --limit.")
     if not reminders:
+        # Still true row-by-row after DEC-84, and that is the precise wording:
+        # a RECURRING reminder is a chain of rows, each of which resolves once
+        # and is never re-run — the next occurrence is a NEW row, minted when
+        # this one is claimed. Nothing here re-runs anything.
         lines.append("Nothing is waiting. Reminders resolve once and are never re-run.")
     return lines
 
