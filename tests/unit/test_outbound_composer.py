@@ -13,15 +13,22 @@ The properties worth having tests for, in the order they can go wrong:
    field. That is asserted directly, because it is the R-18 exposure the whole
    design is arranged around.
 4. **The text is returned unchanged**, which is what makes (1) meaningful.
+5. **Style ranges and mention ranges index the SAME string** (DEC-82). Two
+   independent sources of offsets over one message is the whole hazard of
+   converting `**bold**` at all, and the section at the bottom is where the two
+   are asserted together — with CJK and with a non-BMP emoji, because that is
+   the only shape in which a `len()`-based answer differs from the right one.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from nora.agent.outbound import Outbound, OutboundComposer, first_url, utf16_len
+from nora.agent.markdown import render_markdown
+from nora.agent.outbound import Outbound, OutboundComposer, first_url
 from nora.domain.models import PersonRef
-from nora.domain.ports import LinkPreview, Roster
+from nora.domain.ports import LinkPreview, Roster, Style, Styled, TextStyle
+from nora.domain.utf16 import utf16_len
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.testing import FakeLinkPreviewSource
@@ -80,6 +87,20 @@ class _Roster:
 IN_ROOM = (frozenset({GRANT_ACI, GRANT_PHONE}), frozenset({MILES_ACI}))
 
 
+def _draft(text: str) -> Styled:
+    """What `Deliverer.deliver` hands the composer: the reply, already rendered.
+
+    Through the real `render_markdown` rather than a bare `Styled(text)`, and
+    that is not ceremony. `compose` no longer takes a string — the whole safety
+    argument is that the pre-conversion draft is not in its scope — so a helper
+    that fabricated a `Styled` would be a second producer of the one type this
+    design says has exactly one. Most strings below carry no Markdown and come
+    back verbatim; the ones in the styles section do not, and they exercise the
+    same path.
+    """
+    return render_markdown(text)
+
+
 def _composer(
     *, roster: object | None = None, preview: object | None = None,
     metrics: Metrics | None = None, persons: Persons | None = None,
@@ -113,7 +134,7 @@ async def test_a_mention_after_chinese_is_positioned_in_utf16_units():
     composer = _composer()
     text = "我唔知你幾高 @Grant"
 
-    out = await composer.compose(text)
+    out = await composer.compose(_draft(text))
 
     (mention,) = out.mentions
     assert mention.start == len("我唔知你幾高 ")     # CJK: units == characters
@@ -131,7 +152,7 @@ async def test_a_mention_after_an_emoji_is_offset_by_two_units_per_surrogate_pai
     composer = _composer()
     text = "😅 @Grant 你幾高?"
 
-    out = await composer.compose(text)
+    out = await composer.compose(_draft(text))
 
     (mention,) = out.mentions
     assert mention.start == 3               # 😅 is 2 units, then a space
@@ -143,7 +164,7 @@ async def test_two_mentions_in_one_message_each_carry_their_own_offset():
     composer = _composer()
     text = "@Grant 同 @Miles 你哋幾高?"
 
-    out = await composer.compose(text)
+    out = await composer.compose(_draft(text))
 
     assert [m.recipient for m in out.mentions] == [GRANT_ACI, MILES_ACI]
     assert out.mentions[0].start == 0
@@ -165,7 +186,7 @@ async def test_the_text_is_returned_unchanged_and_carries_no_placeholder():
     composer = _composer()
     text = "@Grant 你幾高?"
 
-    out = await composer.compose(text)
+    out = await composer.compose(_draft(text))
 
     assert out.text == text
     assert "￼" not in out.text
@@ -179,7 +200,7 @@ async def test_no_identifier_ever_enters_the_message_text():
     "helpfully render the id" edit is exactly the shape that would not."""
     composer = _composer()
 
-    out = await composer.compose("@Grant 你幾高?")
+    out = await composer.compose(_draft("@Grant 你幾高?"))
 
     assert GRANT_ACI not in out.text
     assert GRANT_PHONE not in out.text
@@ -192,7 +213,7 @@ async def test_an_unknown_name_stays_plain_text_and_sends_no_range():
     metrics = Metrics()
     composer = _composer(metrics=metrics)
 
-    out = await composer.compose("@nobody 你幾高?")
+    out = await composer.compose(_draft("@nobody 你幾高?"))
 
     assert out.text == "@nobody 你幾高?"
     assert out.mentions == ()
@@ -205,7 +226,7 @@ async def test_a_person_who_is_not_in_this_room_is_not_tagged():
     metrics = Metrics()
     composer = _composer(roster=_Roster((frozenset({MILES_ACI}),)), metrics=metrics)
 
-    out = await composer.compose("@Grant 你幾高?")
+    out = await composer.compose(_draft("@Grant 你幾高?"))
 
     assert out.mentions == ()
     assert metrics.get("nora_outbound_mentions_total", outcome="not_in_room") == 1
@@ -219,7 +240,7 @@ async def test_an_unreadable_roster_tags_nobody_rather_than_guessing():
     metrics = Metrics()
     composer = _composer(roster=_Roster(available=False), metrics=metrics)
 
-    out = await composer.compose("@Grant 你幾高?")
+    out = await composer.compose(_draft("@Grant 你幾高?"))
 
     assert out.text == "@Grant 你幾高?"
     assert out.mentions == ()
@@ -234,7 +255,7 @@ async def test_no_roster_source_at_all_tags_nobody():
         metrics=Metrics(), roster_source=None,
     )
 
-    out = await composer.compose("@Grant 你幾高?")
+    out = await composer.compose(_draft("@Grant 你幾高?"))
 
     assert out.mentions == ()
 
@@ -248,7 +269,7 @@ async def test_a_roster_that_raises_never_costs_the_message():
 
     composer = _composer(roster=_Exploding())
 
-    out = await composer.compose("@Grant 你幾高?")
+    out = await composer.compose(_draft("@Grant 你幾高?"))
 
     assert out.text == "@Grant 你幾高?"
     assert out.mentions == ()
@@ -264,7 +285,7 @@ async def test_an_ambiguous_handle_tags_neither_person():
     )
     composer = _composer(persons=_persons(twin=twin), metrics=metrics)
 
-    out = await composer.compose("@阿豹 你幾高?")
+    out = await composer.compose(_draft("@阿豹 你幾高?"))
 
     assert out.mentions == ()
     assert metrics.get("nora_outbound_mentions_total", outcome="ambiguous") == 1
@@ -280,7 +301,7 @@ async def test_a_person_with_no_id_form_on_this_platform_is_unresolved():
     )
     composer = _composer(persons=persons, metrics=metrics)
 
-    out = await composer.compose("@Ghost 你幾高?")
+    out = await composer.compose(_draft("@Ghost 你幾高?"))
 
     assert out.mentions == ()
     assert metrics.get("nora_outbound_mentions_total", outcome="unresolved") == 1
@@ -292,7 +313,7 @@ async def test_a_handle_glued_to_a_word_is_not_a_mention():
     """`a@b.com` is an address. The `@` must start a token."""
     composer = _composer()
 
-    out = await composer.compose("mail me at grant@Grant.example")
+    out = await composer.compose(_draft("mail me at grant@Grant.example"))
 
     assert out.mentions == ()
 
@@ -304,7 +325,7 @@ async def test_an_ascii_handle_inside_a_longer_ascii_word_is_not_a_mention():
     below."""
     composer = _composer()
 
-    out = await composer.compose("@Mikeson said hi")
+    out = await composer.compose(_draft("@Mikeson said hi"))
 
     assert out.mentions == ()
 
@@ -315,7 +336,7 @@ async def test_a_cjk_handle_runs_straight_into_the_next_character():
     group actually writes it."""
     composer = _composer()
 
-    out = await composer.compose("@阿豹同我講")
+    out = await composer.compose(_draft("@阿豹同我講"))
 
     (mention,) = out.mentions
     assert mention.recipient == GRANT_ACI
@@ -328,7 +349,7 @@ async def test_the_longest_matching_handle_wins():
     must cover the longer one or the chip lands beside a stray 妹."""
     composer = _composer()
 
-    out = await composer.compose("@阿豹妹 你幾高?")
+    out = await composer.compose(_draft("@阿豹妹 你幾高?"))
 
     (mention,) = out.mentions
     assert mention.length == utf16_len("@阿豹妹")
@@ -337,7 +358,7 @@ async def test_the_longest_matching_handle_wins():
 async def test_handles_are_matched_case_insensitively():
     composer = _composer()
 
-    out = await composer.compose("@grant 你幾高?")
+    out = await composer.compose(_draft("@grant 你幾高?"))
 
     assert out.mentions[0].recipient == GRANT_ACI
 
@@ -349,7 +370,7 @@ async def test_a_message_with_no_at_sign_never_reads_the_roster():
     roster = _Roster(IN_ROOM)
     composer = _composer(roster=roster)
 
-    await composer.compose("我唔知你幾高")
+    await composer.compose(_draft("我唔知你幾高"))
 
     assert roster.calls == []
 
@@ -358,7 +379,7 @@ async def test_two_mentions_read_the_roster_once():
     roster = _Roster(IN_ROOM)
     composer = _composer(roster=roster)
 
-    await composer.compose("@Grant 同 @Miles 你哋幾高?")
+    await composer.compose(_draft("@Grant 同 @Miles 你哋幾高?"))
 
     assert roster.calls == [CONVERSATION]
 
@@ -369,7 +390,7 @@ async def test_the_aci_is_preferred_over_the_phone_number():
     `SignalReactor` already sends as `targetAuthor`."""
     composer = _composer()
 
-    out = await composer.compose("@Grant")
+    out = await composer.compose(_draft("@Grant"))
 
     assert out.mentions[0].recipient == GRANT_ACI
 
@@ -389,7 +410,7 @@ async def test_only_the_id_the_platform_confirmed_is_sent():
         persons=persons, roster=_Roster((frozenset({GRANT_PHONE}),)),
     )
 
-    out = await composer.compose("@Grant")
+    out = await composer.compose(_draft("@Grant"))
 
     assert out.mentions[0].recipient == GRANT_PHONE
 
@@ -407,7 +428,7 @@ async def test_a_url_in_the_reply_gets_its_card():
     metrics = Metrics()
     composer = _composer(preview=source, metrics=metrics)
 
-    out = await composer.compose(f"睇下 {CARD.url}")
+    out = await composer.compose(_draft(f"睇下 {CARD.url}"))
 
     assert out.preview == CARD
     assert metrics.get("nora_link_previews_total", outcome="attached") == 1
@@ -417,7 +438,7 @@ async def test_a_reply_with_no_url_never_asks_for_a_card():
     source = FakeLinkPreviewSource({CARD.url: CARD})
     composer = _composer(preview=source)
 
-    out = await composer.compose("我唔知你幾高")
+    out = await composer.compose(_draft("我唔知你幾高"))
 
     assert out.preview is None
     assert source.requested == []
@@ -430,7 +451,7 @@ async def test_a_preview_that_cannot_be_built_never_costs_the_message():
     metrics = Metrics()
     composer = _composer(preview=source, metrics=metrics)
 
-    out = await composer.compose(f"睇下 {CARD.url}")
+    out = await composer.compose(_draft(f"睇下 {CARD.url}"))
 
     assert out.text == f"睇下 {CARD.url}"
     assert out.preview is None
@@ -444,7 +465,7 @@ async def test_a_preview_source_that_raises_never_costs_the_message():
 
     composer = _composer(preview=_Exploding())
 
-    out = await composer.compose(f"睇下 {CARD.url}")
+    out = await composer.compose(_draft(f"睇下 {CARD.url}"))
 
     assert out.text == f"睇下 {CARD.url}"
     assert out.preview is None
@@ -462,7 +483,7 @@ async def test_a_fetched_card_carrying_an_identifier_is_dropped():
         preview=FakeLinkPreviewSource({CARD.url: leaky}), metrics=metrics,
     )
 
-    out = await composer.compose(f"睇下 {CARD.url}")
+    out = await composer.compose(_draft(f"睇下 {CARD.url}"))
 
     assert out.preview is None
     assert metrics.get("nora_link_previews_total", outcome="blocked") == 1
@@ -484,7 +505,7 @@ async def test_a_card_mentioning_a_model_name_is_deliberately_not_dropped():
     )
     composer = _composer(preview=FakeLinkPreviewSource({CARD.url: about_llms}))
 
-    out = await composer.compose(f"睇下 {CARD.url}")
+    out = await composer.compose(_draft(f"睇下 {CARD.url}"))
 
     assert out.preview == about_llms
 
@@ -512,6 +533,110 @@ def test_first_url_extracts_a_substring_of_the_body(text, expected):
 async def test_no_preview_source_means_no_card_and_no_failure():
     composer = _composer(preview=None)
 
-    out = await composer.compose(f"睇下 {CARD.url}")
+    out = await composer.compose(_draft(f"睇下 {CARD.url}"))
 
-    assert out == Outbound(text=f"睇下 {CARD.url}")
+    assert out == Outbound(_draft(f"睇下 {CARD.url}"))
+
+
+# ------------------------------------------------- styles beside mentions (DEC-82)
+#
+# The section this feature exists for. A mention range and a style range are
+# produced by DIFFERENT code, at different times, over one string — the styles
+# by `render_markdown` before the guards run, the mentions by `compose` after —
+# and Signal renders a mismatch rather than rejecting it. Everything below is
+# written so that an off-by-one in EITHER producer is visible.
+
+
+async def test_a_bold_span_and_a_mention_index_the_same_final_string():
+    """Both ranges are asserted by SLICING the text that goes on the wire, not
+    by comparing them to hand-counted constants. A test that asserted `start ==
+    9` would keep passing if both the text and the offsets shifted together;
+    this one cannot, because it re-derives the substring each range covers.
+    """
+    composer = _composer()
+
+    out = await composer.compose(_draft("**投資**方面 @Grant 你點睇?"))
+
+    assert out.text == "投資方面 @Grant 你點睇?"
+    (style,) = out.styles
+    assert out.text[style.start:style.start + style.length] == "投資"
+    (mention,) = out.mentions
+    assert out.text[mention.start:mention.start + mention.length] == "@Grant"
+    assert mention.recipient == GRANT_ACI
+
+
+async def test_an_emoji_before_both_ranges_shifts_them_by_two_units_each():
+    """The one shape where `len()` and the answer differ, applied to BOTH
+    producers at once. 😅 is one Python character and two UTF-16 units, so a
+    naive implementation is off by one on the style and off by one on the
+    mention — and the two errors are independent, which is why the assertions
+    below are not a substring slice: Python slicing counts characters, so it
+    would agree with the wrong answer.
+
+    PROBE: replace `utf16_len` with `len` and both assertions go red.
+    """
+    composer = _composer()
+
+    out = await composer.compose(_draft("😅 **好正** @Grant"))
+
+    assert out.text == "😅 好正 @Grant"
+    (style,) = out.styles
+    assert style.start == 3                      # 😅 is 2 units, then a space
+    assert style.start != out.text.index("好")    # ...and Python would say 2
+    assert style.length == 2
+    (mention,) = out.mentions
+    assert mention.start == utf16_len("😅 好正 ")
+    assert mention.length == utf16_len("@Grant")
+
+
+async def test_a_mention_inside_the_bold_span_keeps_both_ranges():
+    """Nesting the two sources of ranges, which is where a design that computed
+    them against different strings would finally show. The mention lives INSIDE
+    the emphasis, so its offset depends on the asterisks having already gone."""
+    composer = _composer()
+
+    out = await composer.compose(_draft("**@Grant 快啲**"))
+
+    assert out.text == "@Grant 快啲"
+    (style,) = out.styles
+    assert (style.start, style.length) == (0, utf16_len("@Grant 快啲"))
+    (mention,) = out.mentions
+    assert (mention.start, mention.length) == (0, utf16_len("@Grant"))
+
+
+async def test_a_reply_with_no_markdown_carries_no_styles_at_all():
+    """The overwhelmingly common message. An empty tuple and not a range of
+    length zero — `nora.platform.signal.send` omits the key entirely when there
+    is nothing to say, and a zero-length range would be a parameter."""
+    composer = _composer()
+
+    out = await composer.compose(_draft("我唔知你幾高"))
+
+    assert out.styles == ()
+    assert out.text == "我唔知你幾高"
+
+
+async def test_the_outbound_reads_its_text_and_its_styles_off_one_value():
+    """The structural claim, asserted as a claim about the OBJECT rather than
+    about a message. `Outbound` stores the `Styled`; `.text` and `.styles` are
+    properties of it, so there is no assignment anywhere that could pair one
+    message's text with another's ranges.
+
+    PROBE: give `Outbound` separate `text: str` and `styles: tuple[...]` fields
+    and this goes red at the `is` — which is the edit that reads as a
+    simplification and silently reopens the hazard.
+    """
+    styled = _draft("**投資**方面")
+    out = Outbound(styled)
+
+    assert out.text is styled.text
+    assert out.styles is styled.styles
+
+
+def test_an_outbound_cannot_be_built_with_a_range_outside_its_text():
+    """`Styled` refuses at construction, so the wrong pairing never becomes an
+    `Outbound` in the first place. This is the runtime half of the property
+    above: the type system cannot say «these offsets belong to that string», so
+    the constructor says the part of it that is checkable."""
+    with pytest.raises(ValueError, match="does not fit"):
+        Styled(text="short", styles=(TextStyle(start=0, length=99, style=Style.BOLD),))

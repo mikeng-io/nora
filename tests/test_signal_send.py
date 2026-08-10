@@ -3,7 +3,7 @@ import pytest
 from aiohttp import web
 
 from nora.domain.models import ConversationTarget
-from nora.domain.ports import LinkPreview, Mention, SendResult
+from nora.domain.ports import LinkPreview, Mention, SendResult, Style, TextStyle
 from nora.platform.signal.send import SignalSender
 
 TARGET = ConversationTarget("signal", "Z3JvdXA=", "group")
@@ -191,18 +191,19 @@ async def test_a_non_integer_timestamp_is_ignored_rather_than_raising(aiohttp_se
 #
 # The parameter NAMES, which nothing else in the suite can check. They were read
 # out of the shipped signal-cli 0.14.7 jar rather than inferred from the man
-# page — `JsonRpcNamespace.getList(name)` tries the literal key FIRST and only
-# falls back to `name + "s"`, and `SendCommand` reads `getList("mention")` and
-# `getString("preview-url" | "preview-title" | "preview-description" |
-# "preview-image")` — because the man page documents both a camelCase rule AND a
-# pluralising example (`--attachment` becoming `attachments`) and does not say
-# which applies to a repeatable option. Guessing wrong here is SILENT:
-# signal-cli ignores a parameter it never reads, the message goes out
-# unmentioned, and no error appears anywhere.
+# page, because the man page documents both a camelCase rule AND a pluralising
+# example (`--attachment` becoming `attachments`) and does not say which applies
+# to a repeatable option. Guessing wrong here is SILENT: signal-cli ignores a
+# parameter it never reads, the message goes out unmentioned or unstyled, and no
+# error appears anywhere.
 #
-# NOT verified against a live daemon — `nora.platform.signal.send`'s module
-# docstring says so in the code as well as here, because a test that looks like
-# a wire test is exactly the instrument someone would later read as one.
+# The names were then CONFIRMED against the running daemon on 2026-08-10 —
+# `nora.platform.signal.send`'s module docstring records the probe and its
+# negative controls. That matters for how to read this file: these tests hold
+# the names STEADY, and the daemon is what established them. A test whose
+# fixture is a local aiohttp server can only ever prove what this code sends,
+# never what signal-cli accepts, and misreading one for the other is exactly how
+# a wrong name survives a green suite.
 
 async def test_a_mention_is_sent_as_start_length_recipient_under_the_mention_key(rpc_server):
     sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
@@ -231,7 +232,7 @@ async def test_several_mentions_ride_one_array(rpc_server):
     ]
 
 
-async def test_a_plain_message_carries_neither_decoration_key(rpc_server):
+async def test_a_plain_message_carries_no_decoration_key_at_all(rpc_server):
     """A plain send's payload is still exactly the two keys it always was.
 
     Not cosmetic: an argparse4j namespace holding an EMPTY list is a different
@@ -243,6 +244,103 @@ async def test_a_plain_message_carries_neither_decoration_key(rpc_server):
     await sender.send(TARGET, "hello")
 
     assert set(rpc_server.calls[0]["params"]) == {"groupId", "message"}
+
+
+async def test_a_style_is_sent_as_start_length_style_under_the_text_style_key(rpc_server):
+    """The name and the encoding together (DEC-82).
+
+    `textStyle` — singular, camelCase. `SendCommand` asks for `text-style`, and
+    `JsonRpcNamespace.getList` resolves that through an overridden `get` that
+    tries the literal key and then the camelCase form, which is the spelling
+    `signal-cli-jsonrpc(5)` documents. Confirmed on the live daemon: this key
+    reached `parseTextStyles` (it rejected a deliberately invalid style name),
+    while a `textStylez` control fell through to the next validation instead.
+    """
+    sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
+
+    await sender.send(
+        TARGET, "hello there",
+        styles=(TextStyle(start=0, length=5, style=Style.BOLD),),
+    )
+
+    assert rpc_server.calls[0]["params"]["textStyle"] == ["0:5:BOLD"]
+
+
+async def test_the_style_name_is_sent_uppercase_because_the_parser_is_exact(rpc_server):
+    """`TextStyle.Style.from` is a chain of `String.equals` against uppercase
+    names, so a lowercase value is not merely ignored — it fails the whole send.
+    The live daemon answered `0:1:bold` with «Invalid style: bold»."""
+    sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
+
+    await sender.send(
+        TARGET, "hello there",
+        styles=(
+            TextStyle(start=0, length=5, style=Style.BOLD),
+            TextStyle(start=6, length=5, style=Style.ITALIC),
+        ),
+    )
+
+    assert rpc_server.calls[0]["params"]["textStyle"] == ["0:5:BOLD", "6:5:ITALIC"]
+
+
+async def test_mentions_and_styles_ride_the_same_message_under_separate_keys(rpc_server):
+    """The two range arrays are independent parameters over one body, which is
+    what makes them able to disagree — and the reason everything upstream of
+    this line exists to stop them."""
+    sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
+
+    await sender.send(
+        TARGET, "@Grant hi",
+        mentions=(Mention(start=0, length=8, recipient=ACI),),
+        styles=(TextStyle(start=9, length=2, style=Style.BOLD),),
+    )
+
+    params = rpc_server.calls[0]["params"]
+    assert params["mention"] == [f"0:8:{ACI}"]
+    assert params["textStyle"] == ["9:2:BOLD"]
+
+
+async def test_a_style_range_past_the_end_of_the_text_is_dropped(rpc_server):
+    """Same rule as a malformed mention, and the daemon is the reason: it
+    answered `-1:3:BOLD` with «Invalid textStyle syntax» and sent nothing at
+    all. A range that cannot be expressed costs the STYLING, never the message.
+
+    The over-long range here is the case a bounds check catches and the regex
+    would not — `12:9:BOLD` matches `(\\d+):(\\d+):(.+)` perfectly well and would
+    be posted, indexing five units of text that do not exist.
+    """
+    sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
+
+    result = await sender.send(
+        TARGET, "hello",
+        styles=(
+            TextStyle(start=-1, length=3, style=Style.BOLD),
+            TextStyle(start=0, length=0, style=Style.BOLD),
+            TextStyle(start=12, length=9, style=Style.BOLD),
+        ),
+    )
+
+    assert result.ok is True
+    assert "textStyle" not in rpc_server.calls[0]["params"]
+
+
+async def test_the_bounds_check_counts_utf16_units_not_characters(rpc_server):
+    """A range covering an emoji is LONGER than the character count, so a bounds
+    check written in `len()` would drop the one valid range in this message.
+
+    PROBE: change `_text_style_params`' `limit` to `len(text)` and this reds —
+    the whole point being that the check must fail in the same units the range
+    is expressed in, or it becomes a second source of wrongness rather than a
+    guard against the first.
+    """
+    sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
+
+    await sender.send(
+        TARGET, "😅 好正",                     # 2 + 1 + 2 = 5 UTF-16 units, 4 chars
+        styles=(TextStyle(start=3, length=2, style=Style.BOLD),),
+    )
+
+    assert rpc_server.calls[0]["params"]["textStyle"] == ["3:2:BOLD"]
 
 
 async def test_a_preview_is_sent_as_the_four_camelcase_scalars(rpc_server):

@@ -55,6 +55,7 @@ import logging
 import re
 
 from ..doctrine.loader import Doctrine
+from .markdown import strip_markdown
 
 # E.164 as Signal actually presents it: a leading +, country code, 7-14 more
 # digits. Requires the +, so "call me at 12345678" stays sendable while the
@@ -142,73 +143,6 @@ def _normalize(text: str) -> str:
     return _WS.sub(" ", text).strip()
 
 
-# Markdown emphasis/heading syntax, as it actually reaches a chat client that
-# does not render it. Deliberately NARROW — see `strip_markdown`.
-#
-# The delimiter rule is about the ASTERISK RUN and the whitespace INSIDE it,
-# never about word characters outside it. The first version guarded with
-# `(?<!\w)`/`(?!\w)` and was broken for Cantonese — the language she actually
-# writes in (review 2026-08-10). `\w` is Unicode-aware, so 投 and 資 ARE word
-# characters; in `**投資**方面` the closing `**` is followed by 方, the guard
-# fails on the real delimiter, and the engine backtracks onto the INNER
-# asterisk of each pair — emitting `*投資*方面`. Half-stripped output is worse
-# than none: the asterisks still reach the group AND they move onto the wrong
-# spans (`重點係**價錢**同**位置**` became `重點係*價錢同位置*`). Chinese prose has
-# no spaces, so bold-adjacent-to-CJK is the COMMON shape here, not an edge case.
-#
-#   (?<!\*)(\*{1,3})(?!\*)  a COMPLETE run of 1-3 asterisks — this is what stops
-#                           the engine matching half of a `**` pair, and what
-#                           leaves `****` and `**/*.py` alone.
-#   (?!\s)  …  (?<!\s)      no whitespace just inside either delimiter, which is
-#                           what keeps `3 * 4` and `a * b * c` intact.
-#   [^\n]+?                 single line only. Emphasis never spans a blank line,
-#                           and the old `re.DOTALL` let two unrelated stray
-#                           asterisks in different paragraphs pair up and eat
-#                           the text between them.
-_MD_EMPHASIS = re.compile(r"(?<!\*)(\*{1,3})(?!\*)(?!\s)([^\n]+?)(?<!\s)\1(?!\*)")
-# `(?=\S)` so a bare `###` is left as literal text instead of being emptied —
-# the strip must never turn a reply that would have been SENT into an R-4
-# empty_reply refusal.
-_MD_HEADING = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+(?=\S)", re.MULTILINE)
-
-
-def strip_markdown(text: str) -> str:
-    """Remove Markdown emphasis and headings from a reply (DEC-82).
-
-    **A structural fix for a doctrine rule the model ignores.** `voice.md`
-    already says «No headers. No bold labels. It's a chat message.» — and on
-    long answers the model emits `**投資** — …` and `**燒烤堂** 🔥 — …` anyway,
-    which Signal renders as literal asterisks. Measured live 2026-08-10: two of
-    the four long replies in one stress-test session leaked raw `**`. DEC-78
-    already established the lesson this applies — a prose maxim does not move
-    behaviour, the matched surface does — so the rule is enforced where the text
-    LEAVES rather than asserted once more in the prompt.
-
-    NARROW on purpose, because this edits her authored words:
-    - `**x**` / `*x*` / `***x***` → `x`, and leading `#` headings → nothing.
-    - A `*` with whitespace inside the delimiters is left alone, so «3 * 4» and
-      a bare "*" survive untouched.
-    - `(?<!\\w)`/`(?!\\w)` keep it off word-internal asterisks, so a filename or
-      a glob in code-ish text is not rewritten.
-    - Underscores are NOT touched: `_x_` is far more often part of a real token
-      (`person_id`, `send_reply`) than emphasis, and this repo's own vocabulary
-      is full of them. Bold is what leaked; bold is what this removes.
-
-    Not a leak guard — nothing here is unsafe, it is just the wrong FORMAT for
-    the destination — so it returns cleaned text rather than refusing, and it is
-    applied to the reply only, never to a tool argument."""
-    text = _MD_HEADING.sub("", text)
-    # Longest delimiters first: one pass over `***x***` with the `{1,3}` group
-    # is greedy and already takes all three, but repeating until stable also
-    # collapses `**a *b* c**` (nested emphasis), which one pass leaves half-done.
-    for _ in range(3):
-        cleaned = _MD_EMPHASIS.sub(r"\2", text)
-        if cleaned == text:
-            break
-        text = cleaned
-    return text
-
-
 class LeakGuard:
     """R-6: no reply carries the canary or a verbatim >=min_span doctrine span.
 
@@ -221,14 +155,18 @@ class LeakGuard:
         self._canary = canary
         self._min_span = min_span
         # The haystack speaks the SAME dialect as the candidate (fail-closed
-        # audit 2026-08-10). DEC-82 strips Markdown from replies, but the
-        # doctrine files ARE Markdown — voice.md alone carries 10 `**bold**`
-        # spans and every file has `#` headings — so comparing a stripped reply
-        # against a raw haystack silently un-blocked verbatim recitations whose
-        # windows straddled a removed marker. Measured: 405 bold-caused and 831
-        # heading-caused misses at a 45-char window. Both sides are normalised
-        # the same way here; `Deliverer` additionally checks the RAW reply, so a
-        # span is caught whichever dialect it was written in.
+        # audit 2026-08-10). DEC-82 removes Markdown SYNTAX from replies — it
+        # now converts the emphasis to a style range rather than dropping it,
+        # but the CHARACTERS still go — and the doctrine files ARE Markdown:
+        # voice.md alone carries 10 `**bold**` spans and every file has `#`
+        # headings, so comparing a converted reply against a raw haystack
+        # silently un-blocked verbatim recitations whose windows straddled a
+        # removed marker. Measured: 405 bold-caused and 831 heading-caused
+        # misses at a 45-char window. `strip_markdown` is the TEXT half of the
+        # very function that produces the reply's form (`nora.agent.markdown`),
+        # not a lookalike, so the two sides cannot drift apart on what a
+        # delimiter is. `Deliverer` additionally checks the RAW reply, so a span
+        # is caught whichever dialect it was written in.
         self._haystack = _normalize(strip_markdown(doctrine.doctrine_text))
         self._raw_haystack = _normalize(doctrine.doctrine_text)
 

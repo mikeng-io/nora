@@ -1,13 +1,19 @@
 """One suite, both implementations of `PlatformAdapter.send`.
 
 CLAUDE.md: "A port never gains a second implementation — including a test fake
-— without a shared contract suite both pass." `send()` gained `mentions` and
-`preview`, and `nora.testing.FakeAdapter.send` is what every pipeline,
-integration and eval test asserts against — so without this suite a fake that
-quietly dropped the decoration would let all of them prove a mention was
-COMPOSED while proving nothing about whether it reached a transport.
-`FakeAdapter`'s documented exemption covers `.parse()`/`.listen()`, which are
-not on the port; `send()` is.
+— without a shared contract suite both pass." `send()` gained `mentions`,
+`styles` and `preview`, and `nora.testing.FakeAdapter.send` is what every
+pipeline, integration and eval test asserts against — so without this suite a
+fake that quietly dropped the decoration would let all of them prove a mention
+or a bold range was COMPOSED while proving nothing about whether it reached a
+transport. `FakeAdapter`'s documented exemption covers `.parse()`/`.listen()`,
+which are not on the port; `send()` is.
+
+The malformed-range cases at the bottom are where a fake most easily stops
+being a model of the server. signal-cli fails the WHOLE send on a range it
+cannot parse, so «the message still goes out» is a property both
+implementations owe — and a fake that recorded the bad range anyway would let a
+test assert something the daemon would have refused.
 
 The half that only the real adapter can be asked about — the JSON-RPC parameter
 NAMES — lives in `tests/test_signal_send.py`, against a server that inspects
@@ -22,7 +28,14 @@ import pytest
 from aiohttp import web
 
 from nora.domain.models import ConversationTarget
-from nora.domain.ports import LinkPreview, Mention, PlatformAdapter, SendResult
+from nora.domain.ports import (
+    LinkPreview,
+    Mention,
+    PlatformAdapter,
+    SendResult,
+    Style,
+    TextStyle,
+)
 from nora.obs.metrics import Metrics
 from nora.platform.signal.adapter import SignalAdapter
 from nora.testing import FakeAdapter
@@ -30,6 +43,7 @@ from nora.testing import FakeAdapter
 GROUP = ConversationTarget("signal", "Z3JvdXA=", "group")
 ACI = "b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b"
 MENTION = Mention(start=0, length=8, recipient=ACI)
+STYLE = TextStyle(start=0, length=5, style=Style.BOLD)
 PREVIEW = LinkPreview(url="https://n.example.net/a", title="A page", description="about it")
 
 
@@ -72,9 +86,10 @@ def test_send_accepts_the_ports_decoration_parameters(impl):
     `PlatformAdapter` by that test and would `TypeError` the moment `Deliverer`
     called it. The shape has to be asserted directly."""
     params = inspect.signature(impl.send).parameters
-    for name in ("target", "text", "mentions", "preview"):
+    for name in ("target", "text", "mentions", "styles", "preview"):
         assert name in params, name
     assert params["mentions"].default == ()
+    assert params["styles"].default == ()
     assert params["preview"].default is None
 
 
@@ -96,6 +111,11 @@ async def test_a_send_carrying_a_mention_succeeds(working):
     assert result.ok is True
 
 
+async def test_a_send_carrying_a_style_succeeds(working):
+    result = await working.send(target=GROUP, text="hello there", styles=(STYLE,))
+    assert result.ok is True
+
+
 async def test_a_send_carrying_a_preview_succeeds(working):
     result = await working.send(
         target=GROUP, text="https://n.example.net/a", preview=PREVIEW,
@@ -103,10 +123,10 @@ async def test_a_send_carrying_a_preview_succeeds(working):
     assert result.ok is True
 
 
-async def test_a_send_carrying_both_succeeds(working):
+async def test_a_send_carrying_every_decoration_at_once_succeeds(working):
     result = await working.send(
         target=GROUP, text="@Grant https://n.example.net/a",
-        mentions=(MENTION,), preview=PREVIEW,
+        mentions=(MENTION,), styles=(STYLE,), preview=PREVIEW,
     )
     assert result.ok is True
 
@@ -132,5 +152,23 @@ async def test_a_malformed_mention_range_never_costs_the_message(working):
     result = await working.send(
         target=GROUP, text="hello",
         mentions=(Mention(start=-1, length=0, recipient=""),),
+    )
+    assert result.ok is True
+
+
+async def test_a_style_range_that_does_not_fit_never_costs_the_message(working):
+    """Same rule, verified on the live daemon rather than reasoned about: it
+    answered `-1:3:BOLD` with «Invalid textStyle syntax» and delivered nothing.
+
+    `12:9` is the case a syntax check alone would miss — it matches the regex
+    and indexes text that does not exist — which is why both implementations
+    bound the range against the message rather than merely parsing it.
+    """
+    result = await working.send(
+        target=GROUP, text="hello",
+        styles=(
+            TextStyle(start=-1, length=3, style=Style.BOLD),
+            TextStyle(start=12, length=9, style=Style.BOLD),
+        ),
     )
     assert result.ok is True

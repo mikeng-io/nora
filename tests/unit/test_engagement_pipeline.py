@@ -103,7 +103,7 @@ class _FakeAdapter:
 
     async def send(
         self, *, target: ConversationTarget, text: str,
-        mentions: tuple = (), preview: object | None = None,
+        mentions: tuple = (), styles: tuple = (), preview: object | None = None,
     ) -> SendResult:
         self.sent.append((target, text))
         self.sent_mentions.append(tuple(mentions))

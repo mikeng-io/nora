@@ -13,6 +13,7 @@ from ...domain.ports import (
     PlatformIdentity,
     ReactionResult,
     SendResult,
+    TextStyle,
 )
 from .listener import SignalListener
 from .parser import parse_event
@@ -86,9 +87,12 @@ class SignalAdapter:
         target: ConversationTarget,
         text: str,
         mentions: tuple[Mention, ...] = (),
+        styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
     ) -> SendResult:
-        return await self._sender.send(target, text, mentions=mentions, preview=preview)
+        return await self._sender.send(
+            target, text, mentions=mentions, styles=styles, preview=preview,
+        )
 
     async def react(
         self,

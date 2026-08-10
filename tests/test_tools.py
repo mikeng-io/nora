@@ -3,7 +3,8 @@ import re
 import pytest
 
 from nora.agent.guards import Deliverer
-from nora.agent.outbound import OutboundComposer, utf16_len
+from nora.agent.markdown import render_markdown
+from nora.agent.outbound import OutboundComposer
 from nora.agent.room import Room
 from nora.agent.tools import (
     LOAD_TRANSCRIPT_DEFAULT,
@@ -14,6 +15,7 @@ from nora.agent.tools import (
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
 from nora.domain.ports import Roster
+from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -461,7 +463,10 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
             platform="signal", conversation_id="g1", persons=persons,
             metrics=Metrics(), roster_source=_RosterHolding(JORDAN_ACI),
         )
-        out = await present.compose(line)
+        # DEC-82 made `compose` take a `Styled` — the reply and its style
+        # ranges never travel separately — so the advertised line goes
+        # through the same one-interpretation path a real reply does.
+        out = await present.compose(render_markdown(line))
         (mention,) = out.mentions
         assert out.text == line                        # the text is never rewritten
         assert mention.recipient == JORDAN_ACI
@@ -473,7 +478,7 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
             platform="signal", conversation_id="g1", persons=persons,
             metrics=Metrics(), roster_source=_RosterHolding(OTHER_ACI),
         )
-        assert (await absent.compose(line)).mentions == ()
+        assert (await absent.compose(render_markdown(line))).mentions == ()
 
 
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):

@@ -2,8 +2,9 @@
 
 This module answers one question — *given the exact string that is about to be
 sent, what decoration goes with it* — and it is the ONLY place allowed to
-answer it. Two decorations today: @-mentions (a range over the text plus an id
-that is never in the text) and a link preview card.
+answer it. Three decorations today: @-mentions (a range over the text plus an
+id that is never in the text), text styles (a range plus BOLD or ITALIC), and a
+link preview card.
 
 WHY IT IS A SEPARATE STAGE, AND WHY IT RUNS LAST
 ------------------------------------------------
@@ -11,28 +12,48 @@ A mention is `(start, length, recipient)` over the message body. Those offsets
 are only meaningful against ONE string — the exact bytes the platform receives
 — so every transformation of the text has to happen BEFORE they are computed,
 and nothing may touch the text after. That is not a style preference; it is the
-one way this feature breaks silently. A later stage that trims, reflows, strips
-markdown, appends a footer or normalises whitespace shifts every offset after
-the edit, and Signal does not reject the result: it renders somebody's name
-over the wrong span of somebody else's sentence, in a group, with no error
-anywhere.
+one way this feature breaks silently. A later stage that trims, reflows,
+rewrites markdown, appends a footer or normalises whitespace shifts every
+offset after the edit, and Signal does not reject the result: it renders
+somebody's name over the wrong span of somebody else's sentence, in a group,
+with no error anywhere.
 
 The structural answer is that `compose` OWNS the final text. It returns an
-`Outbound` whose `.text` is what `Deliverer` hands to `adapter.send`, so:
+`Outbound` whose `.text` is what `Deliverer` hands to `adapter.send`, so a text
+transformation added AFTER the `compose` call in `Deliverer.deliver` is INERT —
+it cannot reach the wire, because the wire reads `outbound.text` and not the
+local it would have rewritten. Wrong-but-inert beats
+correct-looking-but-corrupting: the missing transformation is visible in the
+group as raw markdown, whereas a shifted mention is invisible to everyone
+except the person wrongly tagged.
 
-* a text transformation added later belongs INSIDE `compose`, ahead of the
-  offset arithmetic, where it is correct by construction;
-* a text transformation added AFTER the `compose` call in `Deliverer.deliver`
-  is INERT — it cannot reach the wire, because the wire reads `outbound.text`
-  and not the local it would have rewritten. Wrong-but-inert beats
-  correct-looking-but-corrupting: the missing transformation is visible in the
-  group as unstripped text, whereas a shifted mention is invisible to everyone
-  except the person wrongly tagged.
+**AND `compose` NO LONGER TAKES A STRING.** It takes a `Styled` — the final
+text and the style ranges over it, as one frozen value produced by
+`nora.agent.markdown.render_markdown`. Two consequences, and both are the
+mechanism rather than a convenience:
+
+* the pre-conversion draft is **not in this method's scope**, so it cannot be
+  handed to the mention scanner by mistake. The mention offsets and the style
+  offsets index the same string because there is only one string here to index;
+* `Outbound` STORES that `Styled` and exposes `.text`/`.styles` as properties
+  of it, so a message whose styles index a different string than its text is
+  unconstructible rather than merely untested.
+
+The markdown conversion therefore happens in `Deliverer.deliver`, one line
+before the guards, and NOT on the first line of `compose` where an earlier
+version of this docstring said a transformation belongs. That rule was written
+when the only transformation was a strip, and R-6/R-18 outrank it: a
+fail-closed guard must see the CONVERTED text as well as the drafted one
+(`"*+85298765432*a"` scans clean once the asterisks are gone), so `deliver` has
+to hold the converted form before it composes. The rule survives in its real
+shape — the transformation still precedes every offset, and `compose` still
+owns the final text; it just receives it already final.
 
 `tests/architecture/test_outbound_offsets_are_computed_last.py` is what keeps
-that true — it asserts, on the AST, that the value `Deliverer.deliver` passes
-to `adapter.send(text=...)` is an attribute of the compose result and never a
-bare local.
+all of that true — it asserts, on the AST, that the value `Deliverer.deliver`
+passes to `adapter.send(text=...)` is an attribute of the compose result and
+never a bare local, that the guards measure the same value that is composed,
+and that `compose` reads nothing but its `Styled` parameter.
 
 WHY THE MODEL DOES NOT GET A `mentions` PARAMETER
 -------------------------------------------------
@@ -105,7 +126,16 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from ..domain.ports import LinkPreview, LinkPreviewSource, Mention, Roster, RosterSource
+from ..domain.ports import (
+    LinkPreview,
+    LinkPreviewSource,
+    Mention,
+    Roster,
+    RosterSource,
+    Styled,
+    TextStyle,
+)
+from ..domain.utf16 import utf16_len
 from ..persons import Persons
 from .egress import scan_identifiers
 
@@ -133,39 +163,37 @@ _URL = re.compile(r"https?://[^\s<>\"'　]+")
 _URL_TAIL = "。，、！？：；)）]】>》.,!?:;'\""  # noqa: RUF001 - CJK punctuation is the point
 
 
-def utf16_len(text: str) -> int:
-    """Length of `text` in UTF-16 code units — the unit Signal's ranges use.
-
-    NOT `len(text)`, and the difference is not theoretical in this group: 「幾」
-    is one Python character and one UTF-16 unit, 「🇭🇰」 is two Python
-    characters and FOUR UTF-16 units (two surrogate pairs), and 「😅」 — which
-    is in the never-silent fallback line this repo already ships — is one
-    Python character and TWO. signal-cli says the unit twice in its own man
-    page (`--mention` and `--text-style`) and links its FAQ's string-indexing
-    note; getting it wrong shifts every mention after the first emoji.
-
-    Computed by encoding rather than by counting `ord(c) > 0xFFFF`, because the
-    encoder is the definition and a hand-rolled surrogate count is a second
-    implementation of it that can drift. `utf-16-le` (not `utf-16`) because the
-    plain codec prepends a two-byte BOM, which would add one unit to every
-    answer.
-    """
-    return len(text.encode("utf-16-le")) // 2
-
-
 @dataclass(frozen=True)
 class Outbound:
     """One message as it goes on the wire: the FINAL text, plus its decoration.
 
-    Frozen, and `text` is the authoritative copy — see this module's docstring
-    for why that is the mechanism and not a detail. Constructing one by hand
-    outside `OutboundComposer.compose` is how the offsets and the text get to
-    disagree, so the only public producer is that method.
+    Frozen, and `styled` is the authoritative copy of the text — see this
+    module's docstring for why that is the mechanism and not a detail.
+    Constructing one by hand outside `OutboundComposer.compose` is how the
+    offsets and the text get to disagree, so the only public producer is that
+    method.
+
+    **`text` and `styles` are properties, not fields, and that is the whole
+    point.** They read one `Styled`, so there is no assignment anywhere that
+    could pair this message's text with another message's ranges — the
+    correspondence is held by object identity rather than by a convention
+    somebody has to keep. `Mention` ranges are a separate field because they
+    are computed HERE, from `styled.text`, in a method that has no other string
+    in scope; the style ranges arrive already paired with the text they index,
+    which is the only form in which they are safe to pass around.
     """
 
-    text: str
+    styled: Styled
     mentions: tuple[Mention, ...] = ()
     preview: LinkPreview | None = None
+
+    @property
+    def text(self) -> str:
+        return self.styled.text
+
+    @property
+    def styles(self) -> tuple[TextStyle, ...]:
+        return self.styled.styles
 
 
 def _is_word(ch: str) -> bool:
@@ -272,18 +300,26 @@ class OutboundComposer:
         self._handles = _handle_index(persons)
         self._roster: Roster | None = None
 
-    async def compose(self, text: str) -> Outbound:
-        """`text` plus its decoration. Never raises; never returns other text.
+    async def compose(self, styled: Styled) -> Outbound:
+        """`styled` plus its decoration. Never raises; never returns other text.
 
-        **`text` is returned unchanged today, and that is a fact about today,
-        not a promise.** If a transformation of the outbound string is ever
-        needed — stripping markdown the group's clients render as literal
-        asterisks is the obvious candidate — it belongs on the first line of
-        this method, ahead of every offset. See the module docstring.
+        **The parameter is a `Styled`, not a string, and that is the safety
+        property.** `styled.text` is already final — `Deliverer.deliver`
+        rendered the Markdown before it measured its guards, because a
+        fail-closed guard has to see the bytes that leave — so the only string
+        this method can reach is the one the platform will receive. There is no
+        draft in scope to compute a mention offset against by mistake, and the
+        style ranges that arrive with it were computed against this same
+        string. Both facts are what `Outbound` then holds together.
+
+        A transformation of the outbound text added HERE would still be
+        correct-by-construction for the mentions and WRONG for the styles,
+        which already index `styled.text`. It belongs in
+        `nora.agent.markdown.render_markdown`, where both are produced at once.
         """
-        mentions = await self._mentions(text)
-        preview = await self._preview(text)
-        return Outbound(text=text, mentions=mentions, preview=preview)
+        mentions = await self._mentions(styled.text)
+        preview = await self._preview(styled.text)
+        return Outbound(styled=styled, mentions=mentions, preview=preview)
 
     # ------------------------------------------------------------------ mentions
 

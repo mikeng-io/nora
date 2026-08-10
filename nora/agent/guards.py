@@ -19,11 +19,12 @@ from strands.hooks import (
 
 from ..doctrine.loader import Doctrine
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
-from ..domain.ports import SendResult
+from ..domain.ports import SendResult, Styled
 from ..obs.metrics import Metrics
 from . import tool_choice
-from .egress import LeakGuard, scan_reply, strip_markdown
+from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
+from .markdown import render_markdown
 from .outbound import Outbound, OutboundComposer
 
 log = logging.getLogger("nora.guards")
@@ -207,23 +208,29 @@ class Deliverer:
         """
         return self._attempts >= self._message_cap
 
-    async def _compose(self, text: str) -> Outbound:
-        """`text` as an `Outbound` — decorated if a composer is wired, bare if not.
+    async def _compose(self, styled: Styled) -> Outbound:
+        """`styled` as an `Outbound` — decorated if a composer is wired, bare if not.
 
         The `except` is not redundant with `compose`'s own never-raise
         contract. A mention is decoration on a message a human is waiting for,
         and the one failure this class must never have is «she went silent
-        because a name lookup blew up». Degrading to `Outbound(text)` sends the
-        identical message the composer-less path sends, which is the honest
+        because a name lookup blew up». Degrading to `Outbound(styled)` sends
+        the identical message the composer-less path sends, which is the honest
         floor rather than a guess.
+
+        Note what the degraded answer KEEPS: the text and its style ranges,
+        because both live in the `Styled` this was handed. A composer that
+        blows up costs the @-mention and the preview card — the two things this
+        class computes — and not the bold, which was already decided upstream
+        and cannot be made wrong by anything that happens here.
         """
         if self._composer is None:
-            return Outbound(text=text)
+            return Outbound(styled)
         try:
-            return await self._composer.compose(text)
+            return await self._composer.compose(styled)
         except Exception:                  # decoration is never fatal
             log.exception("compose raised (tag=%s); sending plain text", self._tag_id)
-            return Outbound(text=text)
+            return Outbound(styled)
 
     async def deliver(self, text: str, *, source: str = "tool") -> bool:
         if self.exhausted:                                     # R-2
@@ -234,12 +241,21 @@ class Deliverer:
             self._metrics.inc("nora_guard_vetoes_total", rule="R-2")
             return False
 
-        # DEC-82: strip Markdown BEFORE the remaining guards, so each one
-        # measures the bytes that actually LEAVE rather than a draft that no
-        # longer exists. It also happens before `row` is built, so the audit row,
-        # `sent_texts` and the Honcho feed all carry the ONE canonical form — the
-        # words the group actually saw.
-        drafted, text = text, strip_markdown(text)
+        # DEC-82: convert Markdown ONCE, here, BEFORE the remaining guards, so
+        # each one measures the bytes that actually LEAVE rather than a draft
+        # that no longer exists. It also happens before `row` is built, so the
+        # audit row, `sent_texts` and the Honcho feed all carry the ONE
+        # canonical form — the words the group actually saw.
+        #
+        # ONE call, and `styled` is the only model of this reply from here on
+        # (comprehend-once). `render_markdown` both deletes the asterisks and
+        # produces the ranges that index what is left, so a SECOND call would
+        # be a second interpretation of one text — and the two would agree
+        # right up until somebody made the function stateful or non-total. The
+        # value is passed whole to `_compose` below rather than unpacked; see
+        # `nora.agent.markdown` for why the text and its ranges never travel
+        # separately.
+        drafted = text
 
         if not text or not text.strip():                       # R-4
             log.warning("delivery refused: empty reply (tag=%s)", self._tag_id)
@@ -249,34 +265,48 @@ class Deliverer:
             )
             return False
 
-        # DEC-89: put back the links this reply EARNED and dropped. Positioned
-        # by three constraints, all of which pin it to exactly here:
+        # DEC-89: put back the links this reply EARNED and dropped. Ordered by
+        # three constraints, and the merge of DEC-82 and DEC-89 is what pins it
+        # to exactly here rather than anywhere else that also "works":
         #   - AFTER R-4, so a link can never rescue an empty reply into a sent
-        #     one. `strip_markdown`'s docstring makes the same statement about
-        #     the same guard, because in both directions the obvious guess is
-        #     the wrong one.
+        #     one. That is why R-4 reads the DRAFT rather than the rendered
+        #     value — it is the authored reply that has to be non-empty.
+        #   - BEFORE the render, so `render_markdown` is called ONCE. The first
+        #     merge of these two features appended the link after the render and
+        #     re-rendered, which `test_the_composer_is_handed_the_rendered_value`
+        #     caught: a second interpretation is a second model of one message,
+        #     and comprehend-once is the whole reason `Styled` exists.
         #   - BEFORE R-6/R-18, so those guards measure the bytes that actually
-        #     LEAVE. The url was screened when it was minted, and screening it
-        #     again costs nothing; a text transformation sitting in FRONT of a
-        #     fail-closed guard without the guard seeing its output is the exact
-        #     hole the 2026-08-10 audit found in DEC-82's first cut.
-        #   - BEFORE `_compose`, because `outbound.text` is the last thing that
-        #     may look at the text and a mention offset computed over a shorter
-        #     string would land in the wrong place.
+        #     LEAVE. A text transformation sitting in front of a fail-closed
+        #     guard without the guard seeing its output is the exact hole the
+        #     2026-08-10 audit found in DEC-82's first cut.
         text, carried = self._links.apply(text)
         if carried:
             self._metrics.inc("nora_reply_links_carried_total", outcome="appended")
 
-        # R-6 against BOTH forms, because DEC-82's strip cuts both ways and only
-        # one direction was noticed at first (review 2026-08-10). Stripping
-        # REVEALS a doctrine span broken up by emphasis — checking the draft
-        # alone would miss it. But `_MD_HEADING` also DELETES the `# ` that the
-        # raw doctrine haystack still contains, so a window straddling a heading
-        # stops matching — measured, that let 293 verbatim voice.md spans through
-        # that the draft form blocks. Neither form is a superset of the other, so
-        # checking either one alone is a hole. Check both and refuse on either:
-        # a false block costs one silent reply, a leak is not recoverable.
-        reason = self._leak.check(text) or self._leak.check(drafted)  # R-6
+        # DEC-82: ONE interpretation of this reply, and `styled` is the only
+        # model of it from here on. `render_markdown` both removes the emphasis
+        # delimiters and produces the offsets into what is left, so the text and
+        # its ranges can never be separated.
+        styled = render_markdown(text)
+
+        # R-6 against BOTH forms, because DEC-82's rewrite cuts both ways and
+        # only one direction was noticed at first (review 2026-08-10). Removing
+        # the delimiters REVEALS a doctrine span broken up by emphasis —
+        # checking the draft alone would miss it. But `_MD_HEADING` also DELETES
+        # the `# ` that the raw doctrine haystack still contains, so a window
+        # straddling a heading stops matching — measured, that let 293 verbatim
+        # voice.md spans through that the draft form blocks. Neither form is a
+        # superset of the other, so checking either one alone is a hole. Check
+        # both and refuse on either: a false block costs one silent reply, a
+        # leak is not recoverable.
+        #
+        # Converting the emphasis to a STYLE rather than dropping it does not
+        # weaken this by a character: the guard's subject is the text, the
+        # ranges ride in a parallel field, and `styled.text` is exactly the
+        # string the old strip produced. What changed is that the same string
+        # now also carries offsets — which is why it arrives as one value.
+        reason = self._leak.check(styled.text) or self._leak.check(drafted)  # R-6
         if reason:
             log.error("doctrine_leak_blocked: %s (tag=%s)", reason, self._tag_id)
             self._metrics.inc("nora_leak_blocks_total")
@@ -295,16 +325,19 @@ class Deliverer:
         # the sharper case (fail-closed audit 2026-08-10). Every identifier
         # pattern is `\b`-anchored, and removing an asterisk BETWEEN two word
         # characters joins them and destroys the boundary. Measured on the
-        # committed code and on this rewrite:
+        # committed code and on the conversion that replaced it — the emphasis
+        # becomes a BOLD range in both these cases, and the characters that made
+        # the boundary are gone either way:
         #
-        #   "*a*deadbeef-1234-5678-9abc-def012345678"  raw→uuid   stripped→None
-        #   "*+85298765432*a"                          raw→phone  stripped→None
+        #   "*a*deadbeef-1234-5678-9abc-def012345678"  raw→uuid   converted→None
+        #   "*+85298765432*a"                          raw→phone  converted→None
         #
-        # i.e. a member's real number, wrapped in emphasis, would have been SENT.
-        # A text transformation must never sit in front of a fail-closed guard
-        # without the guard seeing both sides; this module's own docstring is
-        # explicit that blocking costs one reply and leaking is not recoverable.
-        kind = scan_reply(text) or scan_reply(drafted)
+        # i.e. a member's real number, wrapped in emphasis, would have been SENT
+        # — and would have been sent in BOLD. A text transformation must never
+        # sit in front of a fail-closed guard without the guard seeing both
+        # sides; this module's own docstring is explicit that blocking costs one
+        # reply and leaking is not recoverable.
+        kind = scan_reply(styled.text) or scan_reply(drafted)
         if kind:
             log.error("egress_blocked: %s (tag=%s)", kind, self._tag_id)
             self._metrics.inc("nora_egress_blocks_total", kind=kind)
@@ -317,13 +350,20 @@ class Deliverer:
         self._attempts += 1
         # **THE LAST THING THAT MAY LOOK AT THE TEXT.** `outbound.text` is the
         # string that goes on the wire and into the audit row from here on, and
-        # `text` is not read again below — see `nora.agent.outbound`'s module
-        # docstring for why that is the mechanism. A transformation added after
-        # this line cannot corrupt a mention offset, because it cannot reach
-        # the wire at all; one that is genuinely needed belongs inside
-        # `compose`, ahead of the arithmetic. Pinned on the AST by
+        # neither `text` nor `styled` is read again below — see
+        # `nora.agent.outbound`'s module docstring for why that is the
+        # mechanism. A transformation added after this line cannot corrupt a
+        # mention offset, because it cannot reach the wire at all; one that is
+        # genuinely needed belongs in `nora.agent.markdown.render_markdown`,
+        # where the text and every range over it are produced together. Pinned
+        # on the AST by
         # `tests/architecture/test_outbound_offsets_are_computed_last.py`.
-        outbound = await self._compose(text)
+        #
+        # `styled` and not `styled.text`: handing the composer the string alone
+        # would strand the style ranges here, and re-pairing them with the
+        # composed text afterwards is precisely the assignment that this design
+        # exists to make unwritable.
+        outbound = await self._compose(styled)
         row = NormalizedMessage(
             platform=self._target.platform,
             conversation_id=self._target.conversation_id,
@@ -359,7 +399,8 @@ class Deliverer:
         try:
             result = await self._adapter.send(
                 target=self._target, text=outbound.text,
-                mentions=outbound.mentions, preview=outbound.preview,
+                mentions=outbound.mentions, styles=outbound.styles,
+                preview=outbound.preview,
             )
         except Exception:
             log.exception("send raised (tag=%s)", self._tag_id)

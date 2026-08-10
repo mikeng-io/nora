@@ -24,7 +24,9 @@ from nora.domain.ports import (
     Recollection,
     Roster,
     SendResult,
+    TextStyle,
 )
+from nora.domain.utf16 import utf16_len
 
 
 class FakeRecordStore:
@@ -361,6 +363,7 @@ class FakeAdapter:
         # Parallel to `sent`, one entry per send — see `send`'s docstring for
         # why the decoration is beside the list rather than inside its tuples.
         self.sent_mentions: list[tuple[Mention, ...]] = []
+        self.sent_styles: list[tuple[TextStyle, ...]] = []
         self.sent_previews: list[LinkPreview | None] = []
         self.reactions: list[tuple[ConversationTarget, str, str, int, bool]] = []
         self._succeed = succeed
@@ -401,25 +404,41 @@ class FakeAdapter:
         target: ConversationTarget,
         text: str,
         mentions: tuple[Mention, ...] = (),
+        styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
     ) -> SendResult:
         """Records the send instead of performing it, DECORATION AND ALL.
 
-        `mentions`/`preview` are recorded, not dropped, and that is the point
-        rather than bookkeeping: this is `PlatformAdapter.send`'s second
+        `mentions`/`styles`/`preview` are recorded, not dropped, and that is the
+        point rather than bookkeeping: this is `PlatformAdapter.send`'s second
         implementation, so `tests/contract/test_send_contract.py` runs one suite
         over it and over `SignalAdapter` to keep the two in agreement — a fake
         that accepted the arguments and forgot them would let every pipeline
         test prove a mention was composed while proving nothing about whether it
         reached the wire.
 
+        **It also drops the ranges the real transport drops**, which is not
+        symmetry for its own sake: `SignalSender._text_style_params` refuses a
+        style that does not fit the text because signal-cli fails the whole SEND
+        on one, and a fake that recorded it anyway would let a test assert a
+        range was «sent» that the daemon would have answered with «Invalid
+        textStyle syntax» and no message. The fake has to be wrong in the same
+        places the server is, or it is not measuring the server.
+
         `self.sent` keeps its two-tuple shape (target, text) because dozens of
         assertions read it and a message's TEXT is what almost all of them are
-        about; the decoration lands on `self.sent_mentions`/`self.sent_previews`
-        in step, one entry per send, so an index into either matches `sent`.
+        about; the decoration lands on `self.sent_mentions`/`self.sent_styles`/
+        `self.sent_previews` in step, one entry per send, so an index into any
+        of them matches `sent`.
         """
         self.sent.append((target, text))
         self.sent_mentions.append(tuple(mentions))
+        limit = utf16_len(text)
+        self.sent_styles.append(tuple(
+            style for style in styles
+            if style.start >= 0 and style.length > 0
+            and style.start + style.length <= limit
+        ))
         self.sent_previews.append(preview)
         return SendResult(ok=self._succeed)
 
