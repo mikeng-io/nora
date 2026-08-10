@@ -492,9 +492,15 @@ class FirePath:
         """
         started = time.perf_counter()
         stop_reason: str | None = None
+        # DEC-93: the prose the model wrote instead of calling `send_reply`.
+        # A fire turn has nobody watching a 👀, but it has the same tool-choice
+        # exposure — the route accepts `required` and ignores it — and a
+        # reminder that fires into silence is the one failure the heartbeat
+        # exists to prevent.
+        final_text = ""
         failure: str | None = None
         try:
-            stop_reason = await asyncio.wait_for(
+            stop_reason, final_text = await asyncio.wait_for(
                 self._runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
@@ -536,6 +542,23 @@ class FirePath:
         # `check_outcome` (external review 2026-08-10). A fire turn whose reply
         # was guard-refused DID call the tool, and reporting it as
         # `no_send_call` double-counts one failure under two names.
+        # DEC-93, before the silent-failure accounting: recover the prose she
+        # wrote without routing it through the tool. Same narrow conditions as
+        # the tag path — `end_turn` only, nothing delivered, non-empty — and
+        # through `deliver`, so every guard still applies.
+        if (
+            failure is None
+            and stop_reason == "end_turn"
+            and not deliverer.delivered
+            and final_text.strip()
+            and await deliverer.deliver(final_text, source="recovered")
+        ):
+            self._metrics.inc("nora_recovered_replies_total", platform=platform)
+            log.warning(
+                "fire turn recovered a reply written WITHOUT send_reply "
+                "(tag=%s, %d chars)", ctx.tag_id, len(final_text),
+            )
+
         if failure is None and not deliverer.delivered and not deliverer.called:
             # The loop finished and she never called `send_reply`, or one of
             # R-8's caps cut it off. Labelled the way `check_outcome` labels it

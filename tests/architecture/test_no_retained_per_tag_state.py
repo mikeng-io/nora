@@ -95,7 +95,7 @@ class _ReplyingRunner:
     `ReplyGuard` and `Deliverer` are genuinely constructed and exercised on every
     tag — not just allocated and immediately discarded unused."""
 
-    async def invoke(self, *, tools, guard, ctx, **_kwargs) -> None:
+    async def invoke(self, *, tools, guard, ctx, **_kwargs) -> tuple[str | None, str]:
         tools_by_name = {t.tool_name: t for t in tools}
         args = {"text": "ok"}
         if guard.evaluate("send_reply", args) is None:
@@ -103,6 +103,10 @@ class _ReplyingRunner:
             if hasattr(result, "__await__"):
                 await result
             guard.record("send_reply")
+        # `(stop_reason, final_text)` since DEC-93. The empty text is the point:
+        # this double SENDS through the tool, so there is no un-routed prose to
+        # recover and the recovery path must stay untaken.
+        return "end_turn", ""
 
 
 def _build_pipeline() -> tuple[EngagementPipeline, BackgroundTasks]:

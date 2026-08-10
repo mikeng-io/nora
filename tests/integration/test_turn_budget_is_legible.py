@@ -54,7 +54,7 @@ def _spent_the_budget_without_replying():
 
 def _chose_not_to_reply():
     """The benign turn: the model finished, cheaply, and said nothing."""
-    return [ScriptedTurn(final_text="silent")]
+    return [ScriptedTurn(final_text="")]
 
 
 async def test_a_budget_stop_is_distinguishable_from_a_silent_model(harness_factory):

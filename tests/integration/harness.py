@@ -391,7 +391,12 @@ async def build_handler(
         runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("send_reply", {"text": "   "})],
             final_text="   ", bypass_guard=True)], on_call=calls.append)
     elif fault == "no_send_call":
-        runner = FakeAgentRunner([ScriptedTurn(final_text="silent")], on_call=calls.append)
+        # `final_text=""` — a turn that produces NOTHING, which is what "no
+        # script" should mean. It carried the word "silent" until DEC-93, when
+        # prose without a `send_reply` call started being recovered and
+        # delivered: every scenario that just wanted a quiet turn would have
+        # started sending the word "silent" to its group.
+        runner = FakeAgentRunner([ScriptedTurn(final_text="")], on_call=calls.append)
     elif fault == "leak_guard_trips":
         # A >=40-char verbatim span of nora/doctrine/constraints.md's body, read live so
         # this can't drift from the real file. LeakGuard normalizes whitespace before

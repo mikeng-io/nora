@@ -312,8 +312,14 @@ class FakeAgentRunner:
         self.models: list[ScriptedModel] = []
         self.tool_choices: list = []
 
-    async def invoke(self, **kwargs) -> str | None:
-        """Replay the script and return the `stop_reason` the real loop would.
+    async def invoke(self, **kwargs) -> tuple[str | None, str]:
+        """Replay the script and return `(stop_reason, final_text)` — what the
+        real loop would.
+
+        `final_text` is `ScriptedTurn.final_text` for the LAST turn replayed,
+        and it is what makes DEC-93 reproducible here: a scenario whose script
+        ends with prose and no `send_reply` is exactly the shape that reached
+        the group as silence, and this double has to be able to express it.
 
         The budget check is not a flag this double is TOLD to return — it is
         computed from what the script actually spent against the `limits` dict
@@ -345,7 +351,7 @@ class FakeAgentRunner:
                 # A terminal verb has run and the guard ended the turn, so the
                 # SDK never makes this model call. A script with turns after
                 # that point is describing something production cannot do.
-                return "end_turn"
+                return "end_turn", ""
             # Recorded AFTER the hooks, because that is when the SDK reads the
             # model's config to build the request — a value sampled before them
             # would miss the relaxation this line exists to make visible.
@@ -368,11 +374,11 @@ class FakeAgentRunner:
                 # The cycle ended `end_turn`, so the loop stops here and never
                 # reaches the top-of-cycle check — a one-shot answer cannot
                 # trip a cap however much it spent. See `limit_stop_reason`.
-                return "end_turn"
+                return "end_turn", turn.final_text or ""
             stop = limit_stop_reason(
                 cycles=cycles, total_tokens=total_tokens,
                 output_tokens=output_tokens, limits=limits,
             )
             if stop is not None:
-                return stop
-        return "end_turn"
+                return stop, ""
+        return "end_turn", (self.turns[-1].final_text or "") if self.turns else ""

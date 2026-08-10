@@ -30,7 +30,7 @@ immediately before `factory.create_agent` (`nora/handler.py:133`) — and
 handed to the runner rather than left for it to recompute.
 
 
-Returns `(ok, elapsed, stop_reason)` rather than just `ok`: `elapsed` is the
+Returns `(ok, elapsed, stop_reason, final_text)` rather than just `ok`: `elapsed` is the
 single measurement both recorded as `nora_llm_latency_seconds` here AND reused
 by `nora.engagement.pipeline` for the `nora_overhead_seconds` computation —
 one clock read, not two independent ones that could drift apart —
@@ -68,7 +68,7 @@ class AgentRunner(Protocol):
         limits: dict,
         ctx: TagContext,
         trace_attributes: dict,
-    ) -> str | None: ...
+    ) -> tuple[str | None, str]: ...
 
 
 async def run(
@@ -83,8 +83,8 @@ async def run(
     ctx: TagContext,
     timeout_seconds: float,
     metrics: Any,
-) -> tuple[bool, float, str | None]:
-    """Return `(ok, elapsed, stop_reason)`. `ok` is False on a timeout or any
+) -> tuple[bool, float, str | None, str]:
+    """Return `(ok, elapsed, stop_reason, final_text)`. `ok` is False on a timeout or any
     other exception, in which case the model was never allowed to reply — the
     caller must not proceed to delivery.
 
@@ -111,8 +111,12 @@ async def run(
     started = time.perf_counter()
     ok = True
     stop_reason: str | None = None
+    # The model's FINAL prose, when it ended a turn without calling the tool.
+    # Empty on every healthy turn, because a turn that called `send_reply` has
+    # said what it had to say through the tool. See `pipeline`'s recovery.
+    final_text = ""
     try:
-        stop_reason = await asyncio.wait_for(
+        stop_reason, final_text = await asyncio.wait_for(
             runner.invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                 tag_message=tag_message, limits=limits, ctx=ctx,
@@ -143,4 +147,4 @@ async def run(
         # fraction of turns are being cut off, and `end_turn` being the
         # overwhelming majority is the thing that makes a `limit_*` legible.
         metrics.inc("nora_llm_stop_reason_total", reason=stop_reason, audience="tag")
-    return ok, elapsed, stop_reason
+    return ok, elapsed, stop_reason, final_text

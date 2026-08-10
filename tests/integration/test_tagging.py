@@ -47,13 +47,28 @@ async def test_context_is_collected_before_the_model_runs(harness_factory):
     assert "m0" in h.last_prefill[1]["content"][0]["text"]
 
 
-async def test_model_never_calls_send_reply_means_strict_silence(harness_factory):
-    """Q5: final text without a send_reply call is dropped."""
-    h = await harness_factory(script=[ScriptedTurn(final_text="I would have said this")])
+async def test_a_model_that_writes_nothing_at_all_means_strict_silence(harness_factory):
+    """Q5, narrowed by DEC-93 — and the narrowing is a deliberate weakening of
+    R-4 that should be argued with, not inherited.
+
+    The rule WAS «final text without a `send_reply` call is dropped», and it
+    held because `tool_choice="required"` made prose impossible: text outside
+    the tool meant the model had chosen not to speak. On the DEC-84 route
+    `required` is accepted and ignored, so prose no longer carries that meaning
+    — live, 2 of the first 4 tags wrote a complete group-addressed reply that
+    nobody received.
+
+    The rule is now «nothing reaches the group unless she WROTE it», and
+    `test_a_reply_written_without_calling_send_reply_is_RECOVERED` pins the
+    other side. What is unchanged, and what this test exists for: a turn that
+    produced neither a tool call nor any text still says nothing. There is no
+    path by which Nora emits words she did not author."""
+    h = await harness_factory(script=[ScriptedTurn(final_text="")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
     assert h.sink.sent == []
     assert h.metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
+    assert h.metrics.get("nora_recovered_replies_total") == 0
     assert [r for r in await h.store.recent(conversation_id="g1", limit=10) if r.is_nora] == []
 
 
@@ -208,7 +223,7 @@ async def test_the_tag_path_feed_happens_exactly_once_per_delivered_reply(harnes
 async def test_an_undelivered_tag_adds_no_second_feed(harness_factory):
     """Only the ambient write survives: `feedback.run` is reached from behind
     `deliver.check_outcome`, so a turn that said nothing writes once, not twice."""
-    h = await harness_factory(script=[ScriptedTurn(final_text="silent")])
+    h = await harness_factory(script=[ScriptedTurn(final_text="")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
     assert h.honcho.fed == [("miles", "nora.000 ?", "g1")]

@@ -129,7 +129,7 @@ async def _run(
 ) -> tuple[str | None, _StubModel]:
     model = _StubModel(tokens_per_call=tokens_per_call, tool_use_calls=tool_use_calls)
     runner = LiveAgentRunner(models=FixedModelSource(model), retry=RETRY)
-    stop_reason = await runner.invoke(
+    stop_reason, _final_text = await runner.invoke(
         doctrine=_doctrine(), tools=[_tool()], pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
                          metrics=Metrics()),

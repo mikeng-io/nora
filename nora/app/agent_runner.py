@@ -74,7 +74,7 @@ class LiveAgentRunner:
         limits: dict[str, Any],
         ctx: TagContext,
         trace_attributes: dict[str, Any],
-    ) -> str | None:
+    ) -> tuple[str | None, str]:
         """Run the turn and return Strands' `stop_reason` (R-23).
 
         This method used to `await factory.invoke(...)` and DISCARD the
@@ -106,4 +106,35 @@ class LiveAgentRunner:
         # `str | None` signature is precisely what mypy's `warn_return_any`
         # exists to stop. A shape that is not a string is not a stop reason.
         stop_reason = getattr(result, "stop_reason", None)
-        return stop_reason if isinstance(stop_reason, str) else None
+        return (
+            stop_reason if isinstance(stop_reason, str) else None,
+            _final_text(result),
+        )
+
+
+def _final_text(result: Any) -> str:
+    """The model's last PROSE, or "" — the words it wrote instead of calling
+    `send_reply` (DEC-93).
+
+    Empty on every healthy turn: a turn that used the tool has already said
+    what it had to say, and its final message carries a `toolUse` block rather
+    than text. This exists for the turn that ends `end_turn` with a complete,
+    group-addressed reply sitting in a `text` block that strict-silence then
+    discards — measured live at 2 of 4 tags.
+
+    Defensive throughout (`getattr`, `isinstance`) because this reads a
+    third-party result shape on the reply path: a Strands version that renames
+    `message` must degrade to "" — the pre-DEC-93 behaviour — never raise into
+    a turn that otherwise succeeded.
+    """
+    message = getattr(result, "message", None)
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return ""
+    parts = [
+        block["text"] for block in content
+        if isinstance(block, dict) and isinstance(block.get("text"), str)
+    ]
+    return "\n".join(p for p in parts if p.strip()).strip()

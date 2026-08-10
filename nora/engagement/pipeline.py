@@ -391,7 +391,7 @@ class EngagementPipeline:
                 ctx, tagger_name=tagger_name, display_name=self._display_name,
             )
 
-            ok, llm_elapsed, stop_reason = await invoke.run(
+            ok, llm_elapsed, stop_reason, final_text = await invoke.run(
                 runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tag_message=tag_message, limits=self._limits, ctx=ctx,
                 timeout_seconds=self._timeout_seconds, metrics=self._metrics,
@@ -434,6 +434,52 @@ class EngagementPipeline:
             ):
                 self._metrics.inc(
                     "nora_loop_exhausted_fallbacks_total", reason=stop_reason,
+                )
+
+            # DEC-93: she WROTE a reply and did not put it through the tool.
+            #
+            # `tool_choice="required"` is what made the model reach for
+            # `send_reply` instead of answering in prose — measured on
+            # opencode-zen, where `auto` on a fresh question sent plain text 5/6
+            # (`nora.agent.tool_choice`). DEC-84 moved the deployment to
+            # ollamacloud, where `required` is ACCEPTED AND IGNORED: a probe
+            # found `auto` and `required` behaving identically, which was
+            # recorded as "inert, harmless". It is not harmless — it removed the
+            # only thing forcing the terminal verb, and the group went quiet on
+            # 2 of the first 4 live tags, both with a complete, correct,
+            # group-addressed answer sitting in a `text` block.
+            #
+            # So the words are recovered rather than a canned line sent in their
+            # place. Narrow on purpose:
+            #   - `end_turn` ONLY. A budget cut-off is handled above and a
+            #     timeout produced no considered ending at all.
+            #   - nothing delivered, so this can never append to a real reply.
+            #   - `_EXHAUSTED_FALLBACK` is preferred when both could apply, by
+            #     ordering: a cut-off turn is not a deliberate ending.
+            #   - it goes through `deliver`, so R-4/R-6/R-18, the Markdown
+            #     conversion, the link carry and the audit row all apply exactly
+            #     as they would have. Nothing is bypassed to rescue it.
+            #
+            # It DOES feed Honcho, unlike `_EXHAUSTED_FALLBACK`. `Deliverer`
+            # excludes only `source="fallback"`, and the distinction is real:
+            # the fallback is a canned apology nobody composed, while this is
+            # her own sentence that merely took the wrong exit. The group read
+            # it; her memory of her own speech should contain it.
+            #
+            # Counted because the honest read of a non-zero value here is «the
+            # provider is not honouring `required`», NOT «this feature is
+            # working».
+            elif (
+                stop_reason == "end_turn"
+                and not handle.deliverer.delivered
+                and final_text.strip()
+                and await handle.deliverer.deliver(final_text, source="recovered")
+            ):
+                self._metrics.inc("nora_recovered_replies_total", platform=msg.platform)
+                log.warning(
+                    "recovered a reply the model wrote WITHOUT calling send_reply "
+                    "(tag=%s, %d chars) — the route is not honouring "
+                    "tool_choice=required", request.tag_id, len(final_text),
                 )
 
             # `stop_reason` is threaded rather than dropped (R-23): without it

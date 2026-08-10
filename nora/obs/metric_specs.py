@@ -464,6 +464,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # unable to distinguish "the flag is working" from "the room filled up with
     # strangers". The startup pre-flight warns once at boot and never again, so
     # for an account that joins later this is the ONLY runtime signal.
+    # DEC-93. A reply the model WROTE without calling `send_reply`, recovered
+    # and delivered rather than discarded. The honest read of a non-zero value
+    # is «the LLM route is not honouring `tool_choice=required`» — not «this
+    # feature is working». It went from 0 to 2-in-4 the day the deployment moved
+    # to a provider that accepts `required` and ignores it, and it is the
+    # cheapest signal that would catch the same substitution again.
+    _CounterSpec(
+        "nora_recovered_replies_total",
+        "Replies the model wrote as prose instead of calling send_reply, "
+        "recovered and delivered (DEC-93). Non-zero means the route is not "
+        "honouring tool_choice=required.",
+        ("platform",),
+    ),
     _CounterSpec(
         "nora_presence_disclosure_waived_total",
         "whereis disclosures that PASSED only because the conversation is "

@@ -38,7 +38,7 @@ async def test_llm_latency_is_recorded_separately(harness_factory):
 
 
 async def test_overhead_is_recorded_even_when_nothing_is_sent(harness_factory):
-    h = await harness_factory(script=[ScriptedTurn(final_text="silent")])
+    h = await harness_factory(script=[ScriptedTurn(final_text="")])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
     assert len(h.metrics.observations("nora_overhead_seconds")) == 1

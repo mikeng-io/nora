@@ -39,20 +39,23 @@ class _FakeRunner:
 
     def __init__(
         self, *, delay: float = 0.0, raises: Exception | None = None,
-        stop_reason: str | None = "end_turn",
+        stop_reason: str | None = "end_turn", final_text: str = "",
     ) -> None:
         self.delay = delay
         self.raises = raises
         self.stop_reason = stop_reason
+        self.final_text = final_text
         self.calls: list[dict] = []
 
-    async def invoke(self, **kwargs) -> str | None:
+    async def invoke(self, **kwargs) -> tuple[str | None, str]:
         self.calls.append(kwargs)
         if self.delay:
             await asyncio.sleep(self.delay)
         if self.raises:
             raise self.raises
-        return self.stop_reason
+        # `(stop_reason, final_text)` since DEC-93 — the prose the model wrote
+        # WITHOUT calling send_reply, empty on every healthy turn.
+        return self.stop_reason, self.final_text
 
 
 async def _run(runner, *, timeout_seconds=5.0, metrics=None, ctx=None, doctrine=None):
@@ -67,7 +70,7 @@ async def _run(runner, *, timeout_seconds=5.0, metrics=None, ctx=None, doctrine=
 
 async def test_a_successful_invocation_returns_ok_and_observes_latency():
     runner = _FakeRunner()
-    (ok, elapsed, stop_reason), metrics = await _run(runner)
+    (ok, elapsed, stop_reason, _text), metrics = await _run(runner)
 
     assert ok is True
     assert stop_reason == "end_turn"
@@ -112,7 +115,7 @@ async def test_trace_attributes_are_computed_from_ctx_and_doctrine():
 
 async def test_a_timeout_returns_not_ok_and_counts_invocation_timeout():
     runner = _FakeRunner(delay=5.0)
-    (ok, elapsed, stop_reason), metrics = await _run(runner, timeout_seconds=0.05)
+    (ok, elapsed, stop_reason, _text), metrics = await _run(runner, timeout_seconds=0.05)
 
     assert ok is False
     assert stop_reason is None
@@ -123,7 +126,7 @@ async def test_a_timeout_returns_not_ok_and_counts_invocation_timeout():
 
 async def test_a_generic_exception_returns_not_ok_and_counts_llm_error():
     runner = _FakeRunner(raises=RuntimeError("omniroute down"))
-    (ok, _elapsed, stop_reason), metrics = await _run(runner)
+    (ok, _elapsed, stop_reason, _text), metrics = await _run(runner)
 
     assert ok is False
     assert stop_reason is None

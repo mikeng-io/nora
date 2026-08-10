@@ -499,7 +499,23 @@ async def test_a_base_exception_only_fault_is_absorbed_silently():
     assert len(metrics.observations("nora_overhead_seconds")) == 1
 
 
-async def test_no_send_call_is_counted_when_the_model_never_calls_send_reply():
+async def test_a_reply_written_without_calling_send_reply_is_recovered():
+    """DEC-93, and a REVERSAL of what this test asserted before 2026-08-10.
+
+    It used to script exactly this — prose, no `send_reply` — and assert
+    silence, on the reasoning that a plain `end_turn` is a DELIBERATE silence
+    she is allowed. That was true while `tool_choice="required"` was honoured:
+    under `required` the model COULD NOT answer in prose, so prose meant she had
+    chosen not to speak.
+
+    DEC-84 moved the deployment to a route that ACCEPTS `required` AND IGNORES
+    IT. A probe found `auto` and `required` behaving identically there and it
+    was written off as "inert, harmless"; it was not. Live, 2 of the first 4
+    tags produced a complete, correct, group-addressed reply in a `text` block
+    and the group heard nothing — the group asking whether she was broken.
+
+    So prose no longer distinguishes "chose not to speak" from "spoke without
+    using the tool", and the words are recovered rather than discarded."""
     adapter = _FakeAdapter()
     pipeline, metrics, _audit, memory, background = _build_pipeline(
         adapter=adapter,
@@ -509,13 +525,43 @@ async def test_no_send_call_is_counted_when_the_model_never_calls_send_reply():
     await pipeline.run(_request())
     await _drain(background)
 
+    assert [t for _target, t in adapter.sent] == ["I would have said this"]
+    assert metrics.get("nora_recovered_replies_total") == 1
+    assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 0
+    # NOT the canned fallback — that is for a budget CUT-OFF, and these are
+    # different failures with different fixes.
+    assert metrics.get("nora_loop_exhausted_fallbacks_total") == 0
+    # And it DOES feed Honcho, unlike the fallback. The exclusion at
+    # `Deliverer.deliver` is `source != "fallback"` on purpose: the fallback is
+    # a canned apology nobody wrote, so feeding it would teach her self-model a
+    # sentence she never composed. A recovered reply is the opposite — these
+    # ARE her words, she simply failed to route them through the tool, and the
+    # group read them. Excluding them would make her memory of her own speech
+    # incomplete exactly where it is most confusing to her later.
+    assert [t for _peer, t, _conv in memory.fed] == ["I would have said this"]
+
+
+async def test_a_turn_that_wrote_nothing_at_all_is_still_a_silent_failure():
+    """The bound on the recovery, and the reason it cannot swallow the signal.
+
+    `no_send_call` still has to mean something. A model that ends its turn
+    having produced neither a tool call NOR any text has genuinely said nothing,
+    there is nothing to recover, and that must still be counted — otherwise
+    DEC-93 would have replaced a visible failure with an invisible one."""
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(final_text="")]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
     assert adapter.sent == []
     assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
+    assert metrics.get("nora_recovered_replies_total") == 0
     assert memory.fed == []
     assert _held(pipeline) is False
-    # And NO fallback: a plain no-send (end_turn) is a DELIBERATE silence she is
-    # allowed — the never-silent fallback fires only on a budget CUT-OFF.
-    assert metrics.get("nora_loop_exhausted_fallbacks_total") == 0
 
 
 async def test_the_never_silent_fallback_delivers_when_the_loop_is_cut_off():
@@ -618,7 +664,10 @@ async def test_a_silent_tag_observes_zero_rather_than_nothing_at_all():
     metrics = Metrics()
     pipeline, _, _, _, background = _build_pipeline(
         metrics=metrics,
-        runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
+        runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. It used to carry prose here,
+        # which since DEC-93 is RECOVERED and delivered — this test is
+        # about a genuinely silent turn, so it needs one.
+        ScriptedTurn(final_text="")]),
     )
 
     await pipeline.run(_request())
@@ -1008,7 +1057,10 @@ async def test_a_turn_that_never_replied_resolves_to_a_caution_and_says_nothing(
     adapter = _ReactingAdapter()
     pipeline, metrics, _audit, _memory, background = _build_pipeline(
         adapter=adapter,
-        runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
+        runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. It used to carry prose here,
+        # which since DEC-93 is RECOVERED and delivered — this test is
+        # about a genuinely silent turn, so it needs one.
+        ScriptedTurn(final_text="")]),
     )
 
     await pipeline.run(_request())
@@ -1386,7 +1438,10 @@ async def test_a_turn_that_said_nothing_is_a_silent_failure_not_a_partial_one():
     metrics = Metrics()
     pipeline, _, _, _, background = _build_pipeline(
         metrics=metrics,
-        runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
+        runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. It used to carry prose here,
+        # which since DEC-93 is RECOVERED and delivered — this test is
+        # about a genuinely silent turn, so it needs one.
+        ScriptedTurn(final_text="")]),
     )
     await pipeline.run(_request())
     await _drain(background)
