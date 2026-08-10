@@ -421,15 +421,24 @@ async def test_search_parses_the_message_list_and_drops_media_placeholders(serve
 
     base = await server_factory(handler)
     out = await HonchoClient(base, "nora").search(query="hotpot")
-    assert out == [("miles_novak", "打邊爐")]
+    assert out.reachable is True
+    assert out.hits == (("miles_novak", "打邊爐"),)
 
 
-async def test_search_is_empty_on_failure_and_never_raises(server_factory):
+async def test_a_failed_search_reports_unreachable_and_never_raises(server_factory):
     async def handler(request: web.Request) -> web.Response:
         return web.Response(status=500)
 
     base = await server_factory(handler)
-    assert await HonchoClient(base, "nora").search(query="x") == []
+
+    out = await HonchoClient(base, "nora").search(query="x")
+
+    # NOT `== []`. A 500 means the search did not run, and that has to be
+    # distinguishable from a search that ran and matched nothing — otherwise
+    # `search_memory` tells the group «nothing was said here» when Honcho is
+    # down (external review, 2026-08-11).
+    assert out.reachable is False
+    assert out.hits == ()
 
 
 async def test_search_scopes_to_the_conversations_session_not_the_workspace(server_factory):

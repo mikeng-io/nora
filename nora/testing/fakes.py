@@ -19,6 +19,7 @@ from nora.domain.ports import (
     LinkPreview,
     MemoryHealth,
     Mention,
+    MessageHits,
     PlatformIdentity,
     ReactionResult,
     Recollection,
@@ -281,11 +282,16 @@ class FakeMemoryStore:
     async def search(
         self, *, query: str, conversation_id: str | None = None,
         limit: int = 8, workspace_id: str | None = None,
-    ) -> list[tuple[str, str]]:
+    ) -> MessageHits:
+        """Mirrors `HonchoClient.search`, INCLUDING its failure shape: a
+        `fail=True` adapter is UNREACHABLE, not empty. Returning `[]` for both —
+        which this did — is a fake that answers every request the same way, and
+        it is why `search_memory` reported a Honcho outage as «nothing was said
+        here» with no test catching it."""
         self.searches.append(query)
         if self.fail:
-            return []
-        return list(self.messages)[:limit]
+            return MessageHits(reachable=False)
+        return MessageHits(reachable=True, hits=tuple(list(self.messages)[:limit]))
 
     async def health(self) -> MemoryHealth:
         return MemoryHealth(reachable=not self.fail)

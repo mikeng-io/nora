@@ -37,10 +37,16 @@ class _HonchoAdapter:
         self._session_has_id = True
         self._chat_answer = ""
         self._search_hits: list[dict] = []
+        self._search_ok = True
 
     async def start(self) -> None:
         async def handler(request: web.Request) -> web.Response:
             if request.path.endswith("/search"):
+                if not self._search_ok:
+                    # Honcho's real outage shape at this endpoint. The adapter
+                    # swallows it, so the ONLY way the caller can tell this from
+                    # a genuine miss is the bit `MessageHits` carries.
+                    return web.json_response({"error": "boom"}, status=503)
                 return web.json_response(self._search_hits)   # a LIST, not a dict
             if request.path.endswith("/sessions"):
                 return web.json_response({} if not self._session_has_id else {"id": "sess-1"})
@@ -68,6 +74,9 @@ class _HonchoAdapter:
     def break_it(self) -> None:
         self._session_has_id = False   # session cannot be created → feed must be False
 
+    def break_search(self) -> None:
+        self._search_ok = False
+
     def landed(self) -> list[tuple[str, str]]:
         # (peer_id, text) — the session id is deterministic per conversation, so
         # the peer placement is the contract-relevant part.
@@ -88,6 +97,9 @@ class _FakeAdapter:
     async def stop(self) -> None: ...
 
     def break_it(self) -> None:
+        self.store.fail = True
+
+    def break_search(self) -> None:
         self.store.fail = True
 
     def landed(self) -> list[tuple[str, str]]:
@@ -172,8 +184,44 @@ async def test_chat_is_none_when_there_is_nothing_to_say(adapter):
 async def test_search_returns_peer_content_pairs_and_is_empty_when_nothing_matches(adapter):
     """The raw-message search verb (design/24 §S.3), on the port so both backends
     agree: seeded messages come back as (peer_id, content) pairs, and an unseeded
-    search is [] (never None, never a raised error) — the caller's roster filter
-    and R-18 screen run on top of that."""
-    assert await adapter.store.search(query="hotpot") == []
+    search is empty (never None, never a raised error) — the caller's roster
+    filter and R-18 screen run on top of that.
+
+    A REACHED search that matched nothing is `reachable=True` with no hits. That
+    is the half `search_memory` is entitled to report as «nothing was said»."""
+    empty = await adapter.store.search(query="hotpot")
+    assert empty.reachable is True
+    assert empty.hits == ()
+
     adapter.seed_message("miles", "打邊爐 tonight?")
-    assert await adapter.store.search(query="hotpot") == [("miles", "打邊爐 tonight?")]
+    found = await adapter.store.search(query="hotpot")
+    assert found.reachable is True
+    assert found.hits == (("miles", "打邊爐 tonight?"),)
+
+
+async def test_a_search_that_could_not_run_is_distinguishable_from_one_that_found_nothing(
+    adapter,
+):
+    """The bit that cannot be recovered downstream, pinned on the PORT so a
+    backend cannot quietly drop it.
+
+    `search` used to return a bare list and answer `[]` for a transport failure,
+    a >=400, a malformed body AND a genuine miss. `search_memory` reported all
+    four as `nothing_found` — «I couldn't find anything like that in what's been
+    said here» — and counted it `ok`. An ERROR reading as a PASS, which R-27
+    exists to forbid, invisible because "nothing matched" is a true-sounding
+    sentence for a search nobody ran.
+
+    Putting an `except` in the CALLER did not fix it either: the adapter catches
+    everything itself, so that handler was unreachable code that read as a fix
+    (external review, 2026-08-11). The signal has to come from the backend."""
+    adapter.seed_message("miles", "打邊爐 tonight?")
+    adapter.break_search()
+
+    out = await adapter.store.search(query="hotpot")
+
+    assert out.reachable is False, (
+        "an unreachable search reports reachable=True, so an outage is "
+        "indistinguishable from a miss and the caller will say «nothing was said»"
+    )
+    assert out.hits == ()

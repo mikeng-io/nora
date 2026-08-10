@@ -407,6 +407,52 @@ async def test_search_memory_nothing_found_when_no_roster_speaker_matches(person
     assert result["status"] == "nothing_found"
 
 
+async def test_search_memory_reports_an_outage_as_unavailable_not_as_nothing_found(persons):
+    """R-27 at the tool boundary, and the one that was WRONG in a way no test
+    could see (external review, 2026-08-11).
+
+    A Honcho outage used to arrive here as `[]` — because the adapter catches
+    everything — and fell through to «I couldn't find anything like that in
+    what's been said here», counted `ok`. An ERROR reading as a PASS, invisible
+    because "nothing matched" is a true-sounding sentence for a search that
+    never ran. An `except` in this function did not fix it either: the adapter
+    never raises, so that handler was unreachable code that read as a fix.
+
+    `MessageHits.reachable` is the real signal, and the fake carries it because
+    the real client does."""
+    honcho = FakeHoncho()
+    honcho.messages = [("miles_novak", "book 咗七點枱")]   # would match, if it could run
+    honcho.fail = True
+    tools = _build(persons=persons, honcho=honcho)
+
+    result = await _call(tools["search_memory"], query="枱")
+
+    assert result["status"] == "unavailable"
+    assert "couldn't look" in result["note"]
+    assert "nothing" not in result["note"].lower().replace("do not say there was nothing", "")
+
+
+async def test_search_memory_says_it_cannot_repeat_what_it_found_when_all_hits_are_screened(
+    persons,
+):
+    """The other half of the same distinction. A result set emptied by the
+    EGRESS filter is not «nobody said that» — the words exist and she may not
+    repeat them, and saying nobody said them is false.
+
+    DEC-95 made this likely rather than theoretical: the filter moved to
+    `scan_reply`, which drops any line naming an LLM, and this is a group of
+    software engineers who say «claude» constantly."""
+    honcho = FakeHoncho()
+    honcho.messages = [("miles_novak", "琴日我用 claude 寫個 script 好撚快")]
+    tools = _build(persons=persons, honcho=honcho)
+
+    result = await _call(tools["search_memory"], query="script")
+
+    assert result["status"] == "nothing_found"
+    assert result["found_but_unusable"] == 1
+    assert "can't quote" in result["note"] or "can't repeat" in result["note"]
+
+
 async def test_search_memory_refuses_in_a_room_with_someone_it_cannot_place(persons):
     """A raw-message search must NOT surface the group's history into a room
     holding an outsider Nora can't place (R-31, fail-closed) — and it never even

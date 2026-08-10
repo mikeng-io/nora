@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from pathlib import Path
 
 import pytest
 from aiohttp import web
@@ -219,10 +220,32 @@ def test_the_vision_timeout_divides_by_the_resolved_budget_not_the_table():
     The turn dies on the loop's `wait_for` and surfaces as a silent
     `invocation_timeout` — no reply, and nothing that says why.
 
-    Asserts the PROPERTY across overrides rather than a specific number, so it
-    keeps holding when the table's default moves."""
+    Reads COMPOSITION'S OWN SOURCE, not a registry this test builds. The first
+    version constructed its own `ToolRegistry(budget_overrides=...)` and
+    computed the invariant from that — which is true by construction and stayed
+    green with the production fix reverted (external review, 2026-08-11). A test
+    that cannot see the wiring it narrates is decoration.
+
+    So: assert that composition resolves the budget through `budgets()` and does
+    NOT read the raw table. That is the actual defect, and it is what changed."""
     from nora.agent.registry import ToolRegistry
 
+    source = (Path(__file__).resolve().parents[1]
+              / "nora" / "app" / "composition.py").read_text()
+    call = source[source.index("derive_vision_timeout("):]
+    call = call[:call.index("),\n    )")]
+    # CODE only. The comment above the argument explains the defect by naming
+    # `NATIVE_TOOL_BUDGETS`, and a substring check would read that as the bug.
+    call = "\n".join(ln for ln in call.splitlines() if not ln.strip().startswith("#"))
+
+    assert "budgets()[\"media_fetch\"]" in call, (
+        "composition no longer resolves media_fetch's budget through "
+        "ToolRegistry.budgets() — an override would move R-7's ceiling while "
+        "the per-call vision timeout kept dividing by the table (R-33)"
+    )
+    assert "NATIVE_TOOL_BUDGETS" not in call
+
+    # And the property itself holds at every budget the knob can produce.
     loop = 120.0
     for override in ({}, {"media_fetch": 2}, {"media_fetch": 8}, {"media_fetch": 20}):
         budget = ToolRegistry(budget_overrides=override).budgets()["media_fetch"]

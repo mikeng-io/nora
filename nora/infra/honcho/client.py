@@ -16,7 +16,7 @@ from typing import Any, cast
 
 import aiohttp
 
-from nora.domain.ports import MemoryHealth, Recollection
+from nora.domain.ports import MemoryHealth, MessageHits, Recollection
 
 log = logging.getLogger("nora.honcho")
 
@@ -647,12 +647,17 @@ class HonchoClient:
     async def search(
         self, *, query: str, conversation_id: str | None = None, limit: int = 8,
         workspace_id: str | None = None,
-    ) -> list[tuple[str, str]]:
+    ) -> MessageHits:
         """Semantic search over the raw MESSAGES (not derived conclusions) — the
         verb behind `search_memory` (design/24 §S.3). Returns a LIST of message
         objects `{content, peer_id, session_id, …}` parsed to `(peer_id, content)`
-        pairs, [] on any failure. Its OWN parse, not `_post`, because the response
-        is a list, not the dict every other endpoint returns.
+        pairs, carried in a `MessageHits` beside the one bit the caller cannot
+        recover: WHETHER THE SEARCH RAN. This returned a bare list and answered
+        `[]` for a transport failure, a >=400, a malformed body and a genuine
+        miss alike — so `search_memory` reported a Honcho outage as «nothing was
+        said here», which is an ERROR reading as a PASS (external review,
+        2026-08-11). Its OWN parse, not `_post`, because the response is a list,
+        not the dict every other endpoint returns.
 
         SESSION-scoped when a `conversation_id` is given — `POST /sessions/{id}/
         search`, restricted to THIS channel's messages. That is the safe default
@@ -677,13 +682,15 @@ class HonchoClient:
             ):
                 if r.status >= 400:
                     log.warning("honcho search -> %s", r.status)
-                    return []
+                    return MessageHits(reachable=False)
                 body = await r.json()
         except Exception as e:  # noqa: BLE001 — Honcho is never load-bearing
             log.warning("honcho search unreachable: %s", e)
-            return []
+            return MessageHits(reachable=False)
         if not isinstance(body, list):
-            return []
+            # Reached the server and could not read it: still "could not check".
+            log.warning("honcho search returned a non-list body")
+            return MessageHits(reachable=False)
         out: list[tuple[str, str]] = []
         for m in body:
             if not isinstance(m, dict):
@@ -694,7 +701,7 @@ class HonchoClient:
             text = content.replace("￼", "").strip()   # drop the media placeholder
             if text:
                 out.append((peer, text))
-        return out
+        return MessageHits(reachable=True, hits=tuple(out))
 
     async def health(self) -> MemoryHealth:
         result = await self._get(f"{self._base}/health", self._card_timeout)

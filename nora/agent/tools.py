@@ -55,7 +55,7 @@ from datetime import UTC, date, datetime, time, timedelta, timezone
 
 from ..domain.media import HANDLE_CHARS
 from ..domain.models import WeatherObservation
-from ..domain.ports import Recollection
+from ..domain.ports import MessageHits, Recollection
 from ..domain.reminders import (
     Recurrence,
     RecurrenceRule,
@@ -1611,17 +1611,18 @@ def build_tool_specs(
             # workspace-wide search would surface a roster member's PRIVATE DM
             # words into this room. `bound_conversation_id` is the tag's channel,
             # captured once (DEC-24), never a model-supplied value.
-            hits = await honcho.search(query=query[:500], conversation_id=bound_conversation_id)
-            searched = True
+            found = await honcho.search(
+                query=query[:500], conversation_id=bound_conversation_id)
         except Exception:
-            # An ERROR is never a PASS (R-27). This used to fall through to the
-            # empty-result branch, which says «nobody said anything like that» —
-            # a Honcho outage reported as an absence, and counted `ok`. The
-            # whole spine of this repo is that «I could not check» and «there is
-            # nothing» are different answers.
+            # Belt-and-braces only. The adapter catches everything itself, so
+            # this handler is NOT where the outage is detected — an earlier fix
+            # put the R-27 branch here and it was unreachable code that read as
+            # a fix (external review, 2026-08-11). `MessageHits.reachable` is
+            # the real signal, carried out of the place that knows it.
             log.exception("search_memory failed")
-            hits, searched = [], False
-        if not searched:
+            found = MessageHits(reachable=False)
+        hits = found.hits
+        if not found.reachable:
             _record_room(metrics, "search_memory", "unavailable")
             return {
                 "status": "unavailable",

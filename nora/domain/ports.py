@@ -467,6 +467,29 @@ class Recollection:
     conclusions: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class MessageHits:
+    """What a raw-message search returned, and WHETHER IT RAN.
+
+    `Recollection`'s argument, one endpoint over: `MemoryStore.search` returned
+    a bare list and answered `[]` for a transport failure, a >=400, a malformed
+    body AND a genuine miss. `search_memory` then reported all four as
+    `nothing_found` — «I couldn't find anything like that in what's been said
+    here» — which is an ERROR reading as a PASS, the one thing R-27 exists to
+    forbid, and it was counted `ok`.
+
+    That was invisible for the same reason the dead `peer_card` endpoint was:
+    "nothing matched" is a true-sounding sentence for a search nobody ran. An
+    `except` clause in the CALLER could not fix it either — the adapter catches
+    everything itself, so the caller's handler was unreachable code that read as
+    a fix (external review, 2026-08-11). The bit has to be carried out of the
+    place that knows it.
+    """
+
+    reachable: bool
+    hits: tuple[tuple[str, str], ...] = ()      # (peer_id, content)
+
+
 @runtime_checkable
 class RosterSource(Protocol):
     """Current membership of a conversation, read from the platform.
@@ -630,12 +653,14 @@ class MemoryStore(Protocol):
     ) -> str | None: ...
 
     # Semantic search over the raw MESSAGES (not conclusions) — the verb behind
-    # `search_memory`. Returns (peer_id, content) pairs; the caller filters to the
-    # room roster and screens identifiers. Workspace-scoped (design/24 §S.3).
+    # `search_memory`. Carries `reachable` beside the hits (see `MessageHits`):
+    # a bare list made a Honcho outage indistinguishable from a genuine miss,
+    # and `search_memory` reported the outage as «nothing was said», counted ok.
+    # The caller still filters to the room roster and screens identifiers.
     async def search(
         self, *, query: str, conversation_id: str | None = None, limit: int = 8,
         workspace_id: str | None = None,
-    ) -> list[tuple[str, str]]: ...
+    ) -> MessageHits: ...
 
     async def health(self) -> MemoryHealth: ...
 
