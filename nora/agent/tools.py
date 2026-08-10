@@ -440,10 +440,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # is the backstop for the one case the two counters legitimately disagree (a
     # call that reached the audit write but not `record`). Never a second cap
     # checked beside this one — that is the drift DEC-10 exists to prevent.
+    # The `when` clause carries the ADDRESSEE half of DEC-88 and nothing else.
+    # This block is paid on every call and adds only "when to reach for it in
+    # this situation" (`capability()`'s docstring), so the @-form itself — the
+    # mechanism — stays in the schema description below, which the model reads
+    # in the same request and which is the surface DEC-78/DEC-82 measured as the
+    # one that moves behaviour.
     "send_reply": NativeTool(3, "the only way anything you write reaches the group; "
-                                "send one message per distinct thing you are saying — "
-                                "usually one, up to 3 only when addressing different "
-                                "people",
+                                "usually ONE message — a second only when it is a "
+                                "separate act addressed to somebody else, such as "
+                                "putting a question to the person who actually knows",
                              terminal=True),
     # THE ACTIVATION TOOL (DEC-50, activating DEC-48). It is `plugin=True`, so
     # this entry exists for ONE reason: R-7 default-denies any tool absent from
@@ -2826,14 +2832,30 @@ def build_tool_specs(
         """Send a message to the group. This is the only way anything you write is sent.
 
         Usually you call this ONCE, at the end of your turn. You MAY call it up to three
-        times — but only for genuinely SEPARATE messages: a reply to the person who
-        tagged you AND a word to someone else, two distinct things addressed to two
-        different people. That is what a second message is for.
+        times — but only for genuinely SEPARATE acts: a reply to the person who tagged
+        you AND a word to someone else, two distinct things addressed to two different
+        people. That is what a second message is for.
 
-        Do NOT split one answer across several messages to pace or pad it — one thought
-        is one message. If everything you have to say is to one person about one thing,
-        send it once. If you never call this, nothing is sent; it always goes to the
-        conversation you were tagged in — you do not choose where.
+        Writing @ immediately before the name the group uses for somebody ADDRESSES
+        them: it becomes a real tag and their phone lights up. It only works for people
+        who are in THIS conversation — a name that is not here reaches nobody, so tag
+        somebody only when you know they are around. That makes the most useful second
+        message you have: when what somebody wants is a fact about a person who IS here
+        and you do not hold it, say plainly that you do not know, and then ask THEM.
+
+            我唔知佢幾高喎
+            @Jordan 有人想知你幾高
+
+        The question is yours to ask, the answer is theirs to give — you are handing
+        the question over, never answering on their behalf and never passing on what
+        one of them told you privately.
+
+        Do NOT split one answer across several messages to pace or pad it, and do not
+        send a second message merely because three are allowed — one thought is one
+        message, and a straight question gets one straight answer. If everything you
+        have to say is to one person about one thing, send it once. If you never call
+        this, nothing is sent; it always goes to the conversation you were tagged in —
+        you do not choose where.
 
         Args:
             text: One message, in your own voice.
