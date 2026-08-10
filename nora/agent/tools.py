@@ -69,6 +69,7 @@ from ..domain.reminders import (
 )
 from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers
+from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .room import Room, RoomView, _key, _names_of
 from .whereis import Whereis, resolvable_places
@@ -1083,6 +1084,7 @@ def build_tool_specs(
     reminders: ReminderStore | None = None,
     reminder_caps: ReminderCaps | None = None,
     clock: Callable[[], datetime] | None = None,
+    links: LinkCarry | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -1106,6 +1108,14 @@ def build_tool_specs(
     """
     caps = reminder_caps or ReminderCaps()
     now_fn = clock or utc_now
+    # DEC-89. `None` is the INERT case, not an error: a tool that offers a link
+    # to a carrier nobody sends from behaves exactly as it did before the
+    # feature existed. `deliver.build` mints the shared one and both production
+    # callers pass it (pinned by
+    # `tests/architecture/test_tools_and_sender_share_one_link_carrier.py`), so
+    # the default is only ever taken by a caller with no `Deliverer` to share
+    # with — the offline/eval compositions and every test that does not care.
+    link_carry = links if links is not None else LinkCarry()
     # The tag's conversation, captured once. It is the ONLY thing that decides
     # which rows `load_transcript` returns — see DEC-24 for why the model is no
     # longer asked for it. Task 1's cross-group read leak was this value being
@@ -1985,6 +1995,23 @@ def build_tool_specs(
                 if short:
                     maps_url = short
             out["maps_url"] = maps_url
+            # DEC-89: offer it to the turn's carrier so that a reply which NAMES
+            # this place carries the link whether or not the model remembered to
+            # quote it. Two anchors for one url, because the words she is likely
+            # to write are not always the words she asked with: `name` is what
+            # the group said («Soi.29»), `out["name"]` is what Google resolved
+            # («Soi 29 Thai Kitchen»), and either appearing in the reply is
+            # evidence she is recommending THIS place. `LinkCarry` dedupes by
+            # url, so two anchors still append one line.
+            #
+            # `route` deliberately does NOT do this. Its `maps_url` is a link to
+            # one specific trip, and its docstring already conditions on being
+            # ASKED for it («俾條 link 我»); appending unasked would put a map
+            # link under every «幾耐到» answer, which is noise rather than the
+            # measured defect. One tool, the one that was measured dropping
+            # them — widen only on another measurement.
+            link_carry.offer(anchor=name, url=maps_url)
+            link_carry.offer(anchor=str(out.get("name", "")), url=maps_url)
         _record(metrics, "place_info", out["status"], rating=out.get("rating"))
         return out
 
@@ -2857,6 +2884,20 @@ def build_tool_specs(
         this, nothing is sent; it always goes to the conversation you were tagged in —
         you do not choose where.
 
+        Read `text` back before you send it, and fix these three:
+          - **Too long.** One or two sentences answers almost everything. However much
+            you looked up, that is not content — cut it to the part that answers the
+            question. No headings, no per-item paragraphs, no bold labels.
+          - **A tail that offers more.** Delete 「希望幫到你」「有咩再搵我」「要唔要我幫你
+            睇埋…」 and anything like them. Worse, they are how you end up promising
+            something you cannot do — you have no way to book, order, phone or apply
+            for anything. Answer and stop.
+          - **Caving.** If somebody pushed back and you are about to write 「你啱」 or
+            apologise, check what you actually found first. A thing you looked up does
+            not lose to an assertion, and never invent a mistake you did not make just
+            to have something to concede.
+        A link one of your tools gave you belongs IN the message, pasted exactly.
+
         Args:
             text: One message, in your own voice.
         """
@@ -2918,6 +2959,7 @@ def build_tools(
     question: str = "",
     context_window: int = 40,
     ai_peer: str = "nora",
+    links: LinkCarry | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -2934,5 +2976,6 @@ def build_tools(
         refresher=refresher,
         shortener=shortener,
         question=question, context_window=context_window, ai_peer=ai_peer,
+        links=links,
     )
     return [adapt(spec) for spec in specs]

@@ -616,6 +616,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(the fetched title/description carried an identifier, R-18).",
         ("outcome",),
     ),
+    # DEC-89. The series exists to answer one question an operator cannot ask
+    # any other way: is the model quoting the links `place_info` mints, or is
+    # the egress carry the only reason the group ever sees one? A reply that
+    # already carried its link increments NOTHING — like `nora_link_previews_
+    # total`, this counts DECISIONS, not messages — so a rising rate is the
+    # model dropping links and a flat zero (with `place_info` calls happening)
+    # is the model behaving, which is the direction the doctrine is aimed at.
+    # `outcome` is a label rather than a bare counter because the one-valued
+    # version cannot grow the value that will matter next (a link EARNED but
+    # suppressed) without a rename, and metric names here are append-only.
+    _CounterSpec(
+        "nora_reply_links_carried_total",
+        "Replies that left with a link the model had dropped, by outcome: "
+        "appended (a place the reply named had a minted maps link the text did "
+        "not carry).",
+        ("outcome",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

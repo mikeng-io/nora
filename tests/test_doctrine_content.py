@@ -151,6 +151,99 @@ def test_conduct_says_what_earns_a_second_message_and_what_does_not():
 
     # No mechanism here — that is the schema's job (see this test's docstring).
     assert "@" not in text
+def test_voice_carries_no_feminine_speech_markers():
+    """DEC-91 — an operator ruling, pinned so the next session cannot re-decide it.
+
+    It was asked for and REFUSED, and the argument is already in this file two
+    tests up: `voice.md` lists «Cutesy — baby particles, exaggerated softness,
+    performed sweetness» as a sound to AVOID, and feminine-coded Cantonese moves
+    pull straight toward it. 人哋 as a self-reference and softened particle
+    clusters (「啦嘛」「咯喎」「嘛」) are the two concrete shapes that were on the
+    table; they fight the 串/抵死 register the same file is being widened toward,
+    so adding them would make the file argue with itself.
+
+    A decision that lives only in a chat log is one somebody re-opens next
+    month, which is what a decision index and a named test exist to prevent.
+    Asserted on the BODY, not the file, so a future note explaining the ruling
+    can quote the tokens without failing its own rule.
+    """
+    body = (DOCTRINE_DIR / "voice.md").read_text().split("---", 2)[2]
+    for marker in ("人哋", "啦嘛", "咯喎"):
+        assert marker not in body, (
+            f"voice.md gained the feminine speech marker {marker!r}. This was "
+            "asked for and refused (DEC-91) — it collides with the file's own "
+            "«Cutesy» anti-pattern and with the 串/抵死 range it protects."
+        )
+
+
+def test_voice_names_the_generated_text_tells_it_exists_to_remove():
+    """DEC-92 — the Humanizer distillation is a NAMED list, not a mood.
+
+    "Sound human" is not actionable; the individual habits are. These are the
+    ones that survived translation out of a Mandarin written-prose editing guide
+    into 口語 Cantonese chat, and the reason they survived is that each one is a
+    shape you can see in a draft and delete."""
+    text = (DOCTRINE_DIR / "voice.md").read_text()
+    assert "# The machine tells" in text
+    for tell in ("此外", "然而", "希望幫到你", "有咩再搵我", "好問題"):
+        assert tell in text, tell
+    # The positive half. Removing tells alone leaves clean, dead text — the one
+    # thing the source guides agree on and the reason this is two sections.
+    assert "# What you put in instead" in text
+    assert "Have a take" in text
+
+
+def test_the_anti_hedge_rule_does_not_collide_with_saying_you_dont_know():
+    """The de-collision, stated IN the rule — the same discipline that keeps
+    R-5's «say nothing» from colliding with «I can't check that» (see
+    `test_the_silence_doctrine_is_stated_exactly_once_in_guardrails`).
+
+    Cutting hedges and cutting honesty look identical to a model reading fast,
+    and this repo has already paid once for two doctrine clauses that pointed
+    opposite ways. The ban is on stacking four hedges onto one claim she is
+    fairly sure of, and the exemption is named in the same paragraph rather
+    than left to be inferred from another file."""
+    voice = (DOCTRINE_DIR / "voice.md").read_text()
+    assert "Stacked hedges" in voice
+    assert "not the same as being honest about" in voice
+    assert "我唔知" in voice
+
+
+def test_pushback_is_split_by_kind_across_voice_and_conduct():
+    """The two halves of the sycophancy fix live in the file that owns each, and
+    NEITHER is a copy of the other.
+
+    `voice.md` owns how a concession or a refusal SOUNDS; `conduct.md` owns
+    whether the challenge should move her at all, which is a grounding question
+    and belongs beside «stand behind what you say». Splitting by kind is
+    design/17 §4's rule, and the duplicate-clause failure it exists to prevent
+    is the one recorded in `test_the_silence_doctrine_is_stated_exactly_once`.
+    """
+    voice = (DOCTRINE_DIR / "voice.md").read_text()
+    conduct = (DOCTRINE_DIR / "conduct.md").read_text()
+    assert "# When somebody pushes back at you" in voice
+    assert "# Being contradicted is not evidence" in conduct
+    # The forbidden move itself — inventing a fault so there is one to concede —
+    # is what BOTH files must reach, from their own side.
+    assert "invent an account of your own mistake" in voice
+    assert "Never manufacture a fault to hand over" in conduct
+    # …but the register examples stay in voice alone, and the grounding
+    # vocabulary stays in conduct alone.
+    assert "你哋兩個講法唔同" in conduct and "你哋兩個講法唔同" not in voice
+
+
+def test_conduct_refuses_to_record_a_contradiction_as_a_fact():
+    """Three people gave three heights and she answered «記低咗» to each, noting
+    no contradiction. The ruling was that noticing beats resolving — and
+    deliberately NOT a last-write-wins rule, because which account is better
+    «really content/context depends»."""
+    conduct = (DOCTRINE_DIR / "conduct.md").read_text()
+    assert "# When two people tell you different things" in conduct
+    assert "記低咗" in conduct
+    assert "not something a rule decides" in conduct
+    # The tie-breaks are stated as JUDGMENT inputs, never as an ordering to
+    # apply mechanically — a blanket rule was explicitly refused.
+    assert "A person's own answer about themselves outranks a bystander's guess" in conduct
 
 
 def test_no_doctrine_file_carries_a_tool_catalogue():

@@ -156,6 +156,45 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     ) == {"text"}
 
 
+def test_the_send_reply_schema_carries_the_three_reply_defects(wiring):
+    """DEC-92's tool-surface half — and the reason it is HERE and not only in
+    `voice.md`.
+
+    DEC-78 measured that an always-on prose maxim did not move routing at all
+    while a schema-token change moved it 0/16 → 16/16, and DEC-39 established
+    the general form: the schema is the surface the model matches on. All three
+    of these rules already exist in the doctrine, thousands of tokens back in
+    the system prompt, and all three were violated in one live session anyway.
+    This is the same sentence read at the moment the reply is actually being
+    written.
+
+    NOT a claim that it works. Unlike DEC-82's strip and DEC-89's link carry,
+    nothing here is enforced — a docstring is still text addressed to a model,
+    and whether it moves anything is a live measurement nobody has taken. What
+    this test pins is that the surface exists and stays in step with the
+    doctrine, so the measurement has something stable to measure.
+    """
+    # Whitespace-normalised: `adapt()` keeps the docstring's own line breaks and
+    # indentation, so a clause that happens to wrap is still one sentence to the
+    # model and must be one string to this test.
+    description = " ".join(
+        wiring["tools"]["send_reply"].tool_spec["description"].split()
+    )
+    # Length: the essay shape, and the specific excuse that produced it.
+    assert "One or two sentences answers almost everything" in description
+    assert "However much you looked up, that is not content" in description
+    # The chatbot tail, which is also where the capability overclaim came from.
+    assert "有咩再搵我" in description
+    assert "you have no way to book, order, phone or apply for anything" in description
+    # Sycophancy, at the one moment it happens.
+    assert "A thing you looked up does not lose to an assertion" in description
+    assert "never invent a mistake you did not make just to have something " \
+           "to concede" in description
+    # And the dropped link (DEC-89's prose half; the egress carry is the half
+    # that does not depend on the model reading this).
+    assert "pasted exactly" in description
+
+
 def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(wiring):
     """The SDK behaviour DEC-24's scope counter is built on, pinned here.
 
