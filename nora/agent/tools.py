@@ -2262,7 +2262,7 @@ def build_tool_specs(
     # sum rather than a max so the bound stays correct if either half moves.
     _media_window = context_window + LOAD_TRANSCRIPT_MAX
 
-    async def media_fetch(handle: str) -> dict:
+    async def media_fetch(code: str) -> dict:
         """Look at an image somebody sent in this conversation and say what it shows.
 
         Call this when the conversation contains an image — you see a marker like
@@ -2288,7 +2288,7 @@ def build_tool_specs(
             report it as «there's no image» and never invent what was in it.
 
         Args:
-            handle: The short code from the image marker, e.g. "a3f2c1".
+            code: The short code from the image marker, e.g. "a3f2c1".
         """
         # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
         # enabled=false` or no key → no blob store) or no OmniRoute client wired
@@ -2304,13 +2304,13 @@ def build_tool_specs(
                         "there is no image and do not guess what it showed.",
             }
 
-        hex_handle = _handle_hex(handle)
+        hex_handle = _handle_hex(code)
         if len(hex_handle) < HANDLE_CHARS:
             # Not a handle at all (a bare "[image]" with no code, or noise). She
             # holds nothing to resolve, so `nothing_found`, never a MiMo call.
             _record_media(metrics, "nothing_found", reason="no_handle")
             return {
-                "status": "nothing_found", "handle": hex_handle,
+                "status": "nothing_found", "code": hex_handle,
                 "note": "I don't see an image with that code here. Say you can't "
                         "find it rather than guessing what it was.",
             }
@@ -2327,7 +2327,7 @@ def build_tool_specs(
             log.exception("media_fetch failed to read the transcript")
             _record_media(metrics, "unavailable", reason="store")
             return {
-                "status": "unavailable", "handle": hex_handle,
+                "status": "unavailable", "code": hex_handle,
                 "note": "I can't look at images right now. Say so — do not say "
                         "there is no image and do not guess what it showed.",
             }
@@ -2354,7 +2354,7 @@ def build_tool_specs(
         if not matches:
             _record_media(metrics, "nothing_found", candidates=0)
             return {
-                "status": "nothing_found", "handle": hex_handle,
+                "status": "nothing_found", "code": hex_handle,
                 "note": "I don't see an image with that code here. Say you can't "
                         "find it rather than guessing what it was.",
             }
@@ -2364,7 +2364,7 @@ def build_tool_specs(
             # can ask which.
             _record_media(metrics, "ambiguous", candidates=len(matches))
             return {
-                "status": "ambiguous", "handle": hex_handle,
+                "status": "ambiguous", "code": hex_handle,
                 "could_be": sorted(sha[:HANDLE_CHARS] for sha in matches),
                 "note": "More than one image here has that code. Ask which one "
                         "they mean.",
@@ -2378,7 +2378,7 @@ def build_tool_specs(
         if not media_type.startswith("image/"):
             _record_media(metrics, "not_an_image")
             return {
-                "status": "not_an_image", "handle": sha256[:HANDLE_CHARS],
+                "status": "not_an_image", "code": sha256[:HANDLE_CHARS],
                 "note": "That's not a picture — it's a voice note, a video or a "
                         "file. Say you can't look at it.",
             }
@@ -2404,7 +2404,7 @@ def build_tool_specs(
         if not data:
             _record_media(metrics, "unavailable", reason="blob")
             return {
-                "status": "unavailable", "handle": sha256[:HANDLE_CHARS],
+                "status": "unavailable", "code": sha256[:HANDLE_CHARS],
                 "note": "I can't open that image right now. Say so — do not say "
                         "there is no image and do not guess what it showed.",
             }
@@ -2421,7 +2421,7 @@ def build_tool_specs(
         if result is None or not getattr(result, "available", False):
             _record_media(metrics, "unavailable", reason=getattr(result, "reason", "") or "vision")
             return {
-                "status": "unavailable", "handle": sha256[:HANDLE_CHARS],
+                "status": "unavailable", "code": sha256[:HANDLE_CHARS],
                 "note": "I couldn't get a look at that image just now. Say so — do "
                         "not say there is no image and do not describe it anyway.",
             }
@@ -2454,14 +2454,14 @@ def build_tool_specs(
             # status stays `ok` (she DID look), but the words never leave.
             _record_media(metrics, "ok", cached=cached, withheld=True)
             return {
-                "status": "ok", "handle": sha256[:HANDLE_CHARS], "withheld": True,
+                "status": "ok", "code": sha256[:HANDLE_CHARS], "withheld": True,
                 "note": "I looked, and it has what looks like a phone number or an "
                         "ID in it, so I won't repeat what it said. Describe it only "
                         "in general terms, without the contact details.",
             }
         _record_media(metrics, "ok", cached=cached, chars=len(description))
         return {
-            "status": "ok", "handle": sha256[:HANDLE_CHARS],
+            "status": "ok", "code": sha256[:HANDLE_CHARS],
             "description": description,
         }
 

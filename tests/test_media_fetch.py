@@ -128,17 +128,17 @@ async def _call(tool, **kw):
 
 async def test_an_image_in_the_conversation_is_described(wiring):
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
-    out = await _call(wiring["build"](), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
     assert out["status"] == "ok"
     assert out["description"] == "A red one-pixel square."
-    assert out["handle"] == PNG_SHA[:6]
+    assert out["code"] == PNG_SHA[:6]
     assert wiring["vision"].calls == 1
 
 
 async def test_the_bracketed_marker_resolves_too(wiring):
     """The model is shown `[image a3f2c1]` and may quote the whole marker back."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
-    out = await _call(wiring["build"](), handle=f"[image {PNG_SHA[:6]}]")
+    out = await _call(wiring["build"](), code=f"[image {PNG_SHA[:6]}]")
     assert out["status"] == "ok"
 
 
@@ -149,8 +149,8 @@ async def test_a_second_fetch_of_the_same_hash_makes_no_mimo_call(wiring):
     cache lookup in `media_fetch` turns this red: the count becomes 2."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     tool = wiring["build"]()
-    first = await _call(tool, handle=PNG_SHA[:6])
-    second = await _call(tool, handle=PNG_SHA[:6])
+    first = await _call(tool, code=PNG_SHA[:6])
+    second = await _call(tool, code=PNG_SHA[:6])
     assert first["description"] == second["description"] == "A red one-pixel square."
     assert wiring["vision"].calls == 1, "the second fetch called MiMo again"
     assert wiring["metrics"].get("nora_media_fetch_total", status="ok", cached="true") == 1
@@ -161,8 +161,8 @@ async def test_the_cache_survives_across_tags_not_just_within_one(wiring):
     """The cache lives on the registry (per process), so a fresh tool built for a
     later tag still hits it — a per-tag cache would never hit."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
-    await _call(wiring["build"](), handle=PNG_SHA[:6])       # tag 1
-    await _call(wiring["build"](), handle=PNG_SHA[:6])       # tag 2, new tool, same cache
+    await _call(wiring["build"](), code=PNG_SHA[:6])       # tag 1
+    await _call(wiring["build"](), code=PNG_SHA[:6])       # tag 2, new tool, same cache
     assert wiring["vision"].calls == 1
 
 
@@ -176,13 +176,13 @@ async def test_a_transcribed_uuid_is_screened_out_even_on_a_cache_hit(wiring):
     wiring["vision"].description = f"A screenshot of a settings page showing id {uuid}."
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     tool = wiring["build"]()
-    first = await _call(tool, handle=PNG_SHA[:6])
+    first = await _call(tool, code=PNG_SHA[:6])
     assert first["status"] == "ok"
     assert first.get("withheld") is True
     assert "description" not in first
     assert uuid not in repr(first)
     # Second serve is a cache HIT (no new MiMo call) and is screened all the same.
-    second = await _call(tool, handle=PNG_SHA[:6])
+    second = await _call(tool, code=PNG_SHA[:6])
     assert uuid not in repr(second)
     assert wiring["vision"].calls == 1
 
@@ -194,7 +194,7 @@ async def test_the_screen_does_not_catch_a_bare_local_number_and_says_so(wiring)
     limitation rather than claiming a protection the tool does not deliver."""
     wiring["vision"].description = "A business card. The number reads 9000 0101."
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
-    out = await _call(wiring["build"](), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
     assert out["status"] == "ok"
     assert "9000 0101" in out["description"]
 
@@ -203,7 +203,7 @@ async def test_a_transcribed_e164_number_is_screened_out(wiring):
     """The other half of the same honesty: a `+`-prefixed E.164 IS caught."""
     wiring["vision"].description = "A contact card for +85290000101."
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
-    out = await _call(wiring["build"](), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
     assert out["status"] == "ok"
     assert out.get("withheld") is True
     assert "+85290000101" not in repr(out)
@@ -215,7 +215,7 @@ async def test_a_handle_from_another_conversation_is_nothing_found(wiring):
     """R-21: resolved WITHIN this conversation's media_json only. An image in g2
     is un-resolvable in g1 — nothing_found, never described."""
     await _append_image(wiring["store"], conversation_id="g2", sha256=PNG_SHA)
-    out = await _call(wiring["build"](), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
     assert out["status"] == "nothing_found"
     assert wiring["vision"].calls == 0
 
@@ -223,7 +223,7 @@ async def test_a_handle_from_another_conversation_is_nothing_found(wiring):
 async def test_a_bare_image_with_no_handle_is_nothing_found(wiring):
     """The tool must not fire on a bare `[image]` with no code — custody holds
     nothing to resolve, so nothing_found and no MiMo call."""
-    out = await _call(wiring["build"](), handle="[image]")
+    out = await _call(wiring["build"](), code="[image]")
     assert out["status"] == "nothing_found"
     assert wiring["vision"].calls == 0
 
@@ -235,7 +235,7 @@ async def test_two_blobs_sharing_the_prefix_are_ambiguous_never_pick_first(wirin
     b = "abcdef" + "1" * 58
     await _append_image(wiring["store"], conversation_id="g1", sha256=a, ts=100)
     await _append_image(wiring["store"], conversation_id="g1", sha256=b, ts=101)
-    out = await _call(wiring["build"](), handle="abcdef")
+    out = await _call(wiring["build"](), code="abcdef")
     assert out["status"] == "ambiguous"
     assert set(out["could_be"]) == {"abcdef"}  # both render to the same 6-hex
     assert wiring["vision"].calls == 0
@@ -246,7 +246,7 @@ async def test_the_same_blob_in_two_rows_is_not_an_ambiguity(wiring):
     resolves rather than reading as a collision."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA, ts=100)
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA, ts=101)
-    out = await _call(wiring["build"](), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
     assert out["status"] == "ok"
 
 
@@ -255,7 +255,7 @@ async def test_the_same_blob_in_two_rows_is_not_an_ambiguity(wiring):
 async def test_a_voice_note_is_not_an_image_before_any_mimo_call(wiring):
     await _append_image(wiring["store"], conversation_id="g1",
                         sha256="a" * 64, media_type="audio/aac")
-    out = await _call(wiring["build"](), handle="a" * 6)
+    out = await _call(wiring["build"](), code="a" * 6)
     assert out["status"] == "not_an_image"
     assert wiring["vision"].calls == 0
 
@@ -268,7 +268,7 @@ async def test_an_absent_blob_is_unavailable_not_nothing_found(wiring):
     (there was never one) and never a raise."""
     absent = "b" * 64
     await _append_image(wiring["store"], conversation_id="g1", sha256=absent)
-    out = await _call(wiring["build"](), handle="b" * 6)
+    out = await _call(wiring["build"](), code="b" * 6)
     assert out["status"] == "unavailable"
 
 
@@ -281,14 +281,14 @@ async def test_a_wrong_key_blob_raises_and_is_wrapped_into_unavailable(wiring):
     )
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     tool = wiring["build"](blob_store=wrong_key_store)
-    out = await _call(tool, handle=PNG_SHA[:6])
+    out = await _call(tool, code=PNG_SHA[:6])
     assert out["status"] == "unavailable"
 
 
 async def test_a_hung_model_is_unavailable_not_a_guess(wiring):
     wiring["vision"].available = False
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
-    out = await _call(wiring["build"](), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
     assert out["status"] == "unavailable"
     assert "description" not in out
 
@@ -301,7 +301,7 @@ async def test_a_describe_that_raises_is_wrapped_not_propagated(wiring):
             raise RuntimeError("vision on fire")
 
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
-    out = await _call(wiring["build"](vision_source=_Exploding()), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](vision_source=_Exploding()), code=PNG_SHA[:6])
     assert out["status"] == "unavailable"
 
 
@@ -310,7 +310,7 @@ async def test_the_store_going_down_is_unavailable_not_a_raise(wiring, monkeypat
         raise RuntimeError("db down")
 
     monkeypatch.setattr(wiring["store"], "recent", boom)
-    out = await _call(wiring["build"](), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
     assert out["status"] == "unavailable"
 
 
@@ -319,13 +319,13 @@ async def test_the_store_going_down_is_unavailable_not_a_raise(wiring, monkeypat
 async def test_no_blob_store_is_unavailable_the_inert_by_config_shape(wiring):
     """`[media] enabled=false` or no key → no blob store → the tool answers
     `unavailable`, the route-with-no-key shape, never nothing_found."""
-    out = await _call(wiring["build"](blob_store=None), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](blob_store=None), code=PNG_SHA[:6])
     assert out["status"] == "unavailable"
 
 
 async def test_no_vision_client_is_unavailable_reachable_omniroute_gate(wiring):
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
-    out = await _call(wiring["build"](vision_source=None), handle=PNG_SHA[:6])
+    out = await _call(wiring["build"](vision_source=None), code=PNG_SHA[:6])
     assert out["status"] == "unavailable"
 
 
@@ -352,7 +352,7 @@ async def test_a_stored_image_is_read_only_within_scope_and_screened_on_serve(wi
 
     # Scope: the image lives in g2; this tool is bound to g1.
     await _append_image(wiring["store"], conversation_id="g2", sha256=PNG_SHA)
-    cross = await _call(wiring["build"](), handle=PNG_SHA[:6])
+    cross = await _call(wiring["build"](), code=PNG_SHA[:6])
     assert cross["status"] == "nothing_found"
     assert wiring["vision"].calls == 0
 
@@ -360,9 +360,9 @@ async def test_a_stored_image_is_read_only_within_scope_and_screened_on_serve(wi
     wiring["vision"].description = f"A form pre-filled with account {uuid}."
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
     tool = wiring["build"]()
-    served = await _call(tool, handle=PNG_SHA[:6])
+    served = await _call(tool, code=PNG_SHA[:6])
     assert served["status"] == "ok" and served.get("withheld") is True
     assert uuid not in repr(served)
-    cached = await _call(tool, handle=PNG_SHA[:6])       # cache hit, screened all the same
+    cached = await _call(tool, code=PNG_SHA[:6])       # cache hit, screened all the same
     assert uuid not in repr(cached)
     assert wiring["vision"].calls == 1
