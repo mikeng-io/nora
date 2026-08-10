@@ -41,6 +41,11 @@ include = ["nora*"]
 nora = [
     "doctrine/*.md",
     "py.typed",
+    # The build-time version stamp (DEC-79). Generated, gitignored, and absent
+    # from a source checkout — declared here so a WHEEL built from a stamped
+    # tree ships it, exactly as the migrations below are declared so the image
+    # ships those.
+    "version.json",
     "infra/sql/migrations/*",
     "infra/sql/migrations/versions/*",
 ]

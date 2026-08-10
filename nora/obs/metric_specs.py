@@ -456,10 +456,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "is outside the circle and the room is not location-trusted).",
         ("reason",),
     ),
-    # The WAIVER counter — the other half of the pair above, and the reason DEC-79
+    # The WAIVER counter — the other half of the pair above, and the reason DEC-97
     # is auditable rather than merely permissive. When `location = true` overrides
     # a guard, the override is recorded; without this, relaxing `unnamed` would
-    # have retired the very instrument that diagnosed DEC-79
+    # have retired the very instrument that diagnosed DEC-97
     # (`…refusals_total{reason="unnamed"} 12`), leaving a zero refusal counter
     # unable to distinguish "the flag is working" from "the room filled up with
     # strangers". The startup pre-flight warns once at boot and never again, so
@@ -480,7 +480,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_presence_disclosure_waived_total",
         "whereis disclosures that PASSED only because the conversation is "
-        "location-trusted (DEC-79). `reason` names which guard was overridden: "
+        "location-trusted (DEC-97). `reason` names which guard was overridden: "
         "`unnamed` (the room holds account(s) resolving to no person_id). A "
         "non-zero value is not an error — it is the operator's standing decision "
         "being exercised — but a RISING one means the room gained people Nora "
@@ -573,6 +573,25 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Fire turns the heartbeat deferred to a later tick because the "
         "conversation slot was held by a tag. One per deferred turn per tick, "
         "so a sustained rate means a group is starving its own reminders.",
+    ),
+    # The version announcement (DEC-97/R-42), one per room per boot ATTEMPT.
+    # `already_announced` is the ordinary reading on every boot after the first
+    # and is what proves R-42 holding — a deployment restarting all day shows it
+    # climbing while `sent` stays where it was. The other statuses are each a
+    # reason the group heard nothing: `unavailable` (the build carries no
+    # readable stamp — a wiring gap, never "no versions exist"), `no_note` (the
+    # version was never annotated, so there is nothing anybody wrote to relay),
+    # `deferred` (a tag held the conversation), and the fire path's own
+    # failed_policy / failed_timeout / failed_error. R-5 keeps every one of those
+    # out of the room, so this counter is their only trace.
+    _CounterSpec(
+        "nora_version_announcements_total",
+        "Version-announcement attempts, by status: sent; already_announced (the "
+        "R-42 claim already existed — a restart staying quiet); unavailable (no "
+        "readable build stamp); no_note (the version carries no release note); "
+        "deferred (the conversation slot was held); and the fire path's "
+        "failed_policy / failed_timeout / failed_error.",
+        ("status",),
     ),
     _CounterSpec(
         "nora_loop_exhausted_fallbacks_total",

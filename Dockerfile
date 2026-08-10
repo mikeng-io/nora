@@ -19,7 +19,22 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY nora/ ./nora/
 COPY evals/ ./evals/
+COPY scripts/check_version_stamp.py ./scripts/
 COPY config.example.toml identity.example.toml alembic.ini ./
+
+# The version Nora reports is baked HERE and nowhere else. `nora/version.json`
+# is generated on the host by scripts/gen_version_manifest.py (the container has
+# no git checkout, .dockerignore excludes .git/, and github.com may be
+# unreachable — so a runtime lookup would describe the repository rather than
+# this artifact) and arrives with the `COPY nora/` above, in the same filesystem
+# snapshot as the code it describes.
+#
+# The gate below refuses the build when the stamp and NORA_VERSION disagree, or
+# when the manifest is missing. That is what makes "the reported version cannot
+# disagree with the running code" a property rather than a hope. Build with
+# `scripts/build-image.sh V3`, which stamps and passes the same value.
+ARG NORA_VERSION=""
+RUN python scripts/check_version_stamp.py "$NORA_VERSION"
 
 RUN uv sync --frozen --no-dev
 

@@ -285,6 +285,37 @@ docker build --network=host -t nora:latest .
 docker compose up -d --no-build
 ```
 
+### Versions, and the note she posts after an upgrade
+
+Nora's version is **baked into the image at build time** — plain `V1`, `V2`, `V3`, no
+semver. Build with the wrapper rather than `docker build` directly:
+
+```bash
+git tag -a V3 -m "You can now ask her which version she's running."
+scripts/build-image.sh V3
+```
+
+That stamps `nora/version.json` from git (the running version, plus each earlier tag's
+annotation and commit subjects), passes the same value as `--build-arg NORA_VERSION`, and
+carries the `--network=host` this host needs. The Dockerfile **fails the build** if the
+stamp is missing or disagrees with the build argument, so the version she reports can
+never be a version she is not running. There is no runtime GitHub lookup: the container
+has no git checkout and may not reach github.com, and a release API would describe the
+repository rather than this image.
+
+Two things follow from that stamp:
+
+- **`nora.000 你而家咩version`** — she reads it off the artifact. Asking about an earlier
+  version (`V2 有咩?`) reads that tag's annotation. A version the manifest has no record
+  of is «there is no such version»; an image built *without* the wrapper has no stamp at
+  all, and she says she can't check rather than claiming she has no versions.
+- **The upgrade note.** On the first boot of a new version she posts the tag's annotation
+  to every group `policy.toml` allows her into — **once, ever, per room** — relayed in her
+  own words rather than pasted. A restart or a crash-loop never repeats it. A version
+  tagged without a message (`git tag V3`, no `-m`) has nothing to relay, so she says
+  nothing; annotate the tag and rebuild. Turn the whole thing off with `[version]
+  announce = false`.
+
 Either way, `.env` supplies `OMNIROUTE_API_KEY` to Compose automatically — nothing needs
 exporting by hand. The record store (the `db` service's volume) is untouched by either
 path — schema changes are versioned Alembic revisions applied by `run_migrations` at

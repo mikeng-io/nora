@@ -1,4 +1,4 @@
-"""`FirePath` — one due reminder becomes one actual message.
+"""`FirePath` — one OCCASION to speak unprompted becomes one actual message.
 
 WHAT THIS MODULE IS RESPONSIBLE FOR
 -----------------------------------
@@ -6,6 +6,23 @@ The TURN. `nora.app.heartbeat` owns *when* a reminder fires, *whether* policy
 still allows it and *what the row then says*; this owns everything between the
 two — the synthetic `TagContext`, the prompt, the model call, the delivery, and
 the §8.1 outcome string it answers with.
+
+THERE ARE TWO OCCASIONS, AND THE TURN IS THE SAME TURN
+-----------------------------------------------------
+A reminder coming due was the first (DEC-70). A version announcement is the
+second (DEC-79): on the boot after an upgrade, the operator's release note is
+put to her and she relays it in her own voice. Everything between "something
+made this turn happen" and "the group heard it" is identical — the doctrine
+audience, the guards, the audit-first write, the Honcho feed, the Langfuse
+trace — and R-1b (`tests/architecture/test_only_two_paths_can_send.py`) makes
+that structural rather than optional: `deliver.build` has exactly TWO callers,
+the tag pipeline and this module, so a second unprompted path cannot be built
+beside this one. It has to be built THROUGH it.
+
+So what differs is factored into `Occasion`: where she speaks, on whose
+authority, the words put to her, and the header that says why this turn is
+happening. `speak(occasion)` is the turn; `run(rows)` is the heartbeat's
+reminder-shaped adapter onto it (see both docstrings).
 
 It reuses the tag pipeline's stages where they fit and refuses them where they
 do not, and the refusals are the design (design spec §5's table):
@@ -47,6 +64,7 @@ import logging
 import time
 import uuid
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -99,6 +117,84 @@ _EVERY = {
     Recurrence.MONTHLY: "month",
     Recurrence.YEARLY: "year",
 }
+
+
+@dataclass(frozen=True)
+class Occasion:
+    """WHY an unprompted turn is happening, and everything that differs because
+    of it. Everything else about the turn is the same turn.
+
+    Four fields carry the conversation (`platform`/`conversation_id`/
+    `conversation_type` — every conversation key in this codebase is a TUPLE,
+    and a value carrying the id alone can build neither a `ConversationTarget`
+    nor a `Policy.is_allowed` call) and the words put to her (`body`).
+
+    `person_id` is WHOSE AUTHORITY the turn runs under, and it is `None`-able on
+    purpose:
+
+    * A reminder HAS one — the requester, already screened against
+      `policy.is_allowed` by the tick — and `speak` refuses the turn when that
+      person has since left `identity.toml` (§12: the grant went away, so
+      `failed_policy` and not a word said).
+    * A version announcement has NOBODY. Nothing was asked; the build spoke.
+      `None` therefore means "this turn is not held on anyone's behalf", and the
+      §12 refusal does not apply — refusing it would be answering a question
+      nobody asked. The cost is that `ctx.tagger` is `None` for that turn, so
+      the room-scoped tools and the peer card go dark (see `build_context`),
+      which is correct: an announcement is about HER, and needs nothing about
+      anyone in the room.
+
+    `speaker` names the body's author for `build_tag_message`'s `from=`
+    attribute when `person_id` is None. A message attributed to nobody would
+    read as unsourced text in the prompt — the one thing R-13's block structure
+    exists to prevent.
+
+    `header` is the situation paragraph, as a callable rather than a string,
+    because it is the one part that has to be rendered against values only the
+    turn knows: the resolved `PersonRef` (or `None`) and the instant the turn
+    ran. Both occasions escape everything group- or operator-authored that goes
+    into it (R-13), which is why each one builds its own rather than formatting
+    a template here.
+
+    `kind` names the occasion in log lines. It is deliberately NOT a metric
+    label: both occasions run under the `heartbeat` doctrine audience and the
+    same `[heartbeat] timeout_seconds`, so they belong to the same population on
+    every series `AUDIENCE` labels (§13's argument), and splitting them would
+    describe neither.
+    """
+
+    platform: str
+    conversation_id: str
+    conversation_type: str
+    person_id: str | None
+    body: str
+    header: Callable[[PersonRef | None, datetime], str]
+    speaker: str = ""
+    kind: str = "reminder"
+
+
+def reminder_occasion(rows: Sequence[Reminder]) -> Occasion:
+    """One conversation's due reminders, as the occasion they are.
+
+    The heartbeat's rows are already grouped by `(platform, conversation_id,
+    requester)` (§5.2), so `rows[0]` names all four for the whole batch.
+
+    `body` is the requester's OWN sentence(s), joined, and that is the premise of
+    the whole feature: a reminder is a deferred request, put to her at the due
+    time AS a request. The set-at and due-at facts deliberately do NOT go here —
+    they belong in the header, because a body that is anything other than what
+    the person said breaks that premise.
+    """
+    row = rows[0]
+    return Occasion(
+        platform=row.platform,
+        conversation_id=row.conversation_id,
+        conversation_type=row.conversation_type,
+        person_id=row.requester_person_id,
+        body="\n".join(r.text for r in rows),
+        header=lambda tagger, now: _fire_header(rows, tagger, now),
+        kind="reminder",
+    )
 
 
 class FirePath:
@@ -161,7 +257,7 @@ class FirePath:
         self._preview_source = preview_source
         self._llm_state = llm_state
 
-    async def build_context(self, rows: Sequence[Reminder]) -> TagContext:
+    async def build_context(self, occasion: Occasion) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
 
         **This is the trap the whole section exists for.** The synthetic message
@@ -179,9 +275,17 @@ class FirePath:
         * §12's `tagger is None -> refuse` gate fires on EVERY fire turn, for a
           reason that has nothing to do with trust
 
-        So the tagger comes from the row's `requester_person_id` — the id the
-        tick already screened `policy.is_allowed` against — through
+        So the tagger comes from the OCCASION's `person_id` — for a reminder,
+        the id the tick already screened `policy.is_allowed` against — through
         `Persons.by_person`, and never from the message.
+
+        An occasion with `person_id=None` (a version announcement) therefore has
+        `tagger is None` DELIBERATELY, and every consequence above is accepted
+        rather than escaped: nobody asked, so there is no peer card to read and
+        no person whose room membership scopes a lookup. What makes that safe is
+        that `speak` skips §12's refusal only for such an occasion, and that the
+        tools which go dark are exactly the ones an announcement has no use
+        for.
 
         `sender_name` has the same shape and is the second half of the same
         trap: `Persons.display_name(msg)` reads `msg.sender_id` and would
@@ -192,30 +296,35 @@ class FirePath:
         implementer toward an empty transcript and an empty card — a fire turn
         with no context at all, and nothing anywhere saying so.
         """
-        row = rows[0]
         # `.get`, not `[...]`: identity.toml loads once at startup and a row may
         # be thirty days old, so the person it names may have left the file. A
-        # KeyError here would surface as `failed_error` with a traceback; `run`
-        # refuses it as `failed_policy` with a sentence instead.
-        ref = self._persons.by_person.get(row.requester_person_id)
+        # KeyError here would surface as `failed_error` with a traceback; `speak`
+        # refuses it as `failed_policy` with a sentence instead. `None` for an
+        # occasion held on nobody's behalf, which is not an error at all.
+        ref = (
+            self._persons.by_person.get(occasion.person_id)
+            if occasion.person_id is not None else None
+        )
 
         transcript: tuple[TranscriptRow, ...] = ()
         try:
             transcript = tuple(await self._records.recent(
-                conversation_id=row.conversation_id, limit=self._context_window,
+                conversation_id=occasion.conversation_id, limit=self._context_window,
             ))
         except Exception:
             # `TranscriptInjection`'s behaviour, deliberately copied: a thinner
             # turn beats no turn (R-5-adjacent). The counter is what says the
             # turn ran blind.
             log.exception("fire context read failed; continuing with an empty transcript")
-            self._metrics.inc("nora_errors_total", stage="fire_context", platform=row.platform)
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_context", platform=occasion.platform,
+            )
 
         # The same one-name-space projection the tag path applies (DEC-80). A fire
         # turn renders the SAME transcript block through the SAME prefill, so
         # leaving it out here would reintroduce the two-name-space bug on exactly
         # the path nobody is watching when it fires.
-        transcript = self._persons.name_transcript(transcript, platform=row.platform)
+        transcript = self._persons.name_transcript(transcript, platform=occasion.platform)
 
         card: tuple[str, ...] = ()
         if ref is not None:
@@ -233,12 +342,12 @@ class FirePath:
                 # half of the context went blind must not have to guess.
                 log.exception("fire peer_card read failed; continuing without it")
                 self._metrics.inc(
-                    "nora_errors_total", stage="fire_peer_card", platform=row.platform,
+                    "nora_errors_total", stage="fire_peer_card", platform=occasion.platform,
                 )
 
         return TagContext(
             tag_id=uuid.uuid4().hex,
-            message=_synthetic_message(rows, ref),
+            message=_synthetic_message(occasion, ref),
             tagger=ref,
             transcript=transcript,
             peer_card=card,
@@ -246,7 +355,21 @@ class FirePath:
         )
 
     async def run(self, rows: Sequence[Reminder]) -> str:
-        """One turn, and the §8.1 outcome the heartbeat writes onto the rows.
+        """The heartbeat's `fire` collaborator: due rows in, §8.1 outcome out.
+
+        A two-line adapter over `speak`, and it stays a separate method rather
+        than becoming a lambda in the composition root for two reasons. It keeps
+        `HeartbeatLoop._fire` a BOUND METHOD of the real fire path — which is
+        what `tests/test_composition.py::test_the_heartbeat_is_wired_to_the_real_fire_path`
+        asserts, and a lambda would satisfy that test while wrapping anything at
+        all. And it keeps the reminders occasion assembled HERE, beside the
+        header prose it needs, rather than in a module that has no business
+        knowing what a fire turn is (`nora.app.heartbeat`'s own docstring).
+        """
+        return await self.speak(reminder_occasion(rows))
+
+    async def speak(self, occasion: Occasion) -> str:
+        """One turn, and the §8.1 outcome its caller records.
 
         **It does not call `invoke.run` or `deliver.check_outcome`** (§6.2).
         Not for metric isolation — that was tried twice and undercounted twice,
@@ -260,19 +383,20 @@ class FirePath:
         omitting it would let a healthy process report a stale LLM to `/health`.
 
         Only `sent` is DONE, and `sent` means the `Deliverer` actually
-        delivered. Anything else is a reminder that did not arrive.
+        delivered. Anything else is a turn the group never heard — a reminder
+        that did not arrive, or a version nobody was told about.
         """
-        ctx = await self.build_context(rows)
+        ctx = await self.build_context(occasion)
         # Every log line for the rest of this turn — across every stage it calls
         # into — carries the tag id without naming it (nora.obs.logging's
         # contextvar bridge), so a fire turn is greppable exactly like a tag.
         bind_tag_id(ctx.tag_id)
         try:
-            return await self._turn(rows, ctx)
+            return await self._turn(occasion, ctx)
         finally:
             clear_tag_id()
 
-    async def _turn(self, rows: Sequence[Reminder], ctx: TagContext) -> str:
+    async def _turn(self, occasion: Occasion, ctx: TagContext) -> str:
         """One turn's stages, its last-resort guard, and DEC-42's observable.
 
         The `except` is the fire path's counterpart to
@@ -301,7 +425,6 @@ class FirePath:
         every exit path converges on, the cap-cut loop, the timeout, the
         `llm_error` and the guard above alike.
         """
-        row = rows[0]
         # The three the `finally` reads. LOCALS, never attributes: `FirePath` is
         # built once per process and outlives every turn, so state parked on
         # `self` would let one turn's stop reason describe the next one's
@@ -311,15 +434,22 @@ class FirePath:
         completed = False
         try:
             tagger = ctx.tagger
-            if tagger is None:
+            if tagger is None and occasion.person_id is not None:
                 # §12: only a mapped person may hold a reminder, re-checked here
                 # for the same reason policy is (§5.1) — identity.toml is read
                 # once at startup and this row may be thirty days old.
                 # `failed_policy`, not `failed_error`: nothing went wrong, the
                 # grant went away.
+                #
+                # `and occasion.person_id is not None` is the whole difference an
+                # occasion held on NOBODY's behalf makes. Without that clause a
+                # version announcement — which names no requester by design —
+                # would refuse itself on a rule about a grant it never had, and
+                # the failure would read as a revoked person. An occasion that
+                # DOES name someone still refuses, unchanged.
                 log.error(
-                    "reminder %s not fired: %s is no longer in identity.toml",
-                    row.id, row.requester_person_id,
+                    "%s turn not fired: %s is no longer in identity.toml",
+                    occasion.kind, occasion.person_id,
                 )
                 return FAILED_POLICY
 
@@ -337,10 +467,10 @@ class FirePath:
 
             doctrine = self._doctrine_store.get(applies_to=AUDIENCE)
             log.info(
-                "fire turn start (tag_id=%s conversation_id=%s person_id=%s "
-                "reminders=%d doctrine_sha256=%s)",
-                ctx.tag_id, row.conversation_id, tagger.person_id, len(rows),
-                doctrine.sha256,
+                "fire turn start (tag_id=%s kind=%s conversation_id=%s "
+                "person_id=%s doctrine_sha256=%s)",
+                ctx.tag_id, occasion.kind, occasion.conversation_id,
+                occasion.person_id or "-", doctrine.sha256,
             )
 
             handle = deliver.build(
@@ -348,7 +478,7 @@ class FirePath:
                 target=ctx.message.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=ctx.tag_id,
                 nora_sender_id=self._nora_sender_id,
-                conversation_id=row.conversation_id,
+                conversation_id=occasion.conversation_id,
                 # `allowed_mcp` left at its default (empty): `FirePath` has no
                 # `Policy`/allowlist collaborator wired in (unlike
                 # `EngagementPipeline`, which threads `self._policy` — see
@@ -368,20 +498,23 @@ class FirePath:
                 # the person it is FOR ("@grant 你話要我提你…") is the one
                 # shape where a mention is most obviously wanted.
                 composer=OutboundComposer(
-                    platform=row.platform, conversation_id=row.conversation_id,
+                    platform=occasion.platform, conversation_id=occasion.conversation_id,
                     persons=self._persons, metrics=self._metrics,
                     roster_source=self._roster_source,
                     preview_source=self._preview_source,
                 ),
             )
             room = Room(
-                platform=row.platform, conversation_id=row.conversation_id,
+                platform=occasion.platform, conversation_id=occasion.conversation_id,
                 roster_source=self._roster_source, persons=self._persons,
+                # `None` for an occasion nobody asked for, which is what makes
+                # `Room.scope()` report UNAVAILABLE there rather than a room —
+                # the honest state (R-21), not a degraded one.
                 tagger=tagger, self_ids=self_ids,
             )
             tools = self._registry.build(
-                store=self._records, conversation_id=row.conversation_id,
-                conversation_type=row.conversation_type, persons=self._persons,
+                store=self._records, conversation_id=occasion.conversation_id,
+                conversation_type=occasion.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer, room=room,
                 question=ctx.message.body, context_window=self._context_window,
                 metrics=self._metrics,
@@ -400,19 +533,25 @@ class FirePath:
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name,
                 context_window=self._context_window,
-                now=now, header=_fire_header(rows, tagger, now),
+                now=now, header=occasion.header(tagger, now),
             )
             # `tagger.name`, NOT `Persons.display_name(ctx.message)` — that reads
             # `sender_id`, which is blank here, and would attribute the request to
-            # nobody. Same trap as `build_context`'s `sender_name`.
+            # nobody. Same trap as `build_context`'s `sender_name`. An occasion
+            # with no person falls back to the name IT gives its author
+            # (`Occasion.speaker`), because an unattributed `<tag_message>` is
+            # unsourced text in the prompt — the one thing R-13's block structure
+            # exists to prevent.
             tag_message = build_tag_message(
-                ctx, tagger_name=tagger.name, display_name=self._display_name,
+                ctx,
+                tagger_name=tagger.name if tagger is not None else occasion.speaker,
+                display_name=self._display_name,
             )
 
             failure, stop_reason = await self._invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tag_message=tag_message, ctx=ctx,
-                platform=row.platform, deliverer=handle.deliverer,
+                platform=occasion.platform, deliverer=handle.deliverer,
             )
             # `truncation_reason`'s "the turn reached the end of its try block",
             # decided HERE rather than at the end of it. The tag path can leave
@@ -434,14 +573,15 @@ class FirePath:
             if self._llm_state is not None:
                 self._llm_state.last_success_at = time.time()
             await self._feed(
-                handle.deliverer.sent_texts, row.conversation_id, row.platform,
+                handle.deliverer.sent_texts, occasion.conversation_id,
+                occasion.platform,
             )
             return SENT
         except Exception:
             log.exception("fire turn failed (tag=%s); staying silent", ctx.tag_id)
             self._metrics.inc(
                 "nora_silent_failures_total", reason="handler_error",
-                platform=row.platform, audience=AUDIENCE,
+                platform=occasion.platform, audience=AUDIENCE,
             )
             # Whatever the invocation reported, this turn did NOT reach its end —
             # which is what makes `pipeline_error` reachable for a fault raised
@@ -456,12 +596,12 @@ class FirePath:
                 )
                 if reason is not None:
                     log.warning(
-                        "partial_reply: %d reminder message(s) sent, then %s "
-                        "(tag=%s)", messages, reason, ctx.tag_id,
+                        "partial_reply: %d %s message(s) sent, then %s "
+                        "(tag=%s)", messages, occasion.kind, reason, ctx.tag_id,
                     )
                     self._metrics.inc(
                         "nora_partial_replies_total", reason=reason,
-                        platform=row.platform,
+                        platform=occasion.platform,
                     )
 
     async def _invoke(
@@ -613,29 +753,32 @@ class FirePath:
 
 
 def _synthetic_message(
-    rows: Sequence[Reminder], ref: PersonRef | None,
+    occasion: Occasion, ref: PersonRef | None,
 ) -> NormalizedMessage:
     """§6.4's second table. Built in memory only — nothing writes it.
 
-    `body` is the requester's OWN sentence(s), and that is the premise of the
-    whole feature: a reminder is a deferred request, put to her at the due time
-    as a request. `build_tag_message` escapes this into `<tag_message>`, which
-    is how she receives it at all. The set-at and due-at facts deliberately do
-    NOT go here — they belong in the header (`_fire_header`), because a body
-    that is anything other than what the person said breaks that premise.
+    `body` is `Occasion.body`: for a reminder the requester's OWN sentence(s),
+    which is the premise of the whole feature (a deferred request, put to her at
+    the due time AS a request); for a version announcement the operator's own
+    release note, put to her the same way. The circumstances deliberately do NOT
+    go here — they belong in the header — because a body that is anything other
+    than what somebody actually wrote breaks that premise.
 
     `sender_id` and `timestamp` are blank/0: falsy, which is what makes
     `indicate.begin` return None and §5.5's "no reactions" hold without a flag
     anywhere. `timestamp` is `0` and not `None` because the field is `int`.
+
+    `sender_name` falls back to `Occasion.speaker` when no `PersonRef` resolved,
+    so a turn nobody asked for still names the author of the words it carries.
     """
     return NormalizedMessage(
-        platform=rows[0].platform,
-        conversation_id=rows[0].conversation_id,
-        conversation_type=rows[0].conversation_type,
+        platform=occasion.platform,
+        conversation_id=occasion.conversation_id,
+        conversation_type=occasion.conversation_type,
         sender_id="",
-        sender_name=ref.name if ref is not None else "",
+        sender_name=ref.name if ref is not None else occasion.speaker,
         timestamp=0,
-        body="\n".join(row.text for row in rows),
+        body=occasion.body,
         raw={},
     )
 
@@ -648,7 +791,7 @@ def _stamp(moment: datetime) -> str:
 
 
 def _fire_header(
-    rows: Sequence[Reminder], tagger: PersonRef, now: datetime,
+    rows: Sequence[Reminder], tagger: PersonRef | None, now: datetime,
 ) -> str:
     """The situation paragraph for a fire turn — `build_prefill`'s `header`.
 
@@ -659,8 +802,13 @@ def _fire_header(
 
     The name is escaped because everything else this module puts in a prompt is,
     and `identity.toml` is operator-authored text like any other.
+
+    `tagger` is typed optional only because `Occasion.header` is one callable
+    type for both occasions; a reminders occasion always names a requester, and
+    a turn whose requester fell out of `identity.toml` is refused by `_turn`
+    before this is ever rendered.
     """
-    who = escape(tagger.name)
+    who = escape(tagger.name if tagger is not None else "")
     when = "".join(
         f"- asked {_stamp(row.created_at)}, due {_stamp(row.due_at)}"
         f"{_repeat_clause(row)}\n" for row in rows

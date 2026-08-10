@@ -159,6 +159,20 @@ RULE_TESTS = {
     # a currently-passing gate (DEC-75's own text records the measured
     # failure rate; the test below only pins that the corpus exists).
     "R-41": "test_r41_is_covered_by_the_identity_grounding_corpus",
+    # R-42: a version is announced AT MOST ONCE, per room, ever (DEC-97). The
+    # next free number after R-41. Nora's second unprompted-speech occasion, and
+    # the failure it exists to prevent is specific: a container crash-looping
+    # every few seconds would otherwise post the same upgrade note into a group
+    # chat on every boot. The claim is an INSERT on a primary key taken BEFORE
+    # the turn, so a row EXISTING — announced, failed, or stranded mid-turn —
+    # bars a second attempt. That is R-37b's at-most-once decision applied to a
+    # second path, and for the same reason: nothing links a claim to a message
+    # that may already have reached the group.
+    #
+    # The named test simulates the restart the way a restart works — everything
+    # in-process rebuilt, only the database surviving — because an in-memory
+    # claim (or a read-then-write) passes any single-process assertion.
+    "R-42": "test_a_restart_never_re_announces_the_same_version",
 }
 
 

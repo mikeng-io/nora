@@ -34,6 +34,7 @@ from ..domain.reminders import ReminderCaps, ReminderStore
 from ..infra.routes import RouteClient
 from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
+from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
 from .links import LinkCarry
 from .mcp import McpToolGroup
@@ -82,6 +83,7 @@ class ToolRegistry:
         reminder_caps: ReminderCaps | None = None,
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
+        versions: VersionManifest | None = None,
     ) -> None:
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
@@ -175,6 +177,17 @@ class ToolRegistry:
         # disclosure, not an inert one. `.specs()`/`.build()`'s `allowed_mcp`
         # is the SAME value a caller must pass here (final-review Finding 1).
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
+        # The baked build stamp (DEC-79), DEFAULT-CONSTRUCTED like `transit` and
+        # unlike `route`/`search`/`weather`: there is no key to resolve and no
+        # service to reach, only a file that either shipped with this code or
+        # did not, so there is nothing an unconfigured deployment could be
+        # missing. Reading it costs one open, once, on the first `version` call
+        # — a source checkout has no `nora/version.json`, and the reader answers
+        # `unavailable` for it (never `nothing_found`, R-27). Held HERE for the
+        # reason the transit catalogue is: it is a process-lifetime fact, and
+        # the alternative — a module-level cache — is the mutable singleton the
+        # test-seam policy forbids.
+        self._versions = versions if versions is not None else VersionManifest()
 
     def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
@@ -392,7 +405,8 @@ class ToolRegistry:
         dependencies — before any Strands adaptation.
 
         `transit_source`/`route_source`/`vision_source`/`blob_store`/
-        `vision_cache`/`search_source`/`reminders`/`reminder_caps`/`clock` are
+        `vision_cache`/`search_source`/`reminders`/`reminder_caps`/`clock`/
+        `versions` are
         NOT in this signature and must not become one: each is the registry's
         own long-lived collaborator (or, for the cache, its own per-process
         state), not something a tag brings with it, so every caller of
@@ -427,6 +441,7 @@ class ToolRegistry:
             ai_peer=self._ai_peer, fire_turn=fire_turn,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             links=links,
+            versions=self._versions,
         )
 
     def build(

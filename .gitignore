@@ -62,3 +62,10 @@ deploy/shortener/.terraform.lock.hcl
 deploy/shortener/terraform.tfstate*
 deploy/shortener/*.tfvars
 .eval-cache/
+
+# The build-time version stamp (DEC-79). GENERATED, never committed: it is
+# derived from git history by scripts/gen_version_manifest.py at build time, so
+# a committed copy would be a second, stale answer to "what am I running" —
+# exactly the disagreement the build gate exists to rule out. Its absence in a
+# source checkout is why `version` answers `unavailable` outside a built image.
+nora/version.json
