@@ -51,7 +51,12 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
                              # is unless the room is a subset of their Life360 circle.
                              # Set true when you trust the mapped people here with the
                              # circle's positions even though they aren't all in it.
-                             # An UNKNOWN person in the room still blocks it (DEC-74).
+                             # It is a WHOLE-ROOM switch (DEC-79): accounts you have no
+                             # identity.toml entry for stop blocking it too — real groups
+                             # keep silent sealed-sender members you cannot map at all.
+                             # The one thing it never relaxes: if Nora cannot READ the
+                             # roster, she still refuses. Trust overrules what a roster
+                             # says, never the absence of one.
 
 [[conversations]]
 platform = "telegram"

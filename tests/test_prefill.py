@@ -15,11 +15,11 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0)
 
 
-def _row(row_id, name, body, ts, *, quoted_ts=None, is_nora=False):
+def _row(row_id, name, body, ts, *, quoted_ts=None, is_nora=False, person_name=None):
     return TranscriptRow(
         id=row_id, sender_id=f"+8521{row_id}", sender_name=name, ts=ts, body=body,
         is_nora=is_nora, delivery_status=DeliveryStatus.PENDING, raw_json=None,
-        quoted_ts=quoted_ts,
+        quoted_ts=quoted_ts, person_name=person_name,
     )
 
 
@@ -262,6 +262,41 @@ def test_the_arrow_name_is_the_literal_label_the_parents_own_line_uses():
     text = _body(ctx)
     assert "[Nora]: earlier reply" in text
     assert "[Tyler ↳ Nora「earlier reply」]: 唔該" in text
+
+
+def test_the_transcript_labels_a_speaker_by_their_identity_name():
+    """DEC-80 — THE PROBE for the two-name-space bug.
+
+    `sender_name` is the self-set Signal profile name; `person_name` is the one
+    `tag_message from=`, `group_members` and `lookup_person` all use. Rendering
+    the former while every other surface said the latter is what made Nora answer
+    「呢個 group 冇人叫呢個名」 when asked where Grant was — his own line said
+    「陳志明 Chi Ming」 (Langfuse `05a48150…`, 2026-08-10).
+
+    Revert `_label` to `row.sender_name or "unknown"` and this reds."""
+    ctx = _ctx([_row(1, "陳志明 Chi Ming", "我返到屋企", 1000, person_name="Grant Carver")])
+    text = _body(ctx)
+    assert "[Grant Carver]: 我返到屋企" in text
+    assert "陳志明" not in text          # one name space in the prompt, not two
+
+
+def test_a_speaker_with_no_identity_name_keeps_their_profile_name():
+    """The fallback stays: an account not in identity.toml renders as SOMEBODY
+    rather than collapsing to «unknown». `person_name` is None exactly there, and
+    R-13 escaping still applies to the profile name it falls back to."""
+    ctx = _ctx([_row(1, "A Stranger", "hi", 1000)])          # person_name defaults None
+    assert "[A Stranger]: hi" in _body(ctx)
+
+
+def test_the_arrow_uses_the_identity_name_on_both_lines():
+    """The byte-identical rule (`test_the_arrow_name_is_the_literal_label…`) has
+    to survive the projection — if `_label` were applied on the parent's own line
+    but not after the ↳, the model would see two different people."""
+    ctx = _ctx([_row(1, "陳志明 Chi Ming", "邊度食飯", 1000, person_name="Grant Carver"),
+                _row(2, "峰鵰", "你屋企", 2000, quoted_ts=1000, person_name="Blake Lindqvist")])
+    text = _body(ctx)
+    assert "[Grant Carver]: 邊度食飯" in text
+    assert "[Blake Lindqvist ↳ Grant Carver「邊度食飯」]: 你屋企" in text
 
 
 def test_an_unresolvable_parent_renders_a_plain_line_and_never_an_unknown_symbol():

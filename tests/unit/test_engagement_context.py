@@ -121,6 +121,51 @@ async def test_the_transcript_is_oldest_first_and_window_bounded():
     assert [row.body for row in ctx.transcript] == ["m2", "m3", "m4"]  # bounded, oldest-first
 
 
+async def test_the_transcript_carries_the_identity_name_not_the_profile_name():
+    """DEC-80. The assembler is where identity is interpreted for the turn, so
+    the `TagContext` must leave with ONE name space — the same canonical name
+    `tag_message from=`, `group_members` and `lookup_person` use.
+
+    The row is stored under the SELF-SET Signal profile name («陳志明 Chi Ming»),
+    which is what the prefill used to render; `person_name` is the projection
+    that makes the transcript join to the rest of the prompt. Both are kept, so
+    the rewrite is auditable rather than silent. Delete the `name_transcript`
+    call in `assemble` and this reds."""
+    store = FakeRecordStore()
+    await store.append(message=NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="陳志明 Chi Ming", timestamp=1, body="hi", raw={},
+    ))
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.transcript[0].person_name == "Miles"            # what gets rendered
+    assert ctx.transcript[0].sender_name == "陳志明 Chi Ming"   # provenance, still there
+
+
+async def test_an_unmapped_speaker_keeps_a_null_person_name():
+    """The fallback the renderer depends on: an account not in identity.toml gets
+    NO canonical name rather than a guessed one, and `_label` then falls back to
+    the profile name so they stay visible as somebody. Filling this in with
+    anything — the sender_id, "unknown" — would be inventing an identity."""
+    store = FakeRecordStore()
+    await store.append(message=NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+85299999999", sender_name="A Stranger", timestamp=1, body="hi", raw={},
+    ))
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.transcript[0].person_name is None
+    assert ctx.transcript[0].sender_name == "A Stranger"
+
+
 def test_it_satisfies_the_context_assembler_port():
     assembler: ContextAssembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES, context_window=10,

@@ -283,11 +283,14 @@ class Whereis:
         # read-only behaviour (the last stored fix), unchanged.
         self._refresher = refresher
         self._guard = DisclosureGuard(circle)
-        # LOCATION-DISCLOSURE TRUST (DEC-74): sourced from this conversation's
-        # `policy.toml` `location` flag. True relaxes the SUBSET check below — the
-        # operator trusts this room with the circle's positions even though it is
-        # not a subset — but NOT the unnamed/degraded refusal, so an unknown
-        # outsider in the room still blocks disclosure.
+        # LOCATION-DISCLOSURE TRUST (DEC-74, widened by DEC-79): sourced from this
+        # conversation's `policy.toml` `location` flag. It is a ROOM-LEVEL switch,
+        # not a per-condition one: True relaxes BOTH the SUBSET check and the
+        # `view.unnamed > 0` refusal below. `degraded` is NOT relaxed, and that
+        # asymmetry is the point — an unnamed account is a roster Nora READ and
+        # found an unknown in (a measurement the operator may overrule), whereas
+        # `degraded` is a roster she could not read at all (an R-27 `unavailable`,
+        # which is never a PASS no matter who trusts the room).
         self._location_trusted = location_trusted
         self._metrics = metrics
 
@@ -328,19 +331,22 @@ class Whereis:
         #   - a DEGRADED view (tagger-only, roster unreadable) that cannot verify
         #     the subset at all.
         room_person_ids = frozenset(p.person_id for p in view.people)
-        # The SUBSET check is relaxed when the operator trusts this room with the
-        # circle's locations (DEC-74). The unnamed/degraded refusals are NOT: a
-        # room with anyone Nora cannot place still fails-closed, trusted or not —
-        # trust extends to the KNOWN roster, never to an unknown outsider.
+        # DEC-79 widened DEC-74: `location = true` relaxes the SUBSET check AND
+        # the unnamed refusal, because the operator's real rooms permanently hold
+        # sealed-sender accounts (no phone number on the wire, never spoken, so
+        # nothing to key `identity.toml` on) and a per-condition flag only asked
+        # him the same question twice. `degraded` still refuses for everyone:
+        # trust can overrule what a roster SAYS, never the absence of a roster.
         subset_ok = self._location_trusted or self._guard.permits(room_person_ids)
-        if view.degraded or view.unnamed > 0 or not subset_ok:
+        unnamed_blocks = view.unnamed > 0 and not self._location_trusted
+        if view.degraded or unnamed_blocks or not subset_ok:
             # WHICH of the three conditions fired — so a refusal is diagnosable
             # from the trace/metric instead of inferred (obs review 2026-08-08).
             # Precedence matches the disjunction: degraded first (can verify
             # nothing), then an unmapped account, then the subset itself.
             reason = (
                 "degraded" if view.degraded
-                else "unnamed" if view.unnamed > 0
+                else "unnamed" if unnamed_blocks
                 else "not_subset"
             )
             if self._metrics is not None:

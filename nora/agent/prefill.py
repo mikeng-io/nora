@@ -176,8 +176,18 @@ def _label(row: TranscriptRow, display_name: str) -> str:
     Shared with the arrow and with `_replying_to_block` on purpose: the name
     after ↳ has to be BYTE-IDENTICAL to the label on the parent's own line, so
     the model joins the two by literal match with nothing left to infer.
+
+    `person_name` FIRST (DEC-80): the identity-canonical name is what every other
+    surface of the prompt calls this person — `tag_message from=`,
+    `group_members`, `lookup_person` — so preferring it is what makes the
+    transcript join to them by literal match too, exactly as the arrow joins to
+    its parent. Falling back to the self-set Signal profile name keeps an
+    unmapped account visible as SOMEBODY rather than collapsing it to
+    "unknown"; the assembler leaves `person_name` None precisely there.
     """
-    return display_name if row.is_nora else (row.sender_name or "unknown")
+    if row.is_nora:
+        return display_name
+    return row.person_name or row.sender_name or "unknown"
 
 
 def _parent_of(

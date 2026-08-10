@@ -47,10 +47,13 @@ class Conversation:
     # LOCATION-DISCLOSURE TRUST (DEC-74). Default False: `where_is` refuses to
     # disclose a member's position unless this conversation is a verified SUBSET
     # of that member's Life360 circle (R-31/DisclosureGuard). Setting `location =
-    # true` is the operator saying "I trust the mapped people in THIS room with my
-    # location even though they are not all in my Life360 circle" — it relaxes the
-    # SUBSET check ONLY; the room must still be fully placed (no unnamed/degraded
-    # view), so an unknown outsider still blocks disclosure.
+    # true` is the operator saying "I trust THIS room with my location."
+    #
+    # It is a WHOLE-ROOM switch, not a per-condition one (DEC-79): it relaxes the
+    # SUBSET check AND the unnamed-account refusal, because real rooms hold silent
+    # sealed-sender members with no id to map. It does NOT relax the degraded-view
+    # refusal — a roster Nora could not read is an R-27 `unavailable`, and trust
+    # can overrule what a roster says but not the absence of one.
     location: bool = False
 
 
@@ -126,7 +129,7 @@ class _ConversationEntry(BaseModel):
     label: str = ""
     persons: list[str] | str = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
-    # See `Conversation.location` (DEC-74): relaxes `where_is`'s circle-subset
+    # See `Conversation.location` (DEC-74/79): relaxes `where_is`'s disclosure
     # gate for this room. Default False — the disclosure guard stays strict.
     location: bool = False
 

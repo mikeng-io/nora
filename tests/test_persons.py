@@ -1,6 +1,6 @@
 import pytest
 
-from nora.domain.models import NormalizedMessage
+from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.persons import PersonsError, load_persons, sanitize_unmapped
 
 TOML = """
@@ -483,3 +483,66 @@ def test_an_alias_never_resolves_a_sender(tmp_path):
     assert persons.resolve("signal", "+85290000101").person_id == "miles_novak"
     for alias in ("阿Miles", "俊爺", "norty", "Miles"):
         assert persons.resolve("signal", alias) is None, alias
+
+
+def _t_row(row_id, sender_id, sender_name, *, is_nora=False):
+    return TranscriptRow(
+        id=row_id, sender_id=sender_id, sender_name=sender_name, ts=row_id, body="hi",
+        is_nora=is_nora, delivery_status=DeliveryStatus.PENDING, raw_json=None,
+    )
+
+
+def test_name_transcript_projects_every_mapped_speaker(tmp_path):
+    """DEC-80. `display_name` for a whole transcript, so the prefill renders the
+    SAME name space as `tag_message from=` / `group_members` / `lookup_person`.
+
+    Both names survive: `sender_name` is the self-set platform profile name and
+    stays as provenance, `person_name` is the operator-authored one the renderer
+    prefers. Overwriting `sender_name` in place would make the projection
+    unauditable — you could no longer see what the wire actually said."""
+    persons = load_persons(_write(tmp_path, TOML))
+    rows = [_t_row(1, "+85212345678", "陳志明 Chi Ming"), _t_row(2, "+85287654321", "峰鵰")]
+
+    out = persons.name_transcript(rows, platform="signal")
+
+    assert [r.person_name for r in out] == ["Miles", "Ada"]
+    assert [r.sender_name for r in out] == ["陳志明 Chi Ming", "峰鵰"]   # provenance kept
+
+
+def test_name_transcript_leaves_an_unmapped_speaker_alone(tmp_path):
+    """No canonical name rather than a guessed one — `_label` then falls back to
+    the profile name, which is what keeps a stranger visible as somebody."""
+    persons = load_persons(_write(tmp_path, TOML))
+    out = persons.name_transcript([_t_row(1, "+85299999999", "A Stranger")], platform="signal")
+    assert out[0].person_name is None
+
+
+def test_name_transcript_never_resolves_on_the_display_name(tmp_path):
+    """The `test_an_alias_never_resolves_a_sender` rule, applied to the
+    transcript: a row whose PROFILE NAME is «Miles» but whose sender_id belongs to
+    nobody must not be projected onto Miles. A display name is settable by anyone,
+    so matching on it would let a stranger wear a member's identity in the one
+    block the model reads as fact."""
+    persons = load_persons(_write(tmp_path, TOML))
+    out = persons.name_transcript([_t_row(1, "+85299999999", "Miles")], platform="signal")
+    assert out[0].person_name is None
+
+
+def test_name_transcript_leaves_noras_own_rows_unprojected(tmp_path):
+    """She is deliberately absent from identity.toml and `_label` renders her
+    from the configured `display_name`, so projecting her could only ever write
+    None over None — but it would also mean a person_id collision could rename
+    her. Skipped explicitly."""
+    persons = load_persons(_write(tmp_path, TOML))
+    out = persons.name_transcript(
+        [_t_row(1, "+85212345678", None, is_nora=True)], platform="signal",
+    )
+    assert out[0].person_name is None
+
+
+def test_name_transcript_resolves_per_platform(tmp_path):
+    """Keyed `(platform, sender_id)` like every other resolution: the same id
+    string on a different platform is a different account."""
+    persons = load_persons(_write(tmp_path, TOML))
+    out = persons.name_transcript([_t_row(1, "+85212345678", "Miles")], platform="whatsapp")
+    assert out[0].person_name is None

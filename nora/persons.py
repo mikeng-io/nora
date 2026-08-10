@@ -19,13 +19,14 @@ Nora saw.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from .domain.identity import ACCOUNT_LABEL_KEY, metadata_keys
-from .domain.models import NormalizedMessage, PersonRef
+from .domain.models import NormalizedMessage, PersonRef, TranscriptRow
 from .persons_file import PLATFORM_FIELDS, _PersonsFile
 
 
@@ -71,6 +72,39 @@ class Persons:
         if ref:
             return ref.name
         return msg.sender_name or sanitize_unmapped(msg.sender_id)
+
+    def name_transcript(
+        self, transcript: Sequence[TranscriptRow], *, platform: str
+    ) -> tuple[TranscriptRow, ...]:
+        """Fill each row's `person_name` from this index (DEC-80).
+
+        `display_name` for a whole transcript, and it lives here for the same
+        reason that one does: resolving an account to the name Nora calls it by
+        is identity's job, not a renderer's. Both context assemblers
+        (`nora.engagement.context` for a tag, `nora.app.fire` for a reminder)
+        call it, so the projection cannot drift between the two paths.
+
+        The prefill used to label transcript speakers by their SELF-SET platform
+        profile name while `tag_message from=`, `group_members` and
+        `lookup_person` all used the canonical one — two name spaces for the same
+        people in one prompt. Live consequence (Langfuse `05a48150…`,
+        2026-08-10): asked where 「Grant」 was, Nora answered 「呢個 group 冇人叫
+        呢個名」 — the roster said `Grant Carver`, the transcript said
+        `陳志明 Chi Ming` — then told a DIFFERENT member that he was Grant.
+
+        Keyed on `(platform, sender_id)`, never on the display name: that is the
+        `PersonRef.aliases` rule exactly — operator-authored names are for
+        comprehension, platform ids are for resolution.
+
+        Nora's own rows are left alone. `_label` renders her from the configured
+        `display_name`, and she is deliberately absent from identity.toml, so
+        resolving her would only ever produce None.
+        """
+        return tuple(
+            row if row.is_nora or (ref := self.resolve(platform, row.sender_id)) is None
+            else replace(row, person_name=ref.name)
+            for row in transcript
+        )
 
 
 def load_persons(path: Path) -> Persons:

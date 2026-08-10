@@ -206,12 +206,20 @@ async def test_a_location_trusted_room_discloses_outside_the_circle(persons, sto
     assert out["status"] == "ok"          # disclosed, not refused
 
 
-async def test_a_location_trusted_room_still_refuses_an_unmapped_account(persons, store):
-    """Trust extends to the KNOWN roster, NEVER to an unknown outsider (DEC-74):
-    `location = true` relaxes the subset check but NOT the `view.unnamed > 0`
-    refusal, so an account not in identity.toml still fails-closed. The same room
-    that refuses in `test_whereis_refuses_when_the_room_holds_an_unmapped_account`
-    STILL refuses here, trusted or not."""
+async def test_a_location_trusted_room_discloses_past_an_unmapped_account(persons, store):
+    """DEC-79 REPLACES DEC-74's narrower rule, which this test used to assert in
+    the opposite direction — `location = true` now relaxes the `view.unnamed > 0`
+    refusal too, so the room is one switch rather than two.
+
+    Measured, not theorised: the operator's real group permanently holds four
+    sealed-sender accounts (no phone number on the wire, never spoken, so nothing
+    to key identity.toml on). `unnamed=4` refused EVERY `where_is` call for as
+    long as the tool has been wired — 12/12 refusals, all `reason="unnamed"`, on
+    a room that already had `location = true`. Trust that cannot be expressed is
+    not a safety property, it is a dead tool.
+
+    The same room as `test_whereis_refuses_when_the_room_holds_an_unmapped_account`
+    — that one keeps the strict default and must stay green beside this."""
     await _record(store, person="miles_novak", ts=NOW)
     metrics = Metrics()
     unmapped = frozenset({"+85299999999"})
@@ -220,11 +228,29 @@ async def test_a_location_trusted_room_still_refuses_an_unmapped_account(persons
         location_trusted=True, metrics=metrics,
     )
     out = await w.locate("Miles", now_ms=NOW)
-    assert out["status"] == "refused"     # trust does not reach an unknown
+    assert out["status"] == "ok"          # disclosed, not refused
+    assert metrics.get("nora_presence_disclosure_refusals_total", reason="unnamed") == 0
+
+
+async def test_a_location_trusted_room_still_refuses_a_degraded_view(persons, store):
+    """The line DEC-79 does NOT cross, and the reason the flag is not simply
+    «skip the guard»: `degraded` means the roster could not be READ, so there is
+    no measurement to overrule — an R-27 `unavailable`, which is never a PASS.
+
+    `unnamed` is the opposite: a roster Nora read successfully and found an
+    unknown in. The operator can speak to what he read; he cannot vouch for a
+    room nobody could see. Delete the `view.degraded` term and this reds."""
+    await _record(store, person="miles_novak", ts=NOW)
+    metrics = Metrics()
+    tagger = persons.resolve("signal", "+85290000101")
+    w = _whereis(
+        persons, store, members=(MILES, GRANT, NORA), fail=True,   # roster unreadable
+        location_trusted=True, metrics=metrics, tagger=tagger,
+    )
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "refused"     # trust cannot substitute for a reading
     assert "lat" not in out and "address" not in out
-    assert metrics.get("nora_presence_disclosure_refusals_total") == 1
-    # and the reason is the UNNAMED account, not the subset (obs review 2026-08-08)
-    assert metrics.get("nora_presence_disclosure_refusals_total", reason="unnamed") == 1
+    assert metrics.get("nora_presence_disclosure_refusals_total", reason="degraded") == 1
 
 
 async def test_disclosure_refusal_metric_names_which_condition(persons, store):

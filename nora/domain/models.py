@@ -154,6 +154,18 @@ class TranscriptRow:
     # consumes would be an invented contract. `nora.domain.media` is what a
     # retrieval tool would decode it through when one exists.
     media_json: str | None = None
+    # The IDENTITY-canonical name for this row's sender (`PersonRef.name`), or
+    # None when the sender maps to nobody. Set by the context assembler, which
+    # is the one place that holds `Persons`; the store never fills it.
+    #
+    # It sits BESIDE `sender_name` rather than replacing it (DEC-80): the two
+    # are different facts with different trust. `sender_name` is the SELF-SET
+    # Signal profile name — group-authored, spoofable, and the thing R-13 escapes
+    # on the way into the prefill. `person_name` is operator-authored, so it is
+    # the one the transcript renders and the one every OTHER surface (the
+    # `tag_message from=`, `group_members`, `lookup_person`) already used. Keeping
+    # both is what makes the projection auditable instead of a silent rewrite.
+    person_name: str | None = None
 
 
 @dataclass(frozen=True)

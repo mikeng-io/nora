@@ -188,6 +188,12 @@ class FirePath:
             log.exception("fire context read failed; continuing with an empty transcript")
             self._metrics.inc("nora_errors_total", stage="fire_context", platform=row.platform)
 
+        # The same one-name-space projection the tag path applies (DEC-80). A fire
+        # turn renders the SAME transcript block through the SAME prefill, so
+        # leaving it out here would reintroduce the two-name-space bug on exactly
+        # the path nobody is watching when it fires.
+        transcript = self._persons.name_transcript(transcript, platform=row.platform)
+
         card: tuple[str, ...] = ()
         if ref is not None:
             try:

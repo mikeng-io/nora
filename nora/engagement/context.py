@@ -59,6 +59,9 @@ class TranscriptInjection:
             log.exception("context collection failed; continuing with an empty transcript")
             self._metrics.inc("nora_errors_total", stage="context", platform=msg.platform)
 
+        # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
+        transcript = self._persons.name_transcript(transcript, platform=msg.platform)
+
         ref = self._persons.resolve(msg.platform, msg.sender_id)
         card: tuple[str, ...] = ()
         if ref is not None:
