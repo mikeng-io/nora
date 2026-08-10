@@ -279,6 +279,7 @@ class ReplyGuard(HookProvider):
     def __init__(
         self, *, conversation_id: str, budgets: Mapping[str, int],
         terminal: Collection[str], deliverer=None, metrics: Metrics,
+        forced_first_tool: str | None = None,
     ) -> None:
         self._conversation_id = conversation_id
         self._budgets = dict(budgets)
@@ -290,6 +291,13 @@ class ReplyGuard(HookProvider):
         # when one was merely attempted. See `_before_model`.
         self._spoke = False
         self._turn_is_over = False
+        # Phase 2 routing (`nora.agent.intent_router`): a tool to FORCE via
+        # `tool_choice` on the turn's FIRST model call, or None to abstain. The
+        # counter lets `_before_model` force on call 1 and RELEASE the pin on
+        # call 2 — a pin left in place would make her call it every pass and
+        # never `send_reply`.
+        self._forced_first_tool = forced_first_tool
+        self._model_calls = 0
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
@@ -497,8 +505,22 @@ class ReplyGuard(HookProvider):
         if self._turn_is_over:
             event.cancel = "Reply already sent — the turn is finished."
             return
+        model = getattr(getattr(event, "agent", None), "model", None)
+        self._model_calls += 1
         if self._spoke:
-            tool_choice.relax(getattr(getattr(event, "agent", None), "model", None))
+            tool_choice.relax(model)
+            return
+        # Not spoken yet. Phase 2 routing: force the routed tool on the FIRST
+        # model call, then RELEASE the pin on the next so the loop is free to
+        # reach `send_reply` (still `required`, never `auto` — she has not
+        # spoken, and `auto` before speaking sends prose, R-5's silent shape).
+        # Ordered after the `_spoke` return so a forced pin never survives into
+        # the post-reply relaxation.
+        if self._forced_first_tool is not None:
+            if self._model_calls == 1:
+                tool_choice.force(model, self._forced_first_tool)
+            elif self._model_calls == 2:
+                tool_choice.require(model)
 
     def _before_tool(self, event) -> None:
         try:

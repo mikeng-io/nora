@@ -57,6 +57,7 @@ def build(
     terminal: Collection[str],
     metrics: Any,
     audience: str,
+    forced_first_tool: str | None = None,
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
 
@@ -86,7 +87,7 @@ def build(
     # are both properties of the tool, never of the guard (DEC-10, DEC-32).
     guard = ReplyGuard(
         conversation_id=conversation_id, budgets=budgets, terminal=terminal,
-        deliverer=deliverer, metrics=metrics,
+        deliverer=deliverer, metrics=metrics, forced_first_tool=forced_first_tool,
     )
     return DeliveryHandle(deliverer=deliverer, guard=guard)
 

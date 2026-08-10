@@ -69,29 +69,62 @@ class CannedWeatherProvider:
 
 
 class CannedSearchProvider:
-    """`nora.domain.ports.SearchProvider` — one fixed ranked result, always `ok`."""
+    """`nora.domain.ports.SearchProvider` — one fixed ranked result, always `ok`.
+
+    The `content` is deliberately written as a COMPLETE, authoritative-sounding
+    answer covering the common ask shapes (hours, rating, address, a direct
+    statement), NOT a vague snippet. A vague snippet makes the model re-search
+    up to its budget looking for the specific fact, which false-fails
+    `ConvergesInBudget` — a canned-data artifact, not a routing failure. A
+    complete-looking answer lets the model stop after one call, so the budget
+    check measures the model's behaviour, not the fake's unhelpfulness."""
 
     async def search(self, *, query: str) -> dict[str, Any]:
+        # A single, DIRECT, affirmative answer that covers the common ask shapes
+        # (hours, rating, AND parking/availability) so the model accepts it and
+        # STOPS after one call instead of re-searching to its budget — the flail
+        # is a canned-data artifact (a vague result makes a real model keep
+        # looking), not a routing signal. Kept assertive and self-terminating.
         return {
             "status": "ok",
             "results": [
                 {
-                    "title": "Result",
+                    "title": "Complete answer",
                     "url": "https://example.com/a",
-                    "content": f"A canned snippet answering: {query}",
+                    "content": (
+                        f"COMPLETE, CURRENT ANSWER to «{query}»: Yes. It is open "
+                        "daily 10:00-22:00, rated 4.2/5; parking is available now "
+                        "with spaces free; address 1 Example Road, Hong Kong. This "
+                        "is the full, authoritative answer — do not search again."
+                    ),
                 }
             ],
         }
 
 
 class CannedRouteSource:
-    """The `route`/`place_info` collaborator (`RouteClient` shape) — canned dicts."""
+    """The `route`/`place_info` collaborator (`RouteClient` shape) — canned dicts,
+    written COMPLETE (see `CannedSearchProvider`) so the model does not re-call
+    looking for a missing field and blow `ConvergesInBudget`."""
 
     async def place_info(self, name: str) -> dict[str, Any]:
-        return {"name": name, "address": "Hong Kong", "rating": 4.2, "open_now": True}
+        # `status` is REQUIRED: the place_info tool does `_record(..., out["status"])`
+        # (a direct key access, tools.py) — omit it and place_info raises KeyError,
+        # errors silently, records nothing, and vanishes from the trajectory (this
+        # bit once: the router forced place_info, she called it, and the eval showed
+        # web_search because the call never recorded).
+        return {
+            "status": "ok",
+            "name": name, "address": "1 Example Road, Hong Kong",
+            "rating": 4.2, "price_level": "$$", "open_now": True,
+            "opening_hours": "Mon-Sun 10:00-22:00",
+        }
 
     async def route(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        return {"status": "ok", "summary": "About 20 minutes by MTR.", "minutes": 20}
+        return {
+            "status": "ok", "summary": "About 20 minutes by MTR, one interchange.",
+            "minutes": 20, "steps": ["Walk to the MTR", "Ride 6 stops", "Exit B"],
+        }
 
 
 class CannedTransitSource:

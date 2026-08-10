@@ -76,14 +76,50 @@ def relax(model: Any) -> bool:
         # an exception traceback per turn in those tests would be noise that
         # says nothing about the code under test.
         return False
+    return _set(model, AFTER_SPEAKING, "relax")
+
+
+def force(model: Any, tool_name: str) -> bool:
+    """Pin one tag's model to CALL `tool_name` on its next model call (Phase 2,
+    `nora.agent.intent_router`). True if it changed.
+
+    OpenAI's named tool_choice, `{"type":"function","function":{"name":…}}`, is
+    how you force a SPECIFIC tool rather than merely `required` (some tool). Set
+    from `ReplyGuard._before_model` on the first call for a routed intent, and
+    released with `require` on the next — a pin left in place would make her call
+    the same tool every pass and never `send_reply`. Same per-tag safety and same
+    READ-COPY-WRITE-WHOLE `params` handling as `relax`; never raises (failing to
+    force just leaves `required`, which is the safe direction — she still speaks).
+    """
+    if model is None:
+        return False
+    return _set(model, {"type": "function", "function": {"name": tool_name}}, "force")
+
+
+def require(model: Any) -> bool:
+    """Release a `force` pin back to `required` (some tool) so the next call is
+    free again (still not `auto` — she has not spoken yet, and `auto` on a
+    not-yet-spoken turn sends prose, R-5's silent-failure shape; see the
+    measurements above). True if it changed."""
+    if model is None:
+        return False
+    return _set(model, FIRST_CALL, "require")
+
+
+def _set(model: Any, value: Any, what: str) -> bool:
+    """Read the model's `params`, set `tool_choice=value`, write the whole dict
+    back. Shared by `relax`/`force`/`require` for the reason the module docstring
+    gives: `update_config` is a shallow update, so `params` must be written WHOLE
+    or `max_tokens`/`temperature`/`reasoning_effort` vanish for the rest of the
+    turn. Never raises."""
     try:
         config = model.get_config() or {}
         params = dict(config.get("params") or {})
-        if params.get("tool_choice") == AFTER_SPEAKING:
+        if params.get("tool_choice") == value:
             return False
-        params["tool_choice"] = AFTER_SPEAKING
+        params["tool_choice"] = value
         model.update_config(params=params)
     except Exception:
-        log.exception("could not relax tool_choice; leaving it at %s", FIRST_CALL)
+        log.exception("could not %s tool_choice; leaving it at %s", what, FIRST_CALL)
         return False
     return True

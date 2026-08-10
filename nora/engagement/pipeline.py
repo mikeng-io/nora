@@ -46,6 +46,7 @@ import time
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from nora.agent.intent_router import route_intent
 from nora.agent.prefill import build_prefill, build_tag_message
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
@@ -307,6 +308,11 @@ class EngagementPipeline:
                 budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
                 audience="tag",
+                # Phase 2 routing: a precision-first, abstaining classifier over the
+                # message. Non-None only on a narrow high-precision surface (mall
+                # opening-hours → place_info) the model misroutes despite the
+                # schema; the guard forces it on the first model call and releases.
+                forced_first_tool=route_intent(msg.body),
             )
             # One `Room` per tag, constructed here and closed over by the three
             # room-scoped tools. Nothing reads the platform roster unless one
