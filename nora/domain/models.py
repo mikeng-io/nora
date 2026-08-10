@@ -230,6 +230,20 @@ class TagContext:
     transcript: tuple[TranscriptRow, ...]   # oldest-first rows from db.recent
     peer_card: tuple[str, ...]
     started_at: float              # perf_counter, for the latency histogram
+    # What Honcho has concluded about NORA HERSELF — episodes, not identity.
+    # Deliberately sourced from the `representation` verb and never from
+    # `peer_card`: her card distils her own output into IDENTITY claims («Kind:
+    # AI chatbot/assistant», «Owner: 主人 with admin authority» — both observed
+    # live 2026-08-11), and identity is doctrine's lane and operator-only. A
+    # learned self-description injected beside an authored one wins, because it
+    # reads as evidence. Episodes do not compete: «you told Aaron you would talk
+    # after work» is a fact about the past, which is what she actually lacks.
+    #
+    # Defaulted, so the ~40 existing construction sites (tests, the fire path)
+    # keep working and an absent card is the SAME shape as a card Honcho could
+    # not answer — which is safe here only because this block is advisory: it is
+    # never the ground for a claim, so an empty one costs continuity, not truth.
+    self_card: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

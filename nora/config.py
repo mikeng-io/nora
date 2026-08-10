@@ -77,6 +77,16 @@ class MemoryConfig(BaseModel):
     # (decision B-global). Defaulted so a config.toml written before v2 loads
     # unchanged; the value is a peer id, never a secret.
     ai_peer: str = "nora"
+    # How many of HER OWN conclusions ride in `<self_card>` — episodic
+    # continuity, so a promise she made last night survives falling out of the
+    # transcript window. 0 disables the block entirely.
+    #
+    # Small on purpose. This is a PER-TAG block, so unlike the doctrine it is
+    # not in the cached static head and is re-sent on every model call of the
+    # loop: her live representation measured 2,459 chars (~820 tokens) at 25
+    # conclusions on 2026-08-11, which at `turns = 20` is ~16k of the 128k
+    # budget spent on background nobody asked for. Eight measured ~1,080.
+    self_card_conclusions: int = 8
 
 
 class LimitsConfig(BaseModel):

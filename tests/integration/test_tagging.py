@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus
 from nora.testing import ScriptedTurn, group_event
 
@@ -72,19 +73,24 @@ async def test_a_model_that_writes_nothing_at_all_means_strict_silence(harness_f
     assert [r for r in await h.store.recent(conversation_id="g1", limit=10) if r.is_nora] == []
 
 
-async def test_send_reply_is_capped_at_three_end_to_end(harness_factory):
-    """Multi-message end-to-end (DEC-42): the first three distinct sends reach the
-    group; the fourth is refused by the cap (one R-2 veto). Was
-    `test_second_send_reply_is_cancelled`, which pinned the cap-of-1 behaviour."""
+async def test_send_reply_is_capped_at_the_budget_end_to_end(harness_factory):
+    """Multi-message end-to-end (DEC-42): every send up to the cap reaches the
+    group; the one past it is refused (one R-2 veto). Was
+    `test_second_send_reply_is_cancelled`, which pinned the cap-of-1 behaviour.
+
+    The cap is read from the registry, not written here — DEC-10 keeps the
+    number with the tool and DEC-32 requires exactly one copy of it. Asserting
+    a literal made this test go red for the right reason but the wrong cause at
+    3→6 (DEC-95): the behaviour under test is «the (cap+1)th is refused», which
+    is true at any cap."""
+    cap = ToolRegistry().budgets()["send_reply"]
+    texts = [f"msg{i}" for i in range(cap + 1)]
     h = await harness_factory(script=[ScriptedTurn(
-        tool_calls=[("send_reply", {"text": "first"}),
-                    ("send_reply", {"text": "second"}),
-                    ("send_reply", {"text": "third"}),
-                    ("send_reply", {"text": "fourth"})],
-        final_text="first")])
+        tool_calls=[("send_reply", {"text": t}) for t in texts],
+        final_text=texts[0])])
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert h.sink.texts == ["first", "second", "third"]
+    assert h.sink.texts == texts[:cap]          # the last one never reached the group
     assert h.metrics.get("nora_guard_vetoes_total", rule="R-2") == 1
 
 

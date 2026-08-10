@@ -588,8 +588,9 @@ class ReplyGuard(HookProvider):
 
         # R-7's per-tool budget, and — for `send_reply` — **the message cap**.
         # THIS CHECK RUNS BEFORE R-2's latch below, and that ordering is half of
-        # DEC-32. `NATIVE_TOOL_BUDGETS["send_reply"]` is 3 (DEC-42 activated), so
-        # the FOURTH reply is refused HERE and never reaches `Deliverer.exhausted`.
+        # DEC-32. `NATIVE_TOOLS["send_reply"].budget` is the cap (1 → 3 activated
+        # multi-message, DEC-42; → 6 for the burst, DEC-95), so the (cap+1)th
+        # reply is refused HERE and never reaches `Deliverer.exhausted`.
         # Relaxing R-2 alone — which is what
         # `design/proposed/16-multi-message-replies.md` reads like — would leave
         # multi-message silently dead: the model would be told "you already sent

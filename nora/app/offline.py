@@ -67,6 +67,8 @@ def build_offline_pipeline(
     assembler = TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
         context_window=cfg.store.context_window, metrics=metrics,
+        ai_peer=cfg.memory.ai_peer,
+        self_card_conclusions=cfg.memory.self_card_conclusions,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:

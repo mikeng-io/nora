@@ -4,6 +4,8 @@ from nora.obs.metrics import Metrics
 
 BUDGETS = ToolRegistry().budgets()
 TERMINAL = ToolRegistry().terminal_tools()
+#: Read, never written — see the same note in `test_guards_hooks.py`.
+_CAP = BUDGETS["send_reply"]
 
 
 def _guard(metrics=None) -> ReplyGuard:
@@ -143,7 +145,7 @@ def test_a_well_formed_call_never_touches_the_scope_counter():
 def test_counters_are_per_guard_instance():
     """R-2: constructed fresh per tag, so counters reset by construction."""
     a, b = _guard(), _guard()
-    for _ in range(3):                      # spend a's cap of 3
+    for _ in range(_CAP):                   # spend a's whole cap
         a.record("send_reply")
     assert a.evaluate("send_reply", _send()) is not None
     assert b.evaluate("send_reply", _send()) is None

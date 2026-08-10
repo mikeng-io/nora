@@ -68,7 +68,7 @@ from ..domain.reminders import (
     remaining_occurrences,
 )
 from .arithmetic import evaluate as evaluate_expression
-from .egress import scan_identifiers
+from .egress import scan_identifiers, scan_reply
 from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .room import Room, RoomView, _key, _names_of
@@ -173,8 +173,10 @@ class NativeTool:
 # mid-answer. The per-tool number comments below describe the RELATIVE sizing,
 # which a uniform doubling preserves (a tool sized "2, like route" is still
 # twice group_members). FIVE are deliberately HELD at their original value, for
-# reasons a bigger budget cannot help (review 2026-08-08): `send_reply` (3) is
-# the messages-per-reply spam cap, not a lookup; `ask_memory` (1) is a ~14-19s
+# reasons a bigger budget cannot help (review 2026-08-08): `send_reply` is the
+# messages-per-reply spam cap, not a lookup — held at 3 then, moved to 6 by
+# DEC-95 for the burst, and still sized by what the GROUP should receive rather
+# than by what a call costs; `ask_memory` (1) is a ~14-19s
 # dialectic call whose second invocation blows the turn's wall-clock; and
 # `group_members` / `saved_places` / `skills` (1) each return a per-tag CACHED,
 # provably-identical result, so a second call only crowds out `send_reply`.
@@ -430,11 +432,23 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `_before_model` relaxes `tool_choice` to `auto` after the first send so she
     # MAY stop before reaching the cap. So raising 1→3 HERE, and nowhere else, is
     # the entire activation — exactly the property DEC-10 exists for (the number a
-    # tool costs lives with the tool). **3, not higher, on purpose:** multi-message
-    # is MULTIPURPOSE — distinct acts addressed to different people, never one
-    # thought chunked — and in a five-person group two or three addressees is the
-    # real ceiling; the day that changes it is a one-line raise (operator decision,
-    # 2026-08-07).
+    # tool costs lives with the tool).
+    #
+    # **3 → 6 (operator, 2026-08-11), and the REASON for the cap changed with
+    # it.** 2026-08-07's 3 was sized for multi-message as MULTIPURPOSE — distinct
+    # acts addressed to different people, "never one thought chunked" — so two or
+    # three addressees in a five-person group was the ceiling. DEC-95 makes the
+    # BURST a first-class shape: a reaction, the hit, the twist, fired as separate
+    # messages because the rhythm is the aggression. That is one thought chunked,
+    # deliberately, and it is now the point. Three sends left no room to burst and
+    # then answer somebody else in the same turn.
+    #
+    # Still a cap, and still the spam cap: `turns = 20` and the 128k token ceiling
+    # are far away, so nothing but this number stops a turn carpet-bombing the
+    # group off one inbound message. The schema description below is what actually
+    # decides the shape — DEC-92 measured it as the surface that moves behaviour —
+    # so it was raised in the same edit; a bigger budget under a description
+    # saying "usually ONE message" changes nothing at all.
     #
     # `ReplyGuard.evaluate` checks this budget (R-7) BEFORE `Deliverer.exhausted`
     # (R-2), so the (cap+1)th `send_reply` is refused by the budget and the latch
@@ -447,10 +461,11 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # mechanism — stays in the schema description below, which the model reads
     # in the same request and which is the surface DEC-78/DEC-82 measured as the
     # one that moves behaviour.
-    "send_reply": NativeTool(3, "the only way anything you write reaches the group; "
-                                "usually ONE message — a second only when it is a "
-                                "separate act addressed to somebody else, such as "
-                                "putting a question to the person who actually knows",
+    "send_reply": NativeTool(6, "the only way anything you write reaches the group; "
+                                "send SEVERAL when the moment wants a burst — a "
+                                "reaction, then the hit, then the twist — or when a "
+                                "second message is addressed to somebody else, such "
+                                "as putting a question to the person who knows",
                              terminal=True),
     # THE ACTIVATION TOOL (DEC-50, activating DEC-48). It is `plugin=True`, so
     # this entry exists for ONE reason: R-7 default-denies any tool absent from
@@ -1564,9 +1579,27 @@ def build_tool_specs(
             name = roster.get(peer)
             if name is None:
                 continue                       # only what this room's people said
-            # R-18 fails closed on the whole reply; a raw line carrying an
-            # identifier is dropped here, not handed to the model to echo.
-            if scan_identifiers(content) is not None:
+            # `scan_reply` here, and `scan_identifiers` at `about` (line ~1408),
+            # and the difference is the POINT of each tool rather than an
+            # inconsistency.
+            #
+            # `about` yields KNOWLEDGE she paraphrases, so it filters on the
+            # floor predicate only: screening it with the reply predicate is
+            # what silently withheld every memory naming `claude`/`gemini`/
+            # `opus` from a group of software engineers (fixed 2026-08-06), and
+            # the principle there is that she may KNOW what she may not SAY.
+            #
+            # `search_memory` yields the exact WORDS, and DEC-95 makes those the
+            # top of the escalation ladder — doctrine tells her to quote them
+            # verbatim and forbids hedging with 「好似」. So a hit she cannot
+            # legally utter is not knowledge, it is a trap: she quotes it,
+            # `Deliverer` refuses the WHOLE message (R-18 fails closed), the
+            # refusal still spends one of her sends, and the burst dies
+            # mid-argument with nothing on screen. Measured: 「琴日我用 claude 寫個
+            # script 好撚快」 passes `scan_identifiers` and is blocked by
+            # `scan_reply`. Filter it where the quote is CHOSEN, not where it is
+            # already too late.
+            if scan_reply(content) is not None:
                 continue
             kept.append({"who": name, "said": content})
         if not kept:
@@ -2858,10 +2891,16 @@ def build_tool_specs(
     async def send_reply(text: str) -> bool:
         """Send a message to the group. This is the only way anything you write is sent.
 
-        Usually you call this ONCE, at the end of your turn. You MAY call it up to three
-        times — but only for genuinely SEPARATE acts: a reply to the person who tagged
-        you AND a word to someone else, two distinct things addressed to two different
-        people. That is what a second message is for.
+        A plain question gets ONE call, at the end of your turn. You may call it up to
+        six times, and there are two occasions that genuinely want more than one:
+
+          - **A BURST, when the room is bantering.** A reaction, then the hit, then the
+            twist, sent as separate messages — 「屌」 / 「你上鋪咁撚急衝出去送頭」 /
+            「而家仲有面怪隊友, 收皮啦你」. The rhythm IS the aggression; the same three
+            beats packed into one tidy sentence read as a summary of an argument
+            instead of an argument.
+          - **SEPARATE acts addressed to different people** — a reply to whoever tagged
+            you AND a word to somebody else.
 
         Writing @ immediately before the name the group uses for somebody ADDRESSES
         them: it becomes a real tag and their phone lights up. It only works for people
@@ -2877,12 +2916,13 @@ def build_tool_specs(
         the question over, never answering on their behalf and never passing on what
         one of them told you privately.
 
-        Do NOT split one answer across several messages to pace or pad it, and do not
-        send a second message merely because three are allowed — one thought is one
-        message, and a straight question gets one straight answer. If everything you
-        have to say is to one person about one thing, send it once. If you never call
-        this, nothing is sent; it always goes to the conversation you were tagged in —
-        you do not choose where.
+        What is still wrong is splitting ONE ANSWER to pace or pad it — a fact broken
+        across three messages is not a burst, it is a straight answer made slower, and
+        「等等」「我睇下先」 sent as their own messages are pure noise. A burst is several
+        HITS; padding is one thought in instalments. And do not reach for six because
+        six are allowed: a straight question gets one straight answer. If you never
+        call this, nothing is sent; it always goes to the conversation you were tagged
+        in — you do not choose where.
 
         Read `text` back before you send it, and fix these three:
           - **Too long.** One or two sentences answers almost everything. However much

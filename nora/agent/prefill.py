@@ -138,6 +138,9 @@ def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
         "you. It appears only when there is something; no block at all means "
         "nothing has been recorded about them yet, not that they are a "
         "stranger.\n"
+        "- self_card: things you said or did before, from your own memory. A "
+        "record of what happened, not a description of who you are — who you "
+        "are is above, and you may contradict any line of it.\n"
         "- replying_to: the message they were replying to, quoted from your own "
         "record of it rather than from their copy.\n"
         "- tag_message: what they actually said to you.\n"
@@ -294,6 +297,31 @@ def _peer_card_block(ctx: TagContext) -> str:
     return f'<peer_card person="{who}">\n{facts}\n</peer_card>\n'
 
 
+def _self_card_block(ctx: TagContext) -> str:
+    """What she said and did before — episodic continuity, not self-description.
+
+    The attribute name and the framing line are the whole safety property here,
+    and they are worth more than the content. These conclusions are distilled
+    from HER OWN output and nothing verified them, so the repo's «no
+    self-attestation» rule applies exactly: done is never decided by the doer.
+    Presented as «this is who you are» they would compete with `voice.md` and
+    win, because a concrete observation beats a prescription. Presented as «you
+    said this», they are a record — the same kind of thing as the transcript,
+    at the same authority, and she can contradict one if she wants to.
+
+    Which is also why the block sits BESIDE `group_transcript` rather than
+    anywhere near the doctrine: it is situation-tier, below every authored file.
+    """
+    if not ctx.self_card:
+        return ""
+    lines = "\n".join(f"- {escape(c)}" for c in ctx.self_card)
+    return (
+        '<self_card note="things you said or did before, from your own memory. '
+        'A record of the past, not a description of who you are — you may '
+        'contradict any of it.">\n' + lines + "\n</self_card>\n"
+    )
+
+
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
@@ -330,7 +358,10 @@ def build_prefill(
             # `_context_header`'s docstring for the cache measurement that
             # decided this. It is still the first thing after the static
             # instructions, so nothing about how she reads it changes.
-            _now_line(now) + _peer_card_block(ctx)
+            # `self_card` before `peer_card` before the transcript: her own past,
+            # then theirs, then the room — widening scope, and the transcript
+            # stays adjacent to the message it explains.
+            _now_line(now) + _self_card_block(ctx) + _peer_card_block(ctx)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),

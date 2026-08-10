@@ -25,6 +25,24 @@ enabled = true                   # NOT YET HONOURED — SignalAdapter starts reg
 [memory]
 base_url = "http://host.docker.internal:8000"
 workspace_id = "nora"
+# `<self_card>` — how many of HER OWN conclusions ride in the per-tag prefill,
+# so a promise she made last night survives falling out of the transcript
+# window («you told Aaron you would talk after work», «you called Grant 明明»).
+# 0 turns the block off.
+#
+# From `representation`, never from the peer CARD, and the difference is not
+# cosmetic: read live on 2026-08-11, her card asserts «Kind: AI
+# chatbot/assistant» and «Owner: '主人' (master) with admin authority» — both
+# distilled from her own output, both contradicting identity.md, and both would
+# WIN against the doctrine because a concrete observation outranks a
+# prescription in practice. The representation states episodes instead, which do
+# not compete with who she is.
+#
+# 8, not 25. This block is per-tag, so it is re-sent on every model call of the
+# loop rather than living in the cached static head: 25 conclusions measured
+# 2,459 chars (~820 tokens), which at `turns = 20` is ~16k of the 128k budget.
+# Eight measured ~1,080 chars.
+self_card_conclusions = 8
 
 [llm]
 base_url = "http://host.docker.internal:20128/v1"   # OmniRoute OpenAI-compatible
@@ -84,7 +102,25 @@ temperature = 0.7
 # holds — nothing to reason through") turns out to be the right instinct for the
 # wrong reason: it is not that the turn is easy, it is that the work is «pick one
 # tool and call it correctly», where deliberation is pure downside.
-reasoning_effort = "none"
+#
+# `none` → `low` (operator, 2026-08-11), and the earlier reasoning above is
+# REFUTED for the register the doctrine now asks for. Measured against the real
+# shipped doctrine, same scene 「阿豪又遲到，仲賴塞車」, one call each:
+#
+#   unset  2.7s  2 sends  「塞車係佢嘅藉口定係佢嘅職業」 — no 屌, flat
+#   none   3.7s  2 sends  「屌，佢上次遲到都係話塞車」…
+#   low    1.9s  3 sends  「屌 阿豪次次都係塞車」/「你個藉口仲舊過你對鞋」/
+#                          「上次你話爆胎，上上次話瞓過龍，今次塞車 — 你係咪住喺時空裂縫入面」
+#
+# `low` is FASTER and better: it produced the three-beat burst DEC-95 asks for,
+# escalating, with jokes whose logic holds. `none` produced neither. The work is
+# no longer «pick one tool and call it correctly» — since DEC-95 it is «read the
+# room, choose how hard, and compose several messages», which is deliberation,
+# and the measurement says the model needs a little of it to do that.
+#
+# Still `low`, not higher: `high` was measured (2026-08-06) to end the turn
+# without calling send_reply more often, which is her going mute in the group.
+reasoning_effort = "low"
 # 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container,
 # and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
 # so every real image timed out while the tiny probe PNG passed.

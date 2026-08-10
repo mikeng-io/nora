@@ -75,10 +75,13 @@ def test_the_registry_exposes_every_declared_tool():
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
         "now": 4, "load_transcript": 4,
-        # 3 — multi-message active (DEC-42): the cap on how many messages one
-        # tag may send, raised 1→3 as the whole activation (the delivery path
-        # already read this one number as the cap).
-        "send_reply": 3,
+        # 6 — the cap on how many messages one tag may send. 1→3 activated
+        # multi-message (DEC-42); 3→6 (DEC-95) makes the BURST first-class —
+        # a reaction, the hit, the twist as separate sends — which 3 could not
+        # hold alongside a word to a second person. Still the spam cap: `turns`
+        # and the token ceiling are far away, so this number is the only thing
+        # bounding one inbound message's outbound volume.
+        "send_reply": 6,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,

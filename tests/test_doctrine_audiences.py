@@ -27,7 +27,11 @@ AUTHORED = ("identity", "voice", "conduct", "constraints")
 # RULE's reach across audiences, never its wording, and a rule that is
 # rephrased and quietly loses the heartbeat audience is exactly the failure
 # this test exists to catch.
-MULTI_MESSAGE = "A second message is a second ACT"
+# The v9 rewrite (DEC-96) dropped the SHOUTED "second ACT" for ordinary prose —
+# `kind: conduct` describes rather than legislates. What this file is actually
+# checking is that the multi-message rule reaches BOTH audiences, so it needs a
+# needle that is unique to that rule and indifferent to its wording.
+MULTI_MESSAGE = "a second act"
 SILENCE = "That's the only reason you ever speak"
 
 
@@ -58,6 +62,6 @@ def test_the_multi_message_rule_survives_in_both_audiences(doctrine_store):
     current wrapping or the replacement — a longer phrase fails on whitespace,
     not on meaning.
     """
-    assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "tag").split())
-    assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "heartbeat").split())
+    assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "tag").split()).lower()
+    assert MULTI_MESSAGE in " ".join(_bodies(doctrine_store, "heartbeat").split()).lower()
 

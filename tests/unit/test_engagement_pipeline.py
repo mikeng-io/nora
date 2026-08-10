@@ -1060,24 +1060,26 @@ async def test_reactions_do_not_consume_the_reply_budget():
     """R-2/R-2b with reactions live: reactions are not tools and never touch
     `Deliverer`, so they neither consume nor re-arm the reply budget.
 
-    With the cap at 3 (DEC-42), four `send_reply` calls still deliver exactly
-    three and the fourth is vetoed — the reaction lifecycle is untouched by any
-    of it. (Was `..._so_r2_still_allows_one_reply`, from the cap-of-1 era.)"""
+    (cap+1) `send_reply` calls still deliver exactly `cap` and the last is
+    vetoed — the reaction lifecycle is untouched by any of it. (Was
+    `..._so_r2_still_allows_one_reply`, from the cap-of-1 era.)
+
+    The cap is read from the registry, not spelled here: DEC-10/DEC-32 keep one
+    copy of that number, and the literal rotted at 3→6 (DEC-95)."""
+    cap = ToolRegistry().budgets()["send_reply"]
+    sent = [f"msg{i}" for i in range(cap)]
     adapter = _ReactingAdapter()
     pipeline, metrics, _audit, _memory, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(tool_calls=[
-            ("send_reply", {"text": "first"}),
-            ("send_reply", {"text": "second"}),
-            ("send_reply", {"text": "third"}),
-            ("send_reply", {"text": "fourth"}),
+            ("send_reply", {"text": t}) for t in [*sent, "one too many"]
         ])]),
     )
 
     await pipeline.run(_request())
     await _drain(background)
 
-    assert adapter.texts == ["first", "second", "third"]
+    assert adapter.texts == sent
     assert metrics.get("nora_guard_vetoes_total", rule="R-2") == 1
     assert adapter.emojis == [indicate.ACK, indicate.DONE]
 
@@ -1586,16 +1588,30 @@ async def test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string(
     which is the whole reason the signal has to come from the guard itself.
 
     Delete `not handle.guard.cancelled_model_call` and this reds."""
+    # Spend the terminal budget on replies the Deliverer REFUSES (R-18), so
+    # `_turn_is_over` fires while `delivered` is still False — the one state in
+    # which the recovery would otherwise engage.
+    #
+    # All `cap` sends in ONE turn, which is both what production does now
+    # (DEC-95's burst) and what `LIMITS["turns"] = 4` can hold — one send per
+    # turn would hit `max_turns` before spending a cap of 6, and that is a
+    # BUDGET stop reason, so the never-silent fallback would fire and this would
+    # fail on a line it was not written to probe.
+    #
+    # The turn still ends with the budget spent and `delivered` False, a further
+    # model call is still attempted, and `_before_model` still cancels it —
+    # verified by positive control: reverting the fix (cancel without setting
+    # the flag) delivers «Reply already sent — the turn is finished.» to the
+    # group in exactly this scripting.
+    cap = ToolRegistry().budgets()["send_reply"]
     adapter = _FakeAdapter()
     pipeline, metrics, _audit, memory, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([
-            # Spend the terminal budget on replies the Deliverer REFUSES (R-18),
-            # so `_turn_is_over` fires while `delivered` is still False — the
-            # one state in which the recovery would otherwise engage.
-            ScriptedTurn(tool_calls=[("send_reply", {"text": "佢喺 +85298765432 度"})]),
-            ScriptedTurn(tool_calls=[("send_reply", {"text": "佢喺 +85298765433 度"})]),
-            ScriptedTurn(tool_calls=[("send_reply", {"text": "佢喺 +85298765434 度"})]),
+            ScriptedTurn(tool_calls=[
+                ("send_reply", {"text": f"佢喺 +8529876{5432 + i} 度"})
+                for i in range(cap)
+            ]),
             ScriptedTurn(final_text="unreachable"),
         ]),
     )

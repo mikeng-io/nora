@@ -148,29 +148,35 @@ def test_a_terminal_call_that_raised_does_not_end_the_turn():
 
 
 def test_replies_end_the_turn_at_the_cap_not_before():
-    """Multi-message (DEC-42): the turn ends when `send_reply`'s BUDGET (3) is
-    spent, not on the first reply.
+    """Multi-message (DEC-42): the turn ends when `send_reply`'s BUDGET is spent,
+    not on the first reply.
 
-    A reply the deliverer REFUSED still spends one of the three — it was
-    RECORDED — so the group sees the same silence either way; but a refused
-    FIRST reply no longer ends the turn, because messages remain. Once all three
-    are spent the turn is over and the 4th `send_reply` is already refused by the
-    budget. If the budget ever stops refusing the (cap+1)th call, this is where
-    the loss surfaces. (Was `test_a_reply_the_deliverer_refused_still_ends_the_turn`,
-    which pinned the cap-of-1 behaviour DEC-32 shipped.)
-    """
+    A reply the deliverer REFUSED still spends one — it was RECORDED — so the
+    group sees the same silence either way; but a refused FIRST reply no longer
+    ends the turn, because messages remain. Once all are spent the turn is over
+    and the (cap+1)th `send_reply` is already refused by the budget. If the
+    budget ever stops refusing that call, this is where the loss surfaces. (Was
+    `test_a_reply_the_deliverer_refused_still_ends_the_turn`, which pinned the
+    cap-of-1 behaviour DEC-32 shipped.)
+
+    The cap is READ from the registry rather than written here. DEC-10 puts the
+    number with the tool and DEC-32 requires exactly ONE of it; a literal in
+    this test is a second copy that goes stale the next time an operator moves
+    the budget — which is precisely what happened at 3→6 (DEC-95)."""
+    cap = ToolRegistry().budgets()["send_reply"]
+    assert cap >= 2, "this test needs headroom to distinguish 'not before' from 'at'"
     guard = ReplyGuard(
         conversation_id="g1", budgets=ToolRegistry().budgets(),
         terminal=ToolRegistry().terminal_tools(), deliverer=_NeverLatches(),
         metrics=Metrics(),
     )
-    # The first two recorded replies (delivered nothing) do NOT end the turn.
-    for _ in range(2):
+    # Every recorded reply BUT the last (delivered nothing) leaves the turn open.
+    for _ in range(cap - 1):
         guard._after_tool(_AfterToolCall("send_reply"))
         event = _BeforeModelCall()
         guard._before_model(event)
         assert event.cancel is False
-    # The third spends the last message; the turn is now over.
+    # The last one spends the final message; the turn is now over.
     guard._after_tool(_AfterToolCall("send_reply"))
     event = _BeforeModelCall()
     guard._before_model(event)

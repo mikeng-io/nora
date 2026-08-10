@@ -6,6 +6,10 @@ from nora.obs.metrics import Metrics
 
 BUDGETS = ToolRegistry().budgets()
 TERMINAL = ToolRegistry().terminal_tools()
+#: Read, never written: DEC-10 keeps the number with the tool and DEC-32 allows
+#: exactly one copy of it. A literal here is a second copy that silently rots
+#: the next time an operator moves the budget (3→6, DEC-95).
+_CAP = BUDGETS["send_reply"]
 
 
 class FakeBeforeEvent:
@@ -45,7 +49,7 @@ def test_before_tool_allows_a_valid_call():
 
 def test_before_tool_sets_cancel_tool_with_the_corrective_message():
     g = _guard()
-    for _ in range(3):                      # spend the cap of 3 (DEC-42)
+    for _ in range(_CAP):                   # spend the cap (DEC-42), whatever it is
         g.record("send_reply")
     event = FakeBeforeEvent("send_reply", {"text": "hi"})
     g._before_tool(event)

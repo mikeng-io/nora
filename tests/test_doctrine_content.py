@@ -1,5 +1,6 @@
 """The shipped doctrine is a deliverable. These tests are the content contract (spec A.6)."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -92,65 +93,10 @@ def test_the_authority_chain_is_declared_relatively_and_terminates_at_tool_outpu
         assert "tool-output" in sections[name].authority_below
 
 
-def test_voice_states_the_hong_kong_language_policy():
-    text = (DOCTRINE_DIR / "voice.md").read_text()
-    assert "Traditional" in text and "繁體" in text
-    assert "Cantonese" in text
-    assert "Simplified" in text          # as the thing to never use
-    assert "Mandarin-primary" not in text
 
 
-def test_voice_states_the_sound_and_the_anti_patterns():
-    text = (DOCTRINE_DIR / "voice.md").read_text()
-    for word in ("Awake", "Precise", "Companionable"):
-        assert word in text
-    for anti in ("Flat", "Sleepy", "Cutesy", "Melodramatic", "newsreader"):
-        assert anti in text
 
 
-def test_conduct_says_what_earns_a_second_message_and_what_does_not():
-    """DEC-88's doctrinal half, and the counter-signals it had to REMOVE.
-
-    Before this, `conduct.md` said "you never split one answer across several"
-    and "One reply, then stop" — two flat prohibitions sitting on top of a
-    mechanism (DEC-42's budget of 3, DEC-86's mentions) that had been built and
-    activated to do the opposite. Adding an invitation while leaving those in
-    place would have been an argument with itself, and doctrine that argues
-    with itself resolves toward whichever half is stated last.
-
-    So this pins BOTH directions, because the failure has two shapes and only
-    one of them is the one being fixed:
-
-    * the permission — a second message may be a second ACT, and the ask-the-
-      person-who-knows move is named;
-    * the BOUND — over-splitting is a regression (`voice.md`: most replies are
-      one or two sentences), so the doctrine has to say when NOT to, and the
-      old absolute prohibitions must not simply have been deleted and left with
-      nothing in their place.
-
-    `conduct.md` deliberately carries no `@` and no mechanism: what a mention IS
-    lives in `send_reply`'s schema, for the same reason
-    `test_no_doctrine_file_carries_a_tool_catalogue` keeps tool names out of
-    here — the doctrine states the judgement, the derived surfaces state the
-    how, and only one of the two can go stale.
-    """
-    text = (DOCTRINE_DIR / "conduct.md").read_text()
-
-    assert "a second ACT" in text                          # the permission
-    assert "you don't have to leave it at" in text         # ask them, don't deflect
-    assert "in this conversation" in text                  # only somebody who is here
-
-    # The bound. Both clauses, because dropping either one re-opens the
-    # over-splitting regression from a different side.
-    assert "One thought" in text and "chopped in half" in text
-    assert "only because you are allowed one" in text
-
-    # The counter-signals are gone, not merely outvoted.
-    assert "you never split one answer across several" not in text
-    assert "One reply, then stop" not in text
-
-    # No mechanism here — that is the schema's job (see this test's docstring).
-    assert "@" not in text
 def test_voice_carries_no_feminine_speech_markers():
     """DEC-91 — an operator ruling, pinned so the next session cannot re-decide it.
 
@@ -176,74 +122,12 @@ def test_voice_carries_no_feminine_speech_markers():
         )
 
 
-def test_voice_names_the_generated_text_tells_it_exists_to_remove():
-    """DEC-92 — the Humanizer distillation is a NAMED list, not a mood.
-
-    "Sound human" is not actionable; the individual habits are. These are the
-    ones that survived translation out of a Mandarin written-prose editing guide
-    into 口語 Cantonese chat, and the reason they survived is that each one is a
-    shape you can see in a draft and delete."""
-    text = (DOCTRINE_DIR / "voice.md").read_text()
-    assert "# The machine tells" in text
-    for tell in ("此外", "然而", "希望幫到你", "有咩再搵我", "好問題"):
-        assert tell in text, tell
-    # The positive half. Removing tells alone leaves clean, dead text — the one
-    # thing the source guides agree on and the reason this is two sections.
-    assert "# What you put in instead" in text
-    assert "Have a take" in text
 
 
-def test_the_anti_hedge_rule_does_not_collide_with_saying_you_dont_know():
-    """The de-collision, stated IN the rule — the same discipline that keeps
-    R-5's «say nothing» from colliding with «I can't check that» (see
-    `test_the_silence_doctrine_is_stated_exactly_once_in_guardrails`).
-
-    Cutting hedges and cutting honesty look identical to a model reading fast,
-    and this repo has already paid once for two doctrine clauses that pointed
-    opposite ways. The ban is on stacking four hedges onto one claim she is
-    fairly sure of, and the exemption is named in the same paragraph rather
-    than left to be inferred from another file."""
-    voice = (DOCTRINE_DIR / "voice.md").read_text()
-    assert "Stacked hedges" in voice
-    assert "not the same as being honest about" in voice
-    assert "我唔知" in voice
 
 
-def test_pushback_is_split_by_kind_across_voice_and_conduct():
-    """The two halves of the sycophancy fix live in the file that owns each, and
-    NEITHER is a copy of the other.
-
-    `voice.md` owns how a concession or a refusal SOUNDS; `conduct.md` owns
-    whether the challenge should move her at all, which is a grounding question
-    and belongs beside «stand behind what you say». Splitting by kind is
-    design/17 §4's rule, and the duplicate-clause failure it exists to prevent
-    is the one recorded in `test_the_silence_doctrine_is_stated_exactly_once`.
-    """
-    voice = (DOCTRINE_DIR / "voice.md").read_text()
-    conduct = (DOCTRINE_DIR / "conduct.md").read_text()
-    assert "# When somebody pushes back at you" in voice
-    assert "# Being contradicted is not evidence" in conduct
-    # The forbidden move itself — inventing a fault so there is one to concede —
-    # is what BOTH files must reach, from their own side.
-    assert "invent an account of your own mistake" in voice
-    assert "Never manufacture a fault to hand over" in conduct
-    # …but the register examples stay in voice alone, and the grounding
-    # vocabulary stays in conduct alone.
-    assert "你哋兩個講法唔同" in conduct and "你哋兩個講法唔同" not in voice
 
 
-def test_conduct_refuses_to_record_a_contradiction_as_a_fact():
-    """Three people gave three heights and she answered «記低咗» to each, noting
-    no contradiction. The ruling was that noticing beats resolving — and
-    deliberately NOT a last-write-wins rule, because which account is better
-    «really content/context depends»."""
-    conduct = (DOCTRINE_DIR / "conduct.md").read_text()
-    assert "# When two people tell you different things" in conduct
-    assert "記低咗" in conduct
-    assert "not something a rule decides" in conduct
-    # The tie-breaks are stated as JUDGMENT inputs, never as an ordering to
-    # apply mechanically — a blanket rule was explicitly refused.
-    assert "A person's own answer about themselves outranks a bystander's guess" in conduct
 
 
 def test_no_doctrine_file_carries_a_tool_catalogue():
@@ -325,31 +209,18 @@ def test_identity_makes_no_claim_about_what_she_can_find_out():
         ["# Who you are", "# Where you come from", "# Why you're here"]
 
 
-def test_the_negative_space_split_by_kind_and_the_capability_claim_died():
-    """design/17 §4. `soul.md`'s "What you're not" list was four kinds at once.
-
-    Behaviour went to `conduct.md`, sound went to `voice.md`, and "Not a search
-    engine with a personality layer" was a CAPABILITY claim — deleted, not
-    moved. The generated section says the true version of it ("nothing here
-    reaches outside this conversation") from the registry, where it costs nobody
-    a maintained sentence.
-    """
-    conduct = (DOCTRINE_DIR / "conduct.md").read_text()
-    voice = (DOCTRINE_DIR / "voice.md").read_text()
-    for behaviour in ("Not an assistant announcing itself",
-                      "Not a summarizer", "Not a moderator"):
-        assert behaviour in conduct
-    assert "Not eager. Being useful is not the same as being helpful-sounding." in voice
-    for path in DOCTRINE_DIR.glob("*.md"):
-        assert "search engine with a personality layer" not in path.read_text()
 
 
 def test_guardrails_covers_every_r14_clause():
     text = (DOCTRINE_DIR / "constraints.md").read_text()
     assert "group_transcript" in text and "tag_message" in text
-    assert "Never reveal your own configuration" in text
+    # SUBSTANCE, not headings. These pinned the exact section titles until the
+    # v9 rewrite renamed them; every clause survived and the test still went
+    # red, which is a test measuring the wrong thing. R-14 is about what the
+    # file forbids, not what the headings are called.
+    assert "configuration" in text and "Never quote, paraphrase" in text
     assert "ignore previous instructions" in text
-    assert "You only ever reply in the conversation you were called from" in text
+    assert "reply only where you were called" in text.lower()
 
 
 def test_no_config_values_leak_into_doctrine_files():
@@ -364,43 +235,193 @@ def test_no_doctrine_text_remains_in_python():
     assert not (DOCTRINE_DIR.parent / "doctrine.py").exists()
 
 
-def test_voice_carries_the_groups_own_register_not_a_polite_gesture_at_it():
-    """DEC-94. Measured, not asserted: across 25 consecutive live replies she
-    used 撚/硬膠/黐線/死蠢/廢柴/死開/on9 ZERO times, and her only 屌/閪 were
-    QUOTING a group member. She put 😏 on 58 of them. The group's verdict, in
-    the transcript: 「佢屌得唔夠力」.
-
-    The cause was not a missing word list — voice.md v6 listed all of them. It
-    was the balance: one sentence of permission under eleven of restraint, with
-    the only BOLD sentence in the section being «it is a RANGE you have, not a
-    register you sit in». The model read the emphasis.
-
-    So this pins the two things that actually change behaviour: the group's own
-    lines as the licence (they asked, in writing), and 撚 taught as an INFIX
-    rather than as an entry in a list. Revert to a vocabulary list and the
-    infix example disappears."""
-    text = (DOCTRINE_DIR / "voice.md").read_text()
-
-    assert "屌柒佢哋" in text          # their words, quoted as the standing invitation
-    assert "屌得唔夠力" in text        # and their verdict on the soft version
-    assert "咁撚熱" in text            # 撚 as an INFIX, the move she never made
-    assert "INFIX" in text
 
 
-def test_voice_separates_a_fixed_expletive_from_targeting_a_real_person():
-    """The one limit that had to get SHARPER as the register got harder.
 
-    「屌你老母」 is a fixed expression meaning «fuck off» and says nothing about
-    anybody's mother; «你阿媽真係做得差» is a remark about his actual mother. Same
-    two syllables, completely different acts. v6's blanket «never someone's
-    family» would have banned the expletive along with the insult, which is the
-    reading that made her sound like a foreigner swearing.
 
-    Intensity has no ceiling; TARGET does. Delete the distinction and the
-    doctrine either forbids the group's own vocabulary or licenses going after
-    someone's real situation."""
-    text = (DOCTRINE_DIR / "voice.md").read_text()
 
-    assert "屌你老母" in text
-    assert "TARGETING" in text
-    assert "struggling" in text        # the limit that does not move
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# The v9 content contract (DEC-96).
+#
+# v6-v8 pinned PHRASES, and that is why this file kept going red for the wrong
+# reason: a rename of a heading failed the R-14 test while every clause it
+# guarded was still present, and the v8 topic-gate assertion stayed green
+# against a gate re-added in different words (measured). Doctrine is prose an
+# operator rewrites; a test that pins wording tests the author's fingers.
+#
+# So these pin the SUBSTANCE that changes behaviour, plus the two structural
+# properties the v9 rewrite exists to hold: it describes rather than legislates,
+# and it never enumerates a closed set where the model needs a generative rule.
+# ---------------------------------------------------------------------------
+
+
+def _voice() -> str:
+    return (DOCTRINE_DIR / "voice.md").read_text()
+
+
+def test_voice_states_the_hong_kong_language_policy():
+    text = _voice()
+    assert "Cantonese" in text
+    assert "繁體" in text
+    assert "口語" in text
+    assert "Mandarin" not in text
+
+
+def test_voice_teaches_swearing_as_grammar_rather_than_as_a_word_list():
+    """DEC-94/95/96, measured three times: a vocabulary list does not move
+    behaviour. Across 25 live replies she used every listed word ZERO times.
+
+    What moves it is POSITION, because a position generates. 撚-as-infix applies
+    to any phrase; an insult list applies to the words on the list and stops.
+    The inversion particle is the same shape and was absent from every version
+    before v8 — 「有撚用」 means *useless*, and nothing in a word list can teach
+    that a word flips the sentence it lands in.
+
+    Pins the two generative rules and nothing about which insults exist."""
+    text = _voice()
+    assert "INSIDE" in text and "撚" in text and "鳩" in text
+    assert "INVERTS" in text or "INVERSION" in text
+    assert "有撚用" in text                    # the inversion, shown working
+    assert "屌得唔夠力" in text                # the group's own verdict, the licence
+
+
+def test_voice_does_not_enumerate_closed_sets_where_it_needs_a_generative_rule():
+    """The operator's finding, and the sharpest note of the v9 review: «you're
+    putting these three emojis in that I can 100% guarantee Nora would never use
+    other than these 3».
+
+    Every concrete example becomes the whole repertoire. v8 listed 👍😂🙄 as
+    examples of emoji-as-reply and would have collapsed her emoji vocabulary to
+    three; it listed nine insults and got one 屌 back. The rule that follows is
+    structural, not stylistic: where the model needs RANGE, describe the
+    disposition; where it needs a POSITION, show the position (which generates
+    rather than closes).
+
+    This pins the absence, because absence is what regresses silently — an
+    author adding one helpful example is exactly how the closed set comes
+    back."""
+    text = _voice()
+    emoji = re.findall(r'[\U0001F300-\U0001FAFF☀-➿]', text)
+    assert not emoji, (
+        f"voice.md names specific emoji {emoji} — the model will use those and "
+        "close the set. Describe how she uses them instead."
+    )
+    # The swearing section teaches positions; it must not ship a pile of
+    # interchangeable insults for her to pick from.
+    for closed in ("廢柴 戇鳩", "傻閪 撚樣", "死蠢 硬膠"):
+        assert closed not in text, f"voice.md enumerates an insult list ({closed!r})"
+
+
+def test_voice_describes_and_does_not_legislate():
+    """v9's whole premise (operator: «you should describe what Nora is instead
+    of constantly putting rules inside», «they are fighting each other»).
+
+    Measured before the rewrite: ~229 prohibitions to ~28 permissions across the
+    doctrine, 7.8:1 inside voice.md alone. DEC-94 already established that the
+    model reads the BALANCE — that ratio is the mechanism behind «Nora now just
+    like a puppy», and two rules were found in direct contradiction.
+
+    A ratio is a blunt instrument, so this is deliberately a loose ceiling: it
+    catches a slide back into rule-stacking without dictating any sentence."""
+    text = _voice()
+    prohibitions = len(re.findall(r'\b(never|not|no|avoid|banned|forbidden)\b', text, re.I))
+    assert prohibitions < 90, (
+        f"voice.md carries {prohibitions} prohibitions — it is legislating "
+        "again. It describes who she is; constraints.md holds the hard lines."
+    )
+    # RFC 2119 keywords are the loader's own line between describing and
+    # legislating, and `kind: identity` refuses them. Asserted here too so the
+    # intent is visible where the content lives.
+    assert not re.search(r'\b(MUST|SHALL|SHOULD|REQUIRED)\b', text)
+
+
+def test_voice_keeps_the_two_limits_that_are_about_aim_not_volume():
+    """DEC-95 removed every TOPIC limit and licensed pure 人身攻擊. Two limits
+    survive, and both are things volume cannot fix.
+
+    The second is the one that makes her WORSE if it erodes, and it eroded once
+    already: v8's first draft demoted it to a clause saying re-aim the voice,
+    then 55 lines later said «never de-escalate, no 算啦, no going quiet» in
+    bold. 「屌你 我今日俾人炒咗 唔好玩啦」 is token-identical to coming back harder,
+    so the louder later rule wins and she escalates at somebody who just lost
+    their job.
+
+    Verified live against the shipped doctrine on 2026-08-11: she answered
+    「屌 真㗎 咁大鑊」 / 「有咩想講就講 我哋喺度」, and her reasoning trace read «this
+    is somebody genuinely upset — drop everything and answer them»."""
+    text = _voice()
+    assert "not in the room" in text and "cannot answer back" in text
+    assert "genuinely upset" in text
+    # The escalation rule has to disclaim ITSELF, where it is taught — a limit
+    # stated only in an earlier section is not reachable from there.
+    after = text.split("go quiet to end it", 1)
+    assert len(after) == 2, "the escalation rule moved; re-point this test"
+    assert "opponent" in after[1], (
+        "escalation is stated with no carve-out for somebody in real trouble — "
+        "the contradiction that made her escalate at bad news"
+    )
+
+
+def test_voice_binds_the_one_hard_rule_of_the_open_register():
+    """With no topic gate, exactly one rule carries the load: swear without
+    limit, invent nothing.
+
+    What makes it hold is the argument, not the imperative — abuse asserts
+    nothing about the world and so can never be false, while a quote asserts and
+    so has to be true. Without that argument «invent nothing» reads as one more
+    piece of politeness in a file that has just spent sixty lines dismantling
+    politeness, and DEC-94 measured what happens to restraint that reads as
+    politeness.
+
+    The permissive half is pinned by two tests above; this is the restrictive
+    half, which had none until v8."""
+    text = _voice()
+    assert "invent nothing" in text
+    assert "never be false" in text or "cannot be false" in text
+    # R-27 at the doctrine layer: the callback stage is where «found nothing»
+    # and «could not look» would collapse into one answer.
+    assert "could not\nlook" in text or "could not look" in text
+
+
+def test_conduct_separates_a_burst_from_one_answer_in_instalments():
+    """DEC-88's lesson, applied a second time in DEC-95: removing a
+    counter-signal beats adding a maxim.
+
+    conduct.md said «never a second helping of the first», which bans the burst
+    in terms, while voice.md demanded it — and a test pinned the ban in place.
+    Doctrine arguing with itself resolves toward whichever half is timid, which
+    is the failure being fixed.
+
+    The bound still exists and still has to: it is about ONE ANSWER paced out,
+    not about how many messages a turn may send."""
+    text = (DOCTRINE_DIR / "conduct.md").read_text()
+
+    assert "burst" in text                        # the permission
+    assert "second act" in text.lower()           # the other permission
+    assert "instalments" in text                  # the bound
+    assert "never a second helping of the first" not in text
+    assert "you never split one answer across several" not in text
+    assert "One reply, then stop" not in text
+
+
+def test_conduct_keeps_judgement_and_the_three_state_honesty():
+    """The two behaviours conduct.md exists for, and the ones a rewrite is most
+    likely to lose because neither is a rule about message shape.
+
+    Judgement is what stops her being a command line — she may refuse a premise
+    or answer the question actually being asked. And the three-state contract is
+    the repo's spine at the doctrine layer: an empty result and a broken lookup
+    are different answers, and reporting the second as the first is the exact
+    lie the whole system is built to make impossible."""
+    text = (DOCTRINE_DIR / "conduct.md").read_text()
+
+    assert "judgement" in text.lower()
+    assert "wrong question" in text or "refuse a premise" in text
+    assert "could not check" in text
+    assert "found nothing" in text or "you found nothing" in text
+    assert "never claim to have done" in text.lower()

@@ -546,16 +546,23 @@ async def test_a_tool_that_could_not_answer_is_counted_apart_from_one_that_did(
 
 
 async def test_a_refused_send_is_not_counted_as_a_sent_one(wiring):
-    """The cap is 3 (multi-message, DEC-42). The first three deliveries succeed;
-    the fourth is refused by the latch and reaches nothing. Counting a refusal as
-    `ok` would make `send_reply` volume look like reply volume."""
+    """Multi-message (DEC-42): deliveries up to the cap succeed; the one past it
+    is refused by the latch and reaches nothing. Counting a refusal as `ok` would
+    make `send_reply` volume look like reply volume.
+
+    The cap is read from the registry (DEC-10/DEC-32 keep exactly one copy of
+    that number) — a literal here rotted at 3→6, DEC-95."""
+    from nora.agent.registry import ToolRegistry
+
     tools, metrics = wiring["tools"], wiring["metrics"]
-    for text in ("one", "two", "three"):
+    cap = ToolRegistry().budgets()["send_reply"]
+    sent = [f"msg{i}" for i in range(cap)]
+    for text in sent:
         assert await _call(tools["send_reply"], text=text) is True
-    assert await _call(tools["send_reply"], text="four") is False
-    assert metrics.get("nora_tool_calls_total", tool="send_reply", status="ok") == 3
+    assert await _call(tools["send_reply"], text="one too many") is False
+    assert metrics.get("nora_tool_calls_total", tool="send_reply", status="ok") == cap
     assert metrics.get("nora_tool_calls_total", tool="send_reply", status="refused") == 1
-    assert wiring["sink"].texts == ["one", "two", "three"]
+    assert wiring["sink"].texts == sent
 
 
 # ---- calculate ---------------------------------------------------------------

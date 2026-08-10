@@ -40,12 +40,16 @@ class TranscriptInjection:
         persons: Persons,
         context_window: int,
         metrics: Any,
+        ai_peer: str = "",
+        self_card_conclusions: int = 0,
     ) -> None:
         self._audit = audit
         self._memory = memory
         self._persons = persons
         self._context_window = context_window
         self._metrics = metrics
+        self._ai_peer = ai_peer
+        self._self_card_conclusions = self_card_conclusions
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -74,4 +78,48 @@ class TranscriptInjection:
             transcript=transcript,
             peer_card=card,
             started_at=time.perf_counter(),
+            self_card=await self._recall_self(msg),
         )
+
+    async def _recall_self(self, msg: Any) -> tuple[str, ...]:
+        """What Honcho concluded about NORA, curated to THIS message.
+
+        The `representation` verb with `target=None`, i.e. observer==observed —
+        her own model of herself, built from what she has said in this
+        workspace. NOT `peer_card`: the card renders the same history as
+        IDENTITY claims, and hers currently asserts «Kind: AI chatbot/assistant»
+        and an owner with «admin authority», both of which contradict
+        `identity.md` and would win on injection because a learned claim reads
+        as evidence next to an authored one.
+
+        `search_query` is the inbound text, so the conclusions are the ones
+        RELEVANT to what was just asked rather than the newest N — a promise
+        about tomorrow morning surfaces when somebody mentions tomorrow, which
+        is the only time it is worth its tokens.
+
+        Fail-open and SILENT-open, deliberately, and this is the one place in
+        the repo where that is right: an unreachable Honcho yields no block at
+        all rather than a note saying she cannot remember. R-27's three states
+        govern CLAIMS — this is not a claim she will make, it is background she
+        may draw on, so «I could not check» has nothing to be reported about.
+        The failure surfaces on `nora_errors_total{stage="self_card"}` instead,
+        where it is an operator's problem rather than the group's.
+        """
+        if not self._ai_peer or self._self_card_conclusions <= 0:
+            return ()
+        try:
+            recall = await self._memory.representation(
+                peer_id=self._ai_peer,
+                search_query=msg.text or "",
+                max_conclusions=self._self_card_conclusions,
+            )
+        except Exception:
+            log.exception("self-card recall failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="self_card", platform=msg.platform)
+            return ()
+        if not recall.reachable:
+            self._metrics.inc(
+                "nora_errors_total", stage="self_card", platform=msg.platform)
+            return ()
+        return recall.conclusions
