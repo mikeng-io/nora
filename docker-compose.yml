@@ -78,6 +78,21 @@ services:
       # build. `docker compose build` does not accept --network, so the comment
       # form had no way to be right.
       network: host
+      # The version stamp, for exactly the same reason one line up: the
+      # Dockerfile gate (`scripts/check_version_stamp.py`) refuses a build whose
+      # baked `nora/version.json` disagrees with this argument, and it exits
+      # non-zero on an empty one. Adding the gate while leaving compose without
+      # `args` re-created the defect the `network: host` note above exists to
+      # describe — a build constraint recorded in prose instead of in the build,
+      # so `docker compose build` broke on the documented command.
+      #
+      # `:-` and not `:?`: an operator running `docker compose build` to pick up
+      # a config change should not be forced to invent a version. Empty means
+      # UNSTAMPED, the gate lets it through, and an unstamped image answers
+      # `unavailable` and announces nothing — which is the honest state for a
+      # build that was never tagged. `scripts/build-image.sh V3` is what stamps.
+      args:
+        NORA_VERSION: "${NORA_VERSION:-}"
     image: nora:latest
     container_name: nora
     restart: unless-stopped

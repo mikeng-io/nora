@@ -22,7 +22,7 @@ import logging
 import time
 from typing import Any
 
-from nora.domain.models import TagContext, TranscriptRow
+from nora.domain.models import NormalizedMessage, TagContext, TranscriptRow
 from nora.domain.ports import EngagementRequest, MemoryStore, RecordStore
 from nora.persons import Persons
 
@@ -81,7 +81,7 @@ class TranscriptInjection:
             self_card=await self._recall_self(msg),
         )
 
-    async def _recall_self(self, msg: Any) -> tuple[str, ...]:
+    async def _recall_self(self, msg: NormalizedMessage) -> tuple[str, ...]:
         """What Honcho concluded about NORA, curated to THIS message.
 
         The `representation` verb with `target=None`, i.e. observer==observed —
@@ -110,7 +110,7 @@ class TranscriptInjection:
         try:
             recall = await self._memory.representation(
                 peer_id=self._ai_peer,
-                search_query=msg.text or "",
+                search_query=msg.body or "",
                 max_conclusions=self._self_card_conclusions,
             )
         except Exception:

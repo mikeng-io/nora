@@ -278,7 +278,7 @@ IDX_REMINDERS_DUE = sa.Index(
 
 
 # `version_announcements` — the ledger that makes "announce a version once, ever"
-# true across a restart or a crash-loop (DEC-79, R-42).
+# true across a restart or a crash-loop (DEC-97, R-42).
 #
 # THE PRIMARY KEY IS THE MECHANISM, not bookkeeping. The claim is
 # `INSERT … ON CONFLICT DO NOTHING`, so taking a version-in-a-room is a

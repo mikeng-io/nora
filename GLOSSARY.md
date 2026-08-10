@@ -117,7 +117,7 @@ A capability claim in an authored file now **fails to load**.
 - **occasion** — WHY a fire turn is happening, as a value (`nora.app.fire.Occasion`):
   where she speaks, on whose authority, the words put to her, and the header
   that explains the moment. Two exist — a reminder coming due, and a version
-  announcement (DEC-79). A reminder names its requester; an announcement names
+  announcement (DEC-97). A reminder names its requester; an announcement names
   NOBODY, which is what stops the turn being refused under a rule about a grant
   it never held.
 - **terminal verb** — a tool that ends the turn. Today only `send_reply`, on

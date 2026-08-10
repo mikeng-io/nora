@@ -13,7 +13,13 @@ gains a second implementation without a shared contract suite, and
 from __future__ import annotations
 
 from nora.domain.models import NormalizedMessage, PersonRef
-from nora.domain.ports import ContextAssembler, EngageDecision, EngagementRequest, MemoryHealth
+from nora.domain.ports import (
+    ContextAssembler,
+    EngageDecision,
+    EngagementRequest,
+    MemoryHealth,
+    Recollection,
+)
 from nora.engagement.context import TranscriptInjection
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
@@ -27,6 +33,13 @@ def _msg(sender_id: str = "+852111", conversation_id: str = "g1") -> NormalizedM
     )
 
 
+def _msg_with_body(body: str) -> NormalizedMessage:
+    return NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="Miles", timestamp=1, body=body, raw={},
+    )
+
+
 def _request(msg: NormalizedMessage | None = None, tag_id: str = "tag-1") -> EngagementRequest:
     decision = EngageDecision(engage=True, reason="trigger_text")
     return EngagementRequest(message=msg or _msg(), decision=decision, tag_id=tag_id)
@@ -37,6 +50,8 @@ class FakeMemory:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.queries: list[str] = []
+        self.representation_unreachable = False
 
     async def ensure_workspace(self) -> None:
         return None
@@ -51,6 +66,19 @@ class FakeMemory:
     async def peer_card(self, *, peer_id: str) -> list[str]:
         self.calls.append(("peer_card", peer_id))
         return ["likes coffee"]
+
+    async def representation(
+        self, *, peer_id: str, search_query: str, max_conclusions: int = 5,
+        target: str | None = None,
+    ) -> Recollection:
+        # Records the QUERY, not just the call: `_recall_self` curates her own
+        # conclusions to the inbound message, and a double that ignores the
+        # argument cannot tell a working call from one passing "".
+        self.calls.append(("representation", peer_id))
+        self.queries.append(search_query)
+        if self.representation_unreachable:
+            return Recollection(reachable=False)
+        return Recollection(reachable=True, conclusions=("nora told Aaron they would talk",))
 
     async def health(self) -> MemoryHealth:
         return MemoryHealth(reachable=True)
@@ -172,3 +200,78 @@ def test_it_satisfies_the_context_assembler_port():
         metrics=Metrics(),
     )
     assert isinstance(assembler, ContextAssembler)
+
+
+# ---- <self_card>: the PRODUCER side (DEC-96) -------------------------------
+#
+# These exist because the first version of `_recall_self` read `msg.text` on a
+# `NormalizedMessage` whose field is `body`. Every tag turn raised
+# AttributeError, the fail-open `except` swallowed it, `self_card` was always
+# `()`, and `nora_errors_total{stage="self_card"}` incremented on every turn —
+# so the feature was 100% inert AND its outage metric read as a permanent
+# Honcho failure, which would send an operator to debug the wrong system.
+#
+# Five tests covered the block at the time. All five built `TagContext(
+# self_card=...)` by hand and could not reach this function. That is the repo's
+# own war-story exactly: never read an instrument's output as evidence without
+# first checking it can measure the thing.
+
+
+def _assembler(memory, **kw):
+    return TranscriptInjection(
+        audit=FakeRecordStore(), memory=memory, persons=_MILES,
+        context_window=10, metrics=kw.pop("metrics", Metrics()),
+        ai_peer=kw.pop("ai_peer", "nora"),
+        self_card_conclusions=kw.pop("self_card_conclusions", 8),
+    )
+
+
+async def test_the_self_card_is_recalled_and_curated_to_the_inbound_message():
+    """The probe for the `msg.text`/`msg.body` defect. Asserting only that
+    `self_card` is non-empty would NOT have caught it — the call has to be made
+    with the real message text, so the assertion is on the query."""
+    memory = FakeMemory()
+    ctx = await _assembler(memory).assemble(
+        request=_request(_msg_with_body("聽日朝早記唔記得")))
+
+    assert ctx.self_card == ("nora told Aaron they would talk",)
+    assert memory.queries == ["聽日朝早記唔記得"]      # not "", and not a crash
+    assert ("representation", "nora") in memory.calls
+
+
+async def test_an_unreachable_memory_yields_no_self_card_and_counts_the_stage():
+    """Fail-open, and SILENT-open: no block rather than a note saying she cannot
+    remember. The failure belongs to the operator, on the metric."""
+    memory = FakeMemory()
+    memory.representation_unreachable = True
+    metrics = Metrics()
+
+    ctx = await _assembler(memory, metrics=metrics).assemble(request=_request())
+
+    assert ctx.self_card == ()
+    assert metrics.get("nora_errors_total", stage="self_card", platform="signal") == 1
+
+
+async def test_a_thrown_recall_never_costs_the_turn():
+    """A raising Honcho is the same shape as an unreachable one from the
+    group's side — the reply still happens, thinner."""
+    class Boom(FakeMemory):
+        async def representation(self, **kw):
+            raise RuntimeError("honcho is down")
+
+    metrics = Metrics()
+    ctx = await _assembler(Boom(), metrics=metrics).assemble(request=_request())
+
+    assert ctx.self_card == ()
+    assert ctx.peer_card == ("likes coffee",)     # the rest of the turn survived
+    assert metrics.get("nora_errors_total", stage="self_card", platform="signal") == 1
+
+
+async def test_the_block_is_off_entirely_when_the_budget_is_zero():
+    """`self_card_conclusions = 0` disables it, and disabling means NOT CALLING
+    Honcho — not calling and discarding."""
+    memory = FakeMemory()
+    ctx = await _assembler(memory, self_card_conclusions=0).assemble(request=_request())
+
+    assert ctx.self_card == ()
+    assert not any(c[0] == "representation" for c in memory.calls)

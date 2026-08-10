@@ -49,7 +49,7 @@ class Conversation:
     # of that member's Life360 circle (R-31/DisclosureGuard). Setting `location =
     # true` is the operator saying "I trust THIS room with my location."
     #
-    # It is a WHOLE-ROOM switch, not a per-condition one (DEC-97): it relaxes the
+    # It is a WHOLE-ROOM switch, not a per-condition one (DEC-79): it relaxes the
     # SUBSET check AND the unnamed-account refusal, because real rooms hold silent
     # sealed-sender members with no id to map. It does NOT relax the degraded-view
     # refusal — a roster Nora could not read is an R-27 `unavailable`, and trust

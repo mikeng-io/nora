@@ -281,7 +281,10 @@ build`/`up --build` stalls:
 ```bash
 docker compose stop nora
 git checkout <ref>
-docker build --network=host -t nora:latest .
+docker build --network=host -t nora:latest .   # unstamped: she answers «I can't
+                                               # check» to 咩version. Use
+                                               # scripts/build-image.sh V<n> to
+                                               # roll back TO a tagged version.
 docker compose up -d --no-build
 ```
 

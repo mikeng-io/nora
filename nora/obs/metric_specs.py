@@ -456,10 +456,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "is outside the circle and the room is not location-trusted).",
         ("reason",),
     ),
-    # The WAIVER counter — the other half of the pair above, and the reason DEC-97
+    # The WAIVER counter — the other half of the pair above, and the reason DEC-79
     # is auditable rather than merely permissive. When `location = true` overrides
     # a guard, the override is recorded; without this, relaxing `unnamed` would
-    # have retired the very instrument that diagnosed DEC-97
+    # have retired the very instrument that diagnosed DEC-79
     # (`…refusals_total{reason="unnamed"} 12`), leaving a zero refusal counter
     # unable to distinguish "the flag is working" from "the room filled up with
     # strangers". The startup pre-flight warns once at boot and never again, so
@@ -480,7 +480,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_presence_disclosure_waived_total",
         "whereis disclosures that PASSED only because the conversation is "
-        "location-trusted (DEC-97). `reason` names which guard was overridden: "
+        "location-trusted (DEC-79). `reason` names which guard was overridden: "
         "`unnamed` (the room holds account(s) resolving to no person_id). A "
         "non-zero value is not an error — it is the operator's standing decision "
         "being exercised — but a RISING one means the room gained people Nora "

@@ -203,10 +203,38 @@ def test_the_build_gate_refuses_an_unstamped_context(repo: Path):
     assert "missing" in done.stderr
 
 
-def test_the_build_gate_refuses_an_empty_build_argument(repo: Path):
-    _stamp(repo, "--version", "V2")
+def test_an_unstamped_build_is_allowed_and_leaves_no_stale_stamp(repo: Path):
+    """The empty argument is the UNSTAMPED build, and it is allowed.
 
-    assert _check(repo, "").returncode == 2
+    It used to be refused, which broke `docker compose build` and the plain
+    `docker build --network=host` in README — both documented, both failing,
+    with the new requirement recorded only in a comment (pre-deploy review,
+    2026-08-11). It also bought nothing: the property is «the reported version
+    cannot disagree with the running code», and an image that reports nothing
+    cannot disagree.
+
+    But it has to be unstamped for REAL. A manifest left over from an earlier
+    stamped build would ride into the image and be read as authoritative, so
+    the image would claim a version it is not running — the exact disagreement
+    this gate exists to prevent. Warning would leave the property depending on
+    somebody reading the build log, so the stale file is deleted.
+
+    Both halves asserted: the build proceeds AND the stamp is gone."""
+    _stamp(repo, "--version", "V2")
+    assert (repo / "nora" / "version.json").exists()
+
+    result = _check(repo, "")
+
+    assert result.returncode == 0
+    assert not (repo / "nora" / "version.json").exists()
+    assert "UNSTAMPED" in result.stdout
+
+
+def test_the_build_gate_still_refuses_a_claimed_version_with_no_manifest(repo: Path):
+    """Allowing the unstamped build must not have widened into allowing a build
+    that CLAIMS V3 and ships nothing to read — that is the same failure from the
+    other side, and it is still a hard stop."""
+    assert _check(repo, "V3").returncode == 2
 
 
 def test_the_dockerfile_runs_the_gate_with_the_build_argument():

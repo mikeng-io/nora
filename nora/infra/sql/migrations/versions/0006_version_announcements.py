@@ -30,7 +30,7 @@ The column list and its ORDER match `nora.infra.sql.schema.VERSION_ANNOUNCEMENTS
 exactly; the parity gate fails on any drift.
 
 Revision ID: 0006_version_announcements
-Revises: 0004_reminders
+Revises: 0005_reminder_recurrence
 Create Date: 2026-08-11
 """
 

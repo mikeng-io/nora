@@ -177,7 +177,7 @@ class ToolRegistry:
         # disclosure, not an inert one. `.specs()`/`.build()`'s `allowed_mcp`
         # is the SAME value a caller must pass here (final-review Finding 1).
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
-        # The baked build stamp (DEC-79), DEFAULT-CONSTRUCTED like `transit` and
+        # The baked build stamp (DEC-97), DEFAULT-CONSTRUCTED like `transit` and
         # unlike `route`/`search`/`weather`: there is no key to resolve and no
         # service to reach, only a file that either shipped with this code or
         # did not, so there is nothing an unconfigured deployment could be

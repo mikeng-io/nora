@@ -11,15 +11,27 @@ neither git nor the venv and runs in the container. It imports nothing from
 `nora` for that reason — `nora/__init__.py` pulls in dependencies that are not
 installed yet at this point in the build.
 
-WHAT IT ENFORCES, and why each half is load-bearing:
+WHAT IT ENFORCES, and the ONE thing it deliberately does not:
 
-1. **The manifest exists.** An unstamped image answers `unavailable` to every
-   version question forever, which under R-5 looks exactly like a healthy Nora
-   who was never asked. A build failure is the only loud version of that.
-2. **The stamp equals the build argument.** This is the "impossible to disagree"
-   half: the tag the operator says they are building and the file the running
-   code will read must be the same string, checked against each other while the
-   image is still being made rather than trusted afterwards.
+1. **The stamp equals the build argument**, whenever a version is claimed. This
+   is the whole point — "impossible to disagree": the tag the operator says they
+   are building and the file the running code will read must be the same string,
+   checked while the image is still being made rather than trusted afterwards.
+2. **A claimed version must actually have a manifest.** Asking for V3 and
+   shipping nothing to read is the same failure from the other side.
+3. **An UNSTAMPED build is allowed**, and this was a real defect for a day
+   (pre-deploy review, 2026-08-11). The gate used to refuse an empty
+   NORA_VERSION, which broke `docker compose build` and the plain
+   `docker build --network=host` in README — both documented, both suddenly
+   failing, with the requirement recorded only in a comment. That is exactly the
+   shape docker-compose.yml's `network: host` note exists to warn about.
+
+   Refusing it also bought nothing. The property being defended is «the reported
+   version cannot disagree with the running code», and an image with no stamp
+   REPORTS NOTHING: `version` answers `unavailable`, and the announcer finds no
+   manifest and stays quiet. There is no disagreement to prevent. Forcing every
+   config-change rebuild to invent a tag is workflow cost with no safety return,
+   and it made the honest state (an untagged build) unreachable.
 """
 
 from __future__ import annotations
@@ -34,13 +46,24 @@ MANIFEST = Path("nora/version.json")
 def main(argv: list[str]) -> int:
     expected = (argv[1] if len(argv) > 1 else "").strip()
     if not expected:
+        # An unstamped build, which is allowed — see the module docstring. But
+        # it has to be unstamped for REAL: a manifest left in the build context
+        # from an earlier stamped build would ride into the image and be read as
+        # authoritative, so the image would report a version it is not running.
+        # That is precisely the disagreement this gate exists to prevent, and
+        # merely warning about it would leave the property depending on someone
+        # reading the build log. Delete it instead — an image whose manifest is
+        # absent answers `unavailable`, which is true.
+        removed = ""
+        if MANIFEST.exists():
+            MANIFEST.unlink()
+            removed = " (removed a stale nora/version.json from this build)"
         print(
-            "NORA_VERSION build argument is empty. Build with "
-            "`scripts/build-image.sh V3`, which stamps nora/version.json from "
-            "git and passes the same version here.",
-            file=sys.stderr,
+            f"no NORA_VERSION: building UNSTAMPED{removed}. `version` will "
+            "answer `unavailable` and no upgrade note will be posted. Use "
+            "`scripts/build-image.sh V3` to stamp a release."
         )
-        return 2
+        return 0
     if not MANIFEST.exists():
         print(
             f"{MANIFEST} is missing from the build context. It is generated on "

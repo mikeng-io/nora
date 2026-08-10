@@ -419,7 +419,7 @@ docker exec nora-db psql -U nora -d nora -c \
 | status | what happened | what to do |
 |---|---|---|
 | `already_announced` | the version was already taken for that room | nothing — this is R-42 working, and it climbs on every restart |
-| `unavailable` | this image carries no readable build stamp | rebuild with `scripts/build-image.sh V3`; a plain `docker build` produces an image that can never announce (and answers «I can't check» to «咩version») |
+| `unavailable` | this image carries no readable build stamp | rebuild with `scripts/build-image.sh V3`. A plain `docker build` (or `docker compose build` with no `NORA_VERSION`) SUCCEEDS and is the normal way to pick up a config change — it just produces an UNSTAMPED image, which announces nothing and answers «I can't check» to «咩version». It is not an error state, it is an untagged build |
 | `no_note` | the tag has no annotation, so there is nothing anybody wrote to relay | `git tag -a V3 -m "…" -f` and rebuild — nothing was claimed, so it will still announce |
 | `deferred` | a tag held the conversation when the sweep ran | nothing — the next boot retries, because nothing was said |
 | `failed_*` | the turn ran and the group heard nothing | the row records which; **it is not retried** (at-most-once, R-42) — announce the next version, or say it yourself |

@@ -1612,10 +1612,24 @@ def build_tool_specs(
             # words into this room. `bound_conversation_id` is the tag's channel,
             # captured once (DEC-24), never a model-supplied value.
             hits = await honcho.search(query=query[:500], conversation_id=bound_conversation_id)
+            searched = True
         except Exception:
+            # An ERROR is never a PASS (R-27). This used to fall through to the
+            # empty-result branch, which says «nobody said anything like that» —
+            # a Honcho outage reported as an absence, and counted `ok`. The
+            # whole spine of this repo is that «I could not check» and «there is
+            # nothing» are different answers.
             log.exception("search_memory failed")
-            hits = []
+            hits, searched = [], False
+        if not searched:
+            _record_room(metrics, "search_memory", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't look back through what was said. Say you "
+                        "couldn't check — do not say there was nothing.",
+            }
         kept: list[dict] = []
+        withheld = 0
         for peer, content in hits:
             name = roster.get(peer)
             if name is None:
@@ -1641,9 +1655,25 @@ def build_tool_specs(
             # `scan_reply`. Filter it where the quote is CHOSEN, not where it is
             # already too late.
             if scan_reply(content) is not None:
+                withheld += 1
                 continue
             kept.append({"who": name, "said": content})
         if not kept:
+            # Third state, and it is NOT `nothing_found`. A result set emptied by
+            # the egress filter means the words exist and she may not repeat
+            # them — telling the group nobody said anything would be false, and
+            # DEC-95 makes it likelier by sending her here more often AND by
+            # filtering on the reply predicate (this group talks about `claude`
+            # and `gemini` constantly, and every such line is withheld).
+            if withheld:
+                _record_room(metrics, "search_memory", "ok", results=0, withheld=withheld)
+                return {
+                    "status": "nothing_found",
+                    "found_but_unusable": withheld,
+                    "note": "I found things but nothing I can quote back. Say you "
+                            "can't repeat it — never say nobody said anything, and "
+                            "never paraphrase it into a quote.",
+                }
             _record_room(metrics, "search_memory", "ok", results=0)
             return {
                 "status": "nothing_found",
@@ -2200,7 +2230,7 @@ def build_tool_specs(
         # answer. All of this stays inside `Whereis.locate`'s guard, which is
         # what decides disclosure — NOT this fold. The old claim here («no circle
         # the room is not a verified subset of ever discloses, R-31») has been
-        # false since DEC-74 made the subset check waivable per room, and DEC-97
+        # false since DEC-74 made the subset check waivable per room, and DEC-79
         # widened that further; the accurate statement is that this loop adds no
         # disclosure of its own and can only pick among answers the guard already
         # authorised. `degraded` now arrives as `unavailable` rather than

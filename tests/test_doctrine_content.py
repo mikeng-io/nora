@@ -330,7 +330,16 @@ def test_voice_describes_and_does_not_legislate():
     catches a slide back into rule-stacking without dictating any sentence."""
     text = _voice()
     prohibitions = len(re.findall(r'\b(never|not|no|avoid|banned|forbidden)\b', text, re.I))
-    assert prohibitions < 90, (
+    # 65, and the number is the whole test. The first version said 90, which the
+    # v8 file it was written to REJECT scores 75 against — a ceiling that
+    # green-lights the thing it exists to catch is decoration, and the
+    # pre-deploy review caught it by running the assertion against the old file
+    # (the repo's own standard: revert the change, does it go red?).
+    #
+    # 65 sits between v8's 75 and v9's 55: a real gate with real headroom, and
+    # the next author who stacks ten more prohibitions trips it before the
+    # balance is back where DEC-94 measured the puppy.
+    assert prohibitions < 65, (
         f"voice.md carries {prohibitions} prohibitions — it is legislating "
         "again. It describes who she is; constraints.md holds the hard lines."
     )

@@ -739,7 +739,7 @@ async def _presence_preflight(
     warning rather than pretending the gauge covers them.
 
     **In a location-TRUSTED room that per-call guard no longer refuses on
-    `view.unnamed` (DEC-97), so do not read the warning below as a block.** What
+    `view.unnamed` (DEC-79), so do not read the warning below as a block.** What
     still holds there: the roster must READ (a degraded room answers
     `unavailable`), the target must resolve inside it, and every waiver is
     counted on `nora_presence_disclosure_waived_total` — which is the runtime
@@ -788,7 +788,7 @@ async def _presence_preflight(
                 #
                 # This used to add «and an unmapped account still blocks
                 # disclosure, trusted or not» as the second half of the
-                # justification. DEC-97 made that false, and the fail-closed
+                # justification. DEC-79 made that false, and the fail-closed
                 # audit was right to call it out: what actually remains in a
                 # trusted room is the roster READ (degraded → `unavailable`), the
                 # target resolving inside it, and the waiver counter. Skipping
