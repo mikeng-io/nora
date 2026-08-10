@@ -1,4 +1,50 @@
-"""signal-cli JSON-RPC send (spec C.3). Returns SendResult; never raises to the caller."""
+"""signal-cli JSON-RPC send (spec C.3). Returns SendResult; never raises to the caller.
+
+THE WIRE NAMES, AND HOW THEY WERE ESTABLISHED
+----------------------------------------------
+`nora.platform.signal.react` set the precedent: a JSON-RPC method IS the CLI
+command name and "parameter names are provided in camelCase format instead of
+the hyphen format on the cli" (`signal-cli-jsonrpc(5)`). That sentence is
+enough for `sendReaction`'s five scalars, and it is NOT enough here — the same
+man page also says a repeatable option "can be provided as single json value or
+as json array" and gives `--attachment` becoming **`attachments`**, plural. So
+for `--mention` the documentation admits both `mention` and `mentions` without
+saying which, and picking by eye is how a silently-ignored parameter ships (the
+message goes out, unmentioned, with no error anywhere — R-5's shape).
+
+So the names below were read out of the shipped **0.14.7 jar**, not inferred:
+
+* `org.asamk.signal.commands.JsonRpcNamespace` is the adapter between the JSON
+  `params` object and argparse4j's `Namespace`. `get(name)` tries the literal
+  key, then `Util.dashSeparatedToCamelCaseString(name)`. `getList(name)` tries
+  the literal key as a LIST first, falls back to wrapping a scalar under the
+  same key, and only then tries `name + "s"` (the constant-pool string is
+  `\\u0001s`, a `makeConcatWithConstants` recipe — plural is the LAST resort,
+  not the first).
+* `org.asamk.signal.commands.SendCommand` reads `namespace.getList("mention")`
+  and `namespace.getString("preview-url" | "preview-title" |
+  "preview-description" | "preview-image")`.
+
+Combining those two: **`"mention"` as a JSON array is the FIRST lookup** and
+needs no fallback, which is why it is the name used here rather than the
+plural the `--attachment` example would suggest. The four preview scalars are
+sent camelCased (`previewUrl`, …) because that is the form the man page
+documents as public; the dash form resolves too, via `get`'s literal-key
+attempt, so both are correct and only one is documented.
+
+A mention element is `"start:length:recipient"` — `SendCommand.parseMentions`
+compiles `(\\d+):(\\d+):(.+)` and passes group 1 as start, group 2 as length and
+group 3 to `CommandUtil.getSingleRecipientIdentifier`. Units are UTF-16 code
+units (`nora.domain.ports.Mention`).
+
+**NOT VERIFIED AGAINST A LIVE DAEMON.** Every name above is read from the jar
+this deployment runs and from its own man pages; no send carrying a mention or
+a preview has been made, because the only live conversation is a real one. The
+failure mode of a wrong name here is a message that goes out plain — signal-cli
+ignores parameters it does not read — so this degrades the way the rest of the
+feature does rather than costing the message. A live smoke test against the
+operator's daemon is the confirmation this cannot supply.
+"""
 
 from __future__ import annotations
 
@@ -8,9 +54,45 @@ import os
 import aiohttp
 
 from ...domain.models import ConversationTarget
-from ...domain.ports import SendResult
+from ...domain.ports import LinkPreview, Mention, SendResult
 
 log = logging.getLogger("nora.signal.send")
+
+
+def _mention_params(mentions: tuple[Mention, ...]) -> list[str]:
+    """`Mention`s as signal-cli's `start:length:recipient` strings.
+
+    Malformed ranges are dropped HERE as well as refused upstream, and that
+    duplication is deliberate rather than defensive clutter: `SendCommand`
+    throws `UserErrorException` on a value its regex does not match, which
+    fails the WHOLE send — so a negative start or an empty recipient reaching
+    the daemon does not cost a mention, it costs the message. `nora.agent.
+    outbound` cannot construct one of these; a future second producer might.
+    """
+    out = []
+    for m in mentions:
+        if m.start < 0 or m.length <= 0 or not m.recipient or ":" in m.recipient[:1]:
+            log.error("dropping a malformed mention range (start=%s, length=%s)",
+                      m.start, m.length)
+            continue
+        out.append(f"{m.start}:{m.length}:{m.recipient}")
+    return out
+
+
+def _preview_params(preview: LinkPreview) -> dict[str, str]:
+    """The four `preview*` scalars, omitting the two that are optional-and-empty.
+
+    `previewTitle` is sent even when empty only because signal-cli calls it
+    mandatory and would `Optional.orElse("")` it anyway; `nora.infra.preview`
+    refuses to produce a titleless preview in the first place, so this is the
+    belt to that braces.
+    """
+    params = {"previewUrl": preview.url, "previewTitle": preview.title}
+    if preview.description:
+        params["previewDescription"] = preview.description
+    if preview.image_data_uri:
+        params["previewImage"] = preview.image_data_uri
+    return params
 
 
 def _retry_after_seconds(value: str | None) -> float | None:
@@ -77,16 +159,36 @@ class SignalSender:
         self._timeout = aiohttp.ClientTimeout(total=timeout)
 
     async def send(
-        self, target: ConversationTarget, text: str, *, request_id: str = ""
+        self,
+        target: ConversationTarget,
+        text: str,
+        *,
+        mentions: tuple[Mention, ...] = (),
+        preview: LinkPreview | None = None,
+        request_id: str = "",
     ) -> SendResult:
         if target.conversation_type != "group":
             log.error("refusing to send to conversation_type=%r (v2 is groups only)",
                       target.conversation_type)
             return SendResult(ok=False)
+        params: dict[str, object] = {
+            "groupId": target.conversation_id, "message": text,
+        }
+        # Both keys are ABSENT when there is nothing to say, never present and
+        # empty. An empty `mention: []` is harmless today, but the whole point
+        # of the previous release's payload being two keys is that a reader can
+        # see what a plain message looks like on the wire — and an argparse4j
+        # namespace with an empty list in it is a different object from one
+        # without the key, which is the kind of difference that turns out to
+        # matter on the version nobody tested against.
+        if ranges := _mention_params(mentions):
+            params["mention"] = ranges
+        if preview is not None:
+            params.update(_preview_params(preview))
         payload = {
             "jsonrpc": "2.0",
             "method": "send",
-            "params": {"groupId": target.conversation_id, "message": text},
+            "params": params,
             "id": request_id or "nora",
         }
         try:
@@ -112,5 +214,11 @@ class SignalSender:
             log.error("send rejected by signal-cli (conversation=%s, id=%s)",
                       target.conversation_id, request_id)
             return SendResult(ok=False)
-        log.info("sent %d chars to %s (id=%s)", len(text), target.conversation_id, request_id)
+        # A COUNT of mentions, never the recipients — the same rule
+        # `Deliverer` follows for the reply text. An ACI in a log line is an
+        # identifier at rest in a file the operator greps, which R-18 is about
+        # as much as it is about the group.
+        log.info("sent %d chars to %s (id=%s, mentions=%d, preview=%s)",
+                 len(text), target.conversation_id, request_id,
+                 len(mentions), preview is not None)
         return SendResult(ok=True, timestamp=_sent_timestamp(body))

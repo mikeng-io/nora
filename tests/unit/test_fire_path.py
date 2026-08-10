@@ -193,6 +193,7 @@ class _FireAdapter:
 
     def __init__(self, *, identity_raises: Exception | None = None) -> None:
         self.sent: list[tuple[ConversationTarget, str]] = []
+        self.sent_mentions: list[tuple] = []
         self._identity_raises = identity_raises
 
     async def resolve_identity(self) -> PlatformIdentity:
@@ -200,8 +201,12 @@ class _FireAdapter:
             raise self._identity_raises
         return PlatformIdentity(platform=self.platform, primary="+85200000000")
 
-    async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
+    async def send(
+        self, *, target: ConversationTarget, text: str,
+        mentions: tuple = (), preview: object | None = None,
+    ) -> SendResult:
         self.sent.append((target, text))
+        self.sent_mentions.append(tuple(mentions))
         return SendResult(ok=True)
 
     @property

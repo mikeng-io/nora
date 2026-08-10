@@ -16,7 +16,9 @@ from nora.domain.models import (
 )
 from nora.domain.ports import (
     AdapterHealth,
+    LinkPreview,
     MemoryHealth,
+    Mention,
     PlatformIdentity,
     ReactionResult,
     Recollection,
@@ -356,6 +358,10 @@ class FakeAdapter:
         self, *, succeed: bool = True, account: str = "", react_fails: bool = False,
     ) -> None:
         self.sent: list[tuple[ConversationTarget, str]] = []
+        # Parallel to `sent`, one entry per send — see `send`'s docstring for
+        # why the decoration is beside the list rather than inside its tuples.
+        self.sent_mentions: list[tuple[Mention, ...]] = []
+        self.sent_previews: list[LinkPreview | None] = []
         self.reactions: list[tuple[ConversationTarget, str, str, int, bool]] = []
         self._succeed = succeed
         self._react_fails = react_fails
@@ -390,8 +396,31 @@ class FakeAdapter:
             body=text, raw=raw_event,
         )
 
-    async def send(self, target: ConversationTarget, text: str) -> SendResult:
+    async def send(
+        self,
+        target: ConversationTarget,
+        text: str,
+        mentions: tuple[Mention, ...] = (),
+        preview: LinkPreview | None = None,
+    ) -> SendResult:
+        """Records the send instead of performing it, DECORATION AND ALL.
+
+        `mentions`/`preview` are recorded, not dropped, and that is the point
+        rather than bookkeeping: this is `PlatformAdapter.send`'s second
+        implementation, so `tests/contract/test_send_contract.py` runs one suite
+        over it and over `SignalAdapter` to keep the two in agreement — a fake
+        that accepted the arguments and forgot them would let every pipeline
+        test prove a mention was composed while proving nothing about whether it
+        reached the wire.
+
+        `self.sent` keeps its two-tuple shape (target, text) because dozens of
+        assertions read it and a message's TEXT is what almost all of them are
+        about; the decoration lands on `self.sent_mentions`/`self.sent_previews`
+        in step, one entry per send, so an index into either matches `sent`.
+        """
         self.sent.append((target, text))
+        self.sent_mentions.append(tuple(mentions))
+        self.sent_previews.append(preview)
         return SendResult(ok=self._succeed)
 
     async def react(
@@ -506,3 +535,71 @@ class FakeBlobStore:
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
             raise ValueError("blob key must be a lowercase sha256 hex digest")
         return self.blobs.get(key)
+
+
+class FakeLinkPreviewSource:
+    """In-memory `LinkPreviewSource`, bound to `nora.infra.preview.
+    OpenGraphPreviewSource` by `tests/contract/test_link_preview_contract.py`.
+
+    **It does not answer every request the same way, and that is the whole
+    reason it is written like this** (CLAUDE.md; `FakeMediaSource` makes the
+    same argument at length). A fake that returned a card for any URL would let
+    the composer's tests pass while production refused the same URL at its SSRF
+    check, or dropped it for having no `og:title` — the two most likely real
+    outcomes. So it reproduces the production source's decision table rather
+    than its transport:
+
+    * a URL it holds a page for → that page's card;
+    * a page with no title → `None`, because `--preview-title` is mandatory and
+      `OpenGraphPreviewSource` refuses a titleless card;
+    * a non-`http(s)` scheme, or a host that is not globally routable →
+      `None`, the SSRF refusal, keyed off the same two properties the real
+      guard checks so a test can exercise the branch without a network;
+    * a URL it has never heard of → `None`, which is what a 404 or a dead host
+      produces;
+    * `unavailable=True` → `None` for everything, the "the whole capability is
+      having a bad day" state that no single URL can express.
+
+    `requested` records what was asked for, so a test can prove the composer
+    only fetches when there IS a link and only once per message.
+    """
+
+    def __init__(
+        self,
+        pages: dict[str, LinkPreview] | None = None,
+        *,
+        unavailable: bool = False,
+    ) -> None:
+        self.pages = dict(pages or {})
+        self.unavailable = unavailable
+        self.requested: list[str] = []
+
+    async def preview_for(self, *, url: str) -> LinkPreview | None:
+        self.requested.append(url)
+        if self.unavailable:
+            return None
+        if not _fetchable(url):
+            return None
+        preview = self.pages.get(url)
+        if preview is None or not preview.title:
+            return None
+        return preview
+
+
+def _fetchable(url: str) -> bool:
+    """The two refusals `nora.infra.preview._safe` makes, without a resolver.
+
+    Deliberately NOT a copy of the real guard — it cannot be, since the real
+    one calls `getaddrinfo` and this must run offline. It reproduces the two
+    properties a test can state literally (scheme, and a host that is obviously
+    not global), which is enough for the contract suite to assert that BOTH
+    implementations refuse `http://127.0.0.1:9100/metrics` and `file:///etc/
+    passwd`. The full address check is production's, and the contract suite
+    says so where it parametrizes.
+    """
+    scheme, _, rest = url.partition("://")
+    if scheme not in ("http", "https"):
+        return False
+    host = rest.split("/")[0].split(":")[0].lower()
+    private = ("localhost", "127.", "10.", "192.168.", "169.254.", "0.")
+    return not (host.startswith(private) or host.endswith(".local"))

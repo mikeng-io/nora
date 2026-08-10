@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nora.agent.guards import Deliverer, ReplyGuard
+from nora.agent.outbound import OutboundComposer
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 
@@ -57,6 +58,7 @@ def build(
     terminal: Collection[str],
     metrics: Any,
     audience: str,
+    composer: OutboundComposer | None,
     forced_first_tool: str | None = None,
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
@@ -68,6 +70,19 @@ def build(
     as conversation failures, inside the very budget A8 filters to
     `audience="tag"` (`docs/runbook.md`). That is invisible; a missing keyword
     is a `TypeError`.
+
+    **`composer` has no default here either, and `None` is a legal value** —
+    the two statements are not in tension, and the distinction is which
+    mistake stays invisible. `Deliverer` defaults it, because a test about R-2
+    should not have to care; THIS function is the seam both production senders
+    pass through (`tests/architecture/test_only_two_paths_can_send.py` proves
+    there are exactly two), so requiring the keyword is what stops the feature
+    from shipping INERT — wired everywhere, decided nowhere, silently sending
+    plain text while a decision index entry claims otherwise. That is DEC-42's
+    lesson restated: multi-message was structurally dead for a release because
+    a number nobody had edited was doing the refusing. Passing `None` is a
+    decision (the offline and eval compositions genuinely have no roster and no
+    preview fetcher); omitting the argument is a `TypeError`.
     """
     deliverer = Deliverer(
         store=store, adapter=adapter, target=target, doctrine=doctrine, canary=canary,
@@ -81,6 +96,7 @@ def build(
         message_cap=budgets["send_reply"],
         audience=audience,
         metrics=metrics,
+        composer=composer,
     )
     # `budgets` and `terminal` travel together and come from the same place
     # (`ToolRegistry`) — what a tool costs and whether calling it ends the turn

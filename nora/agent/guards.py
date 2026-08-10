@@ -23,6 +23,7 @@ from ..domain.ports import SendResult
 from ..obs.metrics import Metrics
 from . import tool_choice
 from .egress import LeakGuard, scan_reply
+from .outbound import Outbound, OutboundComposer
 
 log = logging.getLogger("nora.guards")
 
@@ -83,6 +84,7 @@ class Deliverer:
         message_cap: int,
         audience: str,
         metrics: Metrics,
+        composer: OutboundComposer | None = None,
     ) -> None:
         self._store = store
         self._adapter = adapter
@@ -97,6 +99,18 @@ class Deliverer:
         self._leak = LeakGuard(doctrine, canary)
         self._doctrine_sha256 = doctrine.sha256
         self._message_cap = message_cap
+        # What decoration rides with the text (`nora.agent.outbound`). **This
+        # one DOES default to None**, unlike `message_cap` and `audience` two
+        # paragraphs up, and the asymmetry is the argument rather than an
+        # inconsistency: those two are numbers that a missing value would get
+        # WRONG while looking right — capping her at one message, or charging a
+        # heartbeat's failures to the tag budget — whereas a missing composer
+        # produces exactly the message this class sent before the feature
+        # existed. There is no wrong claim available to it. `deliver.build`
+        # takes it with NO default all the same, so the two production callers
+        # still have to decide; the default lives here because a `Deliverer`
+        # built in a test that is not about mentions should not have to.
+        self._composer = composer
         self._attempts = 0
         self._delivered_count = 0
         # Every message actually SENT this turn (Honcho v2): the feedback stage
@@ -145,6 +159,24 @@ class Deliverer:
         """
         return self._attempts >= self._message_cap
 
+    async def _compose(self, text: str) -> Outbound:
+        """`text` as an `Outbound` — decorated if a composer is wired, bare if not.
+
+        The `except` is not redundant with `compose`'s own never-raise
+        contract. A mention is decoration on a message a human is waiting for,
+        and the one failure this class must never have is «she went silent
+        because a name lookup blew up». Degrading to `Outbound(text)` sends the
+        identical message the composer-less path sends, which is the honest
+        floor rather than a guess.
+        """
+        if self._composer is None:
+            return Outbound(text=text)
+        try:
+            return await self._composer.compose(text)
+        except Exception:                  # decoration is never fatal
+            log.exception("compose raised (tag=%s); sending plain text", self._tag_id)
+            return Outbound(text=text)
+
     async def deliver(self, text: str, *, source: str = "tool") -> bool:
         if self.exhausted:                                     # R-2
             log.warning(
@@ -187,6 +219,15 @@ class Deliverer:
             return False
 
         self._attempts += 1
+        # **THE LAST THING THAT MAY LOOK AT THE TEXT.** `outbound.text` is the
+        # string that goes on the wire and into the audit row from here on, and
+        # `text` is not read again below — see `nora.agent.outbound`'s module
+        # docstring for why that is the mechanism. A transformation added after
+        # this line cannot corrupt a mention offset, because it cannot reach
+        # the wire at all; one that is genuinely needed belongs inside
+        # `compose`, ahead of the arithmetic. Pinned on the AST by
+        # `tests/architecture/test_outbound_offsets_are_computed_last.py`.
+        outbound = await self._compose(text)
         row = NormalizedMessage(
             platform=self._target.platform,
             conversation_id=self._target.conversation_id,
@@ -194,7 +235,16 @@ class Deliverer:
             sender_id=self._nora_sender_id,
             sender_name=None,
             timestamp=int(time.time() * 1000),
-            body=text,
+            # The AUDITED body is the text as written, `@grant` and all —
+            # which is also exactly what goes on the wire, because a mention
+            # replaces no characters (`nora.agent.outbound`). That equality is
+            # what keeps her own rows readable in the transcript: Signal's
+            # inbound convention is a U+FFFC placeholder, and `MentionRenderer`
+            # cannot rehydrate one in a row of HERS (her `raw` is tag
+            # bookkeeping, not an envelope, so `_row`'s cheap reject leaves the
+            # body as stored) — so a placeholder-shaped outbound message would
+            # have reintroduced DEC-34's exact void inside Nora's own history.
+            body=outbound.text,
             raw={"tag_id": self._tag_id, "source": source,
                  "doctrine_sha256": self._doctrine_sha256},
         )
@@ -211,7 +261,10 @@ class Deliverer:
             return False
 
         try:
-            result = await self._adapter.send(target=self._target, text=text)
+            result = await self._adapter.send(
+                target=self._target, text=outbound.text,
+                mentions=outbound.mentions, preview=outbound.preview,
+            )
         except Exception:
             log.exception("send raised (tag=%s)", self._tag_id)
             result = SendResult(ok=False)
@@ -233,7 +286,7 @@ class Deliverer:
             # of `sent_texts` and never feeds her Honcho self-model card (review
             # 2026-08-09). Only her real replies build that model.
             if source != "fallback":
-                self._sent_texts.append(text)
+                self._sent_texts.append(outbound.text)
             self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)
         else:
             self._metrics.inc("nora_replies_total", status="failed", platform=self._target.platform)

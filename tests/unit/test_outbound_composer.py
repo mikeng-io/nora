@@ -1,0 +1,517 @@
+"""`OutboundComposer` — @-mention ranges and the preview card that ride with a reply.
+
+The properties worth having tests for, in the order they can go wrong:
+
+1. **The offsets are UTF-16 code units.** Every arithmetic test here is written
+   against a string this group would actually send — Chinese, then an emoji
+   before the mention — because that is the only shape where `len()` and the
+   correct answer differ, and `len()` is what a reasonable person writes.
+2. **Nothing resolvable becomes a range unless the ROOM confirms it.** Four
+   refusals, four labels, all fail-closed: unmapped, not-in-room,
+   roster-unreadable, ambiguous.
+3. **No identifier ever enters the text.** The recipient rides in a parallel
+   field. That is asserted directly, because it is the R-18 exposure the whole
+   design is arranged around.
+4. **The text is returned unchanged**, which is what makes (1) meaningful.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from nora.agent.outbound import Outbound, OutboundComposer, first_url, utf16_len
+from nora.domain.models import PersonRef
+from nora.domain.ports import LinkPreview, Roster
+from nora.obs.metrics import Metrics
+from nora.persons import Persons
+from nora.testing import FakeLinkPreviewSource
+
+GRANT_ACI = "b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b"
+GRANT_PHONE = "+85251234567"
+MILES_ACI = "0f8ab3c1-7d22-4e10-8b41-9c5e6f7a8b90"
+CONVERSATION = "Z3JvdXA="
+
+
+def _persons(**extra: PersonRef) -> Persons:
+    by_person = {
+        "grant": PersonRef(
+            person_id="grant", name="Grant", honcho_peer_id="grant",
+            first_name="Grant", aliases=("阿豹", "阿豹妹"),
+        ),
+        "miles": PersonRef(
+            person_id="miles", name="Miles", honcho_peer_id="miles", first_name="Miles",
+        ),
+        **extra,
+    }
+    index = {
+        ("signal", GRANT_ACI): "grant",
+        ("signal", GRANT_PHONE): "grant",
+        ("signal", MILES_ACI): "miles",
+    }
+    return Persons(by_person=by_person, index=index)
+
+
+class _Roster:
+    """A `RosterSource` that answers like signal-cli does, not like a stub.
+
+    `listGroups` pairs `number` WITH `uuid` per member — which is the whole
+    reason `Roster.members` is a tuple of frozenSETS — so this returns paired
+    id forms rather than a flat list, and a group it was not told about is
+    `available=False` rather than an empty roster (`SignalRoster`'s own
+    stale-group-state branch, CLAUDE.md constraint 3).
+    """
+
+    platform = "signal"
+
+    def __init__(
+        self, members: tuple[frozenset[str], ...] = (), *, available: bool = True,
+    ) -> None:
+        self.members = members
+        self.available = available
+        self.calls: list[str] = []
+
+    async def roster(self, *, conversation_id: str) -> Roster:
+        self.calls.append(conversation_id)
+        if not self.available:
+            return Roster(available=False)
+        return Roster(available=True, members=self.members)
+
+
+IN_ROOM = (frozenset({GRANT_ACI, GRANT_PHONE}), frozenset({MILES_ACI}))
+
+
+def _composer(
+    *, roster: object | None = None, preview: object | None = None,
+    metrics: Metrics | None = None, persons: Persons | None = None,
+) -> OutboundComposer:
+    return OutboundComposer(
+        platform="signal", conversation_id=CONVERSATION,
+        persons=persons if persons is not None else _persons(),
+        metrics=metrics or Metrics(),
+        roster_source=roster if roster is not None else _Roster(IN_ROOM),
+        preview_source=preview,
+    )
+
+
+# --------------------------------------------------------------- utf-16 offsets
+
+def test_utf16_len_counts_code_units_not_characters():
+    """The three cases that decide every offset in this module.
+
+    PROBE: replace `utf16_len`'s body with `len(text)` and the emoji case fails
+    while the ASCII and CJK ones still pass — which is exactly why the emoji
+    case has to be here and why an all-ASCII test suite would have shipped the
+    bug.
+    """
+    assert utf16_len("abc") == 3
+    assert utf16_len("你幾高") == 3          # CJK: BMP, one unit each
+    assert utf16_len("😅") == 2              # non-BMP: one surrogate PAIR
+    assert utf16_len("🇭🇰") == 4              # a flag is TWO non-BMP code points
+
+
+async def test_a_mention_after_chinese_is_positioned_in_utf16_units():
+    composer = _composer()
+    text = "我唔知你幾高 @Grant"
+
+    out = await composer.compose(text)
+
+    (mention,) = out.mentions
+    assert mention.start == len("我唔知你幾高 ")     # CJK: units == characters
+    assert mention.length == len("@Grant")
+    assert mention.recipient == GRANT_ACI
+
+
+async def test_a_mention_after_an_emoji_is_offset_by_two_units_per_surrogate_pair():
+    """The failure `len()` would ship, in the one shape it is visible in.
+
+    Signal accepts a wrong range silently and renders the chip over the wrong
+    span — so this cannot be caught in production by watching for errors, only
+    by someone noticing the group looks odd.
+    """
+    composer = _composer()
+    text = "😅 @Grant 你幾高?"
+
+    out = await composer.compose(text)
+
+    (mention,) = out.mentions
+    assert mention.start == 3               # 😅 is 2 units, then a space
+    assert mention.start != text.index("@")  # ...and Python would have said 2
+    assert mention.length == len("@Grant")
+
+
+async def test_two_mentions_in_one_message_each_carry_their_own_offset():
+    composer = _composer()
+    text = "@Grant 同 @Miles 你哋幾高?"
+
+    out = await composer.compose(text)
+
+    assert [m.recipient for m in out.mentions] == [GRANT_ACI, MILES_ACI]
+    assert out.mentions[0].start == 0
+    assert out.mentions[1].start == utf16_len("@Grant 同 ")
+
+
+# --------------------------------------------------------------- the text itself
+
+async def test_the_text_is_returned_unchanged_and_carries_no_placeholder():
+    """Outbound mentions do NOT use Signal's inbound U+FFFC placeholder.
+
+    Two reasons, and the second is the one a reader is likely to miss:
+    signal-cli's own example replaces ordinary text (`-m "Hi X!" --mention
+    "3:1:…"`), and Nora's OWN audit row stores this string — `MentionRenderer`
+    cannot rehydrate a placeholder in a row of hers (her `raw` is tag
+    bookkeeping, not an envelope), so a placeholder here would put DEC-34's
+    exact void back into her own transcript history.
+    """
+    composer = _composer()
+    text = "@Grant 你幾高?"
+
+    out = await composer.compose(text)
+
+    assert out.text == text
+    assert "￼" not in out.text
+
+
+async def test_no_identifier_ever_enters_the_message_text():
+    """R-18, and the reason `Mention` is a parallel field rather than a
+    substitution. An ACI in the text would be caught by `scan_reply` in
+    `Deliverer.deliver` and make her MUTE — so the wrong design fails loudly
+    here and leaks nowhere; this asserts the right one anyway, because a future
+    "helpfully render the id" edit is exactly the shape that would not."""
+    composer = _composer()
+
+    out = await composer.compose("@Grant 你幾高?")
+
+    assert GRANT_ACI not in out.text
+    assert GRANT_PHONE not in out.text
+    assert out.mentions[0].recipient == GRANT_ACI
+
+
+# ----------------------------------------------------------------- the fail-closed set
+
+async def test_an_unknown_name_stays_plain_text_and_sends_no_range():
+    metrics = Metrics()
+    composer = _composer(metrics=metrics)
+
+    out = await composer.compose("@nobody 你幾高?")
+
+    assert out.text == "@nobody 你幾高?"
+    assert out.mentions == ()
+
+
+async def test_a_person_who_is_not_in_this_room_is_not_tagged():
+    """`identity.toml` is the address book for every room; membership is this
+    room's. The same resolve-WITHIN-scope rule `nora.agent.room` enforces for
+    lookups, applied outbound."""
+    metrics = Metrics()
+    composer = _composer(roster=_Roster((frozenset({MILES_ACI}),)), metrics=metrics)
+
+    out = await composer.compose("@Grant 你幾高?")
+
+    assert out.mentions == ()
+    assert metrics.get("nora_outbound_mentions_total", outcome="not_in_room") == 1
+
+
+async def test_an_unreadable_roster_tags_nobody_rather_than_guessing():
+    """R-22's rule at the send path: «I could not check who is here» is not
+    «they are here». signal-cli answering `[]` for a group Nora is demonstrably
+    in is a state this deployment has actually hit (stale group state on a
+    linked device), so this branch is a real one, not a hypothetical."""
+    metrics = Metrics()
+    composer = _composer(roster=_Roster(available=False), metrics=metrics)
+
+    out = await composer.compose("@Grant 你幾高?")
+
+    assert out.text == "@Grant 你幾高?"
+    assert out.mentions == ()
+    assert metrics.get("nora_outbound_mentions_total", outcome="roster_unavailable") == 1
+
+
+async def test_no_roster_source_at_all_tags_nobody():
+    """The offline/eval composition. Strict by default — an absent source is
+    not permission, it is the absence of confirmation."""
+    composer = OutboundComposer(
+        platform="signal", conversation_id=CONVERSATION, persons=_persons(),
+        metrics=Metrics(), roster_source=None,
+    )
+
+    out = await composer.compose("@Grant 你幾高?")
+
+    assert out.mentions == ()
+
+
+async def test_a_roster_that_raises_never_costs_the_message():
+    class _Exploding:
+        platform = "signal"
+
+        async def roster(self, *, conversation_id: str) -> Roster:
+            raise RuntimeError("daemon on fire")
+
+    composer = _composer(roster=_Exploding())
+
+    out = await composer.compose("@Grant 你幾高?")
+
+    assert out.text == "@Grant 你幾高?"
+    assert out.mentions == ()
+
+
+async def test_an_ambiguous_handle_tags_neither_person():
+    """Two people answering to one alias. Tagging the wrong member of a family
+    group is worse than tagging nobody, and there is no tie-break here that is
+    not a guess."""
+    metrics = Metrics()
+    twin = PersonRef(
+        person_id="twin", name="Twin", honcho_peer_id="twin", aliases=("阿豹",),
+    )
+    composer = _composer(persons=_persons(twin=twin), metrics=metrics)
+
+    out = await composer.compose("@阿豹 你幾高?")
+
+    assert out.mentions == ()
+    assert metrics.get("nora_outbound_mentions_total", outcome="ambiguous") == 1
+
+
+async def test_a_person_with_no_id_form_on_this_platform_is_unresolved():
+    metrics = Metrics()
+    persons = Persons(
+        by_person={"ghost": PersonRef(
+            person_id="ghost", name="Ghost", honcho_peer_id="ghost",
+        )},
+        index={},
+    )
+    composer = _composer(persons=persons, metrics=metrics)
+
+    out = await composer.compose("@Ghost 你幾高?")
+
+    assert out.mentions == ()
+    assert metrics.get("nora_outbound_mentions_total", outcome="unresolved") == 1
+
+
+# ------------------------------------------------------------------ the parser
+
+async def test_a_handle_glued_to_a_word_is_not_a_mention():
+    """`a@b.com` is an address. The `@` must start a token."""
+    composer = _composer()
+
+    out = await composer.compose("mail me at grant@Grant.example")
+
+    assert out.mentions == ()
+
+
+async def test_an_ascii_handle_inside_a_longer_ascii_word_is_not_a_mention():
+    """`@Mikeson` is not `@Miles`. The boundary check fires because BOTH sides
+    are ASCII word characters — see `_is_word`'s docstring for why it is not
+    asserted in `isalnum()`, which would also (wrongly) reject the CJK case
+    below."""
+    composer = _composer()
+
+    out = await composer.compose("@Mikeson said hi")
+
+    assert out.mentions == ()
+
+
+async def test_a_cjk_handle_runs_straight_into_the_next_character():
+    """Chinese has no separators, so demanding a boundary would make every CJK
+    alias unmatchable in an ordinary sentence — 「@阿豹同我講」 is how the
+    group actually writes it."""
+    composer = _composer()
+
+    out = await composer.compose("@阿豹同我講")
+
+    (mention,) = out.mentions
+    assert mention.recipient == GRANT_ACI
+    assert mention.length == utf16_len("@阿豹")
+
+
+async def test_the_longest_matching_handle_wins():
+    """A shorter alias that is a PREFIX of a longer one is the normal case in a
+    family group. `阿豹` and `阿豹妹` both belong to Grant here; the range
+    must cover the longer one or the chip lands beside a stray 妹."""
+    composer = _composer()
+
+    out = await composer.compose("@阿豹妹 你幾高?")
+
+    (mention,) = out.mentions
+    assert mention.length == utf16_len("@阿豹妹")
+
+
+async def test_handles_are_matched_case_insensitively():
+    composer = _composer()
+
+    out = await composer.compose("@grant 你幾高?")
+
+    assert out.mentions[0].recipient == GRANT_ACI
+
+
+async def test_a_message_with_no_at_sign_never_reads_the_roster():
+    """The cost argument. A daemon round trip at the front of every reply is
+    the thing `Room`'s laziness exists to avoid, and the overwhelming majority
+    of replies mention nobody."""
+    roster = _Roster(IN_ROOM)
+    composer = _composer(roster=roster)
+
+    await composer.compose("我唔知你幾高")
+
+    assert roster.calls == []
+
+
+async def test_two_mentions_read_the_roster_once():
+    roster = _Roster(IN_ROOM)
+    composer = _composer(roster=roster)
+
+    await composer.compose("@Grant 同 @Miles 你哋幾高?")
+
+    assert roster.calls == [CONVERSATION]
+
+
+async def test_the_aci_is_preferred_over_the_phone_number():
+    """Under sealed sender the same account arrives as a number on one message
+    and an ACI on another; the ACI is the stable form and the one
+    `SignalReactor` already sends as `targetAuthor`."""
+    composer = _composer()
+
+    out = await composer.compose("@Grant")
+
+    assert out.mentions[0].recipient == GRANT_ACI
+
+
+async def test_only_the_id_the_platform_confirmed_is_sent():
+    """The intersection, not the address book. `identity.toml` here claims a
+    stale ACI that the group's membership list does not carry, so the phone
+    number — which the roster DOES carry — is what goes on the wire."""
+    stale = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    persons = Persons(
+        by_person={"grant": PersonRef(
+            person_id="grant", name="Grant", honcho_peer_id="grant",
+        )},
+        index={("signal", stale): "grant", ("signal", GRANT_PHONE): "grant"},
+    )
+    composer = _composer(
+        persons=persons, roster=_Roster((frozenset({GRANT_PHONE}),)),
+    )
+
+    out = await composer.compose("@Grant")
+
+    assert out.mentions[0].recipient == GRANT_PHONE
+
+
+# ------------------------------------------------------------------- previews
+
+CARD = LinkPreview(
+    url="https://n.example.net/abc", title="A shortened link",
+    description="What it points at",
+)
+
+
+async def test_a_url_in_the_reply_gets_its_card():
+    source = FakeLinkPreviewSource({CARD.url: CARD})
+    metrics = Metrics()
+    composer = _composer(preview=source, metrics=metrics)
+
+    out = await composer.compose(f"睇下 {CARD.url}")
+
+    assert out.preview == CARD
+    assert metrics.get("nora_link_previews_total", outcome="attached") == 1
+
+
+async def test_a_reply_with_no_url_never_asks_for_a_card():
+    source = FakeLinkPreviewSource({CARD.url: CARD})
+    composer = _composer(preview=source)
+
+    out = await composer.compose("我唔知你幾高")
+
+    assert out.preview is None
+    assert source.requested == []
+
+
+async def test_a_preview_that_cannot_be_built_never_costs_the_message():
+    """R-5, and the reason `LinkPreviewSource` returns `None` rather than
+    raising. Whatever the page did, the sentence still goes out."""
+    source = FakeLinkPreviewSource({CARD.url: CARD}, unavailable=True)
+    metrics = Metrics()
+    composer = _composer(preview=source, metrics=metrics)
+
+    out = await composer.compose(f"睇下 {CARD.url}")
+
+    assert out.text == f"睇下 {CARD.url}"
+    assert out.preview is None
+    assert metrics.get("nora_link_previews_total", outcome="unavailable") == 1
+
+
+async def test_a_preview_source_that_raises_never_costs_the_message():
+    class _Exploding:
+        async def preview_for(self, *, url: str) -> LinkPreview | None:
+            raise RuntimeError("dns melted")
+
+    composer = _composer(preview=_Exploding())
+
+    out = await composer.compose(f"睇下 {CARD.url}")
+
+    assert out.text == f"睇下 {CARD.url}"
+    assert out.preview is None
+
+
+async def test_a_fetched_card_carrying_an_identifier_is_dropped():
+    """R-18 applied to somebody ELSE's page. A number rendered in a card is in
+    the room exactly as much as one she typed, and the page's author is not
+    someone this codebase trusts."""
+    leaky = LinkPreview(
+        url=CARD.url, title="Call me", description=f"on {GRANT_PHONE}",
+    )
+    metrics = Metrics()
+    composer = _composer(
+        preview=FakeLinkPreviewSource({CARD.url: leaky}), metrics=metrics,
+    )
+
+    out = await composer.compose(f"睇下 {CARD.url}")
+
+    assert out.preview is None
+    assert metrics.get("nora_link_previews_total", outcome="blocked") == 1
+    assert metrics.get("nora_egress_blocks_total", kind="phone") == 1
+
+
+async def test_a_card_mentioning_a_model_name_is_deliberately_not_dropped():
+    """The other half of `nora.agent.egress`'s two-predicate split (DEC-30).
+    `scan_reply`'s model-name pattern is «she does not SAY what she runs on»;
+    a third party's page title is not her saying anything, and screening it
+    here would silently drop the preview of any page about LLMs — which in a
+    group of software engineers is a page they are likely to be discussing.
+
+    PROBE: swap `scan_identifiers` for `scan_reply` in `_preview` and this is
+    the assertion that goes red.
+    """
+    about_llms = LinkPreview(
+        url=CARD.url, title="Claude and Gemini benchmarks", description="opus vs sonnet",
+    )
+    composer = _composer(preview=FakeLinkPreviewSource({CARD.url: about_llms}))
+
+    out = await composer.compose(f"睇下 {CARD.url}")
+
+    assert out.preview == about_llms
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("睇下 https://n.example.net/abc", "https://n.example.net/abc"),
+        ("睇下 https://n.example.net/abc。", "https://n.example.net/abc"),
+        ("(https://n.example.net/abc)", "https://n.example.net/abc"),
+        ("no link here", None),
+        ("ftp://n.example.net/abc", None),
+    ],
+)
+def test_first_url_extracts_a_substring_of_the_body(text, expected):
+    """A SUBSTRING is the contract, not merely a URL: signal-cli requires the
+    preview url to appear in the message body verbatim or no client shows the
+    card at all, so a normalised url would ship a payload nobody sees."""
+    url = first_url(text)
+    assert url == expected
+    if url is not None:
+        assert url in text
+
+
+async def test_no_preview_source_means_no_card_and_no_failure():
+    composer = _composer(preview=None)
+
+    out = await composer.compose(f"睇下 {CARD.url}")
+
+    assert out == Outbound(text=f"睇下 {CARD.url}")

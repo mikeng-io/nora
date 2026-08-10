@@ -352,6 +352,39 @@ class ShortenerConfig(BaseModel):
     timeout_seconds: float = Field(default=5.0, gt=0)
 
 
+class PreviewConfig(BaseModel):
+    """Sender-generated link previews on Nora's outbound messages.
+
+    **Optional, defaulted, `enabled` False** — the `[route]`/`[shortener]`
+    shape, and off for a sharper reason than either of those: this is the one
+    capability that makes Nora FETCH a URL that came out of a model, from her
+    own network. DEC-73 deleted `web_fetch` and its whole SSRF apparatus
+    precisely because Tavily is never handed a URL; enabling this section is an
+    operator deciding to take a bounded version of that exposure back, so it is
+    a decision rather than a default. `nora.infra.preview` documents the guard
+    and the one residual risk it does not close.
+
+    No key, so unlike `[search]` there is nothing else gating it — `enabled` is
+    the whole switch. Off, a reply containing a link goes out exactly as it does
+    today.
+
+    `timeout_seconds` is small on purpose: this runs on the reply path with a
+    human watching a 👀, so a dead host must cost a couple of seconds and a
+    missing card, never a noticeable pause. `image` is separately switchable
+    because it is the expensive half — a second fetch, and up to
+    `image_max_bytes` base64'd into the JSON-RPC body — while the title and
+    description are most of the value.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    timeout_seconds: float = Field(default=3.0, gt=0)
+    max_bytes: int = Field(default=262_144, gt=0)
+    image: bool = True
+    image_max_bytes: int = Field(default=262_144, gt=0)
+
+
 class PresenceConfig(BaseModel):
     """The presence collector (design/19), DEC-54/DEC-55.
 
@@ -736,6 +769,10 @@ class Config(BaseModel):
     # Optional and defaulted — see `ShortenerConfig`. Off unless an operator
     # turns it on; never load-bearing (a failed mint leaves the long URL).
     shortener: ShortenerConfig = ShortenerConfig()
+    # Optional and defaulted — see `PreviewConfig`. Off unless an operator turns
+    # it on; off means a reply carrying a link goes out with no card, which is
+    # every deployment's behaviour before this section existed.
+    preview: PreviewConfig = PreviewConfig()
     # Optional and defaulted — see `PresenceConfig`. Off unless an operator turns
     # it on; a config.toml without a `[presence]` section keeps loading, and the
     # collector is a SEPARATE process (`python -m nora.presence`) that reads this

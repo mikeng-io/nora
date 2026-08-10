@@ -6,7 +6,14 @@ import time
 from collections.abc import Awaitable, Callable
 
 from ...domain.models import ConversationTarget, NormalizedMessage
-from ...domain.ports import AdapterHealth, PlatformIdentity, ReactionResult, SendResult
+from ...domain.ports import (
+    AdapterHealth,
+    LinkPreview,
+    Mention,
+    PlatformIdentity,
+    ReactionResult,
+    SendResult,
+)
 from .listener import SignalListener
 from .parser import parse_event
 from .react import SignalReactor
@@ -73,8 +80,15 @@ class SignalAdapter:
 
         await self._listener.listen(_on_event)
 
-    async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
-        return await self._sender.send(target, text)
+    async def send(
+        self,
+        *,
+        target: ConversationTarget,
+        text: str,
+        mentions: tuple[Mention, ...] = (),
+        preview: LinkPreview | None = None,
+    ) -> SendResult:
+        return await self._sender.send(target, text, mentions=mentions, preview=preview)
 
     async def react(
         self,

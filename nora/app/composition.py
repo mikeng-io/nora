@@ -467,6 +467,22 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "shortener enabled but %s is unset — links stay long",
                 cfg.shortener.token_env,
             )
+    # Sender-generated link previews ([preview]). Keyless, so `enabled` is the
+    # whole gate — unlike the shortener above, there is no token whose absence
+    # could leave it half-wired. Off is the shipped default and is not a
+    # degradation: a reply carrying a link goes out with no card, exactly as
+    # every deployment before this section existed. It is ONE instance for the
+    # process (it holds no per-turn state), handed to the pipeline and the fire
+    # path, which hand it to each turn's `OutboundComposer`.
+    preview_source = None
+    if cfg.preview.enabled:
+        from nora.infra.preview import OpenGraphPreviewSource
+        preview_source = OpenGraphPreviewSource(
+            timeout_seconds=cfg.preview.timeout_seconds,
+            max_bytes=cfg.preview.max_bytes,
+            fetch_image=cfg.preview.image,
+            image_max_bytes=cfg.preview.image_max_bytes,
+        )
     # The on-demand LIVE-refresh client (DEC-67): when `[presence].refresh_url` is
     # set AND presence is wired, `where_is` asks the collector to force a fresh
     # reading before it reads the store. Unset → `where_is` stays read-only
@@ -566,6 +582,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
         reactions=cfg.engagement.reactions.enabled,
         roster_source=roster_source,
+        preview_source=preview_source,
         slots=slots,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
@@ -604,6 +621,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             timeout_seconds=cfg.heartbeat.timeout_seconds,
             clock=lambda: datetime.now(UTC),
             roster_source=roster_source,
+            # The SAME preview source the tag path holds. A fire turn is a
+            # message into the same group, so a link in it earns the same card.
+            preview_source=preview_source,
             llm_state=llm_state,
         )
         heartbeat = HeartbeatLoop(

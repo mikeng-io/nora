@@ -3,9 +3,11 @@ import time
 import pytest
 
 from nora.agent.guards import Deliverer
+from nora.agent.outbound import Outbound
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget
+from nora.domain.ports import Mention
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -345,3 +347,102 @@ async def test_ordinary_cantonese_with_a_bare_number_still_sends(store, doctrine
     ok, sink, _ = await _deliver_text("價錢係 12345678 蚊，貴到痴線 😏", store, doctrine)
     assert ok is True
     assert len(sink.sent) == 1
+
+
+# ---------------------------------------------------------- outbound decoration
+#
+# `Deliverer` is the ONLY caller of `adapter.send` (R-1b), so it is also the only
+# place a mention can reach the wire. These cover the seam itself; the offset
+# arithmetic and the fail-closed refusals are `tests/unit/test_outbound_composer.py`.
+
+class _Composer:
+    """A composer stand-in that returns a FIXED `Outbound`.
+
+    Deliberately not a real `OutboundComposer`: the property under test here is
+    the wiring — that `Deliverer` asks, that it sends what it was given, and
+    that it audits the same string — and a real composer would make each of
+    those assertions depend on a name resolution these tests are not about.
+    """
+
+    def __init__(self, outbound: Outbound | None = None, *, raises: bool = False) -> None:
+        self._outbound = outbound
+        self._raises = raises
+        self.asked: list[str] = []
+
+    async def compose(self, text: str) -> Outbound:
+        self.asked.append(text)
+        if self._raises:
+            raise RuntimeError("identity.toml on fire")
+        return self._outbound or Outbound(text=text)
+
+
+MENTION = Mention(start=0, length=8, recipient="b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b")
+
+
+async def test_the_composed_mention_reaches_the_adapter(store, doctrine):
+    """The end-to-end wiring: composer -> Deliverer -> port.
+
+    PROBE: drop the `mentions=` argument from `Deliverer.deliver`'s
+    `adapter.send` call and this goes red while every other test in this file
+    stays green — which is the whole reason it is here rather than left to the
+    composer's own suite.
+    """
+    sink = SinkSender()
+    composer = _Composer(Outbound(text="@Grant 你幾高?", mentions=(MENTION,)))
+    d = Deliverer(
+        store=store, adapter=sink, target=TARGET, doctrine=doctrine, canary="CANARY-1",
+        tag_id="tag-1", nora_sender_id="nora", message_cap=MESSAGE_CAP, audience="tag",
+        metrics=Metrics(), composer=composer,
+    )
+
+    assert await d.deliver("@Grant 你幾高?") is True
+    assert composer.asked == ["@Grant 你幾高?"]
+    assert sink.sent_mentions == [(MENTION,)]
+
+
+async def test_the_audited_row_carries_the_text_the_wire_carried(store, doctrine):
+    """A9 stores what she SENT. Asserted through the real store rather than on
+    the AST (`tests/architecture/test_outbound_offsets_are_computed_last.py`
+    does that half) so the two halves cannot both be satisfied by a mock."""
+    sink = SinkSender()
+    d = Deliverer(
+        store=store, adapter=sink, target=TARGET, doctrine=doctrine, canary="CANARY-1",
+        tag_id="tag-1", nora_sender_id="nora", message_cap=MESSAGE_CAP, audience="tag",
+        metrics=Metrics(), composer=_Composer(),
+    )
+
+    await d.deliver("@Grant 你幾高?")
+
+    row = (await store.recent(conversation_id="g1", limit=1))[0]
+    assert row.body == sink.texts[0] == "@Grant 你幾高?"
+
+
+async def test_a_composer_that_raises_still_sends_the_plain_message(store, doctrine):
+    """R-5's actual subject: decoration must never be why a group hears nothing.
+
+    A composer failure is not a delivery failure — the sentence answers a human
+    either way, and it goes out untagged rather than not at all."""
+    sink = SinkSender()
+    metrics = Metrics()
+    d = Deliverer(
+        store=store, adapter=sink, target=TARGET, doctrine=doctrine, canary="CANARY-1",
+        tag_id="tag-1", nora_sender_id="nora", message_cap=MESSAGE_CAP, audience="tag",
+        metrics=metrics, composer=_Composer(raises=True),
+    )
+
+    assert await d.deliver("@Grant 你幾高?") is True
+    assert sink.texts == ["@Grant 你幾高?"]
+    assert sink.sent_mentions == [()]
+    assert metrics.get("nora_silent_failures_total", reason="send_failed") == 0
+
+
+async def test_no_composer_at_all_sends_exactly_what_it_always_did(store, doctrine):
+    """The `composer=None` path — the offline/eval compositions, and every
+    `Deliverer` in this file that predates the feature. It must be the SAME
+    message, which is the argument for the parameter having a default at all."""
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink)
+
+    assert await d.deliver("今晚七點半得唔得？") is True
+    assert sink.texts == ["今晚七點半得唔得？"]
+    assert sink.sent_mentions == [()]

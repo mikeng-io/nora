@@ -258,6 +258,26 @@ api_key_env = "TAVILY_API_KEY"   # NAMES the env var; the key never lives here (
 # content_max_chars = 1500        # per-result snippet clamp (bounds re-sent tokens)
 # timeout_seconds = 12.0
 
+[preview]
+# Sender-generated link previews on Nora's OUTBOUND messages: when a reply
+# carries a URL she fetches its OpenGraph tags and attaches a title/description
+# (and image) card, the way every Signal client does.
+#
+# Off here for a sharper reason than the "explicitly on" house rule. This is the
+# one capability that makes Nora FETCH a url that came out of a model, from her
+# own network — the exposure DEC-73 deleted along with `web_fetch`, on the
+# argument that Tavily is never handed a url and searches from ITS servers.
+# Turning it on takes a bounded version of that exposure back, so it is a
+# decision an operator makes rather than a default they inherit. The bound is in
+# `nora/infra/preview.py`: http(s) only, every resolved address must be globally
+# routable, redirects followed by hand and re-validated per hop, a byte ceiling
+# and a small total timeout. Keyless, so `enabled` is the whole switch.
+enabled = false
+# timeout_seconds = 3.0     # small: this is on the reply path, human waiting
+# max_bytes = 262144        # how much of the document to read (og tags are in <head>)
+# image = true              # fetch og:image too — the expensive half
+# image_max_bytes = 262144
+
 [weather]
 # The `weather` tool (DEC-72) — HK Observatory Open Data, KEYLESS. Off here for
 # the "explicitly on" house rule; safe to enable (no key, no cost, no egress).

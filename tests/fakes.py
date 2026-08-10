@@ -121,6 +121,7 @@ class SinkSender:
         timestamp: int | None = None,
     ) -> None:
         self.sent: list[tuple[ConversationTarget, str]] = []
+        self.sent_mentions: list[tuple] = []
         self.events: list[dict] = []
         self._succeed = succeed
         self._account = account
@@ -141,8 +142,21 @@ class SinkSender:
     async def resolve_identity(self) -> PlatformIdentity:
         return PlatformIdentity(platform=self.platform, primary=self._account)
 
-    async def send(self, target: ConversationTarget, text: str) -> SendResult:
+    async def send(
+        self, target: ConversationTarget, text: str,
+        mentions: tuple = (), preview: object | None = None,
+    ) -> SendResult:
+        """Accepts (and records) the port's decoration parameters.
+
+        Not optional politeness: `Deliverer` passes both on EVERY send, so a
+        double that did not accept them would `TypeError` on a plain message —
+        which is the point of the port having grown them rather than the
+        `Deliverer` passing them conditionally. Recorded rather than dropped so
+        an integration test can assert an @-mention actually reached the
+        transport, not merely that the composer built one.
+        """
         self.sent.append((target, text))
+        self.sent_mentions.append(tuple(mentions))
         return SendResult(ok=self._succeed, timestamp=self._timestamp)
 
     async def health(self) -> AdapterHealth:

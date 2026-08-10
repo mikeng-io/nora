@@ -465,6 +465,40 @@ def test_a_single_account_still_needs_no_label(tmp_path):
     assert persons.resolve("signal", "b68741f9").person_id == "ada"
 
 
+def test_platform_ids_returns_every_id_form_that_person_presents(persons):
+    """The reverse of `resolve`, and the only OUTBOUND consumer of this class.
+
+    Every FORM, not one: `nora.agent.outbound` intersects this with the group's
+    own membership list before choosing what to put on the wire, so handing
+    back a single "best" id here would make that intersection able to miss —
+    the platform reports one member as `{number, uuid}` and identity.toml may
+    only have matched on the other one.
+    """
+    ids = persons.platform_ids("signal", "miles")
+    assert ids == frozenset({"+85212345678", "8185b8fa-359a-4c0a-c6ed-24814dc655bb"})
+
+
+def test_platform_ids_is_scoped_to_the_platform_asked_for(persons):
+    """Miles's life360 `member_id` resolves to the same person (A2/DEC-14) and
+    is emphatically NOT something to hand signal-cli as a mention recipient."""
+    assert persons.platform_ids("life360", "miles") == frozenset({"life360-miles-uuid"})
+    assert "life360-miles-uuid" not in persons.platform_ids("signal", "miles")
+
+
+def test_platform_ids_answers_empty_for_someone_it_does_not_know(persons):
+    """Empty, never a `KeyError`: the caller is mid-turn composing a reply, and
+    a name it could not place must cost a mention, not the message."""
+    assert persons.platform_ids("signal", "nobody") == frozenset()
+    assert persons.platform_ids("telegram", "miles") == frozenset()
+
+
+def test_platform_ids_round_trips_with_resolve(persons):
+    """The two directions read one index, so they cannot disagree — which is
+    why `platform_ids` derives from `index` instead of keeping an inverse."""
+    for value in persons.platform_ids("signal", "ada"):
+        assert persons.resolve("signal", value).person_id == "ada"
+
+
 def test_an_alias_never_resolves_a_sender(tmp_path):
     """Aliases are for COMPREHENSION, never for identity.
 
