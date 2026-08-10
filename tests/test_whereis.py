@@ -232,14 +232,82 @@ async def test_a_location_trusted_room_discloses_past_an_unmapped_account(person
     assert metrics.get("nora_presence_disclosure_refusals_total", reason="unnamed") == 0
 
 
-async def test_a_location_trusted_room_still_refuses_a_degraded_view(persons, store):
+async def test_a_degraded_room_answers_unavailable_and_never_refused(persons, store):
+    """R-27, fail-closed audit 2026-08-10: an ERROR must not be dressed as a
+    policy decision. `refused` tells the model «someone here is outside the
+    circle» — a claim about who is in the room — but a degraded view means
+    signal-cli could not be read at all, and after DEC-79 that is the ONLY
+    refusal a trusted room can reach. So the operator's real failure mode (the
+    daemon wedged) would have rendered to the group as 「有人唔喺個 circle 入面」,
+    which is simply false.
+
+    The metric keeps `reason="degraded"` so the event stays diagnosable — the
+    status changed, the observability did not."""
+    await _record(store, person="miles_novak", ts=NOW)
+    metrics = Metrics()
+    tagger = persons.resolve("signal", "+85290000101")
+    w = _whereis(
+        persons, store, members=(MILES, GRANT, NORA), fail=True,
+        metrics=metrics, tagger=tagger,
+    )
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "unavailable"          # not "refused"
+    assert "circle" not in out["note"]             # no false claim about the room
+    assert "lat" not in out and "address" not in out
+    assert metrics.get("nora_presence_disclosure_refusals_total", reason="degraded") == 1
+
+
+async def test_a_waived_unnamed_guard_is_counted_and_never_silent(persons, store):
+    """Both 2026-08-10 reviews. DEC-79's whole diagnosis was
+    `…refusals_total{reason="unnamed"} 12` — relaxing the condition without
+    recording the waiver would retire the instrument that found the bug, leaving
+    a zero refusal counter unable to tell «the flag works» from «the room filled
+    up with strangers». The startup pre-flight warns once at boot and never
+    again, so an account joining later would otherwise produce no signal at all.
+
+    Delete the waiver counter and this reds while everything else stays green —
+    which is exactly the failure mode it guards."""
+    await _record(store, person="miles_novak", ts=NOW)
+    metrics = Metrics()
+    w = _whereis(
+        persons, store, members=(MILES, GRANT, frozenset({"+85299999999"}), NORA),
+        location_trusted=True, metrics=metrics,
+    )
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "ok"                                    # disclosed
+    assert metrics.get("nora_presence_disclosure_waived_total", reason="unnamed") == 1
+    assert metrics.get("nora_presence_disclosure_refusals_total", reason="unnamed") == 0
+
+
+async def test_a_fully_mapped_trusted_room_waives_nothing(persons, store):
+    """The counter must mean «a guard was overridden», not «the flag is on» —
+    otherwise it cannot answer the question it exists for. A trusted room with
+    nobody unmapped overrides nothing, so it records nothing."""
+    await _record(store, person="miles_novak", ts=NOW)
+    metrics = Metrics()
+    w = _whereis(
+        persons, store, members=(MILES, GRANT, NORA),
+        location_trusted=True, metrics=metrics,
+    )
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "ok"
+    assert metrics.get("nora_presence_disclosure_waived_total", reason="unnamed") == 0
+
+
+async def test_a_location_trusted_room_still_discloses_nothing_on_a_degraded_view(
+    persons, store,
+):
     """The line DEC-79 does NOT cross, and the reason the flag is not simply
     «skip the guard»: `degraded` means the roster could not be READ, so there is
     no measurement to overrule — an R-27 `unavailable`, which is never a PASS.
 
     `unnamed` is the opposite: a roster Nora read successfully and found an
     unknown in. The operator can speak to what he read; he cannot vouch for a
-    room nobody could see. Delete the `view.degraded` term and this reds."""
+    room nobody could see. Delete the `view.degraded` term and this reds.
+
+    (The STATUS is `unavailable` rather than `refused` — see
+    `test_a_degraded_room_answers_unavailable_and_never_refused`. What this test
+    pins is that trust does not reach it and nothing is disclosed.)"""
     await _record(store, person="miles_novak", ts=NOW)
     metrics = Metrics()
     tagger = persons.resolve("signal", "+85290000101")
@@ -248,9 +316,11 @@ async def test_a_location_trusted_room_still_refuses_a_degraded_view(persons, st
         location_trusted=True, metrics=metrics, tagger=tagger,
     )
     out = await w.locate("Miles", now_ms=NOW)
-    assert out["status"] == "refused"     # trust cannot substitute for a reading
+    assert out["status"] == "unavailable"   # trust cannot substitute for a reading
     assert "lat" not in out and "address" not in out
     assert metrics.get("nora_presence_disclosure_refusals_total", reason="degraded") == 1
+    # and it did NOT record a waiver — nothing was overridden, it could not read
+    assert metrics.get("nora_presence_disclosure_waived_total", reason="unnamed") == 0
 
 
 async def test_disclosure_refusal_metric_names_which_condition(persons, store):
@@ -290,14 +360,22 @@ async def test_whereis_is_unavailable_when_the_room_cannot_be_read(persons, stor
     assert out["status"] == "unavailable"
 
 
-async def test_whereis_refuses_on_a_degraded_room_it_cannot_verify(persons, store):
+async def test_whereis_discloses_nothing_on_a_degraded_room_it_cannot_verify(
+    persons, store,
+):
     """A degraded (tagger-only) view cannot VERIFY group ⊆ circle, so the
-    fail-closed guard refuses rather than disclose on an unverifiable room."""
+    fail-closed guard never discloses on an unverifiable room.
+
+    The STATUS is `unavailable`, not `refused` (R-27, 2026-08-10): the property
+    that matters is that no position escapes, and calling an unread roster a
+    policy refusal put a false sentence about the room in Nora's mouth. See
+    `test_a_degraded_room_answers_unavailable_and_never_refused`."""
     await _record(store, person="miles_novak", ts=NOW)
     tagger = persons.resolve("signal", "+85290000101")
     w = _whereis(persons, store, members=(MILES, GRANT, NORA), fail=True, tagger=tagger)
     out = await w.locate("Miles", now_ms=NOW)
-    assert out["status"] == "refused"
+    assert out["status"] == "unavailable"
+    assert "lat" not in out and "address" not in out
 
 
 async def test_whereis_not_found_for_a_name_not_in_the_room(persons, store):
@@ -549,6 +627,70 @@ async def test_an_unreadable_roster_resolves_no_saved_place(persons, store):
     ) == ()
 
 
+async def test_a_location_trusted_room_resolves_saved_places_past_an_unmapped_account(
+    persons, store,
+):
+    """DEC-79 reaches the SECOND disclosure surface too — the review found this
+    one stranded when `where_is` alone was widened.
+
+    In the operator's real room that split was absurd: `where_is` disclosed a
+    live street address while `saved_places` answered «there are no saved
+    places» forever, both refusing on the same four unmappable accounts. It also
+    silently killed `where_work`, the journey DEC-77/78 spent two commits routing
+    onto `saved_places`. Drop the `location_trusted` term from
+    `resolvable_places` and this reds."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    room = _room(persons, members=(MILES, GRANT, frozenset({"+85299999999"}), NORA))
+    places = await resolvable_places(
+        room=room, circles=(CIRCLE,), presence=store, location_trusted=True,
+    )
+    assert [p.name for p in places] == ["Home"]
+
+
+async def test_a_location_trusted_room_still_resolves_nothing_on_an_unreadable_roster(
+    persons, store,
+):
+    """The same line `where_is` holds: trust overrules what a roster SAYS, never
+    the absence of one. `()` here rather than `None` — the room was read well
+    enough to know it cannot be verified; `None` is reserved for a read that
+    THREW, which is a different fact (see the next test)."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    room = _room(persons, members=(MILES, NORA), fail=True)
+    assert await resolvable_places(
+        room=room, circles=(CIRCLE,), presence=store, location_trusted=True,
+    ) == ()
+
+
+class _ThrowingPresence:
+    """A presence store whose read RAISES — an unreachable Postgres, not an
+    empty table. Behaves like the real store right up to the failure, which is
+    the point: a fake that simply returned `[]` would make the bug invisible."""
+
+    async def latest_fix(self, **_kw):
+        raise RuntimeError("presence store unreachable")
+
+    async def places_for(self, **_kw):
+        raise RuntimeError("presence store unreachable")
+
+    async def window(self, **_kw):
+        raise RuntimeError("presence store unreachable")
+
+
+async def test_a_failed_read_is_none_and_never_an_empty_list(persons):
+    """R-27, fail-closed audit 2026-08-10. `()` and a THROWN read used to be the
+    same value, so an unreachable presence store rendered as
+    「你冇 save 過任何地方」 — a confident wrong answer — with `status="ok"` in the
+    metrics beside it. An ERROR is never a PASS: `()` means «no names you may
+    have», `None` means «I could not check».
+
+    Revert the `except` branch to `return ()` and this reds."""
+    room = _room(persons, members=(MILES, GRANT, NORA))
+    out = await resolvable_places(
+        room=room, circles=(CIRCLE,), presence=_ThrowingPresence(),
+    )
+    assert out is None                      # not (), which would read as «none saved»
+
+
 # ── the movement read (design/19 §6 first slice, DEC-61) ─────────────────────
 
 async def test_whereis_reports_measured_movement_towards_a_saved_place(persons, store):
@@ -672,13 +814,16 @@ async def test_a_non_subset_room_hands_the_route_client_no_map(persons, store):
 # ── saved_places tool: list names, model picks (2026-08-07, replaces the
 #    brittle casefold filter — the model matches «屋企»→"Home" semantically) ──
 
-def _saved_places_tool(persons, store, *, members):
+def _saved_places_tool(persons, store, *, members, location_trusted=False,
+                       metrics=None):
     tools = build_tools(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, honcho=None, deliverer=None,
+        metrics=metrics if metrics is not None else Metrics(),
         room=_room(persons, members=members),
         transit_source=None,
         presence_source=store, presence_circles=(CIRCLE,),
+        location_trusted=location_trusted,
         question="", context_window=40,
     )
     return {t.tool_name: t for t in tools}["saved_places"]
@@ -705,6 +850,44 @@ async def test_saved_places_is_empty_for_a_non_subset_room(persons, store):
     out = await tool._tool_func()
     assert out["status"] == "ok"
     assert out["names"] == []
+
+
+async def test_saved_places_lists_names_in_a_location_trusted_room(persons, store):
+    """DEC-79's second surface, end-to-end through the TOOL rather than the seam.
+
+    This is the `where_work` journey DEC-77/78 routed onto `saved_places`: in the
+    operator's real room (unmapped accounts present, `location = true`) it
+    answered「冇 save 過任何地方」forever, because only `where_is` had been widened.
+    The room here is the same one `test_saved_places_is_empty_for_a_non_subset_room`
+    proves stays empty untrusted — the flag is the only difference."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("返工")])
+    tool = _saved_places_tool(
+        persons, store, members=(MILES, GRANT, frozenset({"+85299999999"}), NORA),
+        location_trusted=True,
+    )
+    out = await tool._tool_func()
+    assert out["status"] == "ok"
+    assert out["names"] == ["返工"]
+
+
+async def test_saved_places_says_unavailable_when_the_read_fails(persons):
+    """R-27 end-to-end. A thrown read used to render as `{"status": "ok",
+    "names": []}` — so with the presence store unreachable Nora said
+    「你冇 save 過任何地方」, a confident wrong answer, while
+    `nora_tool_total{tool="saved_places",status="ok"}` read healthy. The model
+    must be told she could not look, not that there is nothing.
+
+    Revert `resolvable_places`' `except` branch to `return ()` and this reds."""
+    metrics = Metrics()
+    tool = _saved_places_tool(
+        persons, _ThrowingPresence(), members=(MILES, GRANT, NORA), metrics=metrics,
+    )
+    out = await tool._tool_func()
+    assert out["status"] == "unavailable"
+    assert "names" not in out                    # never an empty list on a failure
+    m = "nora_tool_calls_total"
+    assert metrics.get(m, tool="saved_places", status="unavailable") == 1
+    assert metrics.get(m, tool="saved_places", status="ok") == 0
 
 
 async def test_saved_places_unavailable_when_presence_not_wired(persons):

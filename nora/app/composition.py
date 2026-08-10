@@ -649,9 +649,17 @@ async def _presence_preflight(
     logs an ERROR on the day the answer is no — the operator's tell that a
     stranger joined the group (or someone left the circle) and `whereis` is now
     refusing there. Belt-and-braces over the KNOWN person_ids only; the per-call
-    guard in `Whereis.locate` is authoritative and also refuses on unmapped
-    accounts (`view.unnamed`), which a person_id subset cannot see — so this
-    logs those as a warning rather than pretending the gauge covers them.
+    guard in `Whereis.locate` is authoritative and sees unmapped accounts
+    (`view.unnamed`) that a person_id subset cannot — so this logs those as a
+    warning rather than pretending the gauge covers them.
+
+    **In a location-TRUSTED room that per-call guard no longer refuses on
+    `view.unnamed` (DEC-79), so do not read the warning below as a block.** What
+    still holds there: the roster must READ (a degraded room answers
+    `unavailable`), the target must resolve inside it, and every waiver is
+    counted on `nora_presence_disclosure_waived_total` — which is the runtime
+    tell this once-at-boot warning cannot be, since an account that joins after
+    startup never reaches this code again.
 
     Never fatal, never raises: an unreadable roster leaves the invariant
     UNVERIFIED (warned, not alarmed), and the per-call guard refuses on exactly
@@ -691,9 +699,16 @@ async def _presence_preflight(
                 # whereis must refuse» and pin `nora_presence_circle_subset_ok=0`
                 # for the circle — masking a REAL subset failure in another,
                 # non-trusted room mapped to the same circle. Skip it: `where_is`
-                # discloses here on purpose, and the `unnamed` warning above (an
-                # unmapped account still blocks disclosure, trusted or not) plus
-                # the per-call guard still hold.
+                # discloses here on purpose.
+                #
+                # This used to add «and an unmapped account still blocks
+                # disclosure, trusted or not» as the second half of the
+                # justification. DEC-79 made that false, and the fail-closed
+                # audit was right to call it out: what actually remains in a
+                # trusted room is the roster READ (degraded → `unavailable`), the
+                # target resolving inside it, and the waiver counter. Skipping
+                # this gauge is still correct — it would be a permanent false
+                # alarm — but it is now the only pre-flight this room gets.
                 log.info(
                     "presence pre-flight: conversation is location-trusted (DEC-74) "
                     "— the circle-subset invariant is intentionally skipped here"

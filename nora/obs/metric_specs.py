@@ -450,9 +450,29 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_presence_disclosure_refusals_total",
         "whereis disclosures refused (R-21 fail-closed seam, design/19 §5). "
         "`reason` names WHICH of the three conditions fired so a refusal is "
-        "diagnosable: `degraded` (roster unverifiable), `unnamed` (an account in "
-        "the room maps to no person_id), `not_subset` (a mapped member is outside "
-        "the circle and the room is not location-trusted).",
+        "diagnosable: `degraded` (roster unverifiable — answers `unavailable` "
+        "rather than `refused`, R-27, but still counted here), `unnamed` (an "
+        "account in the room maps to no person_id), `not_subset` (a mapped member "
+        "is outside the circle and the room is not location-trusted).",
+        ("reason",),
+    ),
+    # The WAIVER counter — the other half of the pair above, and the reason DEC-79
+    # is auditable rather than merely permissive. When `location = true` overrides
+    # a guard, the override is recorded; without this, relaxing `unnamed` would
+    # have retired the very instrument that diagnosed DEC-79
+    # (`…refusals_total{reason="unnamed"} 12`), leaving a zero refusal counter
+    # unable to distinguish "the flag is working" from "the room filled up with
+    # strangers". The startup pre-flight warns once at boot and never again, so
+    # for an account that joins later this is the ONLY runtime signal.
+    _CounterSpec(
+        "nora_presence_disclosure_waived_total",
+        "whereis disclosures that PASSED only because the conversation is "
+        "location-trusted (DEC-79). `reason` names which guard was overridden: "
+        "`unnamed` (the room holds account(s) resolving to no person_id). A "
+        "non-zero value is not an error — it is the operator's standing decision "
+        "being exercised — but a RISING one means the room gained people Nora "
+        "cannot name. The count of unmapped accounts is on the log line, not a "
+        "label, so cardinality stays fixed.",
         ("reason",),
     ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is

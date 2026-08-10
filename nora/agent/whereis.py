@@ -156,26 +156,44 @@ def _within_place(lat: float, lng: float, place: SavedPlace) -> bool:
 
 async def resolvable_places(
     *, room: Room, circles: tuple[Circle, ...], presence: PresenceReader,
-) -> tuple[SavedPlace, ...]:
+    location_trusted: bool = False,
+) -> tuple[SavedPlace, ...] | None:
     """The saved places THIS room may resolve by name (design/23 §4.1): only
-    from circles the room is a verified subset of, and EMPTY on any doubt —
-    degraded room, unmapped account, guard refusal, or a failed read. The
-    caller falls through to the public lookup rather than refusing: a hard
-    refusal would confirm a guarded name exists, and fall-through makes it
-    indistinguishable from an unsaved one (R-21's own shape)."""
+    from circles the room is a verified subset of, and EMPTY on doubt about the
+    ROOM — degraded room, unmapped account, guard refusal. The caller falls
+    through to the public lookup rather than refusing: a hard refusal would
+    confirm a guarded name exists, and fall-through makes it indistinguishable
+    from an unsaved one (R-21/R-35's own shape).
+
+    `None` is the FOURTH answer, and it is not the same as `()` (R-27, both
+    2026-08-10 reviews): the read itself failed — a presence store that is
+    unreachable, a `places_for` that raised. `()` says «no names you may have»,
+    `None` says «I could not check», and collapsing them meant an unreachable
+    Postgres rendered as 「你冇 save 過任何地方」 — a confident wrong answer with a
+    healthy `status="ok"` beside it. An ERROR is never a PASS.
+
+    `location_trusted` carries DEC-79 here, because this is the SECOND
+    disclosure surface and the first review found it stranded: `where_is` was
+    widened while this was not, so in the operator's own room `where_is`
+    disclosed a street address while `saved_places` answered «no saved places»
+    forever — the same four unmappable accounts, killing the very path DEC-77/78
+    spent two commits routing 「返工」 onto. One room-level switch, every location
+    surface. It relaxes `unnamed` exactly as `Whereis.locate` does, and
+    `degraded`/unavailable stay hard for the same reason they do there."""
     try:
         view = await room.scope()
-        if not view.available or view.degraded or view.unnamed > 0:
+        unnamed_blocks = view.unnamed > 0 and not location_trusted
+        if not view.available or view.degraded or unnamed_blocks:
             return ()
         room_ids = frozenset(p.person_id for p in view.people)
         out: list[SavedPlace] = []
         for circle in circles:
-            if DisclosureGuard(circle).permits(room_ids):
+            if location_trusted or DisclosureGuard(circle).permits(room_ids):
                 out.extend(await presence.places_for(circle_id=circle.circle_id))
         return tuple(out)
     except Exception:
-        log.exception("resolvable_places failed — falling through to public lookup")
-        return ()
+        log.exception("resolvable_places failed — cannot say whether names exist")
+        return None
 
 
 def circles_from_persons(persons: Any) -> tuple[Circle, ...]:
@@ -237,9 +255,14 @@ def check_disclosure_invariant(
     collector startup. Until then it is a tested seam with no live call site (do
     not read a green `nora_presence_circle_subset_ok` as live coverage). The
     AUTHORITATIVE fail-closed check is the per-call guard in `Whereis.locate`,
-    which also refuses on `view.unnamed > 0` — an unmapped account the coarse
-    person_id subset here cannot see; this startup check is a belt-and-braces
-    pre-flight over the KNOWN person_ids."""
+    which SEES `view.unnamed > 0` — an unmapped account the coarse person_id
+    subset here cannot; this startup check is a belt-and-braces pre-flight over
+    the KNOWN person_ids.
+
+    That per-call guard refuses on `unnamed` in an untrusted room, and WAIVES it
+    (counted, never silent) in a location-trusted one since DEC-79 — so this
+    check being green has never implied the room is fully mapped, and now does
+    not imply an unmapped account would be refused either."""
     ok = bool(group_person_ids) and group_person_ids <= circle.person_ids
     if metrics is not None:
         metrics.gauge(
@@ -304,10 +327,15 @@ class Whereis:
             nothing about whether they exist elsewhere — the same R-21 shape the
             other room tools draw).
           - `ambiguous` — more than one person here matches; ask which.
-          - `refused` — disclosure is refused because this conversation is not a
-            subset of the circle (R-21 fail-closed) — never a silent omission.
-          - `unavailable` — the room could not be read, or there is no usable
-            fix. Never null-island, never a guessed position.
+          - `refused` — a POLICY answer, and only ever that: this conversation
+            is not a subset of the circle, or it holds an account Nora cannot
+            name (R-21 fail-closed) — never a silent omission. A room that is
+            location-trusted (DEC-79) reaches neither, so it never sees this.
+          - `unavailable` — the room could not be READ (unavailable OR degraded
+            roster), or there is no usable fix. The split from `refused` is
+            R-27: an ERROR is never dressed as a policy decision, because
+            «someone here is outside the circle» is a claim about the room and
+            a wedged signal-cli is not. Never null-island, never a guess.
         """
         now = now_ms if now_ms is not None else int(time.time() * 1000)
         view = await self._room.scope()
@@ -319,17 +347,22 @@ class Whereis:
         # Disclosure is checked against the WHOLE room, before any name is
         # resolved: if anyone here is outside the circle, no member's position may
         # be disclosed into this conversation at all (§5). Three ways the room
-        # fails the subset test, and ALL of them refuse — fail-closed on any
-        # uncertainty:
-        #   - a RESOLVED member whose person_id is not in the circle;
+        # fails the subset test — fail-closed on any uncertainty, and TWO of the
+        # three are unconditional (DEC-79 made the third overridable; the list
+        # below is written as it now behaves, not as DEC-74 left it):
+        #   - a RESOLVED member whose person_id is not in the circle. Refuses
+        #     unless the room is location-trusted (DEC-74);
         #   - `view.unnamed > 0` — an account in the room resolving to NO
         #     person_id is by definition unverifiable against the circle, and it
         #     is the LIKELIEST real trigger (a stranger not in identity.toml joins
         #     the group, design/19 §5's own example). `view.people` is only the
         #     RESOLVABLE subset, so checking it alone would silently disclose past
-        #     an unmapped outsider (both #37 reviews, 2026-08-07);
+        #     an unmapped outsider (both #37 reviews, 2026-08-07). Refuses unless
+        #     the room is location-trusted — and when it is waived, it is COUNTED
+        #     and LOGGED rather than passing silently, see below;
         #   - a DEGRADED view (tagger-only, roster unreadable) that cannot verify
-        #     the subset at all.
+        #     the subset at all. UNCONDITIONAL, and it answers `unavailable`
+        #     rather than `refused` — see the branch itself for why.
         room_person_ids = frozenset(p.person_id for p in view.people)
         # DEC-79 widened DEC-74: `location = true` relaxes the SUBSET check AND
         # the unnamed refusal, because the operator's real rooms permanently hold
@@ -339,24 +372,40 @@ class Whereis:
         # trust can overrule what a roster SAYS, never the absence of a roster.
         subset_ok = self._location_trusted or self._guard.permits(room_person_ids)
         unnamed_blocks = view.unnamed > 0 and not self._location_trusted
-        if view.degraded or unnamed_blocks or not subset_ok:
-            # WHICH of the three conditions fired — so a refusal is diagnosable
-            # from the trace/metric instead of inferred (obs review 2026-08-08).
-            # Precedence matches the disjunction: degraded first (can verify
-            # nothing), then an unmapped account, then the subset itself.
-            reason = (
-                "degraded" if view.degraded
-                else "unnamed" if unnamed_blocks
-                else "not_subset"
+        # A DEGRADED room is an ERROR, not a policy decision, and after DEC-79 it
+        # is the ONLY refusal a trusted room can reach — so reporting it as
+        # `refused` put a FALSE sentence in Nora's mouth on the operator's own
+        # live failure mode (R-27, fail-closed audit 2026-08-10). signal-cli
+        # wedged and `listGroups` timing out would render to the group as
+        # 「有人唔喺個 circle 入面」 — a claim about who is in the room — when the
+        # truth is «the daemon is down». `unavailable` is that truth, and the
+        # metric keeps `reason="degraded"` so the refusal stays diagnosable.
+        if view.degraded:
+            if self._metrics is not None:
+                self._metrics.inc(
+                    "nora_presence_disclosure_refusals_total", reason="degraded"
+                )
+            log.warning(
+                "whereis could not verify the room (degraded): circle=%s "
+                "location_trusted=%s", self._circle.circle_id, self._location_trusted,
             )
+            return self._unavailable(
+                "I can't confirm who is in this group right now, so I can't say "
+                "where anyone is. Say you couldn't check — do not guess, and do "
+                "not blame anyone's sharing settings."
+            )
+        if unnamed_blocks or not subset_ok:
+            # WHICH condition fired — so a refusal is diagnosable from the
+            # trace/metric instead of inferred (obs review 2026-08-08).
+            reason = "unnamed" if unnamed_blocks else "not_subset"
             if self._metrics is not None:
                 self._metrics.inc(
                     "nora_presence_disclosure_refusals_total", reason=reason
                 )
             log.warning(
-                "whereis refused (%s): circle=%s degraded=%s unnamed=%d subset_ok=%s "
+                "whereis refused (%s): circle=%s unnamed=%d subset_ok=%s "
                 "location_trusted=%s",
-                reason, self._circle.circle_id, view.degraded, view.unnamed,
+                reason, self._circle.circle_id, view.unnamed,
                 subset_ok, self._location_trusted,
             )
             return {
@@ -365,6 +414,26 @@ class Whereis:
                         "someone here is outside the location-sharing circle, or I "
                         "can't confirm who is here. Say so; do not guess.",
             }
+        # A WAIVED guard is counted, not silent (both 2026-08-10 reviews). DEC-79's
+        # entire diagnosis was `…refusals_total{reason="unnamed"} 12`; relaxing the
+        # condition without recording the waiver would have retired the instrument
+        # that found the bug, leaving a zero refusal counter unable to distinguish
+        # «the flag is working» from «the room filled up with strangers». The
+        # startup pre-flight warns once at boot and never again, so an account that
+        # joins later would otherwise produce no signal at all for the process
+        # lifetime. `unnamed` is a LABEL VALUE, not a count, so the cardinality
+        # stays fixed; the count goes in the log line beside it.
+        if view.unnamed > 0 and self._location_trusted:
+            if self._metrics is not None:
+                self._metrics.inc(
+                    "nora_presence_disclosure_waived_total", reason="unnamed"
+                )
+            log.warning(
+                "whereis disclosed into a location-trusted room holding %d unmapped "
+                "account(s) (DEC-79 waiver): circle=%s — `nora persons pending` "
+                "cannot see accounts that have never spoken",
+                view.unnamed, self._circle.circle_id,
+            )
         matches = view.find(person)
         if not matches:
             return {

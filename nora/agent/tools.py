@@ -990,8 +990,24 @@ def build_tool_specs(
         # no extra query from inside a tool, on the reply path, ever. An
         # unresolved parent drops the key rather than reporting a null the
         # model would then have to interpret.
+        # The THIRD renderer of these rows, and DEC-80 unified only the other two
+        # (both 2026-08-10 reviews). `store.recent` returns rows straight from the
+        # audit table, so `person_name` is unset on every one of them unless it is
+        # projected here — and then one prompt carries `group_members:
+        # ["Grant Carver"]`, prefill lines reading `陳志明 Chi Ming`, and these
+        # rows reading a third thing. That is the original bug, reproduced inside a
+        # single context window, on the path that exists precisely for looking
+        # further back than the prefill.
+        #
+        # Same fallback order as `prefill._label` deliberately: an unmapped account
+        # keeps its profile name rather than collapsing to "unknown", so the two
+        # renderers cannot disagree in EITHER direction.
+        rows = persons.name_transcript(rows, platform=room.platform)
+
         def who(row) -> str:
-            return "Nora" if row.is_nora else (row.sender_name or "unknown")
+            return "Nora" if row.is_nora else (
+                row.person_name or row.sender_name or "unknown"
+            )
 
         by_ts = {r.ts: r for r in rows}
         out = []
@@ -1660,7 +1676,13 @@ def build_tool_specs(
             from ..infra.routes.places import Place
             saved = await resolvable_places(
                 room=room, circles=presence_circles, presence=presence_source,
+                location_trusted=location_trusted,
             )
+            # `None` (failed read) and `()` (nothing you may resolve) both leave
+            # `local_places` unset here, and that is right for THIS caller: the
+            # saved-places layer is an ENRICHMENT over the public lookup, so a
+            # failure degrades to the public answer rather than failing the route.
+            # `saved_places` is where the distinction is model-facing.
             if saved:
                 local_places = {
                     p.name.strip().casefold(): Place(
@@ -1832,7 +1854,19 @@ def build_tool_specs(
             }
         places = await resolvable_places(
             room=room, circles=presence_circles, presence=presence_source,
+            location_trusted=location_trusted,
         )
+        # `None` is a FAILED READ, not an empty answer (R-27). Folding it into
+        # «no names» told the model `ok` with an empty list while the presence
+        # store was unreachable, so Nora said 「你冇 save 過任何地方」 — a confident
+        # wrong answer, with `status="ok"` in the metrics beside it.
+        if places is None:
+            _record(metrics, "saved_places", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't check the saved places just now. Say you "
+                        "couldn't look — don't say there aren't any.",
+            }
         # Names only — the coordinate is never model-facing (DEC-24/60). Empty
         # in a non-subset room (resolvable_places fell through), which is the
         # R-35 shape: the model simply has no household names to offer, and a
@@ -1895,8 +1929,15 @@ def build_tool_specs(
         # non-`refused` answer from a circle the room IS a subset of outranks a
         # `refused` from one it is not — the refusal is about the ROOM/circle
         # pair, not the person — while `ok` from any qualifying circle is the
-        # answer. All of this stays inside `Whereis.locate`'s guard: no circle
-        # the room is not a verified subset of ever discloses (R-31).
+        # answer. All of this stays inside `Whereis.locate`'s guard, which is
+        # what decides disclosure — NOT this fold. The old claim here («no circle
+        # the room is not a verified subset of ever discloses, R-31») has been
+        # false since DEC-74 made the subset check waivable per room, and DEC-79
+        # widened that further; the accurate statement is that this loop adds no
+        # disclosure of its own and can only pick among answers the guard already
+        # authorised. `degraded` now arrives as `unavailable` rather than
+        # `refused`, so it is selected by the non-`refused` rule below — inert,
+        # since a degraded room degrades every circle identically.
         results: list[dict] = []
         for circle in presence_circles:
             out = await Whereis(

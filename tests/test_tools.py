@@ -193,6 +193,43 @@ async def test_load_transcript_returns_only_model_relevant_fields(wiring):
     assert set(rows[0]) == {"sender", "body", "ts"}
 
 
+async def test_load_transcript_names_speakers_the_same_way_the_prefill_does(wiring):
+    """DEC-80's THIRD renderer, which the first pass missed (both 2026-08-10
+    reviews). `store.recent` hands back rows with `person_name` unset, so without
+    the projection this tool renders the self-set Signal profile name while the
+    prefill, `group_members` and `lookup_person` all render the identity one.
+
+    That reproduces the original bug INSIDE ONE CONTEXT WINDOW, on the path that
+    exists precisely for looking further back than the prefill: one prompt would
+    hold 「Miles」 in the prefilled lines and 「陳志明 Chi Ming」 in these rows.
+
+    Delete the `name_transcript` call in `load_transcript` and this reds."""
+    store = wiring["store"]
+    # Same account as the fixture's rows (+852111 → "Miles" in identity.toml),
+    # but presenting a different self-set profile name on the wire.
+    await store.append(message=NormalizedMessage(
+        "signal", "g1", "group", "+852111", "陳志明 Chi Ming", 8, "我返到屋企", {},
+    ))
+    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    row = next(r for r in rows if r["body"] == "我返到屋企")
+    assert row["sender"] == "Miles"
+    assert not any(r["sender"] == "陳志明 Chi Ming" for r in rows)
+
+
+async def test_load_transcript_keeps_the_profile_name_for_an_unmapped_speaker(wiring):
+    """The same fallback `prefill._label` uses, so the two renderers cannot
+    disagree in EITHER direction. `who()` used to collapse an unmapped account to
+    "unknown" where the prefill kept their profile name — a second, quieter way
+    for one person to have two names in one prompt."""
+    store = wiring["store"]
+    await store.append(message=NormalizedMessage(
+        "signal", "g1", "group", "+85299999999", "A Stranger", 7, "hi", {},
+    ))
+    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    row = next(r for r in rows if r["body"] == "hi")
+    assert row["sender"] == "A Stranger"          # not "unknown"
+
+
 async def test_load_transcript_marks_a_reply_with_the_name_it_answers(wiring):
     """design/11 §2.6: if the prefilled transcript teaches `[A ↳ B]` and
     `load_transcript` returns un-threaded rows, the older messages look
