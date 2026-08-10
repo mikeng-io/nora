@@ -524,9 +524,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_reminders_created_total",
         "Reminder creation attempts, by status: created; the caps' refusals "
         "(too_soon / too_far / too_many); the turn-provenance refusal "
-        "(fire_turn); the input refusals (unmapped / unparseable / past); and "
-        "unavailable, which means no reminders store is wired or the write "
-        "failed.",
+        "(fire_turn); the input refusals (unmapped / unparseable / past); the "
+        "recurrence refusals (bad_repeat, a repeat interval that is not one of "
+        "the five; bad_bound, a times/until that cannot be honoured or was "
+        "given with no repeat at all); and unavailable, which means no "
+        "reminders store is wired, the write failed, or [reminders].timezone "
+        "does not resolve.",
         ("status",),
     ),
     # FIRED is the tick's outcome per reminder, and it counts the FAILURES the

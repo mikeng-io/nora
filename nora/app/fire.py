@@ -56,7 +56,7 @@ from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import NormalizedMessage, PersonRef, TagContext, TranscriptRow
 from nora.domain.ports import MemoryStore, PlatformAdapter, RecordStore, RosterSource
-from nora.domain.reminders import Reminder
+from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
@@ -81,6 +81,16 @@ SENT = "sent"
 FAILED_POLICY = "failed_policy"
 FAILED_TIMEOUT = "failed_timeout"
 FAILED_ERROR = "failed_error"
+
+# How a recurrence reads in the fire header. English prose, like the rest of the
+# header: the header is the SITUATION she is told about, and `doctrine` decides
+# what language she answers in — the two have never been the same choice.
+_EVERY = {
+    Recurrence.DAILY: "day",
+    Recurrence.WEEKLY: "week",
+    Recurrence.MONTHLY: "month",
+    Recurrence.YEARLY: "year",
+}
 
 
 class FirePath:
@@ -589,9 +599,23 @@ def _fire_header(
     """
     who = escape(tagger.name)
     when = "".join(
-        f"- asked {_stamp(row.created_at)}, due {_stamp(row.due_at)}\n" for row in rows
+        f"- asked {_stamp(row.created_at)}, due {_stamp(row.due_at)}"
+        f"{_repeat_clause(row)}\n" for row in rows
     )
     request = "request" if len(rows) == 1 else "requests"
+    recurring = (
+        # Stated only when it is true, so an ordinary one-shot turn's prompt is
+        # byte-identical to what it was before DEC-85. It has to be stated at
+        # all because without it she has no way to know this is the third of
+        # fourteen — and the failure is specific, not vague: she announces a
+        # standing arrangement as if it were new («記住喇, 我會日日提你»), every
+        # single day, which is exactly how a helpful daily reminder becomes a
+        # thing people mute.
+        "\nSome of these repeat, as marked. A repeat is not a new arrangement — "
+        "you already told them you would do this, so bring the thing up rather "
+        "than announcing the reminder again.\n"
+        if any(row.series is not None for row in rows) else ""
+    )
     return (
         "You are in a group chat you have been reading all along. Nobody has "
         f"just called you. Earlier, {who} asked you to bring something back up "
@@ -599,8 +623,25 @@ def _fire_header(
         "is happening, and it is the only reason.\n"
         f"When the {request} in tag_message below were made, and when each came "
         f"due (in the same order):\n"
-        f"{when}"
+        f"{when}{recurring}"
         f"Say it to {who} now, in your own words, as the person who was asked to "
         "remember. Do not read the times back at them unless they asked in those "
         "terms."
     )
+
+
+def _repeat_clause(row: Reminder) -> str:
+    """« (every day, 11 more after this) » — or nothing at all for a one-shot.
+
+    `remaining_occurrences` is the series' COUNT bound, so this over-states when
+    an `until` or a cancel will end the series sooner. That is the right way to
+    be wrong here: the number is context for her tone, not a promise she is
+    asked to repeat, and the header already tells her not to read the times back
+    unless they asked in those terms.
+    """
+    series = row.series
+    if series is None:
+        return ""
+    left = remaining_occurrences(series)
+    more = "last one" if left == 0 else f"{left} more after this"
+    return f" (every {_EVERY[series.rule.every]}, {more})"

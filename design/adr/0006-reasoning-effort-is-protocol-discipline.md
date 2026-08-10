@@ -102,18 +102,70 @@ The deciding column is `no_send_call`: **`high` ends the turn without ever
 calling `send_reply` three times as often.** In this architecture that is Nora
 going mute in a group that tagged her.
 
-**The mechanism, and why it is architectural rather than incidental.** Nora is
-entirely tool-mediated — strict-silence means she *cannot speak except through*
-`send_reply`, and any prose the model emits outside a tool call is discarded. A
-larger deliberation budget gives the model room to reason its way to a good
-answer and then simply state it, rather than routing it through the tool. The
-answer improves; the delivery fails; only the delivery reaches the group.
+### The mechanism — CORRECTED 2026-08-10, after external review
 
-The two failure modes measured are the same defect seen twice: at high effort the
-model either **adds a tool call it was not asked for** (`place_info` + `web_search`,
-never a *wrong* tool) or **answers in prose instead of calling one**. Both are
-protocol-compliance failures, not comprehension failures. That is why the auto
-column degrades monotonically — 5/5 → 3/5 → 2/5 → 1/5 — while routing does not.
+**The first version of this ADR got the mechanism wrong, and the wrong version is
+kept here because it is the more attractive story and someone will reach for it
+again.** It claimed the cause was architectural: Nora is tool-mediated, she cannot
+speak except through `send_reply`, so a larger deliberation budget lets the model
+reason its way to a good answer and then simply *state* it rather than routing it
+through the tool — answer improves, delivery fails. Plausible, consistent with the
+failure shapes, and **not what is happening**.
+
+**The actual cause is that thinking mode is structurally broken in this harness.**
+Two facts, both verified directly:
+
+1. **`none` and `low` are different DECODING PATHWAYS, not different amounts of
+   thinking.** Measured against the live gateway:
+
+   ```
+   reasoning_effort="none" -> message keys: ['content', 'role']
+   reasoning_effort="low"  -> message keys: ['content', 'reasoning', 'role']
+   ```
+
+   `none` takes the non-thinking path and emits no reasoning block at all.
+
+2. **Strands DELETES the reasoning block between turns.** In
+   `strands/models/openai.py::format_request_messages`:
+
+   ```python
+   if any("reasoningContent" in content for content in contents):
+       logger.warning("reasoningContent is not supported in multi-turn "
+                      "conversations with the Chat Completions API.")
+   ...
+   if any(block_type in content for block_type in
+          ["toolResult", "toolUse", "reasoningContent"]):
+       continue          # <- filtered OUT of the outgoing request
+   ```
+
+   DeepSeek V4 requires `reasoning_content` from a tool-calling turn to be passed
+   back in the following request. It is not passed back. It is stripped, with a
+   warning.
+
+So in thinking mode the model's own reasoning trajectory is **severed at every
+multi-turn hop**. It reasons, calls a tool, and on the next call has no record of
+why it did so. `none` is unaffected because there is no reasoning block to lose.
+
+This is what the warning counts were measuring all along — **0 / 51 / 86** across
+none / low / high is a direct count of *how often the model's reasoning was
+discarded mid-conversation*. This ADR's first draft dismissed those as harmless
+noise because they did not correlate with `no_send_call`. They are not noise; they
+are the defect.
+
+The observed failure shapes still hold as *symptoms* — an unrequested second tool
+call, or prose instead of a call — but they are downstream of a severed reasoning
+trajectory, not of strict-silence.
+
+A third fact fits the same frame: DeepSeek V4 thinking mode does not support
+forced `tool_choice`, which is exactly the `400 "Thinking mode does not support
+this tool_choice"` that forced the original opencode-zen pin. On ollama-cloud the
+same incompatibility surfaces without an error — the forced call is accepted and
+then quietly violated by adding a second tool. Same root, two provider behaviours.
+
+**Credit where due:** this correction came from an external review that predicted
+both facts before they were checked — that `none` and `low` would prove to be
+different protocols rather than different budgets, and that the `reasoning_content`
+round-trip would be broken. Both were verified here against the running system.
 
 `low` is dominated outright: worst routing of the three, no cost advantage over
 `none`, and 51 `reasoningContent is not supported in multi-turn conversations`
@@ -155,14 +207,31 @@ this ADR's own reasoning).
   shape behind it, not a measurement. What is measured is the correlation and the
   exclusion of budget exhaustion.
 
-**The one experiment that would settle it:** `journey_samples = 9` for a single
-comparison run, which separates `where_work_alt` and `carpark_alt` from noise. If
-`high` held its routing edge at n=9 *and* its `no_send_call` rate fell, this
-decision should be revisited.
+**The experiment that would actually settle it — and it is not the one this ADR
+first proposed.** Because thinking mode is running with its reasoning trajectory
+severed (see the corrected mechanism), every `low` and `high` number here is a
+measurement of *crippled* thinking, not of thinking. The comparison to run is:
 
-**The instrument gap worth closing first:** add `stop_reason` to
-`evals.harness.Trajectory`. It would turn the mechanism above from a good story
-into a fact, and it is what this ADR most wanted and could not have.
+1. Fix the round-trip — either carry `reasoning_content` through in a provider
+   that supports it, or stop using the Chat Completions path for thinking mode.
+2. Re-run journeys at `none` / `low` / `high`.
+
+**Note what this implies about the data already collected: `high` scored the BEST
+routing (21/24) while its reasoning was being discarded on every hop.** That is
+an argument for revisiting this decision once the round-trip works, not for
+treating `none` as settled forever.
+
+Secondary, still worth doing: `journey_samples = 9` to separate `where_work_alt`
+and `carpark_alt` from noise, and adding `stop_reason` to
+`evals.harness.Trajectory` — the harness currently cannot report why a turn
+ended, which is what made this ADR's first mechanism unfalsifiable.
+
+**Architectural option this opens up** (raised in the same external review, not
+yet evaluated): reasoning effort need not be a single global setting. Routing is
+constrained classification and wants `none`; planning and ambiguous synthesis
+want more. A per-phase policy — route at `none`, then reason at `high` — is
+coherent with everything measured here. It is blocked on the same round-trip fix,
+because a high-effort phase inherits the same severed trajectory today.
 
 ## Consequences
 

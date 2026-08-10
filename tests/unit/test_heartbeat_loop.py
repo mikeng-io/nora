@@ -74,9 +74,9 @@ class _StoreWithOneFailure(FakeReminderStore):
         if name == self._fail_on and self._calls[name] == self._nth:
             raise RuntimeError(f"store.{name} exploded")
 
-    async def claim(self, reminder_id):
+    async def claim(self, reminder_id, *, now):
         self._count("claim")
-        return await super().claim(reminder_id)
+        return await super().claim(reminder_id, now=now)
 
     async def mark(self, reminder_id, state, *, fired_at=None, outcome=None):
         self._count("mark")

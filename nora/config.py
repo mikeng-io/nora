@@ -528,7 +528,7 @@ class HeartbeatConfig(BaseModel):
 
 
 class RemindersConfig(BaseModel):
-    """The three anti-runaway caps on stored reminders.
+    """The anti-runaway caps on stored reminders, and the zone a recurrence keeps.
 
     Mirrored by `nora.domain.reminders.ReminderCaps`, which is what the tool
     layer actually receives — import-linter forbids `nora.agent` from importing
@@ -546,7 +546,17 @@ class RemindersConfig(BaseModel):
     # was a comment in three files and a rule in none.
     min_lead_seconds: int = Field(default=120, ge=1)
     max_horizon_days: int = Field(default=365, ge=1)   # matches ReminderCaps
-
+    # DEC-85. A recurring reminder is a CHAIN with only one `pending` row at a
+    # time, so `max_pending_per_requester` counts a whole series as one — this
+    # is the cap that bounds the series itself, in occurrences. Every series is
+    # bounded: `RecurrenceRule.count` is required, so «forever» is not a state
+    # the domain can represent, and this is the ceiling a request is clamped to.
+    max_occurrences_per_series: int = Field(default=60, ge=1)
+    # An IANA zone NAME, never an offset: a recurrence keeps a LOCAL wall clock
+    # («08:00, whatever the offset does that week»), which «+08:00» cannot
+    # express. Validated at series construction — an unknown zone raises
+    # `UnknownRecurrenceZoneError` rather than being guessed at.
+    timezone: str = "Asia/Hong_Kong"
 
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

@@ -32,7 +32,7 @@ from nora.agent import tools as tools_module
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import ConversationTarget, PersonRef
-from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
+from nora.domain.reminders import Recurrence, Reminder, ReminderCaps, ReminderState
 from nora.obs.metrics import Metrics
 from nora.testing.reminders import FakeReminderStore
 from tests.fakes import FakeHoncho, SinkSender
@@ -132,7 +132,14 @@ def test_no_reminder_tool_asks_the_model_where_to_put_it():
     for name in ("remind", "list_reminders", "cancel_reminder"):
         params = set(inspect.signature(tools[name]).parameters)
         assert not params & forbidden, f"{name} makes the model supply {params}"
-    assert set(inspect.signature(tools["remind"]).parameters) == {"when", "text"}
+    # The exact allow-list, not merely «none of the forbidden»: a `remind` that
+    # grew a parameter would otherwise only be caught if the new one happened to
+    # be named in `forbidden`. DEC-85's three recurrence arguments are all about
+    # WHEN and HOW OFTEN, never about WHERE — the destination is still the
+    # closure's conversation and nothing else.
+    assert set(inspect.signature(tools["remind"]).parameters) == {
+        "when", "text", "repeat", "times", "until",
+    }
     assert set(inspect.signature(tools["list_reminders"]).parameters) == set()
     assert set(inspect.signature(tools["cancel_reminder"]).parameters) == {"reminder_id"}
 
@@ -491,6 +498,14 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
     could not tell a genuine status from a typo. Read out of the module SOURCE
     rather than from a hand-kept list here, so adding a tenth refusal without
     documenting it is what turns this red.
+
+    TWO patterns are read, not one (DEC-85). The recurrence refusals do not
+    reach `_record_created` as literals — they travel as `_RepeatRefusal`
+    values and are recorded through `rule.status` — so a regex that only knew
+    the call site would have found neither `bad_repeat` nor `bad_bound` and
+    reported success, which is exactly the decorative shape this file exists to
+    keep out. Both constructors are matched, and both must name their status in
+    the help text.
     """
     import re
     from pathlib import Path
@@ -498,8 +513,10 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
     from nora.obs.metric_specs import _COUNTERS
 
     source = Path(tools_module.__file__).read_text(encoding="utf-8")
-    emitted = set(re.findall(r'_record_created\(metrics,\s*"([a-z_]+)"', source))
-    assert len(emitted) >= 9, f"expected every status to be a literal; found {emitted}"
+    emitted = set(re.findall(r'_record_created\(\s*metrics,\s*"([a-z_]+)"', source))
+    emitted |= set(re.findall(r'_RepeatRefusal\(\s*\n?\s*"([a-z_]+)"', source))
+    assert len(emitted) >= 11, f"expected every status to be a literal; found {emitted}"
+    assert {"bad_repeat", "bad_bound"} <= emitted, emitted
 
     spec = next(c for c in _COUNTERS if c.name == "nora_reminders_created_total")
     undocumented = {s for s in emitted if s not in spec.help_text}
@@ -507,3 +524,300 @@ def test_every_status_remind_can_emit_is_named_in_the_metric_help():
         f"nora_reminders_created_total emits {sorted(undocumented)} and its help "
         f"text does not name them: {spec.help_text!r}"
     )
+
+
+# ---- DEC-85: recurrence, and the three asks that produced it ------------------
+#
+# Each of the three is verbatim from the group, and each was REFUSED before this
+# decision — the first two with 「我 set 唔到 recurring 每日提嘅 reminder」. They
+# are tests rather than an anecdote in a design document because what they pin
+# is the SHAPE the model has to produce: a recurrence is `when` + `repeat` +
+# a bound, and lead time (「前兩個星期」) is arithmetic on `when` rather than a
+# concept anything here stores.
+
+# `max_horizon_days` bounds the FIRST occurrence and ships at 30. Two of the
+# three asks name a date months out, so they are exercised against an operator
+# who has widened it — which is a config change, not a code one, and stating it
+# here is what stops a green test from implying the shipped default is enough.
+YEAR = ReminderCaps(max_horizon_days=365)
+
+
+async def test_the_birthday_ask_becomes_a_yearly_series():
+    """「記住我嘅生日係2月24日嗰時候同我講生日快樂」 — an ANNUAL recurrence.
+
+    The first occurrence is the next 24 February; `repeat="yearly"` is what
+    makes the one after that exist at all. The bound is the cap, because she was
+    not given one — and the answer says what it is, so she can say it back.
+    """
+    store = FakeReminderStore()
+    tools = _tools(reminders=store, caps=YEAR)
+
+    result = await tools["remind"](
+        when="2027-02-24T09:00:00+08:00", text="同我講生日快樂", repeat="yearly",
+    )
+
+    assert result["status"] == "ok"
+    assert result["repeat"] == "yearly"
+    assert result["repeat_left"] == YEAR.max_occurrences_per_series - 1
+    row = (await store.pending_for(CONVERSATION))[0]
+    assert row.series is not None
+    assert row.series.rule.every is Recurrence.YEARLY
+    assert row.series.occurrence == 0
+    assert row.series.anchor_at == row.due_at
+
+
+async def test_the_anniversary_ask_becomes_a_bounded_daily_countdown():
+    """「幫我記住我同Clara嘅結婚日期係2026年10月11日接近日期前兩個星期幫我每天
+    都提一提大家」 — DAILY, bounded to the fortnight before a target date.
+
+    LEAD TIME IS ARITHMETIC, and this is the test that says so: nothing in the
+    schema or the tool knows what a wedding date is. The model resolves 「前兩個
+    星期」 into a first occurrence (27 September) and a length (14), exactly as it
+    already resolves 「等陣」 into an instant, and the series ends on the day.
+    """
+    store = FakeReminderStore()
+    tools = _tools(reminders=store, caps=YEAR)
+
+    result = await tools["remind"](
+        when="2026-09-27T09:00:00+08:00",
+        text="同Clara嘅結婚週年10月11號", repeat="daily", times=14,
+    )
+
+    assert result["status"] == "ok"
+    assert result["repeat"] == "daily"
+    assert result["repeat_left"] == 13
+    row = (await store.pending_for(CONVERSATION))[0]
+    assert row.series is not None
+    assert row.series.rule.count == 14
+    # ONE pending row for a fourteen-day countdown: the successor is minted when
+    # this one is claimed, which is what keeps a series costing 1 against
+    # `max_pending_per_requester` instead of 14.
+    assert await store.count_pending("miles") == 1
+
+
+async def test_the_week_before_ask_stays_a_one_off():
+    """「幫我前一個禮拜講一次啦」 — a single reminder at an offset from a date.
+
+    The ask that is NOT a recurrence, and the reason `repeat` defaults to
+    `none`: 「一次」 is one row, and a model that reached for a recurrence here
+    would have committed her to sixty of them. The row is byte-identical to a
+    pre-DEC-85 one — no series, and no `repeat` key in the answer at all.
+    """
+    store = FakeReminderStore()
+    tools = _tools(reminders=store, caps=YEAR)
+
+    result = await tools["remind"](
+        when="2026-10-04T09:00:00+08:00", text="下個禮拜結婚週年",
+    )
+
+    assert result["status"] == "ok"
+    assert set(result) == {"status", "id", "due_at"}
+    row = (await store.pending_for(CONVERSATION))[0]
+    assert row.series is None
+
+
+# ---- the bounds, and what refuses ---------------------------------------------
+
+async def test_a_repeat_with_no_bound_is_clamped_to_the_cap_and_says_so():
+    """Every series is bounded, and the person is TOLD the bound.
+
+    The cap is the answer to «and then what?» — a series that would run forever
+    is not representable (`RecurrenceRule.count` is required), so the only open
+    question is what she says when nobody named a limit. `repeat_left` is in the
+    result because a limit nobody was told about is the part a person is most
+    surprised by later.
+    """
+    store = FakeReminderStore()
+    caps = ReminderCaps(max_occurrences_per_series=5)
+    tools = _tools(reminders=store, caps=caps)
+
+    result = await tools["remind"](when=SOON, text="食藥", repeat="daily")
+
+    assert result["status"] == "ok"
+    assert result["repeat_left"] == 4
+    row = (await store.pending_for(CONVERSATION))[0]
+    assert row.series is not None
+    assert row.series.rule.count == 5
+
+
+async def test_a_repeat_asking_for_more_than_the_cap_is_clamped_not_refused():
+    """Clamped, because refusing 「每日提我」 over an internal number is a worse
+    answer than doing it for as long as I can and saying so."""
+    store = FakeReminderStore()
+    tools = _tools(reminders=store, caps=ReminderCaps(max_occurrences_per_series=5))
+
+    result = await tools["remind"](
+        when=SOON, text="食藥", repeat="daily", times=500,
+    )
+
+    assert result["status"] == "ok"
+    assert result["repeat_left"] == 4
+
+
+async def test_an_until_given_as_a_bare_date_covers_that_whole_day():
+    """「提到10月11號為止」 names a DAY, not midnight at the start of it.
+
+    Read as 00:00, the bound would exclude every occurrence on the last day the
+    person actually named — so a fortnight's countdown would stop the day before
+    the wedding, which is the one day it existed for. The off-by-one is invisible
+    in the answer, so it is asserted on the stored bound.
+    """
+    store = FakeReminderStore()
+    tools = _tools(reminders=store, caps=YEAR)
+
+    result = await tools["remind"](
+        when="2026-09-27T09:00:00+08:00", text="結婚週年", repeat="daily",
+        until="2026-10-11",
+    )
+
+    assert result["status"] == "ok"
+    row = (await store.pending_for(CONVERSATION))[0]
+    assert row.series is not None
+    ends = row.series.rule.until
+    assert ends is not None
+    local = ends.astimezone(tools_module._HKT)
+    assert local.date().isoformat() == "2026-10-11"
+    assert (local.hour, local.minute) == (23, 59)
+
+
+async def test_remind_refuses_a_repeat_it_does_not_have():
+    store = FakeReminderStore()
+    metrics = Metrics()
+    tools = _tools(reminders=store, metrics=metrics)
+
+    result = await tools["remind"](when=SOON, text="食藥", repeat="fortnightly")
+
+    assert result["status"] == "refused"
+    assert result["note"]
+    assert await store.count_pending("miles") == 0
+    assert metrics.get("nora_reminders_created_total", status="bad_repeat") == 1
+
+
+async def test_remind_refuses_a_bound_with_nothing_to_repeat():
+    """`times=14` with no `repeat` is a model that meant to ask for a
+    recurrence and did not. Writing one reminder and reporting success is the
+    reading that cannot be recovered from — she then tells them it is set."""
+    store = FakeReminderStore()
+    metrics = Metrics()
+    tools = _tools(reminders=store, metrics=metrics)
+
+    result = await tools["remind"](when=SOON, text="食藥", times=14)
+
+    assert result["status"] == "refused"
+    assert await store.count_pending("miles") == 0
+    assert metrics.get("nora_reminders_created_total", status="bad_bound") == 1
+
+
+async def test_remind_refuses_an_until_that_precedes_the_first_occurrence():
+    """A window that ends before it opens is two dates, one of which is wrong —
+    and silently writing a series of one would hide which."""
+    store = FakeReminderStore()
+    metrics = Metrics()
+    tools = _tools(reminders=store, metrics=metrics)
+
+    result = await tools["remind"](
+        when=SOON, text="食藥", repeat="daily",
+        until=(T0 - timedelta(days=1)).isoformat(),
+    )
+
+    assert result["status"] == "refused"
+    assert await store.count_pending("miles") == 0
+    assert metrics.get("nora_reminders_created_total", status="bad_bound") == 1
+
+
+async def test_min_lead_seconds_still_holds_for_the_first_occurrence():
+    """The lead is about the FIRST occurrence, and recurrence does not buy an
+    exemption from it: «I'll tell you in a second, and every day after that» is
+    still «I'd be saying it now». Later occurrences are a day out at the
+    closest, so the cap has nothing to say about them."""
+    store = FakeReminderStore()
+    metrics = Metrics()
+    tools = _tools(reminders=store, caps=ReminderCaps(min_lead_seconds=120),
+                   metrics=metrics)
+
+    result = await tools["remind"](
+        when=(T0 + timedelta(seconds=30)).isoformat(), text="食藥", repeat="daily",
+    )
+
+    assert result["status"] == "refused"
+    assert await store.count_pending("miles") == 0
+    assert metrics.get("nora_reminders_created_total", status="too_soon") == 1
+
+
+async def test_a_yearly_recurrence_gets_one_period_of_horizon_headroom():
+    """A yearly reminder's first occurrence is up to a year out BY DEFINITION,
+    so measuring it against a 30-day horizon does not bound the recurrence — it
+    forbids it, which is exactly how 「記住我嘅生日」 was refused. One period of
+    headroom, and no more: the horizon still bounds a DAILY series to 30 days.
+    """
+    store = FakeReminderStore()
+    caps = ReminderCaps(max_horizon_days=30)
+    tools = _tools(reminders=store, caps=caps)
+
+    yearly = await tools["remind"](
+        when=(T0 + timedelta(days=200)).isoformat(), text="生日快樂",
+        repeat="yearly",
+    )
+    daily = await tools["remind"](
+        when=(T0 + timedelta(days=200)).isoformat(), text="食藥", repeat="daily",
+    )
+
+    assert yearly["status"] == "ok"
+    assert daily["status"] == "refused"
+    assert await store.count_pending("miles") == 1
+
+
+# ---- what the listing shows ---------------------------------------------------
+
+async def test_list_reminders_shows_a_repeat_as_a_repeat():
+    """One row for a fourteen-day countdown, and `repeat` is what stops her
+    reading it as a single reminder. `repeat_left` and `repeat_until` are the
+    two facts she needs to answer 「提到幾時?」 without guessing."""
+    store = FakeReminderStore()
+    tools = _tools(reminders=store)
+    await tools["remind"](
+        when=SOON, text="食藥", repeat="daily", times=14,
+        until=(T0 + timedelta(days=13)).isoformat(),
+    )
+
+    result = await tools["list_reminders"]()
+
+    assert result["status"] == "ok"
+    [row] = result["reminders"]
+    assert row["repeat"] == "daily"
+    assert row["repeat_left"] == 13
+    assert row["repeat_until"] is not None
+
+
+async def test_list_reminders_says_none_for_a_one_shot():
+    """The control: `repeat` is present on every row, so «no repeat key» is
+    never how she has to work out that something is a one-off."""
+    store = FakeReminderStore()
+    await store.create(_row())
+    tools = _tools(reminders=store)
+
+    result = await tools["list_reminders"]()
+
+    [row] = result["reminders"]
+    assert row["repeat"] == "none"
+    assert "repeat_left" not in row
+
+
+async def test_cancelling_a_repeating_reminder_ends_the_whole_series():
+    """The cancel story, from the tool: the id in the listing is the series'
+    one pending occurrence, and nothing forges the next link but a claim. So
+    there is no second verb, and nothing left to cancel afterwards."""
+    store = FakeReminderStore()
+    tools = _tools(reminders=store)
+    created = await tools["remind"](
+        when=SOON, text="食藥", repeat="daily", times=14,
+    )
+
+    result = await tools["cancel_reminder"](reminder_id=created["id"])
+
+    assert result["status"] == "ok"
+    assert await store.pending_for(CONVERSATION) == []
+    assert await store.claim(
+        uuid.UUID(created["id"]), now=T0 + timedelta(hours=3),
+    ) is False
+    assert await store.pending_for(CONVERSATION) == []
