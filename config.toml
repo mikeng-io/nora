@@ -290,6 +290,30 @@ enabled = true
 # here). url / search_depth ("basic") / max_results (5) / content_max_chars
 # default in SearchConfig.
 
+[preview]
+# Sender-generated link previews on Nora's OUTBOUND messages (DEC-87): a reply
+# carrying a URL gets its OpenGraph title/description/image attached as a card,
+# the way every Signal client does when a human types a link.
+#
+# ON, by operator decision 2026-08-10, and this one deserved the pause it got.
+# It is the only capability that makes Nora FETCH a url that came out of a model
+# — the exact exposure DEC-73 removed along with `web_fetch`, whose argument was
+# that Tavily is never handed a url and searches from ITS servers. Turning this
+# on takes a BOUNDED version of that exposure back.
+#
+# The bound is in `nora/infra/preview.py` and is what makes the trade
+# acceptable: http(s) only; EVERY resolved address must be globally routable
+# (so no metadata endpoints, no RFC1918, no loopback); redirects followed by
+# hand, at most 2 hops, re-validated at each; a byte ceiling; a seconds-scale
+# timeout on the reply path. Residual DNS-rebinding risk is stated in that
+# module rather than papered over. Keyless, so `enabled` is the whole switch,
+# and turning it back off needs no other change.
+enabled = true
+# timeout_seconds = 3.0     # small: this is on the reply path, a human waiting
+# max_bytes = 262144        # how much of the document to read (og tags are in <head>)
+# image = true              # fetch og:image too — the expensive half
+# image_max_bytes = 262144
+
 [weather]
 # The `weather` tool (DEC-72). HK Observatory Open Data — KEYLESS, free, leaks
 # nothing (no location egresses), so it ships ON here: there is nothing to gate.
