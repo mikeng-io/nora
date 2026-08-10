@@ -247,16 +247,19 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # has no time dimension the way `route` does — «幾好食» is the same question
     # whenever asked (a stale open_now is the one caveat, and Google returns it
     # fresh per call). `terminal=False`: a rating is the middle of an answer.
-    "place_info": NativeTool(4, "how good or how pricey a place is — a shop, a "
-                                "restaurant, a clinic — its rating and whether it's "
-                                "open; never guess a rating you did not get from here",
+    "place_info": NativeTool(4, "a place — a shop, a mall, a restaurant, a clinic — "
+                                "its rating, its price, its OPENING HOURS (幾點開/幾點"
+                                "關門) and whether it's open right now; never guess a "
+                                "rating or a time you did not get from here",
                              source_tier="confirmed"),
     # 1, like `group_members`: it lists a small fixed set for THIS room, and
     # calling it twice in a turn returns the same list. `time_shiftable=None`:
     # the household's saved names don't decay. Not terminal.
-    "saved_places": NativeTool(1, "the names this household has saved for places "
-                                  "(«Home», «Miles Home») — check before routing to a "
-                                  "place someone calls by a personal name",
+    "saved_places": NativeTool(1, "where you or someone here lives or works — «屋企», "
+                                  "«公司», «返工», «Home», «Miles Home» — the personal "
+                                  "place-names this household saved; check whenever "
+                                  "someone asks about, or routes to, a place by a "
+                                  "personal name rather than a public one",
                                source_tier="remembered"),
     # **`load_transcript`, not `read_buffer`, and that was MEASURED, not argued
     # (DEC-58, same harness as DEC-39).** The old name was a lie — nothing is
@@ -359,9 +362,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # is not about a moment) and `terminal=False` (she still has to say what she
     # found with `send_reply`).
     "web_search": NativeTool(4, "look something up on the web when the answer isn't in "
-                            "the conversation and isn't a bus, a route, the weather or a "
-                            "person you know — you get ranked results, each a title, a "
-                            "link and a content snippet",
+                            "the conversation and isn't a bus, a route, the weather, a "
+                            "person you know, or a shop/mall's hours or rating — you get "
+                            "ranked results, each a title, a link and a content snippet",
                              source_tier="web"),
     # ONE weather verb, a flag for depth (DEC-72): current conditions + warnings
     # (typhoon/rainstorm) + today's outlook always; the 9-day forecast on request.
@@ -1722,7 +1725,7 @@ def build_tool_specs(
     async def place_info(name: str) -> dict:
         """How good, how pricey, and whether-open a place is — from Google.
 
-        Call this for «X 好唔好食», «邊間好啲», «仲開唔開門», «貴唔貴» about a
+        Call this for «X 好唔好食», «邊間好啲», «幾點開門/幾點關門», «仲開唔開門», «貴唔貴» about a
         shop, a restaurant, a clinic, a mall — anything Google Maps knows. Give
         it the place the way it was named. This is the RIGHT tool for a rating:
         it returns Google's own number, not a guess and not a scraped page.
@@ -1799,10 +1802,14 @@ def build_tool_specs(
     async def saved_places() -> dict:
         """The names this household has saved for places, for THIS conversation.
 
-        Call this the moment someone routes to — or asks about — a place by a
+        Call this the moment someone routes to — or asks WHERE — a place by a
         PERSONAL name rather than a public one: «屋企», «home», «我屋企», «阿媽
-        屋企», «Tyler 屋企», «公司». Google doesn't know those; this household
-        does. You get a list of `names` («Home», «Miles Home», «阿媽屋企») — pick
+        屋企», «Tyler 屋企», «公司», «我邊度返工» (where do I work), «返學». Google
+        doesn't know those; this household does. Asked where someone works or
+        lives, this is the tool — not `about` (that's what a person is LIKE) and
+        not `search_memory` (old words); a saved place is a place, not a memory.
+
+        You get a list of `names` («Home», «Miles Home», «阿媽屋企») — pick
         the one they meant and pass THAT as the origin or destination to `route`
         (or the place to `place_info`), and the exact saved spot is used.
 
@@ -2138,9 +2145,12 @@ def build_tool_specs(
 
         Call this when the answer is not in the conversation and is not something
         another tool already covers — not a bus (`transit`), not a route
-        (`route`), not the weather (`weather`), not a person you know (`about`).
-        Good for a fact, a news item, an opening time, a product — anything on the
-        open web.
+        (`route`), not the weather (`weather`), not a person you know (`about`),
+        and not a place you can look up: a shop or mall's hours, rating or whether
+        it's open is `place_info`, not this.
+        Good for a fact, a news item, a product, a how-to — anything on the open
+        web that no dedicated tool owns. (Real-time carpark vacancy has no
+        dedicated tool, so it belongs here.)
 
         Each result has a `url` and a `content` snippet — the relevant part of the
         page, usually enough to answer without opening anything else. **The
