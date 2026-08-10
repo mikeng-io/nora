@@ -1607,3 +1607,36 @@ async def test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string(
     assert not any("turn is finished" in t for _target, t in adapter.sent)
     assert metrics.get("nora_recovered_replies_total") == 0
     assert memory.fed == []
+
+
+async def test_the_scripted_double_returns_the_cancel_text_like_the_real_sdk():
+    """Pins the DOUBLE, because the double's fidelity is now load-bearing.
+
+    `test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string` is
+    only non-vacuous because `FakeAgentRunner` returns the cancel string: revert
+    the double to `""` and that test passes with the production guard DELETED.
+    That is the same class as the defect it defends against — a fake that
+    answers more tidily than the real server — so the double needs a probe of
+    its own (re-review 2026-08-10, follow-up 1).
+
+    Drives the REAL `ReplyGuard`: spending the terminal budget makes
+    `_before_model` cancel, exactly as production does, and Strands then
+    synthesises `{"text": cancel_text}` with `end_turn`."""
+    from nora.agent.guards import ReplyGuard
+    from nora.testing.scripted_agent import FakeAgentRunner
+
+    guard = ReplyGuard(
+        conversation_id="g1", budgets={"send_reply": 1}, terminal={"send_reply"},
+        metrics=Metrics(),
+    )
+    guard._turn_is_over = True          # a terminal verb has run
+
+    runner = FakeAgentRunner([ScriptedTurn(final_text="never reached")])
+    stop_reason, final_text = await runner.invoke(
+        doctrine=None, tools=[], pre_fill=[], guard=guard,
+        tag_message="", limits={}, ctx=None, trace_attributes={},
+    )
+
+    assert stop_reason == "end_turn"
+    assert final_text == "Reply already sent — the turn is finished."
+    assert guard.cancelled_model_call is True     # and the setter really fires

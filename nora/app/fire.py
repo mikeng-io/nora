@@ -50,6 +50,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
 
+from nora.agent.guards import ReplyGuard
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import build_prefill, build_tag_message, escape
 from nora.agent.registry import ToolRegistry
@@ -469,7 +470,7 @@ class FirePath:
         doctrine: Any,
         tools: list[Any],
         pre_fill: list[dict[str, Any]],
-        guard: Any,
+        guard: ReplyGuard,
         tag_message: str,
         ctx: TagContext,
         platform: str,
