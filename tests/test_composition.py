@@ -3,6 +3,7 @@ receives dependencies. This test pins that property."""
 
 import ast
 import base64
+import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,7 @@ from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.config import load
 from nora.infra.blobs import FilesystemBlobStore
 from nora.platform.signal.media import SignalMediaSource
+from nora.policy import load_policy
 from tests.builders import override_config
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -229,6 +231,68 @@ async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
         assert isinstance(loops[0]._fire.__self__, FirePath)
     finally:
         await deps.background.cancel_all()
+
+
+async def test_an_unstamped_build_spawns_no_announcer(cfg):
+    """The gate that keeps a dev checkout (and any image not built through
+    `scripts/build-image.sh`) quiet — DEC-79.
+
+    `[version] announce` defaults TRUE, so this is the only thing standing
+    between "no stamp" and a boot-time announcement of a version nobody knows.
+    The composition root checks the manifest itself rather than spawning an
+    announcer that would immediately answer `unavailable`: there is nothing to
+    announce, and the warning belongs at boot, once, where an operator reads it.
+
+    Reaching into `background._tasks` for the same reason
+    `test_the_heartbeat_is_wired_to_the_real_fire_path` does: `Dependencies`
+    deliberately exposes neither loop.
+    """
+    deps = await build_dependencies(cfg)
+    try:
+        assert not _spawned(deps, "VersionAnnouncer.run")
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_a_stamped_build_announces_into_every_allowed_room(cfg, tmp_path, monkeypatch):
+    """The other half: a stamped build DOES wire the announcer, at the rooms
+    `policy.toml` allows — not a second list in config.toml (DEC-8).
+
+    Without this the test above passes against a feature that never wires at
+    all, which is the exact shape of a capability that ships inert by accident
+    (DEC-42's `send_reply` cap, DEC-50's `skills` budget).
+    """
+    stamp = tmp_path / "version.json"
+    stamp.write_text(json.dumps({
+        "version": "V3",
+        "versions": [{"version": "V3", "notes": "She can say her own version."}],
+    }))
+    monkeypatch.setattr("nora.infra.version.DEFAULT_MANIFEST_PATH", stamp)
+
+    deps = await build_dependencies(cfg)
+    try:
+        announcers = _spawned(deps, "VersionAnnouncer.run")
+        assert announcers, "the version announcer was not spawned"
+        announcer = announcers[0]
+        # Bound to the REAL fire turn, not a stub — the failure
+        # `test_the_heartbeat_is_wired_to_the_real_fire_path` exists for, on the
+        # second occasion.
+        assert isinstance(announcer._speak.__self__, FirePath)
+        assert [t.conversation_id for t in announcer._targets] == [
+            conv.primary_id for conv in load_policy(cfg.policy_file).conversations
+            if conv.platform == "signal"
+        ]
+    finally:
+        await deps.background.cancel_all()
+
+
+def _spawned(deps, qualname: str) -> list:
+    """Every live background task running `qualname`, as its `self`."""
+    return [
+        task.get_coro().cr_frame.f_locals["self"]
+        for task in deps.background._tasks
+        if task.get_coro().__qualname__ == qualname
+    ]
 
 
 async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg, pg_url):

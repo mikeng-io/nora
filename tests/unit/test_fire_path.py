@@ -19,7 +19,7 @@ import pytest
 
 from nora.agent.registry import ToolRegistry
 from nora.app import fire as fire_module
-from nora.app.fire import FirePath
+from nora.app.fire import FirePath, Occasion, reminder_occasion
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.ports import PlatformIdentity, SendResult
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
@@ -100,7 +100,7 @@ async def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     Room.scope() unavailable, and makes search_memory refuse."""
     reminder = _reminder()
 
-    ctx = await fire_path.build_context([reminder])
+    ctx = await fire_path.build_context(reminder_occasion([reminder]))
 
     assert ctx.tagger is not None
     assert ctx.tagger.person_id == reminder.requester_person_id
@@ -116,7 +116,7 @@ async def test_the_peer_card_is_read_for_the_requester(
     """`peer_card` is the half of §6.4 that goes silently empty when the tagger
     falls out — it is keyed on `ref.honcho_peer_id`, so a `None` tagger yields
     `()` with nothing raising anywhere."""
-    ctx = await fire_path.build_context([_reminder()])
+    ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
 
     assert ctx.peer_card == ("drinks his coffee black",)
 
@@ -129,7 +129,7 @@ async def test_the_transcript_is_the_conversation_the_row_names(
     await record_store.append(message=_inbound("conv-1", "去邊食"))
     await record_store.append(message=_inbound("conv-OTHER", "唔關事"))
 
-    ctx = await fire_path.build_context([_reminder()])
+    ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
 
     assert [row.body for row in ctx.transcript] == ["去邊食"]
 
@@ -143,7 +143,7 @@ async def test_several_rows_for_one_requester_are_one_turn(
     first = _reminder(text="洗衫")
     second = _reminder(text="打電話俾阿媽")
 
-    ctx = await fire_path.build_context([first, second])
+    ctx = await fire_path.build_context(reminder_occasion([first, second]))
 
     assert "洗衫" in ctx.message.body
     assert "打電話俾阿媽" in ctx.message.body
@@ -156,7 +156,7 @@ async def test_an_unmapped_requester_leaves_the_tagger_none(
     old, so the person a row names may no longer be in it. `build_context`
     reports that honestly rather than inventing a PersonRef; `run()` is what
     refuses the turn."""
-    ctx = await fire_path.build_context([_reminder(requester_person_id="ghost")])
+    ctx = await fire_path.build_context(reminder_occasion([_reminder(requester_person_id="ghost")]))
 
     assert ctx.tagger is None
 
@@ -498,6 +498,74 @@ async def test_a_reminder_whose_requester_left_identity_toml_sends_nothing(
                    "nora_errors_total"):
         assert metrics.get(series) == 0, series
     assert metrics.observations("nora_llm_latency_seconds") == []
+
+
+async def test_an_occasion_nobody_asked_for_still_speaks(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """DEC-79's occasion, on the real turn rather than through a stub.
+
+    The version announcement names NO person — nobody asked — and the test above
+    (`…requester_person_id="ghost"`) shows what §12 does to a turn whose person
+    cannot be resolved: it refuses, silently, as `failed_policy`. Those two
+    states are one line apart in `_turn`, so without this the announcement would
+    be refused by a rule about a grant it never held, and every announcer test
+    would still pass (they stub `speak`).
+
+    `tagger` is therefore `None` here on purpose, and the assertions below pin
+    the consequences as ACCEPTED rather than accidental: the turn runs, the group
+    hears it, and the `<tag_message>` names the occasion's own speaker rather
+    than attributing the words to a person who never said them.
+    """
+    adapter = _FireAdapter()
+    calls: list = []
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter,
+        runner=FakeAgentRunner(_send_turns("新版本, 而家識講返自己version"),
+                               on_call=calls.append),
+    )
+
+    outcome = await path.speak(Occasion(
+        platform="signal", conversation_id="conv-1", conversation_type="group",
+        person_id=None, body="You can ask her which version she is running.",
+        speaker="the people who build you", kind="version_announcement",
+        header=lambda tagger, now: "You have just been restarted on a new version.",
+    ))
+
+    assert outcome == "sent"
+    assert adapter.texts == ["新版本, 而家識講返自己version"]
+    tag_message = calls[-1]["tag_message"]
+    assert 'from="the people who build you"' in tag_message
+    assert "You can ask her which version she is running." in tag_message
+
+
+async def test_an_occasion_that_names_a_missing_person_is_still_refused(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The control for the test above: relaxing §12 for a person-LESS occasion
+    must not relax it for one that names somebody who has left identity.toml.
+
+    Asserted on `speak` directly, with an occasion built by hand, so it cannot
+    be satisfied by `reminder_occasion` happening to be the only caller that
+    sets `person_id`.
+    """
+    adapter = _FireAdapter()
+    runner = FakeAgentRunner(_send_turns("記得食藥"))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=runner,
+    )
+
+    outcome = await path.speak(Occasion(
+        platform="signal", conversation_id="conv-1", conversation_type="group",
+        person_id="ghost", body="洗衫", kind="reminder",
+        header=lambda tagger, now: "never rendered",
+    ))
+
+    assert outcome == "failed_policy"
+    assert adapter.sent == []
+    assert runner.invocations == 0
 
 
 async def test_the_fire_path_hands_its_tools_the_turn_provenance(

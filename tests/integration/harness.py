@@ -286,6 +286,7 @@ async def build_handler(
     debounce: float | None = None,
     fault: str | None = None,
     register: Callable[[Harness], None] | None = None,
+    tool_registry=None,
 ) -> Harness:
     """Assemble real pipelines wired to a tmp db + a tmp COPY of the real doctrine dir +
     fakes.
@@ -302,6 +303,12 @@ async def build_handler(
     `runner` from this factory, so `nora.app.agent_runner.LiveAgentRunner`'s real,
     live-network branch is unreachable from this test suite by construction (that
     is Task 4's dedicated `@pytest.mark.network` smoke test's job).
+
+    `tool_registry` is threaded straight to `build_offline_pipeline`, which
+    otherwise builds a bare `ToolRegistry()` (every tool inert/`unavailable`).
+    A scenario that needs a tool to answer `ok` — the version tool needs a
+    `VersionManifest` pointed at a real stamp — passes one wired with the
+    collaborator it cares about, and everything else stays inert.
 
     `fault` injects exactly one dependency failure (spec B.3/R-5's silent-failure
     matrix) into an otherwise-normal build; `fault=None` (the default) leaves every
@@ -418,6 +425,7 @@ async def build_handler(
     dispatcher, engagement, background = build_offline_pipeline(
         cfg, adapter=adapter, audit=store, memory=honcho_double, persons=persons,
         doctrine_store=doctrine_store, runner=runner, metrics=metrics,
+        tool_registry=tool_registry,
     )
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
 

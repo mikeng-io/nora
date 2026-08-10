@@ -69,6 +69,8 @@ def test_the_registry_exposes_every_declared_tool():
         "web_search",
         "weather",
         "remind", "list_reminders", "cancel_reminder",
+        # DEC-79: what she is running, and what was in an earlier version.
+        "version",
     }
 
 
@@ -128,6 +130,9 @@ def test_budgets_match_todays_table():
         # reminders exist is `max_pending_per_requester`, checked inside
         # `remind` (§9), which no budget can substitute for.
         "remind": 2, "list_reminders": 2, "cancel_reminder": 2,
+        # 2 — one call answers "what version are you", a second covers the
+        # follow-up about an earlier one (DEC-79).
+        "version": 2,
     }
 
 

@@ -298,6 +298,24 @@ min_lead_seconds = 120     # MUST be > heartbeat.tick_seconds, so a
                            # running. Nora refuses to start if it is not.
 max_horizon_days = 30
 
+[version]
+# The startup upgrade note (DEC-79). On the boot after a deploy, if the version
+# baked into this image has not been announced in a room yet, Nora relays the
+# release note there ONCE — in her own words, through the same fire path a
+# reminder uses. Never twice: the claim is a row in `version_announcements`,
+# taken before the turn, so a restart (or a crash-loop) stays quiet (R-42).
+#
+# ON by default, unlike [heartbeat]/[presence]/[search], because it is already
+# gated by something stronger: an image with no baked stamp announces nothing at
+# all. Only a build made with `scripts/build-image.sh V3` — which stamps
+# nora/version.json from git and makes the Dockerfile refuse a mismatch — can
+# ever speak here. Set it false if you would rather tell the group yourself.
+#
+# WHERE she announces is not configured here: it is every conversation
+# policy.toml already allows her into. Which rooms she may speak in is a trust
+# question, and trust lives in policy.toml (DEC-8).
+announce = true
+
 [doctrine]
 dir = "nora/doctrine"
 reload = "mtime"                      # mtime | startup

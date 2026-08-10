@@ -95,6 +95,8 @@ def test_every_declared_tool_is_built(wiring):
         "web_search",
         "weather",
         "remind", "list_reminders", "cancel_reminder",
+        # DEC-79: what she is running, and what was in an earlier version.
+        "version",
     }
 
 

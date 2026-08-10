@@ -232,3 +232,48 @@ REMINDERS = sa.Table(
 IDX_REMINDERS_DUE = sa.Index(
     "idx_reminders_due", REMINDERS.c.state, REMINDERS.c.due_at
 )
+
+
+# `version_announcements` — the ledger that makes "announce a version once, ever"
+# true across a restart or a crash-loop (DEC-79, R-42).
+#
+# THE PRIMARY KEY IS THE MECHANISM, not bookkeeping. The claim is
+# `INSERT … ON CONFLICT DO NOTHING`, so taking a version-in-a-room is a
+# compare-and-set in ONE statement, exactly as `reminders.claim` puts its state
+# predicate in the WHERE clause (R-37). A row EXISTING — in any state — is what
+# bars a second announcement, so a process that died mid-turn never re-announces
+# on the next boot. That is the same at-most-once decision R-37b made and for the
+# same reason: nothing links a row to a message that may already have been
+# delivered, so a retry double-posts anything that crashed after egress, and an
+# upgrade note posted twice is worse than one never posted.
+#
+# Keyed by `(version, platform, conversation_id)` and not by `version` alone: she
+# lives in more than one room, each room is a separate turn that can separately
+# fail, and one room's failure must not consume another room's announcement.
+#
+# `announced_at` is stamped when the row is CLAIMED, not when it is resolved: it
+# records when this version was taken, which is the fact boot recovery needs to
+# read afterwards. `state`/`outcome` carry what happened — the fire path's own
+# §8.1 outcome string, so an operator asking "why did V3 never appear in that
+# group" reads the answer rather than inferring it from silence (R-5 keeps the
+# failure out of the room, so this row is its only trace).
+#
+# `state` is TEXT with a CHECK, like `reminders.state`, and for the same reason:
+# a CHECK is edited by an ordinary migration where an ENUM needs `ALTER TYPE` —
+# and it is exactly what `alembic check` is blind to, which is why
+# `0005_version_announcements` is hand-written and the parity gate reads it back
+# out of `pg_constraint`.
+VERSION_ANNOUNCEMENTS = sa.Table(
+    "version_announcements",
+    METADATA,
+    sa.Column("version", sa.Text, primary_key=True),
+    sa.Column("platform", sa.Text, primary_key=True),
+    sa.Column("conversation_id", sa.Text, primary_key=True),
+    sa.Column("announced_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("state", sa.Text, nullable=False),
+    sa.Column("outcome", sa.Text, nullable=True),
+    sa.CheckConstraint(
+        "state IN ('announcing','done','failed')",
+        name="ck_version_announcements_state",
+    ),
+)

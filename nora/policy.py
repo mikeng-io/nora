@@ -52,6 +52,17 @@ class Conversation:
     # SUBSET check ONLY; the room must still be fully placed (no unnamed/degraded
     # view), so an unknown outsider still blocks disclosure.
     location: bool = False
+    # The `id` the operator actually WROTE, kept alongside `ids` (which folds it
+    # together with `also_ids` because matching must not care which form
+    # arrived). Anything that SPEAKS INTO a conversation rather than matching one
+    # needs this: `also_ids` exists for the id forms a platform hands us over
+    # time — a Telegram supergroup's retired id, a re-encoded Signal group id —
+    # and sending to a retired form fails. `ids` is a set, so "pick one" would be
+    # arbitrary and would differ between runs. First user: the version
+    # announcement (DEC-79), which speaks into every allowed room on the boot
+    # after an upgrade. Defaulted so nothing that constructs a `Conversation`
+    # without one breaks; `load_policy` always sets it.
+    primary_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -107,7 +118,10 @@ def permissive_policy() -> Policy:
 @dataclass(frozen=True)
 class _PermissivePolicy(Policy):
     def conversation(self, platform: str, conversation_id: str) -> Conversation:
-        return Conversation(platform=platform, ids=frozenset({conversation_id}), persons=None)
+        return Conversation(
+            platform=platform, ids=frozenset({conversation_id}), persons=None,
+            primary_id=conversation_id,
+        )
 
     def is_allowed(self, *, platform: str, conversation_id: str, person_id: str | None) -> bool:
         return True
@@ -186,6 +200,7 @@ def load_policy(path: Path) -> Policy:
         convo = Conversation(
             platform=entry.platform, ids=ids, persons=persons, label=entry.label,
             tools=frozenset(entry.tools), location=entry.location,
+            primary_id=entry.id,
         )
         conversations.append(convo)
         for cid in ids:

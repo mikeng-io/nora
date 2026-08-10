@@ -112,16 +112,22 @@ A capability claim in an authored file now **fails to load**.
 - **turn** — everything from admission to reply. Contains several **model
   calls**; each call is a **round trip** (~4s) and each retained tool result is
   **re-sent on every subsequent call**, which is why intake compounds.
-- **fire turn** — a turn nobody asked for. The heartbeat builds it when a
-  reminder comes due: same stages, same guards, but no tag behind it. The
-  second of exactly two paths that may send (R-1b).
+- **fire turn** — a turn nobody asked for: same stages, same guards, but no tag
+  behind it. The second of exactly two paths that may send (R-1b).
+- **occasion** — WHY a fire turn is happening, as a value (`nora.app.fire.Occasion`):
+  where she speaks, on whose authority, the words put to her, and the header
+  that explains the moment. Two exist — a reminder coming due, and a version
+  announcement (DEC-79). A reminder names its requester; an announcement names
+  NOBODY, which is what stops the turn being refused under a rule about a grant
+  it never held.
 - **terminal verb** — a tool that ends the turn. Today only `send_reply`, on
   both paths — a fire turn has no way to choose silence (that waits for the
   staleness check).
 - **prefill** — the three messages built before the tag message.
 - **context header** — the block explaining how the turn works. Its opening
   paragraph is the one thing that differs between a tag and a fire turn:
-  "somebody just called you" versus "nobody has, and here is why you are awake".
+  "somebody just called you" versus "nobody has, and here is why you are awake"
+  — and between the two fire occasions, which is why the occasion carries it.
 
 ## Reminders
 

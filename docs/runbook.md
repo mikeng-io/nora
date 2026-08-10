@@ -402,6 +402,32 @@ If the daemon is unreachable, `groups` exits 1 with the two commands to run;
 `pending` still works but loses display names and says so — with no roster to
 correlate against, one person's ids may appear as several entries.
 
+## 8b. "The version note never appeared" (or appeared twice)
+
+The upgrade note is one turn per room on the boot after a deploy, and R-5 keeps
+every way it can fail OUT of the room — so the counter and the ledger are the
+only evidence. Read them in that order.
+
+```bash
+curl -s localhost:9100/metrics | grep nora_version_announcements_total
+docker exec nora-db psql -U nora -d nora -c \
+  'select * from version_announcements order by announced_at desc limit 10;'
+```
+
+`status` on the counter says which of these it was:
+
+| status | what happened | what to do |
+|---|---|---|
+| `already_announced` | the version was already taken for that room | nothing — this is R-42 working, and it climbs on every restart |
+| `unavailable` | this image carries no readable build stamp | rebuild with `scripts/build-image.sh V3`; a plain `docker build` produces an image that can never announce (and answers «I can't check» to «咩version») |
+| `no_note` | the tag has no annotation, so there is nothing anybody wrote to relay | `git tag -a V3 -m "…" -f` and rebuild — nothing was claimed, so it will still announce |
+| `deferred` | a tag held the conversation when the sweep ran | nothing — the next boot retries, because nothing was said |
+| `failed_*` | the turn ran and the group heard nothing | the row records which; **it is not retried** (at-most-once, R-42) — announce the next version, or say it yourself |
+
+**Twice is a bug, not a config.** The claim is a primary key, so a repeat means
+the ledger row was deleted or the database was restored from before the
+announcement. Check `version_announcements` before looking anywhere else.
+
 ## 9. "Where does everything live?" (read this first, months later)
 
 One tree. If it is not under `~/workspace/nora/`, Nora does not own it.

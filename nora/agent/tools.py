@@ -57,6 +57,8 @@ from ..domain.media import HANDLE_CHARS
 from ..domain.models import WeatherObservation
 from ..domain.ports import Recollection
 from ..domain.reminders import Reminder, ReminderCaps, ReminderState, ReminderStore
+from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
+from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
 from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers
 from .ports import ToolSpec, adapt
@@ -401,6 +403,27 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                     "another room's"),
     "cancel_reminder": NativeTool(2, "somebody calls one off — takes the id "
                                      "list_reminders gave you, never one you made up"),
+    # WHAT SHE IS RUNNING, and what was in each version (DEC-79). ONE verb with
+    # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
+    # and "V2 有咩" are one capability asked from two angles, and two tools would
+    # fight over every version question the way DEC-58 measured.
+    #
+    # Budget 2, sized like `lookup_person` — by model round trips, not by cost
+    # (the answer is a dict parsed from one small local file). One call answers
+    # "what version are you"; a second covers the follow-up "and what was in the
+    # one before", which is a genuinely different question with a different
+    # argument. A third in one turn is a model looping.
+    #
+    # `source_tier="confirmed"`: this is Nora's own build stamp, read off the
+    # artifact she is executing — the closest source there is for a fact about
+    # herself, and the reason she must never web-search her own version.
+    # `time_shiftable` is None, like `calculate`: the manifest cannot change
+    # under a running process, so the answer is neither about this instant nor
+    # shiftable to another one.
+    "version": NativeTool(2, "somebody asks which version of you is running, or what "
+                             "was in an earlier one — read it, never work it out from "
+                             "the transcript",
+                          source_tier="confirmed"),
     # THE ONLY TERMINAL TOOL, and **the number that caps how many messages one
     # tag may send** (verified 2026-08-06). Both facts are easy to miss from the
     # guard's side, so they are stated here, where the number is.
@@ -848,6 +871,17 @@ _WEATHER_OFF: Mapping[str, object] = {
     "note": "I couldn't reach the weather service just now. Say you couldn't check "
             "— don't invent a temperature or forecast.",
 }
+# The «no build stamp» payload for `version` (DEC-79). A source checkout has no
+# `nora/version.json` (it is generated at build time and gitignored), so this is
+# the ordinary state outside a built image — and it is `unavailable`, NEVER
+# `nothing_found`: «I can't read my own build stamp» and «I have no versions»
+# are different claims, and the second one is a false statement about herself
+# manufactured out of a wiring gap (R-27).
+_VERSION_OFF: Mapping[str, object] = {
+    "status": "unavailable",
+    "note": "I can't read my own build stamp. Say you're not sure which version "
+            "you're on — don't guess one, and don't work it out from the chat.",
+}
 
 
 def _weather_result(obs: WeatherObservation) -> dict[str, object]:
@@ -916,6 +950,7 @@ def build_tool_specs(
     reminders: ReminderStore | None = None,
     reminder_caps: ReminderCaps | None = None,
     clock: Callable[[], datetime] | None = None,
+    versions=None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -936,6 +971,12 @@ def build_tool_specs(
     "not configured" state (R-5) the offline and eval compositions ship in, not
     an error; the caps and the clock fall back to `ReminderCaps()` and
     `utc_now`, so a caller that never sets a reminder needs neither.
+
+    `versions` is a `nora.infra.version.VersionManifest` (DEC-79) and comes from
+    `ToolRegistry` for the same reason: the build stamp is a PROCESS-lifetime
+    fact, read once, never per turn. `None` — a caller that wired none — makes
+    `version` answer `unavailable`, which is the same honest wiring-gap state
+    `reminders=None` gives `remind`, and never `nothing_found`.
     """
     caps = reminder_caps or ReminderCaps()
     now_fn = clock or utc_now
@@ -2516,6 +2557,72 @@ def build_tool_specs(
         _record(metrics, "cancel_reminder", "ok")
         return {"status": "ok"}
 
+    async def version(which: str = "") -> dict:
+        """Which version of you is running, and what was in it.
+
+        Call this the moment somebody asks about YOU as software — 「你而家咩
+        version」, 「你更新咗啲咩」, 「V2 有咩」, 「上個version做過咩」. It reads the
+        build stamp of the code you are actually executing. Never work a version
+        out from the transcript, from what somebody said earlier, or from the
+        web — this is the only thing that knows.
+
+        Leave `which` empty for the version running right now. Pass a name like
+        «V2» to read what was in an earlier one instead.
+
+        `status`:
+          - `ok` — `version` is the name. `notes` is what the people who build
+            you wrote about that version; `changes` is a rough list of what was
+            done in it. Either may be missing, which means nothing was recorded
+            — say the version and say you have no notes for it, never fill the
+            gap in yourself. Put `notes` in your own words; don't read it out.
+          - `nothing_found` — there is no such version. `known` is the list of
+            the ones that do exist; offer those rather than inventing one.
+          - `unavailable` — you can't read your own build stamp. Say you're not
+            sure which version you're on, and move on.
+
+        Args:
+            which: a version name like «V2» — leave it out for the one you are
+                running now.
+        """
+        asked = str(which).strip()
+        if versions is None:
+            _record(metrics, "version", "unavailable", reason="not_wired")
+            return dict(_VERSION_OFF)
+        lookup = versions.lookup(asked) if asked else versions.current()
+        if lookup.status == VERSION_UNAVAILABLE:
+            # `lookup.reason` (absent / unreadable / no_current_version) goes in
+            # the LOG, never the payload: it is an operator's diagnosis of this
+            # host's build, and the model has one thing to do with it either way
+            # — say she cannot check.
+            _record(metrics, "version", "unavailable", reason=lookup.reason)
+            return dict(_VERSION_OFF)
+        if lookup.status == VERSION_NOTHING_FOUND:
+            _record(metrics, "version", "nothing_found", known=len(lookup.known))
+            return {
+                "status": "nothing_found",
+                "known": list(lookup.known),
+                "note": "There's no version by that name. Only the ones in `known` "
+                        "exist — don't describe one that isn't there.",
+            }
+        entry = lookup.entry
+        out: dict = {"status": "ok", "version": entry.version}
+        # Only what the manifest actually recorded. An absent `notes` or
+        # `changes` is left OUT rather than sent as an empty string: a tool
+        # result is re-sent on every subsequent model call (the DEC-73 token
+        # lesson), and an empty field invites the model to fill it.
+        if entry.released:
+            out["released"] = entry.released
+        if entry.notes:
+            out["notes"] = entry.notes
+        if entry.changes:
+            out["changes"] = list(entry.changes)
+        out["known"] = list(lookup.known)
+        _record(
+            metrics, "version", "ok",
+            asked=bool(asked), noted=bool(entry.notes), changes=len(entry.changes),
+        )
+        return out
+
     async def send_reply(text: str) -> bool:
         """Send a message to the group. This is the only way anything you write is sent.
 
@@ -2561,6 +2668,7 @@ def build_tool_specs(
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),
         _spec("cancel_reminder", cancel_reminder),
+        _spec("version", version),
         _spec("send_reply", send_reply),
     )
 
