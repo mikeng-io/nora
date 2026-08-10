@@ -67,6 +67,33 @@ class Persons:
         person_id = self.index.get((platform, sender_id))
         return self.by_person[person_id] if person_id else None
 
+    def platform_ids(self, platform: str, person_id: str) -> frozenset[str]:
+        """Every id form this person presents on `platform` — the reverse of
+        `resolve`, read off the same one index so the two can never disagree.
+
+        Needed by exactly one caller, and only for an OUTBOUND decision:
+        `nora.agent.outbound` has a person and needs an id signal-cli will
+        accept as a mention recipient, which is the opposite direction from
+        every other consumer of this class. Derived from `index` on each call
+        rather than kept as a second dict: `index` is built once at startup and
+        is small (one entry per id form per account), the call happens at most
+        a couple of times per turn, and a cached inverse is a second copy of
+        the same fact that a future `load_persons` edit could leave stale — the
+        failure this class's own duplicate-detection exists to prevent.
+
+        Returns a SET, not an ordered pick, because choosing WHICH form to put
+        on the wire is not this class's decision: `nora.agent.outbound`
+        intersects this with the platform's own membership list first, so the
+        id it sends is one the PLATFORM just asserted, not merely one
+        `identity.toml` claims. An unknown `person_id` or platform is an empty
+        set — never a `KeyError`, since a caller in the middle of a live turn
+        must not raise over a name it could not place.
+        """
+        return frozenset(
+            value for (plat, value), pid in self.index.items()
+            if plat == platform and pid == person_id
+        )
+
     def display_name(self, msg: NormalizedMessage) -> str:
         ref = self.resolve(msg.platform, msg.sender_id)
         if ref:

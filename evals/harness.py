@@ -85,6 +85,19 @@ class Trajectory:
     reply: str | None = None
     honcho_feeds: int = 0
     prefill_sufficient: bool = True
+    # HOW the agent loop ended, read back off `nora_llm_stop_reason_total`
+    # (live runs only; None in scripted mode, which has no loop to end).
+    #
+    # Added 2026-08-10 because its ABSENCE made a root-cause analysis
+    # unfalsifiable: `high` reasoning produced 3x the silent turns of `none`,
+    # the obvious hypothesis was the loop hitting `limit_output_tokens`, and
+    # grepping the eval log for it returned zero — which looked like evidence
+    # and was nothing of the kind, because the harness never recorded a stop
+    # reason at all. A null result from an instrument that cannot measure the
+    # thing is not a null result (CLAUDE.md). `end_turn` with no reply and
+    # `limit_output_tokens` are completely different failures and were
+    # indistinguishable from here.
+    stop_reason: str | None = None
 
 
 @dataclass
@@ -150,6 +163,27 @@ async def _drain(background) -> None:
 # reconstructed by name — it is deliberately not an intent-graph node, and
 # `evals.evaluators.UNMEASURABLE_LIVE` + its guard test fail closed if one is added.
 _TOOL_CALL_METRICS = ("nora_tool_calls_total", "nora_room_lookups_total")
+
+
+def _stop_reason_from_metrics(metrics: Metrics) -> str | None:
+    """How the agent loop ended, off `nora_llm_stop_reason_total{reason}`.
+
+    One turn per `run_case`, so exactly one series is expected to have been
+    incremented; if several are (a retry, a future multi-turn case), the one
+    with the highest count wins and ties break alphabetically so the value is
+    deterministic rather than dict-order-dependent. None when nothing recorded
+    — a turn that faulted before the model was invoked has no stop reason, and
+    inventing `"unknown"` would make that indistinguishable from a real one.
+    """
+    counts: dict[str, float] = {}
+    for (name, labels), value in metrics.snapshot().items():
+        if name == "nora_llm_stop_reason_total" and value:
+            reason = dict(labels).get("reason", "")
+            if reason:
+                counts[reason] = counts.get(reason, 0.0) + value
+    if not counts:
+        return None
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
 
 
 def _tool_calls_from_metrics(metrics: Metrics) -> list[str]:
@@ -281,12 +315,15 @@ async def run_case(
         sent = list(adapter.texts)
         # Live mode has no script to read tool intent from — reconstruct it from
         # what the tools actually recorded this run (see the helper's caveat).
+        stop_reason = None
         if live:
             tool_calls = _tool_calls_from_metrics(metrics)
+            stop_reason = _stop_reason_from_metrics(metrics)
         return Trajectory(
             tool_calls=tool_calls,
             sent=sent,
             reply=sent[-1] if sent else None,
             honcho_feeds=feeds,
             prefill_sufficient=case.prefill_sufficient,
+            stop_reason=stop_reason,
         )

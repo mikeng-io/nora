@@ -2,11 +2,14 @@ import time
 
 import pytest
 
-from nora.agent.egress import scan_reply, strip_markdown
+from nora.agent.egress import scan_reply
 from nora.agent.guards import Deliverer
+from nora.agent.markdown import render_markdown, strip_markdown
+from nora.agent.outbound import Outbound
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import ConversationTarget
+from nora.domain.ports import Mention, Style, Styled
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -414,11 +417,11 @@ async def test_a_deliverer_with_no_observer_still_delivers(store, doctrine):
     assert await d.deliver("好") is True
 
 
-async def test_markdown_is_stripped_before_the_audit_row_is_written(store, doctrine):
-    """DEC-82's placement, not just its regex: the strip happens before `row` is
-    built, so the audit row, `sent_texts` and the Honcho feed all carry the ONE
-    form the group actually saw. Storing the un-stripped draft would make the
-    transcript disagree with every device in the room."""
+async def test_markdown_is_converted_before_the_audit_row_is_written(store, doctrine):
+    """DEC-82's placement, not just its regex: the conversion happens before
+    `row` is built, so the audit row, `sent_texts` and the Honcho feed all carry
+    the ONE form the group actually saw. Storing the un-converted draft would
+    make the transcript disagree with every device in the room."""
     sink = SinkSender()
     d = _deliverer(store, doctrine, sink)
     assert await d.deliver("**燒烤堂** — 好正") is True
@@ -426,6 +429,69 @@ async def test_markdown_is_stripped_before_the_audit_row_is_written(store, doctr
     row = (await store.recent(conversation_id="g1", limit=1))[0]
     assert row.body == "燒烤堂 — 好正"
     assert d.sent_texts == ("燒烤堂 — 好正",)
+
+
+async def test_the_style_range_reaches_the_adapter_beside_the_text(store, doctrine):
+    """DEC-82's OTHER half, and the one the strip could not have: the emphasis
+    survives as a real Signal style rather than being deleted.
+
+    Asserted against the string the SINK received, not against a constant — a
+    range and a text that shifted together would satisfy a hand-counted number.
+
+    PROBE: drop the `styles=` argument from `Deliverer.deliver`'s
+    `adapter.send` call and this goes red while the text assertion above stays
+    green, which is exactly the shape of the failure it is guarding (the group
+    sees the right words with no bold, and nothing errors).
+    """
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink)
+
+    assert await d.deliver("**燒烤堂** — 好正") is True
+
+    ((style,),) = sink.sent_styles
+    (text,) = sink.texts
+    assert text[style.start:style.start + style.length] == "燒烤堂"
+    assert style.style is Style.BOLD
+
+
+async def test_a_composer_that_raises_still_sends_the_bold(store, doctrine):
+    """The degraded path keeps what it can. A mention and a preview are computed
+    by the composer and are lost when it blows up; the styling was decided
+    before it ran and rides in the `Styled` the Deliverer already holds, so
+    there is no reason for it to go too — and «lost the bold because a name
+    lookup failed» is exactly the kind of coupling this split removes."""
+    sink = SinkSender()
+    composer = _Composer(raises=True)
+    d = Deliverer(
+        store=store, adapter=sink, target=TARGET, doctrine=doctrine, canary="CANARY-1",
+        tag_id="tag-1", nora_sender_id="nora", message_cap=MESSAGE_CAP, audience="tag",
+        metrics=Metrics(), composer=composer,
+    )
+
+    assert await d.deliver("**燒烤堂** — 好正") is True
+
+    assert sink.texts == ["燒烤堂 — 好正"]
+    assert sink.sent_mentions == [()]
+    assert [s.style for s in sink.sent_styles[0]] == [Style.BOLD]
+
+
+async def test_the_audited_body_never_carries_the_asterisks_the_style_replaced(
+    store, doctrine,
+):
+    """A9 stores what she SENT, and what she sent is the converted string. The
+    ranges are deliberately NOT stored beside it: an audit row is a record of
+    her words, `MentionRenderer` reads it back as prose, and a row carrying
+    offsets into a string that a later reader re-wraps would be a record of a
+    rendering rather than of a message."""
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink)
+
+    assert await d.deliver("## 推介\n**燒烤堂** — 好正") is True
+
+    row = (await store.recent(conversation_id="g1", limit=1))[0]
+    assert row.body == "推介\n燒烤堂 — 好正"
+    assert "*" not in row.body
+    assert "#" not in row.body
 
 
 async def test_markdown_is_stripped_before_the_leak_guard_runs(store, doctrine):
@@ -479,12 +545,20 @@ async def test_emphasis_cannot_smuggle_an_identifier_past_r18(store, doctrine):
     wrapped in emphasis scanned CLEAN after stripping and would have been sent to
     the group — the unrecoverable leak `nora.agent.egress` exists to prevent.
 
+    Under CONVERSION the hole is identical and the outcome would have been
+    worse: the asterisks still go, so the boundary is still destroyed, and the
+    ACI would have reached the group in bold. Asserted against
+    `render_markdown(...).text` — the exact bytes `deliver` composes — rather
+    than against a lookalike transformation.
+
     Drop the `or scan_reply(drafted)` and this reds."""
     metrics = Metrics()
     d = _deliverer(store, doctrine, SinkSender(), metrics)
     smuggled = "*a*deadbeef-1234-5678-9abc-def012345678"
-    assert scan_reply(strip_markdown(smuggled)) is None      # invisible once stripped
-    assert await d.deliver(smuggled) is False                # still refused
+    converted = render_markdown(smuggled)
+    assert scan_reply(converted.text) is None      # invisible once converted
+    assert converted.styles                        # ...and it WOULD have been styled
+    assert await d.deliver(smuggled) is False      # still refused
     assert metrics.get("nora_egress_blocks_total", kind="uuid") == 1
 
 
@@ -493,6 +567,111 @@ async def test_emphasis_cannot_smuggle_a_phone_number_past_r18(store, doctrine):
     metrics = Metrics()
     d = _deliverer(store, doctrine, SinkSender(), metrics)
     smuggled = "*+85298765432*a"
-    assert scan_reply(strip_markdown(smuggled)) is None
+    assert scan_reply(render_markdown(smuggled).text) is None
     assert await d.deliver(smuggled) is False
     assert metrics.get("nora_egress_blocks_total", kind="phone") == 1
+
+# ---------------------------------------------------------- outbound decoration
+#
+# `Deliverer` is the ONLY caller of `adapter.send` (R-1b), so it is also the only
+# place a mention can reach the wire. These cover the seam itself; the offset
+# arithmetic and the fail-closed refusals are `tests/unit/test_outbound_composer.py`.
+
+class _Composer:
+    """A composer stand-in that returns a FIXED `Outbound`.
+
+    Deliberately not a real `OutboundComposer`: the property under test here is
+    the wiring — that `Deliverer` asks, that it sends what it was given, and
+    that it audits the same string — and a real composer would make each of
+    those assertions depend on a name resolution these tests are not about.
+    """
+
+    def __init__(self, outbound: Outbound | None = None, *, raises: bool = False) -> None:
+        self._outbound = outbound
+        self._raises = raises
+        # What it was ASKED with, as the whole `Styled` — not `.text`. The
+        # parameter's type is half the property these tests are about: a
+        # `Deliverer` that unpacked the value and passed the string would still
+        # send the right words while stranding the ranges, so a recorder that
+        # kept only the string could not tell the two apart.
+        self.asked: list[Styled] = []
+
+    async def compose(self, styled: Styled) -> Outbound:
+        self.asked.append(styled)
+        if self._raises:
+            raise RuntimeError("identity.toml on fire")
+        return self._outbound or Outbound(styled)
+
+
+MENTION = Mention(start=0, length=8, recipient="b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b")
+
+
+async def test_the_composed_mention_reaches_the_adapter(store, doctrine):
+    """The end-to-end wiring: composer -> Deliverer -> port.
+
+    PROBE: drop the `mentions=` argument from `Deliverer.deliver`'s
+    `adapter.send` call and this goes red while every other test in this file
+    stays green — which is the whole reason it is here rather than left to the
+    composer's own suite.
+    """
+    sink = SinkSender()
+    composer = _Composer(
+        Outbound(Styled("@Grant 你幾高?"), mentions=(MENTION,)),
+    )
+    d = Deliverer(
+        store=store, adapter=sink, target=TARGET, doctrine=doctrine, canary="CANARY-1",
+        tag_id="tag-1", nora_sender_id="nora", message_cap=MESSAGE_CAP, audience="tag",
+        metrics=Metrics(), composer=composer,
+    )
+
+    assert await d.deliver("@Grant 你幾高?") is True
+    assert [s.text for s in composer.asked] == ["@Grant 你幾高?"]
+    assert sink.sent_mentions == [(MENTION,)]
+
+
+async def test_the_audited_row_carries_the_text_the_wire_carried(store, doctrine):
+    """A9 stores what she SENT. Asserted through the real store rather than on
+    the AST (`tests/architecture/test_outbound_offsets_are_computed_last.py`
+    does that half) so the two halves cannot both be satisfied by a mock."""
+    sink = SinkSender()
+    d = Deliverer(
+        store=store, adapter=sink, target=TARGET, doctrine=doctrine, canary="CANARY-1",
+        tag_id="tag-1", nora_sender_id="nora", message_cap=MESSAGE_CAP, audience="tag",
+        metrics=Metrics(), composer=_Composer(),
+    )
+
+    await d.deliver("@Grant 你幾高?")
+
+    row = (await store.recent(conversation_id="g1", limit=1))[0]
+    assert row.body == sink.texts[0] == "@Grant 你幾高?"
+
+
+async def test_a_composer_that_raises_still_sends_the_plain_message(store, doctrine):
+    """R-5's actual subject: decoration must never be why a group hears nothing.
+
+    A composer failure is not a delivery failure — the sentence answers a human
+    either way, and it goes out untagged rather than not at all."""
+    sink = SinkSender()
+    metrics = Metrics()
+    d = Deliverer(
+        store=store, adapter=sink, target=TARGET, doctrine=doctrine, canary="CANARY-1",
+        tag_id="tag-1", nora_sender_id="nora", message_cap=MESSAGE_CAP, audience="tag",
+        metrics=metrics, composer=_Composer(raises=True),
+    )
+
+    assert await d.deliver("@Grant 你幾高?") is True
+    assert sink.texts == ["@Grant 你幾高?"]
+    assert sink.sent_mentions == [()]
+    assert metrics.get("nora_silent_failures_total", reason="send_failed") == 0
+
+
+async def test_no_composer_at_all_sends_exactly_what_it_always_did(store, doctrine):
+    """The `composer=None` path — the offline/eval compositions, and every
+    `Deliverer` in this file that predates the feature. It must be the SAME
+    message, which is the argument for the parameter having a default at all."""
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink)
+
+    assert await d.deliver("今晚七點半得唔得？") is True
+    assert sink.texts == ["今晚七點半得唔得？"]
+    assert sink.sent_mentions == [()]

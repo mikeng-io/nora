@@ -207,7 +207,13 @@ judge_samples = 3
 # journey_samples (F8a): --suite journeys runs each journey k times, majority-gated
 # — routing is stochastic, n=1 both flakes a good model and passes a lucky broken
 # one. Odd so a majority always exists; ties fail closed.
-journey_samples = 3
+# 3 → 9 (2026-08-10). n=3 could not separate signal from noise in the one
+# comparison that mattered: two journeys flipped by a single sample between
+# reasoning-effort settings, which is exactly the resolution 3 samples cannot
+# resolve. 9 makes a majority meaningful rather than a coin flip on the tail
+# cases, and the suite is only run deliberately, so the cost is wall-clock on
+# a run nobody is waiting on. Still odd, so a majority always exists.
+journey_samples = 9
 
 [evals.langfuse]
 # Verified live 2026-08-05: three datasets (nora-trigger / nora-no-trigger /

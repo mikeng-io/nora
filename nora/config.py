@@ -352,6 +352,39 @@ class ShortenerConfig(BaseModel):
     timeout_seconds: float = Field(default=5.0, gt=0)
 
 
+class PreviewConfig(BaseModel):
+    """Sender-generated link previews on Nora's outbound messages.
+
+    **Optional, defaulted, `enabled` False** — the `[route]`/`[shortener]`
+    shape, and off for a sharper reason than either of those: this is the one
+    capability that makes Nora FETCH a URL that came out of a model, from her
+    own network. DEC-73 deleted `web_fetch` and its whole SSRF apparatus
+    precisely because Tavily is never handed a URL; enabling this section is an
+    operator deciding to take a bounded version of that exposure back, so it is
+    a decision rather than a default. `nora.infra.preview` documents the guard
+    and the one residual risk it does not close.
+
+    No key, so unlike `[search]` there is nothing else gating it — `enabled` is
+    the whole switch. Off, a reply containing a link goes out exactly as it does
+    today.
+
+    `timeout_seconds` is small on purpose: this runs on the reply path with a
+    human watching a 👀, so a dead host must cost a couple of seconds and a
+    missing card, never a noticeable pause. `image` is separately switchable
+    because it is the expensive half — a second fetch, and up to
+    `image_max_bytes` base64'd into the JSON-RPC body — while the title and
+    description are most of the value.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    timeout_seconds: float = Field(default=3.0, gt=0)
+    max_bytes: int = Field(default=262_144, gt=0)
+    image: bool = True
+    image_max_bytes: int = Field(default=262_144, gt=0)
+
+
 class PresenceConfig(BaseModel):
     """The presence collector (design/19), DEC-54/DEC-55.
 
@@ -528,7 +561,7 @@ class HeartbeatConfig(BaseModel):
 
 
 class RemindersConfig(BaseModel):
-    """The three anti-runaway caps on stored reminders.
+    """The anti-runaway caps on stored reminders, and the zone a recurrence keeps.
 
     Mirrored by `nora.domain.reminders.ReminderCaps`, which is what the tool
     layer actually receives — import-linter forbids `nora.agent` from importing
@@ -546,7 +579,17 @@ class RemindersConfig(BaseModel):
     # was a comment in three files and a rule in none.
     min_lead_seconds: int = Field(default=120, ge=1)
     max_horizon_days: int = Field(default=365, ge=1)   # matches ReminderCaps
-
+    # DEC-85. A recurring reminder is a CHAIN with only one `pending` row at a
+    # time, so `max_pending_per_requester` counts a whole series as one — this
+    # is the cap that bounds the series itself, in occurrences. Every series is
+    # bounded: `RecurrenceRule.count` is required, so «forever» is not a state
+    # the domain can represent, and this is the ceiling a request is clamped to.
+    max_occurrences_per_series: int = Field(default=60, ge=1)
+    # An IANA zone NAME, never an offset: a recurrence keeps a LOCAL wall clock
+    # («08:00, whatever the offset does that week»), which «+08:00» cannot
+    # express. Validated at series construction — an unknown zone raises
+    # `UnknownRecurrenceZoneError` rather than being guessed at.
+    timezone: str = "Asia/Hong_Kong"
 
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -736,6 +779,10 @@ class Config(BaseModel):
     # Optional and defaulted — see `ShortenerConfig`. Off unless an operator
     # turns it on; never load-bearing (a failed mint leaves the long URL).
     shortener: ShortenerConfig = ShortenerConfig()
+    # Optional and defaulted — see `PreviewConfig`. Off unless an operator turns
+    # it on; off means a reply carrying a link goes out with no card, which is
+    # every deployment's behaviour before this section existed.
+    preview: PreviewConfig = PreviewConfig()
     # Optional and defaulted — see `PresenceConfig`. Off unless an operator turns
     # it on; a config.toml without a `[presence]` section keeps loading, and the
     # collector is a SEPARATE process (`python -m nora.presence`) that reads this

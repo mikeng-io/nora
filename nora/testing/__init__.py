@@ -16,9 +16,11 @@ production implementation both pass — `FakeRecordStore` (`RecordStore`),
 bound to `nora.platform.signal.roster.SignalRoster` by
 `tests/contract/test_roster_source_contract.py`), `FakeMediaSource`
 (`MediaSource`, bound to `nora.platform.signal.media.SignalMediaSource` by
-`tests/contract/test_media_source_contract.py`) and `FakeBlobStore`
+`tests/contract/test_media_source_contract.py`) `FakeBlobStore`
 (`BlobStore`, bound to `nora.infra.blobs.FilesystemBlobStore` by
-`tests/contract/test_blob_store_contract.py`). Adding such a fake without one is a
+`tests/contract/test_blob_store_contract.py`) and `FakeLinkPreviewSource`
+(`LinkPreviewSource`, bound to `nora.infra.preview.OpenGraphPreviewSource` by
+`tests/contract/test_link_preview_contract.py`). Adding such a fake without one is a
 project rule violation, not a shortcut. `FakeAdapter` is exempt *as a whole*: it keeps
 `.parse()` public and `.listen()` a no-op rather than mirroring
 `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop (nothing
@@ -28,7 +30,9 @@ That exemption is scoped to the methods it names, and does NOT extend to
 `FakeAdapter.react`: `react()` IS on `PlatformAdapter` (unlike `parse`/
 `listen`'s shape), so it is a genuine second implementation and is bound to
 `SignalAdapter.react` by `tests/contract/test_reaction_contract.py`, one suite
-parametrized over both.
+parametrized over both — nor to `FakeAdapter.send`, which grew `mentions`/
+`preview` with the port and is bound to `SignalAdapter.send` by
+`tests/contract/test_send_contract.py`.
 `ScriptedTurn`/`FakeAgentRunner` satisfy `nora.engagement.stages.invoke.
 AgentRunner`, a stage-level `Protocol`, not one of `nora/domain/ports.py`'s
 ports — also exempt; see their docstrings.
@@ -46,6 +50,7 @@ from nora.testing.eval_backends import (
 from nora.testing.fakes import (
     FakeAdapter,
     FakeBlobStore,
+    FakeLinkPreviewSource,
     FakeMediaSource,
     FakeMemoryStore,
     FakeRecordStore,
@@ -72,6 +77,7 @@ __all__ = [
     "FakeAdapter",
     "FakeAgentRunner",
     "FakeBlobStore",
+    "FakeLinkPreviewSource",
     "FakeMediaSource",
     "FakeMemoryStore",
     "FakeRecordStore",

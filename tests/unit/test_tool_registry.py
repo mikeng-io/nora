@@ -253,6 +253,34 @@ def test_the_capability_block_states_the_sourcing_priority():
     assert "web_search, which reaches the open web and is the last resort" in block
 
 
+def test_the_capability_block_closes_the_world_it_opens(): # DEC-90
+    """The list of tools was never stated to be the WHOLE list, and she filled
+    the gap: a restaurant answer ended «講清楚我幫你睇埋使唔使訂位» — offering to
+    check a booking, which no tool here does and none is planned. That is the
+    same class as guessing a location, and the same fix DEC-28 applied to
+    `soul.md`'s knowledge claim: the sentence is only true relative to the
+    registry, so it is GENERATED beside the list rather than authored anywhere
+    that cannot see the list."""
+    block = ToolRegistry().capability()
+    assert "That list is the WHOLE of what you can do" in block
+    assert "no request you can put in on somebody's behalf" in block
+    assert "Never offer, promise or volunteer an action that is not one of the "\
+           "things above" in block
+    # The measured overclaim, and the family it belongs to, named concretely —
+    # a rule stated only in the abstract is the one the model reads past.
+    assert "no booking a table" in block
+
+
+def test_the_closed_world_clause_forbids_offers_not_ignorance():
+    """It must not collide with the rule right after it. She may always say she
+    cannot find something out — `constraints.md` and `conduct.md` both insist on
+    it — so the ban is on PROMISED ACTS, and the two sentences have to be able
+    to sit next to each other without contradicting."""
+    block = ToolRegistry().capability()
+    assert "When you cannot find something out, say so in one clause" in block
+    assert block.index("That list is the WHOLE") < block.index("When you cannot find")
+
+
 def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
     """The taxonomy must stay COMPLETE over the tools routing actually confuses —
     a new local tool added untagged would silently sit outside the priority. Pins

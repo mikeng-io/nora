@@ -4,8 +4,11 @@ keep living where they live until the phase that migrates them.
 
 Standard library only, same rule as the rest of `nora/domain`: if a port needs
 aiohttp, strands, sqlalchemy, pydantic or prometheus_client to express itself,
-the port is wrong. `nora.domain.models` and `nora.domain.identity` are the only
-allowed sibling imports.
+the port is wrong. `nora.domain.models`, `nora.domain.identity` and
+`nora.domain.utf16` are the only allowed sibling imports — the last one because
+`Styled` below cannot check its own invariant without the arithmetic that
+defines it, and a copy of that arithmetic here would be the exact drift
+`nora.domain.utf16`'s docstring exists to prevent.
 
 Each shape below encodes a decision that cost something to reach. Simplifying
 it back to the "obvious" version silently reintroduces the bug it was built to
@@ -159,6 +162,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
@@ -173,6 +177,7 @@ from nora.domain.models import (
     UnattributedRow,
     WeatherObservation,
 )
+from nora.domain.utf16 import utf16_len
 
 # `PlatformIdentity` is re-exported, not declared here — it moved next to
 # `Identifier` in `nora.domain.identity` when it grew a typed `identifiers`
@@ -204,6 +209,184 @@ class ReactionResult:
 
     ok: bool
     supported: bool = True
+
+
+@dataclass(frozen=True)
+class Mention:
+    """One outbound @-mention: a RANGE over the message text, plus who it names.
+
+    **A mention is not text, in either direction.** `nora.engagement.mentions`
+    is the INBOUND half of this type (DEC-34) and its docstring is the reason
+    this one exists: Signal carries the identity in a parallel array and puts
+    only a range in the body, so a mention Nora *sends* has to be expressed the
+    same way — never by writing an id into the message.
+
+    `start`/`length` are **UTF-16 code units**, not Python characters and not
+    Unicode code points. signal-cli says so in two places (`signal-cli(1)`'s
+    `--mention`: "The units of start and length should be UTF-16 code units,
+    NOT Unicode code points", and the same sentence again on `--text-style`),
+    and it matters in this group specifically: a CJK character is one UTF-16
+    unit and a Python character, but an emoji outside the BMP is TWO UTF-16
+    units and ONE Python character. Computing these offsets with `len()` is
+    correct right up until somebody puts 🇭🇰 in front of a mention, at which
+    point every mention after it silently points at the wrong span — Signal
+    does not reject it, it renders somebody else's name over the wrong words.
+    `nora.domain.utf16.utf16_len` is the one place that arithmetic lives — it
+    moved out of `nora.agent.outbound` when `TextStyle` below became a second
+    producer of ranges (DEC-82); see that module for why.
+
+    `recipient` is an id form signal-cli's RECIPIENT grammar accepts — a bare
+    ACI UUID, a `PNI:`-prefixed UUID, a `u:`-prefixed username, or an E.164
+    number. Verified out of the shipped 0.14.7 jar, not guessed:
+    `SendCommand.parseMentions` matches `(\\d+):(\\d+):(.+)` and hands group 3
+    to `CommandUtil.getSingleRecipientIdentifier`, which is
+    `RecipientIdentifier.Single.fromString` — UUID, then `PNI:`, then `u:`,
+    then a phone number. That is the SAME grammar `targetAuthor` accepts, which
+    `nora.platform.signal.react`'s module docstring already documents.
+
+    **This value never reaches the message body**, and that separation is the
+    whole R-18 story of the feature: `Deliverer.deliver` runs `scan_reply` on
+    the TEXT, and an ACI in the text would (correctly) make her mute — so a
+    design that substituted the id into the string would have shipped a mute
+    Nora, while one that leaked it would have shipped R-18's exact exposure.
+    Carrying it in a parallel field is what makes both impossible.
+    """
+
+    start: int
+    length: int
+    recipient: str
+
+
+class Style(StrEnum):
+    """A Signal text style, spelled exactly as signal-cli's parser accepts it.
+
+    **Exactly two members, and the shortfall is deliberate.** signal-cli 0.14.7
+    also knows `NONE`, `SPOILER`, `STRIKETHROUGH` and `MONOSPACE`
+    (`org.asamk.signal.manager.api.TextStyle$Style`), and none of them has a
+    producer here: `nora.agent.markdown` converts the two emphasis forms the
+    model actually emits and nothing else. Declaring the other four would buy a
+    member no code path can reach, which R-17's argument about counters that
+    can never increment applies to just as well — an unreachable enum member is
+    indistinguishable from a deleted one, and it invites a caller to invent a
+    syntax for it.
+
+    The VALUES are the wire form, and they are case-sensitive. `TextStyle.Style
+    .from(String)` is a chain of `String.equals` against the uppercase names —
+    verified twice: on the bytecode, and against the live daemon, which answers
+    a lowercase `bold` with `{"error": {"message": "Invalid style: bold"}}` and
+    sends nothing at all. `StrEnum` so the member IS its wire string and there
+    is no second table mapping one to the other.
+    """
+
+    BOLD = "BOLD"
+    ITALIC = "ITALIC"
+
+
+@dataclass(frozen=True)
+class TextStyle:
+    """One styled RANGE over the message text — the sibling of `Mention`.
+
+    Same shape, same units, same hazard: `start`/`length` are **UTF-16 code
+    units** (`nora.domain.utf16`), they are meaningful against exactly one
+    string, and Signal renders a wrong range rather than rejecting it. Read
+    `Mention`'s docstring for the full argument; everything in it applies here
+    with `style` where `recipient` is.
+
+    One thing is SHARPER here than for a mention. A mention is added to text
+    the model wrote; a style is what is LEFT after `nora.agent.markdown`
+    deleted the asterisks that expressed it — so the range indexes a string
+    that did not exist when the model produced it. That is why the text and its
+    styles travel as one `Styled` value below rather than as two arguments.
+
+    **A malformed range costs the MESSAGE, not the styling.**
+    `SendCommand.parseTextStyles` compiles `(\\d+):(\\d+):(.+)` and throws
+    `UserErrorException` on anything else, which fails the whole send — checked
+    against the live daemon on 2026-08-10: `-1:3:BOLD` came back «Invalid
+    textStyle syntax (-1:3:BOLD) expected 'start:length:STYLE'» with nothing
+    delivered. So `nora.platform.signal.send` drops a range it cannot express
+    rather than posting it, exactly as it does for a mention.
+    """
+
+    start: int
+    length: int
+    style: Style
+
+
+@dataclass(frozen=True)
+class Styled:
+    """A message's FINAL text together with the ranges that index it.
+
+    **The point of this type is that the two cannot be separated.** DEC-82
+    converts `**bold**` into a style range, which means one operation both
+    deletes characters and produces offsets into the string that is left. Hand
+    those back as two values and every later line is an opportunity to pair the
+    new offsets with the old text; there is no error when that happens, only a
+    group seeing bold over the wrong words. So the producer returns ONE frozen
+    value, `nora.agent.outbound.Outbound` stores that value rather than copying
+    its halves, and `Outbound.text`/`Outbound.styles` are properties off it —
+    an `Outbound` whose styles index a different string than its text is not a
+    bug to be found in review, it is unconstructible.
+
+    `nora.agent.markdown.render_markdown` is the only producer in `nora/`, and
+    `tests/architecture/test_outbound_offsets_are_computed_last.py` is what
+    keeps that true on the AST.
+
+    `__post_init__` is the runtime half: a range outside the text is refused at
+    construction, so the fail-safe upstream (`render_markdown` returns the
+    unstyled draft if anything goes wrong) fires on a bad range instead of the
+    range reaching the wire. Skipped entirely when there are no styles, which
+    is the overwhelmingly common message — an unstyled `Styled` costs nothing.
+    """
+
+    text: str
+    styles: tuple[TextStyle, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.styles:
+            return
+        limit = utf16_len(self.text)
+        for style in self.styles:
+            if style.start < 0 or style.length <= 0 or style.start + style.length > limit:
+                raise ValueError(
+                    f"style range {style.start}:{style.length} does not fit a "
+                    f"{limit}-unit message"
+                )
+
+
+@dataclass(frozen=True)
+class LinkPreview:
+    """The sender-generated preview card for one URL in the message.
+
+    Signal link previews are **sender-generated**: the sending client fetches
+    the target's OpenGraph tags and attaches title/description/image to the
+    message. The recipients' clients render what they are given and fetch
+    nothing, which is the privacy property the design exists for — and the
+    reason this is Nora's fetch to make, with Nora's SSRF exposure to manage
+    (`nora.infra.preview`).
+
+    `title` is MANDATORY on the wire (`signal-cli(1)`: "Specify the title for
+    the link preview (mandatory)"), so a page with no usable title yields no
+    preview at all rather than a half one — `OpenGraphPreviewSource` returns
+    `None` in that case and the message goes out plain.
+
+    `image_data_uri` is an RFC 2397 `data:` URI, NOT a path, and that is a
+    deployment fact rather than a preference: `--preview-image` takes a file
+    signal-cli must be able to READ, and signal-cli runs in a different
+    container from Nora with no shared volume (`docker-compose.yml` — Nora
+    mounts `./data`, signal-cli mounts `./state/signal-cli`, and neither sees
+    the other). A path would therefore have been silently unreadable in
+    production while passing every local test. Verified out of the 0.14.7 jar:
+    `ManagerImpl` hands `Message.Preview.image()` to
+    `AttachmentHelper.uploadAttachment(String)`, whose `getAttachmentStream`
+    skips the file-path validation entirely when the string starts with
+    `data:` and goes to `Utils.createStreamDetails` — the same RFC 2397 path
+    `--attachment` documents.
+    """
+
+    url: str
+    title: str
+    description: str = ""
+    image_data_uri: str | None = None
 
 
 @dataclass(frozen=True)
@@ -325,7 +508,34 @@ class PlatformAdapter(Protocol):
         self, *, on_message: Callable[[NormalizedMessage], Awaitable[None]]
     ) -> None: ...
 
-    async def send(self, *, target: ConversationTarget, text: str) -> SendResult: ...
+    # `mentions`/`styles`/`preview` are DEFAULTED, and that is the only
+    # defaulting on this port's send path. They are DECORATION on a message
+    # that must go out regardless (R-5): a platform with no mention concept
+    # ignores them, and every failure upstream of here — an unresolvable name,
+    # an unreadable roster, a preview that would not fetch, a markdown render
+    # that raised — degrades to the empty default and the plain message, never
+    # to a refusal. The defaults are also what keeps a future adapter honest
+    # without a flag day: it satisfies the port the day it is written, and
+    # adding real support is a change to that adapter alone. See
+    # `Mention`/`TextStyle`/`LinkPreview` for the wire facts each carries, and
+    # `nora.agent.outbound` for who is allowed to build them.
+    #
+    # `styles` is passed as a bare tuple here even though it is INSEPARABLE
+    # from the text upstream (`Styled`), because this is the boundary where the
+    # message stops being one value and becomes a JSON-RPC payload of parallel
+    # fields. The invariant is held on the near side of this call, by
+    # `Outbound` reading both halves off one `Styled`; asking every adapter to
+    # accept a `Styled` would put a domain composite in the signature of a
+    # method whose whole job is to flatten it.
+    async def send(
+        self,
+        *,
+        target: ConversationTarget,
+        text: str,
+        mentions: tuple[Mention, ...] = (),
+        styles: tuple[TextStyle, ...] = (),
+        preview: LinkPreview | None = None,
+    ) -> SendResult: ...
 
     async def react(
         self,
@@ -502,6 +712,38 @@ class SearchProvider(Protocol):
     model-chosen URL, so the old `is_global`/`allowed_urls` apparatus is gone."""
 
     async def search(self, *, query: str) -> dict[str, Any]: ...
+
+
+@runtime_checkable
+class LinkPreviewSource(Protocol):
+    """`url -> LinkPreview | None` — the OpenGraph read behind an outbound
+    preview card. **NEVER raises**, and `None` is the only failure value.
+
+    That single-value degradation is deliberate, and it is the one place in
+    this file where the two-axis `Roster`/`Recollection` shape is REFUSED
+    rather than copied. Those two carry `available` because a CALLER has to
+    tell "I could not look" from "there is nothing", and says the difference
+    out loud to the group. Nothing downstream of this port ever will: the only
+    consumer is `nora.agent.outbound.OutboundComposer`, whose entire policy for
+    every failure is the same — send the message without a card. A `reachable`
+    bit here would exist solely to be discarded at its one call site, which is
+    an invented contract (`nora.domain.ports`' `MemoryStore.feed` makes the
+    same argument for staying a bare `bool`).
+
+    The **R-5 obligation is on the implementation, not the caller**: a preview
+    is decoration on a message that must go out anyway, so a dead host, a slow
+    host, a 404, a non-HTML body or a page with no `og:title` are all `None`,
+    and a preview must never be the reason the group hears nothing.
+
+    Whoever implements this inherits an **SSRF obligation**, because unlike
+    `SearchProvider` (DEC-73 (2): Tavily searches from ITS servers and is never
+    handed a URL) this port IS handed a URL that originated in model output, and
+    fetches it from Nora's own network — the exact exposure the retired
+    `web_fetch` had. `OpenGraphPreviewSource` documents the guard it applies;
+    a second implementation that does not apply one reopens DEC-73's hole.
+    """
+
+    async def preview_for(self, *, url: str) -> LinkPreview | None: ...
 
 
 @runtime_checkable

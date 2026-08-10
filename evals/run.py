@@ -43,6 +43,7 @@ import hashlib
 import json
 import os
 import sys
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -511,6 +512,11 @@ async def _run_journeys_live(journeys=JOURNEYS, *, samples: int = 1) -> tuple[bo
             runs.append({
                 "graded": graded, "passed": journeys_gate(graded, hard_checks=hard),
                 "tool_calls": list(trajectory.tool_calls),
+                # HOW the loop ended. Printed below because a journey can fail
+                # two completely different ways — the model chose the wrong tool,
+                # or it never reached `send_reply` at all — and the pass/fail
+                # line alone cannot tell them apart. See `Trajectory.stop_reason`.
+                "stop_reason": trajectory.stop_reason,
             })
         n_pass = sum(1 for r in runs if r["passed"])
         journey_passed = n_pass * 2 > samples  # strict majority; ties fail closed
@@ -522,6 +528,8 @@ async def _run_journeys_live(journeys=JOURNEYS, *, samples: int = 1) -> tuple[bo
         for name in _ROUTING_CHECKS:
             rate = sum(1 for r in runs if r["graded"][name].passed)
             print(f"    {name} ({'hard' if name in hard else 'advisory'}): {rate}/{samples} pass")
+        stops = Counter(r["stop_reason"] or "unrecorded" for r in runs)
+        print("    stop_reason: " + ", ".join(f"{k}x{v}" for k, v in sorted(stops.items())))
     return all_passed, results
 
 

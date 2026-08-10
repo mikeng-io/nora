@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from nora.agent.guards import Deliverer, ReplyGuard
+from nora.agent.links import LinkCarry
+from nora.agent.outbound import OutboundComposer
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 
@@ -35,12 +37,21 @@ log = logging.getLogger("nora.engagement.deliver")
 
 @dataclass
 class DeliveryHandle:
-    """The pair the invoke stage needs: `guard` as the agent's hook,
-    `deliverer` as what `send_reply` calls into (and what `check_outcome`
-    inspects afterwards)."""
+    """What the invoke stage needs: `guard` as the agent's hook, `deliverer` as
+    what `send_reply` calls into (and what `check_outcome` inspects afterwards),
+    and `links` as the one object the TOOLS and the `Deliverer` must share.
+
+    `links` is on the handle rather than reached for off `deliverer` (DEC-89).
+    Both would work; only this one makes the sharing visible at the call site,
+    where the caller passes the same object to `ToolRegistry.build(links=...)`
+    that it has just given the `Deliverer`. Reaching through
+    `handle.deliverer.links` would let a caller wire the tools to a carrier and
+    silently forget the sender — the feature present, decided, and inert, which
+    is DEC-42's failure and the reason `composer` has no default on `build`."""
 
     deliverer: Deliverer
     guard: ReplyGuard
+    links: LinkCarry
 
 
 def build(
@@ -57,6 +68,7 @@ def build(
     terminal: Collection[str],
     metrics: Any,
     audience: str,
+    composer: OutboundComposer | None,
     forced_first_tool: str | None = None,
     on_delivered: Any = None,
 ) -> DeliveryHandle:
@@ -69,7 +81,27 @@ def build(
     as conversation failures, inside the very budget A8 filters to
     `audience="tag"` (`docs/runbook.md`). That is invisible; a missing keyword
     is a `TypeError`.
+
+    **`composer` has no default here either, and `None` is a legal value** —
+    the two statements are not in tension, and the distinction is which
+    mistake stays invisible. `Deliverer` defaults it, because a test about R-2
+    should not have to care; THIS function is the seam both production senders
+    pass through (`tests/architecture/test_only_two_paths_can_send.py` proves
+    there are exactly two), so requiring the keyword is what stops the feature
+    from shipping INERT — wired everywhere, decided nowhere, silently sending
+    plain text while a decision index entry claims otherwise. That is DEC-42's
+    lesson restated: multi-message was structurally dead for a release because
+    a number nobody had edited was doing the refusing. Passing `None` is a
+    decision (the offline and eval compositions genuinely have no roster and no
+    preview fetcher); omitting the argument is a `TypeError`.
     """
+    # DEC-89: one carrier per turn, built HERE because this is the only place
+    # both users of it are in scope — the `Deliverer` below, and (via the
+    # returned handle) the `ToolRegistry.build(links=...)` call the caller makes
+    # next. `deliver.build` has exactly two production callers
+    # (`tests/architecture/test_only_two_paths_can_send.py` proves it), so
+    # minting it here is what makes both paths carry links rather than one.
+    links = LinkCarry()
     deliverer = Deliverer(
         store=store, adapter=adapter, target=target, doctrine=doctrine, canary=canary,
         tag_id=tag_id, nora_sender_id=nora_sender_id,
@@ -87,6 +119,8 @@ def build(
         # defaulting to None — the fire path passes nothing, and a turn with no
         # observer delivers exactly as it always did.
         on_delivered=on_delivered,
+        composer=composer,
+        links=links,
     )
     # `budgets` and `terminal` travel together and come from the same place
     # (`ToolRegistry`) — what a tool costs and whether calling it ends the turn
@@ -95,7 +129,7 @@ def build(
         conversation_id=conversation_id, budgets=budgets, terminal=terminal,
         deliverer=deliverer, metrics=metrics, forced_first_tool=forced_first_tool,
     )
-    return DeliveryHandle(deliverer=deliverer, guard=guard)
+    return DeliveryHandle(deliverer=deliverer, guard=guard, links=links)
 
 
 # The three `stop_reason` values that mean R-8's caps ended the turn, rather

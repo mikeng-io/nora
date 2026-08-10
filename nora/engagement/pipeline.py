@@ -47,10 +47,17 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from nora.agent.intent_router import route_intent
+from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import build_prefill, build_tag_message
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.domain.ports import EngagementRequest, MemoryStore, RecordStore, RosterSource
+from nora.domain.ports import (
+    EngagementRequest,
+    LinkPreviewSource,
+    MemoryStore,
+    RecordStore,
+    RosterSource,
+)
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
 from nora.policy import Policy
@@ -102,6 +109,7 @@ class EngagementPipeline:
         llm_state: Any = None,
         reactions: bool = True,
         roster_source: RosterSource | None = None,
+        preview_source: LinkPreviewSource | None = None,
     ) -> None:
         self._adapter = adapter
         self._audit = audit
@@ -138,6 +146,14 @@ class EngagementPipeline:
         # wiring mistake — degrades honestly instead of answering "nobody is
         # here" (R-5).
         self._roster_source = roster_source
+        # The OpenGraph fetcher behind an outbound link-preview card. `None`
+        # whenever `[preview].enabled` is false — the shipped default — and in
+        # every offline composition, which is why it defaults rather than being
+        # required: a missing preview is a message without a card, the exact
+        # state every deployment is in today, and nothing about it is a wrong
+        # claim. (`composer` on `deliver.build` is required for the opposite
+        # reason; the split is argued there.)
+        self._preview_source = preview_source
         # R-10's single-in-flight lock and R-30's per-conversation FIFO queue,
         # both keyed by (platform, conversation_id), as one INJECTED
         # collaborator. The queue feeds the lock's one slot in order as each
@@ -308,6 +324,17 @@ class EngagementPipeline:
                 budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
                 audience="tag",
+                # The outbound decoration stage (@-mentions + a link preview
+                # card). ONE per turn, holding the same `roster_source` the
+                # room-scoped tools use — so a mention is confirmed against the
+                # platform's own membership list for THIS conversation, lazily
+                # and at most once, rather than against the whole address book.
+                composer=OutboundComposer(
+                    platform=msg.platform, conversation_id=msg.conversation_id,
+                    persons=self._persons, metrics=self._metrics,
+                    roster_source=self._roster_source,
+                    preview_source=self._preview_source,
+                ),
                 # Phase 2 routing: a precision-first, abstaining classifier over the
                 # message. Non-None only on a narrow high-precision surface (mall
                 # opening-hours → place_info) the model misroutes despite the
@@ -339,6 +366,11 @@ class EngagementPipeline:
                 room=room, question=msg.body,
                 context_window=self._context_window, metrics=self._metrics,
                 allowed_mcp=allowed_mcp, location_trusted=location_trusted,
+                # DEC-89: the SAME carrier the `Deliverer` above holds. The
+                # tools mint links into it and the sender puts back the ones the
+                # reply earned and dropped; two carriers would be a feature that
+                # collects perfectly and appends nothing.
+                links=handle.links,
             )
             tagger_name = self._persons.display_name(msg)
             # STILL NO ROSTER IN THE PROMPT, and now there is a tool instead.

@@ -55,7 +55,9 @@ class _FakeAdapter:
     async def resolve_identity(self) -> PlatformIdentity:
         return PlatformIdentity(platform=self.platform, primary=self._account)
 
-    async def send(self, *, target, text: str) -> SendResult:
+    async def send(
+        self, *, target, text: str, mentions=(), styles=(), preview=None,
+    ) -> SendResult:
         self.sent.append((target, text))
         return SendResult(ok=True)
 

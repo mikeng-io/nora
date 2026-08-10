@@ -206,3 +206,48 @@ async def test_live_journey_routes_correctly(journey):
     # DEC-76); asserting them here would flake this test on exactly the runs the
     # gate is designed to tolerate.
     assert journeys_gate(results), (journey.intent.name, trajectory.tool_calls, failed)
+
+
+# ── the stop_reason instrument (2026-08-10) ─────────────────────────────────
+
+def test_stop_reason_is_read_back_off_the_metric():
+    """THE PROBE. `Trajectory` carried no stop reason, and its absence made a
+    root-cause analysis unfalsifiable: grepping an eval log for
+    `limit_output_tokens` returned zero, which looked like evidence and was a
+    null result from an instrument that could not measure the thing.
+
+    `end_turn` with no reply and `limit_output_tokens` are different failures —
+    one is the model declining to speak, the other is the loop being cut off —
+    and the gate could not tell them apart. Delete `_stop_reason_from_metrics`
+    and this reds."""
+    from evals.harness import _stop_reason_from_metrics
+    from nora.obs.metrics import Metrics
+
+    m = Metrics()
+    m.inc("nora_llm_stop_reason_total", reason="end_turn", audience="tag")
+    assert _stop_reason_from_metrics(m) == "end_turn"
+
+
+def test_no_stop_reason_recorded_is_none_not_a_guess():
+    """A turn that faulted before the model was invoked has no stop reason.
+    Inventing `"unknown"` would make that indistinguishable from a real one —
+    the same fail-closed rule the rest of the codebase uses for «I could not
+    check» vs «there is nothing»."""
+    from evals.harness import _stop_reason_from_metrics
+    from nora.obs.metrics import Metrics
+
+    assert _stop_reason_from_metrics(Metrics()) is None
+
+
+def test_the_winning_stop_reason_is_deterministic_on_a_tie():
+    """Two series with equal counts must not resolve by dict order, or the same
+    run reports different reasons on different days."""
+    from evals.harness import _stop_reason_from_metrics
+    from nora.obs.metrics import Metrics
+
+    m = Metrics()
+    m.inc("nora_llm_stop_reason_total", reason="end_turn", audience="tag")
+    m.inc("nora_llm_stop_reason_total", reason="limit_turns", audience="tag")
+    assert _stop_reason_from_metrics(m) == "end_turn"      # alphabetical on a tie
+    m.inc("nora_llm_stop_reason_total", reason="limit_turns", audience="tag")
+    assert _stop_reason_from_metrics(m) == "limit_turns"   # count beats alphabet
