@@ -47,6 +47,17 @@ from .agent_runner import LiveAgentRunner
 #: verified subset and the R-31 disclosure gate PERMITS `where_is`/`saved_places`.
 _EVAL_PERSON_ID = "miles"
 
+#: The SHIPPED table, deliberately WITHOUT `[llm.budgets]`. An eval measures the
+#: agent as the repo defines it, so runs stay comparable across deployments and
+#: across time — folding in a per-deployment delta would make a trajectory's
+#: verdict depend on whichever config.toml happened to be on the machine.
+#:
+#: The cost is stated rather than hidden (external review, 2026-08-11): once an
+#: operator raises a cap, an eval judges `ToolBudget` against a ceiling
+#: production no longer enforces, so a trajectory that is legal in production
+#: can fail here. That is the right way round — evals get stricter, never
+#: laxer, and the divergence shows up as a failing eval rather than as a
+#: passing one that proved nothing.
 REPLY_GUARD_BUDGETS = ToolRegistry().budgets()
 # What the doctrine loader's tool-catalogue gate checks backticked prose
 # against, so an eval run loads the shipped doctrine under the same rule

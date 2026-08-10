@@ -29,9 +29,13 @@ COPY config.example.toml identity.example.toml alembic.ini ./
 # this artifact) and arrives with the `COPY nora/` above, in the same filesystem
 # snapshot as the code it describes.
 #
-# The gate below refuses the build when the stamp and NORA_VERSION disagree, or
-# when the manifest is missing. That is what makes "the reported version cannot
-# disagree with the running code" a property rather than a hope. Build with
+# The gate below refuses the build when a CLAIMED version and the baked stamp
+# disagree — either way round: a mismatch, or a claim with no manifest to read.
+# That is what makes "the reported version cannot disagree with the running
+# code" a property rather than a hope. An UNSTAMPED build (no NORA_VERSION) is
+# allowed and drops any stale manifest, because an image that reports nothing
+# cannot disagree with anything — refusing it only broke `docker compose build`
+# and the plain `docker build` in README. Build with
 # `scripts/build-image.sh V3`, which stamps and passes the same value.
 ARG NORA_VERSION=""
 RUN python scripts/check_version_stamp.py "$NORA_VERSION"

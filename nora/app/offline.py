@@ -88,7 +88,12 @@ def build_offline_pipeline(
     # Default: a bare registry (every tool inert/`unavailable`). The eval's live
     # routing gate passes one wired with canned backends (F4) so `weather`/
     # `web_search`/`place_info`/… answer `ok`, removing the fallback confound.
-    tool_registry = tool_registry if tool_registry is not None else ToolRegistry()
+    # `budget_overrides` threaded, so an offline replay runs under the SAME
+    # ceilings production does. Without it, `[llm.budgets]` would silently make
+    # replay a different agent from the one deployed — which is the whole thing
+    # a replay path exists to rule out.
+    tool_registry = tool_registry if tool_registry is not None else ToolRegistry(
+        budget_overrides=cfg.llm.budgets)
     engagement = EngagementPipeline(
         adapter=adapter, audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
