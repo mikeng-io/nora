@@ -217,6 +217,14 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
+#: Every params key that carries DECORATION rather than the message. Named so
+#: the undecorated retry below cannot drift from the block that sets them: a new
+#: decoration key added to `send` without an entry here would be retried WITH the
+#: thing that may have caused the rejection.
+_DECORATION_KEYS = ("mention", "textStyle", "previewUrl", "previewTitle",
+                    "previewDescription", "previewImage")
+
+
 class SignalSender:
     def __init__(self, base_url: str, *, timeout: float = 10.0) -> None:
         self._base_url = base_url.rstrip("/")
@@ -278,9 +286,37 @@ class SignalSender:
                       type(exc).__name__, target.conversation_id, request_id)
             return SendResult(ok=False)
         if isinstance(body, dict) and body.get("error"):
-            log.error("send rejected by signal-cli (conversation=%s, id=%s)",
-                      target.conversation_id, request_id)
-            return SendResult(ok=False)
+            # RETRY ONCE, UNDECORATED, and this is the one retry in the send path
+            # (external review 2026-08-10). Decoration is a nicety; the message is
+            # not. Four of the params here — the `preview*` scalars — were never
+            # covered by the live-daemon probe, because `getString` has no parse
+            # step and a read key is indistinguishable from an ignored one; and
+            # `previewImage`'s `data:` URI acceptance rests on a jar reading. If
+            # any of that is wrong, signal-cli rejects the CALL, not the card, so
+            # `ok=False` here means the group hears NOTHING — and DEC-89 has just
+            # made URL-carrying replies more common, so that would be the common
+            # case rather than a corner.
+            #
+            # R-5 says silence beats a wrong answer; it does not say silence beats
+            # a PLAIN answer. Losing a preview card is invisible to the group;
+            # losing the reply is the failure this whole codebase is built to
+            # avoid. So a decorated send that is rejected is retried once with the
+            # decoration dropped, and only a bare send that ALSO fails is a real
+            # failure. Guarded on `params` having had decoration at all, so an
+            # undecorated rejection is not retried twice — a genuine refusal
+            # (blocked, not a member, bad group id) still fails on the first call.
+            decorated = any(k in params for k in _DECORATION_KEYS)
+            log.error(
+                "send rejected by signal-cli (conversation=%s, id=%s, decorated=%s)",
+                target.conversation_id, request_id, decorated,
+            )
+            if not decorated:
+                return SendResult(ok=False)
+            log.warning(
+                "retrying the send UNDECORATED (conversation=%s, id=%s) — the "
+                "reply matters, the card does not", target.conversation_id, request_id,
+            )
+            return await self.send(target, text, request_id=request_id)
         # A COUNT of mentions, never the recipients — the same rule
         # `Deliverer` follows for the reply text. An ACI in a log line is an
         # identifier at rest in a file the operator greps, which R-18 is about

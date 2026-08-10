@@ -427,3 +427,67 @@ async def test_a_valid_range_survives_alongside_a_malformed_one(rpc_server):
     )
 
     assert rpc_server.calls[0]["params"]["mention"] == [f"0:5:{ACI}"]
+
+
+# ── the undecorated retry (external review 2026-08-10) ──────────────────────
+
+
+async def test_a_rejected_decorated_send_is_retried_without_the_decoration(aiohttp_server):
+    """THE PROBE. Decoration is a nicety; the message is not.
+
+    The four `preview*` params were never covered by the live-daemon probe —
+    `getString` has no parse step, so a key that is READ and a key that is
+    IGNORED look identical — and `previewImage`'s `data:` URI acceptance rests
+    on a jar reading. If any of that is wrong, signal-cli rejects the CALL, not
+    the card: `ok=False`, row FAILED, and the group hears NOTHING. DEC-89 has
+    just made URL-carrying replies the common case rather than a corner.
+
+    R-5 says silence beats a WRONG answer. It does not say silence beats a
+    PLAIN one. Delete the retry and this reds."""
+    seen: list[dict] = []
+
+    async def handler(request):
+        body = await request.json()
+        seen.append(body["params"])
+        if any(k in body["params"] for k in ("previewUrl", "mention", "textStyle")):
+            return web.json_response({"error": {"message": "Invalid preview"}})
+        return web.json_response({"result": {"timestamp": 111}})
+
+    app = web.Application()
+    app.router.add_post("/api/v1/rpc", handler)
+    server = await aiohttp_server(app)
+    sender = SignalSender(str(server.make_url("")).rstrip("/"))
+
+    result = await sender.send(
+        TARGET, "去呢間 https://n.example.net/9DpAk8g",
+        preview=LinkPreview(url="https://n.example.net/9DpAk8g", title="Google Maps"),
+    )
+
+    assert result.ok is True                       # the REPLY got through
+    assert len(seen) == 2                          # decorated, then bare
+    assert "previewUrl" in seen[0]
+    assert not any(k in seen[1] for k in ("previewUrl", "previewTitle", "mention", "textStyle"))
+    assert seen[1]["message"] == "去呢間 https://n.example.net/9DpAk8g"   # same words
+
+
+async def test_an_undecorated_rejection_is_not_retried(aiohttp_server):
+    """The bound on the retry. A bare send that signal-cli refuses is a REAL
+    refusal — blocked, not a member, bad group id — and retrying it would turn
+    one honest failure into two identical ones."""
+    calls = 0
+
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        await request.json()
+        return web.json_response({"error": {"message": "Group not found"}})
+
+    app = web.Application()
+    app.router.add_post("/api/v1/rpc", handler)
+    server = await aiohttp_server(app)
+    sender = SignalSender(str(server.make_url("")).rstrip("/"))
+
+    result = await sender.send(TARGET, "hi")
+
+    assert result.ok is False
+    assert calls == 1
