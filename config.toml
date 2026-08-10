@@ -30,28 +30,23 @@ workspace_id = "nora"
 base_url = "http://host.docker.internal:20128/v1"   # OmniRoute OpenAI-compatible
 api_key_env = "OMNIROUTE_API_KEY"        # env var NAME, never the value
 
-# PINNED to one upstream, not the `nora` combo. The combo fans out per request
-# and only ONE of its three upstreams accepts a forced tool_choice while
-# thinking is enabled — measured 4/4 each, not sampled:
+# PINNED to one upstream, not the `nora` combo — the combo fans out per request
+# and the upstreams disagree about forced `tool_choice`, so on it she was on a
+# coin flip. See ADR 0006 for the full measurement behind BOTH values here.
 #
-#   deepseek/deepseek-v4-flash       400 "Thinking mode does not support this
-#   opencode-go/deepseek-v4-flash    400  tool_choice" (deepseek-ai/DeepSeek-V3#1376)
-#   opencode-zen/deepseek-v4-flash   200, and picks the right tool 4/4
+# opencode-zen → ollamacloud (2026-08-10). Two reasons, in order:
+#   1. ECONOMICS. ollama-cloud is subscription-based; opencode-zen is credit-based
+#      and was returning 403/429 «All credentials for model deepseek-v4-flash are
+#      cooling down» throughout a probing session. A route that rate-limits under
+#      load is not a route for the only path the group can reach her by.
+#   2. tool_choice. The 400 «Thinking mode does not support this tool_choice»
+#      that forced the zen pin does NOT occur here: 0 errors in 32 forced calls
+#      across all three deepseek tags.
 #
-# So on the combo she was on a coin flip: routed to zen she chained correctly,
-# routed to either other she 400'd mid-turn and went silent — showing the group
-# ⚠️, which reads as "gave up" rather than "the provider refused the request".
-#
-# This gives up the alias's benefit of keeping the upstream name out of her
-# process (R-18 still blocks model names from replies, so she cannot say it).
-# Determinism is worth more than the indirection.
-#
-# WATCH THIS: zen is the only one of the three that reports no reasoning_tokens
-# in usage, which suggests a different — possibly older — build than the other
-# two. If that is why it accepts the forced tool_choice, their next update
-# could start 400ing with nothing changing here. The version-independent
-# fallback is reasoning_effort = "none", which works on all three.
-model = "opencode-zen/deepseek-v4-flash"
+# `deepseek-v4-flash` and NEVER `-pro` (operator). Measured, `pro` is not better
+# at the one thing that matters here — it obeyed a forced tool_choice 2/3 where
+# flash-at-none obeyed 8/8 — so the larger model buys nothing and costs more.
+model = "ollamacloud/deepseek-v4-flash"
 # The provider's per-CALL ceiling — NOT the turn's budget (see [llm.limits]
 # below, which is where the loop's budget lives). Was 4000, an unmeasured
 # number that doubled as the loop budget; measured 2026-08-06, the largest
@@ -59,10 +54,37 @@ model = "opencode-zen/deepseek-v4-flash"
 # so 2000 is 5.4x headroom.
 max_tokens = 2000
 temperature = 0.7
-# "none" | "low" | "medium" | "high". A tag is one short reply from context she
-# already holds — nothing to reason through. Measured on deepseek-v4-flash:
-# "none" 4.7s, "low" 9.5s, unset 16.1s, all producing the tool call.
-reasoning_effort = "low"
+# "none" | "low" | "medium" | "high".
+#
+# "none", and the reason is NOT that the model reasons badly — it is that MORE
+# REASONING BUYS WORSE PROTOCOL COMPLIANCE, which is the only property this
+# architecture can spend (ADR 0006). Nora is entirely tool-mediated: she cannot
+# speak except through `send_reply`. Deliberation gives the model room to reason
+# to a good answer and then simply SAY it rather than route it through the tool
+# — and strict-silence discards that, so the group gets nothing.
+#
+# Measured 2026-08-10 on ollamacloud/deepseek-v4-flash. Two independent probes,
+# same monotonic shape:
+#
+#   effort   out tok p50   p50 s   auto tool-choice   no_send_call (journeys)
+#   none              49     1.2         5/5                    5
+#   low               70     1.1         3/5                    4
+#   medium            81     1.2         2/5                    —
+#   high             104     2.9         1/5                   15
+#
+# ROUTING is a wash — journeys total-samples high 21/24, none 20/24, low 19/24,
+# i.e. one sample apart at n=3. What is not a wash is the last column: `high`
+# ends the turn without calling `send_reply` three times as often, and that is
+# her going mute in the group. Ruled OUT as token exhaustion, from the code
+# rather than a log grep — `nora.engagement.pipeline` handles budget cut-offs on
+# a separate branch (they get the fallback reply), so `no_send_call` is a loop
+# that ended normally having never called the tool.
+#
+# The earlier note here ("A tag is one short reply from context she already
+# holds — nothing to reason through") turns out to be the right instinct for the
+# wrong reason: it is not that the turn is easy, it is that the work is «pick one
+# tool and call it correctly», where deliberation is pure downside.
+reasoning_effort = "none"
 # 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container,
 # and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
 # so every real image timed out while the tiny probe PNG passed.
