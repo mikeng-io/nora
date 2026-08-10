@@ -15,35 +15,64 @@ message goes out, unmentioned, with no error anywhere — R-5's shape).
 So the names below were read out of the shipped **0.14.7 jar**, not inferred:
 
 * `org.asamk.signal.commands.JsonRpcNamespace` is the adapter between the JSON
-  `params` object and argparse4j's `Namespace`. `get(name)` tries the literal
-  key, then `Util.dashSeparatedToCamelCaseString(name)`. `getList(name)` tries
-  the literal key as a LIST first, falls back to wrapping a scalar under the
-  same key, and only then tries `name + "s"` (the constant-pool string is
-  `\\u0001s`, a `makeConcatWithConstants` recipe — plural is the LAST resort,
-  not the first).
-* `org.asamk.signal.commands.SendCommand` reads `namespace.getList("mention")`
-  and `namespace.getString("preview-url" | "preview-title" |
-  "preview-description" | "preview-image")`.
+  `params` object and argparse4j's `Namespace`. It overrides `get(name)` to try
+  the literal key and then `Util.dashSeparatedToCamelCaseString(name)`, and
+  `getList(name)` to try `super.getList(name)` and then `name + "s"` (the
+  constant-pool string is `\\u0001s`, a `makeConcatWithConstants` recipe).
+  **The subtlety that decides everything: `Namespace.getList` is
+  `checkcast(List) this.get(dest)`, and `this.get` is a VIRTUAL call** — so it
+  dispatches back into the override, and the camelCase attempt applies to list
+  parameters too. Four spellings therefore resolve to one option:
+  `text-style`, `textStyle`, `text-styles`, `textStyles`.
+* `org.asamk.signal.commands.SendCommand` reads `namespace.getList("mention")`,
+  `namespace.getList("text-style")` and `namespace.getString("preview-url" |
+  "preview-title" | "preview-description" | "preview-image")`.
 
-Combining those two: **`"mention"` as a JSON array is the FIRST lookup** and
-needs no fallback, which is why it is the name used here rather than the
-plural the `--attachment` example would suggest. The four preview scalars are
-sent camelCased (`previewUrl`, …) because that is the form the man page
-documents as public; the dash form resolves too, via `get`'s literal-key
-attempt, so both are correct and only one is documented.
+`mention` and `textStyle` are the spellings used below: the singular because
+that is the literal key `SendCommand` asks for and it needs no fallback at all,
+the camelCase because that is the form `signal-cli-jsonrpc(5)` documents as
+public. Both resolve on the first or second lookup, and — unlike in the release
+that shipped mentions — that is no longer an argument from bytecode alone.
+
+**VERIFIED AGAINST THE LIVE DAEMON, 2026-08-10.** The parameter names were
+probed on the running `signal-cli` 0.14.7 container without sending anything,
+by exploiting the ORDER in which `SendCommand.handleCommand` validates: text
+styles are parsed at bytecode offset 428 and the quote author is checked at
+464, so a request carrying a deliberately invalid style AND a quote timestamp
+with no author fails at one of two named errors and reaches no `sendMessage`:
+
+    textStyle  / text-style / textStyles → "Invalid style: NOTASTYLE"
+    textStylez (the negative control)    → "Quote author parameter is missing"
+    mention                              → "Invalid phone number 'NOT-A-...'"
+    mentionz   (the negative control)    → "Quote author parameter is missing"
+
+The controls are what make the positives readable: the daemon answers a key it
+does not know by falling through to the NEXT validation, so an instrument that
+returned the same error for both would have measured nothing. A valid
+`0:1:BOLD` also falls through to the quote error, and a lowercase `0:1:bold`
+comes back «Invalid style: bold» — the style names are case-sensitive.
+
+**What that probe does NOT cover, stated rather than glossed:**
+
+* **The four `preview*` scalars.** They are read with `getString`, which takes
+  the `JsonRpcNamespace.get` path (literal key, then camelCase) and has no
+  parse step to fail on — so there is no error to distinguish a key that was
+  read from one that was ignored, and the same trick cannot be played. They
+  remain a bytecode-and-man-page claim, exactly as `[preview] enabled = false`
+  shipped (DEC-87), and a live smoke test is still the confirmation this cannot
+  supply.
+* **That a range which parses also RENDERS where it should** on a recipient's
+  device. Nothing short of a real send into the real group can show that, and
+  the failure mode there is cosmetic rather than silent — signal-cli rejects a
+  malformed range loudly (see `_text_style_params`), so the untested half is
+  «right bytes, wrong-looking», not «right-looking, wrong bytes».
 
 A mention element is `"start:length:recipient"` — `SendCommand.parseMentions`
 compiles `(\\d+):(\\d+):(.+)` and passes group 1 as start, group 2 as length and
-group 3 to `CommandUtil.getSingleRecipientIdentifier`. Units are UTF-16 code
-units (`nora.domain.ports.Mention`).
-
-**NOT VERIFIED AGAINST A LIVE DAEMON.** Every name above is read from the jar
-this deployment runs and from its own man pages; no send carrying a mention or
-a preview has been made, because the only live conversation is a real one. The
-failure mode of a wrong name here is a message that goes out plain — signal-cli
-ignores parameters it does not read — so this degrades the way the rest of the
-feature does rather than costing the message. A live smoke test against the
-operator's daemon is the confirmation this cannot supply.
+group 3 to `CommandUtil.getSingleRecipientIdentifier`. A text style is
+`"start:length:STYLE"` through the same regex in `parseTextStyles`, with group 3
+handed to `TextStyle.Style.from`. Units are UTF-16 code units for both
+(`nora.domain.utf16`).
 """
 
 from __future__ import annotations
@@ -54,7 +83,8 @@ import os
 import aiohttp
 
 from ...domain.models import ConversationTarget
-from ...domain.ports import LinkPreview, Mention, SendResult
+from ...domain.ports import LinkPreview, Mention, SendResult, TextStyle
+from ...domain.utf16 import utf16_len
 
 log = logging.getLogger("nora.signal.send")
 
@@ -76,6 +106,40 @@ def _mention_params(mentions: tuple[Mention, ...]) -> list[str]:
                       m.start, m.length)
             continue
         out.append(f"{m.start}:{m.length}:{m.recipient}")
+    return out
+
+
+def _text_style_params(styles: tuple[TextStyle, ...], text: str) -> list[str]:
+    """`TextStyle`s as signal-cli's `start:length:STYLE` strings.
+
+    The same shape as `_mention_params` above, for the same measured reason: a
+    range signal-cli's `(\\d+):(\\d+):(.+)` regex rejects throws
+    `UserErrorException` and fails the WHOLE send. Confirmed on the live daemon
+    rather than reasoned about — `-1:3:BOLD` came back «Invalid textStyle
+    syntax (-1:3:BOLD) expected 'start:length:STYLE'» with nothing delivered.
+    So a range that cannot be expressed is DROPPED here: the group gets the
+    sentence without the bold, which is the whole point of R-5's ordering.
+
+    **The bounds check is the part `_mention_params` has no equivalent of**, and
+    it is here rather than upstream because this is the last place that holds
+    both the ranges and the exact string they index. `Styled.__post_init__`
+    already refuses an out-of-range style at construction, and
+    `nora.agent.markdown` computes them from the very text it is returning — so
+    a drop here means one of those two broke, which is exactly when a belt is
+    worth its braces. It is logged at ERROR for that reason: unlike a dropped
+    mention (an ordinary consequence of a stale address book), this one has no
+    innocent cause.
+    """
+    limit = utf16_len(text)
+    out = []
+    for style in styles:
+        if style.start < 0 or style.length <= 0 or style.start + style.length > limit:
+            log.error(
+                "dropping a malformed text style (start=%s, length=%s, limit=%s)",
+                style.start, style.length, limit,
+            )
+            continue
+        out.append(f"{style.start}:{style.length}:{style.style.value}")
     return out
 
 
@@ -164,6 +228,7 @@ class SignalSender:
         text: str,
         *,
         mentions: tuple[Mention, ...] = (),
+        styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
         request_id: str = "",
     ) -> SendResult:
@@ -174,15 +239,17 @@ class SignalSender:
         params: dict[str, object] = {
             "groupId": target.conversation_id, "message": text,
         }
-        # Both keys are ABSENT when there is nothing to say, never present and
-        # empty. An empty `mention: []` is harmless today, but the whole point
-        # of the previous release's payload being two keys is that a reader can
-        # see what a plain message looks like on the wire — and an argparse4j
-        # namespace with an empty list in it is a different object from one
-        # without the key, which is the kind of difference that turns out to
-        # matter on the version nobody tested against.
+        # Every decoration key is ABSENT when there is nothing to say, never
+        # present and empty. An empty `mention: []` is harmless today, but the
+        # whole point of a plain message's payload being exactly two keys is
+        # that a reader can see what one looks like on the wire — and an
+        # argparse4j namespace with an empty list in it is a different object
+        # from one without the key, which is the kind of difference that turns
+        # out to matter on the version nobody tested against.
         if ranges := _mention_params(mentions):
             params["mention"] = ranges
+        if spans := _text_style_params(styles, text):
+            params["textStyle"] = spans
         if preview is not None:
             params.update(_preview_params(preview))
         payload = {
@@ -218,7 +285,7 @@ class SignalSender:
         # `Deliverer` follows for the reply text. An ACI in a log line is an
         # identifier at rest in a file the operator greps, which R-18 is about
         # as much as it is about the group.
-        log.info("sent %d chars to %s (id=%s, mentions=%d, preview=%s)",
+        log.info("sent %d chars to %s (id=%s, mentions=%d, styles=%d, preview=%s)",
                  len(text), target.conversation_id, request_id,
-                 len(mentions), preview is not None)
+                 len(mentions), len(styles), preview is not None)
         return SendResult(ok=True, timestamp=_sent_timestamp(body))
