@@ -81,7 +81,14 @@ class ReminderCaps:
 
     max_pending_per_requester: int = 20
     min_lead_seconds: int = 120
-    max_horizon_days: int = 30
+    # 365, matching the shipped `config.toml` (2026-08-10). It was 30 while
+    # config said 365, and the drift was invisible until the horizon moved:
+    # `nora.app.offline` builds `ToolRegistry()` with no caps, so the EVAL
+    # harness silently measured a 30-day horizon against a 365-day production
+    # and would have reported the change as not landed. A default that
+    # disagrees with the shipped config is an instrument that cannot measure
+    # the thing (CLAUDE.md's rule).
+    max_horizon_days: int = 365
 
 
 @dataclass(frozen=True, slots=True)

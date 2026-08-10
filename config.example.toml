@@ -296,7 +296,7 @@ max_pending_per_requester = 20
 min_lead_seconds = 120     # MUST be > heartbeat.tick_seconds, so a
                            # minimum-lead row cannot land in the tick already
                            # running. Nora refuses to start if it is not.
-max_horizon_days = 30
+max_horizon_days = 365
 
 [doctrine]
 dir = "nora/doctrine"

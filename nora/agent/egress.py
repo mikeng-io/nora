@@ -144,8 +144,32 @@ def _normalize(text: str) -> str:
 
 # Markdown emphasis/heading syntax, as it actually reaches a chat client that
 # does not render it. Deliberately NARROW — see `strip_markdown`.
-_MD_BOLD_ITALIC = re.compile(r"(?<!\w)(\*{1,3})(?!\s)(.+?)(?<!\s)\1(?!\w)", re.DOTALL)
-_MD_HEADING = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+", re.MULTILINE)
+#
+# The delimiter rule is about the ASTERISK RUN and the whitespace INSIDE it,
+# never about word characters outside it. The first version guarded with
+# `(?<!\w)`/`(?!\w)` and was broken for Cantonese — the language she actually
+# writes in (review 2026-08-10). `\w` is Unicode-aware, so 投 and 資 ARE word
+# characters; in `**投資**方面` the closing `**` is followed by 方, the guard
+# fails on the real delimiter, and the engine backtracks onto the INNER
+# asterisk of each pair — emitting `*投資*方面`. Half-stripped output is worse
+# than none: the asterisks still reach the group AND they move onto the wrong
+# spans (`重點係**價錢**同**位置**` became `重點係*價錢同位置*`). Chinese prose has
+# no spaces, so bold-adjacent-to-CJK is the COMMON shape here, not an edge case.
+#
+#   (?<!\*)(\*{1,3})(?!\*)  a COMPLETE run of 1-3 asterisks — this is what stops
+#                           the engine matching half of a `**` pair, and what
+#                           leaves `****` and `**/*.py` alone.
+#   (?!\s)  …  (?<!\s)      no whitespace just inside either delimiter, which is
+#                           what keeps `3 * 4` and `a * b * c` intact.
+#   [^\n]+?                 single line only. Emphasis never spans a blank line,
+#                           and the old `re.DOTALL` let two unrelated stray
+#                           asterisks in different paragraphs pair up and eat
+#                           the text between them.
+_MD_EMPHASIS = re.compile(r"(?<!\*)(\*{1,3})(?!\*)(?!\s)([^\n]+?)(?<!\s)\1(?!\*)")
+# `(?=\S)` so a bare `###` is left as literal text instead of being emptied —
+# the strip must never turn a reply that would have been SENT into an R-4
+# empty_reply refusal.
+_MD_HEADING = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+(?=\S)", re.MULTILINE)
 
 
 def strip_markdown(text: str) -> str:
@@ -178,7 +202,7 @@ def strip_markdown(text: str) -> str:
     # is greedy and already takes all three, but repeating until stable also
     # collapses `**a *b* c**` (nested emphasis), which one pass leaves half-done.
     for _ in range(3):
-        cleaned = _MD_BOLD_ITALIC.sub(r"\2", text)
+        cleaned = _MD_EMPHASIS.sub(r"\2", text)
         if cleaned == text:
             break
         text = cleaned
@@ -196,7 +220,17 @@ class LeakGuard:
     def __init__(self, doctrine: Doctrine, canary: str, min_span: int = 40) -> None:
         self._canary = canary
         self._min_span = min_span
-        self._haystack = _normalize(doctrine.doctrine_text)
+        # The haystack speaks the SAME dialect as the candidate (fail-closed
+        # audit 2026-08-10). DEC-82 strips Markdown from replies, but the
+        # doctrine files ARE Markdown — voice.md alone carries 10 `**bold**`
+        # spans and every file has `#` headings — so comparing a stripped reply
+        # against a raw haystack silently un-blocked verbatim recitations whose
+        # windows straddled a removed marker. Measured: 405 bold-caused and 831
+        # heading-caused misses at a 45-char window. Both sides are normalised
+        # the same way here; `Deliverer` additionally checks the RAW reply, so a
+        # span is caught whichever dialect it was written in.
+        self._haystack = _normalize(strip_markdown(doctrine.doctrine_text))
+        self._raw_haystack = _normalize(doctrine.doctrine_text)
 
     def check(self, text: str) -> str | None:
         if not text:
@@ -208,7 +242,7 @@ class LeakGuard:
             return None
         for start in range(0, len(candidate) - self._min_span + 1):
             span = candidate[start:start + self._min_span]
-            if span in self._haystack:
+            if span in self._haystack or span in self._raw_haystack:
                 log.error("doctrine_leak_blocked: verbatim span %r", span[:60])
                 return "doctrine_span"
         return None

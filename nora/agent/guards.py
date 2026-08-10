@@ -191,21 +191,12 @@ class Deliverer:
             self._metrics.inc("nora_guard_vetoes_total", rule="R-2")
             return False
 
-        # DEC-82: strip Markdown BEFORE every remaining guard, so each one
+        # DEC-82: strip Markdown BEFORE the remaining guards, so each one
         # measures the bytes that actually LEAVE rather than a draft that no
-        # longer exists. The concrete case is R-6: a doctrine span broken up by
-        # emphasis (`**You never post an error message…**`) is invisible to the
-        # leak guard as drafted and plainly present once stripped, so cleaning
-        # afterwards would let exactly that through.
-        #
-        # It does NOT rescue R-4 — the regex requires non-whitespace inside the
-        # delimiters, so no input that is non-empty before the strip is empty
-        # after it. Said explicitly because the reverse is the obvious guess.
-        #
-        # It also happens before `row` is built, so the audit row, `sent_texts`,
-        # and the Honcho feed all carry the ONE canonical form — the words the
-        # group actually saw.
-        text = strip_markdown(text)
+        # longer exists. It also happens before `row` is built, so the audit row,
+        # `sent_texts` and the Honcho feed all carry the ONE canonical form — the
+        # words the group actually saw.
+        drafted, text = text, strip_markdown(text)
 
         if not text or not text.strip():                       # R-4
             log.warning("delivery refused: empty reply (tag=%s)", self._tag_id)
@@ -215,7 +206,16 @@ class Deliverer:
             )
             return False
 
-        reason = self._leak.check(text)                        # R-6
+        # R-6 against BOTH forms, because DEC-82's strip cuts both ways and only
+        # one direction was noticed at first (review 2026-08-10). Stripping
+        # REVEALS a doctrine span broken up by emphasis — checking the draft
+        # alone would miss it. But `_MD_HEADING` also DELETES the `# ` that the
+        # raw doctrine haystack still contains, so a window straddling a heading
+        # stops matching — measured, that let 293 verbatim voice.md spans through
+        # that the draft form blocks. Neither form is a superset of the other, so
+        # checking either one alone is a hole. Check both and refuse on either:
+        # a false block costs one silent reply, a leak is not recoverable.
+        reason = self._leak.check(text) or self._leak.check(drafted)  # R-6
         if reason:
             log.error("doctrine_leak_blocked: %s (tag=%s)", reason, self._tag_id)
             self._metrics.inc("nora_leak_blocks_total")
@@ -229,7 +229,21 @@ class Deliverer:
         # deliberately does not match. This is the ONE caller of `scan_reply`,
         # the strict predicate: `text` here is addressed to the group, so the
         # model name is a disclosure. Everywhere else uses `scan_identifiers`.
-        kind = scan_reply(text)
+        #
+        # BOTH forms, for the same reason R-6 above checks both — and this one is
+        # the sharper case (fail-closed audit 2026-08-10). Every identifier
+        # pattern is `\b`-anchored, and removing an asterisk BETWEEN two word
+        # characters joins them and destroys the boundary. Measured on the
+        # committed code and on this rewrite:
+        #
+        #   "*a*deadbeef-1234-5678-9abc-def012345678"  raw→uuid   stripped→None
+        #   "*+85298765432*a"                          raw→phone  stripped→None
+        #
+        # i.e. a member's real number, wrapped in emphasis, would have been SENT.
+        # A text transformation must never sit in front of a fail-closed guard
+        # without the guard seeing both sides; this module's own docstring is
+        # explicit that blocking costs one reply and leaking is not recoverable.
+        kind = scan_reply(text) or scan_reply(drafted)
         if kind:
             log.error("egress_blocked: %s (tag=%s)", kind, self._tag_id)
             self._metrics.inc("nora_egress_blocks_total", kind=kind)

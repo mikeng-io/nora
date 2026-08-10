@@ -247,7 +247,12 @@ def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_p
     assert cfg.heartbeat.timeout_seconds == 120.0
     assert cfg.reminders.max_pending_per_requester == 20
     assert cfg.reminders.min_lead_seconds == 120
-    assert cfg.reminders.max_horizon_days == 30
+    # 365 since 2026-08-10: 30 refused the real asks (a wedding 55 days out, a
+    # birthday 6 months out) and the code default now MATCHES the shipped config
+    # — they had drifted, which made the eval harness measure a horizon
+    # production does not have (`nora.app.offline` builds `ToolRegistry()` with
+    # no caps). This assertion is what keeps the two from drifting again.
+    assert cfg.reminders.max_horizon_days == 365
     assert cfg.reminders.min_lead_seconds > cfg.heartbeat.tick_seconds
 
 

@@ -545,7 +545,7 @@ class RemindersConfig(BaseModel):
     # stated: `Config._lead_clears_the_tick` refuses the pair outright — this
     # was a comment in three files and a rule in none.
     min_lead_seconds: int = Field(default=120, ge=1)
-    max_horizon_days: int = Field(default=30, ge=1)
+    max_horizon_days: int = Field(default=365, ge=1)   # matches ReminderCaps
 
 
 class DoctrineConfig(BaseModel):

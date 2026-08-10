@@ -300,8 +300,15 @@ def resolve(
     """
     if indicator is None or indicator.settled.is_set():
         return
-    indicator.settled.set()
+    # SPAWN FIRST, LATCH SECOND (fail-closed audit 2026-08-10). `spawn` is
+    # `asyncio.create_task` underneath, which raises `RuntimeError` when there is
+    # no running loop or it is closing. Latching first meant that raise left the
+    # indicator marked settled with nothing scheduled — so the pipeline's
+    # `finally` saw `settled.is_set()`, returned, and the group kept the 👀
+    # FOREVER on a turn that had actually answered. Ordered this way a failed
+    # spawn leaves the latch clear and the `finally` still does its job.
     spawn(_resolve(indicator, delivered=delivered))
+    indicator.settled.set()
 
 
 class DeliverySettler:
@@ -330,5 +337,22 @@ class DeliverySettler:
     def settle(self) -> None:
         """A reply reached the group. Safe to call on every message of a
         multi-message turn (DEC-40) — the second and later calls are latched
-        out, so the ✅ marks the FIRST reply rather than moving down the turn."""
-        resolve(indicator=self._indicator, delivered=True, spawn=self._spawn)
+        out, so the ✅ marks the FIRST reply rather than moving down the turn.
+
+        NEVER RAISES, and that is load-bearing rather than tidy (fail-closed
+        audit 2026-08-10). This runs SYNCHRONOUSLY inside `Deliverer.deliver`,
+        after `adapter.send` has already succeeded — the message is on every
+        device by now. An exception escaping here would climb `send_reply` →
+        `invoke.run`'s `except Exception` and be counted
+        `nora_silent_failures_total{reason="llm_error"}`: a delivered reply
+        reported as a failed turn. Decoration is never allowed to become the
+        turn's problem (R-5), which is exactly why `_react` swallows too.
+        """
+        try:
+            resolve(indicator=self._indicator, delivered=True, spawn=self._spawn)
+        except Exception:
+            log.warning(
+                "settling the indicator failed (tag=%s); the reply was DELIVERED "
+                "and the pipeline's finally will still resolve it",
+                self._indicator.tag_id if self._indicator else "-", exc_info=True,
+            )

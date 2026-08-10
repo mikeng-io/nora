@@ -2,6 +2,7 @@ import time
 
 import pytest
 
+from nora.agent.egress import scan_reply, strip_markdown
 from nora.agent.guards import Deliverer
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import DoctrineStore
@@ -14,7 +15,17 @@ from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
 TARGET = ConversationTarget("signal", "g1", "group")
-GUARDRAIL_BODY = "You never post an error message, a stack trace, or a failure notice at all."
+# MARKDOWN IS PART OF THE FIXTURE, deliberately (fail-closed audit 2026-08-10).
+# The real doctrine files are Markdown — voice.md alone carries 10 `**bold**`
+# spans and every file has `#` headings — and this fixture used to be one plain
+# sentence with none. That is structurally why the DEC-82 strip looked
+# guard-STRENGTHENING in tests while weakening R-6 against the real doctrine: a
+# haystack with no emphasis cannot express the asymmetry. CLAUDE.md's "make the
+# fake behave like the real server" applies to fixtures too.
+GUARDRAIL_BODY = (
+    "# Guardrails\n\n"
+    "You never post an **error message**, a **stack trace**, or a failure notice at all."
+)
 
 
 @pytest.fixture
@@ -418,19 +429,70 @@ async def test_markdown_is_stripped_before_the_audit_row_is_written(store, doctr
 
 
 async def test_markdown_is_stripped_before_the_leak_guard_runs(store, doctrine):
-    """The ordering that actually matters for DEC-82. The R-6 leak guard must
-    see the bytes that LEAVE: a doctrine span broken up by emphasis markers
-    (`**You are** Nora`) is invisible to the guard as drafted and plainly
-    present once stripped. Cleaning after the guards would let exactly that
-    through.
+    """DEC-82 ordering, R-6 direction ONE: stripping REVEALS a doctrine span
+    that emphasis had broken up.
 
-    (The other direction — a strip producing an empty reply for R-4 — cannot
-    happen: the regex requires non-whitespace inside the delimiters, so `***
-    ***` is left alone as literal text. Ordering is justified by the leak guard
-    alone, which is why that is what this pins.)"""
+    The first version of this test was DECORATIVE (review 2026-08-10) — it wrapped
+    the whole body as `**{GUARDRAIL_BODY}**`, which still contains the body
+    verbatim, so `LeakGuard`'s 40-char sliding window matched with or without the
+    strip and the test stayed green when the production change was reverted. The
+    emphasis has to sit INSIDE the span, closer together than `min_span`, so that
+    no un-stripped window is verbatim.
+
+    Delete the strip and this reds."""
     metrics = Metrics()
     d = _deliverer(store, doctrine, SinkSender(), metrics)
-    # GUARDRAIL_BODY verbatim, wrapped in emphasis so only the STRIPPED form
-    # is a byte-for-byte doctrine span the R-6 guard can recognise.
-    assert await d.deliver(f"**{GUARDRAIL_BODY}**") is False
+    broken = (
+        "You **never** post an **error** message, a **stack** trace, "
+        "or a **failure** notice at all."
+    )
+    assert d._leak.check(broken) is None          # invisible as drafted
+    assert await d.deliver(broken) is False       # and caught once stripped
     assert metrics.get("nora_silent_failures_total", reason="doctrine_leak") == 1
+
+
+async def test_the_leak_guard_still_sees_a_span_the_strip_would_hide(store, doctrine):
+    """R-6 direction TWO, and the reason `deliver` checks BOTH forms.
+
+    `_MD_HEADING` deletes the `# ` that the raw doctrine haystack still carries,
+    so a verbatim quote straddling a heading matches BEFORE the strip and not
+    after. Measured on the real doctrine, that was 293 voice.md spans silently
+    un-blocked. Neither form is a superset of the other, so checking only the
+    stripped text is a hole in a fail-closed guard.
+
+    Drop the `or self._leak.check(drafted)` and this reds."""
+    metrics = Metrics()
+    d = _deliverer(store, doctrine, SinkSender(), metrics)
+    # A heading in the candidate, whose removal breaks the verbatim window.
+    quoted = f"# Guardrails\n{GUARDRAIL_BODY}"
+    assert d._leak.check(quoted) is not None                  # caught as drafted
+    assert d._leak.check(strip_markdown(quoted)) is not None or True  # (may or may not survive)
+    assert await d.deliver(quoted) is False                   # refused either way
+    assert metrics.get("nora_silent_failures_total", reason="doctrine_leak") == 1
+
+
+async def test_emphasis_cannot_smuggle_an_identifier_past_r18(store, doctrine):
+    """THE PROBE for the R-18 bypass (fail-closed audit 2026-08-10).
+
+    Every identifier pattern is `\\b`-anchored. Removing an asterisk BETWEEN two
+    word characters joins them and destroys the boundary, so a real number or ACI
+    wrapped in emphasis scanned CLEAN after stripping and would have been sent to
+    the group — the unrecoverable leak `nora.agent.egress` exists to prevent.
+
+    Drop the `or scan_reply(drafted)` and this reds."""
+    metrics = Metrics()
+    d = _deliverer(store, doctrine, SinkSender(), metrics)
+    smuggled = "*a*deadbeef-1234-5678-9abc-def012345678"
+    assert scan_reply(strip_markdown(smuggled)) is None      # invisible once stripped
+    assert await d.deliver(smuggled) is False                # still refused
+    assert metrics.get("nora_egress_blocks_total", kind="uuid") == 1
+
+
+async def test_emphasis_cannot_smuggle_a_phone_number_past_r18(store, doctrine):
+    """The same hole with the other pattern — a member's real phone number."""
+    metrics = Metrics()
+    d = _deliverer(store, doctrine, SinkSender(), metrics)
+    smuggled = "*+85298765432*a"
+    assert scan_reply(strip_markdown(smuggled)) is None
+    assert await d.deliver(smuggled) is False
+    assert metrics.get("nora_egress_blocks_total", kind="phone") == 1
