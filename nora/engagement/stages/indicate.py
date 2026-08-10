@@ -163,6 +163,12 @@ class Indicator:
     tag_id: str
     metrics: Any
     placed: asyncio.Event = field(default_factory=asyncio.Event)
+    # First-resolution-wins latch (DEC-83). `resolve` may now be called twice —
+    # once the moment a reply is delivered, and once from the pipeline's
+    # `finally` on the way out — and only the first may place a terminal emoji.
+    # An `Event` rather than a bool because it is also the honest name for the
+    # state: set exactly once, never cleared, read from more than one task.
+    settled: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 async def _react(indicator: Indicator, emoji: str, *, phase: str, remove: bool = False) -> None:
@@ -271,11 +277,58 @@ def resolve(
 ) -> None:
     """Replace the 👀 with ✅ (a reply went out) or ⚠️ (none did).
 
-    Called from the pipeline's `finally`, so it runs on every exit path a tag
-    has — timeout, model error, guard veto, a model that never called
-    `send_reply`, and the outer `BaseException` catch. That placement is the
-    whole guarantee: there is no way to leave the turn with the 👀 still on.
+    Called from TWO places, and idempotent because of it (DEC-83):
+
+    - `DeliverySettler`, the instant the first reply is delivered. This is the
+      one people see. The pipeline's `finally` runs only after the agent loop
+      drains, and the loop ALWAYS makes one more model call after `send_reply`
+      returns — so the ✅ used to wait on a round trip whose output is thrown
+      away. Measured over 24 live turns: median **14.9 s** between the reply
+      landing in the group and the ✅ appearing, worst case 23.7 s. The reply is
+      already on every device for all of it, which reads as «she answered but is
+      still stuck».
+    - the pipeline's `finally`, so every exit path a tag has — timeout, model
+      error, guard veto, a model that never called `send_reply`, and the outer
+      `BaseException` catch — still replaces the 👀. That placement is the whole
+      guarantee: there is no way to leave the turn with the 👀 still on.
+
+    FIRST CALL WINS, and the ordering makes that the correct rule rather than an
+    arbitrary one: the only call that can precede the `finally` is a delivery
+    that already happened, and `delivered=True` is not something a later exit
+    path can invalidate. A turn that delivers and THEN faults is still a turn
+    the group got an answer from, so ✅ — not ⚠️ — remains the honest mark.
     """
-    if indicator is None:
+    if indicator is None or indicator.settled.is_set():
         return
+    indicator.settled.set()
     spawn(_resolve(indicator, delivered=delivered))
+
+
+class DeliverySettler:
+    """Places the terminal ✅ as soon as a reply is actually delivered (DEC-83).
+
+    A COLLABORATOR, not a callback: the repo's test-seam policy is that
+    production classes take collaborators through `__init__` only — no `*_fn`
+    hooks — so `Deliverer` receives one of these rather than a function. It also
+    keeps `Deliverer` free of any reaction vocabulary; all it knows is that it
+    has something to tell «a reply went out» to, and a no-op default when
+    reactions are off.
+
+    Idempotence lives in `resolve`, not here, because the `finally` path must
+    share the same latch — a flag owned by this object could not stop it.
+    """
+
+    def __init__(
+        self,
+        *,
+        indicator: Indicator | None,
+        spawn: Callable[[Coroutine[Any, Any, None]], Any],
+    ) -> None:
+        self._indicator = indicator
+        self._spawn = spawn
+
+    def settle(self) -> None:
+        """A reply reached the group. Safe to call on every message of a
+        multi-message turn (DEC-40) — the second and later calls are latched
+        out, so the ✅ marks the FIRST reply rather than moving down the turn."""
+        resolve(indicator=self._indicator, delivered=True, spawn=self._spawn)

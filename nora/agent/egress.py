@@ -142,6 +142,49 @@ def _normalize(text: str) -> str:
     return _WS.sub(" ", text).strip()
 
 
+# Markdown emphasis/heading syntax, as it actually reaches a chat client that
+# does not render it. Deliberately NARROW — see `strip_markdown`.
+_MD_BOLD_ITALIC = re.compile(r"(?<!\w)(\*{1,3})(?!\s)(.+?)(?<!\s)\1(?!\w)", re.DOTALL)
+_MD_HEADING = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+", re.MULTILINE)
+
+
+def strip_markdown(text: str) -> str:
+    """Remove Markdown emphasis and headings from a reply (DEC-82).
+
+    **A structural fix for a doctrine rule the model ignores.** `voice.md`
+    already says «No headers. No bold labels. It's a chat message.» — and on
+    long answers the model emits `**投資** — …` and `**燒烤堂** 🔥 — …` anyway,
+    which Signal renders as literal asterisks. Measured live 2026-08-10: two of
+    the four long replies in one stress-test session leaked raw `**`. DEC-78
+    already established the lesson this applies — a prose maxim does not move
+    behaviour, the matched surface does — so the rule is enforced where the text
+    LEAVES rather than asserted once more in the prompt.
+
+    NARROW on purpose, because this edits her authored words:
+    - `**x**` / `*x*` / `***x***` → `x`, and leading `#` headings → nothing.
+    - A `*` with whitespace inside the delimiters is left alone, so «3 * 4» and
+      a bare "*" survive untouched.
+    - `(?<!\\w)`/`(?!\\w)` keep it off word-internal asterisks, so a filename or
+      a glob in code-ish text is not rewritten.
+    - Underscores are NOT touched: `_x_` is far more often part of a real token
+      (`person_id`, `send_reply`) than emphasis, and this repo's own vocabulary
+      is full of them. Bold is what leaked; bold is what this removes.
+
+    Not a leak guard — nothing here is unsafe, it is just the wrong FORMAT for
+    the destination — so it returns cleaned text rather than refusing, and it is
+    applied to the reply only, never to a tool argument."""
+    text = _MD_HEADING.sub("", text)
+    # Longest delimiters first: one pass over `***x***` with the `{1,3}` group
+    # is greedy and already takes all three, but repeating until stable also
+    # collapses `**a *b* c**` (nested emphasis), which one pass leaves half-done.
+    for _ in range(3):
+        cleaned = _MD_BOLD_ITALIC.sub(r"\2", text)
+        if cleaned == text:
+            break
+        text = cleaned
+    return text
+
+
 class LeakGuard:
     """R-6: no reply carries the canary or a verbatim >=min_span doctrine span.
 

@@ -313,6 +313,14 @@ class EngagementPipeline:
                 # opening-hours → place_info) the model misroutes despite the
                 # schema; the guard forces it on the first model call and releases.
                 forced_first_tool=route_intent(msg.body),
+                # DEC-83: settles the 👀 → ✅ the instant a reply is delivered,
+                # instead of ~15 s later when the loop's final model call
+                # returns. `indicator` is None when reactions are off, and the
+                # settler is then inert — the flag stays one branch, in
+                # `_begin_indicator`, exactly as its docstring promises.
+                on_delivered=indicate.DeliverySettler(
+                    indicator=indicator, spawn=self._spawn,
+                ),
             )
             # One `Room` per tag, constructed here and closed over by the three
             # room-scoped tools. Nothing reads the platform roster unless one

@@ -77,3 +77,37 @@ def test_the_canary_check_is_case_sensitive_and_exact(guard):
 
 def test_an_empty_canary_never_matches(doctrine):
     assert LeakGuard(doctrine, canary="").check("anything at all") is None
+
+
+# ── DEC-82: Markdown never reaches the group ────────────────────────────────
+
+from nora.agent.egress import strip_markdown  # noqa: E402
+
+
+def test_bold_labels_are_stripped_from_a_reply():
+    """THE PROBE, from the live leak (2026-08-10). Signal renders no Markdown,
+    so `**投資** — …` reached the group as literal asterisks. `voice.md` already
+    forbade bold labels and the model emitted them anyway on long answers, which
+    is DEC-78's lesson exactly: enforce at the surface, not in prose."""
+    out = strip_markdown("**投資** — 月供 ETF\n\n**Side hustle** — freelance")
+    assert out == "投資 — 月供 ETF\n\nSide hustle — freelance"
+    assert "*" not in out
+
+
+def test_headings_and_italics_and_bold_italics_all_go():
+    assert strip_markdown("## 推介\n*平* 同 ***正***") == "推介\n平 同 正"
+
+
+def test_arithmetic_and_bare_asterisks_survive():
+    """NARROW on purpose — this edits her authored words, so anything that is
+    not unambiguously emphasis is left exactly as written."""
+    for text in ("3 * 4 = 12", "5*6", "a * b * c", "*", "**"):
+        assert strip_markdown(text) == text, text
+
+
+def test_underscores_are_never_touched():
+    """`person_id` / `send_reply` are ordinary vocabulary here; treating `_x_`
+    as emphasis would corrupt far more than it fixed."""
+    assert strip_markdown("_x_ and person_id and send_reply") == (
+        "_x_ and person_id and send_reply"
+    )

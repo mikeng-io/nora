@@ -41,11 +41,24 @@ def doctrine(tmp_path):
 MESSAGE_CAP = NATIVE_TOOL_BUDGETS["send_reply"]
 
 
-def _deliverer(store, doctrine, sink, metrics=None, *, message_cap=MESSAGE_CAP) -> Deliverer:
+def _deliverer(store, doctrine, sink, metrics=None, *, message_cap=MESSAGE_CAP,
+               on_delivered=None) -> Deliverer:
     return Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                      canary="CANARY-1", tag_id="tag-1", nora_sender_id="nora",
                      message_cap=message_cap, audience="tag",
-                     metrics=metrics or Metrics())
+                     metrics=metrics or Metrics(), on_delivered=on_delivered)
+
+
+class _RecordingObserver:
+    """A `DeliveredObserver` that counts. Behaves like the real
+    `DeliverySettler` in the one way that matters here — it is told, it does not
+    ask — so a Deliverer that never tells it fails the test."""
+
+    def __init__(self) -> None:
+        self.settles = 0
+
+    def settle(self) -> None:
+        self.settles += 1
 
 
 async def test_happy_path_records_then_sends(store, doctrine):
@@ -345,3 +358,79 @@ async def test_ordinary_cantonese_with_a_bare_number_still_sends(store, doctrine
     ok, sink, _ = await _deliver_text("價錢係 12345678 蚊，貴到痴線 😏", store, doctrine)
     assert ok is True
     assert len(sink.sent) == 1
+
+
+# ── DEC-83: the ✅ is settled on delivery, not at end of turn ────────────────
+
+
+async def test_a_delivered_reply_settles_the_indicator_immediately(store, doctrine):
+    """THE PROBE. The observer must be told INSIDE `deliver`, at the point the
+    group can see the message — not by the pipeline afterwards. Measured live:
+    the agent loop always makes one more model call after `send_reply`, so
+    settling at end-of-turn put a median 14.9 s gap between the reply landing
+    and the ✅ appearing.
+
+    Delete the `self._on_delivered.settle()` call and this reds."""
+    obs = _RecordingObserver()
+    d = _deliverer(store, doctrine, SinkSender(), on_delivered=obs)
+    assert await d.deliver("好") is True
+    assert obs.settles == 1
+
+
+async def test_a_refused_reply_never_settles_the_indicator(store, doctrine):
+    """An empty reply is R-4-refused and nothing reaches the group, so the turn
+    is NOT done — the ⚠️ from the pipeline's `finally` is the honest mark. A
+    settler told here would paint ✅ on a turn that said nothing."""
+    obs = _RecordingObserver()
+    d = _deliverer(store, doctrine, SinkSender(), on_delivered=obs)
+    assert await d.deliver("   ") is False
+    assert obs.settles == 0
+
+
+async def test_a_failed_send_never_settles_the_indicator(store, doctrine):
+    """The send was ATTEMPTED but the platform rejected it, so the group has
+    nothing. `result.ok` — not "we tried" — is what settles."""
+    obs = _RecordingObserver()
+    d = _deliverer(store, doctrine, SinkSender(succeed=False), on_delivered=obs)
+    assert await d.deliver("好") is False
+    assert obs.settles == 0
+
+
+async def test_a_deliverer_with_no_observer_still_delivers(store, doctrine):
+    """The collaborator is optional and defaults to a no-op — the fire path and
+    every test that predates DEC-83 construct one without it."""
+    d = _deliverer(store, doctrine, SinkSender())
+    assert await d.deliver("好") is True
+
+
+async def test_markdown_is_stripped_before_the_audit_row_is_written(store, doctrine):
+    """DEC-82's placement, not just its regex: the strip happens before `row` is
+    built, so the audit row, `sent_texts` and the Honcho feed all carry the ONE
+    form the group actually saw. Storing the un-stripped draft would make the
+    transcript disagree with every device in the room."""
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink)
+    assert await d.deliver("**燒烤堂** — 好正") is True
+    assert sink.texts == ["燒烤堂 — 好正"]
+    row = (await store.recent(conversation_id="g1", limit=1))[0]
+    assert row.body == "燒烤堂 — 好正"
+    assert d.sent_texts == ("燒烤堂 — 好正",)
+
+
+async def test_markdown_is_stripped_before_the_leak_guard_runs(store, doctrine):
+    """The ordering that actually matters for DEC-82. The R-6 leak guard must
+    see the bytes that LEAVE: a doctrine span broken up by emphasis markers
+    (`**You are** Nora`) is invisible to the guard as drafted and plainly
+    present once stripped. Cleaning after the guards would let exactly that
+    through.
+
+    (The other direction — a strip producing an empty reply for R-4 — cannot
+    happen: the regex requires non-whitespace inside the delimiters, so `***
+    ***` is left alone as literal text. Ordering is justified by the leak guard
+    alone, which is why that is what this pins.)"""
+    metrics = Metrics()
+    d = _deliverer(store, doctrine, SinkSender(), metrics)
+    # GUARDRAIL_BODY verbatim, wrapped in emphasis so only the STRIPPED form
+    # is a byte-for-byte doctrine span the R-6 guard can recognise.
+    assert await d.deliver(f"**{GUARDRAIL_BODY}**") is False
+    assert metrics.get("nora_silent_failures_total", reason="doctrine_leak") == 1

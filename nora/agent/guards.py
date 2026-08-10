@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Collection, Mapping
-from typing import Any
+from typing import Any, Protocol
 
 from strands.hooks import (
     AfterToolCallEvent,
@@ -22,9 +22,40 @@ from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessag
 from ..domain.ports import SendResult
 from ..obs.metrics import Metrics
 from . import tool_choice
-from .egress import LeakGuard, scan_reply
+from .egress import LeakGuard, scan_reply, strip_markdown
 
 log = logging.getLogger("nora.guards")
+
+
+class DeliveredObserver(Protocol):
+    """Told once a reply has actually reached the group (DEC-83).
+
+    A one-method port so `Deliverer` — which lives in `nora.agent` — never
+    imports the reaction stage in `nora.engagement`, which the layered import
+    contract forbids in that direction anyway.
+    `nora.engagement.stages.indicate.DeliverySettler` is the shipped
+    implementation; `_NoDeliveredObserver` below is the default.
+
+    `settle()` returns None and must never raise: it is decoration on the far
+    side of a message the group already has, and R-5's rule is that decoration
+    failing is never allowed to become the turn's problem.
+    """
+
+    def settle(self) -> None: ...
+
+
+class _NoDeliveredObserver:
+    """The default. Delivery still happens; nothing is told about it.
+
+    Constructed PER `Deliverer` rather than shared as a module-level instance —
+    `tests/architecture/test_no_module_level_mutable_singletons.py` refuses one,
+    and it is right to even though this object holds no state: the rule is
+    structural precisely so nobody has to re-audit "is it still stateless?" on
+    every later edit. A `Deliverer` already lives and dies with one tag, so this
+    costs one empty object per tag."""
+
+    def settle(self) -> None:
+        return None
 
 
 
@@ -83,6 +114,7 @@ class Deliverer:
         message_cap: int,
         audience: str,
         metrics: Metrics,
+        on_delivered: DeliveredObserver | None = None,
     ) -> None:
         self._store = store
         self._adapter = adapter
@@ -97,6 +129,11 @@ class Deliverer:
         self._leak = LeakGuard(doctrine, canary)
         self._doctrine_sha256 = doctrine.sha256
         self._message_cap = message_cap
+        # Told when a reply actually reaches the group (DEC-83). Defaults to a
+        # no-op so this stays one optional collaborator rather than a required
+        # argument on nine construction sites, and so `Deliverer` never has to
+        # branch on None at the call site.
+        self._on_delivered = on_delivered or _NoDeliveredObserver()
         self._attempts = 0
         self._delivered_count = 0
         # Every message actually SENT this turn (Honcho v2): the feedback stage
@@ -153,6 +190,22 @@ class Deliverer:
             )
             self._metrics.inc("nora_guard_vetoes_total", rule="R-2")
             return False
+
+        # DEC-82: strip Markdown BEFORE every remaining guard, so each one
+        # measures the bytes that actually LEAVE rather than a draft that no
+        # longer exists. The concrete case is R-6: a doctrine span broken up by
+        # emphasis (`**You never post an error message…**`) is invisible to the
+        # leak guard as drafted and plainly present once stripped, so cleaning
+        # afterwards would let exactly that through.
+        #
+        # It does NOT rescue R-4 — the regex requires non-whitespace inside the
+        # delimiters, so no input that is non-empty before the strip is empty
+        # after it. Said explicitly because the reverse is the obvious guess.
+        #
+        # It also happens before `row` is built, so the audit row, `sent_texts`,
+        # and the Honcho feed all carry the ONE canonical form — the words the
+        # group actually saw.
+        text = strip_markdown(text)
 
         if not text or not text.strip():                       # R-4
             log.warning("delivery refused: empty reply (tag=%s)", self._tag_id)
@@ -235,6 +288,18 @@ class Deliverer:
             if source != "fallback":
                 self._sent_texts.append(text)
             self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)
+            # DEC-83: the group can SEE the reply now, so mark the turn done now
+            # rather than when the agent loop finally drains — that is a whole
+            # extra model round trip later (measured median 14.9 s). Told to a
+            # collaborator, not a callback, per the `__init__`-only seam rule;
+            # the default is a no-op, so a Deliverer built without one (the fire
+            # path, every test that does not care) behaves exactly as before.
+            #
+            # `source != "fallback"` is deliberately NOT applied here: the
+            # fallback IS delivered, the group did get something, and leaving the
+            # 👀 up through a fallback turn would misreport the one case where a
+            # human is most likely to be watching for it.
+            self._on_delivered.settle()
         else:
             self._metrics.inc("nora_replies_total", status="failed", platform=self._target.platform)
             self._metrics.inc(

@@ -58,6 +58,7 @@ def build(
     metrics: Any,
     audience: str,
     forced_first_tool: str | None = None,
+    on_delivered: Any = None,
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
 
@@ -81,6 +82,11 @@ def build(
         message_cap=budgets["send_reply"],
         audience=audience,
         metrics=metrics,
+        # DEC-83: who to tell the moment a reply lands, so the ✅ does not wait
+        # for the agent loop's last (discarded) model call. Optional and
+        # defaulting to None — the fire path passes nothing, and a turn with no
+        # observer delivers exactly as it always did.
+        on_delivered=on_delivered,
     )
     # `budgets` and `terminal` travel together and come from the same place
     # (`ToolRegistry`) — what a tool costs and whether calling it ends the turn

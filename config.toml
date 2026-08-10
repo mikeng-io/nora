@@ -297,7 +297,16 @@ max_pending_per_requester = 20
 min_lead_seconds = 120     # MUST be > heartbeat.tick_seconds, so a
                            # minimum-lead row cannot land in the tick already
                            # running. Nora refuses to start if it is not.
-max_horizon_days = 30
+# 30 → 365 (operator 2026-08-10). 30 was an anti-runaway guess, and the stress
+# test showed it refusing the three things people actually ask for: a wedding
+# 55 days out, a birthday 6 months out, and «remind us two weeks before». It was
+# also generating a workaround — «set a reminder to remind me to set a reminder»
+# — which she correctly refuses, so the cap turned real asks into dead ends.
+# A year is the natural ceiling for the annual events this now serves. The
+# runaway risk it guarded is carried by `max_pending_per_requester`, which is
+# the cap that actually bounds volume; horizon only bounds how far out ONE row
+# sits, and a row costs the same whether it is due tomorrow or in March.
+max_horizon_days = 365
 
 [tools.mcp.pulse]
 enabled = true
