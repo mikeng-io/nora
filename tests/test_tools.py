@@ -1,6 +1,9 @@
+import re
+
 import pytest
 
 from nora.agent.guards import Deliverer
+from nora.agent.outbound import OutboundComposer, utf16_len
 from nora.agent.room import Room
 from nora.agent.tools import (
     LOAD_TRANSCRIPT_DEFAULT,
@@ -9,13 +12,14 @@ from nora.agent.tools import (
     build_tools,
 )
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.models import ConversationTarget, NormalizedMessage, Quote
+from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
+from nora.domain.ports import Roster
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
-from nora.persons import load_persons
+from nora.persons import Persons, load_persons
 from tests.fakes import FakeHoncho, SinkSender
 from tests.test_doctrine_loader import write
 
@@ -346,6 +350,91 @@ async def test_send_reply_delegates_to_the_deliverer(wiring):
     assert await _call(wiring["tools"]["send_reply"], text="hello") is True
     assert wiring["sink"].texts == ["hello"]
     assert wiring["deliverer"].delivered is True
+
+
+class _RosterHolding:
+    """A `RosterSource` that reports exactly the members it was told about.
+
+    Deliberately not a stub that says yes to everything: DEC-86's whole gate is
+    that «in identity.toml» and «in this room» are different questions, so a
+    roster answering the same way for both would make the positive half of the
+    test below assert nothing.
+    """
+
+    platform = "signal"
+
+    def __init__(self, *members: str) -> None:
+        self._members = tuple(frozenset({m}) for m in members)
+
+    async def roster(self, *, conversation_id: str) -> Roster:
+        return Roster(available=True, members=self._members)
+
+
+JORDAN_ACI = "b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b"
+OTHER_ACI = "0f8ab3c1-7d22-4e10-8b41-9c5e6f7a8b90"
+
+
+async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_resolves(
+    wiring,
+):
+    """DEC-88. The @-mention MECHANISM landed with DEC-86 and the model was
+    never told it exists; this is the join between the two, and the join is
+    what can rot silently.
+
+    Two halves, asserted against EACH OTHER rather than each against a literal:
+
+    1. `send_reply`'s SCHEMA — the string Strands actually sends — must carry a
+       worked `@handle` example. DEC-78/DEC-82 measured that a maxim in the
+       doctrine does not move behaviour and the matched surface does, so an
+       affordance the schema never shows is an affordance the model never has.
+    2. `nora.agent.outbound.OutboundComposer` must RESOLVE that exact written
+       form. The example is lifted OUT of the description and driven through
+       the real composer, so `@[Jordan]`, `<@jordan>`, `@ Jordan`, or a parser whose
+       boundary rule stops matching a bare `@Name` mid-sentence all turn this
+       red — rather than shipping an instruction the machinery ignores.
+
+    The negative half is what stops the fake from agreeing with everything: the
+    SAME line, composed against a room this person is not in, yields no mention
+    at all. One roster class, two answers, decided by who it was told is there.
+    """
+    description = wiring["tools"]["send_reply"].tool_spec["description"]
+    handles = re.findall(r"@\w+", description)
+    assert handles, (
+        "send_reply's schema shows the model no @handle example, so DEC-86's "
+        "mention mechanism is unreachable from the model's side"
+    )
+    assert "this conversation" in description.lower(), (
+        "the schema must say a tag reaches only somebody in THIS room"
+    )
+
+    for handle in handles:
+        name = handle[1:]
+        persons = Persons(
+            by_person={"jordan": PersonRef(person_id="jordan", name=name,
+                                         honcho_peer_id="jordan", first_name=name)},
+            index={("signal", JORDAN_ACI): "jordan"},
+        )
+        # The example inside the sentence the schema shows it in, not the bare
+        # handle — so the boundary rule is exercised rather than side-stepped.
+        line = next(ln.strip() for ln in description.splitlines() if handle in ln)
+
+        present = OutboundComposer(
+            platform="signal", conversation_id="g1", persons=persons,
+            metrics=Metrics(), roster_source=_RosterHolding(JORDAN_ACI),
+        )
+        out = await present.compose(line)
+        (mention,) = out.mentions
+        assert out.text == line                        # the text is never rewritten
+        assert mention.recipient == JORDAN_ACI
+        assert mention.start == utf16_len(line[:line.index(handle)])
+        assert mention.length == utf16_len(handle)
+        assert JORDAN_ACI not in out.text                # R-18: the id is never text
+
+        absent = OutboundComposer(
+            platform="signal", conversation_id="g1", persons=persons,
+            metrics=Metrics(), roster_source=_RosterHolding(OTHER_ACI),
+        )
+        assert (await absent.compose(line)).mentions == ()
 
 
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):

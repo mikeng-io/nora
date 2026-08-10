@@ -108,6 +108,51 @@ def test_voice_states_the_sound_and_the_anti_patterns():
         assert anti in text
 
 
+def test_conduct_says_what_earns_a_second_message_and_what_does_not():
+    """DEC-88's doctrinal half, and the counter-signals it had to REMOVE.
+
+    Before this, `conduct.md` said "you never split one answer across several"
+    and "One reply, then stop" — two flat prohibitions sitting on top of a
+    mechanism (DEC-42's budget of 3, DEC-86's mentions) that had been built and
+    activated to do the opposite. Adding an invitation while leaving those in
+    place would have been an argument with itself, and doctrine that argues
+    with itself resolves toward whichever half is stated last.
+
+    So this pins BOTH directions, because the failure has two shapes and only
+    one of them is the one being fixed:
+
+    * the permission — a second message may be a second ACT, and the ask-the-
+      person-who-knows move is named;
+    * the BOUND — over-splitting is a regression (`voice.md`: most replies are
+      one or two sentences), so the doctrine has to say when NOT to, and the
+      old absolute prohibitions must not simply have been deleted and left with
+      nothing in their place.
+
+    `conduct.md` deliberately carries no `@` and no mechanism: what a mention IS
+    lives in `send_reply`'s schema, for the same reason
+    `test_no_doctrine_file_carries_a_tool_catalogue` keeps tool names out of
+    here — the doctrine states the judgement, the derived surfaces state the
+    how, and only one of the two can go stale.
+    """
+    text = (DOCTRINE_DIR / "conduct.md").read_text()
+
+    assert "a second ACT" in text                          # the permission
+    assert "you don't have to leave it at" in text         # ask them, don't deflect
+    assert "in this conversation" in text                  # only somebody who is here
+
+    # The bound. Both clauses, because dropping either one re-opens the
+    # over-splitting regression from a different side.
+    assert "One thought" in text and "chopped in half" in text
+    assert "only because you are allowed one" in text
+
+    # The counter-signals are gone, not merely outvoted.
+    assert "you never split one answer across several" not in text
+    assert "One reply, then stop" not in text
+
+    # No mechanism here — that is the schema's job (see this test's docstring).
+    assert "@" not in text
+
+
 def test_no_doctrine_file_carries_a_tool_catalogue():
     """The doctrine names CAPABILITIES; only `_context_header` names tools.
 

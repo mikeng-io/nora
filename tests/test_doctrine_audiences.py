@@ -9,7 +9,10 @@ The split that makes a second audience possible is smaller than it looks.
 `# Silence is the default` was not homogeneous: its first three sentences are
 FALSE on a turn nobody called, and its last sentence is DEC-40's multi-message
 rule, which is true on any turn. Splitting on the heading would have deleted
-DEC-40 from the new audience without a single test noticing.
+DEC-40 from the new audience without a single test noticing. DEC-88 rewrote
+that rule (a second message is a second ACT, and one of the acts it may be is
+asking the person who knows); it is still true on any turn, so the assertion
+below still holds in both audiences and only its needle moved.
 """
 
 import re
@@ -17,7 +20,14 @@ import re
 from nora.doctrine.loader import DoctrineStore
 
 AUTHORED = ("identity", "voice", "conduct", "constraints")
-MULTI_MESSAGE = "never split one answer across several"
+# DEC-88 rewrote the rule this needle points at — it used to be the flat
+# prohibition "never split one answer across several", which was the sentence
+# multi-message and mentions were later built to contradict. The needle moves
+# with it rather than the test being deleted: what this file asserts is the
+# RULE's reach across audiences, never its wording, and a rule that is
+# rephrased and quietly loses the heartbeat audience is exactly the failure
+# this test exists to catch.
+MULTI_MESSAGE = "A second message is a second ACT"
 SILENCE = "That's the only reason you ever speak"
 
 
