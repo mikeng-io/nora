@@ -347,11 +347,18 @@ class FakeAgentRunner:
         agent = _Agent(model)
         cycles = total_tokens = output_tokens = 0
         for turn in self.turns:
-            if hooks.dispatch(_BeforeModelCall(agent)).cancel:
+            cancel = hooks.dispatch(_BeforeModelCall(agent)).cancel
+            if cancel:
                 # A terminal verb has run and the guard ended the turn, so the
-                # SDK never makes this model call. A script with turns after
-                # that point is describing something production cannot do.
-                return "end_turn", ""
+                # SDK never calls the MODEL. It does still synthesise an
+                # assistant message carrying the cancel text and yield
+                # `end_turn` (`strands/event_loop/event_loop.py`) — and this
+                # double returned "" there, which is exactly why a defect that
+                # delivered the guard's own veto string to the group passed 2257
+                # tests (pre-deploy review 2026-08-10). CLAUDE.md's rule, in the
+                # one shape it mattered: make the fake behave like the real
+                # server, INCLUDING its wrong-call shapes.
+                return "end_turn", cancel if isinstance(cancel, str) else ""
             # Recorded AFTER the hooks, because that is when the SDK reads the
             # model's config to build the request — a value sampled before them
             # would miss the relaxation this line exists to make visible.

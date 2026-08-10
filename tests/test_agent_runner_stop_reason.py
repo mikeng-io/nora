@@ -12,6 +12,7 @@ and discarding its return value, a line no test touched.
 from __future__ import annotations
 
 from collections.abc import AsyncIterable
+from types import SimpleNamespace
 from typing import Any
 
 from strands.models.model import Model
@@ -185,3 +186,63 @@ async def test_a_turn_cap_stops_the_loop_before_the_token_cap_does():
     )
     assert stop_reason == "limit_turns"
     assert model.calls == 1
+
+
+# ── DEC-93: what `_final_text` reads, against the REAL SDK shape ─────────────
+
+
+def test_final_text_reads_only_authored_text_blocks():
+    """`_final_text` is production code on the reply path and had NO coverage of
+    the shape it reads (pre-deploy review 2026-08-10).
+
+    The blocks it must SKIP are the point. `reasoningContent` is the model's
+    private thinking — Strands emits it as
+    `{"reasoningContent": {"reasoningText": {"text": ...}}}`, so a naive
+    recursive text-scrape would ship her internal monologue to the group — and
+    `toolUse` is a call, not speech."""
+    from nora.app.agent_runner import _final_text
+
+    result = SimpleNamespace(message={"role": "assistant", "content": [
+        {"reasoningContent": {"reasoningText": {"text": "let me think…"}}},
+        {"toolUse": {"name": "weather", "input": {}}},
+        {"text": "37 度，酷熱警告生效"},
+    ]})
+
+    assert _final_text(result) == "37 度，酷熱警告生效"
+
+
+def test_final_text_degrades_to_empty_on_an_unexpected_result_shape():
+    """It reads a third-party shape on the reply path. A Strands version that
+    renames or restructures `message` must produce the pre-DEC-93 behaviour —
+    no recovery — never an exception into a turn that otherwise succeeded."""
+    from nora.app.agent_runner import _final_text
+
+    assert _final_text(SimpleNamespace()) == ""                       # no `message`
+    assert _final_text(SimpleNamespace(message="not a dict")) == ""
+    assert _final_text(SimpleNamespace(message={"role": "assistant"})) == ""
+
+
+def test_a_guard_cancelled_model_call_is_not_treated_as_her_words():
+    """THE PROBE for the defect this fix exists for, at the seam that produces
+    it (`tests/unit/test_engagement_pipeline.py` covers the consumer).
+
+    When `ReplyGuard` cancels a model call, Strands synthesises
+    `message={"content":[{"text": cancel_text}]}` with `stop_reason="end_turn"`
+    — byte-identical in shape to the model having written prose. The recovery
+    would have sent «Reply already sent — the turn is finished.» to a Cantonese
+    group, fed it to Honcho as her own speech, and settled the turn ✅.
+
+    It clears both content guards trivially, so nothing downstream stops it:
+    the ONLY thing that can tell the two apart is that the guard knows it
+    cancelled. Delete `cancelled_model_call` and the recovery has no way to
+    refuse this."""
+    from nora.agent.egress import scan_reply
+    from nora.agent.guards import ReplyGuard
+
+    veto = "Reply already sent — the turn is finished."
+    assert scan_reply(veto) is None            # R-18 cannot see it
+    guard = ReplyGuard(
+        conversation_id="g1", budgets={"send_reply": 1}, terminal={"send_reply"},
+        metrics=Metrics(),
+    )
+    assert guard.cancelled_model_call is False

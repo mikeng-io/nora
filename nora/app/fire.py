@@ -538,10 +538,6 @@ class FirePath:
             self._metrics.inc(
                 "nora_llm_stop_reason_total", reason=stop_reason, audience=AUDIENCE,
             )
-        # `called`, not `attempted` — the same correction as the tag path's
-        # `check_outcome` (external review 2026-08-10). A fire turn whose reply
-        # was guard-refused DID call the tool, and reporting it as
-        # `no_send_call` double-counts one failure under two names.
         # DEC-93, before the silent-failure accounting: recover the prose she
         # wrote without routing it through the tool. Same narrow conditions as
         # the tag path — `end_turn` only, nothing delivered, non-empty — and
@@ -549,6 +545,11 @@ class FirePath:
         if (
             failure is None
             and stop_reason == "end_turn"
+            # See the tag path: a cancelled model call ends with the GUARD's
+            # string. Worse here — recovering it would set `delivered`, so
+            # `_turn` returns SENT, the reminder row is written done and never
+            # retried, and a reminder that never fired is recorded as fired.
+            and not guard.cancelled_model_call
             and not deliverer.delivered
             and final_text.strip()
             and await deliverer.deliver(final_text, source="recovered")
@@ -559,6 +560,10 @@ class FirePath:
                 "(tag=%s, %d chars)", ctx.tag_id, len(final_text),
             )
 
+        # `called`, not `attempted` — the same correction as the tag path's
+        # `check_outcome` (external review 2026-08-10). A fire turn whose reply
+        # was guard-refused DID call the tool, and reporting it as
+        # `no_send_call` double-counts one failure under two names.
         if failure is None and not deliverer.delivered and not deliverer.called:
             # The loop finished and she never called `send_reply`, or one of
             # R-8's caps cut it off. Labelled the way `check_outcome` labels it

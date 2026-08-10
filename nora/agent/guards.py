@@ -520,6 +520,11 @@ class ReplyGuard(HookProvider):
         # when one was merely attempted. See `_before_model`.
         self._spoke = False
         self._turn_is_over = False
+        # Did THIS guard cancel a model call? Public because
+        # `nora.engagement.pipeline` and `nora.app.fire` read it to refuse
+        # DEC-93's recovery — the text such a turn ends with is this class's
+        # veto string, not anything the model authored.
+        self.cancelled_model_call = False
         # Phase 2 routing (`nora.agent.intent_router`): a tool to FORCE via
         # `tool_choice` on the turn's FIRST model call, or None to abstain. The
         # counter lets `_before_model` force on call 1 and RELEASE the pin on
@@ -733,6 +738,14 @@ class ReplyGuard(HookProvider):
         """
         if self._turn_is_over:
             event.cancel = "Reply already sent — the turn is finished."
+            # DEC-93: this turn's last "assistant text" is now MINE, not hers.
+            # Strands synthesises `message={"content":[{"text": cancel_text}]}`
+            # with `stop_reason="end_turn"` for a cancelled model call
+            # (`strands/event_loop/event_loop.py`), which is indistinguishable
+            # from the model having written prose — and this string trivially
+            # passes R-6 and R-18, so nothing downstream would stop it reaching
+            # the group. Recorded here, at the one place that knows.
+            self.cancelled_model_call = True
             return
         model = getattr(getattr(event, "agent", None), "model", None)
         self._model_calls += 1

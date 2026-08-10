@@ -541,6 +541,64 @@ async def test_a_reply_written_without_calling_send_reply_is_recovered():
     assert [t for _peer, t, _conv in memory.fed] == ["I would have said this"]
 
 
+async def test_a_partial_multi_message_turn_is_not_topped_up_by_the_recovery():
+    """DEC-93's interaction with DEC-40, which the two features were built apart
+    from.
+
+    `send_reply`'s budget is 3, so a turn may send one message and then write
+    its SECOND as prose. The recovery must not deliver that: the group already
+    heard from her, and appending an unrouted second message would turn a
+    partial reply into a duplicate-looking one. `not deliverer.delivered` is the
+    guard — flip it to `not deliverer.called` and this reds."""
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(
+            tool_calls=[("send_reply", {"text": "first"})],
+            final_text="and this second bit never went through the tool",
+        )]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert [t for _target, t in adapter.sent] == ["first"]
+    assert metrics.get("nora_recovered_replies_total") == 0
+
+
+async def test_a_refused_send_reply_followed_by_prose_is_still_recovered():
+    """Which predicate guards the recovery — `delivered` or `called` — and the
+    only case that tells them apart.
+
+    A `send_reply` the Deliverer REFUSED (here R-18, an E.164 in the text)
+    leaves `called=True` and `delivered=False`. The group heard nothing, so the
+    recovery SHOULD fire; guarding on `called` would suppress it and leave her
+    silent on exactly the turn where she tried twice.
+
+    Safe by construction rather than by luck: the recovered text goes through
+    the same `deliver`, so whatever refused the first attempt gets to refuse
+    this one too — this is a second chance through the guards, never around
+    them. Swap the guard to `not handle.deliverer.called` and this reds."""
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(
+            # R-18 refuses this INSIDE `deliver` — an E.164 in the reply. It
+            # has to be a guard `ReplyGuard.evaluate` does NOT also catch, or
+            # the tool call is vetoed before `deliver` is entered and `called`
+            # never flips, which is what makes the two predicates distinguishable.
+            tool_calls=[("send_reply", {"text": "佢喺 +85298765432 嗰邊"})],
+            final_text="the answer she actually wrote",
+        )]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert [t for _target, t in adapter.sent] == ["the answer she actually wrote"]
+    assert metrics.get("nora_recovered_replies_total") == 1
+
+
 async def test_a_turn_that_wrote_nothing_at_all_is_still_a_silent_failure():
     """The bound on the recovery, and the reason it cannot swallow the signal.
 
@@ -1511,3 +1569,41 @@ async def test_a_complete_turn_is_never_counted_as_partial():
 
     for reason in ("limit_turns", "limit_total_tokens", "invocation_failed", "pipeline_error"):
         assert metrics.get("nora_partial_replies_total", reason=reason) == 0
+
+
+async def test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string():
+    """THE PROBE for the defect the pre-deploy review caught, at the consumer.
+
+    `ReplyGuard._before_model` cancels a model call once the terminal budget is
+    spent, and Strands turns that cancel into an assistant message carrying the
+    veto text with `stop_reason="end_turn"` — shape-identical to the model
+    having written prose. Reproduced against the real loop, `final_text` came
+    back as «Reply already sent — the turn is finished.»
+
+    Without `cancelled_model_call` the recovery sends that to the group, writes
+    it to the audit as her authored body, and feeds it to Honcho as her own
+    speech. It passes R-6 and R-18 trivially, so no other guard can stop it —
+    which is the whole reason the signal has to come from the guard itself.
+
+    Delete `not handle.guard.cancelled_model_call` and this reds."""
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([
+            # Spend the terminal budget on replies the Deliverer REFUSES (R-18),
+            # so `_turn_is_over` fires while `delivered` is still False — the
+            # one state in which the recovery would otherwise engage.
+            ScriptedTurn(tool_calls=[("send_reply", {"text": "佢喺 +85298765432 度"})]),
+            ScriptedTurn(tool_calls=[("send_reply", {"text": "佢喺 +85298765433 度"})]),
+            ScriptedTurn(tool_calls=[("send_reply", {"text": "佢喺 +85298765434 度"})]),
+            ScriptedTurn(final_text="unreachable"),
+        ]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.sent == []
+    assert not any("turn is finished" in t for _target, t in adapter.sent)
+    assert metrics.get("nora_recovered_replies_total") == 0
+    assert memory.fed == []

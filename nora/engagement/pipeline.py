@@ -471,6 +471,13 @@ class EngagementPipeline:
             # working».
             elif (
                 stop_reason == "end_turn"
+                # The text a CANCELLED model call ends with is the guard's veto
+                # string, not the model's words (pre-deploy review 2026-08-10,
+                # reproduced against the real Strands loop). Refusing here is
+                # what keeps DEC-93's own rule true — «nothing reaches the group
+                # unless she WROTE it» — because that string passes R-6 and R-18
+                # trivially and nothing else downstream would stop it.
+                and not handle.guard.cancelled_model_call
                 and not handle.deliverer.delivered
                 and final_text.strip()
                 and await handle.deliverer.deliver(final_text, source="recovered")
