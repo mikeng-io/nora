@@ -84,7 +84,9 @@ class ToolRegistry:
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
+        budget_overrides: Mapping[str, int] | None = None,
     ) -> None:
+        self._budget_overrides = dict(budget_overrides or {})
         self._transit = transit if transit is not None else TransitClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
         # `RouteClient` needs a Google API key, and there is no keyless default
@@ -207,6 +209,26 @@ class ToolRegistry:
         with no conversation context (`nora.app.composition`'s throwaway
         registries) gets exactly the native table, nothing more."""
         budgets = dict(NATIVE_TOOL_BUDGETS)
+        # `[llm.budgets]` from config.toml, applied OVER the table rather than
+        # instead of it, so the file may carry one line without restating
+        # twenty (operator, 2026-08-11: budgets "will keep slowly increasing"
+        # as tools are added, and a rebuild to move a number is friction with
+        # no safety return).
+        #
+        # This does not break DEC-10/DEC-32's ONE-NUMBER rule, and the
+        # distinction is the whole reason it is applied HERE. The table still
+        # states the default and the reasoning next to the tool; config states
+        # a per-deployment DELTA; and `budgets()` remains the single place
+        # anything reads a budget from — `ReplyGuard`'s R-7 ceiling, the
+        # `Deliverer`'s message cap and the tests all still resolve to one
+        # value at runtime. Putting `send_reply` alone in config, which is what
+        # was asked for first, WOULD have broken it: fifteen budgets in code
+        # and one in config is the split those decisions exist to prevent.
+        #
+        # Unknown names are REJECTED at config load (`nora.config`), not
+        # silently dropped here: a typo'd tool name in `[llm.budgets]` is an
+        # operator who thinks they raised a cap and did not.
+        budgets.update(self._budget_overrides)
         for name in allowed_mcp:
             group = self._mcp_tools.get(name)
             if group is None:

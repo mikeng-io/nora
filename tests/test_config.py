@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from nora.config import Config, ConfigError, load
+from nora.config import Config, ConfigError, LimitsConfig, LLMConfig, load
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -353,3 +353,35 @@ def test_a_zero_cadence_is_rejected(toml_path):
     )
     with pytest.raises(ConfigError):
         load(toml_path)
+
+
+def _llm_config(**kw) -> LLMConfig:
+    """A minimal valid `LLMConfig`, so the budget assertions below are about
+    `[llm.budgets]` and nothing else."""
+    return LLMConfig(
+        base_url="http://x/v1", api_key_env="K", model="m", max_tokens=2000,
+        temperature=0.7, timeout_seconds=120.0,
+        limits=LimitsConfig(turns=20, total_tokens=128000, output_tokens=12000),
+        **kw,
+    )
+
+
+def test_a_budget_override_naming_an_unknown_tool_refuses_to_start():
+    """A typo here is an operator certain they raised a cap that never moved —
+    the same class as the `peer_card` endpoint that answered `[]` for the life
+    of a deployment. Validated against the LIVE registry, so it cannot go stale
+    when a tool is added or removed."""
+    with pytest.raises(ValidationError, match="unknown tool 'send_replies'"):
+        _llm_config(budgets={"send_replies": 8})
+
+
+def test_a_budget_below_one_refuses_to_start():
+    """0 does not mean "unlimited" and does not mean "off" — R-7 would veto
+    every call, so the tool is present, advertised in the capability block, and
+    unreachable. Removing the tool is the honest way to do that."""
+    with pytest.raises(ValidationError, match="would make the tool unreachable"):
+        _llm_config(budgets={"send_reply": 0})
+
+
+def test_a_valid_budget_override_is_accepted():
+    assert _llm_config(budgets={"send_reply": 9}).budgets == {"send_reply": 9}

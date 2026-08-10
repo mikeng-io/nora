@@ -550,6 +550,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # then be found already due.
         clock=lambda: datetime.now(UTC),
         versions=version_manifest,
+        # `[llm.budgets]`, the per-deployment delta over the table. Threaded
+        # here for the same reason `reminder_caps` is: `nora.agent` may not
+        # import `nora.config`, so the composition root is the conversion
+        # point. Names are validated at config load, so anything arriving here
+        # is a tool that exists.
+        budget_overrides=cfg.llm.budgets,
     )
     # The room-scoped tools' one platform dependency. Built here rather than
     # taken off the adapter because membership is a read-only DIRECTORY query

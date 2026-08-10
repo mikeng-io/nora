@@ -416,3 +416,31 @@ def test_build_includes_only_the_allowed_mcp_servers_tools():
     )
     names = {t.tool_name for t in tools}
     assert {"pulse_server_status", "pulse_weekly"} <= names
+
+
+# ---- [llm.budgets]: a per-deployment DELTA, not a second table -------------
+
+
+def test_a_budget_override_moves_exactly_the_named_tool():
+    """DEC-10 puts the number with the tool and DEC-32 allows exactly one copy
+    of it. `[llm.budgets]` does not break that: the table still states every
+    default beside the tool it belongs to, config states a delta, and
+    `budgets()` is still the single place anything resolves one.
+
+    The alternative that was asked for first — putting `send_reply` alone into
+    config.toml — WOULD have broken it: fifteen budgets in code and one in
+    config is the split those decisions exist to prevent, and the prose in the
+    schema ("up to six") would have gone on lying while the number moved."""
+    default = ToolRegistry().budgets()
+    overridden = ToolRegistry(budget_overrides={"send_reply": 9}).budgets()
+
+    assert default["send_reply"] != 9                 # the table's own value
+    assert overridden["send_reply"] == 9
+    # Every OTHER tool is untouched — an override is a delta, not a replacement.
+    assert {k: v for k, v in overridden.items() if k != "send_reply"} == \
+           {k: v for k, v in default.items() if k != "send_reply"}
+
+
+def test_no_override_leaves_the_table_exactly_as_it_is():
+    assert ToolRegistry(budget_overrides={}).budgets() == ToolRegistry().budgets()
+    assert ToolRegistry(budget_overrides=None).budgets() == ToolRegistry().budgets()

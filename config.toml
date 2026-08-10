@@ -149,6 +149,25 @@ timeout_seconds = 120
 # 64000 gives ~2x headroom over the worst measured 6-call turn and lets
 # `turns` be the cap that actually binds — which is the one an operator can
 # reason about, because a turn is a round trip and a token is not.
+# Per-tool call-count overrides — the per-deployment DELTA over the table in
+# `nora/agent/tools.py`, which states every default with its reasoning beside
+# the tool it belongs to (DEC-10). Empty here means "the table, unchanged".
+#
+# This exists because budgets drift upward as tools are added, and moving a
+# number should not need a code change and a rebuild. It is applied OVER the
+# table by `ToolRegistry.budgets()`, which stays the single place anything
+# resolves a budget from — R-7's ceiling, the Deliverer's message cap and the
+# tests all still read one value. Putting ONE tool's budget here instead would
+# have split the table fifteen-to-one, which is the drift DEC-10/DEC-32 exist
+# to prevent.
+#
+# An unknown tool name or a value below 1 is a STARTUP FAILURE, not a warning:
+# a silently-ignored line is an operator certain they raised a cap that never
+# moved.
+#
+# [llm.budgets]
+# send_reply = 6
+
 [llm.limits]
 # 8 → 20 (operator, 2026-08-07): with more tools live (where_is, media_fetch,
 # the web pair on the way), a turn that legitimately chains reads — locate a

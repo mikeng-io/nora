@@ -174,6 +174,41 @@ class LLMConfig(BaseModel):
     # forces it.
     reasoning_effort: str = "low"
     limits: LimitsConfig
+    # Per-tool call-count overrides, applied OVER `NATIVE_TOOL_BUDGETS` by
+    # `ToolRegistry.budgets()`. Empty by default: the table in
+    # `nora/agent/tools.py` states every default with the reasoning beside the
+    # tool it belongs to (DEC-10), and this is only the per-deployment delta —
+    # an operator raising a cap without a code change and a rebuild.
+    #
+    # Names are VALIDATED against the live registry below, so a typo is a
+    # startup failure. Silently ignoring `{"send_replies": 8}` would leave an
+    # operator certain they had raised a cap that never moved, which is the
+    # same class of bug as a dead `peer_card` endpoint answering `[]` for the
+    # life of a deployment.
+    budgets: dict[str, int] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _budget_names_and_values_are_real(self) -> LLMConfig:
+        # Imported here, not at module scope: `nora.config` is imported by
+        # everything and `nora.agent.registry` pulls in the whole tool tree,
+        # so a top-level import would invert the layering `lint-imports`
+        # enforces (config must not depend on agent).
+        from nora.agent.tools import NATIVE_TOOLS
+
+        for name, value in self.budgets.items():
+            if name not in NATIVE_TOOLS:
+                known = ", ".join(sorted(NATIVE_TOOLS))
+                raise ValueError(
+                    f"[llm.budgets] names an unknown tool {name!r}. "
+                    f"Known tools: {known}"
+                )
+            if value < 1:
+                raise ValueError(
+                    f"[llm.budgets] {name} = {value}: a budget below 1 would "
+                    "make the tool unreachable. Remove the tool instead of "
+                    "starving it."
+                )
+        return self
 
 
 class TriggerConfig(BaseModel):
