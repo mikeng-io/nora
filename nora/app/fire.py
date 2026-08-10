@@ -50,12 +50,19 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
 
+from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import build_prefill, build_tag_message, escape
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import NormalizedMessage, PersonRef, TagContext, TranscriptRow
-from nora.domain.ports import MemoryStore, PlatformAdapter, RecordStore, RosterSource
+from nora.domain.ports import (
+    LinkPreviewSource,
+    MemoryStore,
+    PlatformAdapter,
+    RecordStore,
+    RosterSource,
+)
 from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
@@ -121,6 +128,7 @@ class FirePath:
         timeout_seconds: float,
         clock: Callable[[], datetime],
         roster_source: RosterSource | None = None,
+        preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
     ) -> None:
         self._persons = persons
@@ -146,6 +154,10 @@ class FirePath:
         # an absent source as UNAVAILABLE rather than as an empty room, so a
         # harness degrades honestly instead of answering "nobody is here" (R-5).
         self._roster_source = roster_source
+        # The link-preview fetcher, `None` unless `[preview].enabled` — see the
+        # engagement pipeline's identical field for why this one defaults while
+        # `deliver.build`'s `composer` does not.
+        self._preview_source = preview_source
         self._llm_state = llm_state
 
     async def build_context(self, rows: Sequence[Reminder]) -> TagContext:
@@ -347,6 +359,19 @@ class FirePath:
                 budgets=self._registry.budgets(),
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
                 audience=AUDIENCE,
+                # A fire turn is still a message into a real group, so it gets
+                # the same outbound decoration the tag path does — the same
+                # `roster_source`, the same `Persons`. Threaded rather than
+                # left `None` for the reason this module reuses `deliver.build`
+                # at all: a reminder answered in her own voice that cannot tag
+                # the person it is FOR ("@grant 你話要我提你…") is the one
+                # shape where a mention is most obviously wanted.
+                composer=OutboundComposer(
+                    platform=row.platform, conversation_id=row.conversation_id,
+                    persons=self._persons, metrics=self._metrics,
+                    roster_source=self._roster_source,
+                    preview_source=self._preview_source,
+                ),
             )
             room = Room(
                 platform=row.platform, conversation_id=row.conversation_id,

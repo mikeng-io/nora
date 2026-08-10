@@ -95,13 +95,18 @@ class _FakeAdapter:
     def __init__(self, *, account: str = "+852000", succeed: bool = True) -> None:
         self._account = account
         self.sent: list[tuple[ConversationTarget, str]] = []
+        self.sent_mentions: list[tuple] = []
         self._succeed = succeed
 
     async def resolve_identity(self) -> PlatformIdentity:
         return PlatformIdentity(platform=self.platform, primary=self._account)
 
-    async def send(self, *, target: ConversationTarget, text: str) -> SendResult:
+    async def send(
+        self, *, target: ConversationTarget, text: str,
+        mentions: tuple = (), preview: object | None = None,
+    ) -> SendResult:
         self.sent.append((target, text))
+        self.sent_mentions.append(tuple(mentions))
         return SendResult(ok=self._succeed)
 
     @property

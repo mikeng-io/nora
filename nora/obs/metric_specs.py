@@ -572,6 +572,50 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "here — that stays a silent_failure; see the pipeline's `if not ok`.)",
         ("reason",),
     ),
+    # The OUTBOUND half of `nora_unmapped_mentions_total`, and the pair reads
+    # as a sentence: that one says "somebody was talked about and she does not
+    # know who", this one says "she tried to tag somebody and could not".
+    #
+    # `outcome` is what makes it worth having, because the four failures need
+    # four different fixes and are indistinguishable in the group (every one of
+    # them looks like an ordinary untagged message): `unresolved` = the name is
+    # not in identity.toml, or its only id form is one signal-cli's RECIPIENT
+    # grammar would not take — edit identity.toml AND RESTART (it is read once
+    # at startup, the same trap `nora_unmapped_senders_total` has);
+    # `not_in_room` = she named somebody who is not a member of this
+    # conversation, which is usually correct behaviour and not a fault;
+    # `roster_unavailable` = signal-cli could not be asked who is here, so
+    # nothing was tagged (R-22: "I could not check" is never "they are here"),
+    # and a sustained rate is a wedged or stale daemon, not a naming problem;
+    # `ambiguous` = two people in identity.toml answer to the same handle, so
+    # neither was tagged. `sent` is the denominator that makes the others
+    # readable — without it a flat `unresolved` cannot be told from a Nora who
+    # never tries to tag anyone.
+    _CounterSpec(
+        "nora_outbound_mentions_total",
+        "@-mentions Nora wrote in a reply, by outcome: sent; unresolved (no "
+        "usable id in identity.toml); not_in_room (not a member of this "
+        "conversation); roster_unavailable (the membership list could not be "
+        "read, so nothing was tagged); ambiguous (two people answer to the "
+        "handle).",
+        ("outcome",),
+    ),
+    # Link previews, and the reason this is not a bare success counter: three
+    # of its four values mean something different to an operator. `attached` =
+    # a card went with the message; `unavailable` = the fetch produced nothing
+    # (dead host, non-HTML, no og:title, a refused SSRF check) and the message
+    # went out plain, which is the DESIGNED degradation and only interesting as
+    # a rate; `blocked` = the fetched card carried an identifier and was
+    # dropped at the egress screen, which is a real R-18 event and should be
+    # ~0. A message with no link in it increments nothing at all — the series
+    # counts decisions, not messages.
+    _CounterSpec(
+        "nora_link_previews_total",
+        "Outbound link-preview cards, by outcome: attached; unavailable (the "
+        "fetch yielded no usable card, so the message went out plain); blocked "
+        "(the fetched title/description carried an identifier, R-18).",
+        ("outcome",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
