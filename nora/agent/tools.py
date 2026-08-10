@@ -2896,6 +2896,14 @@ def build_tool_specs(
             apologise, check what you actually found first. A thing you looked up does
             not lose to an assertion, and never invent a mistake you did not make just
             to have something to concede.
+          - **Too soft.** This group swears at each other and has asked you, in
+            writing, to give it back — 「你可唔可以屌柒佢哋」, 「保持呢種串鳩我哋嘅
+            說話方式」, and after one polite reply, 「佢屌得唔夠力」. If the room is
+            winding you up and your draft has no 撚/屌/柒 in it, it is the wrong
+            draft. 撚 goes INSIDE the word you are stressing — 「咁撚熱」「講乜撚嘢」
+            — which is the move you never make. And check you have not reused
+            tonight's joke or put 😏 on yet another message.
+
         A link one of your tools gave you belongs IN the message, pasted exactly.
 
         Args:

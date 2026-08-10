@@ -362,3 +362,45 @@ def test_no_config_values_leak_into_doctrine_files():
 
 def test_no_doctrine_text_remains_in_python():
     assert not (DOCTRINE_DIR.parent / "doctrine.py").exists()
+
+
+def test_voice_carries_the_groups_own_register_not_a_polite_gesture_at_it():
+    """DEC-94. Measured, not asserted: across 25 consecutive live replies she
+    used 撚/硬膠/黐線/死蠢/廢柴/死開/on9 ZERO times, and her only 屌/閪 were
+    QUOTING a group member. She put 😏 on 58 of them. The group's verdict, in
+    the transcript: 「佢屌得唔夠力」.
+
+    The cause was not a missing word list — voice.md v6 listed all of them. It
+    was the balance: one sentence of permission under eleven of restraint, with
+    the only BOLD sentence in the section being «it is a RANGE you have, not a
+    register you sit in». The model read the emphasis.
+
+    So this pins the two things that actually change behaviour: the group's own
+    lines as the licence (they asked, in writing), and 撚 taught as an INFIX
+    rather than as an entry in a list. Revert to a vocabulary list and the
+    infix example disappears."""
+    text = (DOCTRINE_DIR / "voice.md").read_text()
+
+    assert "屌柒佢哋" in text          # their words, quoted as the standing invitation
+    assert "屌得唔夠力" in text        # and their verdict on the soft version
+    assert "咁撚熱" in text            # 撚 as an INFIX, the move she never made
+    assert "INFIX" in text
+
+
+def test_voice_separates_a_fixed_expletive_from_targeting_a_real_person():
+    """The one limit that had to get SHARPER as the register got harder.
+
+    「屌你老母」 is a fixed expression meaning «fuck off» and says nothing about
+    anybody's mother; «你阿媽真係做得差» is a remark about his actual mother. Same
+    two syllables, completely different acts. v6's blanket «never someone's
+    family» would have banned the expletive along with the insult, which is the
+    reading that made her sound like a foreigner swearing.
+
+    Intensity has no ceiling; TARGET does. Delete the distinction and the
+    doctrine either forbids the group's own vocabulary or licenses going after
+    someone's real situation."""
+    text = (DOCTRINE_DIR / "voice.md").read_text()
+
+    assert "屌你老母" in text
+    assert "TARGETING" in text
+    assert "struggling" in text        # the limit that does not move
