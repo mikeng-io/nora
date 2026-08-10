@@ -87,7 +87,13 @@ exposes memorization rather than routing (F2).
    backed** (`hard_checks_for`), which today is all of them; a journey touching an
    unbacked tool (a future MCP tool) keeps those two advisory automatically. The
    presence tools clear the R-31 subset gate because the eval `Circle` roster and
-   the harness room are the same single person.
+   the harness room are the same single person. **CAVEAT — backed ≠ answers the
+   query (DEC-78):** a canned tool returns `ok` but the same fixed data for every
+   query, so for an ask whose specific fact it cannot supply (real-time carpark
+   vacancy), a retry-happy model re-calls to its budget. That inflates
+   `ConvergesInBudget`/`NoSiblingLeakage` for that journey even though its
+   `PathMatchesIntent` (which tool she reached for) is correct. Read the routing
+   check, not the budget/leak check, when the canned data cannot answer the ask.
 2. **Judge detection on diverse fabrications is ~3/5, not 3/3** (DEC-75, C1). The
    adversarial gate's *mechanism* and controls are clean; the judge's *detection*
    of invented-data fabrication on a diverse corpus is the open frontier. Do not
