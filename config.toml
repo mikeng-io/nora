@@ -237,11 +237,31 @@ headers_env = "LANGFUSE_OTLP_HEADERS"
 # READ half: `media_fetch` describes a stored image through MiMo on request.
 enabled = true
 encryption_key_env = "MEDIA_ENCRYPTION_KEY"
-# Reading a stored image back through MiMo-V2.5 (the `media_fetch` tool, DEC-56).
-# Inert while enabled=false above; these are the READ half's knobs, all defaulted.
+# Reading a stored image back (the `media_fetch` tool, DEC-56).
 # vision_max_bytes is far below max_bytes on purpose; vision_timeout_seconds is a
 # ceiling the tool derives its real per-call budget under (< the loop timeout).
-vision_model = "opencode-go/mimo-v2.5"
+#
+# opencode-go/mimo-v2.5 → ollamacloud/minimax-m3 (2026-08-10). The old route was
+# DEAD, not merely expensive: `opencode-go/mimo-v2.5` answers HTTP 401 — the
+# operator's opencode-go usage limit — so every `media_fetch` was failing, and
+# nothing else in this file pointed at that provider, which is why it went
+# unnoticed while the LLM route was being moved.
+#
+# Chosen by measurement on a REAL image, not by reputation: the 174 KB Google
+# static map the operator's own shortener serves as its og:image — i.e. the exact
+# thing a preview card carries and `media_fetch` would be asked about. Two
+# ollama-cloud candidates could see it at all:
+#
+#   gemma4:31b   6.7s, 12 tok  「呢張係香港新界部分之地圖」    correct, generic, 書面語 之
+#   minimax-m3   5.2s, 114 tok 「…元朗同屯門一帶嘅 Google 地圖，
+#                               顯示咗 Yoho Mall II、天水圍、
+#                               香港濕地公園、屯門醫院等地方」
+#
+# minimax-m3 is faster AND read actual landmarks off the map, in natural
+# Cantonese (嘅/同/咗) rather than the stiff register gemma reached for. Others
+# probed and rejected: qwen3.5:397b (400, image length), kimi-k3 (402, extra
+# usage), glm-5.2 / nemotron-3-super / mistral-large-3 (404, no credentials).
+vision_model = "ollamacloud/minimax-m3"
 vision_max_tokens = 1024
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608
