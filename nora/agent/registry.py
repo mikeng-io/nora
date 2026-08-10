@@ -35,6 +35,7 @@ from ..infra.routes import RouteClient
 from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
 from ..infra.vision import VisionCache, VisionClient
+from .links import LinkCarry
 from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
 from .room import Room
@@ -335,10 +336,36 @@ class ToolRegistry:
             f"{' or '.join(web)}, which reaches the open web and is the last resort, "
             f"not the first move.\n" if web else ""
         )
+        # The CLOSED-WORLD clause (DEC-90). The list above is what she can do,
+        # and until now nothing said it was the WHOLE of what she can do — so a
+        # restaurant answer ended «講清楚我幫你睇埋使唔使訂位», offering to check a
+        # booking, which no tool here does and none is planned. That is the same
+        # class as guessing a location: asserting a fact about the world (that
+        # she will find this out) with nothing behind it.
+        #
+        # It lives HERE rather than in an authored file for the reason the rest
+        # of this block does: the sentence is only true relative to the
+        # registry, so an authored copy would be a claim about the tool table
+        # maintained somewhere the tool table cannot reach — which is precisely
+        # how `soul.md` spent eight weeks saying she knew two things. Written in
+        # terms of "the list above" so that adding a booking tool makes it true
+        # again with no edit at all.
+        #
+        # Phrased as a rule about OFFERS, not about knowledge. She may always
+        # say she does not know something; what she may not do is promise a
+        # future act she has no way to perform. The `not_here` boundary in
+        # `conduct.md` keeps that rule out of the authored files.
         return (
             "These are the tools you were given. Their schemas say what each one "
             "takes; this says when to reach for it.\n" + "\n".join(lines) + "\n"
             + clock + sourcing +
+            "That list is the WHOLE of what you can do — there is nothing else you can "
+            "go and check, and no request you can put in on somebody's behalf. Never "
+            "offer, promise or volunteer an action that is not one of the things above: "
+            "no booking a table, no phoning anyone, no ordering, no buying, no filling "
+            "anything in, and nothing you will \"look into\" later. If someone wants one "
+            "of those, say plainly that they have to do it themselves and give them what "
+            "you DO have that helps.\n"
             "The things here that reach outside this conversation are live bus data "
             "and routing (a paid map service). When you cannot find something out, say "
             "so in one clause and move on."
@@ -359,6 +386,7 @@ class ToolRegistry:
         context_window: int = 40,
         fire_turn: bool = False,
         location_trusted: bool = False,
+        links: LinkCarry | None = None,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -375,7 +403,15 @@ class ToolRegistry:
         `fire_turn` IS in this signature and does not violate that rule: it is a
         per-turn VALUE, like `question` and `conversation_id`, not a
         registry-owned collaborator. The heartbeat's fire path passes True; see
-        `nora.agent.tools.build_tool_specs` for what reads it."""
+        `nora.agent.tools.build_tool_specs` for what reads it.
+
+        `links` is in it for the same reason and is the same KIND of thing —
+        per-TURN, not per-process (DEC-89). It must not become a registry field:
+        one `LinkCarry` living for the life of the process would offer a link
+        minted in one conversation to a reply being composed in another, which
+        is a disclosure rather than a cosmetic bug. It comes from
+        `nora.engagement.stages.deliver.build`'s `DeliveryHandle`, which is also
+        where the `Deliverer` that consumes it is built."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -390,6 +426,7 @@ class ToolRegistry:
             question=question, context_window=context_window,
             ai_peer=self._ai_peer, fire_turn=fire_turn,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
+            links=links,
         )
 
     def build(
@@ -408,6 +445,7 @@ class ToolRegistry:
         fire_turn: bool = False,
         allowed_mcp: frozenset[str] = frozenset(),
         location_trusted: bool = False,
+        links: LinkCarry | None = None,
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
@@ -428,7 +466,7 @@ class ToolRegistry:
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
-            fire_turn=fire_turn, location_trusted=location_trusted,
+            fire_turn=fire_turn, location_trusted=location_trusted, links=links,
         )
         tools = [adapt(spec) for spec in specs]
         for name in allowed_mcp:

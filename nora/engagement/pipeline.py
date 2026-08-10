@@ -366,6 +366,11 @@ class EngagementPipeline:
                 room=room, question=msg.body,
                 context_window=self._context_window, metrics=self._metrics,
                 allowed_mcp=allowed_mcp, location_trusted=location_trusted,
+                # DEC-89: the SAME carrier the `Deliverer` above holds. The
+                # tools mint links into it and the sender puts back the ones the
+                # reply earned and dropped; two carriers would be a feature that
+                # collects perfectly and appends nothing.
+                links=handle.links,
             )
             tagger_name = self._persons.display_name(msg)
             # STILL NO ROSTER IN THE PROMPT, and now there is a tool instead.

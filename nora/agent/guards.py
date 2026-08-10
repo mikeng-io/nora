@@ -23,6 +23,7 @@ from ..domain.ports import SendResult
 from ..obs.metrics import Metrics
 from . import tool_choice
 from .egress import LeakGuard, scan_reply, strip_markdown
+from .links import LinkCarry
 from .outbound import Outbound, OutboundComposer
 
 log = logging.getLogger("nora.guards")
@@ -117,6 +118,7 @@ class Deliverer:
         metrics: Metrics,
         on_delivered: DeliveredObserver | None = None,
         composer: OutboundComposer | None = None,
+        links: LinkCarry | None = None,
     ) -> None:
         self._store = store
         self._adapter = adapter
@@ -148,6 +150,15 @@ class Deliverer:
         # still have to decide; the default lives here because a `Deliverer`
         # built in a test that is not about mentions should not have to.
         self._composer = composer
+        # DEC-89: the links `place_info` minted this turn, shared with the tools
+        # (`nora.agent.links.LinkCarry`). Defaulted to a fresh EMPTY carrier for
+        # the reason `composer` is defaulted rather than required — an empty one
+        # appends nothing and sends the exact message this class sent before the
+        # feature existed, so there is no wrong claim available to it. The
+        # decision of whether to SHARE one with the tools is `deliver.build`'s,
+        # where both halves of the wiring are visible at once; a `Deliverer`
+        # holding its own private carrier is the inert case, not a broken one.
+        self._links = links if links is not None else LinkCarry()
         self._attempts = 0
         self._delivered_count = 0
         # Every message actually SENT this turn (Honcho v2): the feedback stage
@@ -237,6 +248,24 @@ class Deliverer:
                 platform=self._target.platform, audience=self._audience,
             )
             return False
+
+        # DEC-89: put back the links this reply EARNED and dropped. Positioned
+        # by three constraints, all of which pin it to exactly here:
+        #   - AFTER R-4, so a link can never rescue an empty reply into a sent
+        #     one. `strip_markdown`'s docstring makes the same statement about
+        #     the same guard, because in both directions the obvious guess is
+        #     the wrong one.
+        #   - BEFORE R-6/R-18, so those guards measure the bytes that actually
+        #     LEAVE. The url was screened when it was minted, and screening it
+        #     again costs nothing; a text transformation sitting in FRONT of a
+        #     fail-closed guard without the guard seeing its output is the exact
+        #     hole the 2026-08-10 audit found in DEC-82's first cut.
+        #   - BEFORE `_compose`, because `outbound.text` is the last thing that
+        #     may look at the text and a mention offset computed over a shorter
+        #     string would land in the wrong place.
+        text, carried = self._links.apply(text)
+        if carried:
+            self._metrics.inc("nora_reply_links_carried_total", outcome="appended")
 
         # R-6 against BOTH forms, because DEC-82's strip cuts both ways and only
         # one direction was noticed at first (review 2026-08-10). Stripping

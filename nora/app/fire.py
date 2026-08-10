@@ -389,6 +389,11 @@ class FirePath:
                 # is an unbounded loop, and the conversation it would fire into
                 # is this one.
                 fire_turn=True,
+                # DEC-89: the same carrier `handle`'s `Deliverer` holds. A fire
+                # turn can absolutely recommend a place («你話要我提你訂枱») and
+                # is a message into a real group, so it gets the link behaviour
+                # for the same reason it gets the `OutboundComposer` above.
+                links=handle.links,
             )
             now = self._clock().astimezone()
             pre_fill = build_prefill(
