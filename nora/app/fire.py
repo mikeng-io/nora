@@ -532,7 +532,11 @@ class FirePath:
             self._metrics.inc(
                 "nora_llm_stop_reason_total", reason=stop_reason, audience=AUDIENCE,
             )
-        if failure is None and not deliverer.delivered and not deliverer.attempted:
+        # `called`, not `attempted` — the same correction as the tag path's
+        # `check_outcome` (external review 2026-08-10). A fire turn whose reply
+        # was guard-refused DID call the tool, and reporting it as
+        # `no_send_call` double-counts one failure under two names.
+        if failure is None and not deliverer.delivered and not deliverer.called:
             # The loop finished and she never called `send_reply`, or one of
             # R-8's caps cut it off. Labelled the way `check_outcome` labels it
             # (R-23) — `no_send_call` and `limit_total_tokens` are different

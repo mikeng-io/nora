@@ -268,6 +268,9 @@ class OpenGraphPreviewSource:
         image_max_bytes: int = DEFAULT_IMAGE_MAX_BYTES,
     ) -> None:
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        #: The WHOLE-card budget, enforced in `fetch` — see the note there
+        #: for why the session timeout alone is not that bound.
+        self._total_seconds = timeout_seconds
         self._max_bytes = max_bytes
         self._fetch_image = fetch_image
         self._image_max_bytes = image_max_bytes
@@ -283,7 +286,21 @@ class OpenGraphPreviewSource:
         would produce a message carrying a preview payload that no client shows.
         """
         try:
-            return await self._build(url)
+            # ONE deadline for the WHOLE card, not one per request (pre-deploy
+            # review 2026-08-10). `aiohttp.ClientTimeout(total=…)` on a SESSION
+            # applies per REQUEST, so a card costing four hops — page, then a
+            # redirect, then the image, then its redirect — spent up to four times
+            # `timeout_seconds` on the reply path while this module's docstring
+            # promised one. Measured: 4 requests under `total=1.0` took 1.61s; at
+            # the shipped 3.0 the tail was ~12s, on a turn a human is watching,
+            # and DEC-89 has just made URL-carrying replies the common case.
+            #
+            # `asyncio.timeout` bounds the whole coroutine, so the promise the
+            # docstring makes is now the promise the code keeps. A card that
+            # cannot be built inside the budget is simply absent, which is the
+            # already-designed degradation.
+            async with asyncio.timeout(self._total_seconds):
+                return await self._build(url)
         except asyncio.CancelledError:
             raise                          # shutdown is not a preview failure
         except (TimeoutError, aiohttp.ClientError) as exc:
@@ -387,6 +404,21 @@ class OpenGraphPreviewSource:
             data = await response.content.read(self._image_max_bytes + 1)
         if len(data) > self._image_max_bytes:
             log.info("preview image over %d bytes, dropping it", self._image_max_bytes)
+            return None
+        if not data:
+            # An EMPTY 200 body, and the only bound above was an upper one
+            # (pre-deploy review 2026-08-10). Zero bytes base64-encode to the
+            # TRUTHY string "data:image/png;base64,", which reaches the wire and
+            # which signal-cli's `DataURI` pattern refuses — it requires
+            # `(?<data>.+)` — throwing `IllegalArgumentException` past a catch
+            # that only handles `IOException`. That fails the WHOLE send, not
+            # the card. Any CDN answering 200 with no body triggers it; no
+            # attacker is needed. The undecorated retry in
+            # `nora.platform.signal.send` now rescues the message, but it costs
+            # a wasted round trip per occurrence and this is the honest place to
+            # stop it. `_image`'s docstring lists its None branches; this was
+            # the one missing from that list.
+            log.info("preview image body was empty, dropping it")
             return None
         return content_type, data
 

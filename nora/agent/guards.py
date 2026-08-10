@@ -161,6 +161,22 @@ class Deliverer:
         # holding its own private carrier is the inert case, not a broken one.
         self._links = links if links is not None else LinkCarry()
         self._attempts = 0
+        # Every `deliver()` ENTRY, whether or not it survived the guards —
+        # distinct from `_attempts`, which counts the ones that reached the
+        # platform. R-2's latch must keep counting attempts (an empty reply
+        # deliberately does not consume a message,
+        # `test_an_empty_reply_does_not_consume_the_latch`), but
+        # `check_outcome` needs a different question: did the model call
+        # `send_reply` AT ALL? Answering that with `attempted` reports a turn
+        # whose every reply was guard-refused as `no_send_call` — on top of the
+        # `egress_block`/`doctrine_leak`/`empty_reply` already counted for it
+        # (external review 2026-08-10). Two counts for one turn, and the second
+        # one is false: she DID try to speak, and a guard stopped her.
+        #
+        # That mislabelling matters beyond tidiness: ADR-0006's OPEN root-cause
+        # investigation reasons from `no_send_call` meaning "the loop ended
+        # having never called the tool". This makes that reading true.
+        self._send_calls = 0
         self._delivered_count = 0
         # Every message actually SENT this turn (Honcho v2): the feedback stage
         # feeds each under the Nora aiPeer. Populated only on a successful send,
@@ -199,6 +215,16 @@ class Deliverer:
         return self._attempts > 0
 
     @property
+    def called(self) -> bool:
+        """Did the model call `send_reply` at all, however it went?
+
+        `attempted` asks whether a message reached the platform; this asks
+        whether she TRIED. A guard-refused turn is False for the first and True
+        for the second, and conflating them is what put `no_send_call` on turns
+        that were in fact blocked."""
+        return self._send_calls > 0
+
+    @property
     def exhausted(self) -> bool:
         """No message left. R-2's latch, generalised from one to `message_cap`.
 
@@ -233,6 +259,7 @@ class Deliverer:
             return Outbound(styled)
 
     async def deliver(self, text: str, *, source: str = "tool") -> bool:
+        self._send_calls += 1
         if self.exhausted:                                     # R-2
             log.warning(
                 "delivery refused: %d message(s) already spent of %d (tag=%s)",

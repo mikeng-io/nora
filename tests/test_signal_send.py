@@ -1,4 +1,6 @@
 
+import logging
+
 import pytest
 from aiohttp import web
 
@@ -114,10 +116,20 @@ async def test_send_never_raises_on_a_timeout(aiohttp_server):
 
 
 async def test_send_does_not_log_the_message_body(rpc_server, caplog):
-    """Group content is private; the send log line carries ids and length only."""
+    """Group content is private; the send log line carries ids and length only.
+
+    `set_level` is load-bearing, not decoration (pre-deploy review 2026-08-10).
+    The success line is `log.info`, and `caplog` defaults to WARNING — so this
+    assertion was reading a stream the line never reached, and stayed green even
+    when the body WAS logged. It is the only assertion in this module protecting
+    a member's words, and it could not fail. The positive control below is what
+    proves the stream is now being read at all.
+    """
+    caplog.set_level(logging.INFO, logger="nora.signal.send")
     sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
     await sender.send(TARGET, "a very private secret")
     assert "a very private secret" not in caplog.text
+    assert "sent 21 chars" in caplog.text          # the line IS being captured
 
 
 async def test_a_dm_target_is_refused_in_v2(rpc_server):

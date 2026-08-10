@@ -282,3 +282,42 @@ async def test_a_malformed_url_is_a_missing_card_not_an_exception():
     source = OpenGraphPreviewSource(timeout_seconds=1.0)
     assert await source.preview_for(url="https://") is None
     assert await source.preview_for(url="not a url at all") is None
+
+
+# ── against a REAL server, not a fixture (operator: "real test data") ────────
+
+
+@pytest.mark.network
+async def test_a_real_shortened_maps_url_produces_a_real_card():
+    """The whole path against the LIVE internet: DNS, the SSRF address check, a
+    real redirect hop, real OpenGraph tags, a real image body.
+
+    Every other test in this module stops at a seam — and it has to, because the
+    guard refuses non-globally-routable hosts and `aiohttp_server` binds
+    loopback, so an end-to-end test on a fixture asks the code to do the one
+    thing it exists to refuse. That is a real limit, and it means the fixtures
+    can only ever prove the REFUSALS. This is the test that proves the accept.
+
+    `n.example.net` is the operator's own shortener and the exact URL shape DEC-89
+    now appends to restaurant replies, so this is the production input, not a
+    representative one. Network-marked, so it is deselected by default and run
+    deliberately: `uv run pytest -m network`.
+    """
+    source = OpenGraphPreviewSource(timeout_seconds=10.0, fetch_image=True)
+    card = await source.preview_for(url="https://n.example.net/9DpAk8g")
+
+    assert card is not None, "the live shortener served no card"
+    # The url is the one PASSED IN, never the post-redirect target — signal-cli
+    # requires the body to carry the same url, and the body carries what she wrote.
+    assert card.url == "https://n.example.net/9DpAk8g"
+    assert card.title                       # real og:title
+    assert card.image_data_uri is None or card.image_data_uri.startswith("data:image/")
+
+
+@pytest.mark.network
+async def test_the_live_guard_still_refuses_a_private_host():
+    """The same real source, pointed somewhere it must not go. Without this the
+    test above would pass just as well against a source with no guard at all."""
+    source = OpenGraphPreviewSource(timeout_seconds=5.0, fetch_image=False)
+    assert await source.preview_for(url="http://169.254.169.254/latest/meta-data/") is None
+    assert await source.preview_for(url="http://127.0.0.1:9100/metrics") is None

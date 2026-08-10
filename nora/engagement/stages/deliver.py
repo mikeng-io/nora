@@ -210,7 +210,15 @@ def check_outcome(
     parameter it needs is `audience`, threaded like `Deliverer`'s.
     """
     if not deliverer.delivered:
-        if not deliverer.attempted:
+        # `called`, not `attempted` (external review 2026-08-10). `attempted`
+        # asks whether a message reached the platform, so a turn whose every
+        # reply was refused by R-4/R-6/R-18 answered False and got
+        # `no_send_call` ON TOP of the block already counted for it — two
+        # silent-failure increments for one turn, the second of them false. She
+        # did call the tool; a guard stopped her, and that is a different
+        # failure with a different fix. This also makes `no_send_call` mean what
+        # ADR-0006's open investigation reads it as meaning.
+        if not deliverer.called:
             reason = stop_reason if stop_reason in BUDGET_STOP_REASONS else "no_send_call"
             log.warning("%s (tag=%s); dropping the model's text", reason, tag_id)
             metrics.inc(

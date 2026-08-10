@@ -633,3 +633,39 @@ async def test_create_refuses_a_duplicate_id(store):
     survivor = await store.get(first.id)
     assert survivor is not None
     assert survivor.text == "洗衫"
+
+
+async def test_one_undecodable_row_does_not_strand_every_other_reminder(store):
+    """M2 (external review 2026-08-10). `recurrence_tz` is free `Text` — no CHECK
+    constraint can validate an IANA zone name — and `_row_to_reminder` raises on
+    one this host's tzdb cannot resolve. That raise escaped `due()` into
+    `HeartbeatLoop.tick` ABOVE its per-group `try`, whose docstring promises one
+    bad reminder must not strand the others. So a single unreadable row stopped
+    EVERY reminder firing, in every conversation, on every tick, forever —
+    visible only as `nora_errors_total{stage="heartbeat"}`.
+
+    Skipping is the fail-closed answer: the bad row never fires, the good ones
+    still do. Revert `_decode_due` to a comprehension and this reds.
+
+    SQL-store only: the fake holds objects, so it has no undecodable state to
+    reproduce — the hazard is deserialisation, which only the real store does.
+    """
+    if not hasattr(store, "_engine"):
+        pytest.skip("row decoding is a property of the SQL store only")
+
+    good = _row(text="good one")
+    await store.create(good)
+    bad = _row(text="poisoned")
+    await store.create(bad)
+
+    # Corrupt one row's zone out of band, exactly as a tzdata rename would.
+    import sqlalchemy as sa
+    async with store._engine.begin() as conn:
+        await conn.execute(sa.text(
+            "UPDATE reminders SET recurrence='daily', recurrence_tz='Mars/Olympus_Mons', "
+            "recurrence_count=3, series_id=id, series_anchor_at=due_at WHERE id=:i"
+        ), {"i": str(bad.id)})
+
+    due = await store.due(now=bad.due_at, limit=10)
+
+    assert [r.text for r in due] == ["good one"]      # the healthy row still fires

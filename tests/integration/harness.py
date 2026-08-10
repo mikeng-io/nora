@@ -34,7 +34,7 @@ from nora.app.runtime import BackgroundTasks
 from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import DeliveryStatus
-from nora.domain.ports import RecordStore
+from nora.domain.ports import RecordStore, RosterSource
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
 from nora.infra.sql.audit import SqlRecordStore
@@ -286,6 +286,7 @@ async def build_handler(
     debounce: float | None = None,
     fault: str | None = None,
     register: Callable[[Harness], None] | None = None,
+    roster: RosterSource | None = None,
 ) -> Harness:
     """Assemble real pipelines wired to a tmp db + a tmp COPY of the real doctrine dir +
     fakes.
@@ -418,6 +419,13 @@ async def build_handler(
     dispatcher, engagement, background = build_offline_pipeline(
         cfg, adapter=adapter, audit=store, memory=honcho_double, persons=persons,
         doctrine_store=doctrine_store, runner=runner, metrics=metrics,
+        # None by default, which is what every scenario before DEC-86 wanted:
+        # `Room` reports an absent source as UNAVAILABLE, never as an empty room,
+        # so the room-scoped tools degrade honestly. A scenario that needs Nora
+        # to TAG somebody has to say who is actually in the group — and the
+        # roster gate means a scenario that forgets gets no mention at all,
+        # which is the fail-closed behaviour rather than a broken test.
+        roster_source=roster,
     )
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
 

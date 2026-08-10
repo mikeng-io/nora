@@ -4,6 +4,7 @@ import pytest
 
 from nora.agent.egress import scan_reply
 from nora.agent.guards import Deliverer
+from nora.agent.links import LinkCarry
 from nora.agent.markdown import render_markdown, strip_markdown
 from nora.agent.outbound import Outbound
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
@@ -56,11 +57,12 @@ MESSAGE_CAP = NATIVE_TOOL_BUDGETS["send_reply"]
 
 
 def _deliverer(store, doctrine, sink, metrics=None, *, message_cap=MESSAGE_CAP,
-               on_delivered=None) -> Deliverer:
+               on_delivered=None, links=None) -> Deliverer:
     return Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                      canary="CANARY-1", tag_id="tag-1", nora_sender_id="nora",
                      message_cap=message_cap, audience="tag",
-                     metrics=metrics or Metrics(), on_delivered=on_delivered)
+                     metrics=metrics or Metrics(), on_delivered=on_delivered,
+                     links=links)
 
 
 class _RecordingObserver:
@@ -675,3 +677,59 @@ async def test_no_composer_at_all_sends_exactly_what_it_always_did(store, doctri
     assert await d.deliver("今晚七點半得唔得？") is True
     assert sink.texts == ["今晚七點半得唔得？"]
     assert sink.sent_mentions == [()]
+
+
+# ── DEC-89 at the CONSUMER, not just the class (pre-deploy review 2026-08-10) ─
+
+
+async def test_deliver_appends_the_link_the_reply_earned(store, doctrine):
+    """THE PROBE the feature shipped without.
+
+    `test_links_carry.py` tests `LinkCarry` in isolation and the architecture
+    test pins the WIRING, but nothing tested `deliver()` actually using it —
+    mutation-testing found that deleting the `self._links.apply(...)` call from
+    `Deliverer.deliver` left the whole suite green. That is DEC-42's
+    "present, wired, inert" failure one layer down, and it is the seam the two
+    known cross-feature findings live in.
+
+    Delete the call and this reds."""
+    links = LinkCarry()
+    links.offer(anchor="燒烤堂", url="https://n.example.net/9DpAk8g")
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink, links=links)
+
+    assert await d.deliver("燒烤堂 好正，諾士佛臺") is True
+
+    assert "https://n.example.net/9DpAk8g" in sink.texts[0]
+    row = (await store.recent(conversation_id="g1", limit=1))[0]
+    assert row.body == sink.texts[0]          # the audit carries what the group saw
+
+
+async def test_a_link_never_rescues_an_empty_reply(store, doctrine):
+    """The ordering property DEC-89 claims, asserted at the consumer.
+
+    `apply` runs AFTER R-4 precisely so an empty reply plus a link on offer is
+    still an empty reply. Move the call above the R-4 branch and this reds —
+    which mutation-testing showed nothing else catches."""
+    metrics = Metrics()
+    links = LinkCarry()
+    links.offer(anchor="燒烤堂", url="https://n.example.net/9DpAk8g")
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink, metrics, links=links)
+
+    assert await d.deliver("   ") is False
+    assert sink.texts == []
+    assert metrics.get("nora_silent_failures_total", reason="empty_reply") == 1
+
+
+async def test_a_reply_that_does_not_name_the_place_gets_no_link(store, doctrine):
+    """The other half — the link is EARNED, not stapled on. A reply that never
+    mentions the place carries no url, so a fake that appended unconditionally
+    would fail here rather than passing the test above by accident."""
+    links = LinkCarry()
+    links.offer(anchor="燒烤堂", url="https://n.example.net/9DpAk8g")
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink, links=links)
+
+    assert await d.deliver("今日好熱") is True
+    assert "n.example.net" not in sink.texts[0]

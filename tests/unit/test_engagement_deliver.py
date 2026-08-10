@@ -13,6 +13,7 @@ from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget, DeliveryStatus
 from nora.domain.ports import SendResult
 from nora.engagement.stages import deliver
+from nora.engagement.stages.deliver import build, check_outcome
 from nora.obs.metrics import Metrics
 from nora.testing import FakeRecordStore
 
@@ -257,3 +258,58 @@ def test_a_fault_after_the_loop_finished_is_named_apart_again():
     """The outer `BaseException`: the loop DID return a stop reason, so the
     turn was not cut off by a cap or a timeout — something after it raised."""
     assert deliver.truncation_reason(stop_reason="end_turn", completed=False) == "pipeline_error"
+
+
+# ── M1: a guard-refused turn is not ALSO a no_send_call ─────────────────────
+
+
+async def test_a_guard_refused_turn_is_not_counted_as_no_send_call():
+    """THE PROBE (external review 2026-08-10).
+
+    R-4/R-6/R-18 all `return False` before `_attempts += 1`, so a turn whose
+    every reply was refused answered False to `attempted` — and `check_outcome`
+    then added `no_send_call` ON TOP of the `egress_block` already counted.
+    Two silent-failure increments for one turn, and the second is a false
+    statement: she DID call the tool, a guard stopped her, and those have
+    different fixes.
+
+    It also corrupts an instrument: ADR-0006's OPEN root-cause investigation
+    reasons from `no_send_call` meaning "the loop ended having never called the
+    tool". Revert `called` to `attempted` in `check_outcome` and this reds."""
+    metrics = Metrics()
+    handle = build(
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
+        doctrine=_doctrine(), canary="C", tag_id="t1", nora_sender_id="nora",
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+        metrics=metrics, audience="tag", composer=None,
+    )
+    # R-18 refuses this: a real E.164 in the reply text.
+    assert await handle.deliverer.deliver("佢喺 +85298765432 嗰邊") is False
+    assert handle.deliverer.delivered is False
+    assert handle.deliverer.attempted is False        # nothing reached the platform
+    assert handle.deliverer.called is True            # but she DID call send_reply
+
+    check_outcome(
+        deliverer=handle.deliverer, metrics=metrics, platform="signal",
+        tag_id="t1", stop_reason="end_turn",
+    )
+    assert metrics.get("nora_silent_failures_total", reason="egress_block") == 1
+    assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 0
+
+
+async def test_a_turn_that_never_called_send_reply_still_counts_no_send_call():
+    """The other half — the bound on the fix. A model that ends its turn without
+    ever calling the tool is the case `no_send_call` exists for, and it must
+    still be counted or the correction above would silence the real signal."""
+    metrics = Metrics()
+    handle = build(
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
+        doctrine=_doctrine(), canary="C", tag_id="t1", nora_sender_id="nora",
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+        metrics=metrics, audience="tag", composer=None,
+    )
+    check_outcome(
+        deliverer=handle.deliverer, metrics=metrics, platform="signal",
+        tag_id="t1", stop_reason="end_turn",
+    )
+    assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
