@@ -208,6 +208,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_room_lookups_total",
         "Room-scoped tool calls, by tool and how the tool answered: ok; "
+        "nothing_found (it looked and there was nothing — recorded as `ok` "
+        "until 2026-08-11, which made hit-rate unreadable on the one series "
+        "that would show her searching constantly and finding nothing); "
         "ambiguous; refused (a room holding somebody she cannot place — R-31 "
         "fails closed rather than disclosing); withheld (it FOUND things the "
         "egress guard will not let her repeat, which is not the same as finding "

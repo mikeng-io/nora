@@ -1575,12 +1575,14 @@ def build_tool_specs(
         not a profile (`about`) or a reasoned answer (`ask_memory`). It searches
         what people in THIS group have said and hands back the matching lines.
 
-        Outcomes: `ok` with the lines (each with who said it); `nothing_found`
-        when nothing matches; `withheld` when it found things you may not repeat
-        (say you can't quote it, NOT that nobody said it); `unavailable` when it
-        can't be checked — never report the last as the second. Only ever
-        surfaces words from people in this conversation, and never in a room
-        with someone it can't place.
+        Outcomes, and they are five different answers: `ok` with the lines
+        (each with who said it); `nothing_found` when nothing matches;
+        `withheld` when it found things you may not repeat (say you can't quote
+        it, NOT that nobody said it); `refused` when somebody here can't be
+        placed, so the group's history stays out of this room; `unavailable`
+        when it couldn't be checked at all. Never report the last as
+        `nothing_found`. Only ever surfaces words from people in this
+        conversation.
 
         Args:
             query: what to look for — a phrase, a topic, a thing that was said.
@@ -1687,7 +1689,12 @@ def build_tool_specs(
                             "can't quote it — never say nobody said anything, and "
                             "never paraphrase it into a quote.",
                 }
-            _record_room(metrics, "search_memory", "ok", results=0)
+            # `nothing_found`, not `ok`. Recording a miss as a success made
+            # hit-rate unreadable on `nora_room_lookups_total` — the one series
+            # that would show her searching constantly and finding nothing,
+            # which is what a broken index or a bad query shape looks like from
+            # outside (external review, 2026-08-11).
+            _record_room(metrics, "search_memory", "nothing_found", results=0)
             return {
                 "status": "nothing_found",
                 "note": "I couldn't find anything like that in what's been said "
