@@ -1576,9 +1576,11 @@ def build_tool_specs(
         what people in THIS group have said and hands back the matching lines.
 
         Outcomes: `ok` with the lines (each with who said it); `nothing_found`
-        when nothing matches; `unavailable` when it can't be checked — never
-        report the last as the middle. Only ever surfaces words from people in
-        this conversation, and never in a room with someone it can't place.
+        when nothing matches; `withheld` when it found things you may not repeat
+        (say you can't quote it, NOT that nobody said it); `unavailable` when it
+        can't be checked — never report the last as the second. Only ever
+        surfaces words from people in this conversation, and never in a room
+        with someone it can't place.
 
         Args:
             query: what to look for — a phrase, a topic, a thing that was said.
@@ -1667,12 +1669,22 @@ def build_tool_specs(
             # filtering on the reply predicate (this group talks about `claude`
             # and `gemini` constantly, and every such line is withheld).
             if withheld:
-                _record_room(metrics, "search_memory", "ok", results=0, withheld=withheld)
+                # A DISTINCT status, not `nothing_found` with a note attached.
+                # It shipped as the latter for one commit and an external review
+                # (Codex, 2026-08-11) was right to hold it: the model reads
+                # `status` first and prose second, so encoding «I found things I
+                # may not repeat» as «nothing was said» leaves the true answer
+                # depending on whether it read far enough. R-27's states are
+                # distinct BECAUSE the caller keys on them. `search_memory`
+                # already carries a fourth state (`refused`), so a fifth is the
+                # existing shape rather than a new one.
+                _record_room(metrics, "search_memory", "withheld", results=0,
+                             withheld=withheld)
                 return {
-                    "status": "nothing_found",
-                    "found_but_unusable": withheld,
-                    "note": "I found things but nothing I can quote back. Say you "
-                            "can't repeat it — never say nobody said anything, and "
+                    "status": "withheld",
+                    "found": withheld,
+                    "note": "I found things but nothing I can repeat back. Say you "
+                            "can't quote it — never say nobody said anything, and "
                             "never paraphrase it into a quote.",
                 }
             _record_room(metrics, "search_memory", "ok", results=0)

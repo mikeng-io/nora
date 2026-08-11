@@ -448,9 +448,13 @@ async def test_search_memory_says_it_cannot_repeat_what_it_found_when_all_hits_a
 
     result = await _call(tools["search_memory"], query="script")
 
-    assert result["status"] == "nothing_found"
-    assert result["found_but_unusable"] == 1
-    assert "can't quote" in result["note"] or "can't repeat" in result["note"]
+    # `withheld`, NOT `nothing_found`. The model keys on `status` and reads the
+    # note second, so encoding this as «nothing was said» leaves the true answer
+    # depending on how far it read (external review, 2026-08-11).
+    assert result["status"] == "withheld"
+    assert result["found"] == 1
+    assert "can't quote" in result["note"]
+    assert result["status"] != "nothing_found"
 
 
 async def test_search_memory_refuses_in_a_room_with_someone_it_cannot_place(persons):

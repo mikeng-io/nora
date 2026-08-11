@@ -207,8 +207,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # signal-cli, not the model.
     _CounterSpec(
         "nora_room_lookups_total",
-        "Room-scoped tool calls, by tool and how the tool answered "
-        "(ok / not_found / ambiguous / unavailable).",
+        "Room-scoped tool calls, by tool and how the tool answered: ok; "
+        "ambiguous; refused (a room holding somebody she cannot place — R-31 "
+        "fails closed rather than disclosing); withheld (it FOUND things the "
+        "egress guard will not let her repeat, which is not the same as finding "
+        "nothing); unavailable (it could not be checked at all). The last two "
+        "are the ones worth alerting on together: a sustained `unavailable` is "
+        "Honcho or signal-cli rather than the model, and a climbing `withheld` "
+        "is the DEC-30 shape — she is being asked things she can see and cannot "
+        "say.",
         ("tool", "status"),
     ),
     # Honcho's `representation` endpoint specifically, and it exists because
