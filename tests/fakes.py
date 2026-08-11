@@ -150,6 +150,7 @@ class SinkSender:
     async def send(
         self, target: ConversationTarget, text: str,
         mentions: tuple = (), styles: tuple = (), preview: object | None = None,
+        attachments: tuple = (),
     ) -> SendResult:
         """Accepts (and records) the port's decoration parameters.
 

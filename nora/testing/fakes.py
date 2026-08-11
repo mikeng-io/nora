@@ -25,6 +25,7 @@ from nora.domain.ports import (
     Recollection,
     Roster,
     SendResult,
+    OutboundAttachment,
     TextStyle,
 )
 from nora.domain.utf16 import utf16_len
@@ -412,6 +413,7 @@ class FakeAdapter:
         mentions: tuple[Mention, ...] = (),
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
+        attachments: tuple[OutboundAttachment, ...] = (),
     ) -> SendResult:
         """Records the send instead of performing it, DECORATION AND ALL.
 

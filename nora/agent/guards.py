@@ -19,7 +19,7 @@ from strands.hooks import (
 
 from ..doctrine.loader import Doctrine
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
-from ..domain.ports import SendResult, Styled
+from ..domain.ports import OutboundAttachment, SendResult, Styled
 from ..obs.metrics import Metrics
 from . import tool_choice
 from .egress import LeakGuard, scan_reply
@@ -258,7 +258,10 @@ class Deliverer:
             log.exception("compose raised (tag=%s); sending plain text", self._tag_id)
             return Outbound(styled)
 
-    async def deliver(self, text: str, *, source: str = "tool") -> bool:
+    async def deliver(
+        self, text: str, *, source: str = "tool",
+        attachments: tuple[OutboundAttachment, ...] = (),
+    ) -> bool:
         self._send_calls += 1
         if self.exhausted:                                     # R-2
             log.warning(
@@ -284,7 +287,7 @@ class Deliverer:
         # separately.
         drafted = text
 
-        if not text or not text.strip():                       # R-4
+        if (not text or not text.strip()) and not attachments:  # R-4
             log.warning("delivery refused: empty reply (tag=%s)", self._tag_id)
             self._metrics.inc(
                 "nora_silent_failures_total", reason="empty_reply",
@@ -428,6 +431,7 @@ class Deliverer:
                 target=self._target, text=outbound.text,
                 mentions=outbound.mentions, styles=outbound.styles,
                 preview=outbound.preview,
+                attachments=attachments,
             )
         except Exception:
             log.exception("send raised (tag=%s)", self._tag_id)
@@ -811,6 +815,6 @@ class ReplyGuard(HookProvider):
                 # is precisely why collapsing them would look correct today and
                 # cap her at one message forever.
                 self._spoke = True
-                self._turn_is_over = self._terminal_budget_spent()
+                self._turn_is_over = self.counts.get(name, 0) >= self._budgets.get(name, 0)
         except Exception:
             log.exception("ReplyGuard._after_tool raised; ignoring")

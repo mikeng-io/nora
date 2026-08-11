@@ -77,13 +77,14 @@ handed to `TextStyle.Style.from`. Units are UTF-16 code units for both
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 
 import aiohttp
 
 from ...domain.models import ConversationTarget
-from ...domain.ports import LinkPreview, Mention, SendResult, TextStyle
+from ...domain.ports import LinkPreview, Mention, OutboundAttachment, SendResult, TextStyle
 from ...domain.utf16 import utf16_len
 
 log = logging.getLogger("nora.signal.send")
@@ -238,6 +239,7 @@ class SignalSender:
         mentions: tuple[Mention, ...] = (),
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
+        attachments: tuple[OutboundAttachment, ...] = (),
         request_id: str = "",
     ) -> SendResult:
         if target.conversation_type != "group":
@@ -260,6 +262,12 @@ class SignalSender:
             params["textStyle"] = spans
         if preview is not None:
             params.update(_preview_params(preview))
+        if attachments:
+            params["attachments"] = [
+                f"data:{a.media_type};filename={a.filename};base64,"
+                f"{base64.b64encode(a.content).decode('ascii')}"
+                for a in attachments
+            ]
         payload = {
             "jsonrpc": "2.0",
             "method": "send",

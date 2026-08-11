@@ -203,6 +203,15 @@ class SendResult:
 
 
 @dataclass(frozen=True)
+class OutboundAttachment:
+    """Verified bytes a platform may include with one outbound message."""
+
+    content: bytes
+    media_type: str
+    filename: str
+
+
+@dataclass(frozen=True)
 class ReactionResult:
     """Outcome of a reaction attempt. `supported` is a separate axis from `ok` —
     see module docstring."""
@@ -558,6 +567,7 @@ class PlatformAdapter(Protocol):
         mentions: tuple[Mention, ...] = (),
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
+        attachments: tuple[OutboundAttachment, ...] = (),
     ) -> SendResult: ...
 
     async def react(

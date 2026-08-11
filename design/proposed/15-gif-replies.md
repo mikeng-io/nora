@@ -75,9 +75,11 @@ cannot drift, and the one measured mis-selection this deployment has seen was
 fixed by `reasoning_effort="low"`, not by a router.
 
 The mechanical consequence is the part that will break if it is missed.
-`send_reply` is **terminal**: `ReplyGuard`'s `BeforeModelCallEvent` hook
-cancels the agent loop the moment a reply lands (DEC-21), which is what makes
-a simple answer cost one turn. `send_gif` must be terminal *in exactly the
+`send_reply` and `send_gif` are **terminal reply verbs**. A successful GIF-only
+send counts as a reply: "must send a reply" means Nora must perform a visible
+outbound act, not that the act must contain text. A plain question normally
+gets one terminal act; existing multi-message policy may permit more, bounded
+by the same per-turn message cap. `send_gif` must be terminal *in exactly the
 same way*, or two failures follow immediately:
 
 - she sends a GIF and the loop continues, so she sends a text reply too —
@@ -95,6 +97,17 @@ with an attachment and a body — `send_gif(query, caption="又係你")` is a
 single send. This is why `caption` belongs on `send_gif` rather than being
 achieved by calling both tools: two calls would be two messages and two
 notifications, which is not what a person does.
+
+The three deliberate shapes are therefore:
+
+- `send_reply(text)`: text only.
+- `send_gif(query)`: GIF only. This is ordinary and allowed.
+- `send_gif(query, caption)`: one message containing both.
+
+When the model has a real two-beat response, it may call `send_reply(text)`
+then `send_gif(query)` under the ordinary multi-message cap. That is a choice
+for the voice policy, not a workaround for a missing caption field. It must
+not split one ordinary answer into text plus a decorative GIF by default.
 
 ### 1.1 Multi-message replies (operator intent, 2026-08-06 — needs its own document)
 
@@ -361,9 +374,8 @@ A9 says record first. A GIF reply must not leave a hole where a reply was.
 11. New rules registered in `design/09-decision-index.md` and
     `tests/test_acceptance_rules.py::RULE_TESTS`, each probed failing first.
 
-## 7. Open question for the operator
+## 7. Operator decision
 
-Does a GIF ever go out **without** a caption? It is the one decision here that
-is purely taste, and it drives §4's canary question and part of `voice.md`.
-Mandatory captions are the safer default and read as more human; caption-less
-GIFs are funnier and occasionally exactly right.
+Caption-less GIFs are allowed. They satisfy the reply requirement themselves;
+captions and a preceding text message are voice choices, not transport or
+guard requirements.

@@ -516,6 +516,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # body comes back whenever it is asked. Both are stated rather than left to
     # the defaults so the fifth field (`plugin`) is not the only one this entry
     # sets on purpose.
+    "send_gif": NativeTool(1, "send one suitable reaction GIF when words are not the best reply", terminal=True),
     "skills": NativeTool(1, "activate a skill named in <available_skills> to load its "
                             "full instructions before you plan",
                          terminal=False, time_shiftable=None, plugin=True),
@@ -1135,6 +1136,7 @@ def build_tool_specs(
     clock: Callable[[], datetime] | None = None,
     links: LinkCarry | None = None,
     versions=None,
+    giphy_source=None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -3116,6 +3118,24 @@ def build_tool_specs(
         _record(metrics, "send_reply", "ok" if sent else "refused", chars=len(text or ""))
         return sent
 
+    async def send_gif(query: str, caption: str = "") -> dict:
+        """Send one Giphy reaction GIF, optionally with a short caption.
+
+        Use this rarely when a GIF is genuinely a better reply than words. Search with a
+        concrete visual reaction, not names, private facts, or text copied from the chat.
+
+        Args:
+            query: A short visual reaction to search for.
+            caption: Optional words sent with the GIF.
+        """
+        if not query or scan_identifiers(query) is not None or giphy_source is None:
+            return {"status": "unavailable", "note": "Reply in words instead."}
+        attachment = await giphy_source.select(query=query)
+        if attachment is None:
+            return {"status": "nothing_found", "note": "Reply in words instead."}
+        sent = await deliverer.deliver(caption, source="tool", attachments=(attachment,))
+        return {"status": "ok" if sent else "failed"}
+
     return (
         _spec("now", now),
         _spec("calculate", calculate),
@@ -3138,6 +3158,7 @@ def build_tool_specs(
         _spec("cancel_reminder", cancel_reminder),
         _spec("version", version),
         _spec("send_reply", send_reply),
+        _spec("send_gif", send_gif),
     )
 
 
