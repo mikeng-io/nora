@@ -1577,8 +1577,9 @@ def build_tool_specs(
 
         Outcomes, and they are five different answers: `ok` with the lines
         (each with who said it); `nothing_found` when nothing matches;
-        `withheld` when it found things you may not repeat (say you can't quote
-        it, NOT that nobody said it); `refused` when somebody here can't be
+        `withheld` when it found things you may not repeat —
+        `found_but_unquotable` counts them; say you can't quote it, NOT that
+        nobody said it; `refused` when somebody here can't be
         placed, so the group's history stays out of this room; `unavailable`
         when it couldn't be checked at all. Never report the last as
         `nothing_found`. Only ever surfaces words from people in this
@@ -1684,7 +1685,7 @@ def build_tool_specs(
                              withheld=withheld)
                 return {
                     "status": "withheld",
-                    "found": withheld,
+                    "found_but_unquotable": withheld,
                     "note": "I found things but nothing I can repeat back. Say you "
                             "can't quote it — never say nobody said anything, and "
                             "never paraphrase it into a quote.",

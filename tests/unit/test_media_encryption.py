@@ -68,14 +68,28 @@ def store(tmp_path) -> FilesystemBlobStore:
 
 
 async def test_the_bytes_on_disk_are_ciphertext_not_the_plaintext(store, tmp_path):
-    """The JPEG magic FF D8 must NOT appear on disk. AES-GCM output is
-    indistinguishable from random, so the picture is unreadable at rest."""
+    """Nothing on disk identifies the file as a picture, and no run of the
+    plaintext survives. AES-GCM output is indistinguishable from random.
+
+    `JPEG_MAGIC not in on_disk` was the assertion here until 2026-08-11, and it
+    was UNSOUND: the magic is two bytes, so it turns up somewhere in ~745 bytes
+    of random output about 1.14% of the time analytically — measured at 20
+    failures in 2000 runs (1.00%). A 1-in-100 spurious red is worse than no test
+    at all, because the four-gate discipline is load-bearing here and a flaky
+    gate teaches an operator to re-run and move on, which is how a real red gets
+    waved through.
+
+    It was also testing the wrong thing. Two coincidental bytes in the middle of
+    ciphertext do not make a picture readable; what would is a viewer sniffing
+    the HEADER, or a recognisable run of plaintext surviving. Both are asserted
+    below, and both are deterministic — the header check exactly, and the
+    16-byte run at 2^-128."""
     plaintext = _jpeg_with_gps(lat=22)
     key = await store.put(data=plaintext)
     on_disk = (tmp_path / "media" / key[:2] / key[2:]).read_bytes()
     assert on_disk != plaintext
-    assert JPEG_MAGIC not in on_disk
-    assert plaintext[:16] not in on_disk
+    assert not on_disk.startswith(JPEG_MAGIC)     # no viewer sniffs it as a JPEG
+    assert plaintext[:16] not in on_disk          # no plaintext run survives
 
 
 async def test_get_round_trips_the_plaintext_byte_for_byte(store):

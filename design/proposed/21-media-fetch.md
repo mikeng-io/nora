@@ -4,7 +4,7 @@ title: "Nora — media_fetch: reading a stored image through MiMo-V2.5"
 description: "The READ half of media custody (design/18): a scoped tool that decrypts a blob Nora already holds and describes it via MiMo-V2.5 through OmniRoute, under its OWN timeout and byte ceiling, caches by content hash, and treats the model-written description as untrusted egress — honest about what the identifier screen does and does not catch."
 tags: [nora, design, media, vision, mimo, omniroute, grounding]
 timestamp: '2026-08-07'
-status: proposed
+status: superseded
 ---
 
 > **SUPERSEDED — this shipped.** `media_fetch` is live (`nora/agent/tools.py`),

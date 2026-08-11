@@ -207,18 +207,30 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # signal-cli, not the model.
     _CounterSpec(
         "nora_room_lookups_total",
-        "Room-scoped tool calls, by tool and how the tool answered: ok; "
-        "nothing_found (it looked and there was nothing — recorded as `ok` "
-        "until 2026-08-11, which made hit-rate unreadable on the one series "
-        "that would show her searching constantly and finding nothing); "
-        "ambiguous; refused (a room holding somebody she cannot place — R-31 "
-        "fails closed rather than disclosing); withheld (it FOUND things the "
-        "egress guard will not let her repeat, which is not the same as finding "
-        "nothing); unavailable (it could not be checked at all). The last two "
-        "are the ones worth alerting on together: a sustained `unavailable` is "
-        "Honcho or signal-cli rather than the model, and a climbing `withheld` "
-        "is the DEC-30 shape — she is being asked things she can see and cannot "
-        "say.",
+        "Room-scoped tool calls, by tool and how the tool answered. SIX values, "
+        "and two pairs of them are easy to conflate: "
+        "`ok`; "
+        "`not_found` — a NAME resolved to nobody in this room (lookup_person, "
+        "where_is, saved_places), and it deliberately cannot be told apart from "
+        "«that person was never written down», because a behaviour difference "
+        "would disclose membership (design/12 §3); "
+        "`nothing_found` — a SEARCH over what was said matched nothing "
+        "(search_memory). A different question from `not_found`, hence a "
+        "different label; it was recorded as `ok` until 2026-08-11, which made "
+        "hit-rate unreadable on the one series that would show her searching "
+        "constantly and finding nothing; "
+        "`ambiguous`; "
+        "`refused` — somebody in the room could not be placed, so the group's "
+        "history stays out of it (R-31 fails closed rather than disclosing); "
+        "`withheld` — it FOUND things the egress guard will not let her repeat, "
+        "which is emphatically not the same as finding nothing; "
+        "`unavailable` — it could not be checked at all. "
+        "NEVER sum `not_found`/`nothing_found` with `unavailable`: the first two "
+        "are answers and the third is a failure to answer, and averaging them "
+        "hides an outage inside a normal-looking miss rate. Worth alerting on: a "
+        "sustained `unavailable` is Honcho or signal-cli rather than the model, "
+        "and a climbing `withheld` is the DEC-30 shape — she is being asked "
+        "things she can see and cannot say.",
         ("tool", "status"),
     ),
     # Honcho's `representation` endpoint specifically, and it exists because

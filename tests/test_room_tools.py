@@ -402,9 +402,15 @@ async def test_search_memory_surfaces_only_roster_speakers_and_screens_identifie
 async def test_search_memory_nothing_found_when_no_roster_speaker_matches(persons):
     honcho = FakeHoncho()
     honcho.messages = [("nora", "只有我講嘢")]           # only Nora → filtered → empty
-    tools = _build(persons=persons, honcho=honcho)
+    metrics = Metrics()
+    tools = _build(persons=persons, honcho=honcho, metrics=metrics)
     result = await _call(tools["search_memory"], query="x")
     assert result["status"] == "nothing_found"
+    # A miss is recorded as a MISS. It was recorded as `ok` until 2026-08-11,
+    # which made hit-rate unreadable — searching constantly and finding nothing
+    # looked identical to searching constantly and succeeding.
+    assert metrics.get("nora_room_lookups_total",
+                       tool="search_memory", status="nothing_found") == 1
 
 
 async def test_search_memory_reports_an_outage_as_unavailable_not_as_nothing_found(persons):
@@ -444,7 +450,8 @@ async def test_search_memory_says_it_cannot_repeat_what_it_found_when_all_hits_a
     software engineers who say «claude» constantly."""
     honcho = FakeHoncho()
     honcho.messages = [("miles_novak", "琴日我用 claude 寫個 script 好撚快")]
-    tools = _build(persons=persons, honcho=honcho)
+    metrics = Metrics()
+    tools = _build(persons=persons, honcho=honcho, metrics=metrics)
 
     result = await _call(tools["search_memory"], query="script")
 
@@ -452,9 +459,17 @@ async def test_search_memory_says_it_cannot_repeat_what_it_found_when_all_hits_a
     # note second, so encoding this as «nothing was said» leaves the true answer
     # depending on how far it read (external review, 2026-08-11).
     assert result["status"] == "withheld"
-    assert result["found"] == 1
+    assert result["found_but_unquotable"] == 1
     assert "can't quote" in result["note"]
-    assert result["status"] != "nothing_found"
+
+    # And the METRIC label moves with the payload. This half was decorative
+    # until now: a verification pass reverted both `_record_room` statuses back
+    # to "ok", left the returned payloads untouched, and 110 tests stayed green.
+    # `nora_room_lookups_total` is the series DEC-30's climbing-withheld alert
+    # reads, so a refactor collapsing it into `ok` would take the alert flat
+    # with nothing noticing.
+    assert metrics.get("nora_room_lookups_total",
+                       tool="search_memory", status="withheld") == 1
 
 
 async def test_search_memory_refuses_in_a_room_with_someone_it_cannot_place(persons):

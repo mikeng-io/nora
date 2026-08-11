@@ -4,7 +4,7 @@ title: "Nora — search + fetch: the web, wrapped untrusted, with the SSRF contr
 description: "The implementation of design/14 §2.1/§3's two web verbs, revised after a design review found the fence in the wrong place. search(query) over SearXNG and fetch(url) over Firecrawl. The SSRF control lives at Firecrawl's container egress (the only place the post-redirect, post-rebind connection is governed) — Nora's search-result URL allow-set and is_global precheck are defence-in-depth. Retrieved bytes are wrapped untrusted (escape-safe, reusing the transit _wrap precedent), search is result- and byte-capped, and the whole thing is inert-by-config."
 tags: [nora, design, grounding, search, fetch, searxng, firecrawl, ssrf, untrusted]
 timestamp: '2026-08-07'
-status: proposed
+status: superseded
 ---
 
 > **SUPERSEDED — half of this shipped.** `web_search` is live (Tavily); the

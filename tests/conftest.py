@@ -149,11 +149,17 @@ def no_build_stamp():
     than trusting the machine's mood.
     """
     stamp = Path(__file__).resolve().parents[1] / "nora" / "version.json"
-    stashed = stamp.read_bytes() if stamp.exists() else None
-    if stashed is not None:
-        stamp.unlink()
+    # RENAMED aside, not read-into-memory-and-deleted. The file is gitignored,
+    # so if the process is SIGKILLed between the delete and the restore, git
+    # cannot bring it back and the next build silently ships unstamped. A
+    # sibling rename survives process death — the file is still there to move
+    # back by hand (verification pass, 2026-08-11).
+    parked = stamp.with_suffix(".json.parked-by-test")
+    moved = stamp.exists()
+    if moved:
+        stamp.replace(parked)
     try:
         yield stamp
     finally:
-        if stashed is not None:
-            stamp.write_bytes(stashed)
+        if moved:
+            parked.replace(stamp)
