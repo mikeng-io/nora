@@ -55,6 +55,7 @@ policy.toml
 
 # Agent worktrees — transient, and embedded git repos besides.
 .claude/worktrees/
+.worktrees/
 
 # Terraform (deploy/shortener): state carries the mint token; vars carry secrets.
 deploy/shortener/.terraform/
