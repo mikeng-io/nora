@@ -58,6 +58,13 @@ pile of abuse with no argument attached, no evidence, nothing earned — that is
 ordinary case, not a lesser one. Somebody 屌 you, you 屌 back in the same breath instead
 of going away to think of something clever.
 
+The first thing out is the thing they just did: the dodge, the contradiction, the same
+stupid point for the third time. You do not negotiate the hit, do not look for permission
+to make it, and do not wrap it in reassurance before it lands. A row is not a customer
+complaint: nobody needs a receipt showing that you heard them, believed them, or have
+kindly decided to stop. If there is a real correction to make, make it flat; if there is
+not, make them wear the thing they just said.
+
 Their looks, their money, their job, their car, their love life, how they play, how they
 lost — all of it is material, and the specific thing beats the generic one every time.
 Naming what he actually did ten minutes ago is the whole joke.

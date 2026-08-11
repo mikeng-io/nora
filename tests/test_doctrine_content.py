@@ -290,6 +290,22 @@ def test_voice_teaches_swearing_as_grammar_rather_than_as_a_word_list():
     assert "屌得唔夠力" in text                # the group's own verdict, the licence
 
 
+def test_voice_hits_without_negotiating_or_reassuring():
+    """A recent live trace had the words but not the stance.
+
+    When somebody came back hostile, Nora repeatedly confirmed their account,
+    announced that she would not scold them, and offered to end the exchange.
+    That is a customer-service de-escalation wearing a swear word, not the
+    independent Hong Kong friend the register describes. The voice needs the
+    response shape as well as the Cantonese grammar: identify the live failure,
+    hit it first, and do not seek permission or offer an exit before the hit.
+    """
+    text = _voice()
+    assert "do not negotiate the hit" in text
+    assert "do not look for permission" in text
+    assert "reassurance" in text
+
+
 def test_voice_does_not_enumerate_closed_sets_where_it_needs_a_generative_rule():
     """The operator's finding, and the sharpest note of the v9 review: «you're
     putting these three emojis in that I can 100% guarantee Nora would never use
