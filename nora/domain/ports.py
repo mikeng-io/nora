@@ -166,6 +166,7 @@ from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
+from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBytes as MediaBytes
 from nora.domain.media import MediaRef as MediaRef
 from nora.domain.models import (
@@ -209,6 +210,14 @@ class OutboundAttachment:
     content: bytes
     media_type: str
     filename: str
+
+
+class GifSource(Protocol):
+    """Provider boundary for finding and retrieving reaction GIFs."""
+
+    async def search(self, *, query: str) -> tuple[GifCandidate, ...]: ...
+
+    async def fetch(self, *, candidate: GifCandidate) -> OutboundAttachment | None: ...
 
 
 @dataclass(frozen=True)

@@ -53,9 +53,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 
-from ..domain.media import HANDLE_CHARS
+from ..domain.media import HANDLE_CHARS, GifCandidate
 from ..domain.models import WeatherObservation
-from ..domain.ports import MessageHits, Recollection
+from ..domain.ports import GifSource, MessageHits, Recollection
 from ..domain.reminders import (
     Recurrence,
     RecurrenceRule,
@@ -516,7 +516,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # body comes back whenever it is asked. Both are stated rather than left to
     # the defaults so the fifth field (`plugin`) is not the only one this entry
     # sets on purpose.
-    "search_gifs": NativeTool(1, "find described Giphy reaction GIF candidates before choosing one"),
+    "search_gifs": NativeTool(
+        1, "find described Giphy reaction GIF candidates before choosing one"
+    ),
     "send_gif": NativeTool(1, "send a previously searched Giphy reaction GIF", terminal=True),
     "skills": NativeTool(1, "activate a skill named in <available_skills> to load its "
                             "full instructions before you plan",
@@ -1137,7 +1139,7 @@ def build_tool_specs(
     clock: Callable[[], datetime] | None = None,
     links: LinkCarry | None = None,
     versions=None,
-    giphy_source=None,
+    giphy_source: GifSource | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -3119,7 +3121,7 @@ def build_tool_specs(
         _record(metrics, "send_reply", "ok" if sent else "refused", chars=len(text or ""))
         return sent
 
-    gif_candidates: dict[str, object] = {}
+    gif_candidates: dict[str, GifCandidate] = {}
 
     async def search_gifs(query: str) -> dict:
         """Find described reaction GIFs before sending one.
@@ -3130,12 +3132,13 @@ def build_tool_specs(
         Args:
             query: A visual reaction phrase, never copied private chat text.
         """
-        if not query or scan_identifiers(query) is not None or giphy_source is None:
+        if (not query or len(query) > 120 or len(query.split()) > 12
+                or scan_identifiers(query) is not None or giphy_source is None):
             return {"status": "unavailable", "note": "Reply in words instead."}
         found = await giphy_source.search(query=query)
         gif_candidates.clear()
         gif_candidates.update({candidate.id: candidate for candidate in found})
-        return {"status": "ok", "candidates": [
+        return {"status": "ok", "metadata_source": "untrusted_provider", "candidates": [
             {"id": c.id, "title": c.title, "alt_text": c.alt_text,
              "tags": list(c.tags), "rating": c.rating} for c in found
         ]} if found else {"status": "nothing_found", "note": "Reply in words instead."}
@@ -3152,11 +3155,19 @@ def build_tool_specs(
         """
         if giphy_source is None or candidate_id not in gif_candidates:
             return {"status": "unavailable", "note": "Reply in words instead."}
-        attachment = await giphy_source.fetch(candidate_id=candidate_id)
+        candidate = gif_candidates[candidate_id]
+        attachment = await giphy_source.fetch(candidate=candidate)
         if attachment is None:
-            return {"status": "nothing_found", "note": "Reply in words instead."}
-        sent = await deliverer.deliver(caption, source="tool", attachments=(attachment,))
-        return {"status": "ok" if sent else "failed"}
+            raise RuntimeError("GIF unavailable; reply in words instead.")
+        record_text = f"{caption.strip()} [GIF via {candidate.provider}]".strip()
+        sent = await deliverer.deliver(
+            caption, source="tool", attachments=(attachment,), record_text=record_text,
+            record_metadata={"media": {"provider": candidate.provider, "id": candidate.id,
+                                       "type": "gif"}},
+        )
+        if not sent:
+            raise RuntimeError("GIF delivery failed; reply in words instead.")
+        return {"status": "ok"}
 
     return (
         _spec("now", now),
@@ -3207,6 +3218,7 @@ def build_tools(
     location_trusted: bool = False,
     refresher=None,
     shortener=None,
+    giphy_source: GifSource | None = None,
     question: str = "",
     context_window: int = 40,
     ai_peer: str = "nora",
@@ -3227,6 +3239,6 @@ def build_tools(
         refresher=refresher,
         shortener=shortener,
         question=question, context_window=context_window, ai_peer=ai_peer,
-        links=links,
+        links=links, giphy_source=giphy_source,
     )
     return [adapt(spec) for spec in specs]

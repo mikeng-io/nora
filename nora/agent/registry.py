@@ -29,7 +29,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
 
-from ..domain.ports import BlobStore, SearchProvider, WeatherProvider
+from ..domain.ports import BlobStore, GifSource, SearchProvider, WeatherProvider
 from ..domain.reminders import ReminderCaps, ReminderStore
 from ..infra.routes import RouteClient
 from ..infra.shortener import LinkShortener
@@ -84,7 +84,7 @@ class ToolRegistry:
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
-        giphy: Any = None,
+        giphy: GifSource | None = None,
         budget_overrides: Mapping[str, int] | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})

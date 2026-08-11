@@ -261,6 +261,8 @@ class Deliverer:
     async def deliver(
         self, text: str, *, source: str = "tool",
         attachments: tuple[OutboundAttachment, ...] = (),
+        record_text: str | None = None,
+        record_metadata: Mapping[str, Any] | None = None,
     ) -> bool:
         self._send_calls += 1
         if self.exhausted:                                     # R-2
@@ -410,9 +412,10 @@ class Deliverer:
             # bookkeeping, not an envelope, so `_row`'s cheap reject leaves the
             # body as stored) — so a placeholder-shaped outbound message would
             # have reintroduced DEC-34's exact void inside Nora's own history.
-            body=outbound.text,
+            body=outbound.text if record_text is None else record_text,
             raw={"tag_id": self._tag_id, "source": source,
-                 "doctrine_sha256": self._doctrine_sha256},
+                 "doctrine_sha256": self._doctrine_sha256,
+                 **({} if record_metadata is None else dict(record_metadata))},
         )
         try:                                                   # record-first
             row_id = await self._store.append(
@@ -453,7 +456,7 @@ class Deliverer:
             # canned apology, NOT one of Nora's authored words, so it is kept OUT
             # of `sent_texts` and never feeds her Honcho self-model card (review
             # 2026-08-09). Only her real replies build that model.
-            if source != "fallback":
+            if source != "fallback" and (not attachments or outbound.text.strip()):
                 self._sent_texts.append(outbound.text)
             self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)
             # DEC-83: the group can SEE the reply now, so mark the turn done now

@@ -1,3 +1,4 @@
+import json
 import re
 
 import pytest
@@ -13,8 +14,9 @@ from nora.agent.tools import (
     build_tools,
 )
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.media import GifCandidate
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
-from nora.domain.ports import Roster
+from nora.domain.ports import OutboundAttachment, Roster
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -85,7 +87,8 @@ async def wiring(pg_url, tmp_path):
                         question="who is here", context_window=40)
     try:
         yield {"tools": {t.tool_name: t for t in tools}, "sink": sink,
-               "honcho": honcho, "deliverer": deliverer, "store": store, "metrics": metrics}
+               "honcho": honcho, "deliverer": deliverer, "store": store, "metrics": metrics,
+               "persons": persons, "room": room}
     finally:
         await store.aclose()
 
@@ -658,3 +661,58 @@ async def test_weather_is_unavailable_without_a_provider(wiring):
 async def _call(tool, **kwargs):
     """Invoke the underlying function of a @tool-decorated closure."""
     return await tool._tool_func(**kwargs)
+
+
+class _GifSource:
+    candidate = GifCandidate("giphy", "happy-1", "Happy dance", "A person dances happily",
+                             ("happy", "dance"), "g")
+
+    def __init__(self, *, attachment: OutboundAttachment | None = None) -> None:
+        self.attachment = attachment or OutboundAttachment(b"GIF89a", "image/gif", "reaction.gif")
+        self.queries: list[str] = []
+
+    async def search(self, *, query: str) -> tuple[GifCandidate, ...]:
+        self.queries.append(query)
+        return (self.candidate,)
+
+    async def fetch(self, *, candidate: GifCandidate) -> OutboundAttachment | None:
+        return self.attachment if candidate == self.candidate else None
+
+
+async def test_gif_tools_bind_turn_candidate_and_audit_a_gif_only_reply(wiring):
+    source = _GifSource()
+    tools = {tool.tool_name: tool for tool in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        giphy_source=source,
+    )}
+
+    found = await _call(tools["search_gifs"], query="happy dance")
+    assert found["metadata_source"] == "untrusted_provider"
+    assert found["candidates"][0]["id"] == "happy-1"
+    assert await _call(tools["send_gif"], candidate_id="happy-1") == {"status": "ok"}
+    assert wiring["sink"].texts == [""]
+    assert wiring["sink"].sent_attachments == [(source.attachment,)]
+    row = (await wiring["store"].recent(conversation_id="g1", limit=1))[0]
+    assert row.body == "[GIF via giphy]"
+    assert json.loads(row.raw_json or "{}")["media"] == {
+        "provider": "giphy", "id": "happy-1", "type": "gif",
+    }
+    assert wiring["deliverer"].sent_texts == ()
+
+
+async def test_gif_send_failure_raises_so_the_agent_can_send_a_text_reply(wiring):
+    source = _GifSource(attachment=None)
+    source.attachment = None
+    tools = {tool.tool_name: tool for tool in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        giphy_source=source,
+    )}
+
+    await _call(tools["search_gifs"], query="happy dance")
+    with pytest.raises(RuntimeError, match="GIF unavailable"):
+        await _call(tools["send_gif"], candidate_id="happy-1")
+    assert await _call(tools["send_reply"], text="搵唔到張啱嘅 GIF，不過笑死") is True

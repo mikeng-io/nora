@@ -324,7 +324,7 @@ class SignalSender:
                 "retrying the send UNDECORATED (conversation=%s, id=%s) — the "
                 "reply matters, the card does not", target.conversation_id, request_id,
             )
-            return await self.send(target, text, request_id=request_id)
+            return await self.send(target, text, attachments=attachments, request_id=request_id)
         # A COUNT of mentions, never the recipients — the same rule
         # `Deliverer` follows for the reply text. An ACI in a log line is an
         # identifier at rest in a file the operator greps, which R-18 is about

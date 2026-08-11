@@ -6,7 +6,12 @@ from aiohttp import web
 
 from nora.domain.models import ConversationTarget
 from nora.domain.ports import (
-    LinkPreview, Mention, OutboundAttachment, SendResult, Style, TextStyle,
+    LinkPreview,
+    Mention,
+    OutboundAttachment,
+    SendResult,
+    Style,
+    TextStyle,
 )
 from nora.platform.signal.send import SignalSender
 
@@ -487,12 +492,14 @@ async def test_a_rejected_decorated_send_is_retried_without_the_decoration(aioht
     result = await sender.send(
         TARGET, "去呢間 https://n.example.net/9DpAk8g",
         preview=LinkPreview(url="https://n.example.net/9DpAk8g", title="Google Maps"),
+        attachments=(OutboundAttachment(b"GIF89a", "image/gif", "reaction.gif"),),
     )
 
     assert result.ok is True                       # the REPLY got through
     assert len(seen) == 2                          # decorated, then bare
     assert "previewUrl" in seen[0]
     assert not any(k in seen[1] for k in ("previewUrl", "previewTitle", "mention", "textStyle"))
+    assert seen[1]["attachments"] == ["data:image/gif;filename=reaction.gif;base64,R0lGODlh"]
     assert seen[1]["message"] == "去呢間 https://n.example.net/9DpAk8g"   # same words
 
 
