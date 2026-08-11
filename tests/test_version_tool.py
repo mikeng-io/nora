@@ -104,10 +104,14 @@ async def test_an_unstamped_build_is_unavailable_not_nothing_found(tmp_path: Pat
         "nora_tool_calls_total", tool="version", status="nothing_found") == 0
 
 
-async def test_a_registry_with_no_manifest_wired_is_unavailable():
+async def test_a_registry_with_no_manifest_wired_is_unavailable(no_build_stamp):
     """`ToolRegistry(versions=…)` default-constructs a manifest at the baked
     path, which in a source checkout is absent — so the honest answer here is
     the same wiring-gap `unavailable`, never a guess and never a `nothing_found`.
+
+    `no_build_stamp` FORCES that absence rather than trusting the checkout: a
+    real build leaves a gitignored `nora/version.json` behind, and without the
+    fixture this test silently starts exercising the stamped path.
     """
     answer = await _version_tool(ToolRegistry(), Metrics())()
 

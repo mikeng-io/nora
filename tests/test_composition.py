@@ -233,7 +233,7 @@ async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
         await deps.background.cancel_all()
 
 
-async def test_an_unstamped_build_spawns_no_announcer(cfg):
+async def test_an_unstamped_build_spawns_no_announcer(cfg, no_build_stamp):
     """The gate that keeps a dev checkout (and any image not built through
     `scripts/build-image.sh`) quiet — DEC-79.
 
@@ -246,6 +246,14 @@ async def test_an_unstamped_build_spawns_no_announcer(cfg):
     Reaching into `background._tasks` for the same reason
     `test_the_heartbeat_is_wired_to_the_real_fire_path` does: `Dependencies`
     deliberately exposes neither loop.
+
+    The absent stamp is FORCED, not assumed. This passed for as long as nobody
+    had ever run a real build, and went red the first time one did (V1,
+    2026-08-11): `scripts/build-image.sh` writes `nora/version.json` into the
+    working tree, it is gitignored so it survives unnoticed, and this test then
+    exercised the STAMPED path while claiming to prove the unstamped one. A test
+    whose meaning depends on ambient filesystem state proves whatever the
+    machine happens to be in the mood for.
     """
     deps = await build_dependencies(cfg)
     try:

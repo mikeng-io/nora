@@ -134,3 +134,26 @@ def pg_url(pg_admin: _PgAdmin, monkeypatch) -> Iterator[str]:
                 (dbname,),
             )
             conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
+@pytest.fixture
+def no_build_stamp():
+    """Force `nora/version.json` ABSENT for the duration of a test.
+
+    `scripts/build-image.sh` writes that file into the working tree, and it is
+    gitignored — so once anyone runs a real build (V1, 2026-08-11) it stays
+    there silently, and every test that assumed "a source checkout has no
+    stamp" quietly starts exercising the STAMPED path while claiming to prove
+    the unstamped one. Two tests went red the first time a build ran; they were
+    the honest ones. Any test asserting unstamped behaviour takes this rather
+    than trusting the machine's mood.
+    """
+    stamp = Path(__file__).resolve().parents[1] / "nora" / "version.json"
+    stashed = stamp.read_bytes() if stamp.exists() else None
+    if stashed is not None:
+        stamp.unlink()
+    try:
+        yield stamp
+    finally:
+        if stashed is not None:
+            stamp.write_bytes(stashed)
