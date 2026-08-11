@@ -7,6 +7,12 @@ timestamp: '2026-08-07'
 status: proposed
 ---
 
+> **SUPERSEDED — half of this shipped.** `web_search` is live (Tavily); the
+> `web_fetch` half was RETIRED (DEC-73) after it exhausted the token budget —
+> fetched pages are input-resident on every subsequent call of the turn, so a
+> research turn dropped empty replies. Read for the SSRF reasoning, not as a
+> plan.
+
 # search + fetch — the web, fenced at the right layer
 
 design/14 §2.1/§3 designed the two web verbs and left them last: they are the only

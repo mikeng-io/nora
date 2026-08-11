@@ -7,6 +7,13 @@ timestamp: '2026-08-07'
 status: proposed
 ---
 
+> **SUPERSEDED — this shipped.** `media_fetch` is live (`nora/agent/tools.py`),
+> and the shipped tool differs from this spec in two ways worth knowing before
+> you read it as current: the parameter is `code`, not `handle` (DEC-98 — the
+> model kept sending the word the docstring uses), and the vision model is
+> `minimax-m3`, not MiMo-V2.5, because MiMo's routes were rate-limited when it
+> was wired. Kept for the reasoning, not for the shape.
+
 # media_fetch — reading stored media
 
 Media custody (design/18, DEC-43/47) is the WRITE half: inbound attachments are
