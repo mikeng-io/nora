@@ -284,8 +284,8 @@ def test_voice_teaches_swearing_as_grammar_rather_than_as_a_word_list():
 
     Pins the two generative rules and nothing about which insults exist."""
     text = _voice()
-    assert "INSIDE" in text and "撚" in text and "鳩" in text
-    assert "INVERTS" in text or "INVERSION" in text
+    assert "句入面" in text and "撚" in text and "鳩" in text
+    assert "反轉" in text
     assert "有撚用" in text                    # the inversion, shown working
     assert "屌得唔夠力" in text                # the group's own verdict, the licence
 
@@ -301,9 +301,9 @@ def test_voice_hits_without_negotiating_or_reassuring():
     hit it first, and do not seek permission or offer an exit before the hit.
     """
     text = _voice()
-    assert "do not negotiate the hit" in text
-    assert "do not look for permission" in text
-    assert "reassurance" in text
+    assert "開火唔係逐點反駁" in text
+    assert "唔係逐點反駁" in text
+    assert "客服腔" in text
 
 
 def test_voice_does_not_enumerate_closed_sets_where_it_needs_a_generative_rule():
@@ -365,31 +365,24 @@ def test_voice_describes_and_does_not_legislate():
     assert not re.search(r'\b(MUST|SHALL|SHOULD|REQUIRED)\b', text)
 
 
-def test_voice_keeps_the_two_limits_that_are_about_aim_not_volume():
-    """DEC-95 removed every TOPIC limit and licensed pure 人身攻擊. Two limits
-    survive, and both are things volume cannot fix.
-
-    The second is the one that makes her WORSE if it erodes, and it eroded once
-    already: v8's first draft demoted it to a clause saying re-aim the voice,
-    then 55 lines later said «never de-escalate, no 算啦, no going quiet» in
-    bold. 「屌你 我今日俾人炒咗 唔好玩啦」 is token-identical to coming back harder,
-    so the louder later rule wins and she escalates at somebody who just lost
-    their job.
-
-    Verified live against the shipped doctrine on 2026-08-11: she answered
-    「屌 真㗎 咁大鑊」 / 「有咩想講就講 我哋喺度」, and her reasoning trace read «this
-    is somebody genuinely upset — drop everything and answer them»."""
+def test_voice_keeps_only_the_limit_about_absent_targets():
+    """Nora may escalate in-room conflict regardless of the target's mood."""
     text = _voice()
-    assert "not in the room" in text and "cannot answer back" in text
-    assert "genuinely upset" in text
-    # The escalation rule has to disclaim ITSELF, where it is taught — a limit
-    # stated only in an earlier section is not reachable from there.
-    after = text.split("go quiet to end it", 1)
-    assert len(after) == 2, "the escalation rule moved; re-point this test"
-    assert "opponent" in after[1], (
-        "escalation is stated with no carve-out for somebody in real trouble — "
-        "the contradiction that made her escalate at bad news"
-    )
+    assert "not in the room" not in text
+    assert "幾個短訊息連環炮" not in text
+    constraints = (DOCTRINE_DIR / "constraints.md").read_text()
+    assert "target of a fight" in constraints
+    assert "cannot answer back" in constraints
+
+
+def test_conduct_allows_personal_banter_only_for_an_in_room_instigator():
+    conduct = (DOCTRINE_DIR / "conduct.md").read_text()
+    constraints = (DOCTRINE_DIR / "constraints.md").read_text()
+
+    assert "人身攻擊" in conduct
+    assert "公開或者當刻睇得到" in conduct
+    assert "主動開火" in conduct
+    assert "target of a fight" in constraints
 
 
 def test_voice_binds_the_one_hard_rule_of_the_open_register():
@@ -406,11 +399,9 @@ def test_voice_binds_the_one_hard_rule_of_the_open_register():
     The permissive half is pinned by two tests above; this is the restrictive
     half, which had none until v8."""
     text = _voice()
-    assert "invent nothing" in text
-    assert "never be false" in text or "cannot be false" in text
-    # R-27 at the doctrine layer: the callback stage is where «found nothing»
-    # and «could not look» would collapse into one answer.
-    assert "could not\nlook" in text or "could not look" in text
+    assert "唔好作 quote" not in text
+    conduct = (DOCTRINE_DIR / "conduct.md").read_text()
+    assert "Do not invent a quote" in conduct
 
 
 def test_conduct_separates_a_burst_from_one_answer_in_instalments():

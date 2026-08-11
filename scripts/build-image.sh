@@ -2,7 +2,7 @@
 # Build Nora's image with the version baked in.
 #
 #     scripts/build-image.sh V3            # stamp V3 and build
-#     scripts/build-image.sh               # stamp the newest V-tag on HEAD
+#     scripts/build-image.sh               # ordinary, unstamped deployment build
 #
 # Two things this wrapper exists to make impossible to forget:
 #
@@ -23,9 +23,13 @@ VERSION="${1:-}"
 if [ -n "$VERSION" ]; then
   uv run python scripts/gen_version_manifest.py --version "$VERSION"
 else
-  uv run python scripts/gen_version_manifest.py
-  VERSION="$(python3 -c 'import json;print(json.load(open("nora/version.json"))["version"])')"
+  rm -f nora/version.json
 fi
 
-docker build --network=host --build-arg "NORA_VERSION=$VERSION" -t nora:"$VERSION" -t nora:latest .
-echo "built nora:$VERSION"
+if [ -n "$VERSION" ]; then
+  docker build --network=host --build-arg "NORA_VERSION=$VERSION" -t nora:"$VERSION" -t nora:latest .
+  echo "built nora:$VERSION"
+else
+  docker build --network=host --build-arg NORA_VERSION= -t nora:latest .
+  echo "built unstamped nora:latest"
+fi

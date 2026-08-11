@@ -33,6 +33,7 @@ from nora.infra.version import NOTHING_FOUND, OK, VersionManifest
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT / "scripts" / "gen_version_manifest.py"
 CHECKER = ROOT / "scripts" / "check_version_stamp.py"
+RELEASE = ROOT / "scripts" / "release.py"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None, reason="the generator derives the manifest from git",
@@ -66,6 +67,7 @@ def repo(tmp_path: Path) -> Path:
     (repo / "nora").mkdir()
     shutil.copy(GENERATOR, repo / "scripts" / GENERATOR.name)
     shutil.copy(CHECKER, repo / "scripts" / CHECKER.name)
+    shutil.copy(RELEASE, repo / "scripts" / RELEASE.name)
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "test@example.invalid")
     _git(repo, "config", "user.name", "Test")
@@ -176,6 +178,10 @@ def _check(repo: Path, arg: str) -> subprocess.CompletedProcess[str]:
     return _run(["python", str(repo / "scripts" / CHECKER.name), arg], repo)
 
 
+def _release(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return _run(["python", str(repo / "scripts" / RELEASE.name), *args], repo)
+
+
 def test_the_build_gate_passes_when_the_stamp_matches(repo: Path):
     _stamp(repo, "--version", "V2")
 
@@ -248,3 +254,37 @@ def test_the_dockerfile_runs_the_gate_with_the_build_argument():
     assert 'python scripts/check_version_stamp.py "$NORA_VERSION"' in dockerfile
     # …after the code it is checking, or it would check an empty directory.
     assert dockerfile.index("COPY nora/") < dockerfile.index("check_version_stamp.py")
+
+
+def test_a_manual_release_tags_the_group_note_and_accumulated_changes(repo: Path):
+    _commit(repo, "after-v2.txt", "fix: keep deployments untagged")
+    notes = repo / "docs" / "releases"
+    notes.mkdir(parents=True)
+    (notes / "V3.md").write_text(
+        "# V3 — Manual releases\n\n"
+        "## Summary\n"
+        "Deployments and releases are now separate operator actions.\n\n"
+        "## Group message\n"
+        "今次係整順咗啲嘢，平時 restart 唔會再扮係新 version。\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", "docs/releases/V3.md")
+    _git(repo, "commit", "-qm", "docs: prepare V3 release")
+
+    done = _release(repo, "--skip-deploy")
+
+    assert done.returncode == 0, done.stderr
+    assert _run(["git", "rev-parse", "V3^{}"], repo).stdout.strip() == _run(
+        ["git", "rev-parse", "HEAD"], repo).stdout.strip()
+    note = _run(["git", "tag", "-l", "--format=%(contents)", "V3"], repo).stdout
+    assert note.strip() == "今次係整順咗啲嘢，平時 restart 唔會再扮係新 version。"
+    assert "fix: keep deployments untagged" not in note
+
+
+def test_a_manual_release_refuses_a_missing_group_note(repo: Path):
+
+    done = _release(repo, "--skip-deploy")
+
+    assert done.returncode == 2
+    assert "release note" in done.stderr
+    assert _run(["git", "tag", "-l", "V3"], repo).stdout == ""
