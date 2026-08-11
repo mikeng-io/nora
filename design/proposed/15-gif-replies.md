@@ -188,32 +188,36 @@ What else moves with R-2:
 
 ## 2. Lookup and selection
 
-**The model writes the query; Nora takes the first acceptable result.**
-`send_gif(query="眼碌碌 side eye")` searches, filters, picks one, sends.
+**The model writes the query, then chooses from described candidates.**
+`search_gifs(query="眼碌碌 side eye")` returns a bounded list of Giphy ids with
+their `title`, `alt_text`, available tags, and rating. The model chooses one of
+those ids with `send_gif(candidate_id, caption)`. It never sends the first
+search result merely because it passed a rating and size filter.
 
-The alternative — return five candidates and let the model choose — costs an
-extra model round trip (~4s, per `design/12` §4) plus the tokens to describe
-five GIFs, to pick a reaction image. That is the wrong trade for this feature,
-and it is worth being explicit about why: the *query* is already the entire
-control surface. A model that can write "眼碌碌 side eye" has expressed its
-intent completely; showing it five results only lets it second-guess a choice
-it had no further information to improve.
+This first version deliberately does **not** use vision. DeepSeek cannot read
+pixels, and adding a vision model plus multi-frame sampling costs a second
+provider, latency, and money for a reaction image. The model therefore knows
+only Giphy's textual metadata, not the GIF's pixels. That limitation is stated
+in the tool result and is preferable to pretending a query establishes what an
+unseen GIF contains.
 
 Selection, in order:
 
 1. `rating` capped at `pg` in the request **and** re-checked on each result —
    the parameter is Giphy's promise, the field is Giphy's claim, and neither
    is our judgment (see §4).
-2. First result whose chosen rendition is under a size ceiling. `original` is
-   never used; `downsized` or `fixed_height` only. The 50× spread measured in
-   §0 is why this is a hard filter and not a preference.
-3. No acceptable result → **fall back to text, do not fail the turn** (R-5).
+2. Candidates with no title, alt text, or tags are excluded: there is nothing
+   for Nora to evaluate. Tags are optional provider metadata, never assumed.
+3. The selected id is fetched again, rechecked, and downloaded through a
+   bounded rendition. `original` is never used; `downsized` or `fixed_height`
+   only. The 50× spread measured in §0 is why this is a hard filter.
+4. No acceptable result → **fall back to text, do not fail the turn** (R-5).
    The tool returns something the model can act on — "no GIF found, reply in
    words" — rather than raising or returning empty. An empty result that reads
    as success is the exact shape of the three silent no-ops in `CLAUDE.md`.
 
-`NATIVE_TOOL_BUDGETS` gets `send_gif: 1` — same as `send_reply`, because it is
-the same kind of act. R-7 vetoes it otherwise.
+`NATIVE_TOOL_BUDGETS` gives both `search_gifs` and `send_gif` a budget of one.
+The search is non-terminal; sending is terminal. R-7 vetoes either otherwise.
 
 ## 3. Tone — sarcastic, teasing, loving, doubting
 

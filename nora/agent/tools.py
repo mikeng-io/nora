@@ -516,7 +516,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # body comes back whenever it is asked. Both are stated rather than left to
     # the defaults so the fifth field (`plugin`) is not the only one this entry
     # sets on purpose.
-    "send_gif": NativeTool(1, "send one suitable reaction GIF when words are not the best reply", terminal=True),
+    "search_gifs": NativeTool(1, "find described Giphy reaction GIF candidates before choosing one"),
+    "send_gif": NativeTool(1, "send a previously searched Giphy reaction GIF", terminal=True),
     "skills": NativeTool(1, "activate a skill named in <available_skills> to load its "
                             "full instructions before you plan",
                          terminal=False, time_shiftable=None, plugin=True),
@@ -3118,19 +3119,40 @@ def build_tool_specs(
         _record(metrics, "send_reply", "ok" if sent else "refused", chars=len(text or ""))
         return sent
 
-    async def send_gif(query: str, caption: str = "") -> dict:
-        """Send one Giphy reaction GIF, optionally with a short caption.
+    gif_candidates: dict[str, object] = {}
 
-        Use this rarely when a GIF is genuinely a better reply than words. Search with a
-        concrete visual reaction, not names, private facts, or text copied from the chat.
+    async def search_gifs(query: str) -> dict:
+        """Find described reaction GIFs before sending one.
+
+        Use a short visual reaction phrase. Choose only from the returned candidates;
+        their descriptions are provider metadata, not pixel-level verification.
 
         Args:
-            query: A short visual reaction to search for.
-            caption: Optional words sent with the GIF.
+            query: A visual reaction phrase, never copied private chat text.
         """
         if not query or scan_identifiers(query) is not None or giphy_source is None:
             return {"status": "unavailable", "note": "Reply in words instead."}
-        attachment = await giphy_source.select(query=query)
+        found = await giphy_source.search(query=query)
+        gif_candidates.clear()
+        gif_candidates.update({candidate.id: candidate for candidate in found})
+        return {"status": "ok", "candidates": [
+            {"id": c.id, "title": c.title, "alt_text": c.alt_text,
+             "tags": list(c.tags), "rating": c.rating} for c in found
+        ]} if found else {"status": "nothing_found", "note": "Reply in words instead."}
+
+    async def send_gif(candidate_id: str, caption: str = "") -> dict:
+        """Send one GIF returned by `search_gifs`, optionally with a caption.
+
+        Pick the candidate whose title, description, and tags fit the reply. Do not
+        invent an id or send a GIF whose metadata does not match your intended reaction.
+
+        Args:
+            candidate_id: An id returned by `search_gifs` in this turn.
+            caption: Optional words sent with the GIF.
+        """
+        if giphy_source is None or candidate_id not in gif_candidates:
+            return {"status": "unavailable", "note": "Reply in words instead."}
+        attachment = await giphy_source.fetch(candidate_id=candidate_id)
         if attachment is None:
             return {"status": "nothing_found", "note": "Reply in words instead."}
         sent = await deliverer.deliver(caption, source="tool", attachments=(attachment,))
@@ -3158,6 +3180,7 @@ def build_tool_specs(
         _spec("cancel_reminder", cancel_reminder),
         _spec("version", version),
         _spec("send_reply", send_reply),
+        _spec("search_gifs", search_gifs),
         _spec("send_gif", send_gif),
     )
 
