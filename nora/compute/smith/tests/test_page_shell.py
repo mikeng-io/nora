@@ -38,6 +38,24 @@ def test_no_accent_means_no_accent_variable_override():
     assert "#2f6f62" not in html
 
 
+def test_the_dark_theme_blocks_also_define_a_fallback_accent():
+    # `h1` reads `color: var(--accent)`, and the default (no accent= given)
+    # must stay legible against `--bg` in EVERY theme. An earlier draft
+    # bound `--accent` only on bare `:root` (light) and left both dark
+    # blocks without their own `--accent` redefinition -- so a dark-mode
+    # h1 fell through to `--shell-accent`'s default of `#141414`, painted
+    # on a `#141414` background: invisible. Both dark blocks must carry
+    # their own fallback (matching --ink's dark value), not just the
+    # light one.
+    html = page_shell(title="Test", sections=["<p>x</p>"])
+    dark_media_block = html.split(
+        "@media (prefers-color-scheme: dark)"
+    )[1].split("}\n}")[0]
+    assert "--accent: var(--shell-accent, #ececec)" in dark_media_block
+    dark_theme_block = html.split(':root[data-theme="dark"]')[1].split("}")[0]
+    assert "--accent: var(--shell-accent, #ececec)" in dark_theme_block
+
+
 def test_a_non_hex_color_accent_is_rejected():
     with pytest.raises(ValueError):
         page_shell(

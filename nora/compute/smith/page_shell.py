@@ -24,11 +24,13 @@ _BASE_CSS = """
   :root:not([data-theme="light"]) {
     --bg: #141414; --surface: #1e1e1e; --surface-2: #262626;
     --ink: #ececec; --muted: #9a9a9a; --line: #333333;
+    --accent: var(--shell-accent, #ececec);
   }
 }
 :root[data-theme="dark"] {
   --bg: #141414; --surface: #1e1e1e; --surface-2: #262626;
   --ink: #ececec; --muted: #9a9a9a; --line: #333333;
+  --accent: var(--shell-accent, #ececec);
 }
 * { box-sizing: border-box; }
 body {
