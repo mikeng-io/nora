@@ -59,6 +59,13 @@ def test_a_create_token_does_not_verify_as_an_update_token():
     )
 
 
+def test_an_update_token_does_not_verify_as_a_create_token():
+    token = mint_job_token(
+        secret=SECRET, scope=TokenScope.UPDATE, artifact_id="art_1", ttl_seconds=60,
+    )
+    assert not verify_job_token(token=token, secret=SECRET, required_scope=TokenScope.CREATE)
+
+
 def test_an_expired_token_does_not_verify():
     token = mint_job_token(secret=SECRET, scope=TokenScope.CREATE, artifact_id=None, ttl_seconds=-1)
     assert not verify_job_token(token=token, secret=SECRET, required_scope=TokenScope.CREATE)

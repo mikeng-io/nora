@@ -441,6 +441,22 @@ def test_a_create_scoped_token_may_not_patch(wired_apps):
     assert resp.status_code == 403
 
 
+def test_an_update_scoped_token_may_not_post(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+    scoped = mint_job_token(
+        secret=JOB_SECRET, scope=TokenScope.UPDATE, artifact_id="art_1", ttl_seconds=60,
+    )
+
+    resp = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {scoped}"},
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"x", "text/plain")},
+    )
+    assert resp.status_code == 403
+
+
 def test_the_master_token_mints_a_scoped_token(wired_apps):
     server, _links, _artifacts = wired_apps
     client = TestClient(server.internal_app)
