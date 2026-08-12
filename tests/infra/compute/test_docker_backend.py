@@ -28,7 +28,18 @@ Deviations from the task brief's literal Step-1 listing, and why (see also
   .wait` instead blocks on a real `threading.Event` (run via
   `asyncio.to_thread`, so it doesn't block the event loop) until the test
   explicitly releases it, so job1/job2 are held open for exactly as long as
-  the test needs, deterministically."""
+  the test needs, deterministically.
+* That same `threading.Event` device (`_hold_container_open`) is now what
+  every test that needs a job held mid-flight uses, not just the semaphore
+  one. `test_a_successful_job_reports_succeeded` originally waited only for
+  the workspace directory to appear and then wrote `url.txt`/`summary.txt`
+  into it, with NOTHING ordering those writes against `_run_job`'s own
+  progress -- it passed by outrunning the background task, and a whole-branch
+  review made it fail deterministically by inserting a 50ms sleep before the
+  writes (reproduced here before the fix). `test_a_job_that_exits_without_
+  writing_output_is_failed` had the same non-ordering plus a weaker
+  assertion: `error is not None` is satisfied by a mint failure or a
+  never-started container just as well as by the branch it names."""
 
 from __future__ import annotations
 
@@ -43,7 +54,7 @@ import requests.exceptions
 from aioresponses import aioresponses
 
 from nora.domain.ports import JobResult, JobStatus
-from nora.infra.compute.docker_backend import LocalDockerBackend
+from nora.infra.compute.docker_backend import MAX_ERROR_LOG_CHARS, LocalDockerBackend
 
 DROP_URL = "http://drop:8081"
 MASTER_TOKEN = "master-token"  # noqa: S105
@@ -58,11 +69,19 @@ def docker_client():
     return client
 
 
-@pytest.fixture
-def backend(tmp_path: Path, docker_client):
+def make_backend(
+    *, docker_client, workspace_root: Path, drop_internal_url: str = DROP_URL,
+) -> LocalDockerBackend:
+    """The `backend` fixture's construction, reusable by a test that needs a
+    DIFFERENT `workspace_root` than `tmp_path` (and by
+    `tests/contract/test_compute_backend_contract.py`, which drives this same
+    adapter through the shared `ComputeBackend` suite against a real
+    in-process token server, hence `drop_internal_url`). One constructor call
+    site for both suites: a new required parameter breaks them together
+    instead of leaving the contract suite building a stale backend."""
     return LocalDockerBackend(
         docker_client=docker_client,
-        drop_internal_url=DROP_URL,
+        drop_internal_url=drop_internal_url,
         drop_master_token=MASTER_TOKEN,
         model_api_key="test-model-key",
         model_base_url="https://omniroute.example/v1",
@@ -70,8 +89,13 @@ def backend(tmp_path: Path, docker_client):
         sandbox_image="smith:latest",
         job_timeout_seconds=30,
         max_concurrent_jobs=2,
-        workspace_root=tmp_path,
+        workspace_root=workspace_root,
     )
+
+
+@pytest.fixture
+def backend(tmp_path: Path, docker_client):
+    return make_backend(docker_client=docker_client, workspace_root=tmp_path)
 
 
 async def test_launch_returns_a_job_id_immediately(backend):
@@ -112,41 +136,82 @@ async def _wait_for(predicate: Callable[[], bool], *, attempts: int = 200) -> No
     assert predicate(), "condition never became true"
 
 
+def _hold_container_open(docker_client, *, status_code: int = 0) -> threading.Event:
+    """Make the mocked `container.wait` block until the returned `Event` is
+    set, so a test can hold a job open at exactly the point the real container
+    would still be running.
+
+    This is the only real synchronisation available here. `_run_job`'s
+    remaining steps (`_kill_and_remove` -> `_read_result`) run inside the
+    background task with no suspension point a test can hook, so a test that
+    merely waits for the workspace directory to appear and then writes into it
+    is racing `_read_result`, not ordering against it -- it passes only by
+    outrunning the rest of `_run_job`. Blocking `wait` (in `asyncio
+    .to_thread`, so the event loop keeps turning) makes the ordering a fact.
+    """
+    release = threading.Event()
+    docker_client.containers.run.return_value.wait.side_effect = (
+        lambda **kwargs: release.wait(timeout=5) and {"StatusCode": status_code}
+    )
+    return release
+
+
 async def test_a_successful_job_reports_succeeded(backend, docker_client, tmp_path):
+    """The workspace files must be in place BEFORE `_run_job` reads them, and
+    that ordering is enforced by holding `container.wait` open rather than by
+    hoping this test outruns the background task -- inserting a 50ms sleep
+    before the writes used to fail this test deterministically."""
+    release = _hold_container_open(docker_client)
+
     with aioresponses() as mocked:
         mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
         job_id = await backend.launch(task="write a haiku")
 
-        # Wait for `_run_job` to actually create the workspace directory
-        # (after minting its token, which needs this `aioresponses()` context
-        # still open -- see the module docstring) before this test writes
-        # into it.
+        # The job has started its container and is now parked inside
+        # `container.wait` -- `_read_result` is unreachable until `release`.
+        await _wait_for(lambda: docker_client.containers.run.call_count == 1)
         workspace = tmp_path / job_id
         await _wait_for(lambda: workspace.exists())
+        assert (await backend.poll(job_id=job_id)).status == JobStatus.RUNNING
 
         # Simulate what Smith's sandbox (Task 4) writes to the bind-mounted
-        # workspace before exiting -- the container mock's `wait` already
-        # resolves immediately, so the workspace files just need to exist by
-        # the time this test polls.
+        # workspace before exiting.
         (workspace / "url.txt").write_text("https://nora.example.net/drop/abc")
         (workspace / "summary.txt").write_text("wrote a haiku about autumn")
 
+        release.set()
         result = await _poll_until_done(backend, job_id=job_id)
     assert result.status == JobStatus.SUCCEEDED
     assert result.url == "https://nora.example.net/drop/abc"
     assert result.summary == "wrote a haiku about autumn"
 
 
-async def test_a_job_that_exits_without_writing_output_is_failed(backend, tmp_path):
+async def test_a_job_that_exits_without_writing_output_is_failed(backend, docker_client, tmp_path):
+    """Same `threading.Event` synchronisation as the success case, for the
+    same reason plus one more: with no ordering at all, `assert result.error
+    is not None` passes for ANY failure -- including a mint that never
+    happened or a container that never started -- so the test would stay green
+    even if the container path it claims to exercise were never reached.
+    Holding the container open pins that the job really did start, really was
+    RUNNING, and only failed once `_read_result` found no output."""
+    release = _hold_container_open(docker_client)
+
     with aioresponses() as mocked:
         mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
         job_id = await backend.launch(task="write a haiku")
 
-        # No url.txt/summary.txt written -- the container "exited" (per the
-        # mock) without producing a result.
+        await _wait_for(lambda: docker_client.containers.run.call_count == 1)
+        workspace = tmp_path / job_id
+        await _wait_for(lambda: workspace.exists())
+        assert (await backend.poll(job_id=job_id)).status == JobStatus.RUNNING
+
+        # No url.txt/summary.txt written -- the container exits without
+        # producing a result.
+        release.set()
         result = await _poll_until_done(backend, job_id=job_id)
     assert result.status == JobStatus.FAILED
     assert result.error is not None
+    assert "without producing a result" in result.error
 
 
 async def test_a_job_that_overruns_its_timeout_is_failed_and_cleaned_up(backend, docker_client):
@@ -158,9 +223,12 @@ async def test_a_job_that_overruns_its_timeout_is_failed_and_cleaned_up(backend,
     asserting by inspection: the timeout path must report FAILED with the
     documented error message AND still clean up the container (`_kill_and_
     remove`), the same as any other failure path -- a timed-out job must not
-    keep running past its own guardrail."""
+    keep running past its own guardrail. The container's own output must
+    survive that removal too: a job killed at its guardrail is exactly a job
+    someone needs to see the logs of."""
     container = docker_client.containers.run.return_value
     container.wait.side_effect = requests.exceptions.ReadTimeout()
+    container.logs.return_value = b"still thinking about it\n"
     # `_kill_and_remove` looks the container up again by job_id via
     # `containers.get` -- wire it to the same mock container so `.remove`
     # calls are observable on the object under test.
@@ -172,7 +240,9 @@ async def test_a_job_that_overruns_its_timeout_is_failed_and_cleaned_up(backend,
         result = await _poll_until_done(backend, job_id=job_id)
 
     assert result.status == JobStatus.FAILED
-    assert result.error == "job exceeded its wall-clock timeout"
+    assert result.error is not None
+    assert result.error.startswith("job exceeded its wall-clock timeout")
+    assert "still thinking about it" in result.error
     container.remove.assert_called_once_with(force=True)
 
 
@@ -217,10 +287,7 @@ async def test_a_third_job_waits_for_the_concurrency_semaphore(backend, docker_c
     job1/job2 stay "in flight" holding the semaphore for exactly as long as
     this test needs, rather than racing a fixed wall-clock sleep against how
     fast the mocked container actually finishes."""
-    release = threading.Event()
-    docker_client.containers.run.return_value.wait.side_effect = (
-        lambda **kwargs: release.wait(timeout=5) and {"StatusCode": 0}
-    )
+    release = _hold_container_open(docker_client)
 
     with aioresponses() as mocked:
         mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"}, repeat=True)
@@ -246,3 +313,139 @@ async def test_a_third_job_waits_for_the_concurrency_semaphore(backend, docker_c
         # reach `containers.run`.
         await _poll_until_done(backend, job_id=job3)
         assert docker_client.containers.run.call_count == 3
+
+
+async def test_a_workspace_that_cannot_be_created_is_a_failed_poll_not_a_raise(
+    tmp_path: Path, docker_client,
+):
+    """`ComputeBackend`'s contract is "NEVER raises": a backend that cannot
+    even start a job "reports that as a `poll` result ... not an exception out
+    of `launch`", so a caller never needs a try/except around it.
+
+    A whole-branch review broke that with the scenario reproduced here --
+    `workspace_root` pointing at a FILE, so `workspace.mkdir(...)` raises
+    `NotADirectoryError`. `mkdir`, the `task.txt` write and the final
+    `_read_result` all sat OUTSIDE `_run_job`'s only try/except, and `poll`
+    read `running.result()` bare, so the error came straight out of `poll`
+    into the caller. Any pre-container failure would do; this is the one that
+    was actually demonstrated."""
+    workspace_root = tmp_path / "workspaces"
+    workspace_root.write_text("a file where a directory should be")
+
+    backend = make_backend(docker_client=docker_client, workspace_root=workspace_root)
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="write a haiku")
+        result = await _poll_until_done(backend, job_id=job_id)
+
+    assert result.status == JobStatus.FAILED
+    assert result.error is not None
+    assert "NotADirectoryError" in result.error
+    # The job died before any container existed -- nothing to launch, nothing
+    # to clean up.
+    docker_client.containers.run.assert_not_called()
+
+
+async def test_a_cancelled_job_task_is_a_failed_poll_not_a_raise(backend, docker_client):
+    """`poll`'s own guard, not `_run_job`'s. `CancelledError` derives from
+    `BaseException`, so `_run_job`'s `except Exception` cannot convert it --
+    a task cancelled by loop shutdown would re-raise out of `.result()` and
+    break the same contract from the other side."""
+    _hold_container_open(docker_client)  # never released -- the job stays in flight
+
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="write a haiku")
+        await _wait_for(lambda: docker_client.containers.run.call_count == 1)
+
+        task = backend._tasks[job_id]  # simulating loop shutdown cancelling the job
+        task.cancel()
+        await _wait_for(lambda: task.done())
+        result = await backend.poll(job_id=job_id)
+
+    assert result.status == JobStatus.FAILED
+    assert result.error == "compute job was cancelled"
+
+
+async def test_a_failed_jobs_container_logs_survive_its_removal(backend, docker_client, tmp_path):
+    """`_kill_and_remove`'s `container.remove(force=True)` used to destroy the
+    only evidence a failed job ever produces -- and `container.wait`'s own
+    `{"StatusCode": N}` was discarded on top of that. This sandbox's expected
+    failure mode is "LLM-authored code went wrong", so both must reach the
+    caller: the logs are read BEFORE the removal, and the exit code rides
+    along with them."""
+    container = docker_client.containers.run.return_value
+    container.logs.return_value = (
+        b'  File "/workspace/plot.py", line 3\n    ZeroDivisionError: division by zero\n'
+    )
+    docker_client.containers.get.return_value = container
+    release = _hold_container_open(docker_client, status_code=1)
+
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="plot something")
+        await _wait_for(lambda: docker_client.containers.run.call_count == 1)
+        await _wait_for(lambda: (tmp_path / job_id).exists())
+        release.set()
+        result = await _poll_until_done(backend, job_id=job_id)
+
+    assert result.status == JobStatus.FAILED
+    assert result.error is not None
+    assert "ZeroDivisionError: division by zero" in result.error
+    assert "container exit code 1" in result.error
+    container.logs.assert_called_once_with(tail=200)
+    # Read BEFORE the removal, not after -- afterwards there is nothing to read.
+    called = [name for name, _, _ in container.method_calls]
+    assert called.index("logs") < called.index("remove")
+
+
+async def test_an_oversized_container_log_is_truncated_in_the_error(
+    backend, docker_client, tmp_path,
+):
+    """A `JobResult.error` ends up in an audit row and potentially in a reply.
+    LLM-authored code can emit an arbitrarily large traceback, so the tail
+    that rides out on the error is bounded -- `tail=200` bounds the lines,
+    `MAX_ERROR_LOG_CHARS` bounds the characters."""
+    container = docker_client.containers.run.return_value
+    container.logs.return_value = b"x" * 50_000
+    docker_client.containers.get.return_value = container
+    release = _hold_container_open(docker_client, status_code=1)
+
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="print a lot")
+        await _wait_for(lambda: docker_client.containers.run.call_count == 1)
+        await _wait_for(lambda: (tmp_path / job_id).exists())
+        release.set()
+        result = await _poll_until_done(backend, job_id=job_id)
+
+    assert result.status == JobStatus.FAILED
+    assert result.error is not None
+    assert "(truncated)" in result.error
+    assert len(result.error) < MAX_ERROR_LOG_CHARS + 500
+
+
+async def test_unreadable_container_logs_do_not_break_the_result(
+    backend, docker_client, tmp_path,
+):
+    """Log capture is diagnostics. A docker client that refuses `logs()` must
+    cost the caller the evidence, never the result -- turning a reportable
+    failure into an unreportable one is the exact shape this whole batch of
+    fixes exists to prevent."""
+    container = docker_client.containers.run.return_value
+    container.logs.side_effect = RuntimeError("daemon says no")
+    docker_client.containers.get.return_value = container
+    release = _hold_container_open(docker_client, status_code=1)
+
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="write a haiku")
+        await _wait_for(lambda: docker_client.containers.run.call_count == 1)
+        await _wait_for(lambda: (tmp_path / job_id).exists())
+        release.set()
+        result = await _poll_until_done(backend, job_id=job_id)
+
+    assert result.status == JobStatus.FAILED
+    assert result.error is not None
+    assert "without producing a result" in result.error
+    container.remove.assert_called_once_with(force=True)

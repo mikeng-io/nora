@@ -10,7 +10,11 @@ does the actual container run/wait/cleanup in the background; `poll` just
 checks whether that task has finished. This keeps `poll` cheap (no Docker
 API call on every poll) and keeps `ComputeBackend`'s own "never raises"
 contract easy to hold -- the task's own exception handling is internal, never
-surfaced to a caller as a raised exception out of `poll`.
+surfaced to a caller as a raised exception out of `poll`. That contract is
+enforced by TWO explicit barriers rather than by inspection of every
+statement: `_run_job` wraps the whole job body, and `poll` guards the
+`.result()` read (which can still raise `CancelledError`, a `BaseException`
+the first barrier cannot see).
 """
 
 from __future__ import annotations
@@ -33,6 +37,33 @@ from nora.domain.ports import JobResult, JobStatus
 log = logging.getLogger("nora.compute")
 
 DEFAULT_MEM_LIMIT = "1g"
+
+# How much of a failed container's own output survives it. `tail` bounds what
+# Docker hands back; `MAX_ERROR_LOG_CHARS` bounds what reaches a `JobResult
+# .error` string, which ends up in an audit row and potentially in a reply --
+# an unbounded traceback from LLM-authored code must not be able to blow
+# either up. The full bounded tail is also logged, so nothing is lost to
+# whoever is reading `nora.compute`'s logs.
+LOG_TAIL_LINES = 200
+MAX_ERROR_LOG_CHARS = 2000
+
+
+def _unexpected(exc: BaseException) -> str:
+    """An unexpected failure's error string. Carries the exception TYPE, not
+    just its message: `[Errno 20] Not a directory: '/var/...'` alone leaves a
+    reader guessing, `NotADirectoryError: [Errno 20] ...` does not -- and this
+    branch exists precisely for failures nobody anticipated."""
+    return f"compute job failed to run: {type(exc).__name__}: {exc}"
+
+
+def _exit_code(wait_result: Any) -> Any:
+    """docker-py's `container.wait()` returns `{"StatusCode": N, "Error": ...}`.
+    That return value used to be discarded entirely, which threw away the one
+    number that says whether the sandboxed process died or exited cleanly
+    without producing output. Returns None when the shape is anything else."""
+    if isinstance(wait_result, dict):
+        return wait_result.get("StatusCode")
+    return None
 
 
 class LocalDockerBackend:
@@ -59,10 +90,18 @@ class LocalDockerBackend:
         # call a model without ever specifying HOW it gets one -- a real gap,
         # caught only by a subagent review that actually tried to run this
         # plan's own code and found `agent.py` had no `model=` anywhere).
-        # Reuses the SAME OmniRoute-shaped (api_key, base_url, model name)
-        # credential Nora herself is configured with
-        # (`nora/app/composition.py`'s own `OMNIROUTE_API_KEY` construction)
+        # Reuses the same OmniRoute-shaped (api_key, base_url, model name)
+        # TRIPLE FORMAT Nora herself is configured with
+        # (`nora/app/composition.py`'s own `OMNIROUTE_API_KEY` construction),
+        # so Smith constructs its model client exactly the way Nora does,
         # rather than inventing a second model-provider story for Smith.
+        # The SHAPE is shared; the VALUE is not necessarily Nora's own literal
+        # secret -- this class takes `model_api_key` as an opaque parameter,
+        # and whether the caller passes Nora's own key or a separate,
+        # Smith-scoped one is decided by whoever constructs this class
+        # (composition wiring, a later phase), not by this class itself.
+        # `nora/compute/smith/agent.py`'s own docstring says the same thing
+        # from Smith's side ("reused SHAPE, not a shared secret").
         self._model_api_key = model_api_key
         self._model_base_url = model_base_url
         self._model_name = model_name
@@ -85,9 +124,42 @@ class LocalDockerBackend:
             return JobResult(status=JobStatus.FAILED, error="unknown job_id")
         if not running.done():
             return JobResult(status=JobStatus.RUNNING)
-        return running.result()
+        # `_run_job` already converts every exception into a FAILED result, so
+        # in practice `.result()` returns. This is the SECOND barrier for the
+        # port's "NEVER raises" contract, and it is not redundant: a task that
+        # was CANCELLED (loop shutdown, `task.cancel()`) re-raises
+        # `CancelledError` from `.result()`, and `CancelledError` derives from
+        # `BaseException`, so `_run_job`'s own `except Exception` never sees it.
+        try:
+            return running.result()
+        except asyncio.CancelledError:
+            return JobResult(status=JobStatus.FAILED, error="compute job was cancelled")
+        except BaseException as exc:  # a raise out of poll breaks the port
+            log.exception("compute job %s raised out of its task", job_id)
+            return JobResult(status=JobStatus.FAILED, error=_unexpected(exc))
 
     async def _run_job(
+        self, *, job_id: str, task: str, artifact_id: str | None,
+    ) -> JobResult:
+        """The port's "NEVER raises" contract (`ComputeBackend`'s docstring:
+        a backend that cannot even start a job "reports that as a `poll`
+        result ... not an exception out of `launch`"), enforced in ONE place
+        rather than trusted to every statement below it.
+
+        This wrapper exists because the inner body's non-container work is
+        just as capable of raising as the container run is, and used not to
+        be covered: a review pointed `workspace_root` at a FILE, and
+        `workspace.mkdir(...)` raised `NotADirectoryError` straight out of
+        `poll` into the caller -- `mkdir`, the `task.txt` write and the final
+        `_read_result` all sat outside the only try/except in the method.
+        """
+        try:
+            return await self._execute_job(job_id=job_id, task=task, artifact_id=artifact_id)
+        except Exception as exc:  # a raise out of poll breaks the port
+            log.exception("compute job %s failed before it could report a result", job_id)
+            return JobResult(status=JobStatus.FAILED, error=_unexpected(exc))
+
+    async def _execute_job(
         self, *, job_id: str, task: str, artifact_id: str | None,
     ) -> JobResult:
         async with self._semaphore:
@@ -101,11 +173,15 @@ class LocalDockerBackend:
             workspace.mkdir(parents=True, exist_ok=True)
             (workspace / "task.txt").write_text(task)
 
+            exit_code: Any = None
             try:
                 container = await asyncio.to_thread(
                     self._start_container, job_id, token, workspace, artifact_id,
                 )
-                await asyncio.to_thread(container.wait, timeout=self._job_timeout_seconds)
+                wait_result = await asyncio.to_thread(
+                    container.wait, timeout=self._job_timeout_seconds,
+                )
+                exit_code = _exit_code(wait_result)
             except requests.exceptions.ReadTimeout:
                 # NOT the builtin `TimeoutError` -- docker-py's `container.wait
                 # (timeout=...)` overrun raises `requests.exceptions.
@@ -119,17 +195,45 @@ class LocalDockerBackend:
                 # message, which is why this is worth getting right rather
                 # than leaving the wrong exception type "harmlessly" caught
                 # by the broader clause.
-                await asyncio.to_thread(self._kill_and_remove, job_id)
-                return JobResult(
-                    status=JobStatus.FAILED, error="job exceeded its wall-clock timeout",
+                logs = await asyncio.to_thread(self._kill_and_remove, job_id)
+                return self._failed(
+                    job_id, "job exceeded its wall-clock timeout", exit_code=None, logs=logs,
                 )
             except Exception as exc:  # noqa: BLE001
-                await asyncio.to_thread(self._kill_and_remove, job_id)
-                return JobResult(status=JobStatus.FAILED, error=f"container run failed: {exc}")
+                logs = await asyncio.to_thread(self._kill_and_remove, job_id)
+                return self._failed(
+                    job_id, f"container run failed: {exc}", exit_code=None, logs=logs,
+                )
             else:
-                await asyncio.to_thread(self._kill_and_remove, job_id)
+                logs = await asyncio.to_thread(self._kill_and_remove, job_id)
 
-            return self._read_result(workspace)
+            result = self._read_result(workspace)
+            if result.status is not JobStatus.FAILED:
+                return result
+            # The expected failure mode of this sandbox is "LLM-authored code
+            # went wrong", and the container is already gone by now -- its own
+            # output is the only evidence of what went wrong, so it rides out
+            # on the result rather than dying with the container.
+            return self._failed(
+                job_id, result.error or "job failed", exit_code=exit_code, logs=logs,
+            )
+
+    def _failed(
+        self, job_id: str, message: str, *, exit_code: Any, logs: str,
+    ) -> JobResult:
+        """Every FAILED result this backend produces after a container existed
+        goes through here, so a failure's evidence (container exit code and a
+        bounded tail of its own output) is both LOGGED and carried on the
+        result -- `container.remove(force=True)` used to destroy all of it."""
+        detail = message
+        if exit_code is not None:
+            detail = f"{detail} (container exit code {exit_code})"
+        log.warning(
+            "compute job %s failed: %s; container log tail:\n%s", job_id, detail, logs or "(none)",
+        )
+        if logs:
+            detail = f"{detail}; container log tail: {logs}"
+        return JobResult(status=JobStatus.FAILED, error=detail)
 
     def _start_container(
         self, job_id: str, token: str, workspace: Path, artifact_id: str | None,
@@ -152,16 +256,49 @@ class LocalDockerBackend:
             name=job_id,
         )
 
-    def _kill_and_remove(self, job_id: str) -> None:
+    def _kill_and_remove(self, job_id: str) -> str:
         """A killed-or-finished container is always removed -- a timed-out
         job must not keep running past its own guardrail (spec §5), and a
         finished one shouldn't accumulate as dead weight. `force=True`
-        tolerates "already exited" without raising."""
+        tolerates "already exited" without raising.
+
+        Returns a bounded tail of the container's own output, read BEFORE the
+        removal that would otherwise destroy it. Removal is what makes this
+        the last possible moment to read it, and this sandbox runs code an LLM
+        wrote: throwing the logs away made every failure undiagnosable."""
         try:
             container = self._docker.containers.get(job_id)
-            container.remove(force=True)
         except Exception as exc:  # noqa: BLE001 - already gone is fine
             log.debug("compute job %s container already gone: %s", job_id, exc)
+            return ""
+        logs = self._capture_logs(job_id, container)
+        try:
+            container.remove(force=True)
+        except Exception as exc:  # noqa: BLE001 - already gone is fine
+            log.debug("compute job %s container could not be removed: %s", job_id, exc)
+        return logs
+
+    def _capture_logs(self, job_id: str, container: Any) -> str:
+        """Never raises and never returns unbounded text -- log capture is
+        diagnostics, so it must not be able to turn a reportable failure into
+        an unreportable one."""
+        try:
+            raw = container.logs(tail=LOG_TAIL_LINES)
+        except Exception as exc:  # noqa: BLE001 - no logs is a worse report, not a failure
+            log.debug("compute job %s logs unavailable: %s", job_id, exc)
+            return ""
+        if isinstance(raw, bytes):
+            text = raw.decode("utf-8", errors="replace").strip()
+        elif isinstance(raw, str):
+            text = raw.strip()
+        else:
+            # docker-py returns bytes for a non-streaming `logs()`; anything
+            # else is a client we don't understand, and guessing at its repr
+            # would put noise where evidence belongs.
+            return ""
+        if len(text) > MAX_ERROR_LOG_CHARS:
+            text = f"...(truncated){text[-MAX_ERROR_LOG_CHARS:]}"
+        return text
 
     def _read_result(self, workspace: Path) -> JobResult:
         url_path = workspace / "url.txt"

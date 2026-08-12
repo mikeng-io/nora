@@ -26,10 +26,14 @@ DROP_INTERNAL_URL = os.environ["DROP_INTERNAL_URL"]
 DROP_JOB_TOKEN = os.environ["DROP_JOB_TOKEN"]
 ARTIFACT_ID = os.environ.get("ARTIFACT_ID") or None
 # Smith's own LLM credential — the same OmniRoute-shaped (api_key, base_url,
-# model name) triple `LocalDockerBackend` mints Nora's own from, NOT a copy
-# of Nora's own key (nora/infra/compute/docker_backend.py's own docstring on
-# why: reused SHAPE, not a shared secret, since this sandbox runs
-# LLM-written code and should hold its own bounded credential).
+# model name) TRIPLE FORMAT Nora is configured with, so this module builds its
+# model client the way she builds hers. The reused thing is the SHAPE, not
+# necessarily the secret: whether the value handed in here is Nora's own key
+# or a separate, Smith-scoped one is decided by whoever constructs
+# `LocalDockerBackend` (composition wiring, a later phase) — this module
+# treats it as opaque either way and never assumes it carries Nora's
+# authority. See nora/infra/compute/docker_backend.py's constructor for the
+# same statement from the other side.
 MODEL_API_KEY = os.environ["SMITH_MODEL_API_KEY"]
 MODEL_BASE_URL = os.environ["SMITH_MODEL_BASE_URL"]
 MODEL_NAME = os.environ["SMITH_MODEL_NAME"]
