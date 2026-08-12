@@ -137,7 +137,7 @@ def render_markdown(text: str) -> str:
 
 @tool
 @guarded(_budget)
-def render_map(locations: list[tuple[float, float]], title: str = "") -> str:
+def render_map(*, locations: list[tuple[float, float]], title: str = "") -> str:
     """Render a static map with markers at the given (lat, lng) locations,
     embedded inline. See skills/maps/SKILL.md."""
     return _render_map(locations=locations, title=title)

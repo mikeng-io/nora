@@ -9,6 +9,7 @@ allowlisted exception, not this tool's job.
 from __future__ import annotations
 
 import base64
+import html
 import os
 
 import requests
@@ -27,5 +28,5 @@ def render_map(*, locations: list[tuple[float, float]], title: str = "") -> str:
     response = requests.get(STATIC_MAPS_URL, params=params, timeout=15)
     response.raise_for_status()
     encoded = base64.b64encode(response.content).decode("ascii")
-    alt = title or "map"
+    alt = html.escape(title or "map")
     return f'<img src="data:image/png;base64,{encoded}" alt="{alt}" />'
