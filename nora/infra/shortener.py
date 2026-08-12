@@ -1,10 +1,12 @@
-"""`LinkShortener` — minting n.example.net short links (deploy/shortener/, 2026-08-07).
+"""`LinkShortener` — minting nora.example.net short links via `drop`'s internal
+`POST /api/links` (Nora Drop spec §5, cutover 2026-08-12; was n.example.net's
+Cloudflare Worker before that — same contract, this class did not change).
 
-One POST against Nora's OWN Worker (self-hosted so no third party sees what the
-group routes to), and NEVER load-bearing: every failure — transport, non-200, a
-body that is not the minted shape — returns None and the caller keeps the long
-URL. A link that stays long is a cosmetic miss; a reply that fails over a
-shortener would be R-5 with extra steps.
+One POST against Nora's OWN service (self-hosted so no third party sees what
+the group routes to), and NEVER load-bearing: every failure — transport,
+non-200, a body that is not the minted shape — returns None and the caller
+keeps the long URL. A link that stays long is a cosmetic miss; a reply that
+fails over a shortener would be R-5 with extra steps.
 """
 
 from __future__ import annotations

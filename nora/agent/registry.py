@@ -138,8 +138,9 @@ class ToolRegistry:
         # The LIVE-refresh client (DEC-67) — None leaves `where_is` reading the
         # last stored fix (offline/eval, or [presence] refresh_url unset).
         self._refresher = refresher
-        # The n.example.net mint client ([shortener], 2026-08-07) — None leaves
-        # long URLs in replies, and a failed mint does the same; never
+        # The drop-service mint client ([shortener], cutover 2026-08-12 to
+        # `drop`'s internal API; was n.example.net's Worker before that) — None
+        # leaves long URLs in replies, and a failed mint does the same; never
         # load-bearing, so no capability line and no budget: it is not a tool,
         # it is a post-processing step inside `route`.
         self._shortener = shortener

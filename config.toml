@@ -341,11 +341,41 @@ vision_max_bytes = 8388608
 vision_timeout_seconds = 20.0
 
 [shortener]
-# Nora's own n.example.net link shortener (deploy/shortener/, Worker+KV this repo's
-# Terraform owns — 2026-08-07). Self-hosted so no third party sees what the
-# group routes to; never load-bearing (a failed mint keeps the long URL). The
-# mint bearer lives in .env as NORA_SHORTENER_TOKEN (DEC-8).
+# Nora's own link shortener/drop delivery (deploy/drop/, this repo's own
+# compose service — cut over 2026-08-12 from the n.example.net Cloudflare
+# Worker+KV, docs/superpowers/specs/2026-08-12-nora-drop-design.md §5). The
+# mint/redirect *contract* is unchanged (bearer-authed POST, slug-based
+# GET-redirect) — but the mint *target* is NOT simply "the new public
+# hostname", the way it would have been for a single-origin drop-in Worker
+# replacement. Verified live (a real `LinkShortener.shorten()` call against
+# `https://nora.example.net` 404s): `drop` deliberately splits an INTERNAL
+# listener (`drop:8081`, no `ports:` entry, no Tunnel rule — §5a) carrying
+# `POST /api/links`/`POST /api/artifacts` from a PUBLIC listener
+# (`nora.example.net` via the Tunnel) carrying only the read-only `GET
+# /i/<slug>`/`GET /drop/<slug>` routes — the write API is deliberately
+# unreachable from outside the `nora` Docker network, so `nora.example.net` has
+# no `/api/links` route at all. `nora`'s own container sits ON that network
+# (docker-compose.yml) and can reach `drop:8081` directly by container DNS,
+# so `base_url` points there. The PUBLIC `short_url` a mint returns is
+# unaffected — `drop`'s own `POST /api/links` handler (deploy/drop/server.py)
+# builds it from ITS OWN `DROP_PUBLIC_BASE_URL` env var
+# (`https://nora.example.net`) and hands it back in the response body;
+# `LinkShortener` (nora/infra/shortener.py) only ever appends `/api/links` to
+# `base_url` and reads back whatever `short_url` the server hands it, so it
+# needs no path-shape (`/i/`) knowledge of its own — confirmed by a real mint
+# round-trip returning `https://nora.example.net/i/<slug>`. Self-hosted so no
+# third party sees what the group routes to; never load-bearing (a failed
+# mint keeps the long URL).
+#
+# `token_env` MUST be overridden here to "NORA_DROP_TOKEN" — `drop`'s
+# internal listener (deploy/drop/auth.py) checks the mint bearer against
+# that env var's value, not NORA_SHORTENER_TOKEN's (a separate, still-live
+# secret the old Worker validates against — deploy/shortener/ is untouched).
+# ShortenerConfig's own default names NORA_SHORTENER_TOKEN because that was
+# correct for the Worker this section pointed at before this cutover.
 enabled = true
+base_url = "http://drop:8081"
+token_env = "NORA_DROP_TOKEN"
 
 [route]
 # Google Routes v2 — journey planning with arrive_by (DEC-46). Costs money and
