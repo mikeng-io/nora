@@ -1,6 +1,9 @@
 """Protocol seams every later phase plugs into (spec §4.2). Declarations only —
 no implementation moves here; the concrete classes that satisfy these shapes
-keep living where they live until the phase that migrates them.
+keep living where they live until the phase that migrates them. One named
+exception: `ArtifactIngest` (Nora Drop spec §7a) ships with NO concrete class
+anywhere in this repo yet — see its own docstring for why, and for what stands
+in for a real implementation in the meantime.
 
 Standard library only, same rule as the rest of `nora/domain`: if a port needs
 aiohttp, strands, sqlalchemy, pydantic or prometheus_client to express itself,
@@ -138,6 +141,22 @@ avoid:
   where the caller chooses the key is not content-addressed — it is a
   filesystem with extra steps, and the verifiability that justified hashing the
   bytes rather than the metadata would be gone.
+
+- `ArtifactIngest` is the Nora Drop spec's §7a seam — the one thing that spec
+  puts in scope from the not-yet-designed Compute layer: a future Compute tool
+  hands `drop` bytes it produced; Compute itself never touches RustFS or
+  Postgres. It is declared here with ZERO implementations in this repo, a
+  departure from every port above (each already has a concrete adapter and a
+  real caller before a second is declared) — reasonable per that spec's own
+  accounting, since the seam belongs to Drop and Compute does not exist yet to
+  write the other half. Paired with `nora.testing.FakeArtifactIngest` anyway,
+  per the spec review that flagged the gap, so the shape is exercised by
+  something rather than declared into a vacuum. See its own docstring for the
+  `bytes`-not-path-or-stream call and the raise-on-failure call, both argued
+  from precedent already on this port (`BlobStore`). The port has since gained
+  an `update` method (Nora Compute spec §9), with both `register` and `update`
+  implemented by `DropArtifactIngest` and `FakeArtifactIngest`, bound by
+  `tests/contract/test_artifact_ingest_contract.py`.
 
 - `MediaSource` is separate from `PlatformAdapter` for the same reason
   `RosterSource` is: fetching attachment bytes is not part of the
@@ -703,6 +722,103 @@ class BlobStore(Protocol):
     async def put(self, *, data: bytes) -> str: ...
 
     async def get(self, *, key: str) -> bytes | None: ...
+
+
+@dataclass(frozen=True)
+class ArtifactRegistration:
+    """What `ArtifactIngest.register` hands back.
+
+    Bundles the id `drop` assigned with the URL a caller can hand straight to
+    `send_reply`, for the same reason `Styled` bundles text with the ranges
+    that index it: splitting them into two return values (or two calls) would
+    let a caller hold an id with no URL yet, and the Nora Drop spec's whole
+    point (§6a) is "produce an artifact → need a URL → reply *this turn*" —
+    one round trip, one value. `artifact_id` still rides along rather than
+    being dropped once the URL exists, because a future expiry/admin surface
+    needs to name the row without re-parsing a slug back out of the URL.
+    """
+
+    artifact_id: str
+    url: str
+
+
+@runtime_checkable
+class ArtifactIngest(Protocol):
+    """The seam a future Nora Compute tool hands a produced file across, into
+    `drop`'s own stores (Nora Drop spec §7a) — `drop`'s Postgres row and RustFS
+    bytes, never Compute's concern. Sibling of `BlobStore`, which the drop spec
+    calls out as "exactly S3's shape" (§4), but a DIFFERENT trust boundary:
+    `BlobStore`/`FilesystemBlobStore` custody a known human's attachment; this
+    custodies whatever a sandboxed compute job produced — self-generated,
+    freeform output no Nora guard has read (the drop spec's own §7a risk note).
+
+    **Shipped with zero implementations alongside this Protocol at first** — a
+    named departure from every other port in this file, each declared next to
+    at least one concrete adapter and a real caller already in-tree; still true
+    of the *caller*, since Compute does not exist yet. `drop`'s own internal
+    `POST /api/artifacts` (drop spec §3, §5a) is now built
+    (`deploy/drop/artifacts.py`), and `nora.infra.drop.DropArtifactIngest` is
+    the Nora-side HTTP-client half (drop spec §6a) — bound to
+    `nora.testing.FakeArtifactIngest` by
+    `tests/contract/test_artifact_ingest_contract.py`, the same as every other
+    port's fake. `DropArtifactIngest` has no caller anywhere in this repo yet;
+    that wiring is Compute's, not this port's.
+
+    `data` is `bytes`, matching `BlobStore.put` exactly — not a path (the
+    caller and `drop` are different containers with no shared filesystem
+    guaranteed by anything decided so far) and not a stream (nothing else on
+    this port, or anywhere in `nora.domain`, expresses one, and
+    `FilesystemBlobStore`'s own docstring already treats a 100 MiB video as an
+    ordinary `bytes` value at this exact size class). `title` and `media_type`
+    name the two things `drop`'s render route needs to answer a `GET`
+    honestly; `media_type` is spelled the way `OutboundAttachment.media_type`
+    already spells it, not the drop spec's looser sketch-word `kind`, so a
+    caller building both values is not inventing a second vocabulary for the
+    same concept. `expires_at` is epoch-ms (`PresenceFix.ts`'s unit) and
+    optional — the drop spec's own §8 leaves the retention default undecided,
+    so `None` means "apply whatever default the implementation has," not
+    "never expires"; this port does not invent the policy its own spec
+    declined to.
+
+    Unlike `WeatherProvider`/`SearchProvider`'s fail-soft `None`, this MAY
+    RAISE — mirroring `BlobStore.put`, not the read-only lookups: a write to
+    external custody either lands with a real id and URL or the caller must
+    know it did not, and it is the caller (Compute's future tool) that maps
+    that onto R-27's `ok`/`unavailable`, exactly as native tools already do
+    around `BlobStore`/`RecordStore` today.
+
+    `update` (Nora Compute spec §9) overwrites an existing artifact at its
+    existing `artifact_id`/URL rather than minting a new one — `drop`'s own
+    `PATCH /api/artifacts/{artifact_id}` (`deploy/drop/server.py`) is its
+    concrete implementation. Note the caller asymmetry this port carries
+    deliberately: Nora Compute's actual production caller for BOTH `register`
+    and `update` is Smith's own HTTP client against `drop` directly (its own
+    per-job credential, its own container — see the Nora Compute spec §2/§3
+    on why it never imports this Python module), not `DropArtifactIngest`.
+    This Protocol and its two implementations exist so the port stays
+    conformant and testable on Nora's own side per this repo's own
+    discipline, the same reason `register` already had `DropArtifactIngest`
+    as a real second implementation before Compute had a caller for it.
+    """
+
+    async def register(
+        self,
+        *,
+        data: bytes,
+        title: str,
+        media_type: str,
+        expires_at: int | None = None,
+    ) -> ArtifactRegistration: ...
+
+    async def update(
+        self,
+        *,
+        artifact_id: str,
+        data: bytes,
+        title: str,
+        media_type: str,
+        expires_at: int | None = None,
+    ) -> ArtifactRegistration: ...
 
 
 @runtime_checkable
