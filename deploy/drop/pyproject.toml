@@ -23,6 +23,7 @@ dependencies = [
     # rather than pulling in aiobotocore's larger dependency chain for a
     # few-artifacts-a-day service.
     "boto3>=1.34",
+    "pyjwt>=2.13.0",
 ]
 
 [dependency-groups]

@@ -8,10 +8,11 @@ route parses.
 
 from __future__ import annotations
 
-from conftest import TOKEN, FakeArtifactStore
+from conftest import JOB_SECRET, TOKEN, FakeArtifactStore
 from starlette.testclient import TestClient
 
 from artifacts import ArtifactRow
+from auth import TokenScope, mint_job_token
 
 
 def test_a_successful_register_returns_artifact_id_and_url(wired_apps):
@@ -374,3 +375,95 @@ def test_an_old_style_unprefixed_path_is_404(wired_apps):
 
     resp = public.get(f"/d/{slug}")
     assert resp.status_code == 404
+
+
+def test_a_valid_create_scoped_token_may_post(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+    scoped = mint_job_token(
+        secret=JOB_SECRET, scope=TokenScope.CREATE, artifact_id=None, ttl_seconds=60,
+    )
+
+    resp = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {scoped}"},
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"hi", "text/plain")},
+    )
+    assert resp.status_code == 200
+
+
+def test_an_update_scoped_token_may_only_patch_its_own_artifact_id(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    created = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"hi", "text/plain")},
+    ).json()
+    scoped = mint_job_token(
+        secret=JOB_SECRET, scope=TokenScope.UPDATE,
+        artifact_id=created["artifact_id"], ttl_seconds=60,
+    )
+
+    ok = client.patch(
+        f"/api/artifacts/{created['artifact_id']}",
+        headers={"Authorization": f"Bearer {scoped}"},
+        data={"title": "T2", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"bye", "text/plain")},
+    )
+    assert ok.status_code == 200
+
+    other_id_resp = client.patch(
+        "/api/artifacts/art_someone_elses",
+        headers={"Authorization": f"Bearer {scoped}"},
+        data={"title": "T2", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"bye", "text/plain")},
+    )
+    assert other_id_resp.status_code == 403
+
+
+def test_a_create_scoped_token_may_not_patch(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+    scoped = mint_job_token(
+        secret=JOB_SECRET, scope=TokenScope.CREATE, artifact_id=None, ttl_seconds=60,
+    )
+
+    resp = client.patch(
+        "/api/artifacts/art_x",
+        headers={"Authorization": f"Bearer {scoped}"},
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"x", "text/plain")},
+    )
+    assert resp.status_code == 403
+
+
+def test_the_master_token_mints_a_scoped_token(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    resp = client.post(
+        "/api/tokens",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        json={"scope": "create", "ttl_seconds": 60},
+    )
+    assert resp.status_code == 200
+    assert "token" in resp.json()
+
+
+def test_a_scoped_token_cannot_mint_another_token(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+    scoped = mint_job_token(
+        secret=JOB_SECRET, scope=TokenScope.CREATE, artifact_id=None, ttl_seconds=60,
+    )
+
+    resp = client.post(
+        "/api/tokens",
+        headers={"Authorization": f"Bearer {scoped}"},
+        json={"scope": "create", "ttl_seconds": 60},
+    )
+    assert resp.status_code == 403

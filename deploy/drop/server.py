@@ -83,7 +83,7 @@ from starlette.responses import JSONResponse, PlainTextResponse, RedirectRespons
 from starlette.routing import Route
 
 from artifacts import ArtifactStoreUnavailableError, PgRustfsArtifactStore
-from auth import bearer_ok
+from auth import TokenScope, bearer_ok, mint_job_token, write_authorized
 from hardening import PublicListenerHardening
 from links import LinkStoreUnavailableError, ValkeyLinkStore
 from rendering import content_disposition
@@ -155,6 +155,40 @@ async def _parse_artifact_form(
     return (data, title, media_type, expires_at)
 
 
+# ── internal: POST /api/tokens ───────────────────────────────────────────────
+
+async def mint_token(request: Request) -> JSONResponse:
+    """Mints a scoped, short-lived job token (Nora Compute spec §5/§9) —
+    master-token-only, so a job holding a scoped token can never mint itself
+    (or anyone else) a further token."""
+    if not bearer_ok(request, token=request.app.state.token):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+
+    try:
+        body: Any = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"error": "invalid body"}, status_code=400)
+
+    scope_raw = body.get("scope") if isinstance(body, dict) else None
+    ttl_raw = body.get("ttl_seconds") if isinstance(body, dict) else None
+    artifact_id = body.get("artifact_id") if isinstance(body, dict) else None
+
+    if scope_raw not in ("create", "update"):
+        return JSONResponse({"error": "scope must be create or update"}, status_code=400)
+    if scope_raw == "update" and not isinstance(artifact_id, str):
+        return JSONResponse({"error": "update scope requires artifact_id"}, status_code=400)
+    if not isinstance(ttl_raw, int) or ttl_raw <= 0:
+        return JSONResponse({"error": "ttl_seconds must be a positive integer"}, status_code=400)
+
+    token = mint_job_token(
+        secret=request.app.state.job_secret,
+        scope=TokenScope(scope_raw),
+        artifact_id=artifact_id if scope_raw == "update" else None,
+        ttl_seconds=ttl_raw,
+    )
+    return JSONResponse({"token": token})
+
+
 # ── internal: POST /api/links ────────────────────────────────────────────────
 
 async def mint_link(request: Request) -> JSONResponse:
@@ -221,7 +255,12 @@ async def register_artifact(request: Request) -> JSONResponse:
     and the shape most HTTP file-upload clients (including
     `aiohttp.FormData`, `DropArtifactIngest`'s own choice) speak natively.
     """
-    if not bearer_ok(request, token=request.app.state.token):
+    if not write_authorized(
+        request,
+        master_token=request.app.state.token,
+        job_secret=request.app.state.job_secret,
+        required_scope=TokenScope.CREATE,
+    ):
         return JSONResponse({"error": "forbidden"}, status_code=403)
 
     parsed = await _parse_artifact_form(request)
@@ -250,10 +289,15 @@ async def update_artifact(request: Request) -> JSONResponse:
     `register_artifact` (this module's own docstring on why multipart, not
     JSON) plus the `artifact_id` path parameter naming which row to overwrite.
     """
-    if not bearer_ok(request, token=request.app.state.token):
-        return JSONResponse({"error": "forbidden"}, status_code=403)
-
     artifact_id = request.path_params["artifact_id"]
+    if not write_authorized(
+        request,
+        master_token=request.app.state.token,
+        job_secret=request.app.state.job_secret,
+        required_scope=TokenScope.UPDATE,
+        artifact_id=artifact_id,
+    ):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
 
     parsed = await _parse_artifact_form(request)
     if isinstance(parsed, JSONResponse):
@@ -329,6 +373,7 @@ async def render_artifact(request: Request) -> Response:
 internal_app = Starlette(routes=[
     Route("/health", health),
     Route("/api/links", mint_link, methods=["POST"]),
+    Route("/api/tokens", mint_token, methods=["POST"]),
     Route("/api/artifacts", register_artifact, methods=["POST"]),
     Route("/api/artifacts/{artifact_id}", update_artifact, methods=["PATCH"]),
 ])
@@ -362,6 +407,7 @@ async def _build_state() -> dict[str, Any]:
     rustfs_endpoint = os.environ.get("RUSTFS_ENDPOINT", "http://rustfs:9000")
     rustfs_bucket = os.environ.get("RUSTFS_BUCKET", "drop-artifacts")
     token = os.environ["NORA_DROP_TOKEN"]
+    job_secret = os.environ["DROP_JOB_TOKEN_SECRET"]
 
     pg_pool = await asyncpg.create_pool(_asyncpg_dsn(database_url))
     redis = Redis.from_url(valkey_url)
@@ -378,6 +424,7 @@ async def _build_state() -> dict[str, Any]:
 
     return {
         "token": token,
+        "job_secret": job_secret,
         "links": link_store,
         "artifacts": artifact_store,
         "_pg_pool": pg_pool,

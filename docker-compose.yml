@@ -413,6 +413,11 @@ services:
       # is the primary one). Same shape as NORA_SHORTENER_TOKEN, a new,
       # separate value since `drop` is a different service.
       - NORA_DROP_TOKEN=${NORA_DROP_TOKEN:?set NORA_DROP_TOKEN in .env}
+      # Signs/verifies per-job scoped tokens (Nora Compute spec §5/§9) --
+      # separate from NORA_DROP_TOKEN (the master credential): a job's own
+      # token is minted and verified against THIS secret, never compared to
+      # the master token directly.
+      - DROP_JOB_TOKEN_SECRET=${DROP_JOB_TOKEN_SECRET:?set DROP_JOB_TOKEN_SECRET in .env}
     healthcheck:
       # Matches `nora`'s own healthcheck pattern (curl against /health).
       # Checks the public listener; both listeners are one process (see

@@ -13,6 +13,7 @@ from artifacts import ArtifactRow, ArtifactStoreUnavailableError, Registration
 from links import LinkStoreUnavailableError
 
 TOKEN = "test-drop-token"  # noqa: S105
+JOB_SECRET = "test-job-secret"  # noqa: S105
 
 
 class FakeLinkStore:
@@ -103,6 +104,7 @@ def wired_apps():
     artifacts = FakeArtifactStore()
     for app in (server.internal_app, server.public_app):
         app.state.token = TOKEN
+        app.state.job_secret = JOB_SECRET
         app.state.links = links
         app.state.artifacts = artifacts
     return server, links, artifacts
