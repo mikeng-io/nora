@@ -17,6 +17,8 @@ from nora.domain.models import (
 from nora.domain.ports import (
     AdapterHealth,
     ArtifactRegistration,
+    JobResult,
+    JobStatus,
     LinkPreview,
     MemoryHealth,
     Mention,
@@ -723,3 +725,52 @@ def _fetchable(url: str) -> bool:
     host = rest.split("/")[0].split(":")[0].lower()
     private = ("localhost", "127.", "10.", "192.168.", "169.254.", "0.")
     return not (host.startswith(private) or host.endswith(".local"))
+
+
+class FakeComputeBackend:
+    """In-memory `ComputeBackend`. Every `launch`ed job defaults to immediate
+    success (a caller that doesn't care about timing gets a working job with
+    no setup) — call `set_result` with `polls_before_done > 0` to arrange a
+    job that reports RUNNING some number of times first, the shape Phase 4's
+    fast-path/slow-path branching (Nora Compute spec §4) needs to test both
+    branches deterministically, without a real timer.
+
+    `launched` records every call's `task`/`artifact_id`/assigned `job_id`,
+    the same "record what was actually asked for" pattern `FakeRecordStore
+    .rows`/`FakeArtifactIngest.artifacts` already use elsewhere in this file.
+    """
+
+    def __init__(self) -> None:
+        self._results: dict[str, JobResult] = {}
+        self._polls_before_done: dict[str, int] = {}
+        self.launched: list[dict[str, Any]] = []
+        self._next_id = 1
+
+    async def launch(self, *, task: str, artifact_id: str | None = None) -> str:
+        job_id = f"job_{self._next_id:06d}"
+        self._next_id += 1
+        self.launched.append({"task": task, "artifact_id": artifact_id, "job_id": job_id})
+        self._results.setdefault(
+            job_id,
+            JobResult(
+                status=JobStatus.SUCCEEDED,
+                url="https://nora.example.net/drop/fake",
+                summary="done",
+            ),
+        )
+        self._polls_before_done.setdefault(job_id, 0)
+        return job_id
+
+    def set_result(
+        self, *, job_id: str, result: JobResult, polls_before_done: int = 0,
+    ) -> None:
+        self._results[job_id] = result
+        self._polls_before_done[job_id] = polls_before_done
+
+    async def poll(self, *, job_id: str) -> JobResult:
+        if job_id not in self._results:
+            return JobResult(status=JobStatus.FAILED, error="unknown job_id")
+        if self._polls_before_done[job_id] > 0:
+            self._polls_before_done[job_id] -= 1
+            return JobResult(status=JobStatus.RUNNING)
+        return self._results[job_id]

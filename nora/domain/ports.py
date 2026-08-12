@@ -158,6 +158,12 @@ avoid:
   implemented by `DropArtifactIngest` and `FakeArtifactIngest`, bound by
   `tests/contract/test_artifact_ingest_contract.py`.
 
+- `ComputeBackend` is the Nora Compute spec's own port (§2): `launch` starts a
+  job and returns immediately, `poll` reports its progress. Deliberately NEVER
+  raises — see the Protocol's own docstring for why a launch failure is a
+  `poll` result, not an exception, matching this file's existing fail-closed
+  convention for ports a live turn depends on.
+
 - `MediaSource` is separate from `PlatformAdapter` for the same reason
   `RosterSource` is: fetching attachment bytes is not part of the
   send/receive/react lifecycle every adapter must implement, and putting it
@@ -826,6 +832,52 @@ class ArtifactIngest(Protocol):
         an implementation default to apply to. `PgRustfsArtifactStore.update`
         (`deploy/drop/artifacts.py`) implements exactly this via `COALESCE`."""
         ...
+
+
+class JobStatus(StrEnum):
+    """A compute job's current state, as `ComputeBackend.poll` reports it."""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class JobResult:
+    """What `ComputeBackend.poll` returns. `url`/`summary` are populated only
+    when `status is SUCCEEDED`; `error` only when `status is FAILED` — never
+    both, and `RUNNING` carries neither (there is nothing to report yet)."""
+
+    status: JobStatus
+    url: str | None = None
+    summary: str | None = None
+    error: str | None = None
+
+
+@runtime_checkable
+class ComputeBackend(Protocol):
+    """A compute job's execution environment (Nora Compute spec §2) —
+    `LocalDockerBackend` is the only adapter this repo ships. `launch`
+    returns immediately with a `job_id`; the job itself runs out-of-band.
+    `task` is the caller's OWN distilled brief, never a raw conversation
+    transcript (spec §4's "interpret once" boundary) — this Protocol takes
+    only a string, so a caller cannot accidentally hand it anything richer.
+
+    `artifact_id`, when set, means "this job revises an existing artifact"
+    (spec §9) rather than creating a new one — `LocalDockerBackend` uses it
+    to mint a narrower-scoped credential (Task 2) than a create job gets.
+
+    NEVER raises. A backend that cannot even start a job (Docker unreachable,
+    the image missing) reports that as a `poll` result with
+    `status=JobStatus.FAILED`, not an exception out of `launch` — the same
+    fail-closed-but-never-crash shape `RosterSource`/`MediaSource` already
+    hold elsewhere in this file, so a caller (`make_artifact`, Phase 4) never
+    needs a try/except around a call it expects to be load-bearing.
+    """
+
+    async def launch(self, *, task: str, artifact_id: str | None = None) -> str: ...
+
+    async def poll(self, *, job_id: str) -> JobResult: ...
 
 
 @runtime_checkable
