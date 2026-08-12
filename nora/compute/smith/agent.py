@@ -21,6 +21,8 @@ import requests
 from strands import Agent, tool
 from strands.models.openai import OpenAIModel
 
+from budget import BudgetExceededError, ToolCallBudget, guarded
+
 WORKSPACE = Path("/workspace")
 DROP_INTERNAL_URL = os.environ["DROP_INTERNAL_URL"]
 DROP_JOB_TOKEN = os.environ["DROP_JOB_TOKEN"]
@@ -38,8 +40,12 @@ MODEL_API_KEY = os.environ["SMITH_MODEL_API_KEY"]
 MODEL_BASE_URL = os.environ["SMITH_MODEL_BASE_URL"]
 MODEL_NAME = os.environ["SMITH_MODEL_NAME"]
 
+MAX_TOOL_CALLS = int(os.environ.get("SMITH_MAX_TOOL_CALLS", "40"))
+_budget = ToolCallBudget(max_calls=MAX_TOOL_CALLS)
+
 
 @tool
+@guarded(_budget)
 def run_python(code: str) -> str:
     """Run a Python snippet in the workspace directory and return its stdout
     (and stderr, if any). Files this snippet writes should go under
@@ -60,6 +66,7 @@ def run_python(code: str) -> str:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
     )
     output = result.stdout
     if result.stderr:
@@ -68,6 +75,7 @@ def run_python(code: str) -> str:
 
 
 @tool
+@guarded(_budget)
 def register_artifact(file_path: str, title: str, media_type: str) -> str:
     """Register a file under /workspace with Drop, returning its URL. Use
     this exactly once, on the one file this task was asked to produce."""
@@ -129,7 +137,15 @@ def main() -> None:
         system_prompt=doctrine,
         tools=[run_python, register_artifact],
     )
-    result = agent(task)
+    try:
+        result = agent(task)
+    except BudgetExceededError:
+        # No url.txt is written -- LocalDockerBackend's _read_result (Phase 2)
+        # already treats a missing url.txt as FAILED; this just makes the
+        # reason legible in the container's own logs rather than a bare
+        # "job exited without producing a result".
+        print(f"job exceeded its {MAX_TOOL_CALLS}-call budget")
+        return
 
     summary_path = WORKSPACE / "summary.txt"
     if not summary_path.exists():
