@@ -83,7 +83,21 @@ def register_artifact(file_path: str, title: str, media_type: str) -> str:
             data=form, files=files, headers=headers, timeout=30,
         )
     response.raise_for_status()
-    return str(response.json()["url"])
+    url = str(response.json()["url"])
+
+    # Written here, not left to the model choosing to call `run_python` with
+    # code that does it (doctrine.md's own instruction, but nothing enforces
+    # the model actually follows it). Without this, a job whose model skips
+    # that step registers the artifact successfully in Drop -- the URL comes
+    # back from THIS call just fine -- but `LocalDockerBackend._read_result`
+    # still reports `FAILED "job exited without producing a result"` because
+    # `/workspace/url.txt` was never written, and the artifact is now
+    # orphaned in Drop with nothing pointing at it. Mirrors the same
+    # guaranteed-write-in-code fallback `main()` already uses for
+    # `summary.txt`, so both output files are equally guaranteed rather than
+    # one being tool-guaranteed and the other model-dependent.
+    (WORKSPACE / "url.txt").write_text(url)
+    return url
 
 
 def main() -> None:
