@@ -39,6 +39,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import requests.exceptions
 from aioresponses import aioresponses
 
 from nora.domain.ports import JobResult, JobStatus
@@ -146,6 +147,33 @@ async def test_a_job_that_exits_without_writing_output_is_failed(backend, tmp_pa
         result = await _poll_until_done(backend, job_id=job_id)
     assert result.status == JobStatus.FAILED
     assert result.error is not None
+
+
+async def test_a_job_that_overruns_its_timeout_is_failed_and_cleaned_up(backend, docker_client):
+    """docker-py's `container.wait(timeout=...)` overrunning raises
+    `requests.exceptions.ReadTimeout` -- NOT the builtin `TimeoutError` (see
+    `docker_backend.py`'s import comment and the `except` clause in
+    `_run_job`). This is the one branch the task brief itself called out as
+    "resolved, not left open" and worth exercising directly, not just
+    asserting by inspection: the timeout path must report FAILED with the
+    documented error message AND still clean up the container (`_kill_and_
+    remove`), the same as any other failure path -- a timed-out job must not
+    keep running past its own guardrail."""
+    container = docker_client.containers.run.return_value
+    container.wait.side_effect = requests.exceptions.ReadTimeout()
+    # `_kill_and_remove` looks the container up again by job_id via
+    # `containers.get` -- wire it to the same mock container so `.remove`
+    # calls are observable on the object under test.
+    docker_client.containers.get.return_value = container
+
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="write a haiku")
+        result = await _poll_until_done(backend, job_id=job_id)
+
+    assert result.status == JobStatus.FAILED
+    assert result.error == "job exceeded its wall-clock timeout"
+    container.remove.assert_called_once_with(force=True)
 
 
 async def test_launch_mints_a_create_scoped_token_by_default(backend):
