@@ -127,6 +127,7 @@ class SinkSender:
         self.sent: list[tuple[ConversationTarget, str]] = []
         self.sent_mentions: list[tuple] = []
         self.sent_styles: list[tuple] = []
+        self.sent_attachments: list[tuple] = []
         self.events: list[dict] = []
         self._succeed = succeed
         self._account = account
@@ -150,6 +151,7 @@ class SinkSender:
     async def send(
         self, target: ConversationTarget, text: str,
         mentions: tuple = (), styles: tuple = (), preview: object | None = None,
+        attachments: tuple = (),
     ) -> SendResult:
         """Accepts (and records) the port's decoration parameters.
 
@@ -163,6 +165,7 @@ class SinkSender:
         self.sent.append((target, text))
         self.sent_mentions.append(tuple(mentions))
         self.sent_styles.append(tuple(styles))
+        self.sent_attachments.append(tuple(attachments))
         return SendResult(ok=self._succeed, timestamp=self._timestamp)
 
     async def health(self) -> AdapterHealth:

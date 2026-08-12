@@ -166,6 +166,7 @@ from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
+from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBytes as MediaBytes
 from nora.domain.media import MediaRef as MediaRef
 from nora.domain.models import (
@@ -200,6 +201,23 @@ class SendResult:
     retryable: bool = False
     retry_after: float | None = None
     timestamp: int | None = None
+
+
+@dataclass(frozen=True)
+class OutboundAttachment:
+    """Verified bytes a platform may include with one outbound message."""
+
+    content: bytes
+    media_type: str
+    filename: str
+
+
+class GifSource(Protocol):
+    """Provider boundary for finding and retrieving reaction GIFs."""
+
+    async def search(self, *, query: str) -> tuple[GifCandidate, ...]: ...
+
+    async def fetch(self, *, candidate: GifCandidate) -> OutboundAttachment | None: ...
 
 
 @dataclass(frozen=True)
@@ -558,6 +576,7 @@ class PlatformAdapter(Protocol):
         mentions: tuple[Mention, ...] = (),
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
+        attachments: tuple[OutboundAttachment, ...] = (),
     ) -> SendResult: ...
 
     async def react(

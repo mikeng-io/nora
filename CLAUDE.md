@@ -99,6 +99,22 @@ uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence   # typ
 uv run lint-imports                                      # import boundaries clean
 ```
 
+## Release fragments
+
+Every branch with a user-observable change adds a JSON fragment under
+`release-fragments/unreleased/`: features, fixes, behaviour/security changes,
+and meaningful limitations all count. Internal-only work adds a `type: "none"`
+fragment with a reason. The fragment is the source for the next version tag's
+annotation; do not reconstruct product notes from commit subjects at release
+time. Validate the branch before merge:
+
+```bash
+uv run python scripts/check_release_fragments.py --base origin/master
+uv run python scripts/render_release_notes.py
+```
+
+See `release-fragments/README.md` for the schema and release procedure.
+
 The schema gate is `tests/infra/test_schema_parity.py`, **not** `alembic check`
 (which is blind to the CHECK constraint and the `ts DESC` index ordering); both
 run in `pytest`. There is no module-size gate (deleted 2026-08-06). See

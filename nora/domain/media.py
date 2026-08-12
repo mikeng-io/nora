@@ -63,6 +63,22 @@ from dataclasses import dataclass
 # the model, never wrong about the bytes.
 HANDLE_CHARS = 6
 
+
+@dataclass(frozen=True)
+class GifCandidate:
+    """A provider-described reaction GIF that may be selected within one turn."""
+
+    provider: str
+    id: str
+    title: str
+    alt_text: str
+    tags: tuple[str, ...]
+    rating: str
+
+    @property
+    def described(self) -> bool:
+        return bool(self.title or self.alt_text or self.tags)
+
 # RFC 6838 §4.2's registered top-level types. Written out rather than inferred
 # so an unrecognised `type/` — which is malformed, not merely unknown — is
 # visible as such instead of silently becoming a label.

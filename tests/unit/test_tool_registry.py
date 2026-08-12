@@ -60,7 +60,7 @@ def _built_tools(registry: ToolRegistry) -> list:
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
-        "now", "load_transcript", "send_reply",
+        "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "calculate", "transit", "route",
         "place_info", "saved_places",
@@ -83,7 +83,7 @@ def test_budgets_match_todays_table():
         # hold alongside a word to a second person. Still the spam cap: `turns`
         # and the token ceiling are far away, so this number is the only thing
         # bounding one inbound message's outbound volume.
-        "send_reply": 6,
+            "send_reply": 6, "search_gifs": 1, "send_gif": 1,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,
@@ -144,7 +144,7 @@ def test_calculate_is_not_terminal_and_ends_no_turn():
     middle of an answer rather than the end of one — she works a total out and
     then still has to say it. `time_shiftable` has no meaning here either way:
     unlike `now`, the answer to `1485/7` does not depend on when it is asked."""
-    assert ToolRegistry().terminal_tools() == frozenset({"send_reply"})
+    assert ToolRegistry().terminal_tools() == frozenset({"send_reply", "send_gif"})
 
 
 def test_budgets_do_not_require_runtime_dependencies():

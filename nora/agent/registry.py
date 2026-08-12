@@ -29,7 +29,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
 
-from ..domain.ports import BlobStore, SearchProvider, WeatherProvider
+from ..domain.ports import BlobStore, GifSource, SearchProvider, WeatherProvider
 from ..domain.reminders import ReminderCaps, ReminderStore
 from ..infra.routes import RouteClient
 from ..infra.shortener import LinkShortener
@@ -84,6 +84,7 @@ class ToolRegistry:
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
+        giphy: GifSource | None = None,
         budget_overrides: Mapping[str, int] | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
@@ -190,6 +191,7 @@ class ToolRegistry:
         # the alternative — a module-level cache — is the mutable singleton the
         # test-seam policy forbids.
         self._versions = versions if versions is not None else VersionManifest()
+        self._giphy = giphy
 
     def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
@@ -464,6 +466,7 @@ class ToolRegistry:
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             links=links,
             versions=self._versions,
+            giphy_source=self._giphy,
         )
 
     def build(

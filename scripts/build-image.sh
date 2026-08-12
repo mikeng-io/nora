@@ -21,6 +21,7 @@ cd "$(dirname "$0")/.."
 
 VERSION="${1:-}"
 if [ -n "$VERSION" ]; then
+  uv run python scripts/check_release_notes.py "$VERSION"
   uv run python scripts/gen_version_manifest.py --version "$VERSION"
 else
   rm -f nora/version.json

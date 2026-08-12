@@ -5,7 +5,14 @@ import pytest
 from aiohttp import web
 
 from nora.domain.models import ConversationTarget
-from nora.domain.ports import LinkPreview, Mention, SendResult, Style, TextStyle
+from nora.domain.ports import (
+    LinkPreview,
+    Mention,
+    OutboundAttachment,
+    SendResult,
+    Style,
+    TextStyle,
+)
 from nora.platform.signal.send import SignalSender
 
 TARGET = ConversationTarget("signal", "Z3JvdXA=", "group")
@@ -40,6 +47,18 @@ async def test_send_posts_the_expected_jsonrpc_shape(rpc_server):
     assert body["params"]["groupId"] == "Z3JvdXA="
     assert body["params"]["message"] == "hello"
     assert body["id"] == "tag-1"
+
+
+async def test_send_encodes_verified_attachment_bytes_as_a_data_uri(rpc_server):
+    sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
+    attachment = OutboundAttachment(b"GIF89a", "image/gif", "reaction.gif")
+
+    result = await sender.send(TARGET, "", attachments=(attachment,))
+
+    assert result.ok is True
+    assert rpc_server.calls[0]["params"]["attachments"] == [
+        "data:image/gif;filename=reaction.gif;base64,R0lGODlh"
+    ]
 
 
 async def test_send_returns_a_non_retryable_failure_on_a_server_error(aiohttp_server):
@@ -473,12 +492,14 @@ async def test_a_rejected_decorated_send_is_retried_without_the_decoration(aioht
     result = await sender.send(
         TARGET, "去呢間 https://n.example.net/9DpAk8g",
         preview=LinkPreview(url="https://n.example.net/9DpAk8g", title="Google Maps"),
+        attachments=(OutboundAttachment(b"GIF89a", "image/gif", "reaction.gif"),),
     )
 
     assert result.ok is True                       # the REPLY got through
     assert len(seen) == 2                          # decorated, then bare
     assert "previewUrl" in seen[0]
     assert not any(k in seen[1] for k in ("previewUrl", "previewTitle", "mention", "textStyle"))
+    assert seen[1]["attachments"] == ["data:image/gif;filename=reaction.gif;base64,R0lGODlh"]
     assert seen[1]["message"] == "去呢間 https://n.example.net/9DpAk8g"   # same words
 
 

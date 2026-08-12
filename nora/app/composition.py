@@ -538,6 +538,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # which is why every version answer degrades to `unavailable` here rather
     # than to a guess.
     version_manifest = VersionManifest()
+    giphy_client = None
+    if giphy_key := os.environ.get("GIPHY_API_KEY"):
+        from nora.infra.giphy import GiphyClient
+        giphy_client = GiphyClient(api_key=giphy_key)
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client, blobs=blobs, search=search_client,
         weather=weather_client,
@@ -563,6 +567,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # then be found already due.
         clock=lambda: datetime.now(UTC),
         versions=version_manifest,
+        giphy=giphy_client,
         # `[llm.budgets]`, the per-deployment delta over the table. Threaded
         # here for the same reason `reminder_caps` is: `nora.agent` may not
         # import `nora.config`, so the composition root is the conversion

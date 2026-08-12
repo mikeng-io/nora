@@ -294,9 +294,16 @@ Nora's version is **baked into the image at build time** — plain `V1`, `V2`, `
 semver. Build with the wrapper rather than `docker build` directly:
 
 ```bash
-git tag -a V3 -m "You can now ask her which version she's running."
+uv run python scripts/check_release_fragments.py --base origin/master
+uv run python scripts/prepare_release.py V3
 scripts/build-image.sh V3
 ```
+
+The tag annotation is rendered from the branch's unreleased JSON fragments,
+not from commit subjects. Each user-observable feature, fix, behaviour change,
+security change, or meaningful limitation adds one fragment at implementation
+time; internal-only work adds an explicit `type: "none"` fragment. Review the
+rendered text before tagging. See `release-fragments/README.md`.
 
 That stamps `nora/version.json` from git (the running version, plus each earlier tag's
 annotation and commit subjects), passes the same value as `--build-arg NORA_VERSION`, and

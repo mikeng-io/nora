@@ -187,8 +187,8 @@ def test_replies_end_the_turn_at_the_cap_not_before():
 # ---- the table, and what the registry makes of it --------------------------
 
 
-def test_exactly_one_tool_is_terminal_today():
-    assert ToolRegistry().terminal_tools() == frozenset({"send_reply"})
+def test_reply_verbs_are_terminal():
+    assert ToolRegistry().terminal_tools() == frozenset({"send_reply", "send_gif"})
 
 
 def test_every_spec_carries_the_declaration_the_registry_reports():

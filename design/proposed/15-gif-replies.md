@@ -68,16 +68,18 @@ interface Nora has.
 ## 1. How she decides text or GIF
 
 **Two terminal tools; the model picks.** `send_reply(text)` and
-`send_gif(query, caption)`. No classifier in front, for the reasons
+`search_gifs(query)` followed by `send_gif(candidate_id, caption)`. No classifier in front, for the reasons
 `design/14` §1 gives at length: choosing among declared capabilities is what
 a function-calling model does, its taxonomy is derived from the tools and
 cannot drift, and the one measured mis-selection this deployment has seen was
 fixed by `reasoning_effort="low"`, not by a router.
 
 The mechanical consequence is the part that will break if it is missed.
-`send_reply` is **terminal**: `ReplyGuard`'s `BeforeModelCallEvent` hook
-cancels the agent loop the moment a reply lands (DEC-21), which is what makes
-a simple answer cost one turn. `send_gif` must be terminal *in exactly the
+`send_reply` and `send_gif` are **terminal reply verbs**. A successful GIF-only
+send counts as a reply: "must send a reply" means Nora must perform a visible
+outbound act, not that the act must contain text. A plain question normally
+gets one terminal act; existing multi-message policy may permit more, bounded
+by the same per-turn message cap. `send_gif` must be terminal *in exactly the
 same way*, or two failures follow immediately:
 
 - she sends a GIF and the loop continues, so she sends a text reply too —
@@ -91,10 +93,21 @@ to that class, and the class must be defined once, in the guard, rather than
 re-listed at each call site.
 
 **Both in one message, not two.** A GIF with a caption is one Signal message
-with an attachment and a body — `send_gif(query, caption="又係你")` is a
+with an attachment and a body — `send_gif(candidate_id, caption="又係你")` is a
 single send. This is why `caption` belongs on `send_gif` rather than being
 achieved by calling both tools: two calls would be two messages and two
 notifications, which is not what a person does.
+
+The three deliberate shapes are therefore:
+
+- `send_reply(text)`: text only.
+- `send_gif(candidate_id)`: GIF only. This is ordinary and allowed.
+- `send_gif(candidate_id, caption)`: one message containing both.
+
+When the model has a real two-beat response, it may call `send_reply(text)`
+then `send_gif(candidate_id)` under the ordinary multi-message cap. That is a choice
+for the voice policy, not a workaround for a missing caption field. It must
+not split one ordinary answer into text plus a decorative GIF by default.
 
 ### 1.1 Multi-message replies (operator intent, 2026-08-06 — needs its own document)
 
@@ -175,32 +188,37 @@ What else moves with R-2:
 
 ## 2. Lookup and selection
 
-**The model writes the query; Nora takes the first acceptable result.**
-`send_gif(query="眼碌碌 side eye")` searches, filters, picks one, sends.
+**The model writes the query, then chooses from described candidates.**
+`search_gifs(query="眼碌碌 side eye")` returns a bounded list of Giphy ids with
+their `title`, `alt_text`, available tags, and rating. The model chooses one of
+those ids with `send_gif(candidate_id, caption)`. It never sends the first
+search result merely because it passed a rating and size filter.
 
-The alternative — return five candidates and let the model choose — costs an
-extra model round trip (~4s, per `design/12` §4) plus the tokens to describe
-five GIFs, to pick a reaction image. That is the wrong trade for this feature,
-and it is worth being explicit about why: the *query* is already the entire
-control surface. A model that can write "眼碌碌 side eye" has expressed its
-intent completely; showing it five results only lets it second-guess a choice
-it had no further information to improve.
+This first version deliberately does **not** use vision. DeepSeek cannot read
+pixels, and adding a vision model plus multi-frame sampling costs a second
+provider, latency, and money for a reaction image. The model therefore knows
+only Giphy's textual metadata, not the GIF's pixels. That limitation is stated
+in the tool result and is preferable to pretending a query establishes what an
+unseen GIF contains.
 
 Selection, in order:
 
 1. `rating` capped at `pg` in the request **and** re-checked on each result —
    the parameter is Giphy's promise, the field is Giphy's claim, and neither
    is our judgment (see §4).
-2. First result whose chosen rendition is under a size ceiling. `original` is
-   never used; `downsized` or `fixed_height` only. The 50× spread measured in
-   §0 is why this is a hard filter and not a preference.
-3. No acceptable result → **fall back to text, do not fail the turn** (R-5).
-   The tool returns something the model can act on — "no GIF found, reply in
-   words" — rather than raising or returning empty. An empty result that reads
-   as success is the exact shape of the three silent no-ops in `CLAUDE.md`.
+2. Candidates with no title, alt text, or tags are excluded: there is nothing
+   for Nora to evaluate. Tags are optional provider metadata, never assumed.
+3. The selected candidate is fetched again and must match the candidate's id
+   and metadata exactly. The bytes come only from Giphy's `media*.giphy.com`
+   CDN, through a bounded `downsized` rendition; redirects, untrusted hosts,
+   oversized content-lengths, and streams beyond the ceiling are refused.
+4. No acceptable result, fetch failure, or transport failure → **fall back to
+   text, do not fail the turn** (R-5). Search returns a legible outcome; a
+   failed terminal send raises a tool error so `ReplyGuard` does not consume
+   its terminal budget and the next model pass can call `send_reply`.
 
-`NATIVE_TOOL_BUDGETS` gets `send_gif: 1` — same as `send_reply`, because it is
-the same kind of act. R-7 vetoes it otherwise.
+`NATIVE_TOOL_BUDGETS` gives both `search_gifs` and `send_gif` a budget of one.
+The search is non-terminal; sending is terminal. R-7 vetoes either otherwise.
 
 ## 3. Tone — sarcastic, teasing, loving, doubting
 
@@ -252,13 +270,10 @@ the decorative gate this repo keeps finding.
 
 Yes — **read the words, not the pixels.**
 
-Giphy returns `title` and `alt_text` for every result, and `alt_text` is a
-genuine description: *"Meme gif. Pedro the Monkey Puppet in profile, with his
-eyes wide mouth"* (measured 2026-08-06). That is **text**, which means it
-costs nothing extra, adds no latency, and R-18's existing predicate inspects
-it unchanged. Filtering deterministically on `title` + `alt_text` — reject and
-take the next result — catches gross mismatch and unpleasant titles without a
-second model call and without the extra turn that §2 rejected. **Do this.**
+Giphy returns `title` and `alt_text` for some results. This metadata lets the
+model compare bounded candidate descriptions before choosing, but it is
+**untrusted provider text**, not a pixel-level claim and not text that may be
+promoted into Nora's authored memory. The result labels this explicitly.
 
 Reading the *pixels* is a different proposition and the answer is not yet:
 
@@ -282,8 +297,8 @@ residual risk is the frame-text hole that metadata cannot close.
 
 What we actually have:
 
-- **`title` and `alt_text`**, filtered deterministically — free, textual, and
-  guardable by machinery that already exists.
+- **`title`, `alt_text`, and tags**, bounded provider metadata for a model
+  choice, not a deterministic safety filter and not a pixel inspection.
 - **Giphy's `rating`**, capped at `pg`. This is a third party's content
   judgment, applied to a third party's corpus. It is the primary control and
   it is not ours.
@@ -311,33 +326,33 @@ cannot leak the doctrine. R-18 is the same shape: no text, nothing to scan.
 So captioned and caption-less differ in only two ways, and neither is a
 guardrail:
 
-- **Memory (A9).** A caption-less GIF feeds a description rather than words, so
-  her durable record of that exchange is thinner. §5 already requires a
-  described act; using Giphy's `alt_text` — already fetched for §4.1's
-  metadata filter — recovers most of it for free.
+- **Memory (A9).** A caption-less GIF is recorded as `[GIF via giphy]` with
+  provider and candidate id in audit metadata, but is not fed as authored
+  textual self-memory. A provider description must not become Nora's words.
 - **Feel.** Replying with just a GIF is ordinary human behaviour, and forcing a
   caption every time is the stiffness `voice.md` spends a section warning
   against.
 
-**Resolution: caption-less is allowed**, and the memory feed carries the
-`alt_text` description. The frame-text hole above is unaffected either way — a
-caption never made the pixels scannable.
+**Resolution: caption-less is allowed**, with an explicit media marker and
+provenance in the audit row. The frame-text hole above is unaffected either way
+— a caption never made the pixels scannable.
 
-**Outbound egress applies unchanged.** `design/14` §2.2 governs: the search
-query leaves the host, so it passes the R-18 predicate *before* the call.
-「Tyler 個電話幾多號」 must never become a Giphy query, and a block returns a
-legible refusal rather than raising.
+**Outbound egress is deliberately narrow.** The search query leaves the host.
+It is length-bounded and identifier-screened before the call, but that cannot
+prove a natural-language phrase is not private. The tool schema therefore
+requires a generic visual reaction phrase and explicitly tells the model that
+the query reaches Giphy. This is a residual privacy limitation, not a claim
+that identifier screening can solve content classification.
 
 ## 5. Record-first
 
 A9 says record first. A GIF reply must not leave a hole where a reply was.
 
-- **Audit**: the query, the resolved GIF id and URL, and the caption — never
-  the bytes.
-- **Honcho**: a GIF reply is fed as a described act, e.g.
-  `[Nora] (GIF: 眼碌碌) 又係你`, so her semantic memory contains the fact that
-  she answered and roughly how. Feeding nothing would make her later recall of
-  the conversation wrong in a way that is very hard to trace back to here.
+- **Audit**: provider, resolved GIF id, media type, and a visible
+  `[GIF via giphy]` marker (plus any caption), never the bytes or the private
+  search query.
+- **Honcho**: a caption-less GIF is not fed as authored text. A captioned GIF
+  contributes only its caption; the audit row preserves the media provenance.
 - The inbound side already has this shape — `nora/platform/signal/parser.py`
   renders incoming attachments as `[attachment: …]` and stickers as
   `[sticker]`, so the transcript convention exists and outbound should match
@@ -352,18 +367,19 @@ A9 says record first. A GIF reply must not leave a hole where a reply was.
    loop and cannot be followed by a text reply.
 3. `original` renditions are unreachable; a size ceiling is enforced.
 4. `rating` is capped in the request and re-checked per result.
-5. No results → text fallback, legible to the model, counted.
+5. No results → text fallback, legible to the model, counted; failed sends do
+   not terminal-latch the agent before it can send that fallback.
 6. The Giphy query passes the outbound predicate before the call.
 7. `send_gif` has a `NATIVE_TOOL_BUDGETS` entry.
 8. The canary decision in §4 is made explicitly.
 9. `voice.md` says when a GIF is in register — **operator-authored**.
-10. A GIF reply is recorded and fed per §5.
+10. A GIF reply is recorded per §5 without treating provider metadata as
+    Nora-authored text.
 11. New rules registered in `design/09-decision-index.md` and
     `tests/test_acceptance_rules.py::RULE_TESTS`, each probed failing first.
 
-## 7. Open question for the operator
+## 7. Operator decision
 
-Does a GIF ever go out **without** a caption? It is the one decision here that
-is purely taste, and it drives §4's canary question and part of `voice.md`.
-Mandatory captions are the safer default and read as more human; caption-less
-GIFs are funnier and occasionally exactly right.
+Caption-less GIFs are allowed. They satisfy the reply requirement themselves;
+captions and a preceding text message are voice choices, not transport or
+guard requirements.
