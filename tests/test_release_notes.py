@@ -69,8 +69,15 @@ def test_branch_gate_requires_a_fragment_or_explicit_none(tmp_path: Path):
     assert "no release fragment" in missing.stderr
     fragment = repo / "release-fragments" / "unreleased" / "internal.json"
     fragment.parent.mkdir(parents=True)
-    fragment.write_text('{"type": "none", "reason": "Internal refactor."}')
+    fragment.write_text('{"type": "none"}')
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "fragment")
+
+    invalid = _run(str(CHECK), "--repo", str(repo), "--base", "master")
+    assert invalid.returncode == 2
+    assert "requires a non-empty reason" in invalid.stderr
+    fragment.write_text('{"type": "none", "reason": "Internal refactor."}')
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "valid fragment")
 
     assert _run(str(CHECK), "--repo", str(repo), "--base", "master").returncode == 0
