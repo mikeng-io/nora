@@ -22,6 +22,7 @@ from strands import Agent, tool
 from strands.models.openai import OpenAIModel
 
 from budget import BudgetExceededError, ToolCallBudget, guarded
+from skills.maps.render import render_map as _render_map
 from skills.markdown.render import render_markdown as _render_markdown
 from skills.mermaid.render import MermaidRenderError
 from skills.mermaid.render import render_mermaid as _render_mermaid
@@ -134,6 +135,14 @@ def render_markdown(text: str) -> str:
     return _render_markdown(text=text)
 
 
+@tool
+@guarded(_budget)
+def render_map(locations: list[tuple[float, float]], title: str = "") -> str:
+    """Render a static map with markers at the given (lat, lng) locations,
+    embedded inline. See skills/maps/SKILL.md."""
+    return _render_map(locations=locations, title=title)
+
+
 def main() -> None:
     task_file = Path(os.environ["TASK_FILE"])
     task = task_file.read_text()
@@ -157,7 +166,9 @@ def main() -> None:
     agent = Agent(
         model=model,
         system_prompt=doctrine,
-        tools=[run_python, register_artifact, render_mermaid, render_markdown],
+        tools=[
+            run_python, register_artifact, render_mermaid, render_markdown, render_map,
+        ],
     )
     try:
         result = agent(task)

@@ -86,6 +86,7 @@ def make_backend(
         model_api_key="test-model-key",
         model_base_url="https://omniroute.example/v1",
         model_name="test-model",
+        google_maps_api_key="test-maps-key",
         sandbox_image="smith:latest",
         job_timeout_seconds=30,
         max_concurrent_jobs=2,

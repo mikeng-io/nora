@@ -78,6 +78,7 @@ class LocalDockerBackend:
         model_api_key: str,
         model_base_url: str,
         model_name: str,
+        google_maps_api_key: str,
         sandbox_image: str,
         job_timeout_seconds: int,
         max_concurrent_jobs: int,
@@ -105,6 +106,11 @@ class LocalDockerBackend:
         self._model_api_key = model_api_key
         self._model_base_url = model_base_url
         self._model_name = model_name
+        # `render_map`'s own Google Static Maps API key (nora/compute/smith/
+        # skills/maps/render.py) -- a later skill this class's Phase 2
+        # constructor didn't anticipate; threaded through the same way as
+        # the model credential above, as an opaque per-job container env var.
+        self._google_maps_api_key = google_maps_api_key
         self._sandbox_image = sandbox_image
         self._job_timeout_seconds = job_timeout_seconds
         self._semaphore = asyncio.Semaphore(max_concurrent_jobs)
@@ -251,6 +257,7 @@ class LocalDockerBackend:
                 "SMITH_MODEL_API_KEY": self._model_api_key,
                 "SMITH_MODEL_BASE_URL": self._model_base_url,
                 "SMITH_MODEL_NAME": self._model_name,
+                "GOOGLE_MAPS_API_KEY": self._google_maps_api_key,
             },
             mem_limit=DEFAULT_MEM_LIMIT,
             name=job_id,
