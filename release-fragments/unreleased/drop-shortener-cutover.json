@@ -1,0 +1,9 @@
+{
+  "type": "change",
+  "summary": "Nora's short links now come from her own self-hosted drop service instead of the n.example.net Worker.",
+  "details": [
+    "Short URLs Nora sends now look like https://nora.example.net/i/<slug> rather than https://n.example.net/<slug>.",
+    "The mint bearer token moved from NORA_SHORTENER_TOKEN to NORA_DROP_TOKEN; deployments must set the new variable."
+  ],
+  "limitations": []
+}
