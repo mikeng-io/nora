@@ -387,7 +387,7 @@ class RouteConfig(BaseModel):
 
 class ShortenerConfig(BaseModel):
     """Nora's own link shortener — `drop`'s internal `POST /api/links`
-    (Nora Drop spec, `docs/superpowers/specs/2026-08-12-nora-drop-design.md`
+    (the `2026-08-12-nora-drop-design` spec under `docs/superpowers/specs/`
     §5, cutover 2026-08-12; the mint contract itself is unchanged from the
     Worker it replaced, `deploy/shortener/` — same bearer-auth, same
     `{"url"}` in / `{"slug","short_url"}` out shape — so this class did not
