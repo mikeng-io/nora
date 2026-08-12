@@ -138,6 +138,19 @@ wheels = [
 ]
 
 [[package]]
+name = "aioresponses"
+version = "0.7.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/28/fb/e3f08af812b3e66fca511ea1babb9dfddeca5965dea2a4d13b6926e0b1c2/aioresponses-0.7.9.tar.gz", hash = "sha256:1dcfa28938fc006f046a98383a7c07ac180be7a492c1ed557f5cd7b0805357d3", size = 34072, upload-time = "2026-06-23T21:23:23.828Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/55/4c77cda7e69c1ac81a32e6895a361e0da9350eb7835a2ddb161a37ef1ce9/aioresponses-0.7.9-py2.py3-none-any.whl", hash = "sha256:94f9617f841c5bd7ee088ed783284f2cf4e6acc85d3933d92fc2fc7bd572a1b0", size = 12832, upload-time = "2026-06-23T21:23:22.426Z" },
+]
+
+[[package]]
 name = "aiosignal"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1610,6 +1623,7 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "cryptography" },
+    { name = "docker" },
     { name = "openai" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "pillow" },
@@ -1617,6 +1631,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "requests" },
     { name = "sqlalchemy" },
     { name = "strands-agents" },
     { name = "structlog" },
@@ -1629,6 +1644,7 @@ evals = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "aioresponses" },
     { name = "import-linter" },
     { name = "mcp" },
     { name = "mypy" },
@@ -1648,6 +1664,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "cryptography", specifier = ">=50.0.0" },
+    { name = "docker", specifier = ">=7.2.0" },
     { name = "openai", specifier = ">=1.40" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.44.0" },
     { name = "pillow", specifier = ">=12.3.0" },
@@ -1655,6 +1672,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pydantic", specifier = ">=2.8" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "requests", specifier = ">=2.34.2" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "strands-agents", specifier = "==1.50.2" },
     { name = "strands-agents-evals", marker = "extra == 'evals'", specifier = "==1.0.3" },
@@ -1664,6 +1682,7 @@ provides-extras = ["evals"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aioresponses", specifier = ">=0.7.9" },
     { name = "import-linter", specifier = ">=2.0" },
     { name = "mcp", specifier = ">=1.29.0" },
     { name = "mypy", specifier = ">=1.11" },
