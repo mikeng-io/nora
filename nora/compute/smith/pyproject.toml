@@ -1,0 +1,40 @@
+[project]
+name = "smith"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    # `strands.models.openai.OpenAIModel` imports the `openai` package
+    # directly but strands-agents does NOT pull it in as a base dependency --
+    # `agent.py`'s `from strands.models.openai import OpenAIModel` raised
+    # `ModuleNotFoundError: No module named 'openai'` at container startup
+    # with only `strands-agents`/`requests` listed, confirmed by actually
+    # running the built image. The `[openai]` extra is what pulls it in, and
+    # is used here rather than a hand-written `openai>=1.40` bound (the repo
+    # root `pyproject.toml`'s own approach) because a hand-written bound with
+    # no upper limit resolved to `openai==3.0.0` in a real build -- outside
+    # the `<3.0.0,>=1.68.0` range strands-agents 1.50.2 itself declares
+    # (confirmed against its installed METADATA) and higher than the
+    # `openai==2.52.0` the repo root's own `uv.lock` actually resolves to.
+    # The extra keeps Smith inside the range strands-agents has itself been
+    # built and tested against.
+    "strands-agents[openai]==1.50.2",
+    "requests",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# `smith` is not an importable package -- `agent.py` is copied into the image
+# and run directly as a script (the Dockerfile's ENTRYPOINT), never
+# `import`ed. Without this, hatchling's wheel builder refuses to build:
+# it looks for a `smith/` directory or `smith.py` module to ship (its
+# default file-selection heuristic keys off the project name) and finds
+# neither at the point the Dockerfile runs `uv pip install --system
+# --no-cache .` (before `agent.py` is even COPYed in), so the build fails
+# with "Unable to determine which files to ship inside the wheel" --
+# confirmed by actually running `docker build` against this Dockerfile.
+# `bypass-selection` tells hatchling this project intentionally ships no
+# files of its own and exists only to pin its dependency set.
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
