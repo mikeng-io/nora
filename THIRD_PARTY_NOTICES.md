@@ -13,9 +13,13 @@ Required Notice: Copyright the `lieflat-charts` authors
 (https://github.com/larashero3-dotcom/lieflat-charts).
 
 **Modification from upstream:** the Google Fonts-loaded Inter typeface
-reference has been replaced with a system font stack in every vendored
-template, so no vendored artifact reaches an external CDN for its type at
-render time (Nora Compute spec §7/§10). Chart.js and Apache ECharts (loaded
+reference has been replaced with a system font stack throughout the vendored
+tree -- every template under `templates/`, the `mono-tokens.js`/
+`color-presets.js` token files, and `SKILL.md`'s own single-file output
+skeleton (the FONT.link property and the `<link>` tags that load it) -- so no
+vendored artifact, including a newly-generated chart built from this skill,
+reaches an external CDN for its type at render time (Nora Compute spec
+§7/§10). Chart.js and Apache ECharts (loaded
 via CDN in the Glance/interactive templates) are UNCHANGED from upstream and
 remain third-party dependencies of those templates specifically:
 

@@ -278,8 +278,6 @@ Agent 不得自行发明第五套默认审美。只有用户给出明确色值�
 <script src="https://cdn.jsdelivr.net/npm/echarts@6/dist/echarts.min.js"></script>
 <!-- 需要 Chart.js 时（G1 / G3）： -->
 <!-- <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script> -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="{MONO.FONT.link}" rel="stylesheet">
 <style>/* 内联 MONO.CARD_CSS */</style>
 </head>
 <body>
