@@ -367,12 +367,13 @@ vision_timeout_seconds = 20.0
 # third party sees what the group routes to; never load-bearing (a failed
 # mint keeps the long URL).
 #
-# `token_env` MUST be overridden here to "NORA_DROP_TOKEN" — `drop`'s
+# `token_env` is pinned here explicitly to "NORA_DROP_TOKEN" — `drop`'s
 # internal listener (deploy/drop/auth.py) checks the mint bearer against
 # that env var's value, not NORA_SHORTENER_TOKEN's (a separate, still-live
 # secret the old Worker validates against — deploy/shortener/ is untouched).
-# ShortenerConfig's own default names NORA_SHORTENER_TOKEN because that was
-# correct for the Worker this section pointed at before this cutover.
+# ShortenerConfig's own default (nora/config.py) also now names
+# NORA_DROP_TOKEN, post-cutover — this line stays for clarity, not because
+# the default would otherwise disagree.
 enabled = true
 base_url = "http://drop:8081"
 token_env = "NORA_DROP_TOKEN"
