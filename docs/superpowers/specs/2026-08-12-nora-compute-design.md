@@ -168,6 +168,38 @@ are implementation-level, not architectural — flagged in §12 for review befor
 they're picked, same as the Drop spec left its own numeric defaults (expiry
 policy) open in its §8.
 
+## 5a. Network topology — a deliberate, reviewed widening of Drop's own trust boundary
+
+Named explicitly, the same way §2 names its supersession of Drop spec §3's
+diagram, because this is a real change to a security argument the Drop spec
+already made, not a detail this document gets to leave implicit.
+
+Drop spec §5a grounds the internal listener's security specifically in network
+reachability: "no `ports:` entry, no Tunnel ingress rule, reachable only by
+container DNS name from Nora's own container" — the *primary* control is that
+only Nora's own container is even on a path to `drop:<port>`, with a bearer
+token as defense-in-depth on top of that, not instead of it. This document's
+§2/§3 decision — Smith calls Drop directly, on its own credential — means a
+second kind of container now needs that same reachability: one running
+LLM-written code with open web egress by design (§5). Putting Smith's
+container on the same `nora` Docker network Drop already sits on (alongside
+Postgres, `signal-cli`, Valkey, RustFS) would hand it network-level
+reachability to all of that, not just Drop — a materially different trust
+boundary than "only Nora's container is on the path," and the per-job token
+(§5) mitigates *credential misuse* without addressing this reachability
+widening at all.
+
+**Resolution: Smith's containers get their own, narrower Docker network — not
+`nora`.** Drop gains a second network attachment (`nora`, to keep reaching
+Postgres/Valkey/RustFS and stay reachable by Nora, unchanged from the Drop
+spec) plus a new one, `nora-compute`, that only Drop and Smith containers ever
+join. `LocalDockerBackend` attaches every job's container to `nora-compute`
+alone — never `nora`. This restores the Drop spec's own shape of guarantee at
+the new boundary it introduces: Smith can reach `drop:<port>` and nothing
+else on Nora's own infrastructure, the same way `nora`'s existing membership
+list was already curated deliberately rather than left as one flat network
+everything sits on.
+
 ## 6. The skill library, not raw code-exec by default
 
 Giving Smith an open-ended code-exec tool and nothing else was the first shape
@@ -211,8 +243,11 @@ and compatible agents. Three visual styles: Lupi (editorial narrative, thin
 lines, real units, heavy whitespace), Glance (fast-read dashboard, bold
 aggregates), Basics (familiar chart shapes with editorial polish). Delivered
 output is a single-file HTML, no build step, double-click-openable — pure-SVG
-templates run fully offline; Chart.js/ECharts-based templates need network
-unless dependencies are inlined.
+templates run fully offline; **Chart.js-, ECharts-, or online-font-based
+templates need network unless those dependencies are inlined** (the upstream
+`SKILL.md`'s own wording — the font clause matters as much as the chart-library
+one, and is carried forward explicitly here rather than dropped, since §8/§10
+both depend on it).
 
 **License, verified against the actual text, not assumed:** PolyForm
 Noncommercial 1.0.0. Its "Personal Uses" clause explicitly covers "hobby
@@ -221,14 +256,31 @@ Nora is a private, self-hosted, non-commercial group agent for friends — clean
 permitted use. One real obligation: the license requires a `Required Notice:`
 line travel with any distributed copy, and Drop serving pages built from these
 templates counts as distribution. `THIRD_PARTY_NOTICES.md` (already present in
-the upstream repo) documents Chart.js (MIT), Apache ECharts (Apache-2.0), and
-the Inter font (SIL OFL) as the third-party pieces its interactive templates
-load via CDN — none of those are PolyForm-licensed themselves, and none block
-adoption.
+the upstream repo, confirmed verbatim: "当前模板通过 jsDelivr 和 Google Fonts 加载这些
+资源" — "the current templates load these resources via jsDelivr **and Google
+Fonts**") documents Chart.js (MIT), Apache ECharts (Apache-2.0), and the Inter
+font (SIL OFL) as the third-party pieces its interactive templates load via
+CDN — none of those are PolyForm-licensed themselves, and none block adoption.
 
-**What ships in this repo:** a vendored copy of the templates and token files
-(`mono-tokens.js`, `color-presets.js`) inside the Smith sandbox image, plus a
-`THIRD_PARTY_NOTICES.md` in this repo carrying the Required Notice forward.
+**Vendoring strips the Google Fonts reference — it does not carry forward as a
+live CDN call.** §10 already commits this whole design to system font stacks
+with zero embedded/external font weight, for reasons independent of this
+license question (no added bytes per artifact, no dependency this small
+private-group deployment needs). That decision resolves what would otherwise
+be a real gap: as fetched from upstream, Glance-family templates reach Google
+Fonts for Inter unless something inlines or replaces that reference first.
+Vendoring is that something — the Inter `<link>`/`@import` is replaced with
+`ui-serif`/`system-ui` (§10) during the vendoring step, before anything ships
+in the sandbox image, so every vendored template stays self-contained
+regardless of which chart style it uses. This is a modification to the
+vendored upstream code, not a passthrough — the `Required Notice:` line still
+travels per the license, and `THIRD_PARTY_NOTICES.md` (below) records the
+substitution alongside it so the change is documented, not silent.
+
+**What ships in this repo:** a vendored, font-substituted copy of the
+templates and token files (`mono-tokens.js`, `color-presets.js`) inside the
+Smith sandbox image, plus a `THIRD_PARTY_NOTICES.md` in this repo carrying the
+Required Notice forward and noting the Inter-to-system-font substitution.
 
 ## 8. Rendering: self-contained by default, an allowlist for interactivity
 
@@ -274,18 +326,43 @@ the Saturday number in that chart") would otherwise only be answerable by
 minting a brand-new artifact at a brand-new URL, silently orphaning whatever
 link was already shared into the group.
 
-**In scope for v1.** `ArtifactIngest` gains:
+**In scope for v1 — but the seam Smith actually calls is Drop's HTTP API, not
+the Python `ArtifactIngest` port.** §2/§3 already decided Smith holds its own
+minimal HTTP client against `drop:<port>` and never imports
+`nora.infra.drop.DropArtifactIngest` — that class runs in Nora's own process,
+Smith runs in a separate container, and nothing bridges them. So the primary
+change is Drop's own REST contract: `POST /api/artifacts` (create) gains a
+sibling update verb — `PATCH /api/artifacts/{artifact_id}` — that Smith calls
+directly, with `data`/`title`/`media_type` in the body, using its per-job
+token scoped to exactly that `artifact_id`.
+
+`ArtifactIngest` (the Python `Protocol` in `nora/domain/ports.py`) gains a
+matching `update` method for the same reason `register` already exists there
+even though Compute is its only real caller today — it documents Drop's
+contract in Nora's own type system and stays available to
+`DropArtifactIngest`/Nora's own process if either ever needs it directly:
 
 ```python
 async def update(
     self, *, artifact_id: str, data: bytes, title: str, media_type: str,
+    expires_at: int | None = None,
 ) -> ArtifactRegistration: ...
 ```
 
-`make_artifact`'s optional `artifact_id` parameter (§4) is the Nora-side half
-of this — when set, `LocalDockerBackend` mints a token scoped to exactly that
-one artifact_id (tighter than a create job's token, which only needs to write
-a new row) and Smith calls `update` instead of `register`.
+`expires_at` mirrors `register`'s own parameter (`nora/domain/ports.py`) rather
+than being dropped: `None` means "leave the artifact's existing expiry
+unchanged," the update-specific reading of the same "apply whatever default
+exists" convention `register`'s docstring already gives `None`. Per this
+repo's own port discipline (CLAUDE.md: "a port never gains a second
+implementation — including a test fake — without a shared contract suite both
+pass"), adding `update` here means `nora.testing.FakeArtifactIngest`
+(`nora/testing/fakes.py`) and `tests/contract/test_artifact_ingest_contract.py`
+grow to cover it too, same as every other port change in this file.
+
+`make_artifact`'s optional `artifact_id` parameter (§4) is what decides which
+HTTP verb Smith's own Drop client uses — set means `PATCH`, unset means
+`POST` — and `LocalDockerBackend` mints the corresponding token scope (§5) in
+either case.
 
 **Overwrite in place — no version history in v1.** The update replaces the
 artifact's bytes/metadata at the same URL; nothing is kept. Version history
@@ -301,9 +378,10 @@ designed on paper alone.
 **Color — true-neutral grayscale for shell chrome, always; one optional accent
 per artifact, for content only.** This directly reuses `lieflat-charts`' own
 stated rule rather than inventing a parallel one: Mono (true black/white/grey)
-is the stable fallback, and a color preset (its celadon/palm/editorial-red
-options) is picked only when a given artifact's own data semantics call for
-it, never mixed within one delivery. The page-shell itself — headings,
+is the stable fallback, and a color preset — `color-presets.js`'s own
+identifiers are `porcelain` (青瓷蓝, celadon-blue), `palm` (椰林绿, palm-green), and
+`wire` (编辑部红, "editorial[-department] red") — is picked only when a given
+artifact's own data semantics call for it, never mixed within one delivery. The page-shell itself — headings,
 dividers, card borders, background — stays strict neutral (R=G=B at every
 step, no hue bias) specifically *because* it has to host whatever accent a
 future artifact's own content decides on; a shell with a built-in warm or
@@ -402,6 +480,13 @@ third-party API response.
   interactive-JS allowlist) need entries in `design/09-decision-index.md` and
   named tests in `tests/test_acceptance_rules.py::RULE_TESTS` once built —
   not done by this document, which only specifies the rules themselves.
+- Visual-fidelity impact of §7's Inter-to-system-font substitution on the
+  vendored Glance templates, which were styled around Inter specifically —
+  not measured here; worth a look once the vendored copy exists, since a
+  system-font swap can shift a design tuned for one typeface's metrics.
+- `docker-compose.yml` changes for §5a's `nora-compute` network (Drop's second
+  network attachment, `LocalDockerBackend`'s container-launch config) are
+  implementation work, not specified further here.
 
 ## 13. Validation spike
 
