@@ -22,6 +22,8 @@ from strands import Agent, tool
 from strands.models.openai import OpenAIModel
 
 from budget import BudgetExceededError, ToolCallBudget, guarded
+from skills.mermaid.render import MermaidRenderError
+from skills.mermaid.render import render_mermaid as _render_mermaid
 
 WORKSPACE = Path("/workspace")
 DROP_INTERNAL_URL = os.environ["DROP_INTERNAL_URL"]
@@ -112,6 +114,17 @@ def register_artifact(file_path: str, title: str, media_type: str) -> str:
     return url
 
 
+@tool
+@guarded(_budget)
+def render_mermaid(diagram_source: str) -> str:
+    """Render Mermaid diagram source to a self-contained SVG string. Raises
+    if the source is malformed -- see skills/mermaid/SKILL.md."""
+    try:
+        return _render_mermaid(diagram_source=diagram_source)
+    except MermaidRenderError as exc:
+        return f"[render_mermaid failed: {exc}]"
+
+
 def main() -> None:
     task_file = Path(os.environ["TASK_FILE"])
     task = task_file.read_text()
@@ -135,7 +148,7 @@ def main() -> None:
     agent = Agent(
         model=model,
         system_prompt=doctrine,
-        tools=[run_python, register_artifact],
+        tools=[run_python, register_artifact, render_mermaid],
     )
     try:
         result = agent(task)
