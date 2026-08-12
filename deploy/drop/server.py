@@ -116,6 +116,45 @@ async def robots_txt(request: Request) -> Response:
     return PlainTextResponse(_ROBOTS_TXT_BODY)
 
 
+# ── internal: shared form parsing ───────────────────────────────────────────
+
+async def _parse_artifact_form(
+    request: Request,
+) -> tuple[bytes, str, str, int | None] | JSONResponse:
+    """Parse and validate multipart form data for artifact registration/update.
+    Returns (data, title, media_type, expires_at) on success, or a JSONResponse
+    error to return directly on failure."""
+    try:
+        form = await request.form()
+    except Exception:  # noqa: BLE001 - any multipart parse failure is a 400
+        return JSONResponse(
+            {"error": "body must be multipart/form-data with file/title/media_type"},
+            status_code=400,
+        )
+
+    upload = form.get("file")
+    title = form.get("title")
+    media_type = form.get("media_type")
+    expires_raw = form.get("expires_at")
+
+    if upload is None or not hasattr(upload, "read"):
+        return JSONResponse({"error": "missing file"}, status_code=400)
+    if not isinstance(title, str) or not title:
+        return JSONResponse({"error": "missing title"}, status_code=400)
+    if not isinstance(media_type, str) or not media_type:
+        return JSONResponse({"error": "missing media_type"}, status_code=400)
+
+    expires_at: int | None = None
+    if expires_raw not in (None, ""):
+        try:
+            expires_at = int(expires_raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "expires_at must be epoch ms"}, status_code=400)
+
+    data = await upload.read()
+    return (data, title, media_type, expires_at)
+
+
 # ── internal: POST /api/links ────────────────────────────────────────────────
 
 async def mint_link(request: Request) -> JSONResponse:
@@ -185,34 +224,10 @@ async def register_artifact(request: Request) -> JSONResponse:
     if not bearer_ok(request, token=request.app.state.token):
         return JSONResponse({"error": "forbidden"}, status_code=403)
 
-    try:
-        form = await request.form()
-    except Exception:  # noqa: BLE001 - any multipart parse failure is a 400
-        return JSONResponse(
-            {"error": "body must be multipart/form-data with file/title/media_type"},
-            status_code=400,
-        )
-
-    upload = form.get("file")
-    title = form.get("title")
-    media_type = form.get("media_type")
-    expires_raw = form.get("expires_at")
-
-    if upload is None or not hasattr(upload, "read"):
-        return JSONResponse({"error": "missing file"}, status_code=400)
-    if not isinstance(title, str) or not title:
-        return JSONResponse({"error": "missing title"}, status_code=400)
-    if not isinstance(media_type, str) or not media_type:
-        return JSONResponse({"error": "missing media_type"}, status_code=400)
-
-    expires_at: int | None = None
-    if expires_raw not in (None, ""):
-        try:
-            expires_at = int(expires_raw)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            return JSONResponse({"error": "expires_at must be epoch ms"}, status_code=400)
-
-    data = await upload.read()
+    parsed = await _parse_artifact_form(request)
+    if isinstance(parsed, JSONResponse):
+        return parsed
+    data, title, media_type, expires_at = parsed
 
     try:
         registration = await request.app.state.artifacts.register(
@@ -240,34 +255,10 @@ async def update_artifact(request: Request) -> JSONResponse:
 
     artifact_id = request.path_params["artifact_id"]
 
-    try:
-        form = await request.form()
-    except Exception:  # noqa: BLE001 - any multipart parse failure is a 400
-        return JSONResponse(
-            {"error": "body must be multipart/form-data with file/title/media_type"},
-            status_code=400,
-        )
-
-    upload = form.get("file")
-    title = form.get("title")
-    media_type = form.get("media_type")
-    expires_raw = form.get("expires_at")
-
-    if upload is None or not hasattr(upload, "read"):
-        return JSONResponse({"error": "missing file"}, status_code=400)
-    if not isinstance(title, str) or not title:
-        return JSONResponse({"error": "missing title"}, status_code=400)
-    if not isinstance(media_type, str) or not media_type:
-        return JSONResponse({"error": "missing media_type"}, status_code=400)
-
-    expires_at: int | None = None
-    if expires_raw not in (None, ""):
-        try:
-            expires_at = int(expires_raw)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            return JSONResponse({"error": "expires_at must be epoch ms"}, status_code=400)
-
-    data = await upload.read()
+    parsed = await _parse_artifact_form(request)
+    if isinstance(parsed, JSONResponse):
+        return parsed
+    data, title, media_type, expires_at = parsed
 
     try:
         registration = await request.app.state.artifacts.update(

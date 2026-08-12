@@ -81,6 +81,33 @@ def test_an_update_actually_overwrites_the_bytes(wired_apps):
     assert artifacts._rows[slug].title == "Revised"
 
 
+def test_an_update_without_expires_at_preserves_existing_value(wired_apps):
+    server, _links, artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    # Register with a specific expires_at value
+    original_expires = 2_000_000_000_000  # some future epoch ms
+    minted = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "Original", "media_type": "text/plain", "expires_at": str(original_expires)},
+        files={"file": ("t.txt", b"v1", "text/plain")},
+    ).json()
+    artifact_id = minted["artifact_id"]
+    slug = minted["url"].rsplit("/", 1)[-1]
+
+    # Update without providing expires_at (should preserve the original value)
+    client.patch(
+        f"/api/artifacts/{artifact_id}",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "Revised", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"v2", "text/plain")},
+    )
+
+    # Verify the expires_at was preserved
+    assert artifacts._rows[slug].expires_at == original_expires
+
+
 def test_an_unknown_artifact_id_update_is_404(wired_apps):
     server, _links, _artifacts = wired_apps
     client = TestClient(server.internal_app)
