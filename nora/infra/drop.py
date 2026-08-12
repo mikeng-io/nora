@@ -37,6 +37,7 @@ import asyncio
 import json
 import logging
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
@@ -72,48 +73,14 @@ class DropArtifactIngest:
         failure — refused auth, a non-200, an unreachable listener, a body
         that is not the registered shape — never returns a sentinel, per this
         module's own docstring on why that differs from `LinkShortener`."""
-        form = aiohttp.FormData()
-        form.add_field("title", title)
-        form.add_field("media_type", media_type)
-        if expires_at is not None:
-            form.add_field("expires_at", str(expires_at))
-        form.add_field(
-            "file", data, filename=title or "artifact", content_type=media_type,
+        return await self._send(
+            method="POST",
+            url=self._register_url,
+            title=title,
+            media_type=media_type,
+            expires_at=expires_at,
+            data=data,
         )
-        try:
-            async with (
-                aiohttp.ClientSession(timeout=self._timeout) as session,
-                session.post(
-                    self._register_url,
-                    headers={"Authorization": f"Bearer {self._token}"},
-                    data=form,
-                ) as response,
-            ):
-                if response.status != 200:
-                    body_text = (await response.text())[:200]
-                    raise ConnectionError(
-                        f"drop refused registration (http {response.status}): "
-                        f"{body_text}"
-                    )
-                body: Any = await response.json(content_type=None)
-        except asyncio.CancelledError:
-            raise  # shutdown is not a registration failure
-        except (TimeoutError, aiohttp.ClientError) as exc:
-            raise ConnectionError(
-                f"drop unreachable ({type(exc).__name__})"
-            ) from exc
-        except json.JSONDecodeError as exc:
-            raise ConnectionError(
-                f"drop returned a non-JSON body ({type(exc).__name__})"
-            ) from exc
-
-        artifact_id = body.get("artifact_id") if isinstance(body, dict) else None
-        url = body.get("url") if isinstance(body, dict) else None
-        if not isinstance(artifact_id, str) or not artifact_id or not isinstance(
-            url, str,
-        ) or not url:
-            raise ConnectionError(f"drop returned a malformed registration: {body!r}")
-        return ArtifactRegistration(artifact_id=artifact_id, url=url)
 
     async def update(
         self,
@@ -130,6 +97,34 @@ class DropArtifactIngest:
         network failure; every non-200 raises `ConnectionError`, matching
         `register`'s own simplicity rather than inventing a richer error
         taxonomy this port doesn't otherwise have."""
+        # `quote(..., safe="")` guards the one difference from `register`'s
+        # fixed URL: `artifact_id` is caller-supplied and lands in the path,
+        # so a value containing `/`, `?`, or other reserved characters must
+        # not be allowed to reshape the request's target.
+        update_url = f"{self._register_url}/{quote(artifact_id, safe='')}"
+        return await self._send(
+            method="PATCH",
+            url=update_url,
+            title=title,
+            media_type=media_type,
+            expires_at=expires_at,
+            data=data,
+        )
+
+    async def _send(
+        self,
+        *,
+        method: str,
+        url: str,
+        title: str,
+        media_type: str,
+        expires_at: int | None,
+        data: bytes,
+    ) -> ArtifactRegistration:
+        """Shared wire mechanics for `register` (`POST`) and `update`
+        (`PATCH`) — same multipart body, same auth header, same
+        raise-on-any-failure contract; only the HTTP method and target URL
+        differ between the two callers."""
         form = aiohttp.FormData()
         form.add_field("title", title)
         form.add_field("media_type", media_type)
@@ -138,12 +133,12 @@ class DropArtifactIngest:
         form.add_field(
             "file", data, filename=title or "artifact", content_type=media_type,
         )
-        update_url = self._register_url + "/" + artifact_id
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
-                session.patch(
-                    update_url,
+                session.request(
+                    method,
+                    url,
                     headers={"Authorization": f"Bearer {self._token}"},
                     data=form,
                 ) as response,
@@ -151,11 +146,12 @@ class DropArtifactIngest:
                 if response.status != 200:
                     body_text = (await response.text())[:200]
                     raise ConnectionError(
-                        f"drop refused update (http {response.status}): {body_text}"
+                        f"drop refused {method} (http {response.status}): "
+                        f"{body_text}"
                     )
                 body: Any = await response.json(content_type=None)
         except asyncio.CancelledError:
-            raise  # shutdown is not an update failure
+            raise  # shutdown is not a registration/update failure
         except (TimeoutError, aiohttp.ClientError) as exc:
             raise ConnectionError(
                 f"drop unreachable ({type(exc).__name__})"
@@ -165,10 +161,10 @@ class DropArtifactIngest:
                 f"drop returned a non-JSON body ({type(exc).__name__})"
             ) from exc
 
-        returned_id = body.get("artifact_id") if isinstance(body, dict) else None
-        url = body.get("url") if isinstance(body, dict) else None
-        if not isinstance(returned_id, str) or not returned_id or not isinstance(
-            url, str,
-        ) or not url:
+        artifact_id = body.get("artifact_id") if isinstance(body, dict) else None
+        returned_url = body.get("url") if isinstance(body, dict) else None
+        if not isinstance(artifact_id, str) or not artifact_id or not isinstance(
+            returned_url, str,
+        ) or not returned_url:
             raise ConnectionError(f"drop returned a malformed registration: {body!r}")
-        return ArtifactRegistration(artifact_id=returned_id, url=url)
+        return ArtifactRegistration(artifact_id=artifact_id, url=returned_url)

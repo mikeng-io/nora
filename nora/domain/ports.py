@@ -818,7 +818,14 @@ class ArtifactIngest(Protocol):
         title: str,
         media_type: str,
         expires_at: int | None = None,
-    ) -> ArtifactRegistration: ...
+    ) -> ArtifactRegistration:
+        """`expires_at=None` here is the update-specific OVERRIDE of
+        `register`'s convention above, not a repeat of it: for `update` it
+        means "leave the artifact's existing expiry unchanged," never "apply
+        whatever default the implementation has" — there is no fresh row for
+        an implementation default to apply to. `PgRustfsArtifactStore.update`
+        (`deploy/drop/artifacts.py`) implements exactly this via `COALESCE`."""
+        ...
 
 
 @runtime_checkable
