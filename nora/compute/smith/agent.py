@@ -1,9 +1,9 @@
 """Smith's bootstrap script — the ENTRYPOINT of the sandbox image (Nora
-Compute spec §3). Reads its task, runs a bare Strands agent (code-exec plus
-one raw artifact-registration tool, no skill library yet — that's a later
-phase), and writes its result to the bind-mounted workspace for
-`LocalDockerBackend` (nora/infra/compute/docker_backend.py) to read once this
-process exits.
+Compute spec §3). Reads its task, runs a Strands agent equipped with the
+full skill library (`run_python`, `register_artifact`, `render_mermaid`,
+`render_markdown`, `render_map`, `render_html_report`), and writes its
+result to the bind-mounted workspace for `LocalDockerBackend`
+(nora/infra/compute/docker_backend.py) to read once this process exits.
 
 Deliberately NOT importing anything from the top-level `nora` package — this
 image is a separate, isolated environment (its own `pyproject.toml`), and an
@@ -21,11 +21,10 @@ import requests
 from strands import Agent, tool
 from strands.models.openai import OpenAIModel
 
-from budget import BudgetExceededError, ToolCallBudget, guarded
+from budget import ToolCallBudget, guarded
 from skills.html_report.render import render_html_report as _render_html_report
 from skills.maps.render import render_map as _render_map
 from skills.markdown.render import render_markdown as _render_markdown
-from skills.mermaid.render import MermaidRenderError
 from skills.mermaid.render import render_mermaid as _render_mermaid
 
 WORKSPACE = Path("/workspace")
@@ -122,10 +121,19 @@ def register_artifact(file_path: str, title: str, media_type: str) -> str:
 def render_mermaid(diagram_source: str) -> str:
     """Render Mermaid diagram source to a self-contained SVG string. Raises
     if the source is malformed -- see skills/mermaid/SKILL.md."""
-    try:
-        return _render_mermaid(diagram_source=diagram_source)
-    except MermaidRenderError as exc:
-        return f"[render_mermaid failed: {exc}]"
+    # Let `MermaidRenderError` propagate rather than catching it here --
+    # exactly what skills/mermaid/SKILL.md already tells Smith to expect
+    # ("raises rather than returning something broken -- catch it and
+    # either fix the source or fall back to prose"). A prior version of
+    # this wrapper caught the error and returned the string
+    # "[render_mermaid failed: ...]" as if it were a successful render --
+    # a `status: "success"` ToolResult carrying a failure message as if it
+    # were a diagram, the ONLY one of the six tools here that swallowed its
+    # own real error instead of letting Strands turn it into a proper
+    # `status: "error"` ToolResult the model can actually react to (the same
+    # behavior render_map's `HTTPError` and render_html_report's `ValueError`
+    # already have by simply not catching anything).
+    return _render_mermaid(diagram_source=diagram_source)
 
 
 @tool
@@ -183,14 +191,39 @@ def main() -> None:
             render_html_report,
         ],
     )
-    try:
-        result = agent(task)
-    except BudgetExceededError:
-        # No url.txt is written -- LocalDockerBackend's _read_result (Phase 2)
-        # already treats a missing url.txt as FAILED; this just makes the
-        # reason legible in the container's own logs rather than a bare
-        # "job exited without producing a result".
-        print(f"job exceeded its {MAX_TOOL_CALLS}-call budget")
+    # Strands' own NATIVE per-invocation ceiling -- enforced inside the event
+    # loop itself (`strands/event_loop/event_loop.py`'s `_check_limits`,
+    # confirmed against the installed `strands-agents==1.50.2`), independent
+    # of `_budget` above. This is the PRIMARY, actually-effective ceiling: a
+    # cap here ends the job by returning a normal `AgentResult` with a
+    # `limit_*` stop_reason, no exception involved, so it cannot be
+    # swallowed the way a tool-raised exception can be.
+    #
+    # `turns` (one model call plus whatever tool calls follow from it) is set
+    # a bit above `MAX_TOOL_CALLS` (40 by default): most turns spend at most
+    # one tool call, so 50 turns comfortably brackets 40 tool calls plus a
+    # handful of turns of slack for the model to see a budget-exhausted tool
+    # error and wrap up -- without handing a thrashing job meaningfully more
+    # room than `_budget` already allows. `total_tokens` bounds runaway
+    # *cost* independent of call count: 300k tokens is a generous multiple
+    # of what a well-behaved ~40-tool-call job should need (a few thousand
+    # tokens per turn), while still being a hard ceiling on spend for a job
+    # that is thrashing rather than working.
+    result = agent(task, limits={"turns": 50, "total_tokens": 300_000})
+
+    if _budget.exceeded:
+        # `BudgetExceededError` (raised by `guarded` when `_budget` trips)
+        # does NOT propagate out of `agent(task)` -- Strands' own
+        # `DecoratedFunctionTool.stream()` catches it like any other tool
+        # exception and turns it into an ordinary `status: "error"`
+        # ToolResult, so the call above returns normally either way. This
+        # checks `_budget`'s own state instead of trusting an exception that
+        # can never arrive: if the tool-call ceiling was actually spent, the
+        # job used its whole allowance on some mix of real work and
+        # thrashing, so it is reported as a failure the same way a
+        # propagating exception would have -- no summary.txt beyond what
+        # already happened, and a clear reason in the container's own logs.
+        print(f"job exhausted its {MAX_TOOL_CALLS}-call tool budget")
         return
 
     summary_path = WORKSPACE / "summary.txt"

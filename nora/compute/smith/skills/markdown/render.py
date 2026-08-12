@@ -27,7 +27,15 @@ from pygments.util import ClassNotFound
 _FORMATTER = HtmlFormatter(nowrap=True, cssclass="highlight")
 _STYLE_BLOCK = f"<style>{_FORMATTER.get_style_defs('.highlight')}</style>"
 
-_md = MarkdownIt("gfm-like").use(front_matter_plugin)
+# `html: False` -- MarkdownIt's "gfm-like" preset defaults to `html: True`,
+# which passes raw HTML embedded in the markdown SOURCE (e.g. a `<script>`
+# tag) straight through into the output, unescaped. This plan's own Global
+# Constraint 1 (no untrusted script in a self-contained artifact) applies to
+# markdown input exactly as it does to `accent` in page_shell.py -- markdown
+# is LLM-authored (or LLM-relayed from a task description), not trusted
+# input, so raw HTML in it gets escaped like any other text rather than
+# rendered as markup.
+_md = MarkdownIt("gfm-like", {"html": False}).use(front_matter_plugin)
 
 
 def _highlight_code(code: str, lang: str, _attrs: str) -> str:

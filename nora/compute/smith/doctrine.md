@@ -24,11 +24,27 @@ Prefer a named skill over raw code whenever one fits:
   type rather than assuming the family name alone settles it). Only reach for
   Glance/interactive generally (Chart.js/ECharts, loaded via CDN) when the
   task explicitly wants a dashboard-style fast read or genuine interactivity.
+  A chart template is its own complete standalone document (its own
+  `<head>`, full page skeleton) -- if the delivery also calls
+  `render_html_report`, do not pass that whole document as one of its
+  `sections`. `render_html_report` wraps each section in
+  `<div class="section card">...</div>`, so a full `<html>` document handed
+  to it would end up nested inside a `<div>`. Extract just the chart's own
+  inner content instead -- the `<svg>`/canvas markup plus any inline
+  `<style>`/`<script>` the chart itself needs, but not the outer
+  `<html>`/`<head>`/`<body>` skeleton -- and pass that fragment as the
+  section.
 - **Diagrams** -- `render_mermaid(diagram_source=...)`. Static SVG, always.
 - **Prose, code, tables** -- `render_markdown(text=...)`.
 - **Locations** -- `render_map(locations=[...])`. Static image, embedded
   inline -- never the live Google Maps JavaScript API unless the task
-  explicitly needs pan/zoom (a rare exception, not a default).
+  explicitly needs pan/zoom (a rare exception, not a default). `render_map`
+  calls the server-side Static Maps API, so the key it uses should be
+  restricted by IP address or quota, not by HTTP referrer -- a referrer
+  restriction only constrains browser-side requests, which this call never
+  makes. (The referrer-restricted key below is for the separate, allowlisted
+  live JavaScript API case, where the request genuinely does come from a
+  browser.)
 - **Putting it together** -- `render_html_report(title=..., sections=[...])`,
   called LAST, once, with every rendered fragment.
 - **Anything that doesn't fit a skill** -- `run_python`, the escape hatch.

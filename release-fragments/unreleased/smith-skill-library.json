@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Smith gains a rendering skill library -- Mermaid diagrams, GFM markdown, static maps, and composed HTML reports, all backed by a shared, self-contained page-shell.",
+  "details": [
+    "Mermaid diagram source renders server-side to a static, self-contained SVG -- no client-side mermaid.js ships in the artifact.",
+    "GFM markdown (with syntax-highlighted code blocks) renders to self-contained HTML; raw HTML embedded in the markdown source is escaped, not passed through.",
+    "A list of (lat, lng) locations renders to a static map image, fetched once at job time and embedded inline as base64 -- never loaded live from Google's servers.",
+    "render_html_report composes already-rendered fragments (from any of the above, or from the charts skill) into one responsive page sharing a single neutral page-shell, with an optional single accent color.",
+    "A per-job tool-call budget and Strands' own native turns/token ceiling both bound a job independently of its wall-clock timeout, so a thrashing job cannot run away."
+  ],
+  "limitations": [
+    "Nothing in Nora's runtime calls Smith yet: the sandbox backend that would dispatch a compute job is not wired into composition/runtime until a later phase, so this ships as capability without a caller."
+  ]
+}

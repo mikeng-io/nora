@@ -25,6 +25,12 @@ def test_the_shell_defaults_to_true_neutral_grayscale():
 def test_an_accent_color_is_applied_when_given():
     html = page_shell(title="Test", sections=["<p>x</p>"], accent="#2f6f62")
     assert "#2f6f62" in html
+    # Not just present SOMEWHERE in the string -- `--accent` must actually be
+    # consumed by a rule that renders, not merely defined and left unread
+    # (the bug this test was strengthened to catch: the CSS variable existed
+    # but no selector referenced it).
+    assert "color: var(--accent)" in html
+    assert "h1 {" in html
 
 
 def test_no_accent_means_no_accent_variable_override():

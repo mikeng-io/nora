@@ -40,7 +40,10 @@ body {
   padding: clamp(1.25rem, 4vw, 3rem) clamp(1rem, 5vw, 1.5rem) 4rem;
   display: flex; flex-direction: column; gap: clamp(2rem, 5vw, 3rem);
 }
-h1 { font-family: var(--font-display); font-size: clamp(1.6rem, 5vw, 2.2rem); }
+h1 {
+  font-family: var(--font-display); font-size: clamp(1.6rem, 5vw, 2.2rem);
+  color: var(--accent);
+}
 .section { overflow-x: auto; }
 .card {
   background: var(--surface); border: 1px solid var(--line);
@@ -53,7 +56,7 @@ dialog { border: 1px solid var(--line); border-radius: 4px; }
 """
 
 _HEX_COLOR = re.compile(
-    r"^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{4}$|^#[0-9a-fA-F]{6}$|^#[0-9a-fA-F]{8}$"
+    r"#[0-9a-fA-F]{3}|#[0-9a-fA-F]{4}|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}"
 )
 
 
@@ -66,7 +69,12 @@ def page_shell(*, title: str, sections: list[str], accent: str | None = None) ->
     # examples use, so that's the accepted grammar; anything else is rejected
     # outright rather than escaped, since there is no safe way to escape
     # arbitrary text into a CSS custom-property value.
-    if accent is not None and not _HEX_COLOR.match(accent):
+    # `.fullmatch`, not `.match` -- Python's `$` (which the old per-
+    # alternative pattern used) matches just before a trailing "\n", so
+    # `.match()` against `"^...$|^...$|..."` would incorrectly accept a
+    # value like "#fff\n". `.fullmatch` has no such carve-out: the whole
+    # string must match one alternative, trailing newline included.
+    if accent is not None and not _HEX_COLOR.fullmatch(accent):
         raise ValueError(
             f"accent must be a hex color like '#2f6f62', got: {accent!r}"
         )
