@@ -40,13 +40,20 @@ TOKEN = "contract-drop-token"  # noqa: S105
 
 class _WorkingDrop:
     """A minimal double for `drop`'s internal `POST /api/artifacts` and
-    `PATCH /api/artifacts/{artifact_id}`: bearer-checked, mints/overwrites a
-    fresh id/url per call (never the fake that answers every request the same
-    way — CLAUDE.md's own warning is exactly about a double like this one)."""
+    `PATCH /api/artifacts/{artifact_id}`: bearer-checked, mints a fresh id/url
+    per `register` call but — matching the real server
+    (`deploy/drop/artifacts.py`'s `PgRustfsArtifactStore.update`, and
+    `deploy/drop/tests/test_artifacts_route.py`'s own assertion that update
+    never re-mints) — `update` returns the SAME url `register` already
+    minted for that `artifact_id`, never a freshly-built one. Minting a
+    different url on update would be exactly the kind of double that "answers
+    every request the same way [as if the underlying property didn't matter]"
+    CLAUDE.md warns against: it would let this suite pass while silently
+    disagreeing with the server it stands in for."""
 
     def __init__(self) -> None:
         self._ids = itertools.count(1)
-        self._known: set[str] = set()
+        self._urls: dict[str, str] = {}
 
     async def register(self, request: web.Request) -> web.Response:
         if request.headers.get("Authorization") != f"Bearer {TOKEN}":
@@ -54,21 +61,19 @@ class _WorkingDrop:
         await request.multipart()  # drain the body like a real handler would
         n = next(self._ids)
         artifact_id = f"art_c{n:06d}"
-        self._known.add(artifact_id)
-        return web.json_response(
-            {"artifact_id": artifact_id, "url": f"https://drop.nora.example.net/d/c{n}"}
-        )
+        url = f"https://drop.nora.example.net/d/c{n}"
+        self._urls[artifact_id] = url
+        return web.json_response({"artifact_id": artifact_id, "url": url})
 
     async def update(self, request: web.Request) -> web.Response:
         if request.headers.get("Authorization") != f"Bearer {TOKEN}":
             return web.json_response({"error": "forbidden"}, status=403)
         artifact_id = request.match_info["artifact_id"]
         await request.multipart()
-        if artifact_id not in self._known:
+        url = self._urls.get(artifact_id)
+        if url is None:
             return web.json_response({"error": "not found"}, status=404)
-        return web.json_response(
-            {"artifact_id": artifact_id, "url": f"https://drop.nora.example.net/d/{artifact_id}"}
-        )
+        return web.json_response({"artifact_id": artifact_id, "url": url})
 
 
 async def _refusing_drop(request: web.Request) -> web.Response:
@@ -163,6 +168,10 @@ async def test_a_successful_update_returns_a_populated_registration(ingest):
     )
     assert isinstance(updated, ArtifactRegistration)
     assert updated.artifact_id == created.artifact_id
+    # Same slug, no re-mint — the whole point of `update` over registering a
+    # second artifact (`ArtifactIngest.update`'s own docstring, and this is
+    # the property `_WorkingDrop`'s register/update previously disagreed on).
+    assert updated.url == created.url
 
 
 async def test_updating_an_unknown_artifact_id_raises(ingest):
