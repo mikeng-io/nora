@@ -22,6 +22,7 @@ from strands import Agent, tool
 from strands.models.openai import OpenAIModel
 
 from budget import BudgetExceededError, ToolCallBudget, guarded
+from skills.html_report.render import render_html_report as _render_html_report
 from skills.maps.render import render_map as _render_map
 from skills.markdown.render import render_markdown as _render_markdown
 from skills.mermaid.render import MermaidRenderError
@@ -143,6 +144,17 @@ def render_map(*, locations: list[tuple[float, float]], title: str = "") -> str:
     return _render_map(locations=locations, title=title)
 
 
+@tool
+@guarded(_budget)
+def render_html_report(
+    *, title: str, sections: list[str], accent: str | None = None
+) -> str:
+    """Compose rendered HTML fragments into one responsive, self-contained
+    page. Call this LAST, once, with everything the artifact needs. See
+    skills/html_report/SKILL.md."""
+    return _render_html_report(title=title, sections=sections, accent=accent)
+
+
 def main() -> None:
     task_file = Path(os.environ["TASK_FILE"])
     task = task_file.read_text()
@@ -168,6 +180,7 @@ def main() -> None:
         system_prompt=doctrine,
         tools=[
             run_python, register_artifact, render_mermaid, render_markdown, render_map,
+            render_html_report,
         ],
     )
     try:
