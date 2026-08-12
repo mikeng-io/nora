@@ -283,8 +283,8 @@ docker compose stop nora
 git checkout <ref>
 docker build --network=host -t nora:latest .   # unstamped: she answers «I can't
                                                # check» to 咩version. Use
-                                               # scripts/build-image.sh V<n> to
-                                               # roll back TO a tagged version.
+                                               # scripts/build-release-image.sh V<n>
+                                               # to rebuild a tagged release.
 docker compose up -d --no-build
 ```
 
@@ -294,16 +294,16 @@ Nora's version is **baked into the image at build time** — plain `V1`, `V2`, `
 semver. Build with the wrapper rather than `docker build` directly:
 
 ```bash
-uv run python scripts/check_release_fragments.py --base origin/master
-uv run python scripts/prepare_release.py V3
-scripts/build-image.sh V3
+uv run python scripts/render_release_notes.py
+# Review/edit docs/releases/V3.md, then explicitly release it:
+uv run python scripts/release.py
 ```
 
-The tag annotation is rendered from the branch's unreleased JSON fragments,
-not from commit subjects. Each user-observable feature, fix, behaviour change,
-security change, or meaningful limitation adds one fragment at implementation
-time; internal-only work adds an explicit `type: "none"` fragment. Review the
-rendered text before tagging. See `release-fragments/README.md`.
+JSON fragments accumulate user-visible changes between releases. They are
+source material for the manual `docs/releases/V<n>.md` record, not a deploy
+trigger and not an automatic tag. Each feature, fix, behaviour/security change,
+or meaningful limitation adds one fragment at implementation time; internal
+work adds an explicit `type: "none"` fragment. See `release-fragments/README.md`.
 
 That stamps `nora/version.json` from git (the running version, plus each earlier tag's
 annotation and commit subjects), passes the same value as `--build-arg NORA_VERSION`, and

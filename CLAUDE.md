@@ -113,7 +113,8 @@ uv run python scripts/check_release_fragments.py --base origin/master
 uv run python scripts/render_release_notes.py
 ```
 
-See `release-fragments/README.md` for the schema and release procedure.
+See `release-fragments/README.md` for the schema. Fragments accumulate across
+ordinary deployments and never create a tag or deploy a release themselves.
 
 The schema gate is `tests/infra/test_schema_parity.py`, **not** `alembic check`
 (which is blind to the CHECK constraint and the `ts DESC` index ordering); both

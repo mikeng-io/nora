@@ -17,16 +17,17 @@ The supported `type` values are `feature`, `fix`, `change`, `security`, and
 }
 ```
 
-At release time, archive and tag in one transaction. The script renders the
-note, moves every unreleased fragment to `released/V<n>/`, commits that archive,
-and creates an annotated tag on that exact commit. `build-image.sh V<n>` refuses
-to build unless the tag annotation matches the archived note.
+Fragments accumulate after the latest release. They do not tag, build, deploy,
+or announce anything. At an explicitly chosen release, use them to prepare the
+manual `docs/releases/V<n>.md` record that `scripts/release.py` requires, then
+archive the consumed JSON files alongside that release record. Ordinary
+deployments leave fragments untouched.
+
+Fragments never create a tag or deploy a release themselves.
 
 ```bash
 uv run python scripts/render_release_notes.py
 uv run python scripts/check_release_fragments.py --base origin/master
-uv run python scripts/prepare_release.py V4
-scripts/build-image.sh V4
 ```
 
 `check_release_fragments.py` is a branch-level gate: changed code with no new

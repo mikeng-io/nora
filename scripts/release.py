@@ -14,22 +14,26 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r"V(\d+)$")
 
 
 def run(*args: str) -> str:
-    done = subprocess.run(args, cwd=ROOT, text=True, capture_output=True, check=False)
+    done = subprocess.run(  # noqa: S603 - fixed release-script commands only
+        args, cwd=ROOT, text=True, capture_output=True, check=False
+    )
     if done.returncode:
         raise RuntimeError(done.stderr.strip() or " ".join(args))
     return done.stdout
 
 
 def next_version() -> str:
-    tags = [tag for tag in run("git", "tag", "--list", "V*").splitlines()
-            if VERSION.fullmatch(tag)]
-    highest = max((int(VERSION.fullmatch(tag).group(1)) for tag in tags), default=0)
+    numbers = [
+        int(match.group(1))
+        for tag in run("git", "tag", "--list", "V*").splitlines()
+        if (match := VERSION.fullmatch(tag)) is not None
+    ]
+    highest = max(numbers, default=0)
     return f"V{highest + 1}"
 
 
@@ -56,8 +60,16 @@ def main(argv: list[str] | None = None) -> int:
         note = group_message(ROOT / "docs" / "releases" / f"{version}.md", version)
         run("git", "tag", "-a", version, "-m", note)
         if not args.skip_deploy:
-            subprocess.run([str(ROOT / "scripts" / "build-image.sh"), version], cwd=ROOT, check=True)
-            subprocess.run(["docker", "compose", "up", "-d", "--no-build", "nora", "presence"], cwd=ROOT, check=True)
+            subprocess.run(  # noqa: S603 - fixed local release builder only
+                [str(ROOT / "scripts" / "build-release-image.sh"), version],
+                cwd=ROOT,
+                check=True,
+            )
+            subprocess.run(
+                ["docker", "compose", "up", "-d", "--no-build", "nora", "presence"],  # noqa: S607
+                cwd=ROOT,
+                check=True,
+            )
         print(f"released {version}")
         return 0
     except (RuntimeError, ValueError, subprocess.CalledProcessError) as exc:

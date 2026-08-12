@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Release-management workflow repair: deployments are structurally unversioned and fragments accumulate until an explicit manual release."
+}

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Build Nora's image with the version baked in.
+# Build Nora's ordinary, unversioned deployment image.
 #
-#     scripts/build-image.sh V3            # stamp V3 and build
-#     scripts/build-image.sh               # ordinary, unstamped deployment build
+#     scripts/build-image.sh
 #
 # Two things this wrapper exists to make impossible to forget:
 #
@@ -10,27 +9,19 @@
 #      deb.debian.org on this host (operational constraint 1), so a plain
 #      `docker build` fails in apt-get with a DNS error that reads like a
 #      network outage.
-#   2. The version stamp. `nora/version.json` is generated HERE, on the host,
-#      because .dockerignore excludes .git/ and the container has no git — and
-#      the same version is passed as --build-arg so the in-image gate
-#      (scripts/check_version_stamp.py) can refuse a build whose stamp and
-#      build argument disagree.
+#   2. Deployments are not releases. This always removes any version stamp and
+#      builds `nora:latest` without an announcement. `scripts/release.py` is
+#      the sole explicit release command; it invokes `build-release-image.sh`
+#      only after the operator has prepared and approved a release record.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-VERSION="${1:-}"
-if [ -n "$VERSION" ]; then
-  uv run python scripts/check_release_notes.py "$VERSION"
-  uv run python scripts/gen_version_manifest.py --version "$VERSION"
-else
-  rm -f nora/version.json
+if [ "$#" -ne 0 ]; then
+  echo "deployments are unversioned; use scripts/release.py for an explicit release" >&2
+  exit 2
 fi
 
-if [ -n "$VERSION" ]; then
-  docker build --network=host --build-arg "NORA_VERSION=$VERSION" -t nora:"$VERSION" -t nora:latest .
-  echo "built nora:$VERSION"
-else
-  docker build --network=host --build-arg NORA_VERSION= -t nora:latest .
-  echo "built unstamped nora:latest"
-fi
+rm -f nora/version.json
+docker build --network=host --build-arg NORA_VERSION= -t nora:latest .
+echo "built unversioned nora:latest"

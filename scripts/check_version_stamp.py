@@ -61,7 +61,7 @@ def main(argv: list[str]) -> int:
         print(
             f"no NORA_VERSION: building UNSTAMPED{removed}. `version` will "
             "answer `unavailable` and no upgrade note will be posted. Use "
-            "`scripts/build-image.sh V3` to stamp a release."
+            "`scripts/release.py` for an explicit release."
         )
         return 0
     if not MANIFEST.exists():
