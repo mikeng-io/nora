@@ -20,6 +20,10 @@ dependencies = [
     "strands-agents[openai]==1.50.2",
     "requests",
     "pytest>=9.1.1",
+    "markdown-it-py>=4.2.0",
+    "mdit-py-plugins>=0.6.1",
+    "pygments>=2.20.0",
+    "linkify-it-py>=2.1.0",
 ]
 
 [project.optional-dependencies]

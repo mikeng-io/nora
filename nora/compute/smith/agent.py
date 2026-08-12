@@ -22,6 +22,7 @@ from strands import Agent, tool
 from strands.models.openai import OpenAIModel
 
 from budget import BudgetExceededError, ToolCallBudget, guarded
+from skills.markdown.render import render_markdown as _render_markdown
 from skills.mermaid.render import MermaidRenderError
 from skills.mermaid.render import render_mermaid as _render_mermaid
 
@@ -125,6 +126,14 @@ def render_mermaid(diagram_source: str) -> str:
         return f"[render_mermaid failed: {exc}]"
 
 
+@tool
+@guarded(_budget)
+def render_markdown(text: str) -> str:
+    """Render GFM markdown (with syntax-highlighted code blocks) to
+    self-contained HTML. See skills/markdown/SKILL.md."""
+    return _render_markdown(text=text)
+
+
 def main() -> None:
     task_file = Path(os.environ["TASK_FILE"])
     task = task_file.read_text()
@@ -148,7 +157,7 @@ def main() -> None:
     agent = Agent(
         model=model,
         system_prompt=doctrine,
-        tools=[run_python, register_artifact, render_mermaid],
+        tools=[run_python, register_artifact, render_mermaid, render_markdown],
     )
     try:
         result = agent(task)
