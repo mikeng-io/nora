@@ -49,7 +49,8 @@ COPY pyproject.toml .
 RUN uv pip install --system --no-cache .
 
 COPY agent.py doctrine.md ./
-COPY skills/ skills/
+COPY budget.py page_shell.py ./
+COPY skills/ ./skills/
 
 WORKDIR /workspace
 ENTRYPOINT ["python3", "/app/agent.py"]
