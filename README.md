@@ -295,8 +295,7 @@ semver. Build with the wrapper rather than `docker build` directly:
 
 ```bash
 uv run python scripts/check_release_fragments.py --base origin/master
-uv run python scripts/render_release_notes.py > /tmp/nora-V3-notes
-git tag -a V3 -F /tmp/nora-V3-notes
+uv run python scripts/prepare_release.py V3
 scripts/build-image.sh V3
 ```
 

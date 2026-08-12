@@ -21,11 +21,16 @@ cd "$(dirname "$0")/.."
 
 VERSION="${1:-}"
 if [ -n "$VERSION" ]; then
+  uv run python scripts/check_release_notes.py "$VERSION"
   uv run python scripts/gen_version_manifest.py --version "$VERSION"
 else
-  uv run python scripts/gen_version_manifest.py
-  VERSION="$(python3 -c 'import json;print(json.load(open("nora/version.json"))["version"])')"
+  rm -f nora/version.json
 fi
 
-docker build --network=host --build-arg "NORA_VERSION=$VERSION" -t nora:"$VERSION" -t nora:latest .
-echo "built nora:$VERSION"
+if [ -n "$VERSION" ]; then
+  docker build --network=host --build-arg "NORA_VERSION=$VERSION" -t nora:"$VERSION" -t nora:latest .
+  echo "built nora:$VERSION"
+else
+  docker build --network=host --build-arg NORA_VERSION= -t nora:latest .
+  echo "built unstamped nora:latest"
+fi

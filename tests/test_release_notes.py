@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RENDER = ROOT / "scripts" / "render_release_notes.py"
 CHECK = ROOT / "scripts" / "check_release_fragments.py"
+CHECK_NOTES = ROOT / "scripts" / "check_release_notes.py"
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -81,3 +82,48 @@ def test_branch_gate_requires_a_fragment_or_explicit_none(tmp_path: Path):
     _git(repo, "commit", "-qm", "valid fragment")
 
     assert _run(str(CHECK), "--repo", str(repo), "--base", "master").returncode == 0
+
+
+def test_branch_gate_does_not_accept_deleting_an_existing_fragment(tmp_path: Path):
+    repo = tmp_path / "repo"
+    fragment = repo / "release-fragments" / "unreleased" / "old.json"
+    fragment.parent.mkdir(parents=True)
+    fragment.write_text('{"type": "none", "reason": "Old internal work."}')
+    _git(repo, "init", "-q", "-b", "master")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    _git(repo, "config", "user.name", "Test")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "base")
+    _git(repo, "checkout", "-qb", "feature")
+    (repo / "nora.py").write_text("changed\n")
+    fragment.unlink()
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "delete fragment")
+
+    result = _run(str(CHECK), "--repo", str(repo), "--base", "master")
+
+    assert result.returncode == 2
+    assert "no release fragment" in result.stderr
+
+
+def test_release_note_gate_requires_matching_annotated_tag_at_head(tmp_path: Path):
+    repo = tmp_path / "repo"
+    notes = repo / "release-fragments" / "released" / "V4" / "NOTES.md"
+    notes.parent.mkdir(parents=True)
+    notes.write_text("New:\n- Nora can send GIFs.\n")
+    _git(repo, "init", "-q", "-b", "master")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    _git(repo, "config", "user.name", "Test")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "release")
+    _git(repo, "tag", "-a", "V4", "-F", str(notes))
+
+    assert _run(str(CHECK_NOTES), "V4", "--repo", str(repo)).returncode == 0
+    (repo / "later.py").write_text("later\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "later")
+
+    wrong_head = _run(str(CHECK_NOTES), "V4", "--repo", str(repo))
+
+    assert wrong_head.returncode == 2
+    assert "must be an annotated tag at HEAD" in wrong_head.stderr

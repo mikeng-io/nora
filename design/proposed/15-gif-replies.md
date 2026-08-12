@@ -337,10 +337,12 @@ guardrail:
 provenance in the audit row. The frame-text hole above is unaffected either way
 — a caption never made the pixels scannable.
 
-**Outbound egress applies unchanged.** `design/14` §2.2 governs: the search
-query leaves the host, so it passes the R-18 predicate *before* the call.
-「Tyler 個電話幾多號」 must never become a Giphy query, and a block returns a
-legible refusal rather than raising.
+**Outbound egress is deliberately narrow.** The search query leaves the host.
+It is length-bounded and identifier-screened before the call, but that cannot
+prove a natural-language phrase is not private. The tool schema therefore
+requires a generic visual reaction phrase and explicitly tells the model that
+the query reaches Giphy. This is a residual privacy limitation, not a claim
+that identifier screening can solve content classification.
 
 ## 5. Record-first
 

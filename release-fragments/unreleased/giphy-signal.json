@@ -7,6 +7,7 @@
   ],
   "limitations": [
     "Nora does not inspect GIF frames.",
-    "Signal stickers and other chat platforms are not included."
+    "Signal stickers and other chat platforms are not included.",
+    "GIF search terms are sent to Giphy; Nora should use only a generic visual reaction phrase."
   ]
 }

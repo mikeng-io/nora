@@ -75,8 +75,11 @@ class GiphyClient:
                 url = ((gif.get("images") or {}).get("downsized") or {}).get("url")
                 if not isinstance(url, str):
                     return None
-                host = urlparse(url).hostname
+                parsed = urlparse(url)
+                host = parsed.hostname
                 if host is None:
+                    return None
+                if parsed.scheme != "https" or parsed.port not in (None, 443):
                     return None
                 is_giphy_media = host == "media.giphy.com" or (
                     host.startswith("media") and host.endswith(".giphy.com")

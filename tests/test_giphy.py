@@ -100,6 +100,11 @@ async def test_fetch_binds_selected_metadata_and_rejects_non_giphy_media(monkeyp
     assert await GiphyClient(api_key="test").fetch(candidate=candidate) is None
     assert len(session.urls) == 1
 
+    session = _Session([_Response(body={"data": _gif(url="http://media.giphy.com/gif")})])
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda **_: session)
+    assert await GiphyClient(api_key="test").fetch(candidate=candidate) is None
+    assert len(session.urls) == 1
+
     session = _Session([_Response(body={"data": _gif(url="https://example.test/gif")})])
     monkeypatch.setattr(aiohttp, "ClientSession", lambda **_: session)
     assert await GiphyClient(api_key="test").fetch(candidate=candidate) is None

@@ -30,13 +30,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         base = git(args.repo, "merge-base", args.base, "HEAD")[0]
         changed = git(args.repo, "diff", "--name-only", f"{base}...HEAD")
+        statuses = git(args.repo, "diff", "--name-status", f"{base}...HEAD")
     except (RuntimeError, IndexError) as exc:
         print(f"cannot determine release-fragment scope: {exc}", file=sys.stderr)
         return 2
-    if not changed or all(path.startswith("release-fragments/") for path in changed):
+    if not changed:
         return 0
     fragments = [
-        path for path in changed if path.startswith(f"{FRAGMENTS}/") and path.endswith(".json")
+        fields[1]
+        for line in statuses
+        if (fields := line.split("\t")) and fields[0] == "A" and len(fields) == 2
+        and fields[1].startswith(f"{FRAGMENTS}/") and fields[1].endswith(".json")
     ]
     if not fragments:
         print(

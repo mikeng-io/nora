@@ -144,6 +144,10 @@ services:
       - NORA_SHORTENER_TOKEN=${NORA_SHORTENER_TOKEN:-}
       #   TAVILY_API_KEY        — the `web_search` tool (Tavily, DEC-73)
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      #   GIPHY_API_KEY         — described reaction GIF search and download.
+      #   Unset means GIF tools are unavailable; it must be explicitly passed
+      #   because Compose does not inherit host .env values into a service.
+      - GIPHY_API_KEY=${GIPHY_API_KEY:-}
       #   PULSE_MCP_TOKEN       — bearer token for the `pulse` MCP server
       #   ([tools.mcp.pulse], spec: docs/superpowers/specs/2026-08-08-mcp-tool-provider-design.md).
       #   Unset means `build_mcp_tools`'s `${env:PULSE_MCP_TOKEN}` interpolation
