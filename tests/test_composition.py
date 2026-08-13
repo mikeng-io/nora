@@ -442,7 +442,100 @@ async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cf
     ) == 1
 
 
-async def test_compute_only_deployment_still_gets_a_live_fire_path(cfg, no_build_stamp):
+def _compute_environment(monkeypatch, cfg) -> Path:
+    """Every host-injected value `[compute] enabled = true` refuses to start
+    without, set to a plausible value. Returns the host data root, which is the
+    one of them a test may want to assert against.
+
+    Reads the variable NAMES off `cfg` rather than hardcoding them, for the
+    reason DEC-8 gives: config names the variable, the host holds the value, and
+    a test that hardcodes the name passes after a rename that would break the
+    deployment."""
+    host_root = Path("/srv/nora/data")
+    monkeypatch.setenv(cfg.compute.data_host_root_env, str(host_root))
+    monkeypatch.setenv(cfg.shortener.token_env, "test-drop-token")
+    monkeypatch.setenv(cfg.route.api_key_env, "test-maps-key")
+    return host_root
+
+
+@pytest.mark.parametrize(
+    "unset",
+    ["data_host_root_env", "shortener_token_env", "route_api_key_env"],
+)
+async def test_compute_refuses_to_start_without_its_host_injected_values(
+    cfg, monkeypatch, unset,
+):
+    """`policy.toml`'s discipline (R-5: refuse to start rather than run in a
+    state that looks like working), applied to `[compute]`.
+
+    Every one of these is read with a `""` default, so without the check the
+    daemon starts CLEANLY and then fails every job minutes later — an empty
+    bearer token on the Drop mint, an empty key handed to Smith, or a
+    workspace bind-mounted from a host path that does not exist. All three
+    surface in the group as «it failed», with an error string nobody can act
+    on, and none of them are things a group can fix. They are operator
+    problems and they belong in the operator's terminal.
+
+    Parametrized over each one INDIVIDUALLY: a check that only fired when all
+    three were missing would pass a single combined test.
+    """
+    on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
+    _compute_environment(monkeypatch, cfg)
+    monkeypatch.delenv({
+        "data_host_root_env": cfg.compute.data_host_root_env,
+        "shortener_token_env": cfg.shortener.token_env,
+        "route_api_key_env": cfg.route.api_key_env,
+    }[unset])
+
+    with pytest.raises(StartupError):
+        await build_dependencies(on)
+
+
+async def test_compute_refuses_a_relative_host_root(cfg, monkeypatch):
+    """`./data` is what the compose mount falls back to when nobody sets the
+    variable, and it is exactly the value that must NOT reach the backend: the
+    host Docker daemon resolves a bind source against a working directory this
+    process knows nothing about. Unset is caught above; a relative value is the
+    same defect wearing a plausible-looking string."""
+    on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
+    _compute_environment(monkeypatch, cfg)
+    monkeypatch.setenv(cfg.compute.data_host_root_env, "./data")
+
+    with pytest.raises(StartupError):
+        await build_dependencies(on)
+
+
+async def test_the_sandbox_bind_source_is_the_host_path_not_noras_own(
+    cfg, monkeypatch, tmp_path, no_build_stamp,
+):
+    """The wiring half of the two-roots rule (`LocalDockerBackend.__init__`).
+
+    Nora's own `store.data_dir` is `/app/data` inside her container, and that
+    is the right root for the `task.txt` SHE writes. It is the wrong root for
+    the bind-mount source she hands the host Docker daemon, which resolves it
+    on the host filesystem — where `/app/data` does not exist, so the daemon
+    creates an empty directory and every job silently produces nothing.
+
+    Asserted as a PAIR: same trailing directory name, different roots. Wiring
+    that passed `data_dir` to both (the shipped defect) fails the second
+    assertion; wiring that appended a different subdirectory to each fails the
+    first.
+    """
+    on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
+    host_root = _compute_environment(monkeypatch, cfg)
+    deps = await build_dependencies(on)
+    try:
+        backend = _spawned(deps, "ComputeJobPoller.run")[0]._backend
+        assert backend._workspace_root == cfg.store.data_dir / "compute-workspaces"
+        assert backend._workspace_host_root == host_root / "compute-workspaces"
+        assert backend._workspace_host_root != backend._workspace_root
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_compute_only_deployment_still_gets_a_live_fire_path(
+    cfg, monkeypatch, no_build_stamp,
+):
     """The widened `fire_path` gate: `[compute] enabled` alone — heartbeat
     off, no version announcement (`no_build_stamp` forces the unstamped path,
     the same way `test_an_unstamped_build_spawns_no_announcer` does) — must
@@ -462,6 +555,7 @@ async def test_compute_only_deployment_still_gets_a_live_fire_path(cfg, no_build
         "heartbeat.enabled": False,
     })
     assert on.version.announce is True  # the shipped default; no_build_stamp is what mutes it
+    _compute_environment(monkeypatch, cfg)
     deps = await build_dependencies(on)
     try:
         pollers = _spawned(deps, "ComputeJobPoller.run")

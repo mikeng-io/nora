@@ -154,6 +154,24 @@ services:
       #   Unset means GIF tools are unavailable; it must be explicitly passed
       #   because Compose does not inherit host .env values into a service.
       - GIPHY_API_KEY=${GIPHY_API_KEY:-}
+      #   NORA_DATA_HOST_ROOT   — the HOST-side path of the `./data` mount in
+      #   `volumes:` below, and the one value in this file that exists because
+      #   a path inside this container is NOT a path the Docker daemon can
+      #   resolve. `LocalDockerBackend` ([compute] enabled) bind-mounts a job's
+      #   workspace into Smith's sandbox container, and a bind SOURCE is
+      #   resolved by the daemon on the HOST filesystem — so handing it
+      #   `/app/data/compute-workspaces` (which is what `store.data_dir`
+      #   resolves to in here) makes the daemon silently create an empty
+      #   directory at that path on the host, and Smith never sees the
+      #   `task.txt` Nora wrote while Nora never sees Smith's `url.txt`. Every
+      #   job then fails with no exception and no error — the exact R-5 shape.
+      #   `:-` not `:?`: unset is fine for every deployment with `[compute]`
+      #   off (the shipped default), and the mount below falls back to the same
+      #   `./data` it always used. With `[compute] enabled = true`,
+      #   `nora.app.composition` REFUSES TO START unless this names an absolute
+      #   host path (it cannot verify it, so it fails closed at boot rather
+      #   than silently at job time in front of the group).
+      - NORA_DATA_HOST_ROOT=${NORA_DATA_HOST_ROOT:-}
       #   PULSE_MCP_TOKEN       — bearer token for the `pulse` MCP server
       #   ([tools.mcp.pulse], spec: docs/superpowers/specs/2026-08-08-mcp-tool-provider-design.md).
       #   Unset means `build_mcp_tools`'s `${env:PULSE_MCP_TOKEN}` interpolation
@@ -175,7 +193,12 @@ services:
       # can catch it; the timezone belongs in config.toml, read explicitly.
       - TZ=Asia/Hong_Kong
     volumes:
-      - ./data:/app/data
+      # `${NORA_DATA_HOST_ROOT:-./data}` and NOT a bare `./data`, so this bind
+      # source and the `NORA_DATA_HOST_ROOT` value handed to the process above
+      # are THE SAME EXPRESSION and cannot drift apart. See that variable's own
+      # comment for why the process needs to know its host-side path at all.
+      # Unset behaves exactly as the old `./data` did.
+      - ${NORA_DATA_HOST_ROOT:-./data}:/app/data
       - ./config.toml:/app/config.toml:ro
       - ./identity.toml:/app/identity.toml:ro
       # Deny-by-default: without this Nora refuses to start rather than
@@ -475,6 +498,18 @@ networks:
   # Tavily (a public API reached over the default network), web_fetch is gone, so
   # Nora no longer calls the co-located SearXNG/Firecrawl containers.
   nora-compute:
+    # EXPLICIT, and load-bearing: without a `name:` key Compose prefixes a
+    # network with the project name, so this one would really be created as
+    # `nora_nora-compute` (confirmed on this host: the sibling `nora:` network
+    # above is really `nora_nora`). `LocalDockerBackend` does NOT go through
+    # Compose — it calls the Docker daemon directly with
+    # `containers.run(..., network="nora-compute")`, a literal string that has
+    # no project name to prefix with — so the un-named form makes every single
+    # compute job die with a docker-py `NotFound` before its container ever
+    # starts. Naming the network is Compose's own documented opt-out of the
+    # prefix, and it is the half of this pair that is allowed to move: the
+    # backend's string is the fixed point.
+    name: nora-compute
   # Nora Compute spec §5a: only `drop` and Smith's per-job sandbox containers
   # (Phase 2, LocalDockerBackend) ever join this network. Smith needs to reach
   # `drop:8081` directly (its own per-job credential, Nora Compute spec §2/§3)

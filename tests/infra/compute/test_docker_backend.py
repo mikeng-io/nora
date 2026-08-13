@@ -71,6 +71,7 @@ def docker_client():
 
 def make_backend(
     *, docker_client, workspace_root: Path, drop_internal_url: str = DROP_URL,
+    workspace_host_root: Path | None = None,
 ) -> LocalDockerBackend:
     """The `backend` fixture's construction, reusable by a test that needs a
     DIFFERENT `workspace_root` than `tmp_path` (and by
@@ -78,7 +79,12 @@ def make_backend(
     adapter through the shared `ComputeBackend` suite against a real
     in-process token server, hence `drop_internal_url`). One constructor call
     site for both suites: a new required parameter breaks them together
-    instead of leaving the contract suite building a stale backend."""
+    instead of leaving the contract suite building a stale backend.
+
+    `workspace_host_root` defaults to `workspace_root` — the un-containerised
+    deployment, where the two really are the same directory, and the only
+    arrangement under which a test may read back what the sandbox "wrote".
+    The test that cares about the DISTINCTION passes them separately."""
     return LocalDockerBackend(
         docker_client=docker_client,
         drop_internal_url=drop_internal_url,
@@ -91,6 +97,9 @@ def make_backend(
         job_timeout_seconds=30,
         max_concurrent_jobs=2,
         workspace_root=workspace_root,
+        workspace_host_root=(
+            workspace_root if workspace_host_root is None else workspace_host_root
+        ),
     )
 
 
@@ -274,6 +283,40 @@ async def test_launch_attaches_the_container_to_nora_compute_only(backend, docke
         await _poll_until_done(backend, job_id=job_id)
     _, kwargs = docker_client.containers.run.call_args
     assert kwargs["network"] == "nora-compute"
+
+
+async def test_the_bind_source_is_the_host_path_not_this_process_path(
+    tmp_path: Path, docker_client,
+):
+    """A bind-mount SOURCE is resolved by the Docker daemon on the HOST
+    filesystem, never inside the container that asked for it. Nora runs with
+    `./data:/app/data`, so her own `workspace_root` is `/app/data/...` — a
+    path that does not exist on the host. Handing THAT to the daemon raises
+    nothing: it creates an empty host directory, the sandbox finds no
+    `task.txt`, and the job fails with no error anyone can read.
+
+    Two DIFFERENT roots here on purpose. The container-side one is where the
+    `task.txt` this test reads back was actually written; the host-side one is
+    the only thing that may appear in `volumes`. A backend that used one path
+    for both — the shipped defect — fails this on whichever assertion it got
+    wrong."""
+    container_root = tmp_path / "container-side" / "compute-workspaces"
+    host_root = tmp_path / "host-side" / "compute-workspaces"
+    backend = make_backend(
+        docker_client=docker_client,
+        workspace_root=container_root,
+        workspace_host_root=host_root,
+    )
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="write a haiku")
+        await _poll_until_done(backend, job_id=job_id)
+
+    _, kwargs = docker_client.containers.run.call_args
+    assert list(kwargs["volumes"]) == [str(host_root / job_id)]
+    assert kwargs["volumes"][str(host_root / job_id)]["bind"] == "/workspace"
+    # ... while this process still wrote the brief where IT can see it.
+    assert (container_root / job_id / "task.txt").read_text() == "write a haiku"
 
 
 async def test_a_third_job_waits_for_the_concurrency_semaphore(backend, docker_client):

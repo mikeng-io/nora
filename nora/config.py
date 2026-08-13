@@ -652,6 +652,22 @@ class ComputeConfig(BaseModel):
     job_timeout_seconds: int = 300
     max_concurrent_jobs: int = 2
     poll_tick_seconds: float = 10.0
+    # NAMES the env var carrying the HOST-side path of whatever is bind-mounted
+    # at `store.data_dir` — `*_env` for the same DEC-8 reason every secret is:
+    # the VALUE is a deployment fact injected by the host, never a line in a
+    # committed config file. Not a secret, but the same problem: only the host
+    # knows it, and this container cannot compute it.
+    #
+    # It exists because `store.data_dir` is a path INSIDE this container
+    # (`/app/data`), and `LocalDockerBackend` hands a workspace path to the
+    # HOST Docker daemon as a bind-mount source. The daemon resolves it on the
+    # host filesystem, where `/app/data` does not exist — so it would create an
+    # empty directory there and every job would fail with nothing to read and
+    # no exception raised. `docker-compose.yml` sets this variable from THE
+    # SAME expression it uses for the `:/app/data` mount source, so the two
+    # cannot disagree; `nora.app.composition` refuses to start when `enabled`
+    # is true and this is unset or relative.
+    data_host_root_env: str = "NORA_DATA_HOST_ROOT"
 
 
 class VersionConfig(BaseModel):

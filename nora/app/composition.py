@@ -22,6 +22,7 @@ import os
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -96,6 +97,85 @@ class StartupError(Exception):
     messages are unchanged from `nora.__main__.build_app`'s pre-phase-3 shape,
     only relocated here (`migration error` was added deliberately in Phase 2
     — see `design/09-decision-index.md`)."""
+
+
+# The one subdirectory name a compute job's workspace lives under, appended to
+# BOTH the container-side root (`store.data_dir`) and the host-side root, so the
+# two paths handed to `LocalDockerBackend` cannot name different directories.
+COMPUTE_WORKSPACE_DIRNAME = "compute-workspaces"
+
+
+def _compute_workspace_host_root(cfg: Config) -> Path:
+    """The host-side path of whatever is bind-mounted at `store.data_dir`.
+
+    READ FROM THE ENVIRONMENT, and it cannot be anything else: `store.data_dir`
+    is resolved against the config file's own directory, so in the container it
+    is `/app/data` — a path the HOST Docker daemon, which resolves every
+    bind-mount source on the host filesystem, has never heard of. Handing it
+    that path does not error; the daemon creates an empty directory at
+    `/app/data/...` on the host and the job's sandbox finds no `task.txt`,
+    writes its result where nobody reads it, and reports nothing (R-5's exact
+    shape, at job time, in front of the group).
+
+    So this fails CLOSED at boot instead: unset, or set to a relative path
+    nothing can resolve, refuses to start. `docker-compose.yml` populates the
+    variable from the same expression it uses for the mount source itself.
+    """
+    raw = os.environ.get(cfg.compute.data_host_root_env, "").strip()
+    if not raw:
+        raise StartupError(
+            f"[compute] enabled = true but environment variable "
+            f"{cfg.compute.data_host_root_env} is not set — it must name the "
+            f"HOST-side path bind-mounted at {cfg.store.data_dir} (docker "
+            "compose sets it from the same expression as that mount), because "
+            "a sandbox workspace is bind-mounted by the host Docker daemon and "
+            "an in-container path silently resolves to an empty host directory; "
+            "refusing to start"
+        )
+    root = Path(raw)
+    if not root.is_absolute():
+        raise StartupError(
+            f"environment variable {cfg.compute.data_host_root_env} is "
+            f"{raw!r}, a relative path — the host Docker daemon resolves a "
+            "bind-mount source against nothing this process knows, so it must "
+            "be absolute; refusing to start"
+        )
+    return root
+
+
+def _check_compute_secrets(
+    *, drop_token: str, maps_key: str, model_api_key: str, cfg: Config,
+) -> None:
+    """Every credential a compute job cannot run without, checked at BOOT.
+
+    The `policy.toml` discipline (R-5: refuse to start rather than run in a
+    state that looks like working) applied to `[compute]`. Each of these is
+    read with a `""` default, so without this check an unset one starts the
+    daemon cleanly and then fails EVERY job — `LocalDockerBackend` mints its
+    Drop credential with an empty bearer token, or hands Smith an empty model
+    key — minutes later, in front of the group, as "it failed" with an error
+    string nobody can act on. A missing secret is an operator's problem and
+    belongs in the operator's terminal, not in the group chat.
+
+    All of them are named in ONE message rather than one-at-a-time, so an
+    operator setting up compute fixes the whole set in one pass.
+    """
+    missing = [
+        name for name, value in (
+            (cfg.shortener.token_env, drop_token),
+            (cfg.route.api_key_env, maps_key),
+            (cfg.llm.api_key_env, model_api_key),
+        ) if not value.strip()
+    ]
+    if missing:
+        raise StartupError(
+            "[compute] enabled = true but these environment variables are "
+            f"unset or empty: {', '.join(missing)} — a compute job needs the "
+            "drop credential it mints its per-job token against, the Google "
+            "Maps key its map-rendering skill uses, and the model key Smith "
+            "itself runs on. Starting without them would fail every job at "
+            "run time instead of here; refusing to start"
+        )
 
 
 @dataclass(frozen=True)
@@ -557,14 +637,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     if cfg.compute.enabled:
         import docker
 
+        drop_token = os.environ.get(cfg.shortener.token_env, "")
+        maps_key = os.environ.get(cfg.route.api_key_env, "")
+        _check_compute_secrets(
+            drop_token=drop_token, maps_key=maps_key, model_api_key=api_key, cfg=cfg,
+        )
         compute_backend = LocalDockerBackend(
             docker_client=docker.from_env(),
             drop_internal_url=cfg.shortener.base_url,
-            drop_master_token=os.environ.get(cfg.shortener.token_env, ""),
+            drop_master_token=drop_token,
             model_api_key=api_key,
             model_base_url=tier.base_url,
             model_name=tier.model,
-            google_maps_api_key=os.environ.get(cfg.route.api_key_env, ""),
+            google_maps_api_key=maps_key,
             sandbox_image=cfg.compute.sandbox_image,
             job_timeout_seconds=cfg.compute.job_timeout_seconds,
             max_concurrent_jobs=cfg.compute.max_concurrent_jobs,
@@ -573,7 +658,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # — not a second, unmounted absolute path. Bind-mounted at
             # `./data:/app/data` in docker-compose.yml, so a job's workspace
             # survives a container restart exactly as media blobs do.
-            workspace_root=cfg.store.data_dir / "compute-workspaces",
+            workspace_root=cfg.store.data_dir / COMPUTE_WORKSPACE_DIRNAME,
+            # The SAME directory, named as the HOST sees it — the only value
+            # `LocalDockerBackend` may hand the Docker daemon as a bind source
+            # (see its `__init__`'s two-roots comment, and
+            # `_compute_workspace_host_root`'s own for why this cannot be
+            # derived from `data_dir`). The identical `COMPUTE_WORKSPACE_DIRNAME`
+            # is appended to both, so the container-side path and the host-side
+            # path can only ever differ in the part the mount itself defines.
+            workspace_host_root=(
+                _compute_workspace_host_root(cfg) / COMPUTE_WORKSPACE_DIRNAME
+            ),
         )
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape

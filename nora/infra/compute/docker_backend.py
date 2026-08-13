@@ -83,6 +83,7 @@ class LocalDockerBackend:
         job_timeout_seconds: int,
         max_concurrent_jobs: int,
         workspace_root: Path,
+        workspace_host_root: Path,
     ) -> None:
         self._docker = docker_client
         self._drop_internal_url = drop_internal_url.rstrip("/")
@@ -114,7 +115,20 @@ class LocalDockerBackend:
         self._sandbox_image = sandbox_image
         self._job_timeout_seconds = job_timeout_seconds
         self._semaphore = asyncio.Semaphore(max_concurrent_jobs)
+        # TWO roots for ONE directory, and the distinction is load-bearing.
+        # `workspace_root` is where THIS process reads and writes (`task.txt`
+        # out, `url.txt`/`summary.txt` back) — a path in this process's own
+        # filesystem. `workspace_host_root` is the same directory as the HOST
+        # Docker daemon sees it, and it is the ONLY thing that may be used as a
+        # bind-mount SOURCE: the daemon resolves a bind source on the host, not
+        # inside whatever container asked for it. When Nora runs in a container
+        # with `./data:/app/data`, the two are `/app/data/compute-workspaces`
+        # and `<repo>/data/compute-workspaces` — different strings for the same
+        # bytes. Passing the container-side one to the daemon does not error; it
+        # silently creates an empty host directory and the job produces nothing.
+        # (Running Nora directly on the host, the two are simply equal.)
         self._workspace_root = workspace_root
+        self._workspace_host_root = workspace_host_root
         self._tasks: dict[str, asyncio.Task[JobResult]] = {}
 
     async def launch(self, *, task: str, artifact_id: str | None = None) -> str:
@@ -182,7 +196,8 @@ class LocalDockerBackend:
             exit_code: Any = None
             try:
                 container = await asyncio.to_thread(
-                    self._start_container, job_id, token, workspace, artifact_id,
+                    self._start_container,
+                    job_id, token, self._workspace_host_root / job_id, artifact_id,
                 )
                 wait_result = await asyncio.to_thread(
                     container.wait, timeout=self._job_timeout_seconds,
@@ -242,13 +257,23 @@ class LocalDockerBackend:
         return JobResult(status=JobStatus.FAILED, error=detail)
 
     def _start_container(
-        self, job_id: str, token: str, workspace: Path, artifact_id: str | None,
+        self, job_id: str, token: str, host_workspace: Path, artifact_id: str | None,
     ) -> Any:
+        """`host_workspace`, never `self._workspace_root / job_id` — see the
+        two-roots comment in `__init__`. The parameter is named for the side of
+        the boundary it belongs to precisely so a future edit cannot quietly
+        hand this the container-side path again.
+
+        `network="nora-compute"` is a LITERAL, matched by `docker-compose.yml`'s
+        own `name: nora-compute` on that network (Compose would otherwise
+        prefix it with the project name and this call would raise `NotFound`).
+        The compose file is the side that adapts; this string is the fixed
+        point, and `tests/infra/compute/test_docker_backend.py` pins it."""
         return self._docker.containers.run(
             self._sandbox_image,
             detach=True,
             network="nora-compute",
-            volumes={str(workspace): {"bind": "/workspace", "mode": "rw"}},
+            volumes={str(host_workspace): {"bind": "/workspace", "mode": "rw"}},
             environment={
                 "DROP_JOB_TOKEN": token,
                 "DROP_INTERNAL_URL": self._drop_internal_url,
