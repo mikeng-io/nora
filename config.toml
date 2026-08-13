@@ -489,3 +489,38 @@ enabled = true
 base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
 token_env = "PULSE_MCP_TOKEN"
 budget = 5
+
+[compute]
+# `make_artifact` — she builds a FILE (a report, a chart, a map) in a sandboxed
+# container and hands back a link, instead of typing the answer into chat.
+#
+# Ships INERT, like [presence] and [search] before it, and this one has more
+# reason than either: turning it on gives her process the host Docker socket
+# (docker-compose.yml mounts it, with the argument for that beside the mount)
+# and lets an LLM-authored program run on this box. That is an operator
+# decision every time, never something a missing section decides.
+enabled = false
+# Turning `enabled` on ALSO requires four host-injected values, and Nora
+# REFUSES TO START without any of them rather than accepting every job and
+# failing it minutes later in front of the group:
+#   NORA_DATA_HOST_ROOT   the host-side path of the /app/data mount. It exists
+#                         because a sandbox's workspace is bind-mounted by the
+#                         HOST Docker daemon, which resolves the source on the
+#                         host filesystem — an in-container path silently
+#                         resolves to an empty directory and the job produces
+#                         nothing. docker-compose.yml sets it from the same
+#                         expression as the mount itself, so the two agree.
+#   NORA_DROP_TOKEN       [shortener].token_env — the credential each job's own
+#                         scoped, short-lived Drop token is minted against.
+#   GOOGLE_MAPS_API_KEY   [route].api_key_env — the SAME key the `route` tool
+#                         uses, shared with the map-rendering skill.
+#   OMNIROUTE_API_KEY     [llm].api_key_env — the model the sandbox itself runs
+#                         on (the same OmniRoute triple Nora uses).
+# sandbox_image = "smith:latest"
+# job_timeout_seconds = 300   # wall-clock guardrail; the container is killed
+# max_concurrent_jobs = 2     # containers in flight at once
+# poll_tick_seconds = 10      # how often the poller WAKES to check for a
+                              # finished job — the same "best case for
+                              # lateness, not a bound" shape [heartbeat]
+                              # .tick_seconds has.
+# data_host_root_env = "NORA_DATA_HOST_ROOT"

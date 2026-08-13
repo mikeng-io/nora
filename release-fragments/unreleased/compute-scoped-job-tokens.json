@@ -6,6 +6,6 @@
     "The token expires on its own short deadline rather than needing to be revoked afterwards."
   ],
   "limitations": [
-    "Nothing in Nora's runtime mints or uses one yet: the sandbox backend that would request these tokens is not wired into composition until a later phase, so this ships as capability without a caller."
+    "In use now that make_artifact is wired in: every job gets one. A job that outlives its token's deadline cannot write its result at all -- it fails rather than falling back to a wider credential."
   ]
 }

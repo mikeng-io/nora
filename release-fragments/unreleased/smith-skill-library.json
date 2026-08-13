@@ -9,6 +9,6 @@
     "A per-job tool-call budget and Strands' own native turns/token ceiling both bound a job independently of its wall-clock timeout, so a thrashing job cannot run away."
   ],
   "limitations": [
-    "Nothing in Nora's runtime calls Smith yet: the sandbox backend that would dispatch a compute job is not wired into composition/runtime until a later phase, so this ships as capability without a caller."
+    "Reachable now that make_artifact is wired in, but only where a job's brief calls for one of these renderings -- there is no way to ask for a specific skill by name."
   ]
 }
