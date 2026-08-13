@@ -184,6 +184,21 @@ services:
       # Read-only so edits on the host (doctrine hot-reload, mtime-based) are visible
       # inside the container without a rebuild or restart.
       - ./nora/doctrine:/app/nora/doctrine:ro
+      # The host Docker socket, so `LocalDockerBackend` (Nora Compute spec
+      # §2/§3, `[compute] enabled`) can call `docker.from_env()` to launch
+      # Smith's per-job sandbox containers. Named explicitly, not glossed
+      # over: this gives Nora's own container the ability to launch — and,
+      # transitively given Docker's own model, potentially escape into —
+      # arbitrary containers on the host, a real widening of this container's
+      # privilege beyond anything else this design has needed so far. This
+      # was not discussed anywhere in the original Nora Compute design
+      # conversation; it was raised as a Self-Review flag on the plan that
+      # added this wiring and escalated to the human before implementation,
+      # who ruled: proceed as specced (mount the socket directly, not a
+      # sidecar, not deferred). Inert while `[compute] enabled = false`
+      # (the shipped default) — the mount exists either way, but nothing in
+      # this process calls `docker.from_env()` until that flag is on.
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9100/health"]
       interval: 30s

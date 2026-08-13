@@ -33,8 +33,10 @@ from nora.agent.room import Room
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
+from nora.domain.compute import ComputeJobStore
 from nora.domain.ports import (
     BlobStore,
+    ComputeBackend,
     ContextAssembler,
     EngagePolicy,
     MediaSource,
@@ -49,9 +51,11 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
 from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
+from nora.infra.compute.docker_backend import LocalDockerBackend
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
+from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.version import OK as VERSION_OK
@@ -76,6 +80,8 @@ from nora.tag import Debounce
 
 from .agent_runner import LiveAgentRunner
 from .announce import AnnouncementTarget, VersionAnnouncer
+from .compute_poller import ComputeJobPoller
+from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
 from .fire import FirePath
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
@@ -213,6 +219,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # a wiring accident that no test catches (every test builds its own registry
     # with the fake). The tick is the only part behind the flag.
     reminders: ReminderStore = SqlReminderStore(engine)
+    # The compute-job outbox, REUSING `engine` for the same reason `reminders`
+    # does above. Built HERE, unconditionally, beside the other stores — the
+    # exact `reminders` argument applies again: `ToolRegistry` (below) needs
+    # `compute_jobs` for `make_artifact`'s slow path whether or not
+    # `[compute] enabled` is true, and boot recovery a few hundred lines down
+    # (beside `reminders`' own unconditional sweep) must find a store to sweep
+    # even when the poller itself is off. Only the poller's tick loop
+    # (`compute_backend`, further down) is behind the flag.
+    compute_jobs: ComputeJobStore = SqlComputeJobStore(engine)
 
     try:
         registry = await AdapterRegistry.from_config(cfg.platforms, metrics=metrics)
@@ -519,6 +534,47 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # 2026-08-08).
             timeout_seconds=cfg.presence.refresh_timeout_seconds + 2.0,
         )
+    # `LocalDockerBackend` (Nora Compute spec §2/§3), wired ONLY when
+    # `[compute] enabled` — the `[heartbeat]`-shaped gate: off leaves
+    # `compute_backend` None and `make_artifact` answers `unavailable` (R-5),
+    # never a silent no-op. It needs `docker.from_env()` to reach the HOST
+    # Docker daemon, which is why the socket is bind-mounted into this very
+    # container in docker-compose.yml — a named, already-ruled-on privilege
+    # widening (see that file's own comment beside the mount).
+    #
+    # Three collaborators are REUSED rather than re-resolved, each for the
+    # reason `nora/infra/compute/docker_backend.py`'s own docstring gives:
+    # `api_key`/`tier.base_url`/`tier.model` are the SAME OmniRoute triple
+    # Nora's own agent is configured with (Smith needs a model credential too,
+    # not a second provider story), and `cfg.shortener.base_url`/token are the
+    # SAME pair `LinkShortener` above resolves for `drop`'s internal
+    # listener — `LocalDockerBackend` mints its own per-job Drop token against
+    # that same listener. `google_maps_api_key` reads `[route].api_key_env`
+    # directly (not `route_client`'s own scoped `route_key`, which only exists
+    # inside that `if` block) — the SAME env var `render_map`, the skill that
+    # consumes it, already shares with the `route` tool.
+    compute_backend: ComputeBackend | None = None
+    if cfg.compute.enabled:
+        import docker
+
+        compute_backend = LocalDockerBackend(
+            docker_client=docker.from_env(),
+            drop_internal_url=cfg.shortener.base_url,
+            drop_master_token=os.environ.get(cfg.shortener.token_env, ""),
+            model_api_key=api_key,
+            model_base_url=tier.base_url,
+            model_name=tier.model,
+            google_maps_api_key=os.environ.get(cfg.route.api_key_env, ""),
+            sandbox_image=cfg.compute.sandbox_image,
+            job_timeout_seconds=cfg.compute.job_timeout_seconds,
+            max_concurrent_jobs=cfg.compute.max_concurrent_jobs,
+            # `store.data_dir`, the SAME data-volume convention media custody
+            # uses (`_build_media_custody` below: `store.data_dir / "media"`)
+            # — not a second, unmounted absolute path. Bind-mounted at
+            # `./data:/app/data` in docker-compose.yml, so a job's workspace
+            # survives a container restart exactly as media blobs do.
+            workspace_root=cfg.store.data_dir / "compute-workspaces",
+        )
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape
     # `ReminderCaps(**cfg.reminders.model_dump())` already uses just below.
@@ -554,6 +610,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # rows `remind` wrote would sit in one while the heartbeat watched the
         # other.
         reminders=reminders,
+        # `make_artifact`'s own pair (Nora Compute spec §4): `compute_jobs` is
+        # ALWAYS the store built above, `compute_backend` is `None` whenever
+        # `[compute] enabled` is false — the tool answers `unavailable` in
+        # that case (R-5), never a silent no-op.
+        compute_backend=compute_backend, compute_jobs=compute_jobs,
         # §9's caps as the DOMAIN value. `nora.agent` may not import
         # `nora.config` (import-linter's "only app and __main__ read config"),
         # so THIS is the conversion point: `RemindersConfig`'s fields are
@@ -635,14 +696,26 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `recover` counts what it sweeps; this call site logged and counted nothing,
     # which made a crash that ate reminders invisible to every dashboard.
     await recover(store=reminders, metrics=metrics, now=datetime.now(UTC))
+    # Compute-job boot recovery, ALSO unconditional, and for the SAME reason —
+    # deliberately NOT behind `cfg.compute.enabled`. An earlier draft of this
+    # wiring put this call inside that gate; a deployment that crashes
+    # mid-delivery and then flips `[compute] enabled=false` (to disable the
+    # feature, unrelated to the crash) would leave any `FIRING` `ComputeJob`
+    # row stranded forever — exactly the failure mode reminders' own
+    # unconditional recovery above exists to prevent, silently reopened.
+    # Fixed here per a subagent review that caught it by direct comparison
+    # against `nora.app.heartbeat.recover`'s own stated reasoning.
+    await compute_poller_recover(store=compute_jobs, metrics=metrics, now=datetime.now(UTC))
     # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
     # otherwise every deployment on the shipped default (`enabled = false`)
     # exports 0.0 forever, which reads identically to "ticked a moment ago".
     publish_idle_gauge(metrics)
-    # TWO occasions need a fire turn now (DEC-97): a reminder coming due and a
-    # version nobody has been told about. `announcing` is deliberately a TWO-part
-    # gate — the operator left it on, AND the build carries a readable stamp.
-    # An unstamped build (a source checkout, or an image not built through
+    # THREE occasions need a fire turn now (DEC-97, extended by Nora Compute
+    # spec §4): a reminder coming due, a version nobody has been told about,
+    # and — added here — a compute job that has finished and needs
+    # delivering. `announcing` is deliberately a TWO-part gate — the operator
+    # left it on, AND the build carries a readable stamp. An unstamped build
+    # (a source checkout, or an image not built through
     # `scripts/build-image.sh`) constructs no announcer at all rather than
     # spawning one that would immediately answer «I can't check»: there is
     # nothing to announce, and the warning belongs at boot, once, where an
@@ -655,7 +728,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             "scripts/build-image.sh.", version_manifest.path,
         )
     fire_path: FirePath | None = None
-    if cfg.heartbeat.enabled or announcing:
+    # `or cfg.compute.enabled`: without this, a deployment that enables
+    # `[compute]` alone (heartbeat off, no version announcement) would build
+    # `compute_backend` and accept `make_artifact` slow-path jobs, but the
+    # poller below — which needs `fire_path` to deliver a finished job —
+    # would never spawn, and every such job would sit `pending` forever with
+    # no path to ever reach the group it was asked into. Caught while wiring
+    # the poller itself: this gate pre-dates Nora Compute and had no reason
+    # to anticipate a third occasion needing it.
+    if cfg.heartbeat.enabled or announcing or cfg.compute.enabled:
         # The real fire turn. It holds the SAME collaborators the tag path does
         # — one record store, one Honcho client, one runner, one tool registry —
         # because a fire turn is a turn in the same conversation and a second
@@ -732,6 +813,33 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # is the least important thing the process does. `BackgroundTasks` holds
         # the strong reference, exactly as it does for the adoption backfill.
         background.spawn(announcer.run())
+
+    # The compute-job poller (Nora Compute spec §4), matching
+    # `VersionAnnouncer`'s own wiring shape immediately above: a background
+    # loop, gated on BOTH the feature flag and a live `fire_path` (a compute
+    # job is delivered as a fire turn into the same conversation, exactly as
+    # a reminder or an announcement is). `compute_backend` is only non-`None`
+    # when `cfg.compute.enabled` is true (see its construction above), so
+    # this condition is really `cfg.compute.enabled and fire_path is not
+    # None` restated — spelled out with the third check anyway so the
+    # relationship holds even if `compute_backend`'s own gate ever moves.
+    if cfg.compute.enabled and fire_path is not None and compute_backend is not None:
+        compute_poller = ComputeJobPoller(
+            store=compute_jobs, backend=compute_backend,
+            # `speak`, NOT `run`: the same reason `VersionAnnouncer` above
+            # takes `fire_path.speak` rather than the reminder-shaped `run`.
+            speak=fire_path.speak,
+            # The SAME `slots` every other path into a conversation holds.
+            # Two would be two locks and no serialisation at all.
+            slots=slots,
+            metrics=metrics,
+            tick_seconds=cfg.compute.poll_tick_seconds,
+            clock=lambda: datetime.now(UTC),
+        )
+        # Spawned, never awaited — the same reason `heartbeat.run()`/
+        # `announcer.run()` above are: a boot must not wait on a background
+        # loop, and `BackgroundTasks` holds the strong reference.
+        background.spawn(compute_poller.run())
 
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,

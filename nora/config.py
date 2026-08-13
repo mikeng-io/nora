@@ -623,6 +623,37 @@ class HeartbeatConfig(BaseModel):
     timeout_seconds: float = 120.0
 
 
+class ComputeConfig(BaseModel):
+    """Nora Compute's background poller + backend (`nora.app.compute_poller`,
+    `nora.infra.compute.docker_backend.LocalDockerBackend`).
+
+    Optional, defaulted, and INERT by default — the `[heartbeat]` shape: a
+    config.toml written before this section existed keeps loading, and
+    `make_artifact`'s slow path answers `unavailable` until an operator turns
+    this on. UNLIKE `[heartbeat]`, the composition root builds the
+    `ComputeJobStore` unconditionally regardless of `enabled` (mirroring the
+    reason `nora.app.composition` already gives for `reminders`): the slow
+    path needs somewhere to persist a job whether or not the poller that
+    delivers it is running, and a stranded `FIRING` row must be swept at boot
+    whether or not the feature is currently switched on — only the poller's
+    own tick loop is gated on `enabled`.
+
+    `sandbox_image`/`job_timeout_seconds`/`max_concurrent_jobs` are
+    `LocalDockerBackend`'s own construction knobs (Nora Compute spec §2/§3).
+    `poll_tick_seconds` is `ComputeJobPoller`'s wake interval — the same
+    "best case for lateness, not an upper bound" shape `[heartbeat]
+    .tick_seconds`'s own docstring describes.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    sandbox_image: str = "smith:latest"
+    job_timeout_seconds: int = 300
+    max_concurrent_jobs: int = 2
+    poll_tick_seconds: float = 10.0
+
+
 class VersionConfig(BaseModel):
     """The startup upgrade note (DEC-97, `nora.app.announce`).
 
@@ -890,6 +921,10 @@ class Config(BaseModel):
     # be created, whether or not anything is firing them.
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     reminders: RemindersConfig = RemindersConfig()
+    # Optional and defaulted — see `ComputeConfig`. Ships INERT
+    # (`enabled = false`); the `ComputeJobStore` is built unconditionally
+    # regardless (the `reminders` shape), only the poller's tick loop is gated.
+    compute: ComputeConfig = ComputeConfig()
     # Optional and defaulted — see `VersionConfig` for why this one defaults ON
     # where every other optional capability defaults off.
     version: VersionConfig = VersionConfig()
