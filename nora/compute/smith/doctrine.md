@@ -45,10 +45,24 @@ Prefer a named skill over raw code whenever one fits:
   makes. (The referrer-restricted key below is for the separate, allowlisted
   live JavaScript API case, where the request genuinely does come from a
   browser.)
+- **Places needing a map, from an address rather than a coordinate** --
+  `geocode_address(address=...)` first, then pass the result into
+  `render_map`. `context.json` (below) is where a place's name/address
+  usually comes from; you resolve its coordinate yourself — Nora never sends
+  you one.
 - **Putting it together** -- `render_html_report(title=..., sections=[...])`,
   called LAST, once, with every rendered fragment.
 - **Anything that doesn't fit a skill** -- `run_python`, the escape hatch.
   Prefer a skill whenever one applies; reach for raw code only when none does.
+
+## Your input
+
+`/workspace/task.txt` is the brief. If Nora gathered facts relevant to this
+task — a place's rating, a route's duration — they are appended to the same
+prompt as `context.json`'s own JSON, clearly marked. Treat it as VERIFIED
+ground truth: build from it directly, never re-derive or guess at a fact it
+already gives you. Empty (`[]`) means nothing was gathered; work from
+`task.txt` alone.
 
 ## Color
 

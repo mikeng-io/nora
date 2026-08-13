@@ -22,6 +22,7 @@ from strands import Agent, tool
 from strands.models.openai import OpenAIModel
 
 from budget import ToolCallBudget, guarded
+from skills.geocode.render import geocode_address as _geocode_address
 from skills.html_report.render import render_html_report as _render_html_report
 from skills.maps.render import render_map as _render_map
 from skills.markdown.render import render_markdown as _render_markdown
@@ -155,6 +156,16 @@ def render_map(*, locations: list[tuple[float, float]], title: str = "") -> str:
 
 @tool
 @guarded(_budget)
+def geocode_address(address: str) -> tuple[float, float]:
+    """Resolve a place's own address to a (lat, lng) coordinate — call this
+    before render_map when context.json gives you a name/address but no
+    coordinate. Raises GeocodeError if the address cannot be resolved; catch
+    it and drop that marker or describe the place in prose instead."""
+    return _geocode_address(address=address)
+
+
+@tool
+@guarded(_budget)
 def render_html_report(
     *, title: str, sections: list[str], accent: str | None = None
 ) -> str:
@@ -178,6 +189,20 @@ def main() -> None:
 
     task_file = Path(os.environ["TASK_FILE"])
     task = task_file.read_text()
+    # Nora's already-typed tool results (context-channel spec §4), delivered
+    # as a SEPARATE file so a model copying JSON fields into its own JSON
+    # array is a literal task, not the lossy prose-compression step that
+    # motivated this channel in the first place. `[]` (no context given) adds
+    # nothing to the prompt — an empty block would just be noise the model
+    # has to notice is empty.
+    context_path = WORKSPACE / "context.json"
+    context_json = context_path.read_text() if context_path.exists() else "[]"
+    if context_json.strip() not in ("", "[]"):
+        task = (
+            f"{task}\n\n---\nSupporting data already gathered (context.json) — "
+            f"use it directly, never re-derive or guess a fact it already "
+            f"gives you:\n{context_json}"
+        )
     doctrine = Path(__file__).parent.joinpath("doctrine.md").read_text()
 
     # Without this, Smith has NO way to call an LLM at all — a real gap an
@@ -200,7 +225,7 @@ def main() -> None:
         system_prompt=doctrine,
         tools=[
             run_python, register_artifact, render_mermaid, render_markdown, render_map,
-            render_html_report,
+            render_html_report, geocode_address,
         ],
     )
     # Strands' own NATIVE per-invocation ceiling -- enforced inside the event
