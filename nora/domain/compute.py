@@ -1,0 +1,121 @@
+"""The compute-job outbox port (Nora Compute spec §2/§4). A compute job is
+NOT a deferred request repeated on a schedule (unlike `nora.domain.reminders`
+— no `Series`, no recurrence): one job, one delivery, ever.
+
+Every datetime crossing this port is UTC-aware, the same rule
+`nora.domain.reminders`'s module docstring states for `ReminderStore` — kept
+as a SEPARATE local rule/helper here rather than imported from that module,
+since the two ports are independent even though the rule is identical.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Protocol, runtime_checkable
+from uuid import UUID
+
+
+class NaiveComputeJobDatetimeError(ValueError):
+    """A datetime reached `ComputeJobStore` without a timezone."""
+
+
+def ensure_utc_job(value: datetime, *, field: str) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise NaiveComputeJobDatetimeError(
+            f"{field} must be timezone-aware; got naive {value!r}."
+        )
+    return value.astimezone(UTC)
+
+
+class ComputeJobState(StrEnum):
+    PENDING = "pending"
+    FIRING = "firing"
+    DONE = "done"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class ComputeJob:
+    """One `make_artifact` call that fell to the slow path (Nora Compute
+    spec §4) — the fast path never writes a row at all.
+
+    `backend_job_id` is `ComputeBackend.launch`'s own return value — the
+    handle `ComputeJobPoller` polls with. `artifact_id`, when set, means this
+    job is revising an existing artifact (spec §9), matching
+    `ComputeBackend.launch`'s own parameter of the same name and purpose.
+    `requester_person_id`/`platform`/`conversation_id`/`conversation_type`
+    are exactly what `compute_occasion` (nora/app/fire.py) needs to build an
+    `Occasion` once the job completes — the same four fields
+    `Occasion`/`Reminder` both already carry, for the same reason (a fire
+    turn needs one Room, one policy decision, one Deliverer binding).
+    """
+
+    id: UUID
+    backend_job_id: str
+    task: str
+    artifact_id: str | None
+    platform: str
+    conversation_id: str
+    conversation_type: str
+    requester_person_id: str
+    created_at: datetime
+    state: ComputeJobState
+    completed_at: datetime | None
+    result_url: str | None
+    result_summary: str | None
+    error: str | None
+
+
+def normalise_compute_job(job: ComputeJob) -> ComputeJob:
+    from dataclasses import replace
+
+    return replace(
+        job,
+        created_at=ensure_utc_job(job.created_at, field="created_at"),
+        completed_at=(
+            None if job.completed_at is None
+            else ensure_utc_job(job.completed_at, field="completed_at")
+        ),
+    )
+
+
+@runtime_checkable
+class ComputeJobStore(Protocol):
+    async def create(self, job: ComputeJob) -> None:
+        """Insert-only, `state` always `PENDING` at creation."""
+        ...
+
+    async def get(self, job_id: UUID) -> ComputeJob | None: ...
+
+    async def pending(self, *, limit: int) -> list[ComputeJob]:
+        """Every `PENDING` row — `ComputeJobPoller`'s own batch, polled
+        against `ComputeBackend` each tick. Unlike `ReminderStore.due()`,
+        there is no `due_at` filter: EVERY pending row is a candidate on
+        every tick, because "is it done" is a poll, not a clock comparison.
+        """
+        ...
+
+    async def claim(self, job_id: UUID) -> bool:
+        """`PENDING -> FIRING`, compare-and-set. True iff this caller took
+        the row — the same at-most-once discipline `ReminderStore.claim`
+        exists for, without the recurrence-successor half (a compute job
+        never repeats)."""
+        ...
+
+    async def mark(
+        self, job_id: UUID, state: ComputeJobState, *,
+        completed_at: datetime | None = None, result_url: str | None = None,
+        result_summary: str | None = None, error: str | None = None,
+    ) -> bool:
+        """Terminal write for a row already claimed. True if it changed."""
+        ...
+
+    async def sweep_firing(self, *, now: datetime) -> int:
+        """Boot recovery: `FIRING` rows (a crash mid-delivery) resolve to
+        `FAILED`, never re-delivered — at-most-once, mirroring
+        `ReminderStore.sweep_firing`. Returns how many."""
+        ...
+
+    async def aclose(self) -> None: ...
