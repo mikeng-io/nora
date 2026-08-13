@@ -334,7 +334,14 @@ encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 # Cantonese (嘅/同/咗) rather than the stiff register gemma reached for. Others
 # probed and rejected: qwen3.5:397b (400, image length), kimi-k3 (402, extra
 # usage), glm-5.2 / nemotron-3-super / mistral-large-3 (404, no credentials).
-vision_model = "ollamacloud/minimax-m3"
+#
+# ollamacloud/minimax-m3 → opencode-go/mimo-v2.5 (2026-08-13, operator). Moved
+# back now that the opencode-go usage limit above is no longer live — matches
+# nora/config.py's own code default and the catalog's full-capability entry
+# (vision:true, 1M context, 128K max output). If opencode-go 401s again, the
+# minimax-m3 measurement above is the fallback already proven to work, not a
+# fresh probe.
+vision_model = "opencode-go/mimo-v2.5"
 vision_max_tokens = 1024
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608
@@ -499,7 +506,7 @@ budget = 5
 # (docker-compose.yml mounts it, with the argument for that beside the mount)
 # and lets an LLM-authored program run on this box. That is an operator
 # decision every time, never something a missing section decides.
-enabled = false
+enabled = true
 # Turning `enabled` on ALSO requires four host-injected values, and Nora
 # REFUSES TO START without any of them rather than accepting every job and
 # failing it minutes later in front of the group:
