@@ -285,6 +285,16 @@ class LocalDockerBackend:
             self._sandbox_image,
             detach=True,
             network="nora-compute",
+            # Launched ad-hoc via docker.from_env(), never through Compose --
+            # so it does NOT inherit the `extra_hosts: ["host.docker.internal:
+            # host-gateway"]` docker-compose.yml gives Nora's own container.
+            # Without this, `SMITH_MODEL_BASE_URL`/the OTLP endpoint (both
+            # `http://host.docker.internal:...`) fail to resolve at all --
+            # confirmed live: the first real job crashed with
+            # openai.APIConnectionError before producing any output. Same
+            # target Compose's own entry names, added explicitly here since
+            # this container was never subject to Compose's own config.
+            extra_hosts={"host.docker.internal": "host-gateway"},
             volumes={str(host_workspace): {"bind": "/workspace", "mode": "rw"}},
             environment={
                 "DROP_JOB_TOKEN": token,
