@@ -4,7 +4,7 @@ title: "Nora Compute — the context channel: how research reaches Smith"
 description: "make_artifact gains a context parameter carrying Nora's already-typed tool results (place/route facts) to Smith as a separate file, not flattened prose — place coordinates resolved Smith-side from the address Nora already relays, never widening what reaches Nora's own model context. Draws the place-vs-person trust boundary, corrects a wrong assumption about register_artifact's egress path, and adds hash-based provenance for the payload."
 tags: [nora, spec, compute, smith, make_artifact, trust-boundary, provenance]
 timestamp: '2026-08-13'
-status: proposed
+status: accepted
 derives_from:
   - docs/superpowers/specs/2026-08-12-nora-compute-design.md
   - design/09-decision-index.md
