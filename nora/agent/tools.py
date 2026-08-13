@@ -1051,6 +1051,32 @@ def _looks_like_coordinate(text: str) -> bool:
     return _COORD_RE.search(text) is not None
 
 
+# `where_is`'s own last-resort fallback shape (`nora/agent/whereis.py:538-541`)
+# is `{"lat": fix.lat, "lng": fix.lng}` — a STRUCTURED coordinate, not a string
+# one, so `_looks_like_coordinate` (which only ever sees a string) never sees
+# it and a model that copies that dict whole into `context` sails past it.
+_LAT_KEYS = {"lat", "latitude"}
+_LNG_KEYS = {"lng", "longitude"}
+
+
+def _looks_like_coordinate_pair(value: dict) -> bool:
+    """Whether a dict IS a coordinate pair, keyed the same way `where_is`'s own
+    fallback is. Both a lat-shaped key and a lng-shaped key must be present,
+    and both values must be genuinely numeric (`bool` excluded — it is an
+    `int` subclass in Python, and `True`/`False` are never a coordinate) —
+    matching on the key names alone would also catch `{"lat": "unknown"}`,
+    which carries no coordinate at all."""
+    keys = {str(k).casefold() for k in value}
+    if not (keys & _LAT_KEYS and keys & _LNG_KEYS):
+        return False
+    for k, v in value.items():
+        if str(k).casefold() in _LAT_KEYS | _LNG_KEYS and (
+            isinstance(v, bool) or not isinstance(v, int | float)
+        ):
+            return False
+    return True
+
+
 def _context_leak(
     value: Any, *, person_names: frozenset[str], place_names: frozenset[str],
 ) -> str | None:
@@ -1074,6 +1100,8 @@ def _context_leak(
             return "person"
         return None
     if isinstance(value, dict):
+        if _looks_like_coordinate_pair(value):
+            return "coordinate"
         # Keys too, not just values — a model tabulating "who go where" as
         # `{"Tyler Cortez": "25 min via MTR"}` is a plausible shape a values-
         # only walk would wave straight through.
@@ -3089,6 +3117,26 @@ def build_tool_specs(
                     room=room, circles=presence_circles, presence=presence_source,
                     location_trusted=location_trusted,
                 )
+                # `None` is the FOURTH answer `resolvable_places` can give
+                # (`nora/agent/whereis.py:169-174`) and it is NOT `()`: `()`
+                # means the read succeeded and there is nothing to screen
+                # against (a degraded/non-subset room), while `None` means
+                # the read itself failed — an unreachable presence store. An
+                # `if saved:` here would treat both the same and silently
+                # disarm this half of the screen exactly when it cannot be
+                # trusted to have caught anything. A failed read must refuse
+                # the call, the same as a real hit — there is no way to know
+                # whether a saved place name is buried in this context, so
+                # proceeding would be a guess, not a check (R-27: an ERROR is
+                # never a PASS).
+                if saved is None:
+                    _record(metrics, "make_artifact", "refused", reason="presence_unavailable")
+                    return {
+                        "status": "refused",
+                        "note": "I can't check your saved places right now, so I "
+                                "can't safely attach that context. Try again in a "
+                                "moment.",
+                    }
                 if saved:
                     # `_key`, NOT the raw `.name` — `_names_a_person` casefolds
                     # only its HAYSTACK argument (the text being screened), so

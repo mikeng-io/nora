@@ -885,6 +885,26 @@ async def test_a_context_entry_with_a_raw_coordinate_is_refused_before_launch():
     assert backend.launched == []
 
 
+async def test_a_context_entry_with_a_structured_coordinate_dict_is_refused_before_launch():
+    """`where_is`'s own documented last-resort fallback (`nora/agent/whereis.py:
+    538-541`) is exactly `{"lat": fix.lat, "lng": fix.lng}` — a shape the model
+    can hold in hand and might copy whole into `context`. `_looks_like_coordinate`
+    only ever sees a STRING, so without a dedicated check on the dict shape
+    itself this sails straight past the string-only screen — `make_artifact`'s
+    own docstring already promises a coordinate is refused, and this is the
+    fix-up-review test proving that promise holds for the structured shape too,
+    not just the comma-joined string one."""
+    backend = FakeComputeBackend()
+    tools = _tools(compute_backend=backend)
+
+    result = await tools["make_artifact"](
+        task="map it", context=[{"lat": 22.4106, "lng": 114.1245}],
+    )
+
+    assert result["status"] == "refused"
+    assert backend.launched == []
+
+
 async def test_a_context_entry_naming_a_person_is_refused_before_launch():
     """R-44: the same substring screen `route`'s own `origin`/`destination`
     carry — `persons` here is `_FakePersons(MILES, TYLER)`, `_tools()`'s
@@ -963,6 +983,33 @@ async def test_a_context_entry_naming_a_saved_place_is_refused_before_launch(mon
     assert result["status"] == "refused"
 
 
+async def test_a_failed_saved_place_read_refuses_rather_than_falling_open(monkeypatch):
+    """The fix-up-review Critical: `resolvable_places` returning `None` is NOT
+    the same as `()` (`nora/agent/whereis.py:169-174`) — `None` means the read
+    ITSELF failed (an unreachable presence store), while `()` means the read
+    succeeded and there is genuinely nothing to screen against. An
+    `if saved:` check treats both alike and would silently disarm this half
+    of the screen exactly when the code cannot vouch for it having caught
+    anything — this asserts the call refuses instead of quietly proceeding
+    unscreened."""
+    backend = FakeComputeBackend()
+
+    async def _fake_resolvable_places(**kwargs):
+        return None
+
+    monkeypatch.setattr(tools_module, "resolvable_places", _fake_resolvable_places)
+    tools = _tools(
+        compute_backend=backend, presence_source=object(), presence_circles=(object(),),
+    )
+
+    result = await tools["make_artifact"](
+        task="report it", context=[{"detail": "picked up from Miles Home"}],
+    )
+
+    assert result["status"] == "refused"
+    assert backend.launched == []
+
+
 async def test_clean_context_reaches_the_backend_unblocked():
     backend = FakeComputeBackend()
     jobs = FakeComputeJobStore()
@@ -1008,19 +1055,51 @@ def test_an_uppercase_saved_place_name_is_still_caught_by_the_leak_screen():
     assert hit == "person"
 
 
-def test_a_short_saved_place_name_is_never_included_in_the_screen():
+async def test_a_short_saved_place_name_is_never_included_in_the_screen(monkeypatch):
     """The SAME `len(key) >= 2` floor `_known_names` itself applies
-    (`tools.py:1013-1021`) — asserted directly on the filtering `make_artifact`
-    applies when it builds `place_names` from `resolvable_places()`'s result
-    (Step 3, below), not on `_context_leak`: a 1-char needle let through would
-    trivially match almost any haystack, so the floor has to stop it from
-    ever reaching the set in the first place."""
-    names = ["a", "Miles Home"]
-    filtered = frozenset(
-        tools_module._key(name) for name in names if len(tools_module._key(name)) >= 2
+    (`tools.py:1013-1021`), exercised through `make_artifact` itself rather
+    than a local reimplementation of the filter expression — the fix-up-
+    review Important: a test that recomputes `len(_key(name)) >= 2` and
+    asserts on ITS OWN computation stays green even if the real guard is
+    deleted from `tools.py`, which is decorative by CLAUDE.md's own rule.
+
+    Two saved places are wired: `"a"` (1 char, must be filtered OUT before it
+    ever reaches `place_names`) and `"Miles Home"` (ordinary, must be screened
+    normally). A context entry that merely contains the letter "a" somewhere
+    proves the 1-char name never entered the screen — a 1-char needle would
+    otherwise match almost any haystack and refuse everything. A sibling
+    positive control in the same test proves the ordinary name is still
+    caught, so the fix is verified from both directions at once."""
+    from nora.domain.presence import SavedPlace
+
+    short_place = SavedPlace(
+        circle_id="c1", place_id="p-short", name="a", lat=22.3, lng=114.2, updated_ms=0,
     )
-    assert tools_module._key("a") not in filtered
-    assert tools_module._key("Miles Home") in filtered
+    ordinary_place = SavedPlace(
+        circle_id="c1", place_id="p-ord", name="Miles Home",
+        lat=22.3, lng=114.2, updated_ms=0,
+    )
+
+    async def _fake_resolvable_places(**kwargs):
+        return (short_place, ordinary_place)
+
+    monkeypatch.setattr(tools_module, "resolvable_places", _fake_resolvable_places)
+    backend = FakeComputeBackend()
+    jobs = FakeComputeJobStore()
+    tools = _tools(
+        compute_backend=backend, compute_jobs=jobs,
+        presence_source=object(), presence_circles=(object(),),
+    )
+
+    unrelated = await tools["make_artifact"](
+        task="report it", context=[{"detail": "just a normal report"}],
+    )
+    assert unrelated["status"] == "ok"
+
+    named = await tools["make_artifact"](
+        task="report it", context=[{"detail": "picked up from Miles Home"}],
+    )
+    assert named["status"] == "refused"
 
 
 async def test_make_artifact_unavailable_when_compute_backend_not_configured():
