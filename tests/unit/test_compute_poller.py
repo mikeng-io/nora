@@ -45,6 +45,7 @@ def _pending_job(**overrides):
         "conversation_type": "group", "requester_person_id": "person-1",
         "created_at": datetime.now(UTC), "state": ComputeJobState.PENDING,
         "completed_at": None, "result_url": None, "result_summary": None, "error": None,
+        "task_sha256": "hash-task", "context_sha256": "hash-context",
     }   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
     defaults.update(overrides)
     return ComputeJob(**defaults)

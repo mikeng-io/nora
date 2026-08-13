@@ -698,6 +698,7 @@ def _compute_job(**kw: object) -> ComputeJob:
         "conversation_type": "group", "requester_person_id": "miles",
         "created_at": T0, "state": ComputeJobState.PENDING, "completed_at": None,
         "result_url": None, "result_summary": None, "error": None,
+        "task_sha256": "hash-task", "context_sha256": "hash-context",
     }   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
     base.update(kw)
     return ComputeJob(**base)                                   # type: ignore[arg-type]

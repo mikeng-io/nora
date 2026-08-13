@@ -32,6 +32,7 @@ def _row_to_job(r: Row[Any]) -> ComputeJob:
             created_at=r.created_at, state=ComputeJobState(r.state),
             completed_at=r.completed_at, result_url=r.result_url,
             result_summary=r.result_summary, error=r.error,
+            task_sha256=r.task_sha256, context_sha256=r.context_sha256,
         )
     )
 
@@ -51,6 +52,7 @@ class SqlComputeJobStore:
             conversation_type=row.conversation_type,
             requester_person_id=row.requester_person_id,
             created_at=row.created_at, state=row.state.value,
+            task_sha256=row.task_sha256, context_sha256=row.context_sha256,
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)

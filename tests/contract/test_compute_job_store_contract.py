@@ -25,6 +25,7 @@ def _job(**overrides):
         "conversation_type": "group", "requester_person_id": "person-1",
         "created_at": datetime.now(UTC), "state": ComputeJobState.PENDING,
         "completed_at": None, "result_url": None, "result_summary": None, "error": None,
+        "task_sha256": "hash-task", "context_sha256": "hash-context",
     }
     defaults.update(overrides)
     return ComputeJob(**defaults)
@@ -48,6 +49,15 @@ async def test_create_then_get_round_trips(store):
     fetched = await store.get(job.id)
     assert fetched is not None
     assert fetched.backend_job_id == "job_x"
+
+
+async def test_the_provenance_hashes_round_trip(store):
+    job = _job(task_sha256="a" * 64, context_sha256="b" * 64)
+    await store.create(job)
+    fetched = await store.get(job.id)
+    assert fetched is not None
+    assert fetched.task_sha256 == "a" * 64
+    assert fetched.context_sha256 == "b" * 64
 
 
 async def test_pending_returns_only_pending_rows(store):

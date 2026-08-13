@@ -432,6 +432,7 @@ async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cf
         conversation_type="group", requester_person_id="miles",
         created_at=now - timedelta(hours=1), state=ComputeJobState.FIRING,
         completed_at=None, result_url=None, result_summary=None, error=None,
+        task_sha256="hash-task", context_sha256="hash-context",
     ))
     await store.aclose()
 

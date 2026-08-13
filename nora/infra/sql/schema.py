@@ -397,6 +397,8 @@ COMPUTE_JOBS = sa.Table(
     sa.Column("result_url", sa.Text, nullable=True),
     sa.Column("result_summary", sa.Text, nullable=True),
     sa.Column("error", sa.Text, nullable=True),
+    sa.Column("task_sha256", sa.Text, nullable=False, server_default=""),
+    sa.Column("context_sha256", sa.Text, nullable=False, server_default=""),
     sa.CheckConstraint(
         "state IN ('pending', 'firing', 'done', 'failed')",
         name="ck_compute_jobs_state",
