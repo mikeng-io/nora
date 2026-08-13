@@ -198,8 +198,10 @@ def test_both_implementations_are_compute_backends(tmp_path: Path):
 
 
 @pytest.mark.parametrize("impl", [FakeComputeBackend, LocalDockerBackend])
-@pytest.mark.parametrize(("method", "params"), [("launch", ("task", "artifact_id")),
-                                                ("poll", ("job_id",))])
+@pytest.mark.parametrize(("method", "params"), [
+    ("launch", ("task", "artifact_id", "context")),
+    ("poll", ("job_id",)),
+])
 def test_port_methods_are_keyword_only_after_self(impl, method, params):
     """The convention `tests/test_ports.py` pins for every port method, held by
     both implementations — a positional parameter on one of them is a breaking

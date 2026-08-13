@@ -20,6 +20,7 @@ the first barrier cannot see).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from pathlib import Path
@@ -149,7 +150,7 @@ class LocalDockerBackend:
     ) -> str:
         job_id = f"job_{uuid.uuid4().hex}"
         self._tasks[job_id] = asyncio.ensure_future(
-            self._run_job(job_id=job_id, task=task, artifact_id=artifact_id)
+            self._run_job(job_id=job_id, task=task, artifact_id=artifact_id, context=context)
         )
         return job_id
 
@@ -175,6 +176,7 @@ class LocalDockerBackend:
 
     async def _run_job(
         self, *, job_id: str, task: str, artifact_id: str | None,
+        context: list[dict[str, Any]] | None,
     ) -> JobResult:
         """The port's "NEVER raises" contract (`ComputeBackend`'s docstring:
         a backend that cannot even start a job "reports that as a `poll`
@@ -189,13 +191,16 @@ class LocalDockerBackend:
         `_read_result` all sat outside the only try/except in the method.
         """
         try:
-            return await self._execute_job(job_id=job_id, task=task, artifact_id=artifact_id)
+            return await self._execute_job(
+                job_id=job_id, task=task, artifact_id=artifact_id, context=context,
+            )
         except Exception as exc:  # a raise out of poll breaks the port
             log.exception("compute job %s failed before it could report a result", job_id)
             return JobResult(status=JobStatus.FAILED, error=_unexpected(exc))
 
     async def _execute_job(
         self, *, job_id: str, task: str, artifact_id: str | None,
+        context: list[dict[str, Any]] | None,
     ) -> JobResult:
         async with self._semaphore:
             try:
@@ -207,6 +212,10 @@ class LocalDockerBackend:
             workspace = self._workspace_root / job_id
             workspace.mkdir(parents=True, exist_ok=True)
             (workspace / "task.txt").write_text(task)
+            # A second file, never folded into `task`'s prose (context-channel
+            # spec §4) — `[]` when nothing was given, so Smith's own reader
+            # never needs an `exists()` branch for the common "no context" case.
+            (workspace / "context.json").write_text(json.dumps(context or []))
 
             exit_code: Any = None
             try:

@@ -44,6 +44,7 @@ Deviations from the task brief's literal Step-1 listing, and why (see also
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -322,6 +323,33 @@ async def test_the_bind_source_is_the_host_path_not_this_process_path(
     assert kwargs["volumes"][str(host_root / job_id)]["bind"] == "/workspace"
     # ... while this process still wrote the brief where IT can see it.
     assert (container_root / job_id / "task.txt").read_text() == "write a haiku"
+
+
+async def test_context_is_written_to_the_workspace_as_json(
+    backend, docker_client, tmp_path: Path,
+):
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(
+            task="chart the rainfall",
+            context=[{"kind": "place", "name": "Yoho Mall", "rating": 4.2}],
+        )
+        await _poll_until_done(backend, job_id=job_id)
+    written = json.loads(
+        (backend._workspace_root / job_id / "context.json").read_text()
+    )
+    assert written == [{"kind": "place", "name": "Yoho Mall", "rating": 4.2}]
+
+
+async def test_no_context_writes_an_empty_json_list(backend, docker_client):
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="write a haiku")
+        await _poll_until_done(backend, job_id=job_id)
+    written = json.loads(
+        (backend._workspace_root / job_id / "context.json").read_text()
+    )
+    assert written == []
 
 
 async def test_a_third_job_waits_for_the_concurrency_semaphore(backend, docker_client):
