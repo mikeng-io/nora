@@ -32,8 +32,10 @@ from nora.agent import tools as tools_module
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import ConversationTarget, PersonRef
+from nora.domain.ports import JobResult, JobStatus
 from nora.domain.reminders import Recurrence, Reminder, ReminderCaps, ReminderState
 from nora.obs.metrics import Metrics
+from nora.testing import FakeComputeBackend, FakeComputeJobStore
 from nora.testing.reminders import FakeReminderStore
 from tests.fakes import FakeHoncho, SinkSender
 
@@ -89,13 +91,19 @@ def _tools(
     metrics: Metrics | None = None,
     conversation_id: str = CONVERSATION,
     persons: _FakePersons | None = None,
+    compute_backend=None,
+    compute_jobs=None,
 ) -> dict:
     """Every native tool, closed over one turn — keyed by name.
 
     `reminders=None` is a real production state (no store wired), not a test
-    shortcut: it is what `remind` must answer `unavailable` for.
+    shortcut: it is what `remind` must answer `unavailable` for. `compute_backend`/
+    `compute_jobs` default the same honest way, for `make_artifact`.
     """
-    registry = ToolRegistry(reminders=reminders, reminder_caps=caps, clock=clock)
+    registry = ToolRegistry(
+        reminders=reminders, reminder_caps=caps, clock=clock,
+        compute_backend=compute_backend, compute_jobs=compute_jobs,
+    )
     specs = registry.specs(
         store=_FakeStore(), conversation_id=conversation_id, conversation_type="group",
         persons=persons if persons is not None else _FakePersons(MILES, TYLER),
@@ -821,3 +829,91 @@ async def test_cancelling_a_repeating_reminder_ends_the_whole_series():
         uuid.UUID(created["id"]), now=T0 + timedelta(hours=3),
     ) is False
     assert await store.pending_for(CONVERSATION) == []
+
+
+# ---- make_artifact (Nora Compute spec §4, Task 5) --------------------------
+#
+# Built through the same `_tools()` helper as everything above it — the
+# wiring (registry -> build_tool_specs -> a real closure) IS what is under
+# test, the same argument this file's own module docstring makes for
+# `remind`. `compute_backend=None` (the `_tools()` default) is the honest
+# "not configured" state, exercised explicitly below.
+
+async def test_make_artifact_unavailable_when_compute_backend_not_configured():
+    """R-5: no backend wired is an honest wiring gap, not a crash and not a
+    guess."""
+    tools = _tools()
+
+    result = await tools["make_artifact"](task="write a haiku")
+
+    assert result == {"status": "unavailable"}
+
+
+async def test_make_artifact_returns_the_result_inline_when_fast():
+    """`FakeComputeBackend.launch` defaults to immediate SUCCEEDED (its own
+    docstring), so the very first poll inside the sync window already sees a
+    non-RUNNING result and the slow path never engages."""
+    backend = FakeComputeBackend()
+    jobs = FakeComputeJobStore()
+    tools = _tools(compute_backend=backend, compute_jobs=jobs)
+
+    result = await tools["make_artifact"](task="write a haiku")
+
+    assert result["status"] == "ok"
+    assert "url" in result
+    assert "summary" in result
+    assert jobs._jobs == {}  # the fast path never writes a row
+
+
+async def test_make_artifact_falls_back_to_still_working_when_slow(monkeypatch):
+    """Arrange a job that stays RUNNING past the sync poll window --
+    `FakeComputeBackend.set_result`'s `polls_before_done` (Phase 2 Task 1) --
+    and shrink the window itself so the test does not spend real wall-clock
+    seconds sleeping through it. `_SYNC_POLL_SECONDS`/`_SYNC_POLL_INTERVAL`
+    are module constants precisely so a test can monkeypatch them directly
+    rather than needing a new hook threaded through production code."""
+    monkeypatch.setattr(tools_module, "_SYNC_POLL_SECONDS", 0.03)
+    monkeypatch.setattr(tools_module, "_SYNC_POLL_INTERVAL", 0.01)
+    backend = FakeComputeBackend()
+    jobs = FakeComputeJobStore()
+    # `FakeComputeBackend`'s ids are assigned in order starting at "job_000001"
+    # -- this is the FIRST (and only) job this backend instance ever launches,
+    # so it is deterministic to arrange before `make_artifact` calls `launch`.
+    backend.set_result(
+        job_id="job_000001",
+        result=JobResult(status=JobStatus.SUCCEEDED, url="https://x/drop/1", summary="ok"),
+        polls_before_done=999,
+    )
+    tools = _tools(compute_backend=backend, compute_jobs=jobs)
+
+    result = await tools["make_artifact"](task="a long research task")
+
+    assert result == {"status": "ok", "still_working": True}
+    assert len(jobs._jobs) == 1  # a durable row was written
+    [job] = jobs._jobs.values()
+    assert job.task == "a long research task"
+    assert job.backend_job_id == "job_000001"
+    assert job.requester_person_id == MILES.person_id
+    assert job.conversation_id == CONVERSATION
+    assert job.state.value == "pending"
+
+
+async def test_make_artifact_unavailable_when_slow_and_no_tagger(monkeypatch):
+    """Mirrors `remind`'s own unmapped-sender refusal: with nobody to deliver
+    the eventual result TO, writing a durable row would be a job with nowhere
+    to land, so this degrades to `unavailable` instead."""
+    monkeypatch.setattr(tools_module, "_SYNC_POLL_SECONDS", 0.03)
+    monkeypatch.setattr(tools_module, "_SYNC_POLL_INTERVAL", 0.01)
+    backend = FakeComputeBackend()
+    jobs = FakeComputeJobStore()
+    backend.set_result(
+        job_id="job_000001",
+        result=JobResult(status=JobStatus.SUCCEEDED, url="https://x/drop/1", summary="ok"),
+        polls_before_done=999,
+    )
+    tools = _tools(compute_backend=backend, compute_jobs=jobs, tagger=None)
+
+    result = await tools["make_artifact"](task="a long research task")
+
+    assert result == {"status": "unavailable"}
+    assert jobs._jobs == {}
