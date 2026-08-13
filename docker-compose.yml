@@ -104,6 +104,18 @@ services:
     # joins removed 2026-08-08, DEC-73 — web_search is Tavily, a public API.)
     networks: [nora]
     extra_hosts: ["host.docker.internal:host-gateway"]
+    # The Docker-socket bind mount below is necessary but not sufficient: the
+    # `nora` user (uid/gid 1000, this repo's own Dockerfile) is not a member of
+    # the HOST's `docker` group that owns the socket (`srw-rw---- root:docker`),
+    # so `docker.from_env()` fails with a bare PermissionError(13), not a
+    # docker-specific error. `group_add` puts the container process in that
+    # group by GID (Linux group membership is by number, not name, across the
+    # container/host boundary — there is no `docker` group inside the image at
+    # all). DOCKER_GID MUST match `getent group docker` on THIS host — it is
+    # not portable across hosts/distros, hence env-injected with this host's
+    # own value as the default rather than hardcoded with no override. Only
+    # load-bearing once `[compute] enabled = true`.
+    group_add: ["${DOCKER_GID:-973}"]
     # :9100 on loopback so deploy/watchdog.sh (host) still reads /health; the
     # in-container healthcheck below hits the container's own 127.0.0.1:9100.
     ports: ["127.0.0.1:9100:9100"]
