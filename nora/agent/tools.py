@@ -45,6 +45,7 @@ each tool is declared to cost can never drift apart (DEC-10).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -53,6 +54,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
+from typing import Any
 
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from ..domain.media import HANDLE_CHARS, GifCandidate
@@ -1047,6 +1049,49 @@ def _looks_like_coordinate(text: str) -> bool:
     2026-08-07). Range is NOT checked: an out-of-range pair is still a leaked
     coordinate, and blocking it too is the safe direction."""
     return _COORD_RE.search(text) is not None
+
+
+def _context_leak(
+    value: Any, *, person_names: frozenset[str], place_names: frozenset[str],
+) -> str | None:
+    """Recurse through one `context` entry's own value tree (context-channel
+    spec §3.2, R-44), screening every string LEAF the same way `route`/
+    `place_info` screen their own arguments — `context` is schema-light by
+    design (spec §4), so a leak can sit at any depth a caller happened to
+    nest a route's transit steps or a place's own fields at. Returns the
+    kind of hit found, or None. `place_names` is checked through the SAME
+    `_names_a_person` substring match `person_names` uses — a saved place's
+    own name is R-35/DEC-60 subset-gated data with no subset check on this
+    channel, so it is screened exactly like a person's name, not merely
+    logged."""
+    if isinstance(value, str):
+        kind = scan_identifiers(value)
+        if kind is not None:
+            return kind
+        if _looks_like_coordinate(value):
+            return "coordinate"
+        if _names_a_person(value, person_names) or _names_a_person(value, place_names):
+            return "person"
+        return None
+    if isinstance(value, dict):
+        # Keys too, not just values — a model tabulating "who go where" as
+        # `{"Tyler Cortez": "25 min via MTR"}` is a plausible shape a values-
+        # only walk would wave straight through.
+        for k, v in value.items():
+            hit = _context_leak(k, person_names=person_names, place_names=place_names)
+            if hit is not None:
+                return hit
+            hit = _context_leak(v, person_names=person_names, place_names=place_names)
+            if hit is not None:
+                return hit
+        return None
+    if isinstance(value, list):
+        for v in value:
+            hit = _context_leak(v, person_names=person_names, place_names=place_names)
+            if hit is not None:
+                return hit
+        return None
+    return None
 
 
 def _count_known_names(text: str, names: frozenset[str]) -> int:
@@ -3011,7 +3056,9 @@ def build_tool_specs(
         _record(metrics, "cancel_reminder", "ok")
         return {"status": "ok"}
 
-    async def make_artifact(task: str, artifact_id: str | None = None) -> dict:
+    async def make_artifact(
+        task: str, context: list[dict] | None = None, artifact_id: str | None = None,
+    ) -> dict:
         """Build or research something and hand back a link to it — a report, a
         chart, a document. Use this when someone wants a FILE, not just an
         answer in chat. Takes anywhere from seconds to minutes; you may get the
@@ -3021,12 +3068,52 @@ def build_tool_specs(
 
         Args:
             task: what to build, in your own words — a clear, self-contained
-                brief. This is ALL the compute job will see; it has no access
-                to this conversation, so include everything it needs to know.
+                brief. The compute job has no access to this conversation
+                beyond `task` and `context`, so include everything it needs
+                to know.
+            context: already-gathered facts relevant to THIS artifact — the
+                typed results of tools you already called this turn (a
+                place's rating, a route's duration), as a list of small
+                dicts. Copy the fields you already have; do not re-derive or
+                summarise them into prose first, and do not include a
+                coordinate or anyone's resolved home location — those are
+                refused. Leave unset for a task with nothing gathered.
             artifact_id: set this to REVISE an existing artifact (from a
                 previous make_artifact result) rather than creating a new one.
                 Leave unset to create something new.
         """
+        if context:
+            place_names: frozenset[str] = frozenset()
+            if presence_source is not None and presence_circles:
+                saved = await resolvable_places(
+                    room=room, circles=presence_circles, presence=presence_source,
+                    location_trusted=location_trusted,
+                )
+                if saved:
+                    # `_key`, NOT the raw `.name` — `_names_a_person` casefolds
+                    # only its HAYSTACK argument (the text being screened), so
+                    # its `names` set must arrive pre-normalized, exactly the
+                    # contract `_known_names` already holds for person names
+                    # (`_key`, `len >= 2`, both at :1013-1021). A raw "Miles
+                    # Home" here would never match a casefolded haystack, and
+                    # the whole point of this half of R-44 (spec §3.2's own
+                    # example) is that name in particular.
+                    place_names = frozenset(
+                        _key(p.name) for p in saved if len(_key(p.name)) >= 2
+                    )
+            for entry in context:
+                hit = _context_leak(
+                    entry, person_names=_route_person_names, place_names=place_names,
+                )
+                if hit is not None:
+                    _record(metrics, "make_artifact", "refused", reason=hit)
+                    return {
+                        "status": "refused",
+                        "note": "That context carries something that can't leave "
+                                "this room — an identifier, a coordinate, or "
+                                "somebody's saved place. Describe it in your own "
+                                "words instead of pasting the raw data.",
+                    }
         if compute_backend is None:
             _record(metrics, "make_artifact", "unavailable")
             return {"status": "unavailable"}
@@ -3044,7 +3131,7 @@ def build_tool_specs(
             _record(metrics, "make_artifact", "unavailable", reason="no_delivery_target")
             return {"status": "unavailable"}
 
-        job_id = await compute_backend.launch(task=task, artifact_id=artifact_id)
+        job_id = await compute_backend.launch(task=task, artifact_id=artifact_id, context=context)
         elapsed = 0.0
         while elapsed < _SYNC_POLL_SECONDS:
             result = await compute_backend.poll(job_id=job_id)
@@ -3075,7 +3162,14 @@ def build_tool_specs(
 
         # Still running past the sync window — fall to the slow path (Nora
         # Compute spec §4). The delivery binding this needs was checked before
-        # `launch`, above.
+        # `launch`, above. Provenance (context-channel spec §5): hashed HERE,
+        # not in `LocalDockerBackend`, because this closure already holds
+        # both `task` and `context` in hand, while `launch` returns only a
+        # bare `job_id` with no path back to a store.
+        task_sha256 = hashlib.sha256(task.encode("utf-8")).hexdigest()
+        context_sha256 = hashlib.sha256(
+            json.dumps(context or [], sort_keys=True).encode("utf-8")
+        ).hexdigest()
         job = ComputeJob(
             id=uuid.uuid4(), backend_job_id=job_id, task=task, artifact_id=artifact_id,
             platform=room.platform, conversation_id=bound_conversation_id,
@@ -3083,6 +3177,7 @@ def build_tool_specs(
             requester_person_id=room.tagger.person_id,
             created_at=now_fn(), state=ComputeJobState.PENDING,
             completed_at=None, result_url=None, result_summary=None, error=None,
+            task_sha256=task_sha256, context_sha256=context_sha256,
         )
         await compute_jobs.create(job)
         _record(metrics, "make_artifact", "ok", still_working=True)

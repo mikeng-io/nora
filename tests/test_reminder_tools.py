@@ -93,23 +93,30 @@ def _tools(
     persons: _FakePersons | None = None,
     compute_backend=None,
     compute_jobs=None,
+    presence_source=None,
+    presence_circles=(),
+    location_trusted: bool = False,
 ) -> dict:
     """Every native tool, closed over one turn — keyed by name.
 
     `reminders=None` is a real production state (no store wired), not a test
     shortcut: it is what `remind` must answer `unavailable` for. `compute_backend`/
     `compute_jobs` default the same honest way, for `make_artifact`.
+    `presence_source`/`presence_circles`/`location_trusted` default the same
+    honest way, for `make_artifact`'s context-channel screen (R-44) —
+    unwired, unless a test passes them explicitly.
     """
     registry = ToolRegistry(
         reminders=reminders, reminder_caps=caps, clock=clock,
         compute_backend=compute_backend, compute_jobs=compute_jobs,
+        presence=presence_source, circles=presence_circles,
     )
     specs = registry.specs(
         store=_FakeStore(), conversation_id=conversation_id, conversation_type="group",
         persons=persons if persons is not None else _FakePersons(MILES, TYLER),
         honcho=FakeHoncho(), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=_room(tagger=tagger),
-        fire_turn=fire_turn,
+        fire_turn=fire_turn, location_trusted=location_trusted,
     )
     return {spec.name: spec.call for spec in specs}
 
@@ -838,6 +845,183 @@ async def test_cancelling_a_repeating_reminder_ends_the_whole_series():
 # test, the same argument this file's own module docstring makes for
 # `remind`. `compute_backend=None` (the `_tools()` default) is the honest
 # "not configured" state, exercised explicitly below.
+
+# ---- make_artifact's context channel (context-channel spec §3.2, R-44) -----
+#
+# The screen runs BEFORE `compute_backend is None` is even checked — same
+# ordering `place_info`'s own identifier/person screen uses (it refuses
+# before checking `route_source is None` too). The three refusal tests below
+# still wire a `FakeComputeBackend` and assert `backend.launched == []`
+# (mirroring `test_make_artifact_unavailable_when_slow_and_no_tagger`'s own
+# "load-bearing... about ORDER" assertion, line 928) — proving the refusal
+# genuinely happens before `launch`, not merely that the call FAILS for some
+# other reason.
+
+async def test_a_context_entry_with_an_identifier_is_refused_before_launch():
+    """`+85291234567` — `scan_identifiers`'s E.164 pattern requires the
+    leading `+` (`nora/agent/egress.py`'s own docstring: a bare local number
+    with no `+` is explicitly the NON-matching case, so a fixture without one
+    would silently test nothing)."""
+    backend = FakeComputeBackend()
+    tools = _tools(compute_backend=backend)
+
+    result = await tools["make_artifact"](
+        task="chart it", context=[{"note": "call me at +85291234567"}],
+    )
+
+    assert result["status"] == "refused"
+    assert backend.launched == []
+
+
+async def test_a_context_entry_with_a_raw_coordinate_is_refused_before_launch():
+    backend = FakeComputeBackend()
+    tools = _tools(compute_backend=backend)
+
+    result = await tools["make_artifact"](
+        task="map it", context=[{"fix": "22.4106,114.1245"}],
+    )
+
+    assert result["status"] == "refused"
+    assert backend.launched == []
+
+
+async def test_a_context_entry_naming_a_person_is_refused_before_launch():
+    """R-44: the same substring screen `route`'s own `origin`/`destination`
+    carry — `persons` here is `_FakePersons(MILES, TYLER)`, `_tools()`'s
+    default, so "Tyler Cortez" is a real address-book name."""
+    backend = FakeComputeBackend()
+    tools = _tools(compute_backend=backend)
+
+    result = await tools["make_artifact"](
+        task="report it", context=[{"detail": "picked up from Tyler Cortez's place"}],
+    )
+
+    assert result["status"] == "refused"
+    assert backend.launched == []
+
+
+async def test_a_person_name_nested_inside_a_context_entry_is_still_caught():
+    """The screen recurses — a person's name three levels deep in a route
+    entry's own transit-step list must not slip past a shallow, top-level-
+    only check."""
+    tools = _tools()
+
+    result = await tools["make_artifact"](
+        task="report it",
+        context=[{
+            "kind": "route", "steps": [{"headsign": "towards Tyler Cortez's place"}],
+        }],
+    )
+
+    assert result["status"] == "refused"
+
+
+async def test_a_person_name_hiding_in_a_dict_key_is_still_caught():
+    """The screen must walk KEYS as well as values — a model tabulating
+    "who go where" naturally enough produces a dict keyed by name, and a
+    values-only walk would wave it straight through."""
+    tools = _tools()
+
+    result = await tools["make_artifact"](
+        task="report it", context=[{"Tyler Cortez": "25 min via MTR"}],
+    )
+
+    assert result["status"] == "refused"
+
+
+async def test_a_context_entry_naming_a_saved_place_is_refused_before_launch(monkeypatch):
+    """R-44's second half — a SAVED PLACE name, not just an address-book
+    person, must be screened (spec §3.2's own motivating example: "Miles
+    Home"). `resolvable_places` already has its own suite
+    (`tests/test_whereis.py`); this monkeypatches it rather than standing up
+    a real, non-degraded `Room`/`RosterSource` — `_tools()`'s own
+    `_FakePersons.resolve` always returns `None` by design (its docstring:
+    "the answer the degrade test wants"), so a real roster read here would
+    always come back degraded regardless of what this test wires. Patching
+    `resolvable_places` exercises exactly the NEW code this task adds — the
+    `place_names` frozenset built from its return value, and the screen
+    against it — without re-testing `resolvable_places` itself, which is not
+    this task's job.
+    """
+    from nora.domain.presence import SavedPlace
+
+    saved_place = SavedPlace(
+        circle_id="c1", place_id="p1", name="Miles Home",
+        lat=22.3, lng=114.2, updated_ms=0,
+    )
+
+    async def _fake_resolvable_places(**kwargs):
+        return (saved_place,)
+
+    monkeypatch.setattr(tools_module, "resolvable_places", _fake_resolvable_places)
+    tools = _tools(presence_source=object(), presence_circles=(object(),))
+
+    result = await tools["make_artifact"](
+        task="report it", context=[{"detail": "picked up from Miles Home"}],
+    )
+
+    assert result["status"] == "refused"
+
+
+async def test_clean_context_reaches_the_backend_unblocked():
+    backend = FakeComputeBackend()
+    jobs = FakeComputeJobStore()
+    tools = _tools(compute_backend=backend, compute_jobs=jobs)
+
+    result = await tools["make_artifact"](
+        task="chart it",
+        context=[{"kind": "place", "name": "Yoho Mall", "rating": 4.2}],
+    )
+
+    assert result["status"] == "ok"
+    assert backend.launched[-1]["context"] == [
+        {"kind": "place", "name": "Yoho Mall", "rating": 4.2}
+    ]
+
+
+async def test_no_context_is_the_default_and_is_never_screened():
+    backend = FakeComputeBackend()
+    jobs = FakeComputeJobStore()
+    tools = _tools(compute_backend=backend, compute_jobs=jobs)
+
+    result = await tools["make_artifact"](task="write a haiku")
+
+    assert result["status"] == "ok"
+    assert backend.launched[-1]["context"] is None
+
+
+# ---- _context_leak: the screening helper, tested directly (R-44) -----------
+#
+# A pure-function unit test, not routed through `make_artifact` — proves the
+# saved-place-name half is genuinely CASE-INSENSITIVE and length-guarded
+# (`_names_a_person` casefolds only its HAYSTACK argument, `tools.py:1024-
+# 1028`; `place_names` must be pre-normalized through `_key` the same way
+# `_known_names` pre-normalizes person names, `tools.py:1013-1021`, or a
+# place named with any uppercase letter — "Miles Home", spec §3.2's own
+# example — silently never matches).
+
+def test_an_uppercase_saved_place_name_is_still_caught_by_the_leak_screen():
+    place_names = frozenset({tools_module._key("Miles Home")})
+    hit = tools_module._context_leak(
+        "picked up from Miles Home", person_names=frozenset(), place_names=place_names,
+    )
+    assert hit == "person"
+
+
+def test_a_short_saved_place_name_is_never_included_in_the_screen():
+    """The SAME `len(key) >= 2` floor `_known_names` itself applies
+    (`tools.py:1013-1021`) — asserted directly on the filtering `make_artifact`
+    applies when it builds `place_names` from `resolvable_places()`'s result
+    (Step 3, below), not on `_context_leak`: a 1-char needle let through would
+    trivially match almost any haystack, so the floor has to stop it from
+    ever reaching the set in the first place."""
+    names = ["a", "Miles Home"]
+    filtered = frozenset(
+        tools_module._key(name) for name in names if len(tools_module._key(name)) >= 2
+    )
+    assert tools_module._key("a") not in filtered
+    assert tools_module._key("Miles Home") in filtered
+
 
 async def test_make_artifact_unavailable_when_compute_backend_not_configured():
     """R-5: no backend wired is an honest wiring gap, not a crash and not a
