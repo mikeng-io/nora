@@ -35,6 +35,7 @@ defaults are not. The store was SQLite until the 2026-08-07 migration
 from __future__ import annotations
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql as pg
 
 METADATA = sa.MetaData()
 
@@ -369,4 +370,41 @@ ARTIFACTS = sa.Table(
         server_default=sa.text("now()"),
     ),
     sa.Column("expires_at", sa.BigInteger, nullable=True),
+)
+
+
+# `compute_jobs` — the Nora Compute outbox (Nora Compute spec §4, §12). One
+# row per `make_artifact` call that fell to the slow path; the fast path
+# never writes one. No recurrence columns — unlike `REMINDERS`, a compute
+# job never repeats.
+COMPUTE_JOBS = sa.Table(
+    "compute_jobs",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("backend_job_id", sa.Text, nullable=False),
+    sa.Column("task", sa.Text, nullable=False),
+    sa.Column("artifact_id", sa.Text, nullable=True),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("conversation_type", sa.Text, nullable=False),
+    sa.Column("requester_person_id", sa.Text, nullable=False),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("state", sa.Text, nullable=False, server_default="pending"),
+    sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("result_url", sa.Text, nullable=True),
+    sa.Column("result_summary", sa.Text, nullable=True),
+    sa.Column("error", sa.Text, nullable=True),
+    sa.CheckConstraint(
+        "state IN ('pending', 'firing', 'done', 'failed')",
+        name="ck_compute_jobs_state",
+    ),
+)
+
+# Declared after the table, house style. The poller's own `pending()` query
+# filters on `state` alone — matching `idx_reminders_due`'s own precedent.
+COMPUTE_JOBS_STATE_IDX = sa.Index(
+    "idx_compute_jobs_state", COMPUTE_JOBS.c.state,
 )
