@@ -44,5 +44,22 @@ async def test_launch_records_the_task_and_artifact_id():
     await backend.launch(task="revise the chart", artifact_id="art_000001")
     assert backend.launched[-1] == {
         "task": "revise the chart", "artifact_id": "art_000001",
-        "job_id": backend.launched[-1]["job_id"],
+        "context": None, "job_id": backend.launched[-1]["job_id"],
     }
+
+
+async def test_launch_records_the_context():
+    backend = FakeComputeBackend()
+    await backend.launch(
+        task="chart the rainfall",
+        context=[{"kind": "place", "name": "Yoho Mall", "rating": 4.2}],
+    )
+    assert backend.launched[-1]["context"] == [
+        {"kind": "place", "name": "Yoho Mall", "rating": 4.2}
+    ]
+
+
+async def test_launch_records_no_context_as_none_by_default():
+    backend = FakeComputeBackend()
+    await backend.launch(task="write a haiku")
+    assert backend.launched[-1]["context"] is None

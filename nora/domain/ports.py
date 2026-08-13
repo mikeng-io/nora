@@ -860,8 +860,12 @@ class ComputeBackend(Protocol):
     `LocalDockerBackend` is the only adapter this repo ships. `launch`
     returns immediately with a `job_id`; the job itself runs out-of-band.
     `task` is the caller's OWN distilled brief, never a raw conversation
-    transcript (spec §4's "interpret once" boundary) — this Protocol takes
-    only a string, so a caller cannot accidentally hand it anything richer.
+    transcript (spec §4's "interpret once" boundary). `context` is Nora's
+    own already-typed tool results (place/route facts) she chooses to hand
+    along, unmodified — never auto-collected, never required (context-channel
+    spec §4). Structured facts belong here, not folded into `task`'s prose:
+    a second, lossy prose-compression step is exactly the failure the
+    context-channel spec exists to remove.
 
     `artifact_id`, when set, means "this job revises an existing artifact"
     (spec §9) rather than creating a new one — `LocalDockerBackend` uses it
@@ -875,7 +879,10 @@ class ComputeBackend(Protocol):
     needs a try/except around a call it expects to be load-bearing.
     """
 
-    async def launch(self, *, task: str, artifact_id: str | None = None) -> str: ...
+    async def launch(
+        self, *, task: str, artifact_id: str | None = None,
+        context: list[dict[str, Any]] | None = None,
+    ) -> str: ...
 
     async def poll(self, *, job_id: str) -> JobResult: ...
 

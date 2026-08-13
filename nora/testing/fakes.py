@@ -743,9 +743,10 @@ class FakeComputeBackend:
     fast-path/slow-path branching (Nora Compute spec §4) needs to test both
     branches deterministically, without a real timer.
 
-    `launched` records every call's `task`/`artifact_id`/assigned `job_id`,
-    the same "record what was actually asked for" pattern `FakeRecordStore
-    .rows`/`FakeArtifactIngest.artifacts` already use elsewhere in this file.
+    `launched` records every call's `task`/`artifact_id`/`context`/assigned
+    `job_id`, the same "record what was actually asked for" pattern
+    `FakeRecordStore.rows`/`FakeArtifactIngest.artifacts` already use
+    elsewhere in this file.
     """
 
     def __init__(self) -> None:
@@ -754,10 +755,16 @@ class FakeComputeBackend:
         self.launched: list[dict[str, Any]] = []
         self._next_id = 1
 
-    async def launch(self, *, task: str, artifact_id: str | None = None) -> str:
+    async def launch(
+        self, *, task: str, artifact_id: str | None = None,
+        context: list[dict[str, Any]] | None = None,
+    ) -> str:
         job_id = f"job_{self._next_id:06d}"
         self._next_id += 1
-        self.launched.append({"task": task, "artifact_id": artifact_id, "job_id": job_id})
+        self.launched.append({
+            "task": task, "artifact_id": artifact_id, "context": context,
+            "job_id": job_id,
+        })
         self._results.setdefault(
             job_id,
             JobResult(

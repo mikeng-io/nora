@@ -143,7 +143,10 @@ class LocalDockerBackend:
         self._workspace_host_root = workspace_host_root
         self._tasks: dict[str, asyncio.Task[JobResult]] = {}
 
-    async def launch(self, *, task: str, artifact_id: str | None = None) -> str:
+    async def launch(
+        self, *, task: str, artifact_id: str | None = None,
+        context: list[dict[str, Any]] | None = None,
+    ) -> str:
         job_id = f"job_{uuid.uuid4().hex}"
         self._tasks[job_id] = asyncio.ensure_future(
             self._run_job(job_id=job_id, task=task, artifact_id=artifact_id)
