@@ -1,0 +1,249 @@
+"""`POST /api/artifacts` — the HTTP implementation of `ArtifactIngest.
+register`'s contract (`nora/domain/ports.py`, §7a): multipart in, `{artifact_id,
+url}` out. `nora/infra/drop.py::DropArtifactIngest` (Nora's own repo) is the
+client this shape has to match exactly — its own hermetic test suite
+(`tests/test_drop_artifact_ingest.py`) sends the same request shape this
+route parses.
+"""
+
+from __future__ import annotations
+
+from conftest import TOKEN, FakeArtifactStore
+from starlette.testclient import TestClient
+
+from artifacts import ArtifactRow
+
+
+def test_a_successful_register_returns_artifact_id_and_url(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    resp = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "My Report", "media_type": "application/pdf"},
+        files={"file": ("report.pdf", b"%PDF-1.4 fake bytes", "application/pdf")},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body) == {"artifact_id", "url"}
+    assert body["artifact_id"].startswith("art_")
+    assert body["url"].startswith("https://nora.example.net/drop/")
+
+
+def test_expires_at_is_parsed_and_forwarded(wired_apps):
+    server, _links, artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    resp = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "T", "media_type": "text/plain", "expires_at": "1786320000000"},
+        files={"file": ("t.txt", b"hi", "text/plain")},
+    )
+    assert resp.status_code == 200
+    slug = resp.json()["url"].rsplit("/", 1)[-1]
+    row = artifacts._rows[slug]
+    assert row.expires_at == 1_786_320_000_000
+
+
+def test_expires_at_absent_defaults_to_none(wired_apps):
+    server, _links, artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    resp = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"hi", "text/plain")},
+    )
+    slug = resp.json()["url"].rsplit("/", 1)[-1]
+    assert artifacts._rows[slug].expires_at is None
+
+
+def test_a_missing_token_is_403(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    resp = client.post(
+        "/api/artifacts",
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"hi", "text/plain")},
+    )
+    assert resp.status_code == 403
+
+
+def test_a_missing_file_is_400(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    resp = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "T", "media_type": "text/plain"},
+    )
+    assert resp.status_code == 400
+
+
+def test_a_missing_title_is_400(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    resp = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"media_type": "text/plain"},
+        files={"file": ("t.txt", b"hi", "text/plain")},
+    )
+    assert resp.status_code == 400
+
+
+def test_a_bad_expires_at_is_400(wired_apps):
+    server, _links, _artifacts = wired_apps
+    client = TestClient(server.internal_app)
+
+    resp = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "T", "media_type": "text/plain", "expires_at": "not-a-number"},
+        files={"file": ("t.txt", b"hi", "text/plain")},
+    )
+    assert resp.status_code == 400
+
+
+def test_an_unavailable_artifact_store_is_503(wired_apps):
+    server, _links, _artifacts = wired_apps
+    server.internal_app.state.artifacts = FakeArtifactStore(fail=True)
+    client = TestClient(server.internal_app)
+
+    resp = client.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"hi", "text/plain")},
+    )
+    assert resp.status_code == 503
+
+
+def test_the_public_render_route_serves_the_bytes_back(wired_apps):
+    """The real public render route (server.py's module docstring): register
+    via the internal listener, `GET /drop/<slug>` on the public one gets the
+    same bytes back with the stored content type."""
+    server, _links, _artifacts = wired_apps
+    internal = TestClient(server.internal_app)
+    public = TestClient(server.public_app)
+
+    minted = internal.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"the actual bytes", "text/plain")},
+    ).json()
+    slug = minted["url"].rsplit("/", 1)[-1]
+
+    resp = public.get(f"/drop/{slug}")
+    assert resp.status_code == 200
+    assert resp.content == b"the actual bytes"
+    assert resp.headers["content-type"].startswith("text/plain")
+
+
+def test_the_render_route_sets_an_inline_disposition_for_a_browser_native_type(wired_apps):
+    server, _links, _artifacts = wired_apps
+    internal = TestClient(server.internal_app)
+    public = TestClient(server.public_app)
+
+    minted = internal.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "My Report", "media_type": "application/pdf"},
+        files={"file": ("report.pdf", b"%PDF-1.4 fake bytes", "application/pdf")},
+    ).json()
+    slug = minted["url"].rsplit("/", 1)[-1]
+
+    resp = public.get(f"/drop/{slug}")
+    assert resp.status_code == 200
+    assert resp.headers["content-disposition"].startswith("inline;")
+    assert 'filename="My Report.pdf"' in resp.headers["content-disposition"]
+    assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+def test_the_render_route_sets_an_attachment_disposition_for_an_unknown_type(wired_apps):
+    server, _links, _artifacts = wired_apps
+    internal = TestClient(server.internal_app)
+    public = TestClient(server.public_app)
+
+    minted = internal.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "archive", "media_type": "application/zip"},
+        files={"file": ("a.zip", b"PK\x03\x04", "application/zip")},
+    ).json()
+    slug = minted["url"].rsplit("/", 1)[-1]
+
+    resp = public.get(f"/drop/{slug}")
+    assert resp.status_code == 200
+    assert resp.headers["content-disposition"].startswith("attachment;")
+
+
+def test_an_unknown_artifact_slug_is_404(wired_apps):
+    server, _links, _artifacts = wired_apps
+    public = TestClient(server.public_app)
+
+    resp = public.get("/drop/doesnotexist")
+    assert resp.status_code == 404
+
+
+def test_an_expired_artifact_is_410(wired_apps):
+    server, _links, artifacts = wired_apps
+    artifacts._rows["expired1"] = ArtifactRow(
+        id="art_expired", slug="expired1", title="X", media_type="text/plain",
+        size_bytes=1, expires_at=1,  # epoch ms 1 -- long past
+    )
+    artifacts._bytes["art_expired"] = b"x"
+    public = TestClient(server.public_app)
+
+    resp = public.get("/drop/expired1")
+    assert resp.status_code == 410
+
+
+def test_an_artifact_slug_under_the_redirect_prefix_is_404(wired_apps):
+    """Path-based dispatch (server.py's module docstring): `/drop/<slug>` and
+    `/i/<slug>` are disjoint prefixes on the one public host — an artifact
+    slug fetched under the redirect capability's prefix must 404 (there is
+    no matching link for it in the link store), not silently serve or
+    redirect to the artifact anyway."""
+    server, _links, _artifacts = wired_apps
+    internal = TestClient(server.internal_app)
+    public = TestClient(server.public_app)
+
+    minted = internal.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"the actual bytes", "text/plain")},
+    ).json()
+    slug = minted["url"].rsplit("/", 1)[-1]
+
+    resp = public.get(f"/i/{slug}", follow_redirects=False)
+    assert resp.status_code == 404
+
+
+def test_an_old_style_unprefixed_path_is_404(wired_apps):
+    """The retired `/d/<slug>` path (pre-cutover shape) is no longer a route
+    at all — Starlette 404s a request that matches no route, same as an
+    unknown slug under a real prefix."""
+    server, _links, _artifacts = wired_apps
+    internal = TestClient(server.internal_app)
+    public = TestClient(server.public_app)
+
+    minted = internal.post(
+        "/api/artifacts",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        data={"title": "T", "media_type": "text/plain"},
+        files={"file": ("t.txt", b"the actual bytes", "text/plain")},
+    ).json()
+    slug = minted["url"].rsplit("/", 1)[-1]
+
+    resp = public.get(f"/d/{slug}")
+    assert resp.status_code == 404

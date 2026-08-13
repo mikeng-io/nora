@@ -6,13 +6,18 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
+ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
+ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_fixes_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_places_pkey PRIMARY KEY (circle_id, place_id);
 ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
 ADD CONSTRAINT version_announcements_pkey PRIMARY KEY (version, platform, conversation_id);
 ALTER TABLE ONLY public.alembic_version
+ALTER TABLE ONLY public.artifacts
+ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.messages
 ALTER TABLE ONLY public.presence_fixes
 ALTER TABLE ONLY public.presence_places
@@ -32,6 +37,7 @@ CREATE INDEX idx_messages_is_nora ON public.messages USING btree (is_nora);
 CREATE INDEX idx_presence_member_ts ON public.presence_fixes USING btree (circle_id, person_id, ts DESC);
 CREATE INDEX idx_reminders_due ON public.reminders USING btree (state, due_at);
 CREATE TABLE public.alembic_version (
+CREATE TABLE public.artifacts (
 CREATE TABLE public.messages (
 CREATE TABLE public.presence_fixes (
 CREATE TABLE public.presence_places (
@@ -60,12 +66,15 @@ conversation_id text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 created_at text DEFAULT (now())::text NOT NULL,
+created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone NOT NULL,
 delivery_status text DEFAULT 'pending'::text NOT NULL,
 due_at timestamp with time zone NOT NULL,
+expires_at bigint
 fired_at timestamp with time zone,
 id integer NOT NULL,
 id integer NOT NULL,
+id text NOT NULL,
 id uuid NOT NULL,
 is_driving integer,
 is_nora integer DEFAULT 0 NOT NULL,
@@ -74,6 +83,7 @@ lat double precision NOT NULL,
 lng double precision NOT NULL,
 lng double precision NOT NULL,
 media_json text,
+media_type text NOT NULL,
 name text NOT NULL,
 occurrence integer DEFAULT 0 NOT NULL,
 outcome text,
@@ -97,9 +107,12 @@ sender_id text NOT NULL,
 sender_name text,
 series_anchor_at timestamp with time zone,
 series_id uuid,
+size_bytes bigint NOT NULL,
+slug text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 text text NOT NULL,
+title text NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
 updated_ms bigint NOT NULL

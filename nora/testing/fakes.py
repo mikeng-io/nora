@@ -16,16 +16,17 @@ from nora.domain.models import (
 )
 from nora.domain.ports import (
     AdapterHealth,
+    ArtifactRegistration,
     LinkPreview,
     MemoryHealth,
     Mention,
     MessageHits,
+    OutboundAttachment,
     PlatformIdentity,
     ReactionResult,
     Recollection,
     Roster,
     SendResult,
-    OutboundAttachment,
     TextStyle,
 )
 from nora.domain.utf16 import utf16_len
@@ -562,6 +563,73 @@ class FakeBlobStore:
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
             raise ValueError("blob key must be a lowercase sha256 hex digest")
         return self.blobs.get(key)
+
+
+class FakeArtifactIngest:
+    """In-memory `ArtifactIngest` (`nora.domain.ports.ArtifactIngest`).
+
+    **Bound by `tests/contract/test_artifact_ingest_contract.py`** alongside
+    `nora.infra.drop.DropArtifactIngest`, `drop`'s real HTTP-client adapter
+    (Nora Drop spec §7a) — the shared suite CLAUDE.md requires once a port
+    gains a second implementation. This fake predates that adapter (it
+    shipped first, so the Protocol's shape was exercised by SOMETHING rather
+    than declared into a vacuum); now that the real adapter exists, both are
+    held to the same contract, not just this one.
+
+    `fail` simulates `drop`'s internal listener being unreachable — the one
+    failure mode `ArtifactIngest.register` documents raising for, the same
+    role `FakeBlobStore.fail_on_put`'s disk-full switch plays for `BlobStore
+    .put`: a future Compute tool has to be testable turning this into R-27's
+    `unavailable` rather than an uncaught exception reaching the loop.
+
+    `artifacts` records what each call was actually given (not just the
+    `ArtifactRegistration` handed back), keyed by the assigned `artifact_id`,
+    so a test can assert on `title`/`media_type`/`expires_at` as well as the
+    id/url pair — the same reason `FakeRecordStore.rows` keeps the full row
+    rather than only what its own return value exposes.
+    """
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self._fail = fail
+        self._next_id = 1
+        self.artifacts: dict[str, dict[str, Any]] = {}
+
+    async def register(
+        self,
+        *,
+        data: bytes,
+        title: str,
+        media_type: str,
+        expires_at: int | None = None,
+    ) -> ArtifactRegistration:
+        if self._fail:
+            raise ConnectionError("drop unreachable")
+        artifact_id = f"art_{self._next_id:06d}"
+        self._next_id += 1
+        self.artifacts[artifact_id] = {
+            "data": data,
+            "title": title,
+            "media_type": media_type,
+            "expires_at": expires_at,
+        }
+        return ArtifactRegistration(
+            artifact_id=artifact_id,
+            # A slug-shaped stand-in, not a real drop URL — nothing decodes
+            # this string. It exists so a caller has something URL-shaped to
+            # hand `send_reply` in a test, the same spirit as
+            # `CannedSearchProvider`'s fixed `https://example.com/a`.
+            #
+            # Path-based, matching the real `drop` service's actual shape
+            # (nora.example.net/drop/<slug>) — `drop.nora.example.net` (host-based
+            # routing) was the ORIGINAL design and is no longer what ships:
+            # Cloudflare's zone-level Universal SSL only covers one subdomain
+            # level, so that two-level hostname never got a working
+            # certificate and the cutover moved to one host, path-prefixed,
+            # instead. This fake drifted out of sync with that change until
+            # caught here — a real staleness bug, not cosmetic, since a
+            # future caller could reasonably assume this shape is real.
+            url=f"https://nora.example.net/drop/{artifact_id}",
+        )
 
 
 class FakeLinkPreviewSource:

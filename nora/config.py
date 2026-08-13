@@ -386,22 +386,32 @@ class RouteConfig(BaseModel):
 
 
 class ShortenerConfig(BaseModel):
-    """Nora's own link shortener (n.example.net — a Worker+KV this repo's
-    `deploy/shortener/` Terraform owns, operator decision 2026-08-07).
+    """Nora's own link shortener — `drop`'s internal `POST /api/links`
+    (Nora Drop spec, `docs/superpowers/specs/2026-08-12-nora-drop-design.md`
+    §5, cutover 2026-08-12; the mint contract itself is unchanged from the
+    Worker it replaced, `deploy/shortener/` — same bearer-auth, same
+    `{"url"}` in / `{"slug","short_url"}` out shape — so this class did not
+    need to change, only its default `base_url` and `token_env` did).
 
     **Optional, defaulted, `enabled` False** — the `[route]` shape: off (or an
     unset token) leaves long URLs in replies, never a failure. The shortener is
     SELF-HOSTED on purpose — a third-party one would see every destination the
     group routes to — and it is never load-bearing: a mint that fails leaves
     the long URL exactly as it was. `token_env` NAMES the env var holding the
-    mint bearer token (DEC-8); the same value is the Worker's secret.
+    mint bearer token (DEC-8); the same value is `drop`'s own secret.
+
+    `base_url` points at `drop`'s INTERNAL listener (`http://drop:8081` in
+    this deployment) — the write API is deliberately unreachable from the
+    public internet (spec §5a); the public `short_url` a mint returns is
+    built server-side by `drop` from its own `DROP_PUBLIC_BASE_URL`
+    (`https://nora.example.net`), which this class never needs to know.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
-    base_url: str = "https://n.example.net"
-    token_env: str = "NORA_SHORTENER_TOKEN"  # noqa: S105 — names an env var, not a secret
+    base_url: str = "http://drop:8081"
+    token_env: str = "NORA_DROP_TOKEN"  # noqa: S105 — names an env var, not a secret
     timeout_seconds: float = Field(default=5.0, gt=0)
 
 

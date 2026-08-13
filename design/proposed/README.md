@@ -19,6 +19,7 @@ description.
 |---|---|---|
 | `14-grounding.md` | four kinds of grounding: live transit data, routing, web search, page fetch | partly measured; `transit` is next to build |
 | `15-gif-replies.md` | Giphy as a second reply verb | signal-cli attachments verified; nothing built |
+| `26-media-replies-and-signal-stickers.md` | adapter boundary for Giphy delivery and Signal sticker reading | elaboration; nothing built |
 | `16-multi-message-replies.md` | relaxing R-2 so one tag can send several messages | mechanism measured; nothing built |
 | `18-context-budget-and-handles.md` | rationing fetched content per turn; message handles | **contested** — a review argued the budget is a component where a constant would do, and that the live `limit_total_tokens` counter should be read first. Its cheap half (the `↳` snippet) shipped in `624955d`; the rest is deferred. |
 
