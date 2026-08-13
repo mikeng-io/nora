@@ -44,6 +44,7 @@ Deviations from the task brief's literal Step-1 listing, and why (see also
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import threading
 from collections.abc import Callable
@@ -350,6 +351,44 @@ async def test_no_context_writes_an_empty_json_list(backend, docker_client):
         (backend._workspace_root / job_id / "context.json").read_text()
     )
     assert written == []
+
+
+async def test_the_written_context_json_hashes_to_what_make_artifact_promises(
+    backend, docker_client,
+):
+    """`ComputeJob`'s own docstring (`nora/domain/compute.py`) promises a
+    caller can hash the on-disk `context.json` and get back `context_sha256`
+    -- the hash `nora/agent/tools.py`'s `make_artifact` closure computes as
+    `hashlib.sha256(json.dumps(context or [], sort_keys=True).encode("utf-8"))
+    .hexdigest()` BEFORE this backend ever writes a file (context-channel spec
+    §5: hashed in the closure that already holds `context` in hand, not here).
+
+    This is a genuine round trip, not two tests that each assume the other's
+    serialization: it hashes the ACTUAL BYTES this backend put on disk
+    (`.read_bytes()`, no re-parse/re-dump that could paper over a mismatch)
+    and compares against an independent computation of `make_artifact`'s own
+    formula. A dict with keys already out of alphabetical order
+    (`{"zebra": ..., "apple": ...}`) is the fixture that actually exercises
+    the parity -- Python's dict preserves insertion order, so if either side
+    dropped its `sort_keys=True`, this dict's on-disk bytes and the
+    independently-computed hash would diverge and this test would catch it;
+    an already-sorted fixture could pass with either side unsorted."""
+    context = [{"zebra": "z-place", "apple": "a-place", "kind": "route"}]
+    with aioresponses() as mocked:
+        mocked.post(f"{DROP_URL}/api/tokens", payload={"token": "scoped-token"})
+        job_id = await backend.launch(task="chart the rainfall", context=context)
+        await _poll_until_done(backend, job_id=job_id)
+
+    on_disk_bytes = (backend._workspace_root / job_id / "context.json").read_bytes()
+    on_disk_sha256 = hashlib.sha256(on_disk_bytes).hexdigest()
+
+    # `make_artifact`'s own formula (tools.py, context_sha256), computed here
+    # independently of whatever bytes the backend actually wrote.
+    context_sha256 = hashlib.sha256(
+        json.dumps(context, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    assert on_disk_sha256 == context_sha256
 
 
 async def test_a_third_job_waits_for_the_concurrency_semaphore(backend, docker_client):

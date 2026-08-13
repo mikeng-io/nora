@@ -215,7 +215,12 @@ class LocalDockerBackend:
             # A second file, never folded into `task`'s prose (context-channel
             # spec §4) — `[]` when nothing was given, so Smith's own reader
             # never needs an `exists()` branch for the common "no context" case.
-            (workspace / "context.json").write_text(json.dumps(context or []))
+            # `sort_keys=True` matches the hashing in `nora/agent/tools.py`
+            # (`context_sha256`) so the on-disk file's hash actually equals the
+            # provenance hash `ComputeJob` promises callers can verify against.
+            (workspace / "context.json").write_text(
+                json.dumps(context or [], sort_keys=True)
+            )
 
             exit_code: Any = None
             try:

@@ -1062,18 +1062,31 @@ _LNG_KEYS = {"lng", "longitude"}
 def _looks_like_coordinate_pair(value: dict) -> bool:
     """Whether a dict IS a coordinate pair, keyed the same way `where_is`'s own
     fallback is. Both a lat-shaped key and a lng-shaped key must be present,
-    and both values must be genuinely numeric (`bool` excluded — it is an
-    `int` subclass in Python, and `True`/`False` are never a coordinate) —
-    matching on the key names alone would also catch `{"lat": "unknown"}`,
-    which carries no coordinate at all."""
+    and both values must be genuinely numeric — `bool` excluded (it is an
+    `int` subclass in Python, and `True`/`False` are never a coordinate) — OR a
+    string that parses cleanly as a float, so `{"lat": "22.4106", "lng":
+    "114.1245"}` (a JSON round-trip that stringified its numbers, or a model
+    that typed the pair as text) is still caught. This widens the numeric
+    check only under a lat/lng-shaped key, not generally — matching on the key
+    names alone, with no value check at all, would also catch `{"lat":
+    "unknown"}`, which carries no coordinate at all."""
     keys = {str(k).casefold() for k in value}
     if not (keys & _LAT_KEYS and keys & _LNG_KEYS):
         return False
     for k, v in value.items():
-        if str(k).casefold() in _LAT_KEYS | _LNG_KEYS and (
-            isinstance(v, bool) or not isinstance(v, int | float)
-        ):
+        if str(k).casefold() not in _LAT_KEYS | _LNG_KEYS:
+            continue
+        if isinstance(v, bool):
             return False
+        if isinstance(v, int | float):
+            continue
+        if isinstance(v, str):
+            try:
+                float(v)
+            except ValueError:
+                return False
+            continue
+        return False
     return True
 
 
@@ -1114,6 +1127,18 @@ def _context_leak(
                 return hit
         return None
     if isinstance(value, list):
+        # KNOWN RESIDUAL, not silently absent: a bare 2-element numeric
+        # list/tuple — `[22.4106, 114.1245]` or `{"home": [22.4106, 114.1245]}`
+        # — is recursed into element-wise below, and neither lone float trips
+        # `_looks_like_coordinate_pair` (that check only fires on a dict) or
+        # `_looks_like_coordinate` (only fires on a string), so this shape is
+        # NOT caught. Deliberately not range-gated: a generic lat/lng band
+        # (-90..90, -180..180) matches almost any two small numbers, so it
+        # would false-positive on ordinary numeric pairs (a rating, a price
+        # range, a duration) far more often than it would catch a real
+        # coordinate — not worth the refusals it would cause on legitimate
+        # context. Named here so the gap is a documented choice, not a blind
+        # spot.
         for v in value:
             hit = _context_leak(v, person_names=person_names, place_names=place_names)
             if hit is not None:

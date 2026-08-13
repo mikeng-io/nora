@@ -905,6 +905,24 @@ async def test_a_context_entry_with_a_structured_coordinate_dict_is_refused_befo
     assert backend.launched == []
 
 
+async def test_a_context_entry_with_string_typed_coordinate_values_is_refused_before_launch():
+    """Final-review Finding 2: a JSON round trip (or a model that just typed
+    the pair as text) can produce `{"lat": "22.4106", "lng": "114.1245"}` --
+    same shape `where_is`'s own fallback uses, but with STRING values instead
+    of `float`. `_looks_like_coordinate_pair`'s original numeric-only check
+    (`isinstance(v, int | float)`) missed this; it now also accepts a string
+    under a lat/lng-shaped key if `float(value)` parses cleanly."""
+    backend = FakeComputeBackend()
+    tools = _tools(compute_backend=backend)
+
+    result = await tools["make_artifact"](
+        task="map it", context=[{"lat": "22.4106", "lng": "114.1245"}],
+    )
+
+    assert result["status"] == "refused"
+    assert backend.launched == []
+
+
 async def test_a_context_entry_naming_a_person_is_refused_before_launch():
     """R-44: the same substring screen `route`'s own `origin`/`destination`
     carry — `persons` here is `_FakePersons(MILES, TYLER)`, `_tools()`'s
@@ -1046,6 +1064,42 @@ async def test_no_context_is_the_default_and_is_never_screened():
 # `_known_names` pre-normalizes person names, `tools.py:1013-1021`, or a
 # place named with any uppercase letter — "Miles Home", spec §3.2's own
 # example — silently never matches).
+
+def test_a_coordinate_pair_with_string_typed_values_is_caught():
+    """Final-review Finding 2 -- `float(v)` parsing, not just `isinstance`,
+    catches `{"lat": "22.4106", "lng": "114.1245"}`."""
+    assert tools_module._looks_like_coordinate_pair(
+        {"lat": "22.4106", "lng": "114.1245"}
+    )
+
+
+def test_a_lat_key_with_a_genuinely_non_numeric_string_is_not_a_coordinate():
+    """The widened check is `float(v)` under a lat/lng-shaped key specifically
+    -- NOT "any string is fine". `{"lat": "unknown"}` (the docstring's own
+    motivating counter-example) must still come back False, matching-key-
+    names-alone was already known to be too loose before this fix, and
+    widening the value check must not accidentally remove it."""
+    assert not tools_module._looks_like_coordinate_pair(
+        {"lat": "unknown", "lng": "114.1245"}
+    )
+
+
+def test_a_bare_numeric_pair_list_is_a_documented_residual_not_caught():
+    """Final-review Finding 2's other reachable shape -- `[22.4106, 114.1245]`
+    or `{"home": [22.4106, 114.1245]}` -- is NOT caught by `_context_leak`.
+    This is intentional, not a silent gap: see the comment at the `list`
+    branch in `_context_leak` (tools.py) -- a generic lat/lng range gate
+    (-90..90, -180..180) matches almost any two small numbers, so it would
+    false-positive on ordinary numeric pairs (ratings, prices, durations) far
+    more often than it would catch a real coordinate. This test documents the
+    residual so a future change to `_context_leak` that silently starts
+    catching (or silently keeps missing) this shape has something to catch it
+    against, rather than the gap being invisible."""
+    hit = tools_module._context_leak(
+        [22.4106, 114.1245], person_names=frozenset(), place_names=frozenset(),
+    )
+    assert hit is None
+
 
 def test_an_uppercase_saved_place_name_is_still_caught_by_the_leak_screen():
     place_names = frozenset({tools_module._key("Miles Home")})

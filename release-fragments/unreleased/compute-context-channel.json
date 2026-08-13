@@ -7,6 +7,7 @@
     "Anything that would identify a person or their saved location is refused before the job ever starts, the same way a route request already refuses to reveal someone's home."
   ],
   "limitations": [
-    "What Nora hands along is her own choice each time — nothing is gathered automatically on her behalf."
+    "What Nora hands along is her own choice each time — nothing is gathered automatically on her behalf.",
+    "Only the data she hands along this way is checked for a person's identity or location. Her own written request to the builder is not screened the same way and is not covered by this."
   ]
 }
