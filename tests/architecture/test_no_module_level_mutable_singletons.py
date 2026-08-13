@@ -36,7 +36,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _production_modules() -> list[Path]:
-    return sorted((ROOT / "nora").rglob("*.py"))
+    return sorted(
+        p for p in (ROOT / "nora").rglob("*.py") if ".venv" not in p.parts
+    )
 
 
 def test_no_module_level_instantiation_of_a_locally_defined_class() -> None:

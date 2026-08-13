@@ -8,7 +8,11 @@ PKG = ROOT / "nora"
 
 
 def _python_files():
-    return [p for p in PKG.rglob("*.py") if "__pycache__" not in p.parts]
+    return [
+        p
+        for p in PKG.rglob("*.py")
+        if "__pycache__" not in p.parts and ".venv" not in p.parts
+    ]
 
 
 def test_doctrine_read_boundary():
