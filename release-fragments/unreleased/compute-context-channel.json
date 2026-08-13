@@ -1,0 +1,12 @@
+{
+  "type": "feature",
+  "summary": "When Nora already looked something up before building you a file, she can hand that along directly instead of re-typing it into a brief.",
+  "details": [
+    "A place's rating, price, or a route's travel time can ride alongside the request as its own data, so the sandboxed builder gets the real numbers rather than a paraphrase.",
+    "A map needing a coordinate for an address resolves it inside the sandbox itself, from the address already given — never by asking Nora for a raw position.",
+    "Anything that would identify a person or their saved location is refused before the job ever starts, the same way a route request already refuses to reveal someone's home."
+  ],
+  "limitations": [
+    "What Nora hands along is her own choice each time — nothing is gathered automatically on her behalf."
+  ]
+}
