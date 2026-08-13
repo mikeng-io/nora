@@ -150,7 +150,7 @@ MAX_HANDLE_CHARS = 48
 # A URL in her own text, for the preview card. Deliberately narrow: `http(s)`
 # only (a `data:`/`file:` URL is not something a preview should ever chase),
 # and stopping at whitespace or a bracket. The trailing-punctuation strip below
-# is what makes 「睇下 https://n.example.net/abc。」 yield the link and not the
+# is what makes 「睇下 https://nora.example.net/i/abc。」 yield the link and not the
 # sentence — and every character it strips leaves the result still a SUBSTRING
 # of the body, which signal-cli requires ("The same url must also appear in the
 # message body, otherwise the preview won't be displayed by the apps").

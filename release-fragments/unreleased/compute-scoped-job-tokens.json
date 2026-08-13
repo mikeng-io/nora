@@ -1,0 +1,11 @@
+{
+  "type": "feature",
+  "summary": "Drop can mint short-lived, narrowly scoped credentials so a sandboxed job writes only its own artifact.",
+  "details": [
+    "A job is handed its own token that may only create one artifact, or only revise the single artifact it was given — never Nora's own master credential, and never write access to anything else.",
+    "The token expires on its own short deadline rather than needing to be revoked afterwards."
+  ],
+  "limitations": [
+    "In use now that make_artifact is wired in: every job gets one. A job that outlives its token's deadline cannot write its result at all -- it fails rather than falling back to a wider credential."
+  ]
+}

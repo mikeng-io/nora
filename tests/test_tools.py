@@ -104,6 +104,8 @@ def test_every_declared_tool_is_built(wiring):
         "web_search",
         "weather",
         "remind", "list_reminders", "cancel_reminder",
+        # Nora Compute spec §4 (Task 5).
+        "make_artifact",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
     }

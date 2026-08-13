@@ -44,6 +44,7 @@ each tool is declared to cost can never drift apart (DEC-10).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -53,9 +54,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 
+from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from ..domain.media import HANDLE_CHARS, GifCandidate
 from ..domain.models import WeatherObservation
-from ..domain.ports import GifSource, MessageHits, Recollection
+from ..domain.ports import ComputeBackend, GifSource, JobStatus, MessageHits, Recollection
 from ..domain.reminders import (
     Recurrence,
     RecurrenceRule,
@@ -422,6 +424,10 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                     "another room's"),
     "cancel_reminder": NativeTool(2, "somebody calls one off — takes the id "
                                      "list_reminders gave you, never one you made up"),
+    "make_artifact": NativeTool(1, "someone wants you to build or research "
+                                   "something and hand back a file — a report, "
+                                   "a chart, a document — not just say it in "
+                                   "chat"),
     # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
     # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
     # and "V2 有咩" are one capability asked from two angles, and two tools would
@@ -566,6 +572,16 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 # back it wants is looking for a little more, not for the whole room.
 LOAD_TRANSCRIPT_MAX = 60
 LOAD_TRANSCRIPT_DEFAULT = 25
+
+# `make_artifact`'s sync poll window (Nora Compute spec §4): how long a call
+# waits inline for `ComputeBackend.poll` before falling to the slow path (a
+# durable `ComputeJob` row, delivered later by `ComputeJobPoller`). Module
+# constants, not `build_tool_specs` parameters, for the same reason
+# `LOAD_TRANSCRIPT_MAX` above is one: there is no per-deployment reason to
+# vary them, and a test that needs a shorter window monkeypatches these two
+# names directly rather than threading a new hook through production code.
+_SYNC_POLL_SECONDS = 15.0
+_SYNC_POLL_INTERVAL = 1.0
 
 # Honcho's dialectic reasoning levels (DialecticOptions.reasoning_level), from
 # the live schema. `ask_memory` lets the model pick; anything off-list falls back
@@ -1140,6 +1156,8 @@ def build_tool_specs(
     links: LinkCarry | None = None,
     versions=None,
     giphy_source: GifSource | None = None,
+    compute_backend: ComputeBackend | None = None,
+    compute_jobs: ComputeJobStore | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -1166,6 +1184,12 @@ def build_tool_specs(
     fact, read once, never per turn. `None` — a caller that wired none — makes
     `version` answer `unavailable`, which is the same honest wiring-gap state
     `reminders=None` gives `remind`, and never `nothing_found`.
+
+    `compute_backend`/`compute_jobs` are `make_artifact`'s own pair, wired the
+    same honest way `reminders`/`reminder_caps` are: both `None` in the
+    offline/eval compositions and any composition that has not wired Nora
+    Compute, which is exactly what makes `make_artifact` answer `unavailable`
+    (R-5) rather than crash.
     """
     caps = reminder_caps or ReminderCaps()
     now_fn = clock or utc_now
@@ -2985,6 +3009,83 @@ def build_tool_specs(
         _record(metrics, "cancel_reminder", "ok")
         return {"status": "ok"}
 
+    async def make_artifact(task: str, artifact_id: str | None = None) -> dict:
+        """Build or research something and hand back a link to it — a report, a
+        chart, a document. Use this when someone wants a FILE, not just an
+        answer in chat. Takes anywhere from seconds to minutes; you may get the
+        result back immediately, or a "still working" status if it's taking
+        longer — in that case, tell them you're working on it and the result
+        will follow as a separate message once it's ready.
+
+        Args:
+            task: what to build, in your own words — a clear, self-contained
+                brief. This is ALL the compute job will see; it has no access
+                to this conversation, so include everything it needs to know.
+            artifact_id: set this to REVISE an existing artifact (from a
+                previous make_artifact result) rather than creating a new one.
+                Leave unset to create something new.
+        """
+        if compute_backend is None:
+            _record(metrics, "make_artifact", "unavailable")
+            return {"status": "unavailable"}
+        # BEFORE `launch`, not after it. A job that outruns the sync window
+        # needs somewhere to persist and somebody to deliver to; without both,
+        # this call can only ever answer `unavailable` — so checking after
+        # launching means a container is already running for a result nobody
+        # will ever be told about, burning a concurrency slot and a Drop token
+        # until it times out. The cost of checking first is that a job which
+        # WOULD have finished inside the sync window is refused too, on a turn
+        # with no tagger — a version announcement, or a requester who has since
+        # left `identity.toml`. That is the right trade: nobody in either case
+        # is waiting on a file, and a refusal there is honest rather than lucky.
+        if compute_jobs is None or room.tagger is None:
+            _record(metrics, "make_artifact", "unavailable", reason="no_delivery_target")
+            return {"status": "unavailable"}
+
+        job_id = await compute_backend.launch(task=task, artifact_id=artifact_id)
+        elapsed = 0.0
+        while elapsed < _SYNC_POLL_SECONDS:
+            result = await compute_backend.poll(job_id=job_id)
+            if result.status is not JobStatus.RUNNING:
+                break
+            await asyncio.sleep(_SYNC_POLL_INTERVAL)
+            elapsed += _SYNC_POLL_INTERVAL
+        else:
+            result = await compute_backend.poll(job_id=job_id)
+
+        if result.status is JobStatus.SUCCEEDED:
+            _record(metrics, "make_artifact", "ok")
+            return {"status": "ok", "url": result.url, "summary": result.summary}
+        if result.status is JobStatus.FAILED:
+            # `status="failed"` on the COUNTER, `{"status": "ok", "failed":
+            # True}` in the payload, and the two disagree on purpose. The
+            # payload is R-27's answer to the MODEL — the tool did run and its
+            # answer is trustworthy, it is the job that went wrong — while the
+            # counter answers "how did this call go" for whoever is watching
+            # the series, and a failed job counted as `ok` is invisible there.
+            # `failed=True` only ever reached the log line, so `status=ok` was
+            # the whole dimension a dashboard could see. A status outside
+            # R-27's three has precedent here — `remind`, `route` and
+            # `cancel_reminder` all count `refused` — so this is a fourth
+            # value of an existing vocabulary, not a new one.
+            _record(metrics, "make_artifact", "failed")
+            return {"status": "ok", "failed": True, "error": result.error}
+
+        # Still running past the sync window — fall to the slow path (Nora
+        # Compute spec §4). The delivery binding this needs was checked before
+        # `launch`, above.
+        job = ComputeJob(
+            id=uuid.uuid4(), backend_job_id=job_id, task=task, artifact_id=artifact_id,
+            platform=room.platform, conversation_id=bound_conversation_id,
+            conversation_type=conversation_type,
+            requester_person_id=room.tagger.person_id,
+            created_at=now_fn(), state=ComputeJobState.PENDING,
+            completed_at=None, result_url=None, result_summary=None, error=None,
+        )
+        await compute_jobs.create(job)
+        _record(metrics, "make_artifact", "ok", still_working=True)
+        return {"status": "ok", "still_working": True}
+
     async def version(which: str = "") -> dict:
         """Which version of you is running, and what was in it.
 
@@ -3191,6 +3292,7 @@ def build_tool_specs(
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),
         _spec("cancel_reminder", cancel_reminder),
+        _spec("make_artifact", make_artifact),
         _spec("version", version),
         _spec("send_reply", send_reply),
         _spec("search_gifs", search_gifs),

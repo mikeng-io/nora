@@ -428,6 +428,38 @@ docker exec nora-db psql -U nora -d nora -c \
 the ledger row was deleted or the database was restored from before the
 announcement. Check `version_announcements` before looking anywhere else.
 
+## 8c. "She never came back with the file" (`make_artifact`)
+
+A compute job that outruns `make_artifact`'s inline window becomes a durable
+`compute_jobs` row, and `ComputeJobPoller` delivers it later as its own turn.
+R-5 keeps every failure of that delivery out of the room, so — exactly as with
+8b — the counter and the table are the only evidence.
+
+```bash
+curl -s localhost:9100/metrics | grep nora_compute_jobs_delivered_total
+docker exec nora-db psql -U nora -d nora -c \
+  'select id, state, created_at, completed_at, error from compute_jobs
+   order by created_at desc limit 10;'
+```
+
+| outcome | what happened | what to do |
+|---|---|---|
+| `sent` | she delivered it | nothing |
+| `deferred` | a tag held the conversation on that tick | nothing — the row is still `PENDING` and the next tick retries. Climbing without ever reaching `sent` means the slot is never freeing; look at the tag path, not at compute |
+| `failed_error` | the turn raised, **or** boot recovery resolved the row. `error` on the row says which: `process crashed mid-delivery` (`FIRING`) or `lost track of this job across a restart` (`PENDING`) | the second one is expected on **every** restart with jobs in flight — the backend's job registry is in-memory, so a restart orphans both the handle and, possibly, a still-running sandbox container (`docker ps` for a `job_*` name). Nothing retries; the request has to be made again |
+| `failed_policy` / `failed_timeout` | the fire turn itself was refused or cut off | same reading as `nora_reminders_fired_total`'s own — §8.1's outcomes, not compute-specific |
+
+**Nothing here is retried.** One job, one delivery, ever — the same
+at-most-once rule reminders and announcements hold.
+
+**`[compute] enabled = true` and she refuses to start** is the design, not a
+regression: `NORA_DATA_HOST_ROOT` (the host-side path of the `/app/data` mount,
+needed because the Docker daemon resolves a sandbox's bind-mount source on the
+HOST) plus the Drop, Maps and model credentials are all checked at boot. The
+startup message names exactly what is missing. They are checked there because
+each one, unset, would otherwise fail every job silently at run time, in front
+of the group.
+
 ## 9. "Where does everything live?" (read this first, months later)
 
 One tree. If it is not under `~/workspace/nora/`, Nora does not own it.

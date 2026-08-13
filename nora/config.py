@@ -386,22 +386,32 @@ class RouteConfig(BaseModel):
 
 
 class ShortenerConfig(BaseModel):
-    """Nora's own link shortener (n.example.net — a Worker+KV this repo's
-    `deploy/shortener/` Terraform owns, operator decision 2026-08-07).
+    """Nora's own link shortener — `drop`'s internal `POST /api/links`
+    (the `2026-08-12-nora-drop-design` spec under `docs/superpowers/specs/`
+    §5, cutover 2026-08-12; the mint contract itself is unchanged from the
+    Worker it replaced, `deploy/shortener/` — same bearer-auth, same
+    `{"url"}` in / `{"slug","short_url"}` out shape — so this class did not
+    need to change, only its default `base_url` and `token_env` did).
 
     **Optional, defaulted, `enabled` False** — the `[route]` shape: off (or an
     unset token) leaves long URLs in replies, never a failure. The shortener is
     SELF-HOSTED on purpose — a third-party one would see every destination the
     group routes to — and it is never load-bearing: a mint that fails leaves
     the long URL exactly as it was. `token_env` NAMES the env var holding the
-    mint bearer token (DEC-8); the same value is the Worker's secret.
+    mint bearer token (DEC-8); the same value is `drop`'s own secret.
+
+    `base_url` points at `drop`'s INTERNAL listener (`http://drop:8081` in
+    this deployment) — the write API is deliberately unreachable from the
+    public internet (spec §5a); the public `short_url` a mint returns is
+    built server-side by `drop` from its own `DROP_PUBLIC_BASE_URL`
+    (`https://nora.example.net`), which this class never needs to know.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
-    base_url: str = "https://n.example.net"
-    token_env: str = "NORA_SHORTENER_TOKEN"  # noqa: S105 — names an env var, not a secret
+    base_url: str = "http://drop:8081"
+    token_env: str = "NORA_DROP_TOKEN"  # noqa: S105 — names an env var, not a secret
     timeout_seconds: float = Field(default=5.0, gt=0)
 
 
@@ -611,6 +621,53 @@ class HeartbeatConfig(BaseModel):
     enabled: bool = False
     tick_seconds: float = 60.0
     timeout_seconds: float = 120.0
+
+
+class ComputeConfig(BaseModel):
+    """Nora Compute's background poller + backend (`nora.app.compute_poller`,
+    `nora.infra.compute.docker_backend.LocalDockerBackend`).
+
+    Optional, defaulted, and INERT by default — the `[heartbeat]` shape: a
+    config.toml written before this section existed keeps loading, and
+    `make_artifact`'s slow path answers `unavailable` until an operator turns
+    this on. UNLIKE `[heartbeat]`, the composition root builds the
+    `ComputeJobStore` unconditionally regardless of `enabled` (mirroring the
+    reason `nora.app.composition` already gives for `reminders`): the slow
+    path needs somewhere to persist a job whether or not the poller that
+    delivers it is running, and a stranded `FIRING` row must be swept at boot
+    whether or not the feature is currently switched on — only the poller's
+    own tick loop is gated on `enabled`.
+
+    `sandbox_image`/`job_timeout_seconds`/`max_concurrent_jobs` are
+    `LocalDockerBackend`'s own construction knobs (Nora Compute spec §2/§3).
+    `poll_tick_seconds` is `ComputeJobPoller`'s wake interval — the same
+    "best case for lateness, not an upper bound" shape `[heartbeat]
+    .tick_seconds`'s own docstring describes.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    sandbox_image: str = "smith:latest"
+    job_timeout_seconds: int = 300
+    max_concurrent_jobs: int = 2
+    poll_tick_seconds: float = 10.0
+    # NAMES the env var carrying the HOST-side path of whatever is bind-mounted
+    # at `store.data_dir` — `*_env` for the same DEC-8 reason every secret is:
+    # the VALUE is a deployment fact injected by the host, never a line in a
+    # committed config file. Not a secret, but the same problem: only the host
+    # knows it, and this container cannot compute it.
+    #
+    # It exists because `store.data_dir` is a path INSIDE this container
+    # (`/app/data`), and `LocalDockerBackend` hands a workspace path to the
+    # HOST Docker daemon as a bind-mount source. The daemon resolves it on the
+    # host filesystem, where `/app/data` does not exist — so it would create an
+    # empty directory there and every job would fail with nothing to read and
+    # no exception raised. `docker-compose.yml` sets this variable from THE
+    # SAME expression it uses for the `:/app/data` mount source, so the two
+    # cannot disagree; `nora.app.composition` refuses to start when `enabled`
+    # is true and this is unset or relative.
+    data_host_root_env: str = "NORA_DATA_HOST_ROOT"
 
 
 class VersionConfig(BaseModel):
@@ -880,6 +937,10 @@ class Config(BaseModel):
     # be created, whether or not anything is firing them.
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     reminders: RemindersConfig = RemindersConfig()
+    # Optional and defaulted — see `ComputeConfig`. Ships INERT
+    # (`enabled = false`); the `ComputeJobStore` is built unconditionally
+    # regardless (the `reminders` shape), only the poller's tick loop is gated.
+    compute: ComputeConfig = ComputeConfig()
     # Optional and defaulted — see `VersionConfig` for why this one defaults ON
     # where every other optional capability defaults off.
     version: VersionConfig = VersionConfig()

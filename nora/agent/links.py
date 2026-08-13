@@ -6,7 +6,7 @@ then throws away.
 
 **Why it exists (DEC-89).** `place_info` returns a `maps_url` for every place it
 resolves — a real Google deep link, minted short through Nora's own shortener
-(`https://n.example.net/9DpAk8g`), already screened, already in the tool result the
+(`https://nora.example.net/i/9DpAk8g`), already screened, already in the tool result the
 model is reasoning over, and named in the tool's own docstring («include it in
 your reply so they can tap through»). Measured live 2026-08-10: in one
 stress-test session she recommended four restaurants, `place_info` returned a

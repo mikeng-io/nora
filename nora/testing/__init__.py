@@ -20,8 +20,24 @@ bound to `nora.platform.signal.roster.SignalRoster` by
 (`BlobStore`, bound to `nora.infra.blobs.FilesystemBlobStore` by
 `tests/contract/test_blob_store_contract.py`) and `FakeLinkPreviewSource`
 (`LinkPreviewSource`, bound to `nora.infra.preview.OpenGraphPreviewSource` by
-`tests/contract/test_link_preview_contract.py`). Adding such a fake without one is a
-project rule violation, not a shortcut. `FakeAdapter` is exempt *as a whole*: it keeps
+`tests/contract/test_link_preview_contract.py`) and `FakeArtifactIngest`
+(`ArtifactIngest`, bound to `nora.infra.drop.DropArtifactIngest` by
+`tests/contract/test_artifact_ingest_contract.py`). Adding such a fake without
+one is a project rule violation, not a shortcut.
+
+`FakeArtifactIngest` is still also exercised on its own by
+`tests/test_artifact_ingest.py` (a shape/behaviour check written before
+`DropArtifactIngest` existed, kept because it names `FakeArtifactIngest`
+properties — `artifacts` recording the full call, `fail` — the contract suite
+does not, since those are the fake's own surface rather than the port's).
+
+`FakeComputeJobStore` is the same rule applied to `nora.domain.compute`'s own
+port (`ComputeJobStore`, Nora Compute spec §4) rather than one of
+`nora/domain/ports.py`'s — bound to
+`nora.infra.sql.compute_jobs.SqlComputeJobStore` by
+`tests/contract/test_compute_job_store_contract.py`.
+
+`FakeAdapter` is exempt *as a whole*: it keeps
 `.parse()` public and `.listen()` a no-op rather than mirroring
 `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop (nothing
 drives `FakeAdapter` through a real SSE loop), so it never claims to satisfy
@@ -49,7 +65,10 @@ from nora.testing.eval_backends import (
 )
 from nora.testing.fakes import (
     FakeAdapter,
+    FakeArtifactIngest,
     FakeBlobStore,
+    FakeComputeBackend,
+    FakeComputeJobStore,
     FakeLinkPreviewSource,
     FakeMediaSource,
     FakeMemoryStore,
@@ -76,7 +95,10 @@ __all__ = [
     "CannedWeatherProvider",
     "FakeAdapter",
     "FakeAgentRunner",
+    "FakeArtifactIngest",
     "FakeBlobStore",
+    "FakeComputeBackend",
+    "FakeComputeJobStore",
     "FakeLinkPreviewSource",
     "FakeMediaSource",
     "FakeMemoryStore",

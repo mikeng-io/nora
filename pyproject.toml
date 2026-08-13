@@ -18,6 +18,8 @@ dependencies = [
     "cryptography>=50.0.0",
     "asyncpg>=0.31.0",
     "psycopg[binary]>=3.3.4",
+    "docker>=7.2.0",
+    "requests>=2.34.2",
 ]
 
 [project.optional-dependencies]
@@ -187,6 +189,7 @@ allow_indirect_imports = "True"
 
 [dependency-groups]
 dev = [
+    "aioresponses>=0.7.9",
     "import-linter>=2.0",
     "mcp>=1.29.0",
     "mypy>=1.11",
@@ -197,5 +200,6 @@ dev = [
     "ruff>=0.6",
     "testcontainers[postgres]>=4.15.0",
     "tomli-w>=1.0",
+    "types-docker>=7.2.0.20260813",
     "types-pyyaml>=6.0.12.20260724",
 ]

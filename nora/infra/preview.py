@@ -89,8 +89,11 @@ DEFAULT_MAX_BYTES = 262_144
 # it into a JSON-RPC body is not a problem. Signal re-encodes it anyway.
 DEFAULT_IMAGE_MAX_BYTES = 262_144
 
-# Two hops covers `https://n.example.net/x` -> the real page. A third is a chain,
-# and a chain is not something a preview should be chasing on the reply path.
+# Two hops covers `https://nora.example.net/i/x` -> the real page (was
+# `https://n.example.net/x` before the 2026-08-12 cutover to `drop` — same single
+# 301, so the hop count this constant was sized around is unchanged). A third
+# is a chain, and a chain is not something a preview should be chasing on the
+# reply path.
 MAX_REDIRECTS = 2
 
 _HTML_TYPES = ("text/html", "application/xhtml+xml")

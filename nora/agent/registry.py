@@ -29,7 +29,8 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
 
-from ..domain.ports import BlobStore, GifSource, SearchProvider, WeatherProvider
+from ..domain.compute import ComputeJobStore
+from ..domain.ports import BlobStore, ComputeBackend, GifSource, SearchProvider, WeatherProvider
 from ..domain.reminders import ReminderCaps, ReminderStore
 from ..infra.routes import RouteClient
 from ..infra.shortener import LinkShortener
@@ -81,6 +82,8 @@ class ToolRegistry:
         ai_peer: str = "nora",
         reminders: ReminderStore | None = None,
         reminder_caps: ReminderCaps | None = None,
+        compute_backend: ComputeBackend | None = None,
+        compute_jobs: ComputeJobStore | None = None,
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
@@ -138,8 +141,9 @@ class ToolRegistry:
         # The LIVE-refresh client (DEC-67) — None leaves `where_is` reading the
         # last stored fix (offline/eval, or [presence] refresh_url unset).
         self._refresher = refresher
-        # The n.example.net mint client ([shortener], 2026-08-07) — None leaves
-        # long URLs in replies, and a failed mint does the same; never
+        # The drop-service mint client ([shortener], cutover 2026-08-12 to
+        # `drop`'s internal API; was n.example.net's Worker before that) — None
+        # leaves long URLs in replies, and a failed mint does the same; never
         # load-bearing, so no capability line and no budget: it is not a tool,
         # it is a post-processing step inside `route`.
         self._shortener = shortener
@@ -157,6 +161,13 @@ class ToolRegistry:
         # state (R-5). `nora.app.composition` passes the same `SqlReminderStore`
         # the heartbeat's tick reads from; two would be two queues.
         self._reminders = reminders
+        # `make_artifact`'s pair (Nora Compute spec §4), wired the same honest
+        # way `reminders` is: NOT default-constructed — there is no backendless
+        # or storeless default — so every composition that has not wired Nora
+        # Compute (offline, eval, and any test that does not care) leaves both
+        # None and `make_artifact` answers `unavailable` (R-5).
+        self._compute_backend = compute_backend
+        self._compute_jobs = compute_jobs
         # §9's three anti-runaway caps, as the DOMAIN value — never
         # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
         # read config" contract names `nora.agent` as a source module and
@@ -467,6 +478,7 @@ class ToolRegistry:
             links=links,
             versions=self._versions,
             giphy_source=self._giphy,
+            compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,
         )
 
     def build(

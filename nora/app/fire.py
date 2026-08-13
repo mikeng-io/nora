@@ -74,8 +74,11 @@ from nora.agent.prefill import build_prefill, build_tag_message, escape
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.compute import ComputeJob
 from nora.domain.models import NormalizedMessage, PersonRef, TagContext, TranscriptRow
 from nora.domain.ports import (
+    JobResult,
+    JobStatus,
     LinkPreviewSource,
     MemoryStore,
     PlatformAdapter,
@@ -194,6 +197,47 @@ def reminder_occasion(rows: Sequence[Reminder]) -> Occasion:
         body="\n".join(r.text for r in rows),
         header=lambda tagger, now: _fire_header(rows, tagger, now),
         kind="reminder",
+    )
+
+
+def compute_occasion(job: ComputeJob, result: JobResult) -> Occasion:
+    """A finished compute job, as the occasion it is (Nora Compute spec §2)
+    — the THIRD `Occasion`, reusing `FirePath.speak` exactly as
+    `VersionAnnouncer` (DEC-97) already established as the pattern for a
+    second thing built on this turn beside reminders.
+
+    `body` is the job's own task description PLUS its result summary —
+    Smith's own account of what it built (Nora Compute spec §11: this text
+    passes R-18 like any other reply; the artifact bytes themselves do not).
+    Nora composes the actual group-facing message from this in her own
+    voice; this function only assembles what she is TOLD, not what she says.
+    """
+    outcome = (
+        f"It finished: {result.summary}\n{result.url}"
+        if result.status is JobStatus.SUCCEEDED
+        else f"It failed: {result.error or 'no reason given'}"
+    )
+    return Occasion(
+        platform=job.platform,
+        conversation_id=job.conversation_id,
+        conversation_type=job.conversation_type,
+        person_id=job.requester_person_id,
+        body=f"(asked earlier) {job.task}\n\n{outcome}",
+        header=lambda tagger, now: _compute_header(job, tagger, now),
+        kind="compute",
+    )
+
+
+def _compute_header(job: ComputeJob, tagger: PersonRef | None, now: datetime) -> str:
+    who = escape(tagger.name if tagger is not None else "")
+    return (
+        "You are in a group chat you have been reading all along. Nobody has "
+        f"just called you. Earlier, {who} asked you to build something, and "
+        "the job has now finished (or failed) — that is why this turn is "
+        "happening, and it is the only reason.\n"
+        "Tell them what you built (or what went wrong), in your own words, "
+        "including the link if there is one. Do not just repeat the raw "
+        "summary verbatim — say it the way you'd actually tell a friend."
     )
 
 

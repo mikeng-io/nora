@@ -615,6 +615,25 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "failed_policy / failed_timeout / failed_error.",
         ("status",),
     ),
+    # `ComputeJobPoller`'s own delivery outcome (Nora Compute spec §4), the
+    # same `sent` / `failed_policy` / `failed_timeout` / `failed_error`
+    # vocabulary `speak()` returns (§8.1) that `nora_reminders_fired_total`
+    # and `nora_version_announcements_total` already use this label for.
+    # `failed_error` is also what `nora.app.compute_poller.recover` reports
+    # for a `FIRING` row swept at boot (a crash mid-delivery) — the exact
+    # `nora_reminders_fired_total` precedent for a row that "vanished" without
+    # this counter moving too.
+    _CounterSpec(
+        "nora_compute_jobs_delivered_total",
+        "Compute jobs (Nora Compute spec §4) resolved by the poller, by "
+        "outcome: the fire path's own sent / failed_policy / failed_timeout; "
+        "failed_error (the turn raised, or boot recovery resolved a row left "
+        "FIRING by a crash or left PENDING by any restart, whose backend "
+        "handle is in-memory and did not survive); and deferred (the "
+        "conversation slot was held — the ONLY non-terminal value here, the "
+        "row stays PENDING and the next tick tries again).",
+        ("outcome",),
+    ),
     _CounterSpec(
         "nora_loop_exhausted_fallbacks_total",
         "Turns where the agent loop was cut off by an R-8 cap before the model "

@@ -4,8 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from typing import Any
+from uuid import UUID
 
+from nora.domain.compute import (
+    ComputeJob,
+    ComputeJobState,
+    ensure_utc_job,
+    normalise_compute_job,
+)
 from nora.domain.media import MediaBytes, MediaRef, media_json
 from nora.domain.models import (
     ConversationTarget,
@@ -16,16 +24,19 @@ from nora.domain.models import (
 )
 from nora.domain.ports import (
     AdapterHealth,
+    ArtifactRegistration,
+    JobResult,
+    JobStatus,
     LinkPreview,
     MemoryHealth,
     Mention,
     MessageHits,
+    OutboundAttachment,
     PlatformIdentity,
     ReactionResult,
     Recollection,
     Roster,
     SendResult,
-    OutboundAttachment,
     TextStyle,
 )
 from nora.domain.utf16 import utf16_len
@@ -564,6 +575,98 @@ class FakeBlobStore:
         return self.blobs.get(key)
 
 
+class FakeArtifactIngest:
+    """In-memory `ArtifactIngest` (`nora.domain.ports.ArtifactIngest`).
+
+    **Bound by `tests/contract/test_artifact_ingest_contract.py`** alongside
+    `nora.infra.drop.DropArtifactIngest`, `drop`'s real HTTP-client adapter
+    (Nora Drop spec §7a) — the shared suite CLAUDE.md requires once a port
+    gains a second implementation. This fake predates that adapter (it
+    shipped first, so the Protocol's shape was exercised by SOMETHING rather
+    than declared into a vacuum); now that the real adapter exists, both are
+    held to the same contract, not just this one.
+
+    `fail` simulates `drop`'s internal listener being unreachable — the one
+    failure mode `ArtifactIngest.register` documents raising for, the same
+    role `FakeBlobStore.fail_on_put`'s disk-full switch plays for `BlobStore
+    .put`: a future Compute tool has to be testable turning this into R-27's
+    `unavailable` rather than an uncaught exception reaching the loop.
+
+    `artifacts` records what each call was actually given (not just the
+    `ArtifactRegistration` handed back), keyed by the assigned `artifact_id`,
+    so a test can assert on `title`/`media_type`/`expires_at` as well as the
+    id/url pair — the same reason `FakeRecordStore.rows` keeps the full row
+    rather than only what its own return value exposes.
+    """
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self._fail = fail
+        self._next_id = 1
+        self.artifacts: dict[str, dict[str, Any]] = {}
+
+    async def register(
+        self,
+        *,
+        data: bytes,
+        title: str,
+        media_type: str,
+        expires_at: int | None = None,
+    ) -> ArtifactRegistration:
+        if self._fail:
+            raise ConnectionError("drop unreachable")
+        artifact_id = f"art_{self._next_id:06d}"
+        self._next_id += 1
+        self.artifacts[artifact_id] = {
+            "data": data,
+            "title": title,
+            "media_type": media_type,
+            "expires_at": expires_at,
+        }
+        return ArtifactRegistration(
+            artifact_id=artifact_id,
+            # A slug-shaped stand-in, not a real drop URL — nothing decodes
+            # this string. It exists so a caller has something URL-shaped to
+            # hand `send_reply` in a test, the same spirit as
+            # `CannedSearchProvider`'s fixed `https://example.com/a`.
+            #
+            # Path-based, matching the real `drop` service's actual shape
+            # (nora.example.net/drop/<slug>) — `drop.nora.example.net` (host-based
+            # routing) was the ORIGINAL design and is no longer what ships:
+            # Cloudflare's zone-level Universal SSL only covers one subdomain
+            # level, so that two-level hostname never got a working
+            # certificate and the cutover moved to one host, path-prefixed,
+            # instead. This fake drifted out of sync with that change until
+            # caught here — a real staleness bug, not cosmetic, since a
+            # future caller could reasonably assume this shape is real.
+            url=f"https://nora.example.net/drop/{artifact_id}",
+        )
+
+    async def update(
+        self,
+        *,
+        artifact_id: str,
+        data: bytes,
+        title: str,
+        media_type: str,
+        expires_at: int | None = None,
+    ) -> ArtifactRegistration:
+        if self._fail:
+            raise ConnectionError("drop unreachable")
+        if artifact_id not in self.artifacts:
+            raise ConnectionError("drop refused update (http 404): not found")
+        existing_expires_at = self.artifacts[artifact_id]["expires_at"]
+        self.artifacts[artifact_id] = {
+            "data": data,
+            "title": title,
+            "media_type": media_type,
+            "expires_at": expires_at if expires_at is not None else existing_expires_at,
+        }
+        return ArtifactRegistration(
+            artifact_id=artifact_id,
+            url=f"https://nora.example.net/drop/{artifact_id}",
+        )
+
+
 class FakeLinkPreviewSource:
     """In-memory `LinkPreviewSource`, bound to `nora.infra.preview.
     OpenGraphPreviewSource` by `tests/contract/test_link_preview_contract.py`.
@@ -630,3 +733,125 @@ def _fetchable(url: str) -> bool:
     host = rest.split("/")[0].split(":")[0].lower()
     private = ("localhost", "127.", "10.", "192.168.", "169.254.", "0.")
     return not (host.startswith(private) or host.endswith(".local"))
+
+
+class FakeComputeBackend:
+    """In-memory `ComputeBackend`. Every `launch`ed job defaults to immediate
+    success (a caller that doesn't care about timing gets a working job with
+    no setup) — call `set_result` with `polls_before_done > 0` to arrange a
+    job that reports RUNNING some number of times first, the shape Phase 4's
+    fast-path/slow-path branching (Nora Compute spec §4) needs to test both
+    branches deterministically, without a real timer.
+
+    `launched` records every call's `task`/`artifact_id`/assigned `job_id`,
+    the same "record what was actually asked for" pattern `FakeRecordStore
+    .rows`/`FakeArtifactIngest.artifacts` already use elsewhere in this file.
+    """
+
+    def __init__(self) -> None:
+        self._results: dict[str, JobResult] = {}
+        self._polls_before_done: dict[str, int] = {}
+        self.launched: list[dict[str, Any]] = []
+        self._next_id = 1
+
+    async def launch(self, *, task: str, artifact_id: str | None = None) -> str:
+        job_id = f"job_{self._next_id:06d}"
+        self._next_id += 1
+        self.launched.append({"task": task, "artifact_id": artifact_id, "job_id": job_id})
+        self._results.setdefault(
+            job_id,
+            JobResult(
+                status=JobStatus.SUCCEEDED,
+                url="https://nora.example.net/drop/fake",
+                summary="done",
+            ),
+        )
+        self._polls_before_done.setdefault(job_id, 0)
+        return job_id
+
+    def set_result(
+        self, *, job_id: str, result: JobResult, polls_before_done: int = 0,
+    ) -> None:
+        self._results[job_id] = result
+        self._polls_before_done[job_id] = polls_before_done
+
+    async def poll(self, *, job_id: str) -> JobResult:
+        if job_id not in self._results:
+            return JobResult(status=JobStatus.FAILED, error="unknown job_id")
+        if self._polls_before_done[job_id] > 0:
+            self._polls_before_done[job_id] -= 1
+            return JobResult(status=JobStatus.RUNNING)
+        return self._results[job_id]
+
+
+class FakeComputeJobStore:
+    """In-memory `ComputeJobStore`. Bound to
+    `nora.infra.sql.compute_jobs.SqlComputeJobStore` by
+    `tests/contract/test_compute_job_store_contract.py`."""
+
+    def __init__(self) -> None:
+        self._jobs: dict[UUID, ComputeJob] = {}
+
+    async def create(self, job: ComputeJob) -> None:
+        self._jobs[job.id] = normalise_compute_job(job)
+
+    async def get(self, job_id: UUID) -> ComputeJob | None:
+        return self._jobs.get(job_id)
+
+    async def pending(self, *, limit: int) -> list[ComputeJob]:
+        rows = [j for j in self._jobs.values() if j.state is ComputeJobState.PENDING]
+        rows.sort(key=lambda j: (j.created_at, str(j.id)))
+        return rows[:limit]
+
+    async def claim(self, job_id: UUID) -> bool:
+        job = self._jobs.get(job_id)
+        if job is None or job.state is not ComputeJobState.PENDING:
+            return False
+        self._jobs[job_id] = replace(job, state=ComputeJobState.FIRING)
+        return True
+
+    async def mark(
+        self, job_id: UUID, state: ComputeJobState, *,
+        completed_at: Any = None, result_url: str | None = None,
+        result_summary: str | None = None, error: str | None = None,
+    ) -> bool:
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        validated_completed_at = (
+            None if completed_at is None
+            else ensure_utc_job(completed_at, field="completed_at")
+        )
+        self._jobs[job_id] = replace(
+            job, state=state,
+            completed_at=validated_completed_at if completed_at is not None else job.completed_at,
+            result_url=result_url if result_url is not None else job.result_url,
+            result_summary=result_summary if result_summary is not None else job.result_summary,
+            error=error if error is not None else job.error,
+        )
+        return True
+
+    async def sweep_firing(self, *, now: Any) -> int:
+        return self._sweep(
+            ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery",
+        )
+
+    async def sweep_pending(self, *, now: Any) -> int:
+        return self._sweep(
+            ComputeJobState.PENDING, now,
+            "swept at boot: lost track of this job across a restart",
+        )
+
+    def _sweep(self, state: ComputeJobState, now: Any, error: str) -> int:
+        stamp = ensure_utc_job(now, field="now")
+        swept = 0
+        for job_id, job in list(self._jobs.items()):
+            if job.state is state:
+                self._jobs[job_id] = replace(
+                    job, state=ComputeJobState.FAILED, completed_at=stamp, error=error,
+                )
+                swept += 1
+        return swept
+
+    async def aclose(self) -> None:
+        pass
