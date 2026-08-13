@@ -405,6 +405,72 @@ async def test_the_liveness_gauge_is_seeded_even_with_the_heartbeat_off(cfg):
     ) == HEARTBEAT_NOT_RUNNING
 
 
+async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cfg, pg_url):
+    """Mirrors `test_boot_recovery_counts_the_rows_it_swept`: a `FIRING`
+    `ComputeJob` (a crash mid-delivery) must resolve to `FAILED` at boot
+    whether or not `[compute] enabled` is true — the whole point of the
+    unconditional `compute_poller_recover` call in `build_dependencies`
+    (composition.py, beside `reminders`' own unconditional sweep). An earlier
+    draft gated this call behind `cfg.compute.enabled`, which would leave a
+    row stranded forever on exactly the deployment that looks safest: one
+    that crashed with compute on and was then switched off, unrelated to the
+    crash. `cfg.compute.enabled` is False here (the shipped default) — the
+    sweep must still run.
+    """
+    from nora.domain.compute import ComputeJob, ComputeJobState
+    from nora.infra.sql import create_sql_engine, run_migrations
+    from nora.infra.sql.compute_jobs import SqlComputeJobStore
+
+    assert cfg.compute.enabled is False
+
+    run_migrations(pg_url)
+    store = SqlComputeJobStore(create_sql_engine(pg_url))
+    now = datetime.now(UTC)
+    await store.create(ComputeJob(
+        id=uuid.uuid4(), backend_job_id="job_stranded", task="make a chart",
+        artifact_id=None, platform="signal", conversation_id="g1",
+        conversation_type="group", requester_person_id="miles",
+        created_at=now - timedelta(hours=1), state=ComputeJobState.FIRING,
+        completed_at=None, result_url=None, result_summary=None, error=None,
+    ))
+    await store.aclose()
+
+    deps = await build_dependencies(cfg)
+
+    assert deps.metrics.get(
+        "nora_compute_jobs_delivered_total", outcome="failed_error",
+    ) == 1
+
+
+async def test_compute_only_deployment_still_gets_a_live_fire_path(cfg, no_build_stamp):
+    """The widened `fire_path` gate: `[compute] enabled` alone — heartbeat
+    off, no version announcement (`no_build_stamp` forces the unstamped path,
+    the same way `test_an_unstamped_build_spawns_no_announcer` does) — must
+    still construct a real `FirePath` and spawn `ComputeJobPoller`.
+
+    Before the fix, `fire_path` was built only under `cfg.heartbeat.enabled or
+    announcing`; a compute-only deployment (a real, plausible configuration —
+    "I just want make_artifact") would build a live `compute_backend`, accept
+    `make_artifact` slow-path jobs, and then never spawn a poller to deliver
+    them — every such job would sit `pending` forever with no path to ever
+    reach the group that asked for it. Reaching into `background._tasks` for
+    the same reason `test_the_heartbeat_is_wired_to_the_real_fire_path` does:
+    `Dependencies` deliberately exposes neither loop.
+    """
+    on = override_config(cfg, {
+        "compute.enabled": True,
+        "heartbeat.enabled": False,
+    })
+    assert on.version.announce is True  # the shipped default; no_build_stamp is what mutes it
+    deps = await build_dependencies(on)
+    try:
+        pollers = _spawned(deps, "ComputeJobPoller.run")
+        assert pollers, "the compute job poller was not spawned"
+        assert isinstance(pollers[0]._speak.__self__, FirePath)
+    finally:
+        await deps.background.cancel_all()
+
+
 def _resolved_module_name(rel: Path) -> str:
     """The dotted module name `nora/<rel>` would have at import time, e.g.
     `infra/sql/migrations_runner.py` -> `nora.infra.sql.migrations_runner`."""
