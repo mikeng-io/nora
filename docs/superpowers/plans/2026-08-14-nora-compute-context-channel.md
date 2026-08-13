@@ -87,7 +87,7 @@ over BOTH `FakeComputeBackend` and `LocalDockerBackend` — updating its
 not gain the parameter until Task 2. That edit is deferred to Task 2, where
 both arms are green together.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_compute_backend_port.py`:
 
@@ -123,7 +123,7 @@ async def test_launch_records_the_task_and_artifact_id():
     }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_compute_backend_port.py -v`
 Expected: `test_launch_records_the_context` and
@@ -132,7 +132,7 @@ launch() got an unexpected keyword argument 'context'`; the updated
 `test_launch_records_the_task_and_artifact_id` fails on the dict-equality
 assertion (`"context"` key not present in the real dict yet).
 
-- [ ] **Step 3: Widen the port and the fake**
+- [x] **Step 3: Widen the port and the fake**
 
 In `nora/domain/ports.py`, replace the `ComputeBackend` docstring's guarantee
 sentence and the `launch` signature:
@@ -211,7 +211,7 @@ docstring:
         return job_id
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_compute_backend_port.py -v`
 Expected: all PASS, including every pre-existing test in the file.
@@ -220,7 +220,7 @@ Run: `uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence`
 Expected: `Success: no issues found` — confirms `list[dict[str, Any]]` (not a
 bare `dict`) satisfies `disallow_any_generics`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nora/domain/ports.py nora/testing/fakes.py tests/test_compute_backend_port.py
@@ -243,7 +243,7 @@ git commit -m "feat(compute): ComputeBackend.launch gains an optional context pa
   own `agent.py` (Task 5) reads this file at a fixed path,
   `/workspace/context.json`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/infra/compute/test_docker_backend.py`, beside
 `test_the_bind_source_is_the_host_path_not_this_process_path` (same file,
@@ -292,7 +292,7 @@ contract.py`:
 ])
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/infra/compute/test_docker_backend.py -k context -v`
 Expected: FAIL with `TypeError: launch() got an unexpected keyword argument
@@ -303,7 +303,7 @@ run them one at a time if the first failure masks the second).
 Run: `uv run pytest tests/contract/test_compute_backend_contract.py -k keyword_only -v`
 Expected: FAIL on the `LocalDockerBackend` arm with `KeyError: 'context'`.
 
-- [ ] **Step 3: Thread `context` through `launch` → `_run_job` → `_execute_job`, write the file**
+- [x] **Step 3: Thread `context` through `launch` → `_run_job` → `_execute_job`, write the file**
 
 In `nora/infra/compute/docker_backend.py`, add `import json` to the existing
 import block (`asyncio`, `logging`, `uuid`, `Path`, `Any`, `aiohttp`,
@@ -371,7 +371,7 @@ exception handling, `_read_result` — is unchanged; `context` is not needed
 past this point, since `_start_container` only bind-mounts the workspace
 directory, which now already contains both files.)
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/infra/compute/test_docker_backend.py tests/contract/test_compute_backend_contract.py -v`
 Expected: all PASS, including the full pre-existing suite in both files (the
@@ -383,7 +383,7 @@ only_after_self` too).
 Run: `uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence`
 Expected: `Success: no issues found`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nora/infra/compute/docker_backend.py tests/infra/compute/test_docker_backend.py tests/contract/test_compute_backend_contract.py
@@ -411,7 +411,7 @@ todays_table`) — neither reads or asserts a parameter list, and
 tool's `when` text only, never its signature. An optional new parameter
 changes none of that. Confirmed by reading the file, not assumed.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_reminder_tools.py`, right after the existing
 `# ---- make_artifact ...` section header (before
@@ -600,7 +600,7 @@ this file (line 38); `tools_module` (as `from nora.agent import tools as
 tools_module`) is already imported (line 31). No new imports are needed for
 these ten tests.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_reminder_tools.py -k "context_entry or context_leak or clean_context or no_context_is_the_default or saved_place or dict_key or place_name" -v`
 Expected: FAIL — most with `TypeError: make_artifact() got an unexpected
@@ -611,7 +611,7 @@ with `TypeError: _tools() got an unexpected keyword argument
 'presence_source'` until Step 3's `_tools()` extension below lands too — run
 them after Step 3 if this mix of failure reasons is confusing to read.
 
-- [ ] **Step 3: Add the screening helper and the parameter**
+- [x] **Step 3: Add the screening helper and the parameter**
 
 In `nora/agent/tools.py`, add `import hashlib` to the existing import block
 (alongside the already-present `asyncio`, `json`, `logging`, `re`,
@@ -853,7 +853,7 @@ exercise the slow path, so they pass without Task 4. Run
 `uv run mypy nora/agent/tools.py` only as part of Task 4's own gate check,
 not this task's.)
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_reminder_tools.py -k "not slow" -v`
 Expected: all PASS — the ten new tests, and every pre-existing test in this
@@ -872,7 +872,7 @@ Do NOT run the whole-file `uv run pytest tests/test_reminder_tools.py -v`
 (no `-k`) expecting green — those two tests will fail until Task 4 lands,
 by design.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 This commit's own `uv run pytest -q` (the FULL suite) is knowingly red on
 exactly the two tests named in Step 4, until Task 4's next commit — an
@@ -903,7 +903,7 @@ git commit -m "feat(compute): make_artifact gains a screened context parameter (
 - Consumes: Task 3's `ComputeJob(..., task_sha256=..., context_sha256=...)` call site (this task makes that call site actually type-check and run).
 - Produces: `ComputeJob.task_sha256: str`, `ComputeJob.context_sha256: str` — every construction site in the repo must supply both from this task onward.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Update every existing `ComputeJob(...)` construction across the repo to
 supply the two new fields — this IS the failing-test step, since the
@@ -960,7 +960,7 @@ async def test_the_provenance_hashes_round_trip(store):
     assert fetched.context_sha256 == "b" * 64
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/domain/test_compute.py -v`
 Expected: `test_a_compute_job_carries_its_own_provenance_hashes` fails with
@@ -968,7 +968,7 @@ Expected: `test_a_compute_job_carries_its_own_provenance_hashes` fails with
 'task_sha256'`; the three pre-existing tests in this file now ALSO fail with
 the same error, since Step 1 already added the two kwargs to their calls.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 Create `nora/infra/sql/migrations/versions/0009_compute_job_hashes.py`:
 
@@ -1013,7 +1013,7 @@ def downgrade() -> None:
     op.drop_column("compute_jobs", "task_sha256")
 ```
 
-- [ ] **Step 4: Update the schema, the domain dataclass, and the SQL adapter**
+- [x] **Step 4: Update the schema, the domain dataclass, and the SQL adapter**
 
 In `nora/infra/sql/schema.py`, add to `COMPUTE_JOBS` (after the existing
 `sa.Column("error", sa.Text, nullable=True),` line, before the
@@ -1078,7 +1078,7 @@ And `SqlComputeJobStore.create`:
             await conn.execute(stmt)
 ```
 
-- [ ] **Step 5: Regenerate the schema-parity baseline**
+- [x] **Step 5: Regenerate the schema-parity baseline**
 
 Run: `uv run python scripts/gen_pg_baseline.py`
 
@@ -1087,7 +1087,7 @@ Postgres — do not hand-edit that file (CLAUDE.md's own schema-gate note:
 `alembic check` is blind to exactly this kind of drift, which is why this
 file exists as the oracle instead).
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/domain/test_compute.py tests/unit/test_compute_poller.py tests/contract/test_compute_job_store_contract.py tests/test_composition.py tests/unit/test_fire_path.py tests/infra/test_schema_parity.py -v`
 Expected: all PASS.
@@ -1101,7 +1101,7 @@ tests, unblocked now that `ComputeJob` accepts the two new fields).
 Run: `uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence`
 Expected: `Success: no issues found`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add nora/infra/sql/migrations/versions/0009_compute_job_hashes.py nora/infra/sql/schema.py nora/domain/compute.py nora/infra/sql/compute_jobs.py tests/domain/test_compute.py tests/unit/test_compute_poller.py tests/contract/test_compute_job_store_contract.py tests/test_composition.py tests/unit/test_fire_path.py tests/infra/pg_schema_baseline.sql
@@ -1129,7 +1129,7 @@ shows only `SKILL.md`, `render.py`, `__pycache__/`) has none —
 works via implicit namespace packages. `skills/geocode/` matches the same
 shape: no `__init__.py`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `nora/compute/smith/tests/test_geocode_address.py`, mirroring
 `test_render_map.py`'s exact shape (same `monkeypatch`/`patch` pattern, same
@@ -1198,12 +1198,12 @@ def test_raise_for_status_is_called_before_the_json_is_parsed(monkeypatch):
     mock_get.return_value.raise_for_status.assert_called_once()
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd nora/compute/smith && uv run pytest tests/test_geocode_address.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'skills.geocode'`.
 
-- [ ] **Step 3: Write the skill**
+- [x] **Step 3: Write the skill**
 
 Create `nora/compute/smith/skills/geocode/render.py`:
 
@@ -1262,12 +1262,12 @@ catch it and either drop that one marker or fall back to prose naming the
 place instead of failing the whole artifact.
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cd nora/compute/smith && uv run pytest tests/test_geocode_address.py -v`
 Expected: all 4 PASS.
 
-- [ ] **Step 5: Wire the skill into `agent.py`, read `context.json`**
+- [x] **Step 5: Wire the skill into `agent.py`, read `context.json`**
 
 In `nora/compute/smith/agent.py`, add to the existing skill imports —
 **alphabetically FIRST**, before `skills.html_report` (`geocode` < `html_
@@ -1341,7 +1341,7 @@ Read `context.json` and fold it into the prompt, in `main()`, right after
 variable — no further change needed there; the context block is now part of
 what it reads.)
 
-- [ ] **Step 6: Update the doctrine**
+- [x] **Step 6: Update the doctrine**
 
 In `nora/compute/smith/doctrine.md`, add a new bullet to "Your tools" (after
 the "Locations" bullet, before "Putting it together"):
@@ -1368,7 +1368,7 @@ already gives you. Empty (`[]`) means nothing was gathered; work from
 `task.txt` alone.
 ```
 
-- [ ] **Step 7: Run the full Smith test suite**
+- [x] **Step 7: Run the full Smith test suite**
 
 Run: `cd nora/compute/smith && uv run pytest -v`
 Expected: all PASS, including every pre-existing test file
@@ -1380,7 +1380,7 @@ Run: `cd nora/compute/smith && uv run ruff check .`
 Expected: clean (this sub-project has its own `pyproject.toml`/ruff config,
 separate from the repo root's).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add nora/compute/smith/skills/geocode/ nora/compute/smith/tests/test_geocode_address.py nora/compute/smith/agent.py nora/compute/smith/doctrine.md
@@ -1399,7 +1399,7 @@ git commit -m "feat(smith): add geocode_address skill, read context.json at star
 - Consumes: Task 3's `test_a_context_entry_naming_a_person_is_refused_before_launch` (the R-44 rule test), Task 5's `test_geocode_address.py` (cited alongside it).
 - Produces: `RULE_TESTS["R-44"]`, a `DEC-100` row.
 
-- [ ] **Step 1: Confirm the structural gate this task must satisfy**
+- [x] **Step 1: Confirm the structural gate this task must satisfy**
 
 `tests/test_acceptance_rules.py:189` — `test_every_enforced_rule_has_a_named_
 test` — walks `RULE_TESTS` and asserts every named test was actually
@@ -1413,7 +1413,7 @@ Run: `uv run pytest tests/test_acceptance_rules.py -v`
 Expected: all PASS (before this task's own edit below — confirms the
 starting point is clean, so any red after Step 2 is this task's own doing).
 
-- [ ] **Step 2: Add the `RULE_TESTS` entry**
+- [x] **Step 2: Add the `RULE_TESTS` entry**
 
 In `tests/test_acceptance_rules.py`, add after the `"R-43"` entry:
 
@@ -1421,7 +1421,7 @@ In `tests/test_acceptance_rules.py`, add after the `"R-43"` entry:
     "R-44": "test_a_context_entry_naming_a_person_is_refused_before_launch",
 ```
 
-- [ ] **Step 3: Add the DEC-100 row and fix R-28's stale citation**
+- [x] **Step 3: Add the DEC-100 row and fix R-28's stale citation**
 
 In `design/09-decision-index.md`, append after the last existing row (the
 `DEC-99` row):
@@ -1443,12 +1443,12 @@ identical screen, shipped under DEC-63): find the R-28 row (search for
 And extend that row's test cell to also name `place_info`'s own test:
 `` `test_a_route_naming_a_person_is_refused_before_egress`, `test_place_info_tool_refuses_a_person` ``.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_acceptance_rules.py -v`
 Expected: all PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add design/09-decision-index.md tests/test_acceptance_rules.py
@@ -1466,7 +1466,7 @@ git commit -m "docs(decisions): add DEC-100 (the context channel), R-44, fix R-2
 - Consumes: nothing (documentation-only task).
 - Produces: a fragment `check_release_fragments.py` accepts.
 
-- [ ] **Step 1: Write the fragment**
+- [x] **Step 1: Write the fragment**
 
 Create `release-fragments/unreleased/compute-context-channel.json`:
 
@@ -1485,12 +1485,12 @@ Create `release-fragments/unreleased/compute-context-channel.json`:
 }
 ```
 
-- [ ] **Step 2: Run the gate**
+- [x] **Step 2: Run the gate**
 
 Run: `uv run python scripts/check_release_fragments.py --base origin/master`
 Expected: passes (no longer reports "changed branch has no release fragment").
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add release-fragments/unreleased/compute-context-channel.json
@@ -1505,17 +1505,17 @@ git commit -m "docs(release): add fragment for the context channel"
 
 **Interfaces:** none.
 
-- [ ] **Step 1: Full test suite**
+- [x] **Step 1: Full test suite**
 
 Run: `uv run pytest -q`
 Expected: all PASS, 0 failures.
 
-- [ ] **Step 2: Smith's own suite**
+- [x] **Step 2: Smith's own suite**
 
 Run: `cd nora/compute/smith && uv run pytest -q`
 Expected: all PASS.
 
-- [ ] **Step 3: Lint**
+- [x] **Step 3: Lint**
 
 Run: `uv run ruff check nora/ evals/ tests/`
 Expected: clean.
@@ -1523,34 +1523,34 @@ Expected: clean.
 Run: `cd nora/compute/smith && uv run ruff check .`
 Expected: clean.
 
-- [ ] **Step 4: Types**
+- [x] **Step 4: Types**
 
 Run: `uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence`
 Expected: `Success: no issues found`.
 
-- [ ] **Step 5: Import boundaries**
+- [x] **Step 5: Import boundaries**
 
 Run: `uv run lint-imports`
 Expected: clean.
 
-- [ ] **Step 6: Schema parity**
+- [x] **Step 6: Schema parity**
 
 Run: `uv run pytest tests/infra/test_schema_parity.py -v`
 Expected: PASS (confirms Task 4's regenerated baseline still matches a fresh
 migration run).
 
-- [ ] **Step 7: Release fragment gate**
+- [x] **Step 7: Release fragment gate**
 
 Run: `uv run python scripts/check_release_fragments.py --base origin/master`
 Expected: passes.
 
-- [ ] **Step 8: Confirm the untouched-file constraint**
+- [x] **Step 8: Confirm the untouched-file constraint**
 
 Run: `git diff origin/master -- nora/infra/routes/client.py`
 Expected: empty output — `place_info`'s coordinate suppression was never
 touched by this plan (Global Constraints, and spec §3.1's own explicit
 promise).
 
-- [ ] **Step 9: Confirm no `docs/superpowers/plans/2026-08-14-nora-compute-context-channel.md` checkbox is unticked**
+- [x] **Step 9: Confirm no `docs/superpowers/plans/2026-08-14-nora-compute-context-channel.md` checkbox is unticked**
 
 Re-read this file; every `- [ ]` above should now be `- [x]`.
