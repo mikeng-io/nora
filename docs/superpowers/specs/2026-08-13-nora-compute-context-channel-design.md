@@ -191,19 +191,37 @@ headsign, stop count) — never a stop's `location`, never the polyline.
 `"Ah Long: 25 min via MTR"` discloses a travel time, not where his home is.
 
 **A gap the first draft missed, and this revision closes with an
-enforcement rule, not just a sentence:** `route`'s result also carries back
-the `origin`/`destination` strings the call was made with. If Nora resolved
-"home" through a saved place (`saved_places()`, DEC-64) and the raw saved
-name — `"Miles Home"` — ends up copied into `context`, that is R-35/DEC-60
-subset-gated data (§S.3 of the presence design) riding a channel with no
-subset check, straight to a permanently published artifact. **Rule:**
-whatever builds a route entry for `context` is a fixed, small mapping over
-`route`'s own result object — `{duration, distance, mode, steps}` — that
-never touches `result.origin`/`result.destination` (or `local_places`'
-resolved name) at all. Not a doctrine instruction Nora is trusted to
-follow; a function whose return type has no field to leak from, the same
-"held by construction, not by veto" shape DEC-21 already established for
-`send_reply`'s own scope. A named test enforces it (§7): the free number is
+enforcement rule that actually matches how the leak can happen — not the
+one first written here.** The risk isn't `route`'s own result echoing a
+resolved name back to the model (a first pass at this section assumed a
+code-level filter on that result would be enough, which doesn't hold: by
+DEC-64's own design, the model already holds the resolved saved-place name
+*before* it ever calls `route` — `saved_places()` returns the name
+directly, and the model is instructed to pass "that exact name" as the
+argument. `route`'s result has nothing to leak that the model doesn't
+already have from a different call entirely.) The real risk is simpler and
+has to be screened where `context` itself arrives: Nora, composing the
+`make_artifact` call, could type `"Miles Home"` into a `context` entry
+because she has that string in hand from `saved_places()`, independent of
+anything `route` returns. That is R-35/DEC-60 subset-gated data (§S.3 of
+the presence design) with no subset check on this channel, headed straight
+for a permanently published artifact.
+
+**Rule, enforced at `make_artifact`'s own boundary, not by trusting the
+model to follow a doctrine line:** every string value in an incoming
+`context` payload is scanned with the same screens `route`/`place_info`
+already apply to their own arguments — `scan_identifiers`,
+`_looks_like_coordinate`, and `_names_a_person`
+(`nora/agent/tools.py:1024`) — with `_names_a_person` additionally checked
+against the room's own `resolvable_places()` names (DEC-64's own source for
+saved-place names), not only person names. A match anywhere in `context`
+refuses the whole call (`{"status": "refused", ...}`), the same shape
+`route`/`place_info` already use for an identifier/person-name hit — not a
+silent strip, which would build an artifact missing data nobody was told
+about. No new detection logic: the three functions already exist and are
+already imported into this file; `context`'s screening is one more call
+site for each, not a new mechanism. A named test enforces it (§7): the free
+number is
 **R-43** (highest existing is R-42), and the decision-index entry gets a
 `RULE_TESTS` line — CLAUDE.md's own requirement for a new behavioural rule,
 which the first draft named but didn't actually add.
