@@ -84,7 +84,12 @@ def normalise_compute_job(job: ComputeJob) -> ComputeJob:
 @runtime_checkable
 class ComputeJobStore(Protocol):
     async def create(self, job: ComputeJob) -> None:
-        """Insert-only, `state` always `PENDING` at creation."""
+        """Insert-only: the row's fields are written exactly as given, `state`
+        included. In production the only caller (`make_artifact`'s slow path)
+        always passes `PENDING`, but that is the CALLER's discipline — neither
+        implementation enforces it, and the contract suite itself creates a
+        terminal row directly. Stated as a habit rather than an invariant so
+        nothing downstream reasons as though it were checked here."""
         ...
 
     async def get(self, job_id: UUID) -> ComputeJob | None: ...
@@ -116,6 +121,30 @@ class ComputeJobStore(Protocol):
         """Boot recovery: `FIRING` rows (a crash mid-delivery) resolve to
         `FAILED`, never re-delivered — at-most-once, mirroring
         `ReminderStore.sweep_firing`. Returns how many."""
+        ...
+
+    async def sweep_pending(self, *, now: datetime) -> int:
+        """Boot recovery for the OTHER half, and it has no `ReminderStore`
+        counterpart because the two ports differ in what a `PENDING` row means.
+
+        A pending reminder is a due TIME — durable, and a restart loses
+        nothing. A pending compute job is a HANDLE into `ComputeBackend`'s
+        in-process registry (`backend_job_id`), and `LocalDockerBackend` keeps
+        that registry in memory only. So ANY restart — a crash, a deploy, a
+        config change — leaves every surviving `PENDING` row pointing at a job
+        this process has never heard of, and `poll` answers `FAILED("unknown
+        job_id")` for it. Delivered, that becomes Nora telling the group in her
+        own voice that their job failed, which is not something anybody knows.
+
+        Sweeping them at boot resolves each to `FAILED` with an honest reason
+        instead, and it is the same at-most-once rule `sweep_firing` holds:
+        never re-delivered, never re-polled. Returns how many.
+
+        What it does NOT do: reach the container. A sandbox that survived the
+        restart runs to completion and may well register its artifact with
+        Drop — the row says the delivery was lost, which is true, and says
+        nothing about the container, which this process genuinely cannot see.
+        """
         ...
 
     async def aclose(self) -> None: ...

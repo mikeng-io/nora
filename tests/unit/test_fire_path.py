@@ -19,9 +19,10 @@ import pytest
 
 from nora.agent.registry import ToolRegistry
 from nora.app import fire as fire_module
-from nora.app.fire import FirePath, Occasion, reminder_occasion
+from nora.app.fire import FirePath, Occasion, compute_occasion, reminder_occasion
+from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.models import ConversationTarget, PersonRef
-from nora.domain.ports import PlatformIdentity, SendResult
+from nora.domain.ports import JobResult, JobStatus, PlatformIdentity, SendResult
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
@@ -681,3 +682,72 @@ def test_the_final_occurrence_says_so_rather_than_counting_zero() -> None:
     header = fire_module._fire_header([row], MILES, T0)
 
     assert "(every day, last one)" in header
+
+
+# ---- compute_occasion (Nora Compute spec §4) --------------------------------
+#
+# The pure-function half, beside `_fire_header`'s above: what a finished — or
+# failed — compute job becomes when it is put to her. `ComputeJobPoller`'s own
+# tests (`tests/unit/test_compute_poller.py`) cover the delivery around it.
+
+
+def _compute_job(**kw: object) -> ComputeJob:
+    base = {
+        "id": uuid.uuid4(), "backend_job_id": "job_1", "task": "chart the rainfall",
+        "artifact_id": None, "platform": "signal", "conversation_id": "conv-1",
+        "conversation_type": "group", "requester_person_id": "miles",
+        "created_at": T0, "state": ComputeJobState.PENDING, "completed_at": None,
+        "result_url": None, "result_summary": None, "error": None,
+    }   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
+    base.update(kw)
+    return ComputeJob(**base)                                   # type: ignore[arg-type]
+
+
+def test_a_finished_job_puts_its_summary_and_link_to_her() -> None:
+    """The control for the failure test below: on success she is told the
+    summary AND the url, because a report she cannot link to is not delivered.
+    """
+    occasion = compute_occasion(
+        _compute_job(),
+        JobResult(
+            status=JobStatus.SUCCEEDED, url="https://nora.example.net/drop/abc",
+            summary="12 wet days in July",
+        ),
+    )
+
+    assert "It finished: 12 wet days in July" in occasion.body
+    assert "https://nora.example.net/drop/abc" in occasion.body
+    assert "chart the rainfall" in occasion.body   # what was asked, still there
+    assert occasion.person_id == "miles"
+    assert occasion.kind == "compute"
+
+
+def test_a_failed_job_is_put_to_her_as_a_failure_not_as_a_result() -> None:
+    """The branch nothing exercised. A `JobResult` that is not SUCCEEDED must
+    reach her AS a failure — she composes the group-facing message from this
+    body, so a failure worded like a result is how she ends up announcing an
+    artifact that does not exist. The backend's own error rides along because
+    «it didn't work» with no reason is not something anybody can act on.
+    """
+    occasion = compute_occasion(
+        _compute_job(),
+        JobResult(status=JobStatus.FAILED, error="the sandbox ran out of memory"),
+    )
+
+    assert "It failed: the sandbox ran out of memory" in occasion.body
+    assert "It finished" not in occasion.body
+    assert "chart the rainfall" in occasion.body
+    # The header still names the situation as one SHE has to explain.
+    assert "or failed" in occasion.header(MILES, T0)
+
+
+def test_a_failure_with_no_error_says_so_rather_than_reading_as_success() -> None:
+    """`error` is `str | None` on `JobResult`, and `None` is reachable — a
+    backend that reports FAILED without a message. Formatted naively that
+    becomes «It failed: None»; left out entirely it becomes «It failed:», which
+    a model fills in for itself. Neither is an answer, so the absence is named.
+    """
+    occasion = compute_occasion(_compute_job(), JobResult(status=JobStatus.FAILED))
+
+    assert "It failed: no reason given" in occasion.body
+    assert "None" not in occasion.body

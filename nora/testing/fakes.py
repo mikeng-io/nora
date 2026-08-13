@@ -832,13 +832,23 @@ class FakeComputeJobStore:
         return True
 
     async def sweep_firing(self, *, now: Any) -> int:
+        return self._sweep(
+            ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery",
+        )
+
+    async def sweep_pending(self, *, now: Any) -> int:
+        return self._sweep(
+            ComputeJobState.PENDING, now,
+            "swept at boot: lost track of this job across a restart",
+        )
+
+    def _sweep(self, state: ComputeJobState, now: Any, error: str) -> int:
         stamp = ensure_utc_job(now, field="now")
         swept = 0
         for job_id, job in list(self._jobs.items()):
-            if job.state is ComputeJobState.FIRING:
+            if job.state is state:
                 self._jobs[job_id] = replace(
-                    job, state=ComputeJobState.FAILED, completed_at=stamp,
-                    error="swept at boot: process crashed mid-delivery",
+                    job, state=ComputeJobState.FAILED, completed_at=stamp, error=error,
                 )
                 swept += 1
         return swept

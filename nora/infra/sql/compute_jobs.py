@@ -105,13 +105,24 @@ class SqlComputeJobStore:
         return bool(result.rowcount)
 
     async def sweep_firing(self, *, now: Any) -> int:
+        return await self._sweep(
+            ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery",
+        )
+
+    async def sweep_pending(self, *, now: Any) -> int:
+        return await self._sweep(
+            ComputeJobState.PENDING, now,
+            "swept at boot: lost track of this job across a restart",
+        )
+
+    async def _sweep(self, state: ComputeJobState, now: Any, error: str) -> int:
         stmt = (
             sa.update(COMPUTE_JOBS)
-            .where(COMPUTE_JOBS.c.state == ComputeJobState.FIRING.value)
+            .where(COMPUTE_JOBS.c.state == state.value)
             .values(
                 state=ComputeJobState.FAILED.value,
                 completed_at=ensure_utc_job(now, field="now"),
-                error="swept at boot: process crashed mid-delivery",
+                error=error,
             )
         )
         async with self._engine.begin() as conn:

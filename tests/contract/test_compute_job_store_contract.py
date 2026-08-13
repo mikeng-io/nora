@@ -109,6 +109,43 @@ async def test_sweep_firing_resolves_to_failed(store):
     assert fetched.state is ComputeJobState.FAILED
 
 
+async def test_sweep_pending_resolves_to_failed_and_says_why(store):
+    """The restart half of boot recovery. `PENDING` here does NOT mean "not
+    started yet" the way a pending reminder does — it means a container this
+    process launched and can no longer identify, because `backend_job_id` is a
+    handle into `ComputeBackend`'s in-memory registry. The recorded `error` is
+    part of the contract, not decoration: it is what Nora would relay, so it
+    must say the delivery was lost and never that the job itself failed."""
+    job = _job()
+    await store.create(job)
+    swept = await store.sweep_pending(now=datetime.now(UTC))
+    assert swept == 1
+    fetched = await store.get(job.id)
+    assert fetched.state is ComputeJobState.FAILED
+    assert fetched.completed_at is not None
+    assert "restart" in fetched.error
+
+
+async def test_each_sweep_leaves_the_other_state_alone(store):
+    """Neither sweep may generalise into "resolve everything unfinished". They
+    run one after the other at boot and each records a DIFFERENT reason, so a
+    sweep that also took the other's rows would stamp the wrong explanation on
+    them — and, run in the other order, would make the second sweep's count
+    zero and its log line a lie."""
+    firing = _job()
+    await store.create(firing)
+    await store.claim(firing.id)
+    pending = _job(id=uuid4())
+    await store.create(pending)
+
+    assert await store.sweep_firing(now=datetime.now(UTC)) == 1
+    assert (await store.get(pending.id)).state is ComputeJobState.PENDING
+    assert await store.sweep_pending(now=datetime.now(UTC)) == 1
+    assert (await store.get(firing.id)).error == (
+        "swept at boot: process crashed mid-delivery"
+    )
+
+
 async def test_naive_datetimes_are_refused_rather_than_guessed(store):
     """A naive datetime has no answer, so neither store may invent one.
 
@@ -132,3 +169,6 @@ async def test_naive_datetimes_are_refused_rather_than_guessed(store):
 
     with pytest.raises(NaiveComputeJobDatetimeError):
         await store.sweep_firing(now=naive)
+
+    with pytest.raises(NaiveComputeJobDatetimeError):
+        await store.sweep_pending(now=naive)
