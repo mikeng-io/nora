@@ -24,9 +24,6 @@ import os
 from dataclasses import dataclass
 
 from nora.config import Config
-from nora.domain.ports import ReverseGeocoder
-from nora.infra.geocode import GoogleGeocoder
-from nora.infra.geocode_hkgov import HKGovGeocoder
 from nora.infra.life360 import Life360Client
 from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.presence import PresenceStore
@@ -148,34 +145,6 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         password=password,
         metrics=metrics,
     )
-    # The reverse geocoder — a SWITCHABLE option behind the `ReverseGeocoder`
-    # port (2026-08-08). "google" (default, proven) needs the Maps key; "hkgov"
-    # needs a portal service URL + token. Either is OPTIONAL: no credential →
-    # no geocoder, and a fix stores its coordinate/Life360 label, never a startup
-    # failure (an address is a nice-to-have, DEC-54's inert-by-default spirit).
-    geocoder: ReverseGeocoder | None = None
-    if presence.geocode_provider == "hkgov":
-        token = os.environ.get(presence.hkgov_token_env, "")
-        if token and presence.hkgov_geocode_url:
-            geocoder = HKGovGeocoder(
-                service_url=presence.hkgov_geocode_url, token=token,
-                lang_zh=presence.hkgov_lang_zh, lang_en=presence.hkgov_lang_en,
-            )
-        else:
-            log.info(
-                "presence geocoder disabled: geocode_provider=hkgov but "
-                "hkgov_geocode_url or %s is unset", presence.hkgov_token_env,
-            )
-    else:
-        maps_key = os.environ.get(presence.geocode_api_key_env, "")
-        if maps_key:
-            geocoder = GoogleGeocoder(api_key=maps_key)
-        else:
-            log.info(
-                "presence geocoder disabled (%s unset) — a fix without a Life360 "
-                "address stores its coordinate only",
-                presence.geocode_api_key_env,
-            )
     collector = PresenceCollector(
         client=client,
         store=store,
@@ -183,7 +152,6 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         cadence_seconds=presence.cadence_seconds,
         cadence_moving_seconds=presence.cadence_moving_seconds,
         cadence_still_seconds=presence.cadence_still_seconds,
-        geocoder=geocoder,
         metrics=metrics,
     )
     log.info(

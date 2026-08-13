@@ -277,9 +277,11 @@ services:
       - LIFE360_CLIENT_CREDENTIAL=${LIFE360_CLIENT_CREDENTIAL:-}
       - LIFE360_USERNAME=${LIFE360_USERNAME:-}
       - LIFE360_PASSWORD=${LIFE360_PASSWORD:-}
-      # Optional reverse geocoder for address-less fixes — same key `route` uses;
-      # unset stores coordinates, never a failure.
-      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      # No Google Maps key here (2026-08-14) — the collector talks to Life360
+      # ONLY. Reverse-geocoding moved to Nora's own process (`where_is`,
+      # on demand), which already has GOOGLE_MAPS_API_KEY for `route`/
+      # `render_map`; the collector calling Google unconditionally on every
+      # poll cost real billed requests for addresses nobody ever read.
       # Same reasoning as nora's TZ: fix timestamps and logs should read in the
       # group's clock, not UTC.
       - TZ=Asia/Hong_Kong

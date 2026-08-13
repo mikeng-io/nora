@@ -50,6 +50,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from ..domain.ports import ReverseGeocoder
 from ..domain.presence import PresenceFix, SavedPlace
 from .room import Room
 
@@ -295,6 +296,7 @@ class Whereis:
         circle: Circle,
         presence: PresenceReader,
         refresher: LocationRefresher | None = None,
+        geocoder: ReverseGeocoder | None = None,
         location_trusted: bool = False,
         metrics: Any = None,
     ) -> None:
@@ -305,6 +307,18 @@ class Whereis:
         # to force a fresh reading before it reads the store. None → the old
         # read-only behaviour (the last stored fix), unchanged.
         self._refresher = refresher
+        # Optional reverse-geocode, ON DEMAND (moved here from the collector,
+        # 2026-08-14): a fix with no Life360 address is geocoded ONLY when
+        # someone actually asks `where_is` about it, not on every poll cycle
+        # for every tracked person regardless of whether anyone ever reads the
+        # result — the collector's own eager version cost real, billed Google
+        # calls for fixes nobody asked about (~12k requests / 6 days, ~$60,
+        # confirmed against Cloud Monitoring's own request-count metric before
+        # this moved). The coordinate this sends is Nora's own code reading a
+        # DB row, never a model-authored value — the same "not the model, not
+        # the group" ground `nora.infra.geocode`'s own docstring already
+        # argues for the collector's version of this exact call.
+        self._geocoder = geocoder
         self._guard = DisclosureGuard(circle)
         # LOCATION-DISCLOSURE TRUST (DEC-74, widened by DEC-79): sourced from this
         # conversation's `policy.toml` `location` flag. It is a ROOM-LEVEL switch,
@@ -498,6 +512,17 @@ class Whereis:
             log.exception("whereis derivation read failed — answering without it")
         if fix.is_driving:
             movement["driving"] = True
+        # ON-DEMAND reverse-geocode: only reached when there is no saved-place
+        # name AND Life360 gave no address of its own — the two cheaper answers
+        # above always win first. This is the ONE live external call `locate`
+        # makes, and it is paid for only by an actual question about an actual
+        # fix, not by a background poll cycle nobody asked about.
+        address = fix.address
+        if place_name is None and address is None and self._geocoder is not None:
+            try:
+                address = await self._geocoder.address_for(lat=fix.lat, lng=fix.lng)
+            except Exception:
+                log.exception("whereis on-demand geocode failed — answering without it")
         return {
             "status": "ok",
             "person": ref.name,
@@ -511,8 +536,8 @@ class Whereis:
             # when the fix carries neither; they still never leave in a tool
             # ARGUMENT (R-28, outbound stays hard-blocked).
             **({"place": place_name} if place_name else {}),
-            **({"address": fix.address} if fix.address else {}),
-            **({} if (place_name or fix.address) else
+            **({"address": address} if address else {}),
+            **({} if (place_name or address) else
                {"lat": fix.lat, "lng": fix.lng}),
             **movement,
         }

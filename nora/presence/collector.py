@@ -35,7 +35,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.ports import ReverseGeocoder
 from nora.domain.presence import PresenceFix
 from nora.infra.life360 import CircleRead, Life360Client, Member, ReadStatus
 from nora.infra.sql.presence import PresenceStore
@@ -87,7 +86,6 @@ class PresenceCollector:
         cadence_seconds: float,
         cadence_moving_seconds: float | None = None,
         cadence_still_seconds: float | None = None,
-        geocoder: ReverseGeocoder | None = None,
         metrics: Any = None,
     ) -> None:
         self._client = client
@@ -102,10 +100,6 @@ class PresenceCollector:
         self._cadence_still_seconds = (
             cadence_still_seconds if cadence_still_seconds is not None else cadence_seconds
         )
-        # Optional (None when no Google key): fills a place name on a fix Life360
-        # returned without an address (§5). Never load-bearing — a miss stores
-        # the coordinate as before.
-        self._geocoder = geocoder
         self._metrics = metrics
         self._last_success_ms: dict[str, int] = {}
         # When each circle was FIRST attempted. The liveness age falls back to
@@ -257,21 +251,17 @@ class PresenceCollector:
         ts_ms, lat, lng = member.ts_ms, member.lat, member.lng
         if ts_ms is None or lat is None or lng is None:
             return False
-        # PREFER Google's reverse-geocode of the GPS coordinate over Life360's own
-        # address label (§5, operator report 2026-08-08). Life360's label is
-        # COARSE and often wrong: a real fix (22.410600, 114.124500) it labelled
-        # «麗靜徑 Tin Sgak Path» reverse-geocodes via Google to «澤星樓» (Chak Sing
-        # House) — ~1 km off, and Google's is the accurate one (live-verified). So
-        # the GPS is trustworthy but Life360's naming is not; geocode the
-        # coordinate when a geocoder exists and fall back to Life360's address only
-        # when there is none or the geocode misses (fail-soft, never a crash). The
-        # geocoder memoises by location, so a stationary member is geocoded ONCE,
-        # not re-billed every cycle.
-        address = None
-        if self._geocoder is not None:
-            address = await self._geocoder.address_for(lat=lat, lng=lng)
-        if address is None:
-            address = member.address
+        # Life360's own label, stored as-is. The collector talks to Life360
+        # ALONE — it used to also reverse-geocode every fix through Google
+        # (§5, operator report 2026-08-08, reverted 2026-08-14): that ran
+        # unconditionally, every cadence_seconds tick, for every tracked
+        # person, regardless of whether anyone ever asked where they were,
+        # and cost real billed Google Geocoding calls for addresses nobody
+        # read (~12k requests / 6 days, confirmed against Cloud Monitoring).
+        # `where_is` (`nora.agent.whereis.Whereis.locate`) now does this
+        # itself, on demand, only for a fix someone actually asked about and
+        # only when Life360 gave no address of its own.
+        address = member.address
         fix = PresenceFix(
             circle_id=circle.circle_id,
             person_id=person_id,

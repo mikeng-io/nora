@@ -78,6 +78,7 @@ class ToolRegistry:
         presence: PresenceReader | None = None,
         circles: tuple[Circle, ...] = (),
         refresher: Any = None,
+        geocoder: Any = None,
         shortener: LinkShortener | None = None,
         ai_peer: str = "nora",
         reminders: ReminderStore | None = None,
@@ -141,6 +142,10 @@ class ToolRegistry:
         # The LIVE-refresh client (DEC-67) — None leaves `where_is` reading the
         # last stored fix (offline/eval, or [presence] refresh_url unset).
         self._refresher = refresher
+        # The on-demand reverse-geocoder (moved here from the collector,
+        # 2026-08-14) — None leaves `where_is` falling back to Life360's own
+        # address or the raw coordinate, same as no geocoder ever existing.
+        self._geocoder = geocoder
         # The drop-service mint client ([shortener], cutover 2026-08-12 to
         # `drop`'s internal API; was n.example.net's Worker before that) — None
         # leaves long URLs in replies, and a failed mint does the same; never
@@ -471,6 +476,7 @@ class ToolRegistry:
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,
             refresher=self._refresher,
+            geocoder=self._geocoder,
             shortener=self._shortener,
             question=question, context_window=context_window,
             ai_peer=self._ai_peer, fire_turn=fire_turn,

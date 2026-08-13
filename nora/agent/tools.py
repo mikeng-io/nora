@@ -1145,6 +1145,7 @@ def build_tool_specs(
     presence_circles=(),
     location_trusted: bool = False,
     refresher=None,
+    geocoder=None,
     shortener=None,
     question: str = "",
     context_window: int = 40,
@@ -2290,7 +2291,8 @@ def build_tool_specs(
         for circle in presence_circles:
             out = await Whereis(
                 room=room, circle=circle, presence=presence_source,
-                refresher=refresher, location_trusted=location_trusted, metrics=metrics,
+                refresher=refresher, geocoder=geocoder,
+                location_trusted=location_trusted, metrics=metrics,
             ).locate(person)
             if str(out.get("status", "")) == "ok":
                 _record(metrics, "where_is", "ok", age_seconds=out.get("age_seconds"))
@@ -3321,6 +3323,7 @@ def build_tools(
     presence_circles=(),
     location_trusted: bool = False,
     refresher=None,
+    geocoder=None,
     shortener=None,
     giphy_source: GifSource | None = None,
     question: str = "",
@@ -3341,6 +3344,7 @@ def build_tools(
         presence_source=presence_source, presence_circles=presence_circles,
         location_trusted=location_trusted,
         refresher=refresher,
+        geocoder=geocoder,
         shortener=shortener,
         question=question, context_window=context_window, ai_peer=ai_peer,
         links=links, giphy_source=giphy_source,

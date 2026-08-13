@@ -88,12 +88,27 @@ def _room(persons, *, members, fail=False, tagger=None):
 
 
 def _whereis(persons, store, *, members, fail=False, tagger=None, metrics=None,
-             refresher=None, location_trusted=False):
+             refresher=None, geocoder=None, location_trusted=False):
     return Whereis(
         room=_room(persons, members=members, fail=fail, tagger=tagger),
-        circle=CIRCLE, presence=store, refresher=refresher,
+        circle=CIRCLE, presence=store, refresher=refresher, geocoder=geocoder,
         location_trusted=location_trusted, metrics=metrics,
     )
+
+
+class _FakeGeocoder:
+    """Records every call — the assertion that matters most here is HOW MANY
+    times this was reached, not just what it returned (the whole point of
+    moving this on-demand: it must be reached only when locate() actually
+    needs it)."""
+
+    def __init__(self, address="Yoho Mall"):
+        self._address = address
+        self.calls: list[tuple[float, float]] = []
+
+    async def address_for(self, *, lat, lng):
+        self.calls.append((lat, lng))
+        return self._address
 
 
 class _FakeRefresher:
@@ -157,6 +172,82 @@ async def test_whereis_falls_back_to_the_stored_fix_when_the_refresh_fails(perso
     assert refresher.calls == ["miles_novak"]
     assert out["status"] == "ok"
     assert out["address"] == "Yoho Mall"                 # the stored fix stands
+
+
+# ── on-demand reverse-geocode (moved here from the collector, 2026-08-14) ────
+#
+# The collector used to geocode every fix unconditionally, every poll, for
+# every tracked person — real billed Google calls for addresses nobody read
+# (~12k requests / 6 days, confirmed against Cloud Monitoring). It now happens
+# HERE, lazily, only when locate() has nothing cheaper to say — so the call
+# count assertions below are the actual point of these tests, not incidental.
+
+async def test_an_addressless_fix_is_geocoded_on_demand(persons, store):
+    """No Life360 address, no saved place: locate() reaches for the geocoder
+    itself, using the fix's own coordinate, and the geocoded address wins over
+    a raw lat/lng."""
+    await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address=None)
+    geocoder = _FakeGeocoder("Yoho Mall, Yuen Long")
+    w = _whereis(persons, store, members=(MILES, GRANT, NORA), geocoder=geocoder)
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "ok"
+    assert out["address"] == "Yoho Mall, Yuen Long"
+    assert "lat" not in out and "lng" not in out
+    assert geocoder.calls == [(22.44, 114.02)]           # the fix's own coordinate
+
+
+async def test_a_fix_with_a_life360_address_never_reaches_the_geocoder(persons, store):
+    """The cheaper answer wins without paying for the call at all — this is
+    the actual cost fix: a geocoder wired but never invoked when Life360
+    already gave an address."""
+    await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address="Grand Century Place")
+    geocoder = _FakeGeocoder("should never be returned")
+    w = _whereis(persons, store, members=(MILES, GRANT, NORA), geocoder=geocoder)
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["address"] == "Grand Century Place"
+    assert geocoder.calls == []
+
+
+async def test_a_saved_place_hit_never_reaches_the_geocoder(persons, store):
+    """A household place name is the cheapest, best answer — checked BEFORE
+    the geocoder is ever considered, address or no address."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address=None)
+    geocoder = _FakeGeocoder("should never be returned")
+    w = _whereis(persons, store, members=(MILES, GRANT, NORA), geocoder=geocoder)
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["place"] == "Home"
+    assert geocoder.calls == []
+
+
+async def test_no_geocoder_wired_falls_back_to_raw_coordinates(persons, store):
+    """Unwired (offline/eval, or an operator who leaves it off): the old
+    last-resort shape is unchanged — the model gets `lat`/`lng` rather than
+    nothing, and nothing crashes for lacking a geocoder."""
+    await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address=None)
+    w = _whereis(persons, store, members=(MILES, GRANT, NORA))  # geocoder=None
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "ok"
+    assert "address" not in out
+    assert out["lat"] == 22.44
+    assert out["lng"] == 114.02
+
+
+async def test_a_geocode_failure_falls_back_to_raw_coordinates_not_a_crash(persons, store):
+    """NEVER raises into the tool call — a geocoder outage costs an address,
+    never the whole answer (the same fail-soft shape the collector's old call
+    site held, now held here instead)."""
+    class _RaisingGeocoder:
+        async def address_for(self, *, lat, lng):
+            raise ConnectionError("geocode unreachable")
+
+    await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address=None)
+    w = _whereis(persons, store, members=(MILES, GRANT, NORA), geocoder=_RaisingGeocoder())
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "ok"
+    assert "address" not in out
+    assert out["lat"] == 22.44
+    assert out["lng"] == 114.02
 
 
 async def test_whereis_refuses_to_disclose_outside_the_circle(persons, store):

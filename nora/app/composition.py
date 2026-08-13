@@ -44,6 +44,7 @@ from nora.domain.ports import (
     MemoryStore,
     PlatformAdapter,
     RecordStore,
+    ReverseGeocoder,
     RosterSource,
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
@@ -614,6 +615,31 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # 2026-08-08).
             timeout_seconds=cfg.presence.refresh_timeout_seconds + 2.0,
         )
+    # The on-demand reverse-geocoder (moved here from the presence collector,
+    # 2026-08-14): the collector calling this on EVERY fix, for every tracked
+    # person, every cadence_seconds tick, regardless of whether anyone ever
+    # asked where they were, cost ~12k billed Google Geocoding calls over 6
+    # days (~$60, confirmed against Cloud Monitoring's own request-count
+    # metric) for addresses nobody read. `Whereis.locate` (nora/agent/whereis.py)
+    # now calls this itself, ONLY when a fix has no address and someone
+    # actually asked `where_is` about it — the collector talks to Life360
+    # alone, never Google. Switchable behind the SAME `ReverseGeocoder` port
+    # (`[presence] geocode_provider`, "google" default or "hkgov"), same
+    # config fields this used to read on the collector's side.
+    geocoder: ReverseGeocoder | None = None
+    if cfg.presence.geocode_provider == "hkgov":
+        hkgov_token = os.environ.get(cfg.presence.hkgov_token_env, "")
+        if hkgov_token and cfg.presence.hkgov_geocode_url:
+            from nora.infra.geocode_hkgov import HKGovGeocoder
+            geocoder = HKGovGeocoder(
+                service_url=cfg.presence.hkgov_geocode_url, token=hkgov_token,
+                lang_zh=cfg.presence.hkgov_lang_zh, lang_en=cfg.presence.hkgov_lang_en,
+            )
+    else:
+        maps_key = os.environ.get(cfg.presence.geocode_api_key_env, "")
+        if maps_key:
+            from nora.infra.geocode import GoogleGeocoder
+            geocoder = GoogleGeocoder(api_key=maps_key)
     # `LocalDockerBackend` (Nora Compute spec §2/§3), wired ONLY when
     # `[compute] enabled` — the `[heartbeat]`-shaped gate: off leaves
     # `compute_backend` None and `make_artifact` answers `unavailable` (R-5),
@@ -715,6 +741,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         weather=weather_client,
         presence=presence_store, circles=presence_circles,
         refresher=refresher,
+        geocoder=geocoder,
         shortener=shortener_client,
         ai_peer=cfg.memory.ai_peer,
         mcp_tools=mcp_tool_groups,
