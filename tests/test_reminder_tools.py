@@ -901,7 +901,15 @@ async def test_make_artifact_falls_back_to_still_working_when_slow(monkeypatch):
 async def test_make_artifact_unavailable_when_slow_and_no_tagger(monkeypatch):
     """Mirrors `remind`'s own unmapped-sender refusal: with nobody to deliver
     the eventual result TO, writing a durable row would be a job with nowhere
-    to land, so this degrades to `unavailable` instead."""
+    to land, so this degrades to `unavailable` instead.
+
+    `launched == []` is the load-bearing assertion, and it is about ORDER: the
+    binding check runs BEFORE `compute_backend.launch`, so this case never
+    starts a container at all. Checked after launching (the original shape), a
+    real sandbox would be running — holding a concurrency slot and a minted
+    Drop token — for a result the code has already decided nobody can be
+    told about.
+    """
     monkeypatch.setattr(tools_module, "_SYNC_POLL_SECONDS", 0.03)
     monkeypatch.setattr(tools_module, "_SYNC_POLL_INTERVAL", 0.01)
     backend = FakeComputeBackend()
@@ -917,3 +925,39 @@ async def test_make_artifact_unavailable_when_slow_and_no_tagger(monkeypatch):
 
     assert result == {"status": "unavailable"}
     assert jobs._jobs == {}
+    assert backend.launched == []
+
+
+async def test_make_artifact_reports_a_failed_job_without_calling_it_ok():
+    """The fast-path FAILURE branch: the backend answers FAILED inside the
+    sync window, so no durable row is ever written and the model is told
+    inline.
+
+    TWO things are asserted, because the payload and the counter answer
+    different questions. The PAYLOAD keeps `status: ok` — R-27 is about
+    whether the TOOL could answer, and it could; `failed: True` plus the
+    backend's own `error` is the answer. The COUNTER must not say `ok`: a
+    failed job that increments `nora_tool_calls_total{status="ok"}` is
+    invisible to anyone watching the series, which is exactly the state this
+    tool shipped in (the distinction lived only in a log-line keyword).
+    """
+    backend = FakeComputeBackend()
+    jobs = FakeComputeJobStore()
+    metrics = Metrics()
+    tools = _tools(compute_backend=backend, compute_jobs=jobs, metrics=metrics)
+    # `FakeComputeBackend` assigns ids in order from "job_000001"; this is the
+    # only job it ever launches here, so arranging it up front is deterministic
+    # (the same argument the still-working test above makes).
+    backend.set_result(
+        job_id="job_000001",
+        result=JobResult(status=JobStatus.FAILED, error="the sandbox ran out of memory"),
+    )
+
+    result = await tools["make_artifact"](task="render an enormous chart")
+
+    assert result == {
+        "status": "ok", "failed": True, "error": "the sandbox ran out of memory",
+    }
+    assert jobs._jobs == {}  # a failure inside the window writes no durable row
+    assert metrics.get("nora_tool_calls_total", tool="make_artifact", status="failed") == 1
+    assert metrics.get("nora_tool_calls_total", tool="make_artifact", status="ok") == 0

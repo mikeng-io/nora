@@ -3028,6 +3028,19 @@ def build_tool_specs(
         if compute_backend is None:
             _record(metrics, "make_artifact", "unavailable")
             return {"status": "unavailable"}
+        # BEFORE `launch`, not after it. A job that outruns the sync window
+        # needs somewhere to persist and somebody to deliver to; without both,
+        # this call can only ever answer `unavailable` — so checking after
+        # launching means a container is already running for a result nobody
+        # will ever be told about, burning a concurrency slot and a Drop token
+        # until it times out. The cost of checking first is that a job which
+        # WOULD have finished inside the sync window is refused too, on a turn
+        # with no tagger — a version announcement, or a requester who has since
+        # left `identity.toml`. That is the right trade: nobody in either case
+        # is waiting on a file, and a refusal there is honest rather than lucky.
+        if compute_jobs is None or room.tagger is None:
+            _record(metrics, "make_artifact", "unavailable", reason="no_delivery_target")
+            return {"status": "unavailable"}
 
         job_id = await compute_backend.launch(task=task, artifact_id=artifact_id)
         elapsed = 0.0
@@ -3044,16 +3057,23 @@ def build_tool_specs(
             _record(metrics, "make_artifact", "ok")
             return {"status": "ok", "url": result.url, "summary": result.summary}
         if result.status is JobStatus.FAILED:
-            _record(metrics, "make_artifact", "ok", failed=True)
+            # `status="failed"` on the COUNTER, `{"status": "ok", "failed":
+            # True}` in the payload, and the two disagree on purpose. The
+            # payload is R-27's answer to the MODEL — the tool did run and its
+            # answer is trustworthy, it is the job that went wrong — while the
+            # counter answers "how did this call go" for whoever is watching
+            # the series, and a failed job counted as `ok` is invisible there.
+            # `failed=True` only ever reached the log line, so `status=ok` was
+            # the whole dimension a dashboard could see. A status outside
+            # R-27's three has precedent here — `remind`, `route` and
+            # `cancel_reminder` all count `refused` — so this is a fourth
+            # value of an existing vocabulary, not a new one.
+            _record(metrics, "make_artifact", "failed")
             return {"status": "ok", "failed": True, "error": result.error}
 
         # Still running past the sync window — fall to the slow path (Nora
-        # Compute spec §4). A missing requester/conversation binding means there
-        # is nowhere to deliver the eventual result, so this degrades to
-        # "unavailable" rather than launching a job nobody can be told about.
-        if compute_jobs is None or room.tagger is None:
-            _record(metrics, "make_artifact", "unavailable", reason="no_delivery_target")
-            return {"status": "unavailable"}
+        # Compute spec §4). The delivery binding this needs was checked before
+        # `launch`, above.
         job = ComputeJob(
             id=uuid.uuid4(), backend_job_id=job_id, task=task, artifact_id=artifact_id,
             platform=room.platform, conversation_id=bound_conversation_id,
