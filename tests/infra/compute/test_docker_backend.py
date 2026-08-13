@@ -96,6 +96,11 @@ def make_backend(
         sandbox_image="smith:latest",
         job_timeout_seconds=30,
         max_concurrent_jobs=2,
+        mem_limit="1g",
+        nano_cpus=1_000_000_000,
+        tracing_enabled=False,
+        tracing_endpoint="",
+        tracing_headers="",
         workspace_root=workspace_root,
         workspace_host_root=(
             workspace_root if workspace_host_root is None else workspace_host_root

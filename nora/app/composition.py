@@ -653,6 +653,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             sandbox_image=cfg.compute.sandbox_image,
             job_timeout_seconds=cfg.compute.job_timeout_seconds,
             max_concurrent_jobs=cfg.compute.max_concurrent_jobs,
+            mem_limit=cfg.compute.mem_limit,
+            nano_cpus=cfg.compute.nano_cpus,
+            # Reuses Nora's own [obs.tracing] section rather than a second
+            # [compute]-scoped one -- Smith's spans land in the SAME Langfuse
+            # project, under service.name="smith" (tracing.py) for filtering,
+            # not a separate destination an operator would have to configure
+            # twice. Only forwarded when the exporter is actually "otlp_http"
+            # -- "console"/"file" have no endpoint value meaningful to a
+            # process on the other side of the container boundary.
+            tracing_enabled=(
+                cfg.obs.tracing.enabled and cfg.obs.tracing.exporter == "otlp_http"
+            ),
+            tracing_endpoint=cfg.obs.tracing.endpoint,
+            tracing_headers=(
+                os.environ.get(cfg.obs.tracing.headers_env, "")
+                if cfg.obs.tracing.headers_env else ""
+            ),
             # `store.data_dir`, the SAME data-volume convention media custody
             # uses (`_build_media_custody` below: `store.data_dir / "media"`)
             # — not a second, unmounted absolute path. Bind-mounted at

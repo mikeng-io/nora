@@ -652,6 +652,13 @@ class ComputeConfig(BaseModel):
     job_timeout_seconds: int = 300
     max_concurrent_jobs: int = 2
     poll_tick_seconds: float = 10.0
+    # `LocalDockerBackend`'s per-container resource caps -- docker-py's own
+    # `containers.run` kwarg shapes: `mem_limit` a size string, `nano_cpus`
+    # billionths of a CPU core (2_000_000_000 = 2 vCPUs). 1g/unbounded-CPU
+    # (the first-shipped values) was tight for real workloads -- charts,
+    # maps, larger markdown/html renders.
+    mem_limit: str = "8g"
+    nano_cpus: int = 2_000_000_000
     # NAMES the env var carrying the HOST-side path of whatever is bind-mounted
     # at `store.data_dir` — `*_env` for the same DEC-8 reason every secret is:
     # the VALUE is a deployment fact injected by the host, never a line in a

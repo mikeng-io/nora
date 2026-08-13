@@ -49,7 +49,7 @@ COPY pyproject.toml .
 RUN uv pip install --system --no-cache .
 
 COPY agent.py doctrine.md ./
-COPY budget.py page_shell.py ./
+COPY budget.py page_shell.py tracing.py ./
 COPY skills/ ./skills/
 
 WORKDIR /workspace

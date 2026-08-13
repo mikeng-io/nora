@@ -26,6 +26,7 @@ from skills.html_report.render import render_html_report as _render_html_report
 from skills.maps.render import render_map as _render_map
 from skills.markdown.render import render_markdown as _render_markdown
 from skills.mermaid.render import render_mermaid as _render_mermaid
+from tracing import setup_tracing
 
 WORKSPACE = Path("/workspace")
 DROP_INTERNAL_URL = os.environ["DROP_INTERNAL_URL"]
@@ -164,6 +165,17 @@ def render_html_report(
 
 
 def main() -> None:
+    # Before anything else touches Strands -- its own instrumentation reads
+    # whatever global TracerProvider exists at call time, not just at
+    # Agent() construction, so tracing.py's own "never load-bearing" try/
+    # except is the only thing standing between a bad OTLP endpoint and a
+    # job that otherwise runs fine.
+    setup_tracing(
+        enabled=os.environ.get("SMITH_OTLP_ENABLED", "") == "1",
+        endpoint=os.environ.get("SMITH_OTLP_ENDPOINT", ""),
+        headers=os.environ.get("SMITH_OTLP_HEADERS", ""),
+    )
+
     task_file = Path(os.environ["TASK_FILE"])
     task = task_file.read_text()
     doctrine = Path(__file__).parent.joinpath("doctrine.md").read_text()

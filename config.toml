@@ -530,4 +530,6 @@ enabled = true
                               # finished job — the same "best case for
                               # lateness, not a bound" shape [heartbeat]
                               # .tick_seconds has.
+# mem_limit = "8g"            # docker-py's own containers.run mem_limit shape
+# nano_cpus = 2000000000      # billionths of a CPU core (2 vCPUs)
 # data_host_root_env = "NORA_DATA_HOST_ROOT"

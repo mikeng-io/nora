@@ -36,8 +36,6 @@ from nora.domain.ports import JobResult, JobStatus
 
 log = logging.getLogger("nora.compute")
 
-DEFAULT_MEM_LIMIT = "1g"
-
 # How much of a failed container's own output survives it. `tail` bounds what
 # Docker hands back; `MAX_ERROR_LOG_CHARS` bounds what reaches a `JobResult
 # .error` string, which ends up in an audit row and potentially in a reply --
@@ -82,6 +80,11 @@ class LocalDockerBackend:
         sandbox_image: str,
         job_timeout_seconds: int,
         max_concurrent_jobs: int,
+        mem_limit: str,
+        nano_cpus: int,
+        tracing_enabled: bool,
+        tracing_endpoint: str,
+        tracing_headers: str,
         workspace_root: Path,
         workspace_host_root: Path,
     ) -> None:
@@ -114,6 +117,15 @@ class LocalDockerBackend:
         self._google_maps_api_key = google_maps_api_key
         self._sandbox_image = sandbox_image
         self._job_timeout_seconds = job_timeout_seconds
+        self._mem_limit = mem_limit
+        self._nano_cpus = nano_cpus
+        # Already-resolved values, not `*_env` names -- Smith's container has
+        # no access to Nora's own `.env` to resolve a name from itself, the
+        # same reason `model_api_key`/`google_maps_api_key` above are opaque
+        # secrets rather than env-var names too.
+        self._tracing_enabled = tracing_enabled
+        self._tracing_endpoint = tracing_endpoint
+        self._tracing_headers = tracing_headers
         self._semaphore = asyncio.Semaphore(max_concurrent_jobs)
         # TWO roots for ONE directory, and the distinction is load-bearing.
         # `workspace_root` is where THIS process reads and writes (`task.txt`
@@ -283,8 +295,12 @@ class LocalDockerBackend:
                 "SMITH_MODEL_BASE_URL": self._model_base_url,
                 "SMITH_MODEL_NAME": self._model_name,
                 "GOOGLE_MAPS_API_KEY": self._google_maps_api_key,
+                "SMITH_OTLP_ENABLED": "1" if self._tracing_enabled else "0",
+                "SMITH_OTLP_ENDPOINT": self._tracing_endpoint,
+                "SMITH_OTLP_HEADERS": self._tracing_headers,
             },
-            mem_limit=DEFAULT_MEM_LIMIT,
+            mem_limit=self._mem_limit,
+            nano_cpus=self._nano_cpus,
             name=job_id,
         )
 

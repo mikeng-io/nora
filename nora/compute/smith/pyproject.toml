@@ -19,6 +19,11 @@ dependencies = [
     # built and tested against.
     "strands-agents[openai]==1.50.2",
     "requests",
+    # Explicit, matching the repo root pyproject.toml's own direct dependency
+    # (not left to strands-agents' own transitive pull) -- Strands
+    # instruments the agent loop/tools/model calls itself once a global
+    # TracerProvider exists (tracing.py), so this is the exporter half only.
+    "opentelemetry-exporter-otlp-proto-http>=1.44.0",
     "pytest>=9.1.1",
     "markdown-it-py>=4.2.0",
     "mdit-py-plugins>=0.6.1",
