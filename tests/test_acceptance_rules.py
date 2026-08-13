@@ -173,6 +173,10 @@ RULE_TESTS = {
     # in-process rebuilt, only the database surviving — because an in-memory
     # claim (or a read-then-write) passes any single-process assertion.
     "R-42": "test_a_restart_never_re_announces_the_same_version",
+    # R-43: a compute job is delivered AT MOST ONCE, ever — the same
+    # discipline R-37/R-37b hold for reminders, applied to the third
+    # Occasion (DEC-99). The next free number after R-42.
+    "R-43": "test_a_job_never_delivered_twice",
 }
 
 
