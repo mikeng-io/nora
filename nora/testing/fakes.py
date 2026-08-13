@@ -8,7 +8,12 @@ from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
-from nora.domain.compute import ComputeJob, ComputeJobState, normalise_compute_job
+from nora.domain.compute import (
+    ComputeJob,
+    ComputeJobState,
+    ensure_utc_job,
+    normalise_compute_job,
+)
 from nora.domain.media import MediaBytes, MediaRef, media_json
 from nora.domain.models import (
     ConversationTarget,
@@ -813,9 +818,13 @@ class FakeComputeJobStore:
         job = self._jobs.get(job_id)
         if job is None:
             return False
+        validated_completed_at = (
+            None if completed_at is None
+            else ensure_utc_job(completed_at, field="completed_at")
+        )
         self._jobs[job_id] = replace(
             job, state=state,
-            completed_at=completed_at if completed_at is not None else job.completed_at,
+            completed_at=validated_completed_at if completed_at is not None else job.completed_at,
             result_url=result_url if result_url is not None else job.result_url,
             result_summary=result_summary if result_summary is not None else job.result_summary,
             error=error if error is not None else job.error,
@@ -823,11 +832,12 @@ class FakeComputeJobStore:
         return True
 
     async def sweep_firing(self, *, now: Any) -> int:
+        stamp = ensure_utc_job(now, field="now")
         swept = 0
         for job_id, job in list(self._jobs.items()):
             if job.state is ComputeJobState.FIRING:
                 self._jobs[job_id] = replace(
-                    job, state=ComputeJobState.FAILED, completed_at=now,
+                    job, state=ComputeJobState.FAILED, completed_at=stamp,
                     error="swept at boot: process crashed mid-delivery",
                 )
                 swept += 1
