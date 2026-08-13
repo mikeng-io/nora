@@ -1,0 +1,109 @@
+"""One suite, both implementations of `ComputeJobStore` (Nora Compute spec
+§4). Mirrors `tests/contract/test_reminder_store_contract.py`'s own shape —
+the same real-Postgres `pg_url` fixture, migrated up before the SQL store is
+constructed, parametrized alongside the in-memory fake.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import uuid4
+
+import pytest
+
+from nora.domain.compute import ComputeJob, ComputeJobState
+from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.migrations_runner import run_migrations
+from nora.testing import FakeComputeJobStore
+
+
+def _job(**overrides):
+    defaults = {
+        "id": uuid4(), "backend_job_id": "job_x", "task": "write a haiku",
+        "artifact_id": None, "platform": "signal", "conversation_id": "conv-1",
+        "conversation_type": "group", "requester_person_id": "person-1",
+        "created_at": datetime.now(UTC), "state": ComputeJobState.PENDING,
+        "completed_at": None, "result_url": None, "result_summary": None, "error": None,
+    }
+    defaults.update(overrides)
+    return ComputeJob(**defaults)
+
+
+@pytest.fixture(params=["fake", "sql"])
+async def store(request):
+    if request.param == "fake":
+        s = FakeComputeJobStore()
+    else:
+        pg_url = request.getfixturevalue("pg_url")
+        run_migrations(pg_url)
+        s = SqlComputeJobStore(create_sql_engine(pg_url))
+    yield s
+    await s.aclose()
+
+
+async def test_create_then_get_round_trips(store):
+    job = _job()
+    await store.create(job)
+    fetched = await store.get(job.id)
+    assert fetched is not None
+    assert fetched.backend_job_id == "job_x"
+
+
+async def test_pending_returns_only_pending_rows(store):
+    pending_job = _job()
+    await store.create(pending_job)
+    done_job = _job(id=uuid4(), state=ComputeJobState.DONE)
+    await store.create(done_job)
+    result = await store.pending(limit=10)
+    ids = {j.id for j in result}
+    assert pending_job.id in ids
+    assert done_job.id not in ids
+
+
+async def test_pending_with_zero_limit_returns_nothing_on_both_stores(store):
+    """`SqlComputeJobStore.pending` passes `limit` straight into `.limit(limit)`
+    with no `check_limit`-style floor, unlike `ReminderStore.due()` — flagged
+    by Task 2's own review rather than the brief. `limit=0` is the one input
+    the two implementations could plausibly disagree on without either raising:
+    Postgres accepts `LIMIT 0` and returns zero rows, and Python's `rows[:0]`
+    also returns `[]` (unlike a NEGATIVE limit, where `rows[:-1]` silently
+    returns everything but the last row instead of erroring — the divergence
+    `ReminderStore.due()`'s own `check_limit` guards against). Nothing in this
+    plan has `ComputeJobPoller` ever call `pending` with a negative limit, so
+    that case is not exercised here — only the real boundary input both
+    implementations must agree on.
+    """
+    await store.create(_job())
+    assert await store.pending(limit=0) == []
+
+
+async def test_claim_is_a_compare_and_set_from_pending(store):
+    job = _job()
+    await store.create(job)
+    assert await store.claim(job.id) is True
+    assert await store.claim(job.id) is False  # already FIRING, second claim loses
+
+
+async def test_mark_writes_the_terminal_result(store):
+    job = _job()
+    await store.create(job)
+    await store.claim(job.id)
+    changed = await store.mark(
+        job.id, ComputeJobState.DONE, completed_at=datetime.now(UTC),
+        result_url="https://nora.example.net/drop/x", result_summary="a haiku",
+    )
+    assert changed is True
+    fetched = await store.get(job.id)
+    assert fetched.state is ComputeJobState.DONE
+    assert fetched.result_url == "https://nora.example.net/drop/x"
+
+
+async def test_sweep_firing_resolves_to_failed(store):
+    job = _job()
+    await store.create(job)
+    await store.claim(job.id)
+    swept = await store.sweep_firing(now=datetime.now(UTC))
+    assert swept == 1
+    fetched = await store.get(job.id)
+    assert fetched.state is ComputeJobState.FAILED

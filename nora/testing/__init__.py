@@ -31,6 +31,12 @@ one is a project rule violation, not a shortcut.
 properties — `artifacts` recording the full call, `fail` — the contract suite
 does not, since those are the fake's own surface rather than the port's).
 
+`FakeComputeJobStore` is the same rule applied to `nora.domain.compute`'s own
+port (`ComputeJobStore`, Nora Compute spec §4) rather than one of
+`nora/domain/ports.py`'s — bound to
+`nora.infra.sql.compute_jobs.SqlComputeJobStore` by
+`tests/contract/test_compute_job_store_contract.py`.
+
 `FakeAdapter` is exempt *as a whole*: it keeps
 `.parse()` public and `.listen()` a no-op rather than mirroring
 `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop (nothing
@@ -62,6 +68,7 @@ from nora.testing.fakes import (
     FakeArtifactIngest,
     FakeBlobStore,
     FakeComputeBackend,
+    FakeComputeJobStore,
     FakeLinkPreviewSource,
     FakeMediaSource,
     FakeMemoryStore,
@@ -91,6 +98,7 @@ __all__ = [
     "FakeArtifactIngest",
     "FakeBlobStore",
     "FakeComputeBackend",
+    "FakeComputeJobStore",
     "FakeLinkPreviewSource",
     "FakeMediaSource",
     "FakeMemoryStore",

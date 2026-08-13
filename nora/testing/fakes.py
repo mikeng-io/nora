@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from typing import Any
+from uuid import UUID
 
+from nora.domain.compute import ComputeJob, ComputeJobState, normalise_compute_job
 from nora.domain.media import MediaBytes, MediaRef, media_json
 from nora.domain.models import (
     ConversationTarget,
@@ -774,3 +777,61 @@ class FakeComputeBackend:
             self._polls_before_done[job_id] -= 1
             return JobResult(status=JobStatus.RUNNING)
         return self._results[job_id]
+
+
+class FakeComputeJobStore:
+    """In-memory `ComputeJobStore`. Bound to
+    `nora.infra.sql.compute_jobs.SqlComputeJobStore` by
+    `tests/contract/test_compute_job_store_contract.py`."""
+
+    def __init__(self) -> None:
+        self._jobs: dict[UUID, ComputeJob] = {}
+
+    async def create(self, job: ComputeJob) -> None:
+        self._jobs[job.id] = normalise_compute_job(job)
+
+    async def get(self, job_id: UUID) -> ComputeJob | None:
+        return self._jobs.get(job_id)
+
+    async def pending(self, *, limit: int) -> list[ComputeJob]:
+        rows = [j for j in self._jobs.values() if j.state is ComputeJobState.PENDING]
+        rows.sort(key=lambda j: (j.created_at, str(j.id)))
+        return rows[:limit]
+
+    async def claim(self, job_id: UUID) -> bool:
+        job = self._jobs.get(job_id)
+        if job is None or job.state is not ComputeJobState.PENDING:
+            return False
+        self._jobs[job_id] = replace(job, state=ComputeJobState.FIRING)
+        return True
+
+    async def mark(
+        self, job_id: UUID, state: ComputeJobState, *,
+        completed_at: Any = None, result_url: str | None = None,
+        result_summary: str | None = None, error: str | None = None,
+    ) -> bool:
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        self._jobs[job_id] = replace(
+            job, state=state,
+            completed_at=completed_at if completed_at is not None else job.completed_at,
+            result_url=result_url if result_url is not None else job.result_url,
+            result_summary=result_summary if result_summary is not None else job.result_summary,
+            error=error if error is not None else job.error,
+        )
+        return True
+
+    async def sweep_firing(self, *, now: Any) -> int:
+        swept = 0
+        for job_id, job in list(self._jobs.items()):
+            if job.state is ComputeJobState.FIRING:
+                self._jobs[job_id] = replace(
+                    job, state=ComputeJobState.FAILED, completed_at=now,
+                    error="swept at boot: process crashed mid-delivery",
+                )
+                swept += 1
+        return swept
+
+    async def aclose(self) -> None:
+        pass
