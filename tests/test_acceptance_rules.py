@@ -198,6 +198,10 @@ RULE_TESTS = {
     # R-49 (DEC-105): a relay crosses into another room only within one
     # workspace, only for somebody allowed in both, and only under their name.
     "R-49": "test_a_room_in_another_workspace_is_refused",
+    # R-50 (DEC-106): her memory OF THE TAGGER rides in the prefill, and the
+    # tool that would fetch it again points at the block instead. The duplicate
+    # is the whole risk the block carries, so the guard is the named rule.
+    "R-50": "test_about_the_tagger_points_at_the_block_instead_of_fetching_it",
 }
 
 

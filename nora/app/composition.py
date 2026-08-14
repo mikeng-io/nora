@@ -451,6 +451,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         context_window=cfg.store.context_window, metrics=metrics,
         ai_peer=cfg.memory.ai_peer,
         self_card_conclusions=cfg.memory.self_card_conclusions,
+        tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:

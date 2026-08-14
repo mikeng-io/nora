@@ -90,6 +90,7 @@ def _build(
     tagger=None,
     question="邊個係阿豹",
     metrics=None,
+    tagger_card_injected=False,
 ):
     source = (
         FakeRosterSource(fail=True) if roster_fails
@@ -99,6 +100,7 @@ def _build(
     room = Room(
         platform="signal", conversation_id=GROUP, roster_source=source,
         persons=persons, tagger=tagger, self_ids=NORA,
+        tagger_card_injected=tagger_card_injected,
     )
     tools = build_tools(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
@@ -593,3 +595,59 @@ async def test_a_phone_number_is_not_a_name_and_resolves_nobody(persons):
     for value in ("+85290000102", "a1000001-0000-4000-8000-000000000001"):
         assert (await _call(tools["lookup_person"], name=value))["status"] == "not_found"
         assert (await _call(tools["about"], person=value))["status"] == "not_found"
+
+
+# ---- the duplicate `<peer_history>` guard (2026-08-15) ----------------------
+
+
+async def test_about_the_tagger_points_at_the_block_instead_of_fetching_it(persons):
+    """`<peer_history>` already carries this exact call's result for the tagger.
+
+    Running it again would spend a model→tool→model round trip to print the
+    same lines a second time in one turn — the precise duplication the injected
+    block was accused of causing, and cheap to avoid rather than worth
+    accepting. The HONCHO CALL not happening is what this pins: a version that
+    fetched and then discarded would read identically at the tool's boundary.
+    """
+    honcho = FakeHoncho(conclusions={"miles_novak": ["miles_novak asked about dinner"]})
+    tools = _build(
+        persons=persons, honcho=honcho, tagger=persons.by_person["miles_novak"],
+        tagger_card_injected=True,
+    )
+
+    out = await _call(tools["about"], person="Miles")
+
+    assert out["status"] == "already_present"
+    assert honcho.queries == [], "it must not ask Honcho for what is already in the prompt"
+
+
+async def test_about_still_works_for_everybody_else_in_the_room(persons):
+    """Only the TAGGER's history is injected. Everyone else has no block at
+    all, so pointing them at one would be pointing at empty space."""
+    honcho = FakeHoncho(conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]})
+    tools = _build(
+        persons=persons, honcho=honcho, tagger=persons.by_person["miles_novak"],
+        tagger_card_injected=True,
+    )
+
+    out = await _call(tools["about"], person="Tyler")
+
+    assert out["status"] != "already_present"
+    assert honcho.queries, "a non-tagger must still be looked up"
+
+
+async def test_about_the_tagger_does_the_real_lookup_when_no_block_landed(persons):
+    """FAIL-CLOSED on the pointer. The block is absent when Honcho could not
+    answer AND when the knob is 0 — pointing at it in either case would tell
+    her to read something that is not there, and she would answer «I don't
+    remember them» from an empty space rather than from memory."""
+    honcho = FakeHoncho(conclusions={"miles_novak": ["miles_novak asked about dinner"]})
+    tools = _build(
+        persons=persons, honcho=honcho, tagger=persons.by_person["miles_novak"],
+        tagger_card_injected=False,
+    )
+
+    out = await _call(tools["about"], person="Miles")
+
+    assert out["status"] != "already_present"
+    assert honcho.queries, "with no block, the real lookup must run"

@@ -180,6 +180,11 @@ def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
         "- self_card: things you said or did before, from your own memory. A "
         "record of what happened, not a description of who you are — who you "
         "are is above, and you may contradict any line of it.\n"
+        "- peer_history: what has happened with that same person before. Your "
+        "own conclusions about them, so you can be wrong about them; none of it "
+        "is something they just said. Absent means nothing has been concluded "
+        "yet, not that there is nothing to know. When it is here you already "
+        "have your memory of the person talking — do not look them up again.\n"
         "- replying_to: the message they were replying to, quoted from your own "
         "record of it rather than from their copy.\n"
         "- tag_message: what they actually said to you.\n"
@@ -361,6 +366,36 @@ def _self_card_block(ctx: TagContext) -> str:
     )
 
 
+def _peer_history_block(ctx: TagContext) -> str:
+    """What happened with the person talking — episodes, beside their card.
+
+    `peer_card` and this are the two halves of one person and are deliberately
+    not merged: the card is who they are («Name: Miles Novak», «Aliases: …»), this
+    is what has happened with them («asked what to eat for dinner», dated).
+    Read live on 2026-08-15 they shared ZERO items, so a reader seeing both is
+    seeing two different things rather than one thing twice.
+
+    The `note` carries the hedge the card does not need. These conclusions are
+    Honcho's distillation of messages Nora witnessed — inferred, unverified,
+    and occasionally wrong about intent in a way an identity fact is not. She
+    is told she may be wrong about them, because the failure mode this block
+    invites is confidently telling somebody what they think.
+
+    Situation-tier, below every authored file, for `_self_card_block`'s reason.
+    """
+    if not ctx.tagger_card:
+        return ""
+    who = _escape_attr(ctx.tagger.name if ctx.tagger else "them")
+    lines = "\n".join(f"- {escape(c)}" for c in ctx.tagger_card)
+    return (
+        f'<peer_history person="{who}" note="what has happened with them before, '
+        'from your own memory. A record of the past, not a description of who '
+        'they are — it is what you concluded, so you may be wrong about it, and '
+        'nothing here is something they said to you just now.">\n'
+        + lines + "\n</peer_history>\n"
+    )
+
+
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
@@ -397,11 +432,14 @@ def build_prefill(
             # `_context_header`'s docstring for the cache measurement that
             # decided this. It is still the first thing after the static
             # instructions, so nothing about how she reads it changes.
-            # `self_card` before `peer_card` before the transcript: her own past,
-            # then theirs, then the room — widening scope, and the transcript
-            # stays adjacent to the message it explains.
+            # `self_card` before `peer_card`/`peer_history` before the
+            # transcript: her own past, then theirs, then the room — widening
+            # scope, and the transcript stays adjacent to the message it
+            # explains. The two person blocks are adjacent because they are one
+            # person: who they are, then what happened with them.
             _now_line(now) + _where_line(ctx.message.platform)
             + _self_card_block(ctx) + _peer_card_block(ctx)
+            + _peer_history_block(ctx)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),

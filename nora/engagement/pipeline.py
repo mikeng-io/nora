@@ -420,6 +420,10 @@ class EngagementPipeline:
                 platform=msg.platform, conversation_id=msg.conversation_id,
                 roster_source=self._rosters.get(msg.platform), persons=self._persons,
                 tagger=ctx.tagger, self_ids=frozenset(getattr(identity, "aliases", ())),
+                # From the ASSEMBLED context, not from config: the block is
+                # absent when Honcho could not answer as well as when it is
+                # switched off, and `about` must do the real lookup in both.
+                tagger_card_injected=bool(ctx.tagger_card),
             )
             tools = self._tool_registry.build(
                 store=self._audit, conversation_id=msg.conversation_id,

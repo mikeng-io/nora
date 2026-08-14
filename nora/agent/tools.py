@@ -1485,6 +1485,28 @@ def build_tool_specs(
                 "note": "More than one person here goes by that. Ask which one.",
             }
         ref = matches[0]
+        # ALREADY IN THE PROMPT. `<peer_history>` carries exactly this call's
+        # result for the tagger, so running it again would spend a round trip
+        # to print the same lines a second time in the same turn — the precise
+        # duplication the block was accused of causing, and the reason it is
+        # cheap to avoid rather than worth accepting.
+        #
+        # `tagger_card_injected` is false whenever the block did not land —
+        # Honcho unreachable, or the knob at 0 — so this never points at an
+        # empty space, and `about` stays the honest path for everybody else in
+        # the room, who have no block at all.
+        if (
+            room.tagger_card_injected
+            and room.tagger is not None
+            and ref.person_id == room.tagger.person_id
+        ):
+            _record_room(metrics, "about", "already_present", candidates=1)
+            return {
+                "status": "already_present", "person": ref.name,
+                "note": "What you remember about them is already in front of "
+                        "you, under peer_history. Use that — do not say you "
+                        "cannot remember, and do not look again.",
+            }
         try:
             memory = await honcho.representation(
                 # OBSERVER = Nora, OBSERVED = the person (design/24 §4). This is

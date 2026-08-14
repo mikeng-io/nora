@@ -255,6 +255,29 @@ class TagContext:
     # not answer — which is safe here only because this block is advisory: it is
     # never the ground for a claim, so an empty one costs continuity, not truth.
     self_card: tuple[str, ...] = ()
+    # What Honcho has concluded about THE TAGGER — the same `representation`
+    # verb, with `target` set to them instead of to her.
+    #
+    # `peer_card` above and this are NOT redundant, and the reason is worth
+    # keeping: read live 2026-08-15 they overlapped in exactly ZERO items. The
+    # card renders IDENTITY claims («Name: Miles Novak», «Aliases: …»); the
+    # representation states dated episodes («asked what to eat for dinner»).
+    # Who they are, and what happened with them.
+    #
+    # Her own card is excluded (see `self_card`) because a learned
+    # self-description outranks an authored one. That argument does NOT reach
+    # here: the objection was about doctrine's lane, and other people's cards
+    # are facts about them rather than claims about her. So the asymmetry is
+    # deliberate — for her, representation only; for them, both.
+    #
+    # This DUPLICATES what `about` would return for the same person, which is
+    # the trade being made: her episodes with the person actually speaking are
+    # the likeliest recall in any turn, and paying for them up front costs
+    # ~360 tokens against a model→tool→model round trip and the risk she never
+    # asks. `Room.tagger_card_injected` is what stops the duplicate landing
+    # TWICE in one turn — `about` on the tagger points at this block instead of
+    # fetching it again.
+    tagger_card: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

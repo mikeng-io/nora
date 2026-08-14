@@ -154,6 +154,7 @@ class Room:
         persons: Persons,
         tagger: PersonRef | None = None,
         self_ids: frozenset[str] = frozenset(),
+        tagger_card_injected: bool = False,
     ) -> None:
         self._platform = platform
         self._conversation_id = conversation_id
@@ -161,6 +162,7 @@ class Room:
         self._persons = persons
         self._tagger = tagger
         self._self_ids = frozenset(self_ids)
+        self._tagger_card_injected = tagger_card_injected
         self._view: RoomView | None = None
 
     @property
@@ -195,6 +197,23 @@ class Room:
         this object is constructed fresh per turn.
         """
         return self._tagger
+
+    @property
+    def tagger_card_injected(self) -> bool:
+        """Whether `<peer_history>` for the tagger is ALREADY in the prompt.
+
+        Read by `about`, and only to answer the tagger's own name with a
+        pointer instead of a second identical `representation` call — the
+        conclusions are already in front of her, and fetching them again would
+        spend a round trip to print the same lines twice.
+
+        Carries whether the block LANDED, never whether it was configured. An
+        unreachable Honcho and `tagger_card_conclusions = 0` both yield no
+        block, and in both cases `about` must do the real lookup rather than
+        point at an empty space — so this is derived from the assembled
+        `TagContext`, not from config.
+        """
+        return self._tagger_card_injected
 
     async def members(self) -> RoomView:
         """The room as the platform reports it. `available=False` if it could not be read."""

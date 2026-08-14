@@ -45,6 +45,21 @@ workspace_id = "nora"
 # 2,459 chars (~820 tokens), which at `turns = 20` is ~16k of the 128k budget.
 # Eight measured ~1,080 chars.
 self_card_conclusions = 8
+# `<peer_history>` — how many of her conclusions ABOUT THE TAGGER ride in the
+# per-tag prefill. 0 disables the block, restoring the pre-2026-08-15 behaviour
+# where `about` was the only way she reached a person's episodes.
+#
+# This is NOT a duplicate of `<peer_card>` above it. Read live 2026-08-15 the
+# two shared ZERO items: the card renders IDENTITY claims («Name: Blake
+# Lindqvist», «Aliases: …»), the representation states dated episodes («asked what
+# to eat for dinner»). Who they are, and what happened with them.
+#
+# Same per-tag arithmetic as `self_card_conclusions`, and it binds here too:
+# re-sent on every model call of the loop, so 8 (~360 tokens) is ~7.2k of the
+# 128k budget at `turns = 20`. Raising BOTH blocks to 16 spends ~29k before
+# anybody has said anything — measure a real turn's total_tokens before doing
+# it, because this is the budget the web_fetch exhaustion emptied.
+tagger_card_conclusions = 8
 
 [llm]
 base_url = "http://host.docker.internal:20128/v1"   # OmniRoute OpenAI-compatible
