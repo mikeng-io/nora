@@ -1411,6 +1411,31 @@ and thread `tool_call_log_store` into wherever `EngagementPipeline`/
 Add the two imports (`ToolCallLogStore` from `nora.domain.tool_call_log`,
 `SqlToolCallLogStore` from `nora.infra.sql.tool_call_log`).
 
+**This same `tool_call_log_store` variable has a THIRD consumer, arriving
+in Task 7, not this task.** `ToolRegistry(...)`'s own construction
+(`nora/app/composition.py:739`) takes `compute_backend=compute_backend,
+compute_jobs=compute_jobs` — `recall_lookups` (Task 7) needs
+`tool_call_log_store` threaded through this SAME registry, because
+`ToolRegistry.specs()` closes over registry-owned collaborators bound once
+at `__init__` (`self._compute_backend`/`self._compute_jobs`, confirmed at
+`nora/agent/registry.py:174-175`, passed into its own `build_tool_specs(...)`
+call at line ~487), never per-tag arguments — `specs()`'s own docstring
+states this explicitly ("NOT in this signature and must not become one:
+each is the registry's own long-lived collaborator"). Do NOT add this third
+wiring here: `ToolRegistry.__init__` doesn't accept the keyword yet (Task 7
+adds it), so passing it now would break this task's own tests with a
+`TypeError`. Leave a one-line comment at the `tool_call_log_store`
+declaration this step just added, so Task 7's implementer finds it instead
+of missing the connection:
+
+```python
+    # Second consumer wired here (EngagementPipeline/FirePath, via
+    # deliver.build); a THIRD — ToolRegistry(...) below, for
+    # recall_lookups — is wired in the tool-recall-log plan's Task 7,
+    # once ToolRegistry.__init__ accepts the keyword.
+    tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
+```
+
 In the offline/eval compositions (wherever they construct
 `EngagementPipeline`/`FirePath` without a real DB — check
 `nora/app/offline.py`/`nora/app/eval_support.py` or equivalent), do NOT
@@ -1450,19 +1475,23 @@ git commit -m "feat(recall): wire ToolCallLog through composition (tag + fire pa
 
 **Files:**
 - Modify: `nora/agent/tools.py` (new `recall_lookups` native tool + its
-  `NATIVE_TOOLS` entry)
+  `NATIVE_TOOLS` entry, `build_tool_specs`'s own signature)
+- Modify: `nora/agent/registry.py` (`ToolRegistry.__init__` and `.specs()`)
+- Modify: `nora/app/composition.py` (the `ToolRegistry(...)` construction
+  at line 739 — the third consumer of the `tool_call_log_store` variable
+  Task 6 Step 8 already declared)
 - Test: `tests/test_reminder_tools.py` or a new
   `tests/test_recall_lookups.py` — follow whichever existing test file
   this repo's own convention puts `make_artifact`'s tests in (check first;
   match it rather than guessing a new location)
 
 **Interfaces:**
-- Consumes: Task 2's `ToolCallLogEntry`, whatever store the tool closure
-  already receives (this task threads a `tool_call_log_store:
-  ToolCallLogStore | None` parameter into the SAME factory function
-  `make_artifact`/`place_info`/etc. already close over — check that
-  function's exact name and existing parameter list, e.g.
-  `build_tool_specs(...)`, before adding).
+- Consumes: Task 2's `ToolCallLogEntry`/`ToolCallLogStore`, Task 6 Step 8's
+  `tool_call_log_store` variable in `composition.py` (declared there, wired
+  into `ToolRegistry(...)` HERE — `compute_backend`/`compute_jobs` are the
+  exact precedent for a registry-owned collaborator bound once at
+  `ToolRegistry.__init__` and closed over by every `specs()` call,
+  confirmed at `nora/agent/registry.py:174-175,487`).
 - Produces: `recall_lookups(limit: int = 10) -> dict`, budget 2 in
   `NATIVE_TOOLS`.
 
@@ -1565,11 +1594,33 @@ RECALL_LOOKUPS_MAX = 30
 RECALL_LOOKUPS_WINDOW_DAYS = 7
 ```
 
-Add the tool function inside the same factory function that already
-builds `make_artifact`/`place_info` (find its exact name and signature
-first — it takes `metrics`, `route_source`, etc. as closure variables
-already; add `tool_call_log_store: ToolCallLogStore | None = None` to
-that SAME function's own parameter list):
+**Four call sites need `tool_call_log_store` threaded through, not one** —
+`compute_backend`/`compute_jobs` (`make_artifact`'s own collaborators) are
+the exact precedent to mirror at every one of them:
+
+1. `nora/agent/tools.py:1128`, `build_tool_specs(...)`'s own signature —
+   add `tool_call_log_store: ToolCallLogStore | None = None,` right after
+   the existing `compute_jobs: ComputeJobStore | None = None,` parameter.
+   Add the `recall_lookups` closure (below) inside this same function, the
+   same way `make_artifact`/`place_info` already are.
+2. `nora/agent/registry.py:174-175`, `ToolRegistry.__init__` — add
+   `tool_call_log_store: ToolCallLogStore | None = None,` to the
+   constructor's own parameter list (mirroring `compute_backend`/
+   `compute_jobs` at those exact lines) and `self._tool_call_log_store =
+   tool_call_log_store` beside `self._compute_backend = compute_backend`.
+3. `nora/agent/registry.py:487`, inside `ToolRegistry.specs()`'s existing
+   call to `build_tool_specs(...)` — add
+   `tool_call_log_store=self._tool_call_log_store,` right after the
+   existing `compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,`
+   line.
+4. `nora/app/composition.py:739`, the `ToolRegistry(...)` construction —
+   add `tool_call_log_store=tool_call_log_store,` (the variable Task 6
+   Step 8 already declared, with a comment pointing at this exact step).
+
+Then add the tool function inside `build_tool_specs` itself, alongside
+`make_artifact`/`place_info` (it closes over the new
+`tool_call_log_store` parameter and the SAME `conversation_id` closure
+variable those two already use):
 
 ```python
     async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
