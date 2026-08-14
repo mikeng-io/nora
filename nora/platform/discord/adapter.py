@@ -9,6 +9,7 @@ REST calls instead of signal-cli's JSON-RPC.
 
 from __future__ import annotations
 
+import contextlib
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -81,14 +82,30 @@ class DiscordAdapter:
         intents.message_content = True  # privileged; see design/discord-integration/01
         intents.guilds = True
         intents.members = True          # privileged; the roster read needs it
-        self._listener = DiscordListener(discord.Client(intents=intents), self._token)
+        client = discord.Client(intents=intents)
+        self._listener = DiscordListener(client, self._token)
 
         async def _on_discord_message(raw_message: Any) -> None:
             message = parse_discord_message(raw_message, own_id=self._own_id)
             if message is not None:
                 await on_message(message)
 
-        await self._listener.listen(_on_discord_message)
+        try:
+            await self._listener.listen(_on_discord_message)
+        finally:
+            # `Client.start()` is `login()` then `connect()`. `connect()` closes
+            # the client itself before re-raising, but `login()` raising — a
+            # rotated token (401), a DNS failure, a Discord 5xx — leaves its
+            # `aiohttp.ClientSession` open. `supervise_adapter` retries forever
+            # and this method builds a fresh client each time, so a sustained
+            # auth or network outage leaked one session and connector per
+            # attempt (~1400/day at the 60s backoff cap), each announcing
+            # itself later as "Unclosed client session" from the GC.
+            #
+            # `close()` on an already-closed client is a no-op, so this is safe
+            # on the ordinary path too.
+            with contextlib.suppress(Exception):
+                await client.close()
 
     async def send(
         self,

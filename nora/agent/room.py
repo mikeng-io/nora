@@ -24,8 +24,17 @@ That is also why alias matching is safe here at all. design/10 §1.3 forbids an
 alias ever resolving a SENDER — a nickname is operator-authored and a display
 name is settable by anyone, so matching one to decide *who sent this* hands
 identity to whoever can type it. Resolving a lookup TARGET is a different
-operation: the answer is bounded before any alias is consulted, and the worst a
-wrong match can do is name the wrong person who is already in the room.
+operation: the answer is bounded before any alias is consulted.
+
+**That bound is no longer "the room" for every caller, and this paragraph used
+to say it was.** `find_by_name` was extracted out of `RoomView.find` for
+`whereis`, which resolves its target against the location-sharing CIRCLE unioned
+with the room (R-47) — so for that one caller the worst a wrong alias match can
+do is name a circle member who is NOT in the room, which is a stronger claim
+than "somebody already here". The room checks still run in full first, so a
+wrong match cannot reach a room that may not be told anything at all; what it
+can do is answer about the wrong SUBJECT. Every other caller
+(`group_members`, `lookup_person`, `about`) is still bounded by the room.
 `nora.persons.Persons.index` is untouched, and
 `tests/test_persons.py::test_an_alias_never_resolves_a_sender` still holds.
 

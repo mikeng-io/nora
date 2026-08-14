@@ -269,7 +269,12 @@ class DisclosureGuard:
 
 
 def check_disclosure_invariant(
-    *, circle: Circle, group_person_ids: frozenset[str], metrics: Any = None
+    *,
+    circle: Circle,
+    group_person_ids: frozenset[str],
+    metrics: Any = None,
+    platform: str = "",
+    conversation: str = "",
 ) -> bool:
     """The startup invariant (design/19 §5, §7.7): is the Signal group a SUBSET
     of the circle? Publishes `nora_presence_circle_subset_ok` (1/0) and logs an
@@ -297,7 +302,8 @@ def check_disclosure_invariant(
     ok = bool(group_person_ids) and group_person_ids <= circle.person_ids
     if metrics is not None:
         metrics.gauge(
-            "nora_presence_circle_subset_ok", 1.0 if ok else 0.0, circle=circle.circle_id
+            "nora_presence_circle_subset_ok", 1.0 if ok else 0.0,
+            circle=circle.circle_id, platform=platform, conversation=conversation,
         )
     if not ok:
         outside = sorted(group_person_ids - circle.person_ids)

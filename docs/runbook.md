@@ -88,9 +88,21 @@ is correct. To tell "quiet" from "broken":
    ```
 
    `nora_adapter_last_event_age_seconds{platform="…"}` is seconds since that
-   platform last delivered an event, one series per enabled adapter. It is the
-   ONLY per-platform liveness signal Nora exports, so it is what tells you a
-   Discord Gateway has gone quiet.
+   platform last showed a sign of life — a delivered message, or the gateway
+   connecting/resuming. One series per enabled adapter.
+
+   **Alert on the series being ABSENT, not only on it being large.** A
+   prometheus label-child is created on first write, so a platform that has
+   never once been alive publishes nothing at all — and `grep` returning
+   nothing reads as "no problem" when it means "no instrument". Use
+   `absent(nora_adapter_last_event_age_seconds{platform="discord"})` alongside
+   any staleness threshold.
+
+   The two platforms' ages do NOT mean the same thing. Signal's ticks on every
+   SSE envelope, receipts and typing included, so a large age means WEDGED.
+   Discord's ticks on messages and on connect/resume, so in a quiet channel a
+   large age can simply mean nobody talked — pair it with
+   `platforms.discord.connected` from `/health` before concluding anything.
 
    The older `nora_last_event_age_seconds` (unlabelled) still exists and is
    still **Signal's alone**. It was deliberately not relabelled: `/health`'s
@@ -98,6 +110,30 @@ is correct. To tell "quiet" from "broken":
    watches, and adding a label changes a series' identity. Read the labelled one
    for anything platform-specific; the unlabelled one is a compatibility
    surface, not the general answer.
+
+   **If every room-scoped tool answers «I can't check» on Discord** — `where_is`,
+   `group_members`, `lookup_person` all `unavailable`, while `/health` shows
+   `platforms.discord.connected: true` and messages are clearly arriving — the
+   roster read is failing, not the gateway. It has its own failure modes and
+   they are invisible in `/health`:
+
+   ```bash
+   docker compose logs nora | grep 'nora.discord.roster'
+   ```
+
+   - `roster read forbidden for guild …` → the **GUILD_MEMBERS privileged
+     intent** is off for the application in the Discord Developer Portal. This
+     is the single most likely Discord misconfiguration and nothing else
+     surfaces it: the gateway is healthy, messages flow, and only the REST
+     members endpoint 403s.
+   - `has at least 1000 members — this roster does not paginate` → the guild is
+     too large for the current unpaginated read, and every room-scoped tool
+     stays `unavailable` there until pagination lands.
+   - `is not '<guild_id>/<channel_id>'` → a malformed `id` in `policy.toml`.
+
+   All three degrade honestly (R-5) rather than guessing — which is exactly why
+   they are indistinguishable from the guard working correctly without reading
+   the log.
 
 3. Check whether she is **refusing on purpose**. Deny-by-default means a correct,
    healthy Nora can be completely silent because `policy.toml` does not list the room or

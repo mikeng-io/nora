@@ -1133,17 +1133,19 @@ async def _presence_preflight(
                     break
             if view is None:
                 log.warning(
-                    "presence pre-flight: roster unreadable for a policy "
-                    "conversation — subset invariant unverified there; whereis's "
-                    "per-call guard still refuses anything unverifiable"
+                    "presence pre-flight: roster unreadable for %s conversation "
+                    "%r (%s) — subset invariant unverified there; whereis's "
+                    "per-call guard still refuses anything unverifiable",
+                    conv.platform, conv.label or conv.primary_id, conv.primary_id,
                 )
                 continue
             if view.unnamed:
                 log.warning(
-                    "presence pre-flight: %d unmapped account(s) in a policy "
-                    "conversation — whereis refuses there until identity.toml "
-                    "names them (`nora persons pending`)",
-                    view.unnamed,
+                    "presence pre-flight: %d unmapped account(s) in %s "
+                    "conversation %r (%s) — whereis refuses there until "
+                    "identity.toml names them (`nora persons pending`)",
+                    view.unnamed, conv.platform,
+                    conv.label or conv.primary_id, conv.primary_id,
                 )
             if conv.location:
                 # DEC-74: this room is location-TRUSTED, so its group is
@@ -1163,14 +1165,23 @@ async def _presence_preflight(
                 # this gauge is still correct — it would be a permanent false
                 # alarm — but it is now the only pre-flight this room gets.
                 log.info(
-                    "presence pre-flight: conversation is location-trusted (DEC-74) "
-                    "— the circle-subset invariant is intentionally skipped here"
+                    "presence pre-flight: %s conversation %r is location-trusted "
+                    "(DEC-74) — the circle-subset invariant is intentionally "
+                    "skipped here",
+                    conv.platform, conv.label or conv.primary_id,
                 )
                 continue
             group_person_ids = frozenset(p.person_id for p in view.people)
             for circle in circles:
                 check_disclosure_invariant(
                     circle=circle, group_person_ids=group_person_ids, metrics=metrics,
+                    # WHICH room, so the gauge is per-conversation. Circle alone
+                    # was last-writer-wins across every allowlisted room, so a
+                    # failing one could be overwritten by a passing one and the
+                    # alarm lost — and widening this loop to a second platform
+                    # is exactly what made that reachable.
+                    platform=conv.platform,
+                    conversation=conv.primary_id or "",
                 )
         except Exception:
             log.exception("presence pre-flight failed for a policy conversation")

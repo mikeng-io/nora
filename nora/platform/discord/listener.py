@@ -67,6 +67,20 @@ class DiscordListener:
     async def listen(self, on_message_cb: Callable[[Any], Awaitable[None]]) -> None:
         async def on_ready() -> None:
             self.connected = True
+            # A CONNECTED EDGE IS LIVENESS. Without this, `last_event_at` was
+            # written only by `on_message`, so
+            # `nora_adapter_last_event_age_seconds{platform="discord"}` did not
+            # EXIST until the first Discord message the process ever saw — and
+            # every supervised restart rebuilds this listener, so it vanished
+            # again. A Gateway that never connects published no series at all,
+            # which greps as «no problem» and is actually «no instrument», in
+            # the one signal DEC-102 added to make a wedged Gateway alertable.
+            #
+            # Signal's counterpart ticks on every SSE envelope — receipts and
+            # typing included — so its age means «wedged». Stamping the connect
+            # edges here is what stops Discord's meaning «nobody talked» in a
+            # quiet channel.
+            self.last_event_at = self._clock()
             log.info("discord gateway connected")
 
         async def on_resumed() -> None:
@@ -74,6 +88,7 @@ class DiscordListener:
             # exactly as `on_ready` is — see the module docstring for why
             # observing only `ready` latched this False forever.
             self.connected = True
+            self.last_event_at = self._clock()   # a connected edge — see `on_ready`
             log.info("discord gateway resumed")
 
         async def on_message(message: Any) -> None:

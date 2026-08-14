@@ -62,6 +62,12 @@ class _DiscordMessage(Protocol):
     mentions: list[_DiscordUser]
     attachments: list[_DiscordAttachment]
     reference: _DiscordMessageReference | None
+    # The turns that carry NO `content` and NO attachment. Read structurally
+    # with `getattr` at the call site rather than required here, so a double
+    # that predates them still satisfies this Protocol — but declared, because
+    # a reader has to know they exist to know why `_body_parts` looks at them.
+    stickers: list[object]
+    embeds: list[object]
 
 
 def _media_ref(att: _DiscordAttachment) -> MediaRef:
@@ -74,12 +80,45 @@ def _media_ref(att: _DiscordAttachment) -> MediaRef:
     )
 
 
-def _body_parts(content: str, refs: tuple[MediaRef, ...]) -> list[str]:
+def _body_parts(message: _DiscordMessage, refs: tuple[MediaRef, ...]) -> list[str]:
+    """The renderable body, or an empty list if there is genuinely nothing.
+
+    THE PLACEHOLDERS ARE NOT DECORATION. This function was a copy of
+    `nora.platform.signal.parser.body_parts` MINUS its sticker branch — and
+    that branch exists on the Signal side because dropping a sticker made a
+    sticker-only message vanish entirely, so the sender watched Nora ignore
+    something they had clearly sent. Discord has more ways to send a turn with
+    an empty `content` than Signal does (a sticker, a poll, a forward, an
+    embed-only post), so the same defect was reintroduced here and was wider.
+
+    The cost is worse than one ignored message: a dropped turn never reaches
+    the audit store, so Nora later reasons over a transcript with a hole she
+    cannot see — the room said something and her computable model of it
+    silently disagrees.
+
+    Bare placeholders, like Signal's `[sticker]`: the name of a sticker or the
+    contents of a poll would be a claim about what was sent, and rendering
+    something Nora has not actually read is the guess R-5 forbids. `[…]` says
+    a turn happened and what kind, which is exactly what the transcript needs
+    to stop lying by omission.
+    """
     parts = []
-    text = (content or "").strip()
+    text = (message.content or "").strip()
     if text:
         parts.append(text)
     parts += [render_placeholder(label_for(ref)) for ref in refs]
+    if parts:
+        return parts
+    # Nothing rendered yet — so this is one of the content-less turns. Ordered
+    # most specific first; a message carries at most one of these in practice.
+    if getattr(message, "stickers", None):
+        parts.append("[sticker]")
+    elif getattr(message, "poll", None) is not None:
+        parts.append("[poll]")
+    elif getattr(message, "message_snapshots", None):
+        parts.append("[forwarded message]")
+    elif getattr(message, "embeds", None):
+        parts.append("[embed]")
     return parts
 
 
@@ -116,7 +155,7 @@ def parse_discord_message(
             return None  # never ingest Nora's own sends (Signal's R-12, mirrored)
 
         refs = tuple(_media_ref(a) for a in message.attachments)
-        parts = _body_parts(message.content, refs)
+        parts = _body_parts(message, refs)
         if not parts:
             return None  # no usable body
 

@@ -32,7 +32,12 @@ async def api(aiohttp_server):
     """A stand-in for Discord's reaction endpoint that distinguishes its own
     failure modes rather than answering everything identically."""
 
-    state: dict = {"calls": [], "status": None, "placed": set()}
+    state: dict = {
+        "calls": [], "status": None, "placed": set(),
+        # 10014 Unknown Emoji — the benign "already gone" case, which is what
+        # `indicate` hits on every ordinary turn.
+        "not_found_code": 10014,
+    }
 
     async def handler(request: web.Request) -> web.Response:
         emoji = unquote(request.match_info["emoji"])
@@ -46,9 +51,16 @@ async def api(aiohttp_server):
         if request.method == "PUT":
             state["placed"].add(emoji)
             return web.Response(status=204)
-        # DELETE: 404 when there is nothing to remove, exactly like the real API.
+        # DELETE: 404 when there is nothing to remove — and the real API says
+        # WHICH 404 in the body's `code`. Serving one shape here would model the
+        # assumption rather than test it: 10014 (already gone) and 10008/10003
+        # (the message or channel could not be addressed) share a status and
+        # mean opposite things.
         if emoji not in state["placed"]:
-            return web.json_response({"message": "Unknown Emoji"}, status=404)
+            return web.json_response(
+                {"message": "Unknown Emoji", "code": state["not_found_code"]},
+                status=404,
+            )
         state["placed"].discard(emoji)
         return web.Response(status=204)
 
@@ -153,6 +165,39 @@ async def test_an_unreachable_api_never_raises():
     reactor = DiscordReactor("tok", base_url="http://127.0.0.1:1", timeout=0.2)
 
     result = await reactor.react(target=_target(), emoji=EYES, to_message_id=MESSAGE)
+
+    assert result.ok is False
+    assert result.supported is True
+
+
+async def test_a_delete_404_that_means_the_message_is_gone_is_not_a_success(api):
+    """The three 404s are not one fact.
+
+    `indicate` retracts the 👀 before every terminal emoji, so a 404 meaning
+    «that emoji was not on that message» is the normal path and must count as
+    success. A 404 meaning «no such message» or «no such channel» is a wrong
+    `to_message_id` or a wrong channel id — reporting that as a clean
+    retraction counted a broken target as `status="sent"`.
+    """
+    api.state["not_found_code"] = 10008        # Unknown Message
+
+    result = await _reactor(api).react(
+        target=_target(), emoji=EYES, to_message_id=MESSAGE, remove=True,
+    )
+
+    assert result.ok is False
+    assert result.supported is True
+
+
+async def test_a_delete_404_with_no_code_is_not_assumed_benign(api):
+    """A 404 whose body carries no `code` is a 404 nothing has established the
+    meaning of, so it must not inherit the benign case's success. Fail closed:
+    the alternative is treating an unknown failure as a clean retraction."""
+    api.state["not_found_code"] = None
+
+    result = await _reactor(api).react(
+        target=_target(), emoji=EYES, to_message_id=MESSAGE, remove=True,
+    )
 
     assert result.ok is False
     assert result.supported is True

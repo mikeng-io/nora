@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from nora.platform.discord.parser import parse_discord_message
 from nora.platform.discord.snowflake import DISCORD_EPOCH_MS
 
@@ -67,6 +69,14 @@ class FakeMessage:
     mentions: list = field(default_factory=list)
     attachments: list = field(default_factory=list)
     reference: object = None
+    # The content-less turns. Defaulted empty so every existing construction is
+    # untouched, and present at all because the REAL `discord.Message` carries
+    # them — a double without them could not express the message shapes this
+    # parser has to survive.
+    stickers: list = field(default_factory=list)
+    embeds: list = field(default_factory=list)
+    poll: object = None
+    message_snapshots: list = field(default_factory=list)
 
 
 def _message(**overrides) -> FakeMessage:
@@ -175,3 +185,53 @@ def test_an_unresolved_reference_produces_no_quote_and_does_not_crash():
 
 def test_unparseable_input_is_skipped_not_raised():
     assert parse_discord_message(None, own_id=OWN_ID) is None
+
+
+# ---------------------------------------------------------------------------
+# turns that carry no text and no attachment
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"stickers": [object()]}, "[sticker]"),
+        ({"poll": object()}, "[poll]"),
+        ({"message_snapshots": [object()]}, "[forwarded message]"),
+        ({"embeds": [object()]}, "[embed]"),
+    ],
+)
+def test_a_turn_with_no_text_is_rendered_not_dropped(kwargs, expected):
+    """The defect this closes, found by review 2026-08-14.
+
+    `_body_parts` was a copy of Signal's MINUS its sticker branch — and that
+    branch exists on the Signal side precisely because dropping a sticker made
+    a sticker-only message vanish and the sender watched Nora ignore something
+    they had clearly sent. Discord has more ways to send a text-less turn than
+    Signal does, so the same defect was reintroduced here and was wider.
+
+    The cost is not one ignored message: a dropped turn never reaches the audit
+    store, so Nora later reasons over a transcript with a hole she cannot see.
+    """
+    result = parse_discord_message(_message(content="", **kwargs), own_id=OWN_ID)
+
+    assert result is not None, "a text-less turn must still become a message"
+    assert result.body == expected
+
+
+def test_a_turn_with_genuinely_nothing_is_still_dropped():
+    """The placeholders must not become a way to invent a turn. A message with
+    no text, no attachment, no sticker, no poll, no forward and no embed is
+    nothing to render, and rendering it would add a line the room never saw."""
+    assert parse_discord_message(_message(content=""), own_id=OWN_ID) is None
+
+
+def test_text_still_wins_over_a_placeholder():
+    """A sticker sent WITH a caption renders the caption — the placeholder is
+    the fallback for an empty body, not an annotation on every message."""
+    result = parse_discord_message(
+        _message(content="haha", stickers=[object()]), own_id=OWN_ID
+    )
+
+    assert result is not None
+    assert result.body == "haha"

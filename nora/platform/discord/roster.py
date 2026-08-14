@@ -131,10 +131,21 @@ class DiscordRoster:
             return Roster(available=False)
 
         members: list[frozenset[str]] = []
+        skipped = 0
         for entry in body:
             user = entry.get("user") if isinstance(entry, dict) else None
             user_id = user.get("id") if isinstance(user, dict) else None
             if not isinstance(user_id, str) or not user_id:
+                # UNDER-REPORTING, which this module's own docstring calls the
+                # unsafe direction — a roster that has quietly forgotten
+                # somebody is one the disclosure gate will happily approve. It
+                # used to `continue` with no log and no count at all, so the
+                # one branch that can drop a real member was the only one with
+                # no trace whatsoever. Counted and reported below rather than
+                # refusing the whole read: an entry with no usable id is a
+                # shape Discord should never send, and losing the room over one
+                # malformed row would be worse than saying so loudly.
+                skipped += 1
                 continue
             # ONE id form per member, and it is the immutable snowflake. Signal
             # pairs several forms per account because the same person reaches
@@ -144,4 +155,11 @@ class DiscordRoster:
             # (`nora.domain.identity`), because its owner can change it.
             members.append(frozenset({user_id}))
 
+        if skipped:
+            log.error(
+                "roster for guild %s skipped %d member row(s) with no usable id "
+                "— the room is UNDER-reported by that many, which is the "
+                "direction that can let a disclosure through",
+                guild_id, skipped,
+            )
         return Roster(available=True, members=tuple(members))

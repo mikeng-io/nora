@@ -1061,3 +1061,37 @@ async def test_somebody_in_the_room_but_outside_the_circle_still_resolves(
 
     assert out["status"] == "unavailable"
     assert "Grant" in json.dumps(out, ensure_ascii=False)
+
+
+async def test_r47_holds_in_an_ordinary_untrusted_room(persons, store):
+    """R-47 in the SHIPPED default configuration.
+
+    Both of R-47's other tests pass `location_trusted=True`, which
+    short-circuits BOTH guards R-47 sits behind — so between them they could
+    not distinguish "resolves against the circle" from "resolves against the
+    circle only when the disclosure gate is waived". Every conversation without
+    an explicit `location = true` is untrusted, including the operator's own
+    Ridgeline group, so that is the configuration that most needed a test and had
+    none.
+
+    Here the room is a genuine subset of the circle and holds no unmapped
+    account, so the gate passes on its own merits and the widened target
+    resolution is what is actually under test.
+    """
+    circle = Circle(
+        circle_id=CIRCLE_ID,
+        person_ids=frozenset({"miles_novak", "grant_carver"}),
+        people=(persons.by_person["grant_carver"],),
+    )
+    await _record(store, person="grant_carver", ts=NOW)
+    whereis = Whereis(
+        room=_room(persons, members=(MILES, NORA)),
+        circle=circle, presence=store, location_trusted=False,
+    )
+
+    out = await whereis.locate("Grant", now_ms=NOW)
+
+    assert out["status"] == "ok", (
+        "a circle member absent from the room must be askable about in an "
+        "ORDINARY room, not only in a location-trusted one"
+    )

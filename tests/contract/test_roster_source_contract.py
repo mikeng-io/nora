@@ -1,4 +1,4 @@
-"""`RosterSource` has two implementations, so it gets one suite both pass.
+"""`RosterSource` has THREE implementations, so it gets one suite all three pass.
 
 `nora.platform.signal.roster.SignalRoster` (over a real aiohttp daemon serving
 the shapes signal-cli actually returns) and `nora.testing.FakeRosterSource`.
@@ -20,6 +20,7 @@ from __future__ import annotations
 import pytest
 from aiohttp import web
 
+from nora.platform.discord.roster import DiscordRoster
 from nora.platform.signal.roster import SignalRoster
 from nora.testing import FakeRosterSource
 
@@ -64,31 +65,94 @@ def _live_group(group_id=GROUP):
     }
 
 
-@pytest.fixture(params=["signal", "fake"])
-async def sources(request, aiohttp_server):
-    """One (healthy, unreadable) pair per implementation.
+DISCORD_ROOM = "100000000000000203/100000000000000204"
+DISCORD_OTHER = "9999999999999999999/100000000000000204"
 
-    Both members of the pair come from the same implementation so that every
-    assertion below is about ONE class, run twice — not about two classes
-    compared to each other.
+
+async def _discord(aiohttp_server, *, members: list[dict], status: int = 200):
+    """A `DiscordRoster` pointed at a stand-in for `GET /guilds/{id}/members`.
+
+    Routed on the GUILD in the path, so asking about a guild the bot is not in
+    genuinely 404s — the `wrong_group` case has to be reachable the way it
+    really is, not simulated by handing back an empty list.
+    """
+    async def handler(request: web.Request) -> web.Response:
+        if request.match_info["guild"] != DISCORD_ROOM.split("/")[0]:
+            return web.json_response({"message": "Unknown Guild"}, status=404)
+        if status != 200:
+            return web.json_response({"message": "boom"}, status=status)
+        return web.json_response(members)
+
+    app = web.Application()
+    app.router.add_get("/guilds/{guild}/members", handler)
+    server = await aiohttp_server(app)
+    return DiscordRoster("tok", base_url=str(server.make_url("")).rstrip("/"))
+
+
+@pytest.fixture(params=["signal", "discord", "fake"])
+async def sources(request, aiohttp_server):
+    """One (healthy, unreadable, wrong_group) set per implementation, plus the
+    facts that legitimately DIFFER between platforms.
+
+    Every member of a set comes from the same implementation so that each
+    assertion below is about ONE class, run three times — not about three
+    classes compared to each other.
+
+    `ids_per_account` is declared rather than asserted as a constant because it
+    is a genuine platform difference, and flattening it into one number was
+    what made this suite unable to admit Discord at all: Signal pairs a phone
+    number with an ACI for one account (sealed sender delivers either), while a
+    Discord member has exactly one immutable snowflake. What must hold on BOTH
+    is the shape — one frozenset PER ACCOUNT, never a flat set of ids — which
+    is what the pairing test actually checks.
     """
     if request.param == "signal":
         return {
+            "platform": "signal",
+            "conversation": GROUP,
+            "members": MEMBERS,
+            "ids_per_account": 2,
             "healthy": await _signal(aiohttp_server, groups=[_live_group()]),
             "unreadable": await _signal(aiohttp_server, groups=[], status=500),
             "wrong_group": await _signal(aiohttp_server, groups=[_live_group(OTHER)]),
         }
+    if request.param == "discord":
+        member_rows = [
+            {"user": {"id": "100000000000000001"}},
+            {"user": {"id": "100000000000000002"}},
+        ]
+        return {
+            "platform": "discord",
+            "conversation": DISCORD_ROOM,
+            "members": (
+                frozenset({"100000000000000001"}),
+                frozenset({"100000000000000002"}),
+            ),
+            "ids_per_account": 1,
+            "healthy": await _discord(aiohttp_server, members=member_rows),
+            "unreadable": await _discord(aiohttp_server, members=[], status=500),
+            "wrong_group": await _discord(aiohttp_server, members=member_rows),
+        }
     return {
+        "platform": "signal",
+        "conversation": GROUP,
+        "members": MEMBERS,
+        "ids_per_account": 2,
         "healthy": FakeRosterSource(groups={GROUP: MEMBERS}),
         "unreadable": FakeRosterSource(fail=True),
         "wrong_group": FakeRosterSource(groups={OTHER: MEMBERS}),
     }
 
 
+def _other(sources) -> str:
+    """A conversation this source will NOT resolve."""
+    return DISCORD_OTHER if sources["platform"] == "discord" else GROUP
+
+
 async def test_a_readable_group_reports_available_with_its_members(sources):
-    roster = await sources["healthy"].roster(conversation_id=GROUP)
+    roster = await sources["healthy"].roster(conversation_id=sources["conversation"])
     assert roster.available is True
-    assert roster.members == MEMBERS
+    assert set(roster.members) == set(sources["members"])
 
 
 async def test_members_keep_the_id_forms_paired_per_account(sources):
@@ -96,13 +160,14 @@ async def test_members_keep_the_id_forms_paired_per_account(sources):
     under sealed sender the same account reaches Nora as a number on one
     message and as an ACI on another, and only this says they are one account.
     """
-    roster = await sources["healthy"].roster(conversation_id=GROUP)
+    roster = await sources["healthy"].roster(conversation_id=sources["conversation"])
+    assert roster.members, "a healthy roster must not be empty"
     for account in roster.members:
-        assert len(account) == 2, account
+        assert len(account) == sources["ids_per_account"], account
 
 
 async def test_an_unreadable_daemon_is_unavailable_and_never_raises(sources):
-    roster = await sources["unreadable"].roster(conversation_id=GROUP)
+    roster = await sources["unreadable"].roster(conversation_id=sources["conversation"])
     assert roster.available is False
     assert roster.members == ()
 
@@ -112,7 +177,7 @@ async def test_a_conversation_the_daemon_does_not_list_is_unavailable_not_empty(
     real observed state — group state goes stale on a linked device. Reporting
     it as "this group has no members" would be a confident lie told by the
     exact failure mode this deployment has already had."""
-    roster = await sources["wrong_group"].roster(conversation_id=GROUP)
+    roster = await sources["wrong_group"].roster(conversation_id=_other(sources))
     assert roster.available is False
     assert roster.members == ()
 
@@ -120,5 +185,5 @@ async def test_a_conversation_the_daemon_does_not_list_is_unavailable_not_empty(
 async def test_every_implementation_declares_the_platform_it_is_bound_to(sources):
     """`roster()` takes no `platform` — an implementation is bound to one,
     exactly as `PlatformAdapter` is."""
-    for source in sources.values():
-        assert source.platform == "signal"
+    for key in ("healthy", "unreadable", "wrong_group"):
+        assert sources[key].platform == sources["platform"]

@@ -33,6 +33,25 @@ log = logging.getLogger("nora.discord.react")
 
 DEFAULT_API_BASE = "https://discord.com/api/v10"
 
+# Discord's JSON error code for "that emoji is not on that message" — the ONE
+# 404 that means the retraction already happened. Its siblings (10008 Unknown
+# Message, 10003 Unknown Channel) share the status and mean the target could
+# not be addressed at all.
+_UNKNOWN_EMOJI = 10014
+
+
+async def _error_code(resp) -> int | None:
+    """Discord's `code` from an error body, or None if it cannot be read.
+
+    None is deliberately NOT treated as the benign case by the caller: a 404
+    whose body will not parse is a 404 nothing has established the meaning of.
+    """
+    try:
+        body = await resp.json()
+    except Exception:                      # noqa: BLE001 — an unreadable body is just unknown
+        return None
+    return body.get("code") if isinstance(body, dict) else None
+
 
 class DiscordReactor:
     def __init__(
@@ -76,13 +95,32 @@ class DiscordReactor:
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.request(method, url, headers=headers) as resp,
             ):
-                # 204 is the documented success for both verbs. A DELETE of a
-                # reaction that is not there answers 404, and that is a SUCCESS
-                # for this caller: `indicate` removes the 👀 before placing a
-                # terminal emoji, and "it was already gone" is the state it
-                # wanted, not a failure worth counting.
-                if resp.status == 204 or (remove and resp.status == 404):
+                # 204 is the documented success for both verbs.
+                if resp.status == 204:
                     return ReactionResult(ok=True, supported=True)
+                # A DELETE of a reaction that is not there answers 404, and that
+                # IS a success for this caller: `indicate` retracts the 👀 before
+                # placing a terminal emoji, including on paths where it never
+                # landed, so "it was already gone" is the state it wanted.
+                #
+                # But the status alone does not say that. Discord returns 404
+                # here for at least three different facts and distinguishes them
+                # only in the body's `code`: 10014 Unknown Emoji (genuinely
+                # already gone), 10008 Unknown Message (deleted, or a wrong
+                # `to_message_id`), 10003 Unknown Channel (a wrong channel id).
+                # Treating all three as success reported a wrong id as a clean
+                # retraction and counted it `status="sent"`.
+                if remove and resp.status == 404:
+                    code = await _error_code(resp)
+                    if code == _UNKNOWN_EMOJI:
+                        return ReactionResult(ok=True, supported=True)
+                    log.warning(
+                        "reaction DELETE 404 with code %s (channel=%s, message=%s) "
+                        "— the message or channel could not be addressed, which is "
+                        "not the same as the reaction already being gone",
+                        code, channel_id, to_message_id,
+                    )
+                    return ReactionResult(ok=False, supported=True)
                 # 429 is reported as an ordinary failure, NOT retried:
                 # `ReactionResult` carries no retry axis on purpose, because a
                 # reaction is decoration whose moment has passed by the time a

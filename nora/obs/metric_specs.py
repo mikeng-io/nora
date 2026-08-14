@@ -770,8 +770,12 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     _GaugeSpec(
         "nora_presence_circle_subset_ok",
         "1 when the conversation's people are a subset of the circle (R-21 holds "
-        "by construction), 0 the day someone outside the circle is in the group.",
-        ("circle",),
+        "by construction), 0 the day someone outside the circle is in the group. "
+        "Labelled by CONVERSATION as well as circle: the pre-flight checks every "
+        "allowlisted room, so a circle-only series was last-writer-wins across "
+        "them — a failing room could be overwritten by a passing one and the "
+        "alarm silently lost.",
+        ("circle", "platform", "conversation"),
     ),
     # THERE IS DELIBERATELY NO `nora_reminders_pending` HERE, and the name is
     # left free rather than reserved. Design §13 asked for one ("runaway visible

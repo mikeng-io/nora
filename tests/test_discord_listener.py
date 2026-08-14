@@ -95,3 +95,48 @@ async def test_a_raising_callback_does_not_propagate():
     await listener.listen(on_message)
 
     await client.handlers["on_message"]("raw-message-1")  # must not raise
+
+
+async def test_connecting_counts_as_liveness_not_just_a_message():
+    """`nora_adapter_last_event_age_seconds{platform="discord"}` is published
+    only when `last_event_age_seconds` is not None (`nora/__main__.py`), and a
+    prometheus label-child is created on first write — so a listener that
+    stamped `last_event_at` ONLY in `on_message` published no series at all
+    until the first Discord message the process ever saw, and every supervised
+    restart rebuilds the listener and made it vanish again.
+
+    That is the failure the runbook now tells an operator to alert on: a
+    Gateway that never connects would have produced an ABSENT series, which
+    greps as "no problem" and is actually "no instrument" — the thing CLAUDE.md
+    forbids reading as evidence.
+    """
+    client = FakeClient()
+    listener = DiscordListener(client, "tok", clock=lambda: 1234.0)
+
+    async def _on(_m):
+        pass
+
+    await listener.listen(_on)
+    assert listener.last_event_at is None, "nothing has happened yet"
+
+    await client.handlers["on_ready"]()
+    assert listener.last_event_at == 1234.0, (
+        "connecting is liveness — otherwise the series does not exist until "
+        "somebody talks"
+    )
+
+
+async def test_resuming_also_counts_as_liveness():
+    """The same, for the edge that fires after an ordinary reconnect — which is
+    the common case, since `on_ready` only fires on a full re-IDENTIFY."""
+    client = FakeClient()
+    listener = DiscordListener(client, "tok", clock=lambda: 99.0)
+
+    async def _on(_m):
+        pass
+
+    await listener.listen(_on)
+    await client.handlers["on_resumed"]()
+
+    assert listener.connected is True
+    assert listener.last_event_at == 99.0
