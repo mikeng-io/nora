@@ -31,10 +31,11 @@ def _entry(**overrides):
 
 
 @pytest.fixture(params=["fake", "sql"])
-async def store(request, pg_url):
+async def store(request):
     if request.param == "fake":
         yield FakeToolCallLogStore()
         return
+    pg_url = request.getfixturevalue("pg_url")
     run_migrations(pg_url)
     engine = create_sql_engine(pg_url)
     yield SqlToolCallLogStore(engine)
