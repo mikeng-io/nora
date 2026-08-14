@@ -441,3 +441,39 @@ def test_conduct_keeps_judgement_and_the_three_state_honesty():
     assert "could not check" in text
     assert "found nothing" in text or "you found nothing" in text
     assert "never claim to have done" in text.lower()
+
+
+def _conduct() -> str:
+    return (DOCTRINE_DIR / "conduct.md").read_text()
+
+
+def test_conduct_puts_the_day_boundary_at_sleep_rather_than_at_midnight():
+    """The 00:30 trap (operator, 2026-08-15).
+
+    She is given a plain wall-clock line and nothing else about days, so at
+    00:30 on the 15th a stored fact dated the 15th reads as «today» while the
+    person who has not slept yet is calling that same evening 「聽日」. The
+    failure is not a wrong date — it is PEDANTRY: correcting them about which
+    day it is, or answering «I know nothing about tomorrow» while holding the
+    exact thing they asked for.
+    """
+    text = _conduct()
+    assert "sleeps, not at midnight" in text
+    assert "聽日" in text
+    assert "Do not correct somebody about which day it is." in text
+
+
+def test_the_day_boundary_is_a_position_and_not_an_hour():
+    """DEC-94/95/96's finding, applied here: a position generates, a list
+    closes. «A day ends when somebody sleeps» covers 00:30, 04:00 and a night
+    shift alike. Any concrete cutoff — «before 6am», «between midnight and
+    dawn» — answers only for the hours on the list and silently gets the
+    others wrong, and it is the shape this file must not drift into.
+    """
+    import re
+
+    section = _conduct().split("# 幾點先算第二日", 1)[1]
+    assert not re.search(r"\b(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.|:00)\b", section, re.I), (
+        "the day boundary must not be legislated as a clock time"
+    )
+    assert "6am" not in section and "before dawn" not in section
