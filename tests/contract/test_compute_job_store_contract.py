@@ -114,7 +114,10 @@ async def test_sweep_firing_resolves_to_failed(store):
     await store.create(job)
     await store.claim(job.id)
     swept = await store.sweep_firing(now=datetime.now(UTC))
-    assert swept == 1
+    # The ROWS, not a count: they are terminal the instant this returns, so
+    # this is the only moment anything can still learn who was waiting on them
+    # and close the promise they left open.
+    assert [j.id for j in swept] == [job.id]
     fetched = await store.get(job.id)
     assert fetched.state is ComputeJobState.FAILED
 
@@ -129,7 +132,10 @@ async def test_sweep_pending_resolves_to_failed_and_says_why(store):
     job = _job()
     await store.create(job)
     swept = await store.sweep_pending(now=datetime.now(UTC))
-    assert swept == 1
+    assert [j.id for j in swept] == [job.id]
+    assert swept[0].conversation_id and swept[0].requester_person_id, (
+        "the swept row must carry WHERE and WHO — telling them is the point"
+    )
     fetched = await store.get(job.id)
     assert fetched.state is ComputeJobState.FAILED
     assert fetched.completed_at is not None
@@ -148,9 +154,9 @@ async def test_each_sweep_leaves_the_other_state_alone(store):
     pending = _job(id=uuid4())
     await store.create(pending)
 
-    assert await store.sweep_firing(now=datetime.now(UTC)) == 1
+    assert len(await store.sweep_firing(now=datetime.now(UTC))) == 1
     assert (await store.get(pending.id)).state is ComputeJobState.PENDING
-    assert await store.sweep_pending(now=datetime.now(UTC)) == 1
+    assert len(await store.sweep_pending(now=datetime.now(UTC))) == 1
     assert (await store.get(firing.id)).error == (
         "swept at boot: process crashed mid-delivery"
     )

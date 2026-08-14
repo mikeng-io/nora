@@ -124,13 +124,17 @@ class ComputeJobStore(Protocol):
         """Terminal write for a row already claimed. True if it changed."""
         ...
 
-    async def sweep_firing(self, *, now: datetime) -> int:
+    async def sweep_firing(self, *, now: datetime) -> list[ComputeJob]:
         """Boot recovery: `FIRING` rows (a crash mid-delivery) resolve to
         `FAILED`, never re-delivered — at-most-once, mirroring
-        `ReminderStore.sweep_firing`. Returns how many."""
+        `ReminderStore.sweep_firing`.
+
+        Returns the rows it swept, not a count. They are terminal the instant
+        this returns, so this is the ONLY moment anything can still find out
+        who was waiting on them — see `nora.app.compute_poller.recover`."""
         ...
 
-    async def sweep_pending(self, *, now: datetime) -> int:
+    async def sweep_pending(self, *, now: datetime) -> list[ComputeJob]:
         """Boot recovery for the OTHER half, and it has no `ReminderStore`
         counterpart because the two ports differ in what a `PENDING` row means.
 

@@ -262,7 +262,13 @@ async def test_boot_recovery_fails_pending_rows_a_restart_orphaned(fake_metrics)
 
     swept = await recover(store=store, metrics=fake_metrics, now=datetime.now(UTC))
 
-    assert swept == 2
+    # The ROWS, not a count — boot recovery returns them so each requester can
+    # be told she lost track of their job. They were promised «I'm working on
+    # it» and, before 2026-08-14, heard nothing ever again.
+    assert len(swept) == 2
+    assert all(j.conversation_id and j.requester_person_id for j in swept), (
+        "a swept row must carry WHERE and WHO, or nobody can be told"
+    )
     assert await store.pending(limit=10) == []
     still_pending = await store.get(stranded.id)
     assert still_pending.state is ComputeJobState.FAILED
@@ -272,3 +278,38 @@ async def test_boot_recovery_fails_pending_rows_a_restart_orphaned(fake_metrics)
     assert fake_metrics.get(
         "nora_compute_jobs_delivered_total", outcome="failed_error",
     ) == 2
+
+
+# ---------------------------------------------------------------------------
+# telling the person who was left waiting
+# ---------------------------------------------------------------------------
+
+
+async def test_a_lost_job_says_it_lost_track_and_never_that_it_failed():
+    """The promise this closes, and the claim it must not make.
+
+    A requester was told «I'm working on it» and then the process restarted.
+    Sweeping the row terminal is right, and NOT saying the job failed is right
+    — the handle lived in an in-memory registry and the container may have
+    finished perfectly well. But before 2026-08-14 those two correct decisions
+    added up to a third, wrong one: nobody was told anything at all, ever.
+
+    So what is spoken is R-27's `unavailable` — «I lost track of it» — which is
+    the only statement that is true. The header must forbid both other claims
+    explicitly, because a model handed «the job is over» will otherwise pick
+    one.
+    """
+    from nora.app.fire import lost_job_occasion
+
+    job = _pending_job()
+    occasion = lost_job_occasion(job)
+
+    assert occasion.platform == job.platform
+    assert occasion.conversation_id == job.conversation_id
+    assert occasion.person_id == job.requester_person_id
+    assert occasion.kind == "compute_lost"
+
+    header = occasion.header(None, datetime.now(UTC)).lower()
+    assert "lost" in header
+    assert "do not say it failed" in header
+    assert "do not say it worked" in header

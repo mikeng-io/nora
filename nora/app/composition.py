@@ -88,7 +88,7 @@ from .announce import AnnouncementTarget, VersionAnnouncer
 from .compute_poller import ComputeJobPoller
 from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
-from .fire import FirePath, relay_occasion
+from .fire import FirePath, lost_job_occasion, relay_occasion
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .runtime import BackgroundTasks
 
@@ -958,7 +958,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # unconditional recovery above exists to prevent, silently reopened.
     # Fixed here per a subagent review that caught it by direct comparison
     # against `nora.app.heartbeat.recover`'s own stated reasoning.
-    await compute_poller_recover(store=compute_jobs, metrics=metrics, now=datetime.now(UTC))
+    # The rows are RETURNED so the people waiting on them can be told. Sweeping
+    # them terminal is right and not claiming they failed is right, but before
+    # 2026-08-14 that combination also meant nobody was told ANYTHING: the
+    # requester heard «I'm working on it» and then nothing, ever. Delivered
+    # below, once `fire_path` exists.
+    lost_jobs = await compute_poller_recover(
+        store=compute_jobs, metrics=metrics, now=datetime.now(UTC),
+    )
     # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
     # otherwise every deployment on the shipped default (`enabled = false`)
     # exports 0.0 forever, which reads identically to "ticked a moment ago".
@@ -1015,6 +1022,22 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             llm_state=llm_state,
             tool_call_log_store=tool_call_log_store,
         )
+    if lost_jobs and fire_path is not None:
+        # Spawned, never awaited — a boot must not wait on a model call, and
+        # `BackgroundTasks` holds the strong reference, exactly as the
+        # announcer and the poller do.
+        background.spawn(_tell_about_lost_jobs(
+            jobs=lost_jobs, speak=fire_path.speak, slots=slots, metrics=metrics,
+        ))
+    elif lost_jobs:
+        # No fire path on this deployment, so there is no way to say it. Loud
+        # rather than silent: somebody is still waiting on each of these.
+        log.error(
+            "%d compute job(s) lost across the restart and NOBODY CAN BE TOLD — "
+            "this deployment wires no fire path (heartbeat, announcements and "
+            "compute all off)", len(lost_jobs),
+        )
+
     if cfg.heartbeat.enabled and fire_path is not None:
         heartbeat = HeartbeatLoop(
             store=reminders,
@@ -1105,6 +1128,38 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client,
     )
+
+
+async def _tell_about_lost_jobs(
+    *, jobs: list[Any], speak: Any, slots: ConversationSlots, metrics: Metrics,
+) -> None:
+    """Close the promise each lost job left open, one room at a time.
+
+    Never fatal and never raised: this runs detached at boot, and a room that
+    cannot be spoken into must not take the process down with it. Each failure
+    is logged and counted — the whole point of this function is that somebody
+    is waiting, so a delivery that silently did not happen would be the very
+    defect it exists to fix.
+    """
+    for job in jobs:
+        key = (job.platform, job.conversation_id)
+        # `try_acquire`, the heartbeat's rule: a room already mid-turn is not
+        # one to interrupt, and this is the least urgent thing the process does.
+        if not slots.try_acquire(key):
+            log.warning(
+                "could not tell %s about a lost job: the room is mid-turn",
+                job.conversation_id,
+            )
+            metrics.inc("nora_compute_lost_told_total", outcome="busy")
+            continue
+        try:
+            outcome = await speak(lost_job_occasion(job))
+            metrics.inc("nora_compute_lost_told_total", outcome=outcome)
+        except Exception:
+            log.exception("failed to tell %s about a lost job", job.conversation_id)
+            metrics.inc("nora_compute_lost_told_total", outcome="failed_error")
+        finally:
+            slots.release_and_dispatch(key)
 
 
 async def _presence_preflight(

@@ -716,6 +716,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # `not_allowed_there` are the two that mean somebody tried to speak past a
     # trust boundary, and they are worth watching in a way that `unknown_room`
     # (a model guessing at a name) is not.
+    # Somebody was told «I'm working on it» and the job was then lost across a
+    # restart. This counts the CLOSING of that promise, by outcome — `sent` is
+    # the only value that means the person waiting actually heard back, and a
+    # rising `busy`/`failed_error` means they did not.
+    _CounterSpec(
+        "nora_compute_lost_told_total",
+        "Lost-compute-job notices by outcome: sent / busy / failed_* .",
+        ("outcome",),
+    ),
     _CounterSpec(
         "nora_relay_total",
         "Cross-room relays by outcome: ok / empty / unmapped / unknown_room / "

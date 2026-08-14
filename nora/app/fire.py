@@ -276,6 +276,45 @@ def _relay_header(
     )
 
 
+def lost_job_occasion(job: ComputeJob) -> Occasion:
+    """A job whose delivery was lost across a restart — the FIFTH `Occasion`.
+
+    Boot recovery cannot know whether the container finished: its handle lives
+    in `LocalDockerBackend`'s in-memory registry and did not survive
+    (`nora.app.compute_poller.recover`). So this must never say the job
+    FAILED — that is a claim about a container nobody looked at, and it may
+    well have built the thing perfectly.
+
+    What is true, and all that is true, is that she lost track of it. That is
+    R-27's `unavailable` — «I couldn't check», not «there is nothing» — and
+    saying it is what closes a promise that was otherwise left open forever:
+    the requester was told «I'm working on it» and, before this, heard nothing
+    ever again (operator, live, 2026-08-14).
+    """
+    return Occasion(
+        platform=job.platform,
+        conversation_id=job.conversation_id,
+        conversation_type=job.conversation_type,
+        person_id=job.requester_person_id,
+        body=f"(asked earlier) {job.task}",
+        header=_lost_job_header,
+        kind="compute_lost",
+    )
+
+
+def _lost_job_header(tagger: PersonRef | None, now: datetime) -> str:
+    who = escape(tagger.name if tagger is not None else "")
+    return (
+        "You are in a group chat you have been reading all along. Nobody has "
+        f"just called you. Earlier, {who} asked you to build something and you "
+        "said you were on it — then you were restarted and lost the thread of "
+        "it. That is why this turn is happening, and it is the only reason.\n"
+        "Own it briefly and tell them to ask again if they still want it. Do "
+        "NOT say it failed and do NOT say it worked — you genuinely do not "
+        "know which, and guessing either way would be a claim you cannot back."
+    )
+
+
 def _compute_header(job: ComputeJob, tagger: PersonRef | None, now: datetime) -> str:
     who = escape(tagger.name if tagger is not None else "")
     return (

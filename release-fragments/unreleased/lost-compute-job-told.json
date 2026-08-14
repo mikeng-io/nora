@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "If Nora is restarted while building you something, she now comes back and says she lost track of it — instead of leaving «I'm working on it» hanging forever.",
+  "details": [
+    "She says she lost the thread and to ask again. She does not claim it failed and does not claim it worked, because she genuinely cannot tell which.",
+    "If the room is mid-conversation when she comes back, she waits rather than interrupting."
+  ],
+  "limitations": [
+    "The half-built thing itself is still lost — the request has to be made again.",
+    "She tells you once. If that message cannot be delivered it is not retried, though the failure is recorded."
+  ]
+}

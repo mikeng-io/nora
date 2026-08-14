@@ -106,18 +106,18 @@ class SqlComputeJobStore:
             result = await conn.execute(stmt)
         return bool(result.rowcount)
 
-    async def sweep_firing(self, *, now: Any) -> int:
+    async def sweep_firing(self, *, now: Any) -> list[ComputeJob]:
         return await self._sweep(
             ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery",
         )
 
-    async def sweep_pending(self, *, now: Any) -> int:
+    async def sweep_pending(self, *, now: Any) -> list[ComputeJob]:
         return await self._sweep(
             ComputeJobState.PENDING, now,
             "swept at boot: lost track of this job across a restart",
         )
 
-    async def _sweep(self, state: ComputeJobState, now: Any, error: str) -> int:
+    async def _sweep(self, state: ComputeJobState, now: Any, error: str) -> list[ComputeJob]:
         stmt = (
             sa.update(COMPUTE_JOBS)
             .where(COMPUTE_JOBS.c.state == state.value)
@@ -127,9 +127,15 @@ class SqlComputeJobStore:
                 error=error,
             )
         )
+        # RETURNING the rows, not just a count: the person who asked for each
+        # of these was told «I'm working on it» and is still waiting, and
+        # closing that loop needs their room and their name. The sweep is the
+        # only place that knowledge exists — the row is terminal immediately
+        # after, so nothing downstream can find them again (see
+        # `nora.app.compute_poller.recover`).
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return int(result.rowcount or 0)
+            rows = (await conn.execute(stmt.returning(*COMPUTE_JOBS.c))).all()
+        return [_row_to_job(r) for r in rows]
 
     async def aclose(self) -> None:
         await self._engine.dispose()

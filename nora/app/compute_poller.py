@@ -106,7 +106,9 @@ class ComputeJobPoller:
                 self._metrics.inc("nora_errors_total", stage="compute_poller")
 
 
-async def recover(*, store: ComputeJobStore, metrics: Metrics, now: datetime) -> int:
+async def recover(
+    *, store: ComputeJobStore, metrics: Metrics, now: datetime,
+) -> list[ComputeJob]:
     """Boot recovery. BOTH non-terminal states resolve to `FAILED`, and the
     second half is where this stops mirroring `nora.app.heartbeat.recover`.
 
@@ -123,29 +125,44 @@ async def recover(*, store: ComputeJobStore, metrics: Metrics, now: datetime) ->
     its artifact perfectly well.
 
     Sweeping at boot replaces that with the one thing that IS known — the
-    delivery was lost across a restart — and, because the row is terminal
-    before the poller's first tick, it can never be spoken at all. The
-    orphaned container is not addressed here and cannot be: this process has
-    no handle to it either. That is a known cost of the in-memory registry,
-    not something this function hides.
+    delivery was lost across a restart. The orphaned container is not
+    addressed here and cannot be: this process has no handle to it either.
+    That is a known cost of the in-memory registry, not something this
+    function hides.
 
-    Returns the total swept, both states together.
+    **The rows are RETURNED so somebody can still be told** (operator, live,
+    2026-08-14). Making them terminal here is right, and NOT claiming the job
+    failed is right — the container may have finished perfectly well and
+    nobody knows. But "never spoken at all" was a third thing, and it was
+    wrong: the person who asked was told «I'm working on it» and then heard
+    nothing, ever. A promise made and never closed is R-5's own failure shape,
+    and it was on the honest side of the ledger only because the DATABASE was
+    honest; the human was not told anything.
+
+    What is spoken is therefore an `unavailable`, never a `failed`: «I lost
+    track of it, ask me again» — which is the one statement that is true. See
+    `nora.app.fire.lost_job_occasion`.
+
+    Returns the swept rows, both states together.
     """
     firing = await store.sweep_firing(now=now)
     if firing:
         log.warning(
             "boot recovery: %d compute job(s) were left FIRING and are now FAILED",
-            firing,
+            len(firing),
         )
     pending = await store.sweep_pending(now=now)
     if pending:
         log.warning(
             "boot recovery: %d compute job(s) were still PENDING and their backend "
-            "handles did not survive the restart; they are now FAILED and will not "
-            "be delivered (any container still running is orphaned)",
-            pending,
+            "handles did not survive the restart; they are now FAILED and each "
+            "requester will be told she lost track of it (any container still "
+            "running is orphaned)",
+            len(pending),
         )
-    swept = firing + pending
+    swept = [*firing, *pending]
     if swept:
-        metrics.inc("nora_compute_jobs_delivered_total", swept, outcome="failed_error")
+        metrics.inc(
+            "nora_compute_jobs_delivered_total", len(swept), outcome="failed_error",
+        )
     return swept
