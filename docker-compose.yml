@@ -166,6 +166,15 @@ services:
       #   Unset means GIF tools are unavailable; it must be explicitly passed
       #   because Compose does not inherit host .env values into a service.
       - GIPHY_API_KEY=${GIPHY_API_KEY:-}
+      #   DISCORD_BOT_TOKEN     — the Gateway/REST credential for the Discord
+      #   adapter ([platforms.discord] enabled, DEC-102). Passed explicitly for
+      #   the same reason as every value above: Compose does not inherit host
+      #   .env into a service. Unlike the keys above this one is NOT `:-`
+      #   optional in effect — `AdapterRegistry` refuses to start an enabled
+      #   platform that cannot authenticate, so an unset value here is a
+      #   crash-loop, not a degraded feature. Left `:-` so a deployment with
+      #   Discord DISABLED still starts without it.
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
       #   NORA_DATA_HOST_ROOT   — the HOST-side path of the `./data` mount in
       #   `volumes:` below, and the one value in this file that exists because
       #   a path inside this container is NOT a path the Docker daemon can
