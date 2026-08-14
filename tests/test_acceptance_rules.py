@@ -195,6 +195,9 @@ RULE_TESTS = {
     # a concurrent branch that minted them independently for an unrelated
     # decision (Discord routing).
     "R-48": "test_a_non_cacheable_tool_is_never_logged",
+    # R-49 (DEC-105): a relay crosses into another room only within one
+    # workspace, only for somebody allowed in both, and only under their name.
+    "R-49": "test_a_room_in_another_workspace_is_refused",
 }
 
 

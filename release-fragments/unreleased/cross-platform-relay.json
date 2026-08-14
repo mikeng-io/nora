@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "You can ask Nora, from one place, to tell the group somewhere else — «tell the Signal lot we're starting» from Discord.",
+  "details": [
+    "She names the platform, not a room: your group has one room on each, so «tell Signal» is enough.",
+    "What arrives always says who asked for it. She never passes a message on as though it were her own words.",
+    "She still answers you where you asked, telling you whether it went."
+  ],
+  "limitations": [
+    "Only between rooms belonging to the same group. A room in a different group is not merely refused — it cannot be reached or named from outside it.",
+    "Only for people who are themselves in both rooms. Being in one does not let you speak into the other.",
+    "One direction at a time — this is passing a message along, not linking the two rooms together, and nothing is mirrored automatically."
+  ]
+}

@@ -77,6 +77,7 @@ from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_identifiers, scan_reply
 from .links import LinkCarry
 from .ports import ToolSpec, adapt
+from .relay import Relay
 from .room import Room, RoomView, _key, _names_of
 from .whereis import Whereis, resolvable_places
 
@@ -521,6 +522,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 "second message is addressed to somebody else, such "
                                 "as putting a question to the person who knows",
                              terminal=True),
+    # THE ONLY WAY ANYTHING REACHES A ROOM OTHER THAN THIS ONE (DEC-105/R-49).
+    # Budget 2, not 6: relaying is a deliberate act somebody asked for, not a
+    # register she can fall into, and a turn that relays twice has almost
+    # certainly misread one request as two. NOT terminal — the turn still owes
+    # the ASKER a `send_reply` saying what happened, and making this terminal
+    # would let her relay and then go silent on the person standing in front
+    # of her.
+    "send_to": NativeTool(2, "relay a message from somebody here into this "
+                             "group's room on ANOTHER platform — «tell the Signal "
+                             "lot we're starting» — naming the platform, not a "
+                             "room; it never speaks as you, it always says who "
+                             "asked"),
     # THE ACTIVATION TOOL (DEC-50, activating DEC-48). It is `plugin=True`, so
     # this entry exists for ONE reason: R-7 default-denies any tool absent from
     # `budgets()` (`guards.py`), and the `skills(skill_name)` tool is registered
@@ -1199,6 +1212,7 @@ def build_tool_specs(
     compute_backend: ComputeBackend | None = None,
     compute_jobs: ComputeJobStore | None = None,
     tool_call_log_store: ToolCallLogStore | None = None,
+    relay: Relay | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -3403,6 +3417,34 @@ def build_tool_specs(
             raise RuntimeError("GIF delivery failed; reply in words instead.")
         return {"status": "ok"}
 
+    async def send_to(platform: str, text: str) -> dict:
+        """Relay a message from somebody here into this group's room on ANOTHER
+        platform.
+
+        Use when somebody here asks you to tell the others somewhere you are
+        not — "tell the Signal lot we're starting" while you are on Discord.
+        This group has one room per platform, so naming the platform is enough.
+
+        It NEVER speaks as you: what arrives says who asked for it. Answer the
+        person here afterwards with `send_reply`, saying whether it went.
+
+        Args:
+            platform: Where to send it — "signal" or "discord".
+            text: What to relay, in the asker's words.
+        """
+        if relay is None:
+            return {
+                "status": "unavailable",
+                "note": "I can't reach other rooms from here. Say so plainly.",
+            }
+        return await relay.send(
+            platform=platform,
+            text=text,
+            requester=room.tagger,
+            from_platform=room.platform,
+            from_conversation_id=conversation_id,
+        )
+
     return (
         _spec("now", now),
         _spec("calculate", calculate),
@@ -3427,6 +3469,7 @@ def build_tool_specs(
         _spec("make_artifact", make_artifact),
         _spec("version", version),
         _spec("send_reply", send_reply),
+        _spec("send_to", send_to),
         _spec("search_gifs", search_gifs),
         _spec("send_gif", send_gif),
     )

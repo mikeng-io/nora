@@ -61,6 +61,7 @@ def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
+        "send_to",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         "calculate", "transit", "route",
@@ -87,6 +88,9 @@ def test_budgets_match_todays_table():
         # and the token ceiling are far away, so this number is the only thing
         # bounding one inbound message's outbound volume.
             "send_reply": 6, "search_gifs": 1, "send_gif": 1,
+            # DEC-105. Two, not six: relaying is a deliberate act somebody
+            # asked for, not a register she can fall into.
+            "send_to": 2,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,

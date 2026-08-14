@@ -41,6 +41,7 @@ from ..infra.vision import VisionCache, VisionClient
 from .links import LinkCarry
 from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
+from .relay import Relay
 from .room import Room
 from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs, utc_now
 from .whereis import Circle, PresenceReader
@@ -78,6 +79,10 @@ class ToolRegistry:
         weather: WeatherProvider | None = None,
         presence: PresenceReader | None = None,
         circles: tuple[Circle, ...] = (),
+        # DEC-105. `None` is the honest not-configured state every offline and
+        # eval composition ships in — `send_to` then answers `unavailable`,
+        # never a silent no-op.
+        relay: Relay | None = None,
         refresher: Any = None,
         geocoder: Any = None,
         shortener: LinkShortener | None = None,
@@ -141,6 +146,7 @@ class ToolRegistry:
         # per-call R-31 subset guard lives in `nora.agent.whereis`, not here.
         self._presence = presence
         self._circles = tuple(circles)
+        self._relay = relay
         # The LIVE-refresh client (DEC-67) — None leaves `where_is` reading the
         # last stored fix (offline/eval, or [presence] refresh_url unset).
         self._refresher = refresher
@@ -500,6 +506,7 @@ class ToolRegistry:
             ai_peer=self._ai_peer, fire_turn=fire_turn,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             links=links,
+            relay=self._relay,
             versions=self._versions,
             giphy_source=self._giphy,
             compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,

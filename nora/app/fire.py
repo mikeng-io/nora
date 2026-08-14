@@ -229,6 +229,53 @@ def compute_occasion(job: ComputeJob, result: JobResult) -> Occasion:
     )
 
 
+def relay_occasion(
+    *, destination: Any, requester: PersonRef, text: str, from_platform: str,
+) -> Occasion:
+    """A message somebody asked to be passed into another room — the FOURTH
+    `Occasion` (DEC-105), following DEC-99's ruling exactly: a new way for Nora
+    to speak is an occasion on this path, never a fourth send mechanism.
+
+    That ruling is what keeps R-1b's three links intact. A relay that called
+    `adapter.send` itself would bypass R-2's latch, R-4, R-6's leak scan,
+    R-18's egress scan AND A9's audit-first write in one step — and the last of
+    those is the one that bites quietly: the relayed message would appear in
+    the destination room with no row recording it, leaving a hole in that
+    room's transcript that Nora cannot see. Exactly the defect the Discord
+    parser had.
+
+    `person_id` is the REQUESTER's, so the destination's fire turn runs under
+    the authority of somebody `policy.is_allowed` has already cleared for that
+    room — and so §12's re-check at fire time applies to them, as it does to a
+    reminder's owner.
+    """
+    return Occasion(
+        platform=destination.platform,
+        conversation_id=destination.primary_id,
+        conversation_type="group",
+        person_id=requester.person_id,
+        body=text,
+        speaker=requester.name,
+        header=lambda tagger, now: _relay_header(requester, from_platform, tagger, now),
+        kind="relay",
+    )
+
+
+def _relay_header(
+    requester: PersonRef, from_platform: str, tagger: PersonRef | None, now: datetime,
+) -> str:
+    who = escape(requester.name)
+    where = escape(from_platform)
+    return (
+        "You are in a group chat you have been reading all along. Nobody here "
+        f"has just called you. {who} asked you, over on {where}, to pass "
+        "something on to this room — that is why this turn is happening, and "
+        "it is the only reason.\n"
+        f"Pass it on, and make it unmistakable that {who} said it and not you. "
+        "You are carrying somebody's message, not making a remark of your own."
+    )
+
+
 def _compute_header(job: ComputeJob, tagger: PersonRef | None, now: datetime) -> str:
     who = escape(tagger.name if tagger is not None else "")
     return (

@@ -30,6 +30,7 @@ from openai import AsyncOpenAI
 from nora.agent import factory
 from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
+from nora.agent.relay import Relay
 from nora.agent.room import Room
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.config import Config
@@ -87,7 +88,7 @@ from .announce import AnnouncementTarget, VersionAnnouncer
 from .compute_poller import ComputeJobPoller
 from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
-from .fire import FirePath
+from .fire import FirePath, relay_occasion
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .runtime import BackgroundTasks
 
@@ -792,10 +793,42 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     if giphy_key := os.environ.get("GIPHY_API_KEY"):
         from nora.infra.giphy import GiphyClient
         giphy_client = GiphyClient(api_key=giphy_key)
+    # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
+    # Every path that may speak into a conversation holds this same instance —
+    # two would be two locks and no serialisation at all. Built HERE, above the
+    # registry, because the relay below needs it and the registry needs the
+    # relay.
+    slots = ConversationSlots(
+        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
+    )
+
+    # DEC-105: the cross-room relay. It does NOT send — it occasions a fire
+    # turn into the destination (DEC-99's ruling), so R-1b's three links hold
+    # and the relayed message is audited into the room it lands in.
+    #
+    # `fire_path` is genuinely circular: `FirePath` takes the tool registry,
+    # and the registry takes this relay. Python resolves a closure's free
+    # variables at CALL time and a relay can only be called inside a live turn
+    # — long after both exist — so the cycle is closed by deferring rather than
+    # by a mutable attribute nobody can see being set.
+    async def _relay_speak(occasion: Any) -> str:
+        if fire_path is None:
+            # Every occasion needs a fire path, and this deployment has none
+            # (heartbeat, announcements and compute all off). `failed_error` is
+            # what `send_to` turns into an honest «I couldn't».
+            log.warning("relay asked to speak with no fire path wired")
+            return "failed_error"
+        return await fire_path.speak(occasion)
+
+    relay = Relay(
+        policy=allowlist, speak=_relay_speak, slots=slots,
+        occasion_for=relay_occasion, metrics=metrics,
+    )
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client, blobs=blobs, search=search_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,
+        relay=relay,
         refresher=refresher,
         geocoder=geocoder,
         shortener=shortener_client,
@@ -882,12 +915,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # first boot.
             self_ids=registry.self_aliases(),
         ))
-    # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
-    # Every path that may speak into a conversation holds this same instance —
-    # two would be two locks and no serialisation at all.
-    slots = ConversationSlots(
-        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
-    )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
         # platform it arrived from, and `registry.adapters` is exactly the set

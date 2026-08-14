@@ -96,6 +96,7 @@ async def wiring(pg_url, tmp_path):
 def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
+        "send_to",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         "calculate", "transit", "route",

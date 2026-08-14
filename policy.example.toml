@@ -42,10 +42,19 @@ persons = ["miles"]        # [] means Nora accepts no DMs at all.
 #      discord   "<guild_id>/<channel_id>" — the adapter flattens the hierarchy
 #      whatsapp  group JID, ...@g.us
 
+#    `workspace` is the SOCIAL UNIT a room belongs to (DEC-105) — the same
+#    people reachable in more than one place. It is the boundary `send_to`
+#    may never cross: "tell the Signal lot" from Discord resolves to the
+#    Signal room of THIS workspace and nothing else. A workspace holds at
+#    most one room per platform, which is what makes naming the platform a
+#    usable address; two would refuse rather than guess. Defaults to "nora",
+#    so a single-group deployment needs nothing here.
+
 [[conversations]]
-platform = "signal"
-id       = "Q2hhdEdyb3VwSWRFeGFtcGxlQmFzZTY0PT0="
-label    = "Family"          # for humans reading this file. NEVER matched on —
+platform  = "signal"
+id        = "Q2hhdEdyb3VwSWRFeGFtcGxlQmFzZTY0PT0="
+workspace = "family"         # paired with the Discord room below
+label     = "Family"          # for humans reading this file. NEVER matched on —
                              # group names are not unique and are trivially
                              # changed by anyone in the group.
 persons  = ["miles", "ada"]   # only these two may trigger Nora here. A new group
@@ -69,9 +78,10 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
 # allowlistable on its own — being invited to a server grants technical reach,
 # never ambient presence, so every channel is listed explicitly.
 [[conversations]]
-platform = "discord"
-id       = "100000000000000203/100000000000000204"
-label    = "Zone 42 #general"
+platform  = "discord"
+id        = "100000000000000203/100000000000000204"
+workspace = "family"         # the same humans as the Signal group above
+label     = "Zone 42 #general"
 persons  = ["miles", "ada"]
 # location = true            # same switch as Signal, same meaning — see below.
 

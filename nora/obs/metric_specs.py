@@ -711,6 +711,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "not carry).",
         ("outcome",),
     ),
+    # DEC-105. `ok` is a message that reached another room; every other value is
+    # a refusal, and WHICH one it is matters — `other_workspace` and
+    # `not_allowed_there` are the two that mean somebody tried to speak past a
+    # trust boundary, and they are worth watching in a way that `unknown_room`
+    # (a model guessing at a name) is not.
+    _CounterSpec(
+        "nora_relay_total",
+        "Cross-room relays by outcome: ok / empty / unmapped / unknown_room / "
+        "ambiguous_room / unknown_source / same_room / other_workspace / "
+        "not_allowed_there / egress_blocked / no_adapter / failed.",
+        ("outcome",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

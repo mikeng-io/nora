@@ -66,6 +66,21 @@ class Conversation:
     # after an upgrade. Defaulted so nothing that constructs a `Conversation`
     # without one breaks; `load_policy` always sets it.
     primary_id: str = ""
+    # WHICH SOCIAL UNIT this room belongs to (DEC-105). Rooms sharing a
+    # workspace are the same group of people reachable in more than one place —
+    # a friend group with a Signal group AND a Discord channel — and that is
+    # what makes a relay between them something other than a leak: the audience
+    # is already the same audience. Rooms in DIFFERENT workspaces are different
+    # groups and may never be relayed between, however trusted each is on its
+    # own.
+    #
+    # Defaults to `memory.workspace_id`'s shipped value rather than being
+    # required, so an existing policy.toml keeps working — but the default is
+    # the LOOSE direction, so an operator who runs two real social units must
+    # say so. That is why `send_to` also requires the requester to be allowed
+    # in the destination independently: the workspace bounds WHICH rooms may
+    # ever be paired, and the persons list still decides who may use the pair.
+    workspace: str = "nora"
 
 
 @dataclass(frozen=True)
@@ -146,6 +161,9 @@ class _ConversationEntry(BaseModel):
     # See `Conversation.location` (DEC-74/79): relaxes `where_is`'s disclosure
     # gate for this room. Default False — the disclosure guard stays strict.
     location: bool = False
+    # See `Conversation.workspace` (DEC-105): the social unit this room belongs
+    # to. `send_to` may only relay BETWEEN rooms that share it.
+    workspace: str = "nora"
 
     @field_validator("persons")
     @classmethod
@@ -203,7 +221,7 @@ def load_policy(path: Path) -> Policy:
         convo = Conversation(
             platform=entry.platform, ids=ids, persons=persons, label=entry.label,
             tools=frozenset(entry.tools), location=entry.location,
-            primary_id=entry.id,
+            primary_id=entry.id, workspace=entry.workspace,
         )
         conversations.append(convo)
         for cid in ids:
