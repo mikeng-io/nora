@@ -177,6 +177,11 @@ RULE_TESTS = {
     # discipline R-37/R-37b hold for reminders, applied to the third
     # Occasion (DEC-99). The next free number after R-42.
     "R-43": "test_a_job_never_delivered_twice",
+    # R-45: a one-shot nudge, not a refusal — make_artifact called with
+    # context empty after place_info/route already ran this turn (DEC-101).
+    # R-44 was withdrawn 2026-08-14 (the prior occupant of this range); the
+    # next free number is R-45, not a reuse.
+    "R-45": "test_make_artifact_is_nudged_once_when_context_is_empty_after_gathering",
 }
 
 

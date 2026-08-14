@@ -1,0 +1,10 @@
+{
+  "type": "fix",
+  "summary": "When Nora already looked something up and asks for a file, she now gets one reminder to hand along the real numbers instead of just retyping her own draft.",
+  "details": [
+    "If she gathered a place's rating or a route's duration this turn and then asks for a file without passing that data along, she's nudged once to pass it properly before the job runs."
+  ],
+  "limitations": [
+    "One nudge only — if she still doesn't pass it along the second time, the file still gets built from whatever she wrote."
+  ]
+}

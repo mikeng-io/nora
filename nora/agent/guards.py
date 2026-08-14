@@ -539,6 +539,14 @@ class ReplyGuard(HookProvider):
         # never `send_reply`.
         self._forced_first_tool = forced_first_tool
         self._model_calls = 0
+        # R-45: has the make_artifact/context nudge already fired this turn?
+        # One-shot, like R-4/R-2's own care about not silently blocking a
+        # correction (DEC-33) — a second veto on the SAME defect the model
+        # already ignored once would not change its answer, only spend a
+        # turn refusing the model's only remaining path to `make_artifact`
+        # at all (its own budget is 1, and this veto does not consume it —
+        # see `evaluate`).
+        self._context_nudge_given = False
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
@@ -660,6 +668,34 @@ class ReplyGuard(HookProvider):
                            "again. If you still need something, use one of the "
                            "other tools; otherwise finish your turn.",
                 )
+
+        # R-45 (DEC-101): a nudge, not a refusal — `make_artifact` itself
+        # still runs if the model ignores this once. Root cause: the model
+        # had ALREADY drafted a full prose answer from `place_info`/`route`
+        # results earlier this turn and then reused that draft wholesale as
+        # `task`, leaving `context` empty — `make_artifact`'s own docstring
+        # already says "do not re-derive or summarise them into prose
+        # first", but advisory prose alone did not hold against a model that
+        # had already written the words once. One-shot (`_context_nudge_
+        # given`) because vetoing this repeatedly would not change the
+        # model's answer, only spend the turn's only `make_artifact` call
+        # (budget 1) on refusals — this veto is exempt from that spend since
+        # `_after_tool` never `record()`s a cancelled call (DEC-33's own
+        # mechanism, reused here rather than re-invented).
+        if (
+            tool_name == "make_artifact" and not self._context_nudge_given
+            and not (tool_input or {}).get("context")
+            and self.counts.get("place_info", 0) + self.counts.get("route", 0) > 0
+        ):
+            self._context_nudge_given = True
+            gathered = self.counts.get("place_info", 0) + self.counts.get("route", 0)
+            return self._veto(
+                "R-45",
+                f"You already called place_info/route {gathered} time(s) this "
+                "turn and have those typed results. Pass them as `context` — "
+                "the small dicts you already have — instead of typing them "
+                "into `task` as prose.",
+            )
         return None
 
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:

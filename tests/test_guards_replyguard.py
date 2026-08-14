@@ -275,3 +275,82 @@ def test_the_latch_still_refuses_the_message_after_the_last_one():
     """
     g = _guard_with(attempts=2, send_reply_budget=2)
     assert g.evaluate("send_reply", _send("and one more thing")) is not None
+
+
+# ---- R-45 (DEC-101): nudge make_artifact toward context, not prose ---------
+#
+# 2026-08-14: the model called place_info four times, drafted a full prose
+# answer from the results, then reused that draft wholesale as `make_artifact`'s
+# `task` and left `context` empty — the docstring's own "do not re-derive or
+# summarise them into prose first" did not hold against a model that had
+# already written the words once. This is a NUDGE, not a refusal: the veto
+# fires once, and `make_artifact`'s own budget (1) is not spent by it.
+
+
+def test_make_artifact_is_nudged_once_when_context_is_empty_after_gathering():
+    g = _guard()
+    g.record("place_info")
+    msg = g.evaluate("make_artifact", {"task": "build a report"})
+    assert msg is not None
+    assert "place_info" in msg
+
+
+def test_a_route_call_also_triggers_the_nudge():
+    g = _guard()
+    g.record("route")
+    msg = g.evaluate("make_artifact", {"task": "build a report"})
+    assert msg is not None
+
+
+def test_the_context_nudge_does_not_repeat():
+    g = _guard()
+    g.record("place_info")
+    first = g.evaluate("make_artifact", {"task": "build a report"})
+    assert first is not None
+    second = g.evaluate("make_artifact", {"task": "build a report"})
+    assert second is None
+
+
+def test_make_artifact_with_context_already_populated_is_not_nudged():
+    g = _guard()
+    g.record("place_info")
+    msg = g.evaluate(
+        "make_artifact",
+        {"task": "build a report", "context": [{"name": "Yoho Mall", "rating": 4.2}]},
+    )
+    assert msg is None
+
+
+def test_make_artifact_with_nothing_gathered_is_not_nudged():
+    """No place_info/route this turn: an empty context is legitimate, not a
+    defect to correct — `make_artifact`'s own docstring already says to
+    leave it unset "for a task with nothing gathered"."""
+    g = _guard()
+    msg = g.evaluate("make_artifact", {"task": "write a haiku"})
+    assert msg is None
+
+
+def test_the_context_nudge_names_r45_in_the_vetoes_metric():
+    m = Metrics()
+    g = _guard(m)
+    g.record("place_info")
+    g.evaluate("make_artifact", {"task": "build a report"})
+    assert m.get("nora_guard_vetoes_total", rule="R-45") == 1
+
+
+def test_the_context_nudge_does_not_spend_make_artifacts_own_budget():
+    """The nudge is a correction, not a refusal — the model's retry with
+    context populated must still be allowed to actually launch. Mirrors
+    production: `_after_tool` never `record()`s a cancelled call (DEC-33's
+    own mechanism), so this test does not `record("make_artifact")` for the
+    nudged call either — the retry below would hit R-7's OWN budget veto
+    instead of running clean if the nudge had silently spent it."""
+    g = _guard()
+    g.record("place_info")
+    nudged = g.evaluate("make_artifact", {"task": "build a report"})
+    assert nudged is not None
+    allowed = g.evaluate(
+        "make_artifact",
+        {"task": "build a report", "context": [{"name": "Yoho Mall"}]},
+    )
+    assert allowed is None
