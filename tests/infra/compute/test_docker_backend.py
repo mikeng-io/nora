@@ -47,6 +47,7 @@ import asyncio
 import hashlib
 import json
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -122,34 +123,57 @@ async def test_launch_returns_a_job_id_immediately(backend):
     assert job_id.startswith("job_")
 
 
-async def _poll_until_done(backend, *, job_id: str, attempts: int = 200) -> JobResult:
+async def _poll_until_done(backend, *, job_id: str, max_seconds: float = 10.0) -> JobResult:
     """`launch` schedules `_run_job` as a background `asyncio.Task` it never
     awaits directly, and neither `launch` nor `poll` contains an internal
     `await` that actually suspends -- so a tight retry loop with no sleep
     between iterations never yields to the event loop at all, and the
-    scheduled task never gets a turn to run. `asyncio.sleep(0)` on every
-    iteration is what actually lets it progress (its own real suspension
-    points are the two `asyncio.to_thread(...)` calls inside `_run_job`, which
-    only get checked when this coroutine yields). Every test in this file
-    that waits for a job to finish should call this rather than hand-rolling
-    a bare retry loop."""
+    scheduled task never gets a turn to run. Yielding on every iteration is
+    what lets it progress. Every test in this file that waits for a job to
+    finish should call this rather than hand-rolling a bare retry loop.
+
+    **BOUNDED BY WALL CLOCK, NOT BY A COUNT OF EVENT-LOOP TURNS.** It was
+    `for _ in range(200): await asyncio.sleep(0)`, and that is an instrument
+    measuring the wrong thing: `_run_job`'s real suspension points are two
+    `asyncio.to_thread(...)` calls, so what this waits on is a WORKER THREAD
+    finishing — wall-clock work — while `sleep(0)` yields the loop without
+    advancing time at all. On an idle machine 200 turns happen to outlast the
+    thread; under CPU contention they are burnt in microseconds before the
+    thread is ever scheduled, the loop exits with a RUNNING result, and the
+    assertion after it fails.
+
+    That is why SEVEN tests in this file went red together under load
+    (measured 2026-08-15, `nproc*2` busy loops) rather than one being "flaky":
+    they share this helper, and it could not measure the thing.
+
+    `sleep(0.001)` rather than `sleep(0)` for the same reason — it hands time
+    to the thread pool, not just a turn to the loop."""
+    deadline = time.monotonic() + max_seconds
     result = None
-    for _ in range(attempts):
+    while True:
         result = await backend.poll(job_id=job_id)
         if result.status != JobStatus.RUNNING:
             return result
-        await asyncio.sleep(0)
-    return result
+        if time.monotonic() >= deadline:
+            return result
+        await asyncio.sleep(0.001)
 
 
-async def _wait_for(predicate: Callable[[], bool], *, attempts: int = 200) -> None:
+async def _wait_for(predicate: Callable[[], bool], *, max_seconds: float = 10.0) -> None:
     """Yield to the event loop (see `_poll_until_done`'s docstring) until
     `predicate()` is true, for cases -- like a workspace directory landing on
-    disk mid-job -- where there is no `JobResult` to poll yet."""
-    for _ in range(attempts):
+    disk mid-job -- where there is no `JobResult` to poll yet.
+
+    Wall-clock bounded for `_poll_until_done`'s reason: the condition is
+    usually a worker thread having done something, and a count of event-loop
+    turns is not a measure of that."""
+    deadline = time.monotonic() + max_seconds
+    while True:
         if predicate():
             return
-        await asyncio.sleep(0)
+        if time.monotonic() >= deadline:
+            break
+        await asyncio.sleep(0.001)
     assert predicate(), "condition never became true"
 
 
