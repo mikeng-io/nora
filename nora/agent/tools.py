@@ -54,7 +54,6 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
-from typing import Any
 
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from ..domain.media import HANDLE_CHARS, GifCandidate
@@ -1049,102 +1048,6 @@ def _looks_like_coordinate(text: str) -> bool:
     2026-08-07). Range is NOT checked: an out-of-range pair is still a leaked
     coordinate, and blocking it too is the safe direction."""
     return _COORD_RE.search(text) is not None
-
-
-# `where_is`'s own last-resort fallback shape (`nora/agent/whereis.py:538-541`)
-# is `{"lat": fix.lat, "lng": fix.lng}` — a STRUCTURED coordinate, not a string
-# one, so `_looks_like_coordinate` (which only ever sees a string) never sees
-# it and a model that copies that dict whole into `context` sails past it.
-_LAT_KEYS = {"lat", "latitude"}
-_LNG_KEYS = {"lng", "longitude"}
-
-
-def _looks_like_coordinate_pair(value: dict) -> bool:
-    """Whether a dict IS a coordinate pair, keyed the same way `where_is`'s own
-    fallback is. Both a lat-shaped key and a lng-shaped key must be present,
-    and both values must be genuinely numeric — `bool` excluded (it is an
-    `int` subclass in Python, and `True`/`False` are never a coordinate) — OR a
-    string that parses cleanly as a float, so `{"lat": "22.4106", "lng":
-    "114.1245"}` (a JSON round-trip that stringified its numbers, or a model
-    that typed the pair as text) is still caught. This widens the numeric
-    check only under a lat/lng-shaped key, not generally — matching on the key
-    names alone, with no value check at all, would also catch `{"lat":
-    "unknown"}`, which carries no coordinate at all."""
-    keys = {str(k).casefold() for k in value}
-    if not (keys & _LAT_KEYS and keys & _LNG_KEYS):
-        return False
-    for k, v in value.items():
-        if str(k).casefold() not in _LAT_KEYS | _LNG_KEYS:
-            continue
-        if isinstance(v, bool):
-            return False
-        if isinstance(v, int | float):
-            continue
-        if isinstance(v, str):
-            try:
-                float(v)
-            except ValueError:
-                return False
-            continue
-        return False
-    return True
-
-
-def _context_leak(
-    value: Any, *, person_names: frozenset[str], place_names: frozenset[str],
-) -> str | None:
-    """Recurse through one `context` entry's own value tree (context-channel
-    spec §3.2, R-44), screening every string LEAF the same way `route`/
-    `place_info` screen their own arguments — `context` is schema-light by
-    design (spec §4), so a leak can sit at any depth a caller happened to
-    nest a route's transit steps or a place's own fields at. Returns the
-    kind of hit found, or None. `place_names` is checked through the SAME
-    `_names_a_person` substring match `person_names` uses — a saved place's
-    own name is R-35/DEC-60 subset-gated data with no subset check on this
-    channel, so it is screened exactly like a person's name, not merely
-    logged."""
-    if isinstance(value, str):
-        kind = scan_identifiers(value)
-        if kind is not None:
-            return kind
-        if _looks_like_coordinate(value):
-            return "coordinate"
-        if _names_a_person(value, person_names) or _names_a_person(value, place_names):
-            return "person"
-        return None
-    if isinstance(value, dict):
-        if _looks_like_coordinate_pair(value):
-            return "coordinate"
-        # Keys too, not just values — a model tabulating "who go where" as
-        # `{"Tyler Cortez": "25 min via MTR"}` is a plausible shape a values-
-        # only walk would wave straight through.
-        for k, v in value.items():
-            hit = _context_leak(k, person_names=person_names, place_names=place_names)
-            if hit is not None:
-                return hit
-            hit = _context_leak(v, person_names=person_names, place_names=place_names)
-            if hit is not None:
-                return hit
-        return None
-    if isinstance(value, list):
-        # KNOWN RESIDUAL, not silently absent: a bare 2-element numeric
-        # list/tuple — `[22.4106, 114.1245]` or `{"home": [22.4106, 114.1245]}`
-        # — is recursed into element-wise below, and neither lone float trips
-        # `_looks_like_coordinate_pair` (that check only fires on a dict) or
-        # `_looks_like_coordinate` (only fires on a string), so this shape is
-        # NOT caught. Deliberately not range-gated: a generic lat/lng band
-        # (-90..90, -180..180) matches almost any two small numbers, so it
-        # would false-positive on ordinary numeric pairs (a rating, a price
-        # range, a duration) far more often than it would catch a real
-        # coordinate — not worth the refusals it would cause on legitimate
-        # context. Named here so the gap is a documented choice, not a blind
-        # spot.
-        for v in value:
-            hit = _context_leak(v, person_names=person_names, place_names=place_names)
-            if hit is not None:
-                return hit
-        return None
-    return None
 
 
 def _count_known_names(text: str, names: frozenset[str]) -> int:
@@ -3128,65 +3031,12 @@ def build_tool_specs(
                 typed results of tools you already called this turn (a
                 place's rating, a route's duration), as a list of small
                 dicts. Copy the fields you already have; do not re-derive or
-                summarise them into prose first, and do not include a
-                coordinate or anyone's resolved home location — those are
-                refused. Leave unset for a task with nothing gathered.
+                summarise them into prose first. Leave unset for a task with
+                nothing gathered.
             artifact_id: set this to REVISE an existing artifact (from a
                 previous make_artifact result) rather than creating a new one.
                 Leave unset to create something new.
         """
-        if context:
-            place_names: frozenset[str] = frozenset()
-            if presence_source is not None and presence_circles:
-                saved = await resolvable_places(
-                    room=room, circles=presence_circles, presence=presence_source,
-                    location_trusted=location_trusted,
-                )
-                # `None` is the FOURTH answer `resolvable_places` can give
-                # (`nora/agent/whereis.py:169-174`) and it is NOT `()`: `()`
-                # means the read succeeded and there is nothing to screen
-                # against (a degraded/non-subset room), while `None` means
-                # the read itself failed — an unreachable presence store. An
-                # `if saved:` here would treat both the same and silently
-                # disarm this half of the screen exactly when it cannot be
-                # trusted to have caught anything. A failed read must refuse
-                # the call, the same as a real hit — there is no way to know
-                # whether a saved place name is buried in this context, so
-                # proceeding would be a guess, not a check (R-27: an ERROR is
-                # never a PASS).
-                if saved is None:
-                    _record(metrics, "make_artifact", "refused", reason="presence_unavailable")
-                    return {
-                        "status": "refused",
-                        "note": "I can't check your saved places right now, so I "
-                                "can't safely attach that context. Try again in a "
-                                "moment.",
-                    }
-                if saved:
-                    # `_key`, NOT the raw `.name` — `_names_a_person` casefolds
-                    # only its HAYSTACK argument (the text being screened), so
-                    # its `names` set must arrive pre-normalized, exactly the
-                    # contract `_known_names` already holds for person names
-                    # (`_key`, `len >= 2`, both at :1013-1021). A raw "Miles
-                    # Home" here would never match a casefolded haystack, and
-                    # the whole point of this half of R-44 (spec §3.2's own
-                    # example) is that name in particular.
-                    place_names = frozenset(
-                        _key(p.name) for p in saved if len(_key(p.name)) >= 2
-                    )
-            for entry in context:
-                hit = _context_leak(
-                    entry, person_names=_route_person_names, place_names=place_names,
-                )
-                if hit is not None:
-                    _record(metrics, "make_artifact", "refused", reason=hit)
-                    return {
-                        "status": "refused",
-                        "note": "That context carries something that can't leave "
-                                "this room — an identifier, a coordinate, or "
-                                "somebody's saved place. Describe it in your own "
-                                "words instead of pasting the raw data.",
-                    }
         if compute_backend is None:
             _record(metrics, "make_artifact", "unavailable")
             return {"status": "unavailable"}

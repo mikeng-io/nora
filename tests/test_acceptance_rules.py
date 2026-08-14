@@ -177,10 +177,6 @@ RULE_TESTS = {
     # discipline R-37/R-37b hold for reminders, applied to the third
     # Occasion (DEC-99). The next free number after R-42.
     "R-43": "test_a_job_never_delivered_twice",
-    # R-44: a context entry naming a person is refused before launch.
-    # Enforced at `make_artifact`'s own boundary with the same checks that
-    # `route` and `place_info` already apply to their arguments (DEC-100).
-    "R-44": "test_a_context_entry_naming_a_person_is_refused_before_launch",
 }
 
 
