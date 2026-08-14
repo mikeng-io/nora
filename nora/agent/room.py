@@ -100,15 +100,27 @@ class RoomView:
         make 「東」 resolve 阿豹 and 阿豹妹 both, and a wrong confident answer
         about a person in the room is worse than «I'm not sure who you mean».
         """
-        wanted = _key(name)
-        if not wanted:
-            return ()
-        return tuple(p for p in self.people if wanted in _names_of(p))
+        return find_by_name(self.people, name)
+
+
+def find_by_name(people, name: str) -> tuple[PersonRef, ...]:
+    """Every person in `people` that `name` could mean.
+
+    Extracted from `RoomView.find` so the same matching rule can be applied to
+    a set that is NOT a room — `whereis` resolves its target against the
+    location-sharing circle (R-47), and two different matching rules for "who
+    do they mean" is exactly the drift `_names_of`'s own docstring warns about.
+    """
+    wanted = _key(name)
+    if not wanted:
+        return ()
+    return tuple(p for p in people if wanted in _names_of(p))
 
 
 def _names_of(person: PersonRef) -> frozenset[str]:
-    """Every string this person may be called by, normalised. Room-scoped by
-    the caller — this function is only ever applied to `RoomView.people`."""
+    """Every string this person may be called by, normalised. Scoped by the
+    caller — `RoomView.people` for room lookups, a circle's people for
+    `whereis` (R-47)."""
     full = " ".join(p for p in (person.first_name, person.last_name) if p)
     candidates = [person.name, person.first_name, person.last_name, full, *person.aliases]
     return frozenset(key for c in candidates if (key := _key(c)))

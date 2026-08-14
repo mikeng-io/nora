@@ -185,6 +185,10 @@ RULE_TESTS = {
     # design/discord-integration/ — a reply leaves on the platform its tag
     # arrived on; an unroutable platform refuses rather than falling back.
     "R-46": "test_a_discord_tag_is_answered_on_discord_not_signal",
+    # R-47: the circle is who may be asked about; the room is only who may be
+    # told. Scoping the target to room membership answered «nobody here goes by
+    # that» about a friend Nora knows and can locate.
+    "R-47": "test_a_circle_member_who_is_not_in_the_room_can_still_be_asked_about",
 }
 
 

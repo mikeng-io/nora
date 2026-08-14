@@ -638,9 +638,13 @@ circle_id = "c1"
 member_id = "m-sam"
 """)
     circles = circles_from_persons(load_persons(path))
-    assert circles == (
-        Circle(circle_id="c1", person_ids=frozenset({"miles_novak", "grant_carver"})),
-    )
+    (circle,) = circles
+    assert circle.circle_id == "c1"
+    assert circle.person_ids == frozenset({"miles_novak", "grant_carver"})
+    # R-47: the circle carries its members RESOLVED, not just their ids — that
+    # is what lets `where_is` match a NAME against the circle rather than
+    # against room membership. Ids alone cannot answer "who did they mean?".
+    assert {p.person_id for p in circle.people} == {"miles_novak", "grant_carver"}
 
 
 def test_circles_from_persons_is_empty_for_an_identity_with_no_life360_blocks(persons):
@@ -991,3 +995,69 @@ async def test_saved_places_unavailable_when_presence_not_wired(persons):
     tool = {t.tool_name: t for t in tools}["saved_places"]
     out = await tool._tool_func()
     assert out["status"] == "unavailable"
+
+
+# ---------------------------------------------------------------------------
+# R-47 — the circle is who may be ASKED ABOUT; the room is only the audience
+# ---------------------------------------------------------------------------
+
+
+async def test_a_circle_member_who_is_not_in_the_room_can_still_be_asked_about(
+    persons, store,
+):
+    """Operator, 2026-08-14: "only the identity we have identified can use
+    where_is, and it can ask anyone."
+
+    The target used to be resolved against `RoomView.find` — room membership —
+    so a friend who shares her location with Nora but is not in THIS group
+    answered «nobody in this conversation goes by that». That is a false
+    sentence about a person Nora knows perfectly well, and it was the live
+    complaint: Clara is in the Life360 circle and in identity.toml, and
+    simply is not a member of the Signal group.
+
+    The room still gates the AUDIENCE — it is checked in full before this
+    resolution runs — but who may be asked about is the CIRCLE.
+    """
+    circle = Circle(
+        circle_id=CIRCLE_ID,
+        person_ids=frozenset({"miles_novak", "grant_carver"}),
+        people=(persons.by_person["grant_carver"],),
+    )
+    await _record(store, person="grant_carver", ts=NOW)
+    # A room WITHOUT Grant in it — only Nora and Miles.
+    whereis = Whereis(
+        room=_room(persons, members=(MILES, NORA)),
+        circle=circle, presence=store, location_trusted=True,
+    )
+
+    out = await whereis.locate("Grant", now_ms=NOW)
+
+    assert out["status"] == "ok", (
+        "a circle member must be askable about even when absent from the room"
+    )
+
+
+async def test_somebody_in_the_room_but_outside_the_circle_still_resolves(
+    persons, store,
+):
+    """The union's other half, and why the room is not simply dropped.
+
+    Someone present but NOT in the circle has no fix to report — but they are a
+    person Nora knows, so the honest answer is «I have no recorded location for
+    them», not «nobody goes by that». Resolving against the circle ALONE would
+    have regressed that into a `not_found` lie.
+    """
+    circle = Circle(
+        circle_id=CIRCLE_ID,
+        person_ids=frozenset({"miles_novak"}),
+        people=(persons.by_person["miles_novak"],),
+    )
+    whereis = Whereis(
+        room=_room(persons, members=(MILES, GRANT, NORA)),
+        circle=circle, presence=store, location_trusted=True,
+    )
+
+    out = await whereis.locate("Grant", now_ms=NOW)
+
+    assert out["status"] == "unavailable"
+    assert "Grant" in json.dumps(out, ensure_ascii=False)

@@ -60,10 +60,26 @@ is correct. To tell "quiet" from "broken":
    curl -s http://127.0.0.1:9100/health | python -m json.tool
    ```
 
-   Look at `sse.connected`, `store.reachable`, `honcho.reachable`, and
-   `omniroute.last_success_at`. Any of those false/stale explains real silence: the SSE
-   stream dropped, the DB is unreachable, Honcho is down, or the LLM hasn't answered
-   recently.
+   Look at `platforms.<name>.connected`, `store.reachable`, `honcho.reachable`, and
+   `omniroute.last_success_at`. Any of those false/stale explains real silence: a
+   platform's stream dropped, the DB is unreachable, Honcho is down, or the LLM hasn't
+   answered recently.
+
+   **Check `platforms` first, not `sse`.** `sse` is Signal's block and only Signal's;
+   it is kept top-level because `deploy/watchdog.sh` parses it and `/health` is
+   additive-only. `platforms` has one entry per ENABLED platform, and **every one of
+   them counts toward the status code** — so a 503 with a perfectly green `sse` means a
+   non-Signal platform is down, and reading only the four keys above would leave you
+   concluding nothing explains it. A platform that is not enabled is ABSENT from
+   `platforms` entirely; a platform that is enabled and has never connected is present
+   with `connected: false`. Those are different facts and the block distinguishes them.
+
+   ```jsonc
+   "platforms": {
+     "signal":  {"connected": true,  "last_event_age_seconds": 4.2,  "account": "+852…"},
+     "discord": {"connected": false, "last_event_age_seconds": null, "account": "1504…"}
+   }
+   ```
 
 3. Check whether she is **refusing on purpose**. Deny-by-default means a correct,
    healthy Nora can be completely silent because `policy.toml` does not list the room or
@@ -104,8 +120,12 @@ is correct. To tell "quiet" from "broken":
    as her own. **Alert on `== 1`.** One means enrichment produced nothing beyond the
    phone number in `platforms.signal.account`, so R-12 ("never treat my own message as a
    tag") has collapsed from a set-membership test to a plain string equality — and a
-   self-send arriving under her ACI or username would be handled as somebody else's tag.
-   A healthy Signal start reads **4**: phone, ACI, username, PNI. The
+   self-send arriving under her ACI would be handled as somebody else's tag.
+   A healthy Signal start reads **3**: phone, ACI, PNI. (It read 4 until
+   2026-08-14, when `username` stopped being a matchable identity on every
+   platform — a handle its owner can rename, and that somebody else can then
+   claim, must never resolve a person. If you are looking at an older dashboard
+   note expecting 4, 3 is the new healthy.) The
    `..._degraded_total` counter's `reason` label says which half failed: `unreachable`
    (the daemon), `no_self_contact_row` or `no_phone_number_identity` (the daemon answered
    but not in the shape we parse — suspect a signal-cli upgrade).
@@ -543,7 +563,9 @@ back to 0.14.4.1.
     reveals which account that is** — `platforms.signal.account` in `config.toml` is
     load-bearing, not a convenience override.
   - `listContacts` with `{"recipient": "<number>"}` → her own row, a purely local store
-    read: `number`, `uuid` (her **ACI**), `username`.
+    read: `number`, `uuid` (her **ACI**), `username`. Only the first two are
+    COLLECTED — `username` is deliberately dropped (see the alias-count note in
+    §1); it is readable, not matchable.
   - `getUserStatus` with `{"recipient": ["<number>"]}` → **the PNI, not the ACI.** It
     answers a phone-number lookup, so the `uuid` it returns is the phone-number identity.
     Cross-checked against the account store, where `aciAccountData.serviceId` and
@@ -551,9 +573,10 @@ back to 0.14.4.1.
     the obvious one-call fix — collects the wrong UUID and still looks like it worked.
     `nora/platform/signal/self_id.py` batches both calls into one POST and keeps both.
 - **Nora's Signal identity, for cross-checking a metric:** phone `+85290000100`,
-  username `nora.000`, ACI `a1000000-0000-4000-8000-000000000000`, PNI
-  `a10000ff-0000-4000-8000-0000000000ff`. Four id forms, which is why a healthy
-  `nora_identity_aliases` reads 4.
+  ACI `a1000000-0000-4000-8000-000000000000`, PNI
+  `a10000ff-0000-4000-8000-0000000000ff`. Three MATCHABLE id forms, which is why
+  a healthy `nora_identity_aliases` reads 3. Her Signal username (`nora.000`,
+  which is also the wake word) is not one of them and is not collected.
 - **Group state can go stale on a linked device.** If `listGroups` returns `[]`
   for a group you know exists, call `sendSyncRequest` over `/api/v1/rpc` — that
   is what made `Ridgeline` appear.

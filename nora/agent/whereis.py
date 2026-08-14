@@ -50,9 +50,10 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from ..domain.models import PersonRef
 from ..domain.ports import ReverseGeocoder
 from ..domain.presence import PresenceFix, SavedPlace
-from .room import Room
+from .room import Room, find_by_name
 
 log = logging.getLogger("nora.agent.whereis")
 
@@ -93,6 +94,28 @@ class Circle:
 
     circle_id: str
     person_ids: frozenset[str]
+    # The same members, RESOLVED, so a name can be matched against them.
+    # `person_ids` answers "may this room be told?"; this answers "who did they
+    # mean?" — and until R-47 the second question was asked of the ROOM, so a
+    # circle member who was not in the group could not be asked about at all.
+    people: tuple[PersonRef, ...] = ()
+
+
+def _dedupe(refs: tuple[PersonRef, ...]) -> tuple[PersonRef, ...]:
+    """First occurrence per `person_id`, order preserved.
+
+    The circle and the room overlap for anyone who is both a member and
+    present, and a duplicate would render as `ambiguous` — «more than one
+    person here goes by that» — about ONE person.
+    """
+    seen: set[str] = set()
+    out: list[PersonRef] = []
+    for ref in refs:
+        if ref.person_id in seen:
+            continue
+        seen.add(ref.person_id)
+        out.append(ref)
+    return tuple(out)
 
 
 _EARTH_RADIUS_M = 6_371_000.0
@@ -214,7 +237,14 @@ def circles_from_persons(persons: Any) -> tuple[Circle, ...]:
             continue
         by_circle.setdefault(membership.circle_id, set()).add(membership.person_id)
     return tuple(
-        Circle(circle_id=circle_id, person_ids=frozenset(person_ids))
+        Circle(
+            circle_id=circle_id,
+            person_ids=frozenset(person_ids),
+            people=tuple(
+                ref for pid in sorted(person_ids)
+                if (ref := persons.by_person.get(pid)) is not None
+            ),
+        )
         for circle_id, person_ids in sorted(by_circle.items())
     )
 
@@ -448,7 +478,15 @@ class Whereis:
                 "cannot see accounts that have never spoken",
                 view.unnamed, self._circle.circle_id,
             )
-        matches = view.find(person)
+        # R-47: resolved against the CIRCLE, not just the room. The room is the
+        # AUDIENCE gate and it has already been cleared above; who may be ASKED
+        # ABOUT is a different question, and scoping it to room membership meant
+        # a circle member who simply is not in this group — sharing her location
+        # with Nora the whole time — answered «nobody here goes by that». The
+        # room's own people are unioned in so somebody present but OUTSIDE the
+        # circle still resolves, and gets the honest «I have no recorded
+        # location for them» rather than «who?».
+        matches = _dedupe(find_by_name(self._circle.people, person) + view.find(person))
         if not matches:
             return {
                 "status": "not_found",
