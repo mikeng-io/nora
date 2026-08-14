@@ -339,9 +339,12 @@ class FakeAgentRunner:
             raise self.raises
         tools_by_name = {t.tool_name: t for t in kwargs["tools"]}
         guard = kwargs["guard"]
+        tool_call_log = kwargs.get("tool_call_log")
         limits = kwargs.get("limits")
         hooks = _HookRegistry()
         guard.register_hooks(hooks)
+        if tool_call_log is not None:
+            tool_call_log.register_hooks(hooks)
         model = ScriptedModel()
         self.models.append(model)
         agent = _Agent(model)

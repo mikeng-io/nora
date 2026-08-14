@@ -58,6 +58,7 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
+from nora.domain.tool_call_log import ToolCallLogStore
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
 from nora.policy import Policy
@@ -110,6 +111,7 @@ class EngagementPipeline:
         reactions: bool = True,
         roster_source: RosterSource | None = None,
         preview_source: LinkPreviewSource | None = None,
+        tool_call_log_store: ToolCallLogStore | None = None,
     ) -> None:
         self._adapter = adapter
         self._audit = audit
@@ -154,6 +156,12 @@ class EngagementPipeline:
         # claim. (`composer` on `deliver.build` is required for the opposite
         # reason; the split is argued there.)
         self._preview_source = preview_source
+        # The tool-recall log's write-path store (R-46, tool-recall-log spec
+        # §3). `None` in every offline/eval composition and any deployment
+        # that has not wired it — `deliver.build`'s `ToolCallLog` treats a
+        # `None` store as fully inert, same shape as `roster_source`/
+        # `preview_source` above.
+        self._tool_call_log_store = tool_call_log_store
         # R-10's single-in-flight lock and R-30's per-conversation FIFO queue,
         # both keyed by (platform, conversation_id), as one INJECTED
         # collaborator. The queue feeds the lock's one slot in order as each
@@ -324,6 +332,8 @@ class EngagementPipeline:
                 budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
                 audience="tag",
+                cacheable_tools=self._tool_registry.cacheable_tools(),
+                tool_call_log_store=self._tool_call_log_store,
                 # The outbound decoration stage (@-mentions + a link preview
                 # card). ONE per turn, holding the same `roster_source` the
                 # room-scoped tools use — so a mention is confirmed against the
@@ -393,7 +403,8 @@ class EngagementPipeline:
 
             ok, llm_elapsed, stop_reason, final_text = await invoke.run(
                 runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
-                guard=handle.guard, tag_message=tag_message, limits=self._limits, ctx=ctx,
+                guard=handle.guard, tool_call_log=handle.tool_call_log,
+                tag_message=tag_message, limits=self._limits, ctx=ctx,
                 timeout_seconds=self._timeout_seconds, metrics=self._metrics,
             )
             if not ok:

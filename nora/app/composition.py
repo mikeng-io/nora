@@ -48,6 +48,7 @@ from nora.domain.ports import (
     RosterSource,
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
+from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
@@ -60,6 +61,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import VisionClient, derive_vision_timeout
@@ -309,6 +311,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # even when the poller itself is off. Only the poller's tick loop
     # (`compute_backend`, further down) is behind the flag.
     compute_jobs: ComputeJobStore = SqlComputeJobStore(engine)
+    # Second consumer wired here (EngagementPipeline/FirePath, via
+    # deliver.build); a THIRD — ToolRegistry(...) below, for
+    # recall_lookups — is wired in the tool-recall-log plan's Task 7,
+    # once ToolRegistry.__init__ accepts the keyword.
+    tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
 
     try:
         registry = await AdapterRegistry.from_config(cfg.platforms, metrics=metrics)
@@ -823,6 +830,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         roster_source=roster_source,
         preview_source=preview_source,
         slots=slots,
+        tool_call_log_store=tool_call_log_store,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 
@@ -900,6 +908,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # message into the same group, so a link in it earns the same card.
             preview_source=preview_source,
             llm_state=llm_state,
+            tool_call_log_store=tool_call_log_store,
         )
     if cfg.heartbeat.enabled and fire_path is not None:
         heartbeat = HeartbeatLoop(
