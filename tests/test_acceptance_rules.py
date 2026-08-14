@@ -182,6 +182,7 @@ RULE_TESTS = {
     # R-44 was withdrawn 2026-08-14 (the prior occupant of this range); the
     # next free number is R-45, not a reuse.
     "R-45": "test_make_artifact_is_nudged_once_when_context_is_empty_after_gathering",
+    "R-46": "test_a_non_cacheable_tool_is_never_logged",
 }
 
 
