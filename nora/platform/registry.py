@@ -31,7 +31,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from nora.domain.ports import PlatformIdentity
+from nora.domain.ports import PlatformAdapter, PlatformIdentity
+from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.signal.account import AccountError, derive_account
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.self_id import MetricsSink
@@ -49,6 +50,13 @@ class _SignalPlatformConfig(Protocol):
     def account(self) -> str: ...
     @property
     def enabled(self) -> bool: ...
+
+
+class _DiscordPlatformConfig(Protocol):
+    @property
+    def enabled(self) -> bool: ...
+    @property
+    def token_env(self) -> str: ...
 
 
 class _PlatformsConfig(Protocol):
@@ -71,6 +79,8 @@ class _PlatformsConfig(Protocol):
 
     @property
     def signal(self) -> _SignalPlatformConfig: ...
+    @property
+    def discord(self) -> _DiscordPlatformConfig: ...
 
 
 @dataclass(frozen=True)
@@ -80,35 +90,43 @@ class AdapterRegistry:
     Frozen and built once, at startup, by `from_config` — nothing in this
     class does I/O itself; it is a lookup table over work already done.
 
-    `adapters` is typed `dict[str, SignalAdapter]`, not
-    `dict[str, nora.domain.ports.PlatformAdapter]`: only `SignalAdapter`
-    exists to put in it today, so there is nothing yet for the port
-    annotation to buy here — the same reasoning
-    `nora.app.composition.Dependencies.adapter` uses for staying concrete.
-    `SignalAdapter` does now genuinely satisfy `PlatformAdapter` in full
-    (`tests/contract/test_port_conformance.py::
-    test_signal_adapter_satisfies_platform_adapter`, with a static proof at
-    `nora.app.composition.build_dependencies`'s `_adapter_satisfies_platform_adapter`
-    assignment) — this widens to the port the day a second platform exists to
-    put alongside it.
+    `adapters` is typed `dict[str, PlatformAdapter]` — widened from the
+    Signal-only `dict[str, SignalAdapter]` the day `DiscordAdapter` gave the
+    port annotation something to buy (design/discord-integration/). Both
+    concrete adapters satisfy `PlatformAdapter` in full
+    (`tests/contract/test_port_conformance.py`), so a caller reading through
+    this registry never needs to know which one it got.
     """
 
-    adapters: dict[str, SignalAdapter] = field(default_factory=dict)
+    adapters: dict[str, PlatformAdapter] = field(default_factory=dict)
     identities: dict[str, PlatformIdentity] = field(default_factory=dict)
 
     @classmethod
     async def from_config(
-        cls, platforms: _PlatformsConfig, *, metrics: MetricsSink
+        cls,
+        platforms: _PlatformsConfig,
+        *,
+        metrics: MetricsSink,
+        discord_token: str = "",
     ) -> AdapterRegistry:
-        """Build+resolve every enabled platform. Today that is Signal alone;
-        a second platform is one more `if platforms.<x>.enabled:` block, not a
-        rewrite of this method's shape. `platforms` is `cfg.platforms`, not
-        `cfg` itself — see `_PlatformsConfig`'s docstring.
+        """Build+resolve every enabled platform: Signal and, now, Discord —
+        each one more `if platforms.<x>.enabled:` block, not a rewrite of this
+        method's shape. `platforms` is `cfg.platforms`, not `cfg` itself — see
+        `_PlatformsConfig`'s docstring.
+
+        `discord_token` is the one exception to "this module never reads
+        secrets": it arrives already resolved from `platforms.discord.
+        token_env` by the caller (`nora.app.composition.build_dependencies`,
+        the same place every other `*_env` secret — the LLM key, the route
+        key — is resolved before being handed to whatever constructs the
+        client that needs it). An enabled platform with an empty token is a
+        startup failure, not a broken adapter allowed to build (fail-fast is
+        the point — see this module's own docstring).
 
         `metrics` is threaded to each adapter so `resolve_identity()`'s
         enrichment can count its own degradation (R-17). It is required for the
         reason `SignalAdapter.__init__` gives."""
-        adapters: dict[str, SignalAdapter] = {}
+        adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
         signal_cfg = platforms.signal
@@ -131,9 +149,28 @@ class AdapterRegistry:
             adapters["signal"] = adapter
             identities["signal"] = identity
 
+        discord_cfg = platforms.discord
+        if discord_cfg.enabled:
+            if not discord_token:
+                raise AdapterRegistryError(
+                    f"discord is enabled but no token was resolved from "
+                    f"${discord_cfg.token_env} — refusing to start with a "
+                    "platform that cannot authenticate"
+                )
+            discord_adapter = DiscordAdapter(discord_token)
+            try:
+                discord_identity = await discord_adapter.resolve_identity()
+            except Exception as exc:
+                raise AdapterRegistryError(
+                    f"discord adapter could not resolve its own identity: {exc}"
+                ) from exc
+
+            adapters["discord"] = discord_adapter
+            identities["discord"] = discord_identity
+
         return cls(adapters=adapters, identities=identities)
 
-    def get(self, platform: str) -> SignalAdapter:
+    def get(self, platform: str) -> PlatformAdapter:
         return self.adapters[platform]
 
     def identity_for(self, platform: str) -> PlatformIdentity:

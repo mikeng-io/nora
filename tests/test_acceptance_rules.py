@@ -177,6 +177,9 @@ RULE_TESTS = {
     # discipline R-37/R-37b hold for reminders, applied to the third
     # Occasion (DEC-99). The next free number after R-42.
     "R-43": "test_a_job_never_delivered_twice",
+    # design/discord-integration/ — a reply leaves on the platform its tag
+    # arrived on; an unroutable platform refuses rather than falling back.
+    "R-46": "test_a_discord_tag_is_answered_on_discord_not_signal",
 }
 
 

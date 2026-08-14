@@ -20,6 +20,7 @@ from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.honcho import HonchoClient
 from nora.obs.metrics import Metrics
+from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
 from nora.testing import FakeBlobStore, FakeMediaSource, FakeMemoryStore
@@ -95,6 +96,13 @@ def test_signal_adapter_satisfies_platform_adapter():
     genuinely satisfies `PlatformAdapter`, not just method-by-method in
     isolation."""
     assert isinstance(SignalAdapter("http://x", "+1", metrics=Metrics()), PlatformAdapter)
+
+
+def test_discord_adapter_satisfies_platform_adapter():
+    """The registry's second concrete adapter (design/discord-integration/) —
+    same headline goal as the Signal assertion above, proven independently
+    rather than assumed from the Protocol declaration alone."""
+    assert isinstance(DiscordAdapter("tok"), PlatformAdapter)
 
 
 def test_runtime_checkable_protocols_only_check_method_names():

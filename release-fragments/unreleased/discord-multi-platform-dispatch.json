@@ -1,0 +1,16 @@
+{
+  "type": "feature",
+  "summary": "Nora can now be present on more than one chat platform at once, and answers each message in the place it was asked.",
+  "details": [
+    "Every platform she is set up for is listened to at the same time, rather than only the first one — a second platform used to connect and then sit silent.",
+    "A reply, a 👀, and a reminder all go back to the room they belong to, so a question asked in one place is never answered in front of a different group.",
+    "Her health page now lists each platform separately, and reports her as unwell if she has gone deaf on any one of them rather than only checking the first.",
+    "If she is somehow asked to speak somewhere she has no way to reach, she refuses and says so loudly instead of sending it to whichever room she can reach.",
+    "Nora now takes her own name on each platform from that platform itself, rather than from a name typed into her settings — with more than one platform, a single written-down name was always wrong for all but one of them."
+  ],
+  "limitations": [
+    "Which platforms are switched on is still an operator setting, applied at startup — turning one on or off needs a restart.",
+    "Discord itself remains off by default; this is the wiring that makes enabling it actually work, not a decision to enable it.",
+    "Operator note: the `nora_sender_id` setting under [platforms.signal] has been removed. A config file still carrying it will be refused at startup — delete the line."
+  ]
+}

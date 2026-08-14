@@ -216,3 +216,62 @@ async def test_app_run_spawns_the_lazy_adoption_backfill(env, monkeypatch):
         )
     finally:
         await app.shutdown()
+
+
+async def test_app_run_starts_a_listener_for_every_adapter_not_just_signal(env, monkeypatch):
+    """`App.run` used to build a single-element `SupervisedAdapter` list out of
+    `deps.adapter`, so a second enabled platform was built and identity-resolved
+    at startup and then never had `listen()` called — present in `/health`, deaf
+    in practice. `runtime.start_adapters`/`supervise_adapter` were already
+    generic over any number of adapters; this pins the call site to the whole
+    registry.
+
+    A second adapter is inserted into the live registry rather than enabled
+    through config, because building a real `DiscordAdapter` would need a bot
+    token and a Gateway to connect to. `AdapterRegistry.adapters` is an ordinary
+    dict on a frozen dataclass, so this is the registry the app actually reads.
+    """
+    import asyncio
+    import contextlib
+
+    import nora.app.runtime as runtime_module
+
+    class _SecondAdapter:
+        platform = "discord"
+
+        def __init__(self) -> None:
+            self.listened = False
+
+        async def listen(self, *, on_message) -> None:
+            self.listened = True
+            await asyncio.sleep(3600)
+
+    app = await build_app(env)
+    second = _SecondAdapter()
+    app.deps.registry.adapters["discord"] = second
+
+    started: list[str] = []
+    real_start = runtime_module.start_adapters
+
+    def _capture(background, adapters, metrics):
+        started.extend(a.platform for a in adapters)
+        return real_start(background, adapters, metrics)
+
+    monkeypatch.setattr(runtime_module, "start_adapters", _capture)
+
+    try:
+        task = asyncio.create_task(app.run())
+        for _ in range(100):
+            await asyncio.sleep(0.02)
+            if second.listened:
+                break
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        assert sorted(started) == ["discord", "signal"], (
+            "App.run must supervise every adapter in the registry"
+        )
+        assert second.listened, "the second platform's listen() must actually be called"
+    finally:
+        await app.shutdown()

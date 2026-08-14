@@ -20,6 +20,7 @@ dependencies = [
     "psycopg[binary]>=3.3.4",
     "docker>=7.2.0",
     "requests>=2.34.2",
+    "discord-py>=2.7.1",
 ]
 
 [project.optional-dependencies]

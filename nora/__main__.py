@@ -95,7 +95,8 @@ class App:
     async def run(self) -> None:
         deps = self.deps
         health_app = build_health_app(
-            adapter=deps.adapter, store=deps.audit, honcho=deps.memory,
+            adapter=deps.adapter, adapters=deps.registry.adapters,
+            store=deps.audit, honcho=deps.memory,
             doctrine_store=deps.doctrine_store, metrics=deps.metrics,
             started_at=time.time(), llm_state=deps.llm_state,
             identity_file=self.cfg.identity_file, policy_file=self.cfg.policy_file,
@@ -119,14 +120,24 @@ class App:
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,
             ttl_seconds=DEBOUNCE_SWEEP_TTL_SECONDS,
         ))
+        # EVERY enabled adapter, not just Signal's. `start_adapters` and
+        # `supervise_adapter` were written generic over any number of them; this
+        # was the one call site still pinning that to a single-element list, so
+        # an enabled `DiscordAdapter` was built and identity-resolved at startup
+        # and then never had `listen()` called — present in `/health`, deaf in
+        # practice. Each platform gets its own supervised task, so one wedged
+        # Gateway cannot take Signal down with it.
         adapter_tasks = runtime.start_adapters(
             deps.background,
-            [runtime.SupervisedAdapter(
-                platform=deps.adapter.platform,
-                listen=functools.partial(
-                    deps.adapter.listen, on_message=deps.dispatcher.on_message
-                ),
-            )],
+            [
+                runtime.SupervisedAdapter(
+                    platform=adapter.platform,
+                    listen=functools.partial(
+                        adapter.listen, on_message=deps.dispatcher.on_message
+                    ),
+                )
+                for adapter in deps.registry
+            ],
             deps.metrics,
         )
         try:
@@ -146,12 +157,33 @@ class App:
         )
 
     async def _update_last_event_age(self) -> None:
+        """Publish adapter liveness: the pinned Signal series, and one series
+        per platform.
+
+        `nora_last_event_age_seconds` stays UNLABELLED and stays Signal's.
+        `deploy/watchdog.sh` reads that exact series to decide whether to
+        restart the process, so relabelling it — even additively — would
+        silently retarget a watchdog nobody re-read. The per-platform answer
+        goes to its own series instead, which is append-only and breaks
+        nothing.
+        """
         while True:
             await asyncio.sleep(10.0)
-            health = await self.deps.adapter.health()
-            age = health.last_event_age_seconds
-            if age is not None:
-                self.deps.metrics.gauge("nora_last_event_age_seconds", age)
+            for adapter in self.deps.registry:
+                try:
+                    age = (await adapter.health()).last_event_age_seconds
+                except Exception:
+                    # A gauge never takes the loop down: one adapter's failing
+                    # health() must not stop the others being published.
+                    log.exception("health() failed for adapter %s", adapter.platform)
+                    continue
+                if age is None:
+                    continue
+                self.deps.metrics.gauge(
+                    "nora_adapter_last_event_age_seconds", age, platform=adapter.platform,
+                )
+                if adapter.platform == "signal":
+                    self.deps.metrics.gauge("nora_last_event_age_seconds", age)
 
     async def shutdown(self) -> None:
         if self._health_runner is not None:

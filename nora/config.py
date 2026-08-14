@@ -49,12 +49,32 @@ class SignalPlatformConfig(BaseModel):
 
     base_url: str
     account: str
-    nora_sender_id: str
-    # NOT YET HONOURED: nothing reads this field today — `__main__.py` constructs
-    # SignalAdapter unconditionally regardless of its value. Enable/disable wiring is
-    # Phase 4's adapter-registry work (see the architecture design doc under
-    # docs/superpowers/specs, "Platforms: registry, resolve_identity()").
+    # `nora_sender_id` REMOVED (DEC-102, 2026-08-14). It named Nora in her own
+    # audit rows, and it was a string an operator typed — one deployment's guess
+    # at who Nora is. With a second platform wired, a single configured name is
+    # necessarily wrong for every platform but one. Both send paths now take her
+    # id from the PLATFORM itself (`PlatformAdapter.resolve_identity().primary`,
+    # already resolved for the turn). Nothing ever matched on it: `is_nora` is a
+    # column of its own, which is what actually marks her rows.
     enabled: bool
+
+
+class DiscordPlatformConfig(BaseModel):
+    """`design/discord-integration/`. No `base_url` (unlike Signal): the
+    adapter talks to Discord's own Gateway/REST endpoints directly, not a
+    local daemon. `token_env` names the environment variable holding the bot
+    token (see `.env.example`) — the secret itself never lives in config.toml,
+    the same convention `route.api_key_env` uses for the Google Maps key.
+
+    Defaulted, unlike `SignalPlatformConfig`: Signal is core to every Nora
+    deployment and has always been required; Discord is optional, so a
+    config.toml written before it existed must still load with Discord off.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    token_env: str = "DISCORD_BOT_TOKEN"  # noqa: S105 — names an env var, not a secret
 
 
 class PlatformsConfig(BaseModel):
@@ -65,6 +85,7 @@ class PlatformsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     signal: SignalPlatformConfig
+    discord: DiscordPlatformConfig = Field(default_factory=DiscordPlatformConfig)
 
 
 class MemoryConfig(BaseModel):

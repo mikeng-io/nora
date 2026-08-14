@@ -63,7 +63,7 @@ import asyncio
 import logging
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -258,11 +258,10 @@ class FirePath:
         doctrine_store: DoctrineStore,
         metrics: Metrics,
         runner: AgentRunner,
-        adapter: PlatformAdapter,
+        adapters: Mapping[str, PlatformAdapter],
         registry: ToolRegistry,
         canary: str,
         display_name: str,
-        nora_sender_id: str,
         ai_peer: str,
         context_window: int,
         limits: dict[str, Any],
@@ -278,11 +277,15 @@ class FirePath:
         self._doctrine_store = doctrine_store
         self._metrics = metrics
         self._runner = runner
-        self._adapter = adapter
+        # Platform -> adapter, for the reason `EngagementPipeline` holds the
+        # same map: `design/discord-integration/02` makes fire-path eligibility
+        # explicitly NOT platform-specific, so a reminder set in a Discord
+        # channel fires into that channel. A single adapter here would have
+        # spoken every occasion into Signal regardless of where it was owed.
+        self._adapters = adapters
         self._registry = registry
         self._canary = canary
         self._display_name = display_name
-        self._nora_sender_id = nora_sender_id
         self._ai_peer = ai_peer
         self._context_window = context_window
         self._limits = limits
@@ -440,6 +443,25 @@ class FirePath:
         finally:
             clear_tag_id()
 
+    def _adapter_for(self, platform: str) -> PlatformAdapter:
+        """The adapter this occasion is owed on, or a hard failure.
+
+        Raises rather than falling back to any wired adapter, the same
+        judgement `EngagementPipeline._adapter_for` makes and for the same
+        reason: speaking a reminder into a room on another platform is worse
+        than not speaking it. Raised inside `_turn`, whose outer guard turns it
+        into `failed_error` plus `nora_silent_failures_total{reason=
+        "handler_error"}` — so the wiring fault is observable rather than
+        silent (R-5), and the row is not left claiming it fired.
+        """
+        try:
+            return self._adapters[platform]
+        except KeyError:
+            raise KeyError(
+                f"no platform adapter is wired for {platform!r} — "
+                f"wired: {sorted(self._adapters)}"
+            ) from None
+
     async def _turn(self, occasion: Occasion, ctx: TagContext) -> str:
         """One turn's stages, its last-resort guard, and DEC-42's observable.
 
@@ -497,7 +519,7 @@ class FirePath:
                 )
                 return FAILED_POLICY
 
-            identity = await self._adapter.resolve_identity()
+            identity = await self._adapter_for(occasion.platform).resolve_identity()
             self_ids = frozenset(getattr(identity, "aliases", ()))
             # Without this every @-mention in the transcript — including mentions
             # of Nora herself — reaches the model as U+FFFC. Same placement as the
@@ -518,10 +540,17 @@ class FirePath:
             )
 
             handle = deliver.build(
-                store=self._records, adapter=self._adapter,
+                store=self._records, adapter=self._adapter_for(occasion.platform),
                 target=ctx.message.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=ctx.tag_id,
-                nora_sender_id=self._nora_sender_id,
+                # Nora's own id ON THIS PLATFORM, from the platform itself
+                # (`resolve_identity`, resolved just above) — never a string an
+                # operator typed into config.toml. A hardcoded value is one
+                # deployment's guess about who Nora is; the platform is the only
+                # authority on that, and with more than one platform wired a
+                # single configured string is necessarily wrong for all but one
+                # of them (DEC-102).
+                nora_sender_id=identity.primary,
                 conversation_id=occasion.conversation_id,
                 # `allowed_mcp` left at its default (empty): `FirePath` has no
                 # `Policy`/allowlist collaborator wired in (unlike

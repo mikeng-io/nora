@@ -86,8 +86,8 @@ def fire_path(
     return FirePath(
         persons=persons, records=record_store, memory=memory_store,
         doctrine_store=doctrine_store, metrics=metrics,
-        runner=None, adapter=None, registry=None,               # type: ignore[arg-type]
-        canary="test-canary", display_name="Nora", nora_sender_id="+85200000000",
+        runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
+        canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40, limits={},
         timeout_seconds=120.0, clock=lambda: T0,
     )
@@ -205,6 +205,7 @@ class _FireAdapter:
     async def send(
         self, *, target: ConversationTarget, text: str,
         mentions: tuple = (), styles: tuple = (), preview: object | None = None,
+        attachments: tuple = (),
     ) -> SendResult:
         self.sent.append((target, text))
         self.sent_mentions.append(tuple(mentions))
@@ -284,10 +285,10 @@ def _fire_path(
         records=records if records is not None else FakeRecordStore(),
         memory=memory if memory is not None else FakeMemoryStore(),
         doctrine_store=doctrine_store, metrics=metrics, runner=runner,
-        adapter=adapter if adapter is not None else _FireAdapter(),
+        adapters={"signal": adapter if adapter is not None else _FireAdapter()},
         registry=registry if registry is not None else ToolRegistry(),
         canary="test-canary", display_name="Nora",
-        nora_sender_id="+85200000000", ai_peer="nora", context_window=40,
+        ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
     )
 

@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from typing import Any
 
 from nora.agent.intent_router import route_intent
@@ -86,7 +86,7 @@ class EngagementPipeline:
     def __init__(
         self,
         *,
-        adapter: Any,
+        adapters: Mapping[str, Any],
         audit: RecordStore,
         memory: MemoryStore,
         persons: Persons,
@@ -98,7 +98,6 @@ class EngagementPipeline:
         debounce: Debounce,
         canary: str,
         display_name: str,
-        nora_sender_id: str,
         ai_peer: str,
         context_window: int,
         timeout_seconds: float,
@@ -111,7 +110,15 @@ class EngagementPipeline:
         roster_source: RosterSource | None = None,
         preview_source: LinkPreviewSource | None = None,
     ) -> None:
-        self._adapter = adapter
+        # Platform -> adapter, not a single adapter: a reply must leave on the
+        # SAME platform the tag arrived on. Nora reached a second platform
+        # (design/discord-integration/) while this held one Signal adapter, so
+        # every path below selected it unconditionally — a Discord tag would
+        # have resolved Nora's identity against her Signal aliases (R-12's
+        # self-tag check reading the wrong alias set) and delivered its reply
+        # into a Signal group. Keyed by `NormalizedMessage.platform`, which is
+        # the only thing that can answer "where did this come from".
+        self._adapters = adapters
         self._audit = audit
         self._memory = memory
         self._persons = persons
@@ -129,7 +136,6 @@ class EngagementPipeline:
         self._debounce = debounce
         self._canary = canary
         self._display_name = display_name
-        self._nora_sender_id = nora_sender_id
         # The Nora aiPeer id (Honcho v2, design/24): her replies feed under it.
         self._ai_peer = ai_peer
         self._context_window = context_window
@@ -165,6 +171,27 @@ class EngagementPipeline:
         # instance — see `nora.engagement.slots`.
         self._slots = slots
 
+    def _adapter_for(self, platform: str) -> Any:
+        """The adapter this tag's platform belongs to, or a hard failure.
+
+        `KeyError` rather than a fallback to any adapter that happens to be
+        wired: the fallback IS the bug this mapping exists to prevent — it
+        would send a reply to a room on another platform, which is a worse
+        outcome than the tag failing loudly (R-5: silence beats a wrong
+        answer, and a reply delivered to the wrong group is the wrong answer
+        made public). Ingest already admits only platform-qualified
+        conversations from `policy.toml` (DEC-18), so reaching this with an
+        unknown platform means the registry and the allowlist disagree — a
+        wiring fault for an operator, not a condition to paper over.
+        """
+        try:
+            return self._adapters[platform]
+        except KeyError:
+            raise KeyError(
+                f"no platform adapter is wired for {platform!r} — "
+                f"wired: {sorted(self._adapters)}"
+            ) from None
+
     async def run(self, request: EngagementRequest) -> None:
         """Classify the tag (admission), then run it now, queue it, or drop it.
 
@@ -187,7 +214,7 @@ class EngagementPipeline:
         stuck-forever bug the indicator exists to avoid.
         """
         message = request.message
-        identity = await self._adapter.resolve_identity()
+        identity = await self._adapter_for(message.platform).resolve_identity()
         key = (message.platform, message.conversation_id)
         verdict = admission.run(
             message=message, identity=identity, debounce=self._debounce,
@@ -228,7 +255,8 @@ class EngagementPipeline:
         if not self._reactions:
             return None
         return indicate.begin(
-            adapter=self._adapter, message=request.message, tag_id=request.tag_id,
+            adapter=self._adapter_for(request.message.platform),
+            message=request.message, tag_id=request.tag_id,
             metrics=self._metrics, spawn=self._spawn,
         )
 
@@ -238,7 +266,7 @@ class EngagementPipeline:
         every tag ahead of it in line, which is the correctness reason the queue
         serialises a conversation (see `nora.engagement.queue`). Identity is
         re-resolved here (memoized) rather than carried through the queue."""
-        identity = await self._adapter.resolve_identity()
+        identity = await self._adapter_for(request.message.platform).resolve_identity()
         await self._run_admitted(request, identity, indicator)
 
     async def _run_admitted(
@@ -318,9 +346,13 @@ class EngagementPipeline:
             # relaxes it for that room only.
             location_trusted = convo.location if convo is not None else False
             handle = deliver.build(
-                store=self._audit, adapter=self._adapter, target=msg.target(),
+                store=self._audit, adapter=self._adapter_for(msg.platform),
+                target=msg.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=request.tag_id,
-                nora_sender_id=self._nora_sender_id, conversation_id=msg.conversation_id,
+                # Her own id on THIS platform, resolved from the platform
+                # itself (see `FirePath._turn` for the full argument).
+                nora_sender_id=getattr(identity, "primary", ""),
+                conversation_id=msg.conversation_id,
                 budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
                 audience="tag",
