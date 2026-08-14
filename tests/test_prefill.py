@@ -9,8 +9,8 @@ from nora.domain.models import (
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
-         quote=None) -> TagContext:
-    msg = NormalizedMessage("signal", "g1", "group", "+852111", "Miles", 1, body, {},
+         quote=None, platform="signal") -> TagContext:
+    msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card))
@@ -636,3 +636,41 @@ def test_self_card_precedes_the_peer_card_and_the_transcript():
 
     assert (block.index("<self_card") < block.index("<peer_card")
             < block.index("<group_transcript"))
+
+
+def test_the_prefill_tells_her_which_platform_she_is_on():
+    """The live bug this closes (operator, 2026-08-14): with two platforms
+    running, she answered a tag IN DISCORD saying she was on Signal.
+
+    She had no situational model of WHERE — exactly the gap `_now_line` exists
+    to close on the WHEN axis — and a model with no situational model invents
+    one without knowing it is inventing.
+    """
+    ctx = _ctx(platform="discord")
+
+    prefill = build_prefill(ctx, display_name="Nora", context_window=40)
+    text = "\n".join(m["content"][0]["text"] for m in prefill)
+
+    assert "You are on Discord right now." in text
+
+
+def test_the_platform_is_not_in_the_cached_prefix():
+    """`_context_header` is the cache PREFIX — DeepSeek matches on an exact
+    prefix, so the first byte that differs ends the hit for everything after
+    it. The platform varies between tags by definition, so putting it there
+    would cost the cache on every alternating Signal/Discord turn. The clock
+    was moved out of that block for this same reason.
+    """
+    signal_prefill = build_prefill(
+        _ctx(platform="signal"), display_name="Nora", context_window=40
+    )
+    discord_prefill = build_prefill(
+        _ctx(platform="discord"), display_name="Nora", context_window=40
+    )
+
+    assert signal_prefill[0] == discord_prefill[0], (
+        "the header block must be byte-identical across platforms"
+    )
+    assert signal_prefill[1] != discord_prefill[1], (
+        "and the per-turn block is where the difference belongs"
+    )

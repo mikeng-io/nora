@@ -39,6 +39,45 @@ TAG_HEADER = (
 )
 
 
+# How each platform is named to her. A display name, not the internal key:
+# `signal` is a wire value, `Signal` is what the room calls it. A platform with
+# no entry falls back to the key itself rather than being hidden — «I am
+# somewhere I have no name for» is still a better situational model than
+# silence, which is what produced the bug this table exists for.
+_PLATFORM_NAMES = {"signal": "Signal", "discord": "Discord"}
+
+
+def _where_line(platform: str) -> str:
+    """Which platform this turn is happening on, stated plainly.
+
+    She had no idea WHERE she was — not here, not in the doctrine — so with two
+    platforms live she answered a Discord tag saying she was on Signal
+    (operator, live, 2026-08-14). Exactly the failure `_now_line` above exists
+    to prevent, on the other axis: a model with no situational model invents
+    one, and it does not know that it is inventing.
+
+    It matters beyond her getting it right when asked. «Send this to the
+    others» means a different room depending on where she is standing, and any
+    cross-platform capability is unanswerable without it.
+
+    Deliberately NOT a tool, for `_now_line`'s reasons exactly: it is relevant
+    to every turn, so a tool means either a round trip every time or a model
+    deciding it does not need one. It costs a handful of tokens and cannot fail.
+
+    Deliberately NOT in `_context_header` either, and that is the subtler
+    constraint: that block is the cache PREFIX and must not carry anything that
+    varies between tags. The platform varies — that is the entire point of it —
+    so it belongs here in the per-turn message, which is where the clock was
+    moved to for the same reason.
+
+    Carries no conversation id: R-18 keeps identifiers off the wire, and the
+    platform NAME is not one. She is told where she is, never the room's id.
+    """
+    if not platform:
+        return ""
+    return f"You are on {_PLATFORM_NAMES.get(platform, platform)} right now.\n"
+
+
 def _message(role: str, text: str) -> dict:
     return {"role": role, "content": [{"text": text}]}
 
@@ -361,7 +400,8 @@ def build_prefill(
             # `self_card` before `peer_card` before the transcript: her own past,
             # then theirs, then the room — widening scope, and the transcript
             # stays adjacent to the message it explains.
-            _now_line(now) + _self_card_block(ctx) + _peer_card_block(ctx)
+            _now_line(now) + _where_line(ctx.message.platform)
+            + _self_card_block(ctx) + _peer_card_block(ctx)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),
