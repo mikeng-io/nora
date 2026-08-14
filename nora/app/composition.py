@@ -863,7 +863,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # membership resolves to nobody in identity.toml, exactly the
             # stranger-shape the warning exists for. The tag path's Room gets
             # the same set (`EngagementPipeline._run_admitted`).
-            self_ids=frozenset(getattr(registry.identity_for("signal"), "aliases", ())),
+            #
+            # EVERY platform's aliases, not Signal's alone: this pre-flight now
+            # walks Discord rooms too, and Nora's SNOWFLAKE is what identifies
+            # her there. Signal-only would have counted her own bot account as
+            # one of the room's unmapped strangers — reintroducing, on the new
+            # platform, the exact false warning found live on this check's
+            # first boot.
+            self_ids=registry.self_aliases(),
         ))
     # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
     # Every path that may speak into a conversation holds this same instance —
