@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "Nora now works out the street address for a location at the moment somebody asks, instead of continuously for everyone in the background.",
+  "details": [
+    "Answers are the same; the lookup simply happens when it is wanted rather than every 90 seconds for every tracked person whether or not anyone ever reads it.",
+    "The background location collector no longer needs a Google Maps credential at all."
+  ],
+  "limitations": [
+    "A location whose address has to be looked up fresh can take a moment longer to come back than one that was already named.",
+    "If the address lookup fails she falls back to what she already had, exactly as before — she never invents a place."
+  ]
+}

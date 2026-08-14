@@ -9,8 +9,7 @@
     "Nora now takes her own name on each platform from that platform itself, rather than from a name typed into her settings — with more than one platform, a single written-down name was always wrong for all but one of them.",
     "Nora reacts on Discord now — the 👀 while she is thinking and the ✅/⚠️ when she is done — the same acknowledgement she already gave on Signal.",
     "A person is identified only by something they cannot quietly change: a phone number or a user ID. A username is still written in her records so a human can read them, but it never decides who anybody is — someone renaming themselves, or taking a name someone else gave up, cannot become that person.",
-    "Nora keeps reacting after an ordinary Discord reconnect, instead of reporting herself permanently offline while working fine.",
-    "Asking where someone is now works for anyone who shares their location with Nora — not only people who happen to be in the group you are asking from. Who may ASK is unchanged: still only the people named for that room."
+    "Nora keeps reacting after an ordinary Discord reconnect, instead of reporting herself permanently offline while working fine."
   ],
   "limitations": [
     "Which platforms are switched on is still an operator setting, applied at startup — turning one on or off needs a restart.",
