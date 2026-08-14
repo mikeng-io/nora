@@ -1,6 +1,7 @@
 # Nora
 
-A private ambient AI agent for a Signal group chat. She reads every message silently and
+A private ambient AI agent for a friend group's chat — Signal today, Discord
+alongside it. She reads every message silently and
 replies only when tagged. Nora v2 is a two-layer, [Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
 rebuild of the original hand-rolled v1 — see `design/00-overview.md` for the architecture
 and `docs/superpowers/specs/2026-08-03-nora-strands-spec.md` for the full spec.
@@ -108,7 +109,7 @@ Notable knobs:
 
 Peer identity mapping lives in a separate file, `identity.toml` (see
 `identity.example.toml`): one `[[persons.<person_id>.<platform>]]` block per **account**,
-listing whichever id kinds you have for it (`phone`, `uuid`, `username`). A person may hold
+listing whichever id kinds you have for it (`phone`, `uuid`, `user_id`). A person may hold
 several accounts on one platform — a dual-SIM personal/work pair, a second Discord — and
 they all resolve to the same `person_id`, which doubles as the Honcho peer ID, so one human
 stays one peer (A2). This mapping is manual and startup-only — adding a new person or

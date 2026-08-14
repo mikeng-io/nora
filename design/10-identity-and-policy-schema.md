@@ -25,8 +25,9 @@ settled first.
 Identity has **two independent axes**, and the original version of this
 document conflated them:
 
-* **many id FORMS per account** — `phone`, `uuid` and `username` are three ways
-  of naming the *same* Signal registration. Nora matches on any of them.
+* **many id FORMS per account** — `phone` and `uuid` are two ways of naming the
+  *same* Signal registration, and Nora matches on either. (`username` is a
+  third way of naming it, and is deliberately NOT matched on — see §3.1.)
 * **many ACCOUNTS per platform** — a dual-SIM personal/work pair, a second
   Discord, a burner Telegram. Different registrations, *same human*.
 
@@ -55,6 +56,11 @@ person has a single, stable, operator-obtainable identifier on each platform.
 The identifier Nora *receives* and the identifier the operator *can write down*
 are usually **not the same value**. Discord is the only platform where they
 coincide.
+
+**The "Stable?" column is why `username` is never matched on** (§3.1): every
+human-readable id above is marked changeable, and a changeable id that resolves
+a person is a person who can be silently unmapped by a rename — or impersonated
+by whoever claims the freed handle.
 
 This is the whole reason a schema change is needed. It is not a nicety: with a
 hidden phone number on Signal, the operator **cannot author a working mapping at
@@ -180,11 +186,24 @@ silently-ignored key.
 
 | Platform | Kinds | Matchable | Notes |
 |---|---|---|---|
-| signal | `phone`, `uuid`, `username` | all | `uuid` is the ACI; operator gets it from Nora |
-| telegram | `user_id`, `username` | all | `user_id` is stable; `username` changeable |
-| discord | `user_id`, `username` | all | `user_id` obtainable via Developer Mode |
+| signal | `phone`, `uuid` | all | `uuid` is the ACI; operator gets it from Nora |
+| telegram | `user_id` | all | stable, unlike the handle |
+| discord | `user_id` | all | the snowflake, via Developer Mode |
 | whatsapp | `phone`, `lid` | all | no usernames |
 | *any* | `display_name` | **never** | §1.3 — shown, never matched |
+| signal, telegram, discord | `username` | **never** | accepted for READABILITY, never indexed — see below |
+
+**`username` is accepted and never matched, on every platform** (operator,
+2026-08-14: "i can easily change my username on signal or discord and nora dont
+even know — the only unchanging one is the phone number or user ID"). A handle
+is RE-ASSIGNABLE, and that is what makes this a safety rule rather than a
+tidiness one: its owner renames at will, and on most platforms the freed name
+can then be claimed by somebody else. Indexed, a rename silently unmaps a
+person and the next holder of that handle resolves AS them — while everything
+downstream trusts `person_id` completely (peer cards, `where_is` disclosure,
+reminder ownership). `Identifier` therefore refuses to carry one, and
+`nora.persons` treats it exactly as it treats `label`: parsed, kept for a human
+reading the file, excluded from the reverse index.
 
 ### 3.2 Matching
 

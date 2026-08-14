@@ -121,7 +121,8 @@ answer), not a second Signal-shaped code path per adapter.
 
 _2026-08-14_ — design bundle drafted during brainstorming session, then
 built out the same day on `worktree-discord-integration`
-(`.claude/worktrees/discord-integration`), not yet committed or merged.
+(`.claude/worktrees/discord-integration`), merged to master the same day
+(`ecd09af`) and deployed.
 
 **Built and green** (`uv run pytest`, `ruff check`, `mypy`, `lint-imports`
 all clean; zero regressions against the pre-existing baseline, which has 44
@@ -129,6 +130,8 @@ unrelated failing tests of its own):
 - `nora/platform/discord/` — `parser.py` (Discord message → `NormalizedMessage`),
   `snowflake.py` (id → timestamp), `send.py` (REST send), `self_id.py`
   (`GET /users/@me`), `listener.py` (Gateway wrapper over `discord.py`),
+  `react.py` (`DiscordReactor`, the 👀/✅ path), `roster.py` (`DiscordRoster`,
+  the guild members list the room-scoped tools read),
   `adapter.py` (`DiscordAdapter`, satisfies `PlatformAdapter` — proven by
   `tests/contract/test_port_conformance.py::test_discord_adapter_satisfies_platform_adapter`).
 - `nora/config.py` — `DiscordPlatformConfig` (`enabled`, `token_env`),

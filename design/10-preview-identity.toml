@@ -46,8 +46,7 @@ uuid     = "a1000002-0000-4000-8000-000000000002"
 # Telegram: user_id is stable but you cannot look it up without the person
 # interacting with the bot first. NOTE: `username` is accepted here for
 # READABILITY only — it is never matched on, because they can change it
-# (operator 2026-08-14). Only `user_id`/`phone`/`uuid` resolve a person
-# it. List both — matching succeeds on either.
+# (operator 2026-08-14). Only `user_id`/`phone`/`uuid` resolve a person.
 [[persons.miles.telegram]]
 user_id  = "123456789"
 username = "pinegrove"

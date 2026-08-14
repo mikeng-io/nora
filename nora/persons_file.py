@@ -127,9 +127,10 @@ class _PersonEntry(BaseModel):
                 "the old `[persons.<id>.platforms]` shorthand (one id per "
                 "platform) is no longer supported (design/10 §7.3) — use one "
                 "typed table per platform instead, e.g. "
-                '`[persons.<id>.signal]` with `phone = "…"` / `uuid = "…"` / '
-                "`username = \"…\"` keys; see design/10-preview-identity.toml "
-                "for the target shape."
+                '`[persons.<id>.signal]` with `phone = "…"` / `uuid = "…"` '
+                "keys; see design/10-preview-identity.toml for the target "
+                "shape. (`username` is accepted but never matched on — it "
+                "cannot be a block's only id.)"
             )
         return None
 

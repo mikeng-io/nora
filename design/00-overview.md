@@ -147,7 +147,10 @@ Telegram are extensions, not rebuilds.
 - **Peer mapping** — keyed by platform sender ID, mapped to one `person_id` → one
   Honcho peer (`04-config-identity.md §Persons`).
 
-Signal is the only adapter in this version. See `01-ambient-ingest.md`, `02-tagging-path.md`.
+Signal was the only adapter when this was written; Discord joined it on
+2026-08-14 (DEC-102, `design/discord-integration/`), and every enabled adapter
+now runs at once with replies routed back to the platform they came from. See
+`01-ambient-ingest.md`, `02-tagging-path.md`.
 
 ## Runtime Operations (audit A4/A5/A6, 2026-08-03)
 

@@ -7,7 +7,7 @@ description: >
   known in identity.toml. First sub-project of a four-part portal initiative
   (Discord, PWA chat surface, STT/TTS, real-time map); this bundle covers only
   Discord. 1:1 DMs (Signal or Discord) are explicitly out of scope for v1.
-status: design
+status: built
 governance: pre-governance-input
 timestamp: '2026-08-14'
 origin: "brainstorming session with miles, 2026-08-14"
@@ -24,8 +24,8 @@ edges:
 scope:
   v1:
     - "Discord bot ambient+tag presence in explicitly allowlisted channels"
-    - "Discord Gateway listener with RESUME + REST-history backfill resilience"
-    - "policy.toml schema extension for platform-qualified rooms"
+    - "Discord Gateway listener with RESUME resilience (REST-history backfill\n      re-scoped to the cross-platform gap-filling backlog — see 00-overview.md)"
+    - "policy.toml platform-qualified rooms (already existed; nothing to build)"
     - "Discord OAuth login gated to known identity.toml people"
     - "Separate portal auth service (aiohttp, shared Postgres)"
   deferred:

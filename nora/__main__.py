@@ -161,10 +161,13 @@ class App:
         per platform.
 
         `nora_last_event_age_seconds` stays UNLABELLED and stays Signal's.
-        `deploy/watchdog.sh` reads that exact series to decide whether to
-        restart the process, so relabelling it — even additively — would
-        silently retarget a watchdog nobody re-read. The per-platform answer
-        goes to its own series instead, which is append-only and breaks
+        It is the Signal-era liveness series, and adding a label changes a
+        series' IDENTITY — every dashboard or alert selecting it by bare name
+        would stop matching, silently, with no error anywhere. (`deploy/
+        watchdog.sh` itself reads `/health`'s `sse` block rather than this
+        metric, and ALERTS rather than restarting — checked, because an
+        earlier version of this comment claimed otherwise.) The per-platform
+        answer goes to its own series instead, which is append-only and breaks
         nothing.
         """
         while True:

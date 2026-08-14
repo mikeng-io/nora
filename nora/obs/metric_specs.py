@@ -712,10 +712,10 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     _GaugeSpec("nora_last_event_age_seconds", "Seconds since the last ingest event."),
     # The per-platform answer to the same question, added rather than folded
     # into the line above as a label: that series is UNLABELLED on purpose —
-    # `deploy/watchdog.sh` parses it to decide whether to restart the process,
-    # and adding a label changes the series identity a live watchdog is
-    # matching on. This one covers every enabled platform, so a wedged Discord
-    # Gateway is alertable instead of invisible.
+    # it is the Signal-era liveness series, and adding a label changes a
+    # series' IDENTITY, so anything selecting it by bare name stops matching
+    # with no error anywhere. This one covers every enabled platform, so a
+    # wedged Discord Gateway is alertable instead of invisible.
     _GaugeSpec(
         "nora_adapter_last_event_age_seconds",
         "Seconds since the last ingest event, per platform.",

@@ -30,6 +30,13 @@ persons = ["miles"]        # [] means Nora accepts no DMs at all.
 #    DB. Run `nora groups` to print every group's name beside its id; that is
 #    the answer to "I cannot tell which id is which group".
 #
+#    `nora groups` IS SIGNAL-ONLY. It reads signal-cli's directory, so it
+#    cannot name a Discord guild or channel. For Discord, turn on Developer
+#    Mode in the client and use Copy Server ID / Copy Channel ID. (A Discord
+#    sender you have not mapped yet still shows up in `nora persons pending`
+#    once they have spoken — as a bare snowflake, since the name lookup is
+#    Signal-only too.)
+#
 #      signal    groupId, base64
 #      telegram  chat.id, stringified int (negative for groups)
 #      discord   "<guild_id>/<channel_id>" — the adapter flattens the hierarchy
@@ -57,6 +64,16 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
                              # The one thing it never relaxes: if Nora cannot READ the
                              # roster, she still refuses. Trust overrules what a roster
                              # says, never the absence of one.
+
+# Discord: the guild and the channel, flattened into one id. The GUILD IS NOT
+# allowlistable on its own — being invited to a server grants technical reach,
+# never ambient presence, so every channel is listed explicitly.
+[[conversations]]
+platform = "discord"
+id       = "100000000000000203/100000000000000204"
+label    = "Zone 42 #general"
+persons  = ["miles", "ada"]
+# location = true            # same switch as Signal, same meaning — see below.
 
 [[conversations]]
 platform = "telegram"

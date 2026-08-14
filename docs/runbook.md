@@ -81,6 +81,24 @@ is correct. To tell "quiet" from "broken":
    }
    ```
 
+   **Per-platform liveness, from the metrics endpoint:**
+
+   ```bash
+   curl -s http://127.0.0.1:9100/metrics | grep nora_adapter_last_event_age_seconds
+   ```
+
+   `nora_adapter_last_event_age_seconds{platform="…"}` is seconds since that
+   platform last delivered an event, one series per enabled adapter. It is the
+   ONLY per-platform liveness signal Nora exports, so it is what tells you a
+   Discord Gateway has gone quiet.
+
+   The older `nora_last_event_age_seconds` (unlabelled) still exists and is
+   still **Signal's alone**. It was deliberately not relabelled: `/health`'s
+   `sse` block and this series are the pair a Signal-era dashboard already
+   watches, and adding a label changes a series' identity. Read the labelled one
+   for anything platform-specific; the unlabelled one is a compatibility
+   surface, not the general answer.
+
 3. Check whether she is **refusing on purpose**. Deny-by-default means a correct,
    healthy Nora can be completely silent because `policy.toml` does not list the room or
    the person. Both refusals are counted, so this is one command:
