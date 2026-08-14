@@ -964,7 +964,9 @@ class _ReactingAdapter(_FakeAdapter):
         self._react_ok = react_ok
         self._react_delay = react_delay
 
-    async def react(self, *, target, emoji, to_author, to_timestamp, remove=False):
+    async def react(
+        self, *, target, emoji, to_author, to_timestamp, to_message_id="", remove=False,
+    ):
         if self._react_delay:
             await asyncio.sleep(self._react_delay)
         self.reactions.append((emoji, to_author, to_timestamp, remove))

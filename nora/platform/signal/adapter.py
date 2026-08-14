@@ -104,6 +104,11 @@ class SignalAdapter:
         emoji: str,
         to_author: str,
         to_timestamp: int,
+        # Accepted and IGNORED: Signal addresses a message by (author,
+        # timestamp), which is what the two parameters above are. Discord needs
+        # its own snowflake, so the port carries both — see
+        # `nora.domain.ports.PlatformAdapter.react`.
+        to_message_id: str = "",
         remove: bool = False,
     ) -> ReactionResult:
         return await self._reactor.react(

@@ -21,14 +21,18 @@ async def me_server(aiohttp_server):
     return server
 
 
-async def test_derive_identity_returns_the_bots_own_id_and_username(me_server):
+async def test_derive_identity_returns_the_bots_own_id_and_never_its_username(me_server):
     primary, identifiers = await derive_identity(
         "tok", base_url=str(me_server.make_url("")).rstrip("/")
     )
 
     assert primary == "100000000000000100"
     assert Identifier("discord", "user_id", "100000000000000100") in identifiers
-    assert Identifier("discord", "username", "nora") in identifiers
+    # The snowflake ALONE — a renameable handle is never a matchable
+    # identity (operator 2026-08-14): only the phone number / user id is
+    # stable. The /users/@me response DOES carry a username (the fixture
+    # returns one), so this asserts it is dropped, not merely absent.
+    assert {i.kind for i in identifiers} == {"user_id"}
 
 
 async def test_derive_identity_authenticates_with_the_bot_token(me_server):

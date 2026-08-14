@@ -105,13 +105,6 @@ class StartupError(Exception):
 # two paths handed to `LocalDockerBackend` cannot name different directories.
 COMPUTE_WORKSPACE_DIRNAME = "compute-workspaces"
 
-# Id kinds whose VALUE the owner can change at will, and which therefore may
-# never be part of an identity match (operator, 2026-08-14). Nora's own
-# `PlatformIdentity.aliases` flattens every kind, so her Discord `username`
-# sits beside her snowflake in it — matching on that would let a rename, by
-# her or by anyone able to take the name, move who Nora is.
-MUTABLE_ID_KINDS = frozenset({"username"})
-
 
 def _compute_workspace_host_root(cfg: Config) -> Path:
     """The host-side path of whatever is bind-mounted at `store.data_dir`.
@@ -435,23 +428,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # for the tag's own platform (DEC-102).
     #
     # IDENTITY IS MATCHED ON IMMUTABLE IDS ONLY — never a display name, never a
-    # handle (operator, 2026-08-14). `PlatformIdentity.aliases` deliberately
-    # FLATTENS every identifier kind, and `discord.self_id.derive_identity`
-    # puts her `username` in beside her snowflake — so `.aliases` carries a
-    # value its owner can change at will. Nothing routes on it today (a Discord
-    # mention arrives as an id, and a Signal quote carries an ACI), which is
-    # exactly what makes it dangerous: it is an inert trap that silently arms
-    # the first time any matcher compares a name. `identity.toml` already holds
-    # ids alone for every person; this keeps Nora's own set to the same
-    # standard.
-    self_aliases = frozenset(
-        identifier.value
-        for identity in registry.identities.values()
-        for identifier in identity.identifiers
-        if identifier.kind not in MUTABLE_ID_KINDS
-    ) | frozenset(
-        identity.primary for identity in registry.identities.values() if identity.primary
-    )
+    # handle (operator, 2026-08-14: "i can easily change my username on signal
+    # or discord and nora dont even know"). That is enforced ONE level down, in
+    # `nora.domain.identity`: `username` is not a matchable kind on any
+    # platform, so `Identifier` refuses to carry one and no `aliases` set can
+    # contain one. Filtering again here would be a second copy of a rule that
+    # already holds — the shape this codebase argues against everywhere else —
+    # so this reads `.aliases` plainly and trusts the domain.
+    self_aliases = frozenset().union(
+        *(identity.aliases for identity in registry.identities.values())
+    ) if registry.identities else frozenset()
     policy = CompositePolicy((
         TriggerTextPolicy(cfg.engagement.trigger.text),
         MentionPolicy(self_aliases),

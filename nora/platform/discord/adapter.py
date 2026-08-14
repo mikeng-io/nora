@@ -28,6 +28,7 @@ from ...domain.ports import (
 )
 from .listener import DiscordListener
 from .parser import parse_discord_message
+from .react import DiscordReactor
 from .self_id import derive_identity
 from .send import DEFAULT_API_BASE, DiscordSender
 
@@ -43,6 +44,7 @@ class DiscordAdapter:
         intents.guilds = True
         self._listener = DiscordListener(discord.Client(intents=intents), token)
         self._sender = DiscordSender(token, base_url=base_url)
+        self._reactor = DiscordReactor(token, base_url=base_url)
         self._identity: PlatformIdentity | None = None
         self._own_id = ""
 
@@ -95,16 +97,22 @@ class DiscordAdapter:
         emoji: str,
         to_author: str,
         to_timestamp: int,
+        to_message_id: str = "",
         remove: bool = False,
     ) -> ReactionResult:
-        """Discord identifies a message by its own snowflake id, which
-        `to_author`/`to_timestamp` (Signal's identification scheme) cannot
-        reliably reconstruct — `snowflake.timestamp_ms` is not invertible
-        (the lower 22 bits are lost). Rather than guess which message to
-        react to, this is an honest `supported=False` — the same axis
-        `ReactionResult` exists to carry for exactly this case (see its
-        docstring in `nora.domain.ports`)."""
-        return ReactionResult(ok=False, supported=False)
+        """Discord identifies a message by its own snowflake, which
+        `to_author`/`to_timestamp` (Signal's scheme) cannot reconstruct —
+        `snowflake.timestamp_ms` is not invertible, the low 22 bits are gone.
+
+        This used to be an honest `supported=False` for exactly that reason.
+        It no longer has to be: `NormalizedMessage.message_id` carries the real
+        snowflake from the parser, and the port passes it through as
+        `to_message_id`. Absent one, `DiscordReactor` still answers
+        `supported=False` rather than guessing at a message.
+        """
+        return await self._reactor.react(
+            target=target, emoji=emoji, to_message_id=to_message_id, remove=remove,
+        )
 
     async def health(self) -> AdapterHealth:
         last = self._listener.last_event_at

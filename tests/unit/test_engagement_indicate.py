@@ -29,7 +29,9 @@ class _Recorder:
         self._fails = fails
         self._raises = raises
 
-    async def react(self, *, target, emoji, to_author, to_timestamp, remove=False):
+    async def react(
+        self, *, target, emoji, to_author, to_timestamp, to_message_id="", remove=False,
+    ):
         self.calls.append((emoji, to_author, to_timestamp, remove))
         if self._raises:
             raise RuntimeError("daemon exploded")

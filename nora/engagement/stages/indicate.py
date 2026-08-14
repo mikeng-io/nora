@@ -162,6 +162,11 @@ class Indicator:
     timestamp: int
     tag_id: str
     metrics: Any
+    # The platform's OWN handle for the tagging message, when it has one.
+    # Empty on Signal, which addresses a message by (author, timestamp); a
+    # snowflake on Discord, whose reaction endpoint accepts nothing else. Both
+    # are passed to `react` and each adapter uses the one its platform speaks.
+    message_id: str = ""
     placed: asyncio.Event = field(default_factory=asyncio.Event)
     # First-resolution-wins latch (DEC-83). `resolve` may now be called twice —
     # once the moment a reply is delivered, and once from the pipeline's
@@ -191,7 +196,8 @@ async def _react(indicator: Indicator, emoji: str, *, phase: str, remove: bool =
     try:
         result = await react(
             target=indicator.target, emoji=emoji, to_author=indicator.author,
-            to_timestamp=indicator.timestamp, remove=remove,
+            to_timestamp=indicator.timestamp, to_message_id=indicator.message_id,
+            remove=remove,
         )
         status = "sent" if result.ok else ("failed" if result.supported else "unsupported")
     except Exception:
@@ -264,6 +270,7 @@ def begin(
     indicator = Indicator(
         adapter=adapter, target=message.target(), author=message.sender_id,
         timestamp=message.timestamp, tag_id=tag_id, metrics=metrics,
+        message_id=message.message_id,
     )
     spawn(_place(indicator))
     return indicator

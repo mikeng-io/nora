@@ -611,8 +611,14 @@ class PlatformAdapter(Protocol):
         emoji: str,
         to_author: str,
         to_timestamp: int,
+        to_message_id: str = "",
         remove: bool = False,
     ) -> ReactionResult: ...
+    # `to_message_id` is DEFAULTED and additive beside `(to_author,
+    # to_timestamp)` because platforms genuinely disagree about what names a
+    # message: Signal addresses one by who sent it and when, Discord by a
+    # snowflake, and neither can be derived from the other. An adapter uses
+    # whichever its platform speaks and ignores the rest.
 
     async def health(self) -> AdapterHealth: ...
 

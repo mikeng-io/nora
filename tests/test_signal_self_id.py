@@ -103,11 +103,12 @@ async def test_the_working_rpc_yields_every_typed_id_form(aiohttp_server):
     assert identifiers == frozenset({
         Identifier("signal", "phone", PRIMARY),
         Identifier("signal", "uuid", ACI),
-        Identifier("signal", "username", USERNAME),
         Identifier("signal", "uuid", PNI),
     })
     assert metrics.get(DEGRADED_METRIC) == 0.0
-    assert metrics.get(ALIASES_METRIC, platform="signal") == 4.0
+    # 3, not 4: the contact row's `username` is no longer collected — a
+    # renameable handle is never a matchable identity (operator 2026-08-14).
+    assert metrics.get(ALIASES_METRIC, platform="signal") == 3.0
 
 
 async def test_the_aci_and_the_pni_are_both_kept(aiohttp_server):
@@ -196,7 +197,11 @@ async def test_a_missing_user_status_is_counted_separately(aiohttp_server):
 
     identifiers = await derive_identifiers(url, PRIMARY, metrics=metrics)
 
-    assert {i.value for i in identifiers} == {PRIMARY, ACI, USERNAME}
+    # USERNAME deliberately absent: a renameable handle is never a matchable
+    # identity (operator 2026-08-14) — only the phone number / uuid is stable.
+    # The contact row the fake returns DOES carry it, so this proves it is
+    # dropped rather than missing from the fixture.
+    assert {i.value for i in identifiers} == {PRIMARY, ACI}
     assert (
         metrics.get(
             DEGRADED_METRIC, platform="signal", reason="no_phone_number_identity"

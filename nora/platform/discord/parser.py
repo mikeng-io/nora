@@ -144,6 +144,10 @@ def parse_discord_message(
             mentions=frozenset(str(u.id) for u in message.mentions),
             quote=_quoted(message.reference),
             media=refs,
+            # The snowflake, which is the ONLY way Discord's reaction endpoint
+            # will accept a target — `(author, timestamp)` cannot reconstruct
+            # it, because `snowflake.timestamp_ms` throws the low 22 bits away.
+            message_id=str(message.id),
         )
     except Exception:
         log.exception("unparseable discord message, skipping")

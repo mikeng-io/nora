@@ -37,9 +37,20 @@ ACCOUNT_LABEL_KEY = "label"
 # names when it parses `identity.toml`.
 _ID_KINDS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
     {
-        "signal": frozenset({"phone", "uuid", "username"}),
-        "telegram": frozenset({"user_id", "username"}),
-        "discord": frozenset({"user_id", "username"}),
+        # NO `username` ON ANY PLATFORM (operator, 2026-08-14): "i can easily
+        # change my username on signal or discord and nora dont even know — the
+        # only unchanging one is the phone number or user ID". A handle is
+        # RE-ASSIGNABLE: its owner renames at will, and on most platforms the
+        # freed name can then be taken by someone else — so indexing it means a
+        # rename silently unmaps a person, and a third party who claims the old
+        # handle is resolved AS them. Everything downstream trusts `person_id`
+        # completely (peer cards, `where_is` disclosure, reminder ownership), so
+        # this is an identity-confusion hole, not a matching inconvenience.
+        # `username` is still ACCEPTED in identity.toml — as METADATA below, for
+        # the operator to read — it is simply never indexed.
+        "signal": frozenset({"phone", "uuid"}),
+        "telegram": frozenset({"user_id"}),
+        "discord": frozenset({"user_id"}),
         "whatsapp": frozenset({"phone", "lid"}),
         # Life360 is a location provider, not a chat platform, but a person's
         # Life360 account is still "another account this person holds" — so it
@@ -70,7 +81,16 @@ def id_kinds(platform: str) -> frozenset[str]:
 # it to group members into circles (design/19 §3), which is what keeps circle
 # membership in identity.toml (gitignored) instead of the tracked config.
 _METADATA_KEYS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
-    {"life360": frozenset({"circle_id"})}
+    {
+        "life360": frozenset({"circle_id"}),
+        # Readable, never matchable — see the `_ID_KINDS` note above. Keeping
+        # these accepted means an operator can still write the handle beside an
+        # id so `identity.toml` is legible to a human, without that handle ever
+        # deciding who somebody is.
+        "signal": frozenset({"username"}),
+        "telegram": frozenset({"username"}),
+        "discord": frozenset({"username"}),
+    }
 )
 
 

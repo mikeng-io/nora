@@ -333,9 +333,13 @@ def test_every_platform_in_the_preview_toml_is_accepted(tmp_path):
     persons = load_persons(p)
     assert persons.resolve("signal", "+85212345678") is not None
     assert persons.resolve("signal", "8185b8fa-359a-4c0a-c6ed-24814dc655bb") is not None
-    assert persons.resolve("signal", "miles.42") is not None
     assert persons.resolve("telegram", "123456789") is not None
-    assert persons.resolve("telegram", "pinegrove") is not None
+    # A username is ACCEPTED in the file (so it stays readable) and never
+    # INDEXED — a renameable handle must not resolve a person (operator
+    # 2026-08-14). Both platforms' usernames are present in the TOML above, so
+    # these prove the exclusion rather than an omission.
+    assert persons.resolve("signal", "miles.42") is None
+    assert persons.resolve("telegram", "pinegrove") is None
     assert persons.resolve("discord", "100000000000000003") is not None
     assert persons.resolve("whatsapp", "+85212345678") is not None
 

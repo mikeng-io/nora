@@ -69,7 +69,9 @@ _STATUS_ID = "nora-self-status"
 _CONTACT_FIELDS: tuple[tuple[str, str], ...] = (
     ("number", "phone"),
     ("uuid", "uuid"),
-    ("username", "username"),
+    # `username` is deliberately ABSENT: it is not a matchable kind on any
+    # platform any more (see `nora.domain.identity._ID_KINDS`), and building an
+    # `Identifier` for it would now raise `UnmatchableIdentifierError`.
 )
 
 

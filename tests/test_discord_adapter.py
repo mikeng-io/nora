@@ -99,7 +99,11 @@ async def test_send_delegates_to_the_sender():
     assert result.ok is False  # unreachable API -> not ok, never an exception
 
 
-async def test_react_is_unsupported():
+async def test_react_without_a_message_id_is_unsupported():
+    """Signal's `(author, timestamp)` pair cannot name a Discord message —
+    `snowflake.timestamp_ms` throws the low 22 bits away — so with no snowflake
+    there is still nothing to react to, and that is `supported=False`, not a
+    failed attempt."""
     adapter = DiscordAdapter("tok")
     result = await adapter.react(
         target=ConversationTarget("discord", "1/2", "group"),
@@ -109,6 +113,46 @@ async def test_react_is_unsupported():
     )
     assert result.ok is False
     assert result.supported is False
+
+
+async def test_react_delegates_to_the_reactor_with_the_snowflake(aiohttp_server):
+    """The adapter half of the reaction path: given a message id it must
+    actually call Discord, not keep answering the old `supported=False`.
+
+    Drives the REAL `DiscordReactor` against a stand-in endpoint rather than
+    asserting on a mock, so a wiring that dropped `to_message_id` on the floor
+    would reach the server without one and fail here.
+    """
+    seen: list[tuple[str, str, str]] = []
+
+    async def handler(request):
+        seen.append((
+            request.method,
+            request.match_info["channel"],
+            request.match_info["message"],
+        ))
+        return web.Response(status=204)
+
+    app = web.Application()
+    app.router.add_route(
+        "*", "/channels/{channel}/messages/{message}/reactions/{emoji}/@me", handler,
+    )
+    server = await aiohttp_server(app)
+
+    adapter = DiscordAdapter("tok", base_url=str(server.make_url("")).rstrip("/"))
+    result = await adapter.react(
+        target=ConversationTarget("discord", "111/222", "group"),
+        emoji="\U0001f440",
+        to_author="42",
+        to_timestamp=1234,
+        to_message_id="999888777",
+    )
+
+    assert result.ok is True
+    assert result.supported is True
+    assert seen == [("PUT", "222", "999888777")], (
+        "the reaction must address the channel and the message snowflake"
+    )
 
 
 async def test_resolve_identity_returns_a_platform_identity(aiohttp_server):

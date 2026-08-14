@@ -468,6 +468,7 @@ class FakeAdapter:
         emoji: str,
         to_author: str,
         to_timestamp: int,
+        to_message_id: str = "",
         remove: bool = False,
     ) -> ReactionResult:
         """Records reactions instead of performing them.

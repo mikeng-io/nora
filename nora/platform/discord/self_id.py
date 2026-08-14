@@ -39,8 +39,10 @@ async def derive_identity(
     if not isinstance(user_id, str) or not user_id:
         raise DiscordIdentityError("GET /users/@me returned no usable id")
 
+    # The snowflake ALONE. `username` is read back by `/health` and the
+    # operator CLI for display, but it is not an identity: a bot owner can
+    # rename the application at any time, so matching on it would let a rename
+    # change who Nora is (operator, 2026-08-14). It is not a matchable kind on
+    # any platform now, so `Identifier` would refuse it anyway.
     identifiers = {Identifier("discord", "user_id", user_id)}
-    username = body.get("username") if isinstance(body, dict) else None
-    if isinstance(username, str) and username:
-        identifiers.add(Identifier("discord", "username", username))
     return user_id, frozenset(identifiers)

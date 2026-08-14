@@ -194,7 +194,6 @@ async def test_mention_match_set_covers_every_platform_not_just_signal():
     Asserts the UNION, and asserts each platform's id is in it: a set built
     from either platform alone passes one half and fails the other.
     """
-    from nora.app.composition import MUTABLE_ID_KINDS
     from nora.domain.identity import Identifier, PlatformIdentity
 
     signal = PlatformIdentity(
@@ -203,33 +202,23 @@ async def test_mention_match_set_covers_every_platform_not_just_signal():
     )
     discord = PlatformIdentity(
         platform="discord", primary="100000000000000100",
-        identifiers=frozenset({
-            Identifier("discord", "user_id", "100000000000000100"),
-            # `derive_identity` really does put this in, and `aliases` really
-            # does flatten it in beside the snowflake — which is why the
-            # assertion below is not hypothetical.
-            Identifier("discord", "username", "\u0e17\u1d0f\u0280\u0251"),
-        }),
+        identifiers=frozenset({Identifier("discord", "user_id", "100000000000000100")}),
     )
     registry = AdapterRegistry(
         adapters={}, identities={"signal": signal, "discord": discord},
     )
 
-    self_aliases = frozenset(
-        identifier.value
-        for identity in registry.identities.values()
-        for identifier in identity.identifiers
-        if identifier.kind not in MUTABLE_ID_KINDS
-    ) | frozenset(i.primary for i in registry.identities.values() if i.primary)
+    self_aliases = frozenset().union(
+        *(i.aliases for i in registry.identities.values())
+    )
 
     assert "100000000000000100" in self_aliases, (
         "a Discord @mention must be able to match Nora's own id"
     )
     assert "+85290000100" in self_aliases, "Signal must not have been dropped"
-    # Operator rule (2026-08-14): identity is matched on IMMUTABLE ids only.
-    # A handle its owner can rename must never decide who Nora is — and
-    # `PlatformIdentity.aliases` would have carried it, so this is what stops
-    # a future matcher from silently arming that trap.
-    assert "\u0e17\u1d0f\u0280\u0251" not in self_aliases, (
-        "a mutable username must never be part of the identity match set"
-    )
+    # No handle can be in here to begin with: identity is matched on IMMUTABLE
+    # ids only (operator 2026-08-14), enforced one level down in
+    # `nora.domain.identity` — `username` is not a matchable kind on any
+    # platform, so `Identifier` refuses to carry one and no `aliases` set can
+    # contain one. Pinned by `tests/unit/test_domain_identity.py::
+    # test_a_username_is_never_a_matchable_kind_on_any_platform`.

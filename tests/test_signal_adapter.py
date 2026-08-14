@@ -172,7 +172,13 @@ async def test_resolve_identity_publishes_typed_identifiers_not_just_strings(
         str(server.make_url("")).rstrip("/"), "+852999", metrics=Metrics(),
     )
     identity = await adapter.resolve_identity()
-    assert Identifier("signal", "username", "nora.000") in identity.identifiers
+    assert Identifier("signal", "uuid", "uuid-abc") in identity.identifiers
+    # The RPC row above carries `username`, and it is dropped: a renameable
+    # handle is never a matchable identity (operator 2026-08-14). Asserted on
+    # `aliases` too, because that is the flattened set R-12 tests membership in
+    # — the one place a stray handle would actually be matched against.
+    assert {i.kind for i in identity.identifiers} == {"phone", "uuid"}
+    assert "nora.000" not in identity.aliases
     assert identity.aliases == {i.value for i in identity.identifiers} | {"+852999"}
 
 

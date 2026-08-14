@@ -229,4 +229,9 @@ def id_kind(platform: str, value: str) -> str | None:
         return "phone"
     if _UUID_RE.match(value):
         return "uuid"
-    return "username"
+    # NOT `username`: it is no longer a matchable kind (operator, 2026-08-14 —
+    # a handle its owner can rename must never resolve a person), so a stanza
+    # naming one would be refused at startup. `None` means "print it for
+    # hand-mapping", which is what the caller already does for every platform
+    # it cannot infer a kind for.
+    return None

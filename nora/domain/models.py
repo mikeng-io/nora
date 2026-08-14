@@ -78,6 +78,17 @@ class NormalizedMessage:
     # like `mentions`: the body carries `[image]`, and which attachment that
     # placeholder stands for lives here. Produced by the parser.
     media: tuple[MediaRef, ...] = ()
+    # The PLATFORM'S OWN HANDLE for this message, when it has one, so a later
+    # call can point back at it. Discord identifies a message by a snowflake
+    # and its reaction endpoint needs exactly that; Signal has no such handle
+    # and addresses a message by (author, timestamp) instead, so its parser
+    # leaves this empty and nothing about Signal changes.
+    #
+    # Defaulted and additive rather than replacing `(sender_id, timestamp)`:
+    # the two schemes are both real, and collapsing them would either invent an
+    # id Signal does not have or throw away the one Discord needs. `react` on
+    # the port takes both for the same reason.
+    message_id: str = ""
     # What Nora actually HOLDS for each attachment she managed to copy —
     # produced by `nora.ingest.stages.media`, never by the parser, and empty on
     # every message that carried none or whose bytes could not be fetched.
