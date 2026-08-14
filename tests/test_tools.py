@@ -127,6 +127,12 @@ def test_read_peer_card_is_gone_from_the_table_and_the_capability_block():
     assert "read_peer_card" not in ToolRegistry().capability()
 
 
+def test_exactly_five_tools_are_cacheable():
+    from nora.agent.tools import NATIVE_TOOLS
+    cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
+    assert cacheable == {"place_info", "route", "web_search", "weather", "transit"}
+
+
 def test_feed_honcho_is_not_a_tool(wiring):
     assert "feed_honcho" not in wiring["tools"]
 

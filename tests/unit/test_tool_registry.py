@@ -451,3 +451,15 @@ def test_a_budget_override_moves_exactly_the_named_tool():
 def test_no_override_leaves_the_table_exactly_as_it_is():
     assert ToolRegistry(budget_overrides={}).budgets() == ToolRegistry().budgets()
     assert ToolRegistry(budget_overrides=None).budgets() == ToolRegistry().budgets()
+
+
+def test_cacheable_tools_matches_the_declared_set():
+    from nora.agent.registry import ToolRegistry
+    assert ToolRegistry().cacheable_tools() == frozenset(
+        {"place_info", "route", "web_search", "weather", "transit"}
+    )
+
+
+def test_cacheable_tools_is_a_frozenset_not_a_list():
+    from nora.agent.registry import ToolRegistry
+    assert isinstance(ToolRegistry().cacheable_tools(), frozenset)

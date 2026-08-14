@@ -167,6 +167,17 @@ class NativeTool:
     # renders the clock line — so declaring it is not bookkeeping: it changes
     # what the always-on block tells the model to reach for first.
     source_tier: str | None = None
+    # `cacheable` is the seventh (tool-recall-log spec §2). True only for a
+    # tool whose result carries no room/person-disclosure decision baked
+    # into the MOMENT it ran — `where_is`/`search_memory`/`about` all
+    # decide what they may say against the room's LIVE roster, so replaying
+    # a cached answer days later would skip that check entirely; none of
+    # this table's cacheable=True entries do. Read by `ToolRegistry.
+    # cacheable_tools()` and nowhere else, the same single-reader shape
+    # `terminal`/`time_shiftable` already hold. Defaults False, like every
+    # other declared field on this type — a future tool ships un-cacheable
+    # until its own entry says otherwise.
+    cacheable: bool = False
 
 
 # ONE line per tool, in the order the capability block renders them. Keep each
@@ -229,7 +240,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "transit": NativeTool(4, "a Hong Kong bus or feeder route somebody named by number "
                              "— never state a bus time you did not get from here, and "
                              "never use it for a bus later than now",
-                          time_shiftable=False, source_tier="confirmed"),
+                          time_shiftable=False, source_tier="confirmed", cacheable=True),
     # 2, sized like `transit`: one message can name a route to plan for two
     # people leaving from two places, and two calls plus a reply still leave
     # half the turn. Each call is one or two Google Places lookups plus one
@@ -244,7 +255,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "route": NativeTool(4, "how to travel between two places, or how long a journey "
                            "takes — the only tool that can answer about a trip at a "
                            "later time",
-                        time_shiftable=True, source_tier="confirmed"),
+                        time_shiftable=True, source_tier="confirmed", cacheable=True),
     # 2, and HELD at 2 through the budget doubling (Kimi audit 2026-08-08): each
     # call is no longer a cheap local read — with the DEC-67 live refresh it can
     # BLOCK up to `refresh_timeout_seconds` (~8-10s) pinging the phone, so a
@@ -269,7 +280,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 "its rating, its price, its OPENING HOURS (幾點開/幾點"
                                 "關門) and whether it's open right now; never guess a "
                                 "rating or a time you did not get from here",
-                             source_tier="confirmed"),
+                             source_tier="confirmed", cacheable=True),
     # 1, like `group_members`: it lists a small fixed set for THIS room, and
     # calling it twice in a turn returns the same list. `time_shiftable=None`:
     # the household's saved names don't decay. Not terminal.
@@ -383,7 +394,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                             "the conversation and isn't a bus, a route, the weather, a "
                             "person you know, or a shop/mall's hours or rating — you get "
                             "ranked results, each a title, a link and a content snippet",
-                             source_tier="web"),
+                             source_tier="web", cacheable=True),
     # ONE weather verb, a flag for depth (DEC-72): current conditions + warnings
     # (typhoon/rainstorm) + today's outlook always; the 9-day forecast on request.
     # Warnings ride EVERY answer so a signal in force is never missed. Budget 2 —
@@ -391,7 +402,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "weather": NativeTool(2, "the weather in Hong Kong — current temperature and humidity, "
                           "any warnings in force (typhoon signal, rainstorm, very hot), "
                           "today's outlook, and the multi-day forecast when asked",
-                          source_tier="confirmed"),
+                          source_tier="confirmed", cacheable=True),
     # The three reminder verbs (design spec §7). All 2, and the number is sized
     # by the CONVERSATION rather than by cost: none of the three leaves the host
     # or the database, so a call is one model round trip and nothing else, and

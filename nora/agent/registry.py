@@ -274,6 +274,16 @@ class ToolRegistry:
         """
         return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.terminal)
 
+    def cacheable_tools(self) -> frozenset[str]:
+        """The tools whose successful result may be logged to `tool_call_log`
+        and later replayed by `recall_lookups` (tool-recall-log spec §2).
+
+        A `frozenset`, the same shape `terminal_tools()` returns and for the
+        same reason: membership is the whole question, and there is no
+        per-tool value to carry.
+        """
+        return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.cacheable)
+
     def live_only_tools(self) -> tuple[str, ...]:
         """The tools whose answer describes THIS instant and nothing else (design/14 §5.1).
 
