@@ -12,23 +12,11 @@ beyond the task description itself.
 ## Earn the file
 
 A file only earns its own existence if it contains something a chat reply
-could not. If what you are about to produce would read exactly the same as
-the brief itself with headers and bullets sprinkled on top, stop and
-restructure it before rendering -- that is decorated text, not a report, and
-the person who asked for a file gets nothing they did not already have. Two
-shapes are common enough to name directly:
-
-- **Several options being compared, each carrying the same handful of
-  facts** -- price, rating, hours, distance -- go in ONE markdown table via
-  `render_markdown`, not a bullet list per option that repeats the same
-  labels in prose.
-- **Several named PLACES**, not just addresses mentioned in passing text --
-  get a map: geocode each one (see below) and pass them all to ONE
-  `render_map` call as its own section, alongside the writeup, via
-  `render_html_report`.
-
-This is the same question for every brief, not a rule about any one kind of
-task: does this file show something the words alone didn't already say?
+could not. Before rendering, ask: pasted into a chat bubble as plain text,
+would this read exactly the same? If yes, you have decorated the brief, not
+built a report, and the person who asked for a file gets nothing they did
+not already have -- restructure it around whatever shape the data actually
+has, using whichever tool below fits that shape, before you render.
 
 ## Your tools
 
