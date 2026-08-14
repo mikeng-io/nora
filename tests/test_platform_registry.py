@@ -177,3 +177,42 @@ async def test_discord_resolve_identity_failing_fails_the_whole_registry(monkeyp
         await AdapterRegistry.from_config(
             cfg, metrics=Metrics(), discord_token="tok"  # noqa: S106 -- test fixture value
         )
+
+
+async def test_mention_match_set_covers_every_platform_not_just_signal():
+    """The bug this pins, found live 2026-08-14: `@Nora hi` on Discord was
+    ingested, attributed, and answered with silence.
+
+    `MentionPolicy`/`ReplyToNoraPolicy` were built from
+    `registry.identity_for("signal").aliases`, so the match set held a phone
+    number and an ACI while a Discord mention carries a 17-19 digit snowflake.
+    The parser was never at fault — it fills `mentions` correctly — so nothing
+    downstream could tell this from "nobody tagged her". That is exactly the
+    ingest-attribution-silence failure `MentionPolicy`'s own docstring says it
+    exists to end, reintroduced by a second platform.
+
+    Asserts the UNION, and asserts each platform's id is in it: a set built
+    from either platform alone passes one half and fails the other.
+    """
+    from nora.domain.identity import Identifier, PlatformIdentity
+
+    signal = PlatformIdentity(
+        platform="signal", primary="+85290000100",
+        identifiers=frozenset({Identifier("signal", "phone", "+85290000100")}),
+    )
+    discord = PlatformIdentity(
+        platform="discord", primary="100000000000000100",
+        identifiers=frozenset({Identifier("discord", "user_id", "100000000000000100")}),
+    )
+    registry = AdapterRegistry(
+        adapters={}, identities={"signal": signal, "discord": discord},
+    )
+
+    self_aliases = frozenset().union(
+        *(i.aliases for i in registry.identities.values())
+    )
+
+    assert "100000000000000100" in self_aliases, (
+        "a Discord @mention must be able to match Nora's own id"
+    )
+    assert "+85290000100" in self_aliases, "Signal must not have been dropped"

@@ -410,10 +410,29 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # U+FFFC in the body plus a `mentions` array, so a substring trigger can
     # never see it, and tagging her the obvious way used to produce ingest,
     # attribution and silence.
+    # EVERY platform's aliases, not just Signal's. These two policies match a
+    # mention/quote against "is this Nora?", and they were built from the Signal
+    # identity alone — so on Discord an @mention carried her SNOWFLAKE while the
+    # match set held a phone number and a UUID, and the obvious way to address
+    # her produced ingest, attribution and silence. That is the exact failure
+    # `MentionPolicy` was written to end (see its docstring), reintroduced by a
+    # second platform rather than by the parser: the Discord parser fills
+    # `mentions` correctly.
+    #
+    # A UNION rather than a per-platform lookup: these id spaces are disjoint by
+    # construction (a Signal phone is `+…`, its ACI a hyphenated UUID, a Discord
+    # id a bare 17-19 digit snowflake), so no cross-platform false positive is
+    # reachable, and the alternative — threading `message.platform` into every
+    # policy — buys nothing here. R-12's self-tag check is the one that must
+    # stay strictly per-platform, and it does: it reads the resolved identity
+    # for the tag's own platform (DEC-102).
+    self_aliases = frozenset().union(
+        *(identity.aliases for identity in registry.identities.values())
+    ) if registry.identities else frozenset()
     policy = CompositePolicy((
         TriggerTextPolicy(cfg.engagement.trigger.text),
-        MentionPolicy(registry.identity_for("signal").aliases),
-        ReplyToNoraPolicy(registry.identity_for("signal").aliases),
+        MentionPolicy(self_aliases),
+        ReplyToNoraPolicy(self_aliases),
     ))
     assembler = TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
