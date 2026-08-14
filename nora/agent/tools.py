@@ -614,6 +614,13 @@ _SYNC_POLL_INTERVAL = 1.0
 RECALL_LOOKUPS_DEFAULT = 10
 RECALL_LOOKUPS_MAX = 30
 RECALL_LOOKUPS_WINDOW_DAYS = 7
+# A total-character budget across ALL entries, on top of the row-count cap
+# above — `RECALL_LOOKUPS_MAX` bounds how many rows come back, not how big
+# any one of them is, and a `web_search` tool_result can run tens of KB.
+# Mirrors `content_max_chars`'s per-result clamp (`nora/config.py`) at a
+# larger scale, since this is a WHOLE response re-sent on every subsequent
+# model call in the turn, not one search result.
+RECALL_LOOKUPS_MAX_CHARS = 8000
 
 # Honcho's dialectic reasoning levels (DialecticOptions.reasoning_level), from
 # the live schema. `ask_memory` lets the model pick; anything off-list falls back
@@ -3064,15 +3071,30 @@ def build_tool_specs(
         """
         if tool_call_log_store is None:
             _record(metrics, "recall_lookups", "unavailable")
-            return {"status": "unavailable"}
+            return {
+                "status": "unavailable",
+                "note": "Tool-recall isn't set up here.",
+            }
         clamped = max(1, min(limit, RECALL_LOOKUPS_MAX))
         since = datetime.now(UTC) - timedelta(days=RECALL_LOOKUPS_WINDOW_DAYS)
-        rows = await tool_call_log_store.recent(
-            conversation_id=bound_conversation_id, since=since, limit=clamped,
-        )
+        try:
+            rows = await tool_call_log_store.recent(
+                conversation_id=bound_conversation_id, since=since, limit=clamped,
+            )
+        except Exception:
+            log.exception("recall_lookups failed")
+            _record(metrics, "recall_lookups", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't check what I've already looked up. Say so — "
+                        "an empty result and a failed read are different answers.",
+            }
         if not rows:
             _record(metrics, "recall_lookups", "nothing_found")
-            return {"status": "nothing_found"}
+            return {
+                "status": "nothing_found",
+                "note": "Nothing logged for this conversation in the last 7 days.",
+            }
         now_ts = datetime.now(UTC)
         entries = [
             {
@@ -3082,8 +3104,24 @@ def build_tool_specs(
             }
             for r in rows
         ]
-        _record(metrics, "recall_lookups", "ok", count=len(entries))
-        return {"status": "ok", "entries": entries}
+        # A total-character budget on top of the row-count cap above — rows
+        # come back newest-first, so stopping once the budget is spent drops
+        # the OLDEST (least-relevant) entries, never the newest.
+        budgeted: list[dict] = []
+        spent = 0
+        truncated = False
+        for entry in entries:
+            entry_chars = len(json.dumps(entry["tool_result"]))
+            if budgeted and spent + entry_chars > RECALL_LOOKUPS_MAX_CHARS:
+                truncated = True
+                break
+            spent += entry_chars
+            budgeted.append(entry)
+        _record(metrics, "recall_lookups", "ok", count=len(budgeted))
+        result: dict = {"status": "ok", "entries": budgeted}
+        if truncated:
+            result["truncated"] = True
+        return result
 
     async def make_artifact(
         task: str, context: list[dict] | None = None, artifact_id: str | None = None,

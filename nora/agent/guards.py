@@ -8,7 +8,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Collection, Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from strands.hooks import (
@@ -535,7 +535,7 @@ class ToolCallLog(HookProvider):
     def __init__(
         self, *, conversation_id: str, conversation_type: str, tag_id: str,
         cacheable: frozenset[str], store: Any, metrics: Metrics,
-        clock: Callable[[], datetime] = datetime.now,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._conversation_id = conversation_id
         self._conversation_type = conversation_type
@@ -579,11 +579,17 @@ class ToolCallLog(HookProvider):
                 created_at=self._clock(),
             )
             await self._store.append(entry)
+            self._metrics.inc("nora_tool_call_log_writes_total", tool=name, outcome="ok")
         except Exception:
             # Decoration on a turn that has already completed correctly
             # without it (spec §3) — never let a log write cost the reply
             # that already went out.
             log.exception("ToolCallLog write failed; ignoring")
+            self._metrics.inc(
+                "nora_tool_call_log_writes_total",
+                tool=name if "name" in locals() else "unknown",
+                outcome="failed",
+            )
 
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         registry.add_callback(AfterToolCallEvent, self._after_tool_async)
