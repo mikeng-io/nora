@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "A file Nora builds you now has to earn being a file, not just be the same text with headers on it.",
+  "details": [
+    "Several options being compared — each with a price, a rating, a time — come back as a table, not a bulleted retelling of the same sentence.",
+    "Several named places come back with an actual map, not just their addresses typed out."
+  ],
+  "limitations": [
+    "This is a judgement call the builder makes each time, not a hard rule — an ordinary write-up still comes back as plain text when that's genuinely all a request needs."
+  ]
+}
