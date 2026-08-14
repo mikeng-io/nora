@@ -651,3 +651,72 @@ async def test_about_the_tagger_does_the_real_lookup_when_no_block_landed(person
 
     assert out["status"] != "already_present"
     assert honcho.queries, "with no block, the real lookup must run"
+
+
+# ---- about returns BOTH verbs (operator, 2026-08-15) ------------------------
+
+
+async def test_about_returns_identity_and_history_as_separate_keys(persons):
+    """The two verbs answer different questions and are not merged.
+
+    `identity` is durable and still true tomorrow; `profile` is dated and is
+    what SHE concluded rather than what the person said. Flattening them would
+    hand the model one pile in which a stable fact and a stale episode carry
+    equal weight — which is the mistake the prefill avoids by keeping
+    `<peer_card>` and `<peer_history>` as separate blocks.
+    """
+    honcho = FakeHoncho(
+        cards={"tyler_cortez": ["IDENTITY: Name: Tyler Cortez"]},
+        conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]},
+    )
+    tools = _build(persons=persons, honcho=honcho)
+
+    out = await _call(tools["about"], person="Tyler")
+
+    assert out["status"] == "ok"
+    assert out["identity"] == ["IDENTITY: Name: Tyler Cortez"]
+    assert out["profile"] == ["tyler_cortez likes hotpot"]
+
+
+async def test_a_person_with_only_a_card_is_not_reported_as_unknown(persons):
+    """Having identity facts and no episodes is knowing something about them.
+
+    Before both verbs were fetched, this person came back `nothing_known` —
+    «I remember nothing about them yet» — while Honcho held their name and
+    aliases the whole time.
+    """
+    honcho = FakeHoncho(cards={"tyler_cortez": ["IDENTITY: Name: Tyler Cortez"]})
+    tools = _build(persons=persons, honcho=honcho)
+
+    out = await _call(tools["about"], person="Tyler")
+
+    assert out["status"] == "ok"
+    assert out["identity"] == ["IDENTITY: Name: Tyler Cortez"]
+    assert out["profile"] == []
+
+
+async def test_an_identifier_in_the_card_is_withheld_like_one_in_a_conclusion(persons):
+    """The card needs the screen MORE than the conclusions do — it renders
+    identity claims distilled from what people said, and a phone number is
+    exactly the shape of thing that lands in one. R-18 fails closed on the
+    whole reply, so one leaked line costs the entire message."""
+    honcho = FakeHoncho(
+        cards={"tyler_cortez": ["IDENTITY: Phone: +85290000102", "IDENTITY: Name: Tyler"]},
+        conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]},
+    )
+    tools = _build(persons=persons, honcho=honcho)
+
+    out = await _call(tools["about"], person="Tyler")
+
+    assert out["identity"] == ["IDENTITY: Name: Tyler"]
+    assert out["withheld"] == 1
+    assert not any(scan_identifiers(x) for x in out["identity"])
+
+
+async def test_a_person_with_neither_is_still_nothing_known(persons):
+    honcho = FakeHoncho()
+    tools = _build(persons=persons, honcho=honcho)
+
+    out = await _call(tools["about"], person="Tyler")
+
+    assert out["status"] == "nothing_known"

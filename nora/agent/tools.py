@@ -1455,11 +1455,17 @@ def build_tool_specs(
         Name the person the way the message did; a nickname is fine. It only
         knows people in THIS conversation.
 
-        Three different answers, and they mean different things: `ok` is the
-        profile, `nothing_known` means nothing has been concluded about them
-        yet — which is not the same as them being a stranger — and
-        `unavailable` means you could not check at all. Never present the last
-        one as "I don't know them".
+        Two parts come back and they are not the same kind of thing.
+        `identity` is who they are — durable, and it stays true tomorrow.
+        `profile` is what has happened with them, dated, and it is what YOU
+        concluded rather than what they told you, so you can be wrong about it.
+
+        Four different answers, and they mean different things: `ok` carries
+        what was found, `already_present` means it is in your prompt already
+        and you should read it there instead, `nothing_known` means nothing has
+        been concluded about them yet — which is not the same as them being a
+        stranger — and `unavailable` means you could not check at all. Never
+        present the last one as "I don't know them".
 
         Args:
             person: The name or nickname of the person, as the message said it.
@@ -1503,12 +1509,35 @@ def build_tool_specs(
             _record_room(metrics, "about", "already_present", candidates=1)
             return {
                 "status": "already_present", "person": ref.name,
-                "note": "What you remember about them is already in front of "
-                        "you, under peer_history. Use that — do not say you "
-                        "cannot remember, and do not look again.",
+                "note": "Who they are and what you remember about them are both "
+                        "already in front of you, under peer_card and "
+                        "peer_history. Use those — do not say you cannot "
+                        "remember, and do not look again.",
             }
+        # BOTH VERBS, concurrently (operator, 2026-08-15). `about` fetched only
+        # `representation` until now, so a third party's IDENTITY facts were
+        # unreachable while the tagger's rode in the prefill — she knew what had
+        # happened with Blake and not who Blake was. The two overlap in nothing
+        # (measured 2026-08-15: zero shared items), so one was never a substitute
+        # for the other.
+        #
+        # Gathered, not sequential: this runs INSIDE a live turn, where a second
+        # serial round trip is latency the group feels. `_card_of` never raises,
+        # so it cannot cancel its sibling.
+        async def _card_of(peer: str) -> tuple[str, ...]:
+            try:
+                return tuple(await honcho.peer_card(peer_id=peer))
+            except Exception:
+                # Matches `representation`'s own contract here: memory is never
+                # load-bearing, and a card that could not be read must not cost
+                # the episodes that could.
+                log.exception("about: card read failed for %s", peer)
+                return ()
+
         try:
-            memory = await honcho.representation(
+            card, memory = await asyncio.gather(
+                _card_of(ref.honcho_peer_id),
+                honcho.representation(
                 # OBSERVER = Nora, OBSERVED = the person (design/24 §4). This is
                 # what NORA has come to understand about them from messages she
                 # witnessed — her own model — NOT the person's self-description.
@@ -1529,13 +1558,14 @@ def build_tool_specs(
                 # divides it lives with the call that sends it
                 # (`HonchoClient.representation`). Restating a number here that
                 # only means something there is how the two drift apart.
+                ),
             )
         except Exception:
             # `MemoryStore` is documented never to be load-bearing, so this is
             # the belt for those braces — and it must land on `unavailable`,
             # never on an empty answer.
             log.exception("about failed for %s", ref.person_id)
-            memory = Recollection(reachable=False)
+            card, memory = (), Recollection(reachable=False)
         if not memory.reachable:
             metrics.inc("nora_recall_total", status="unavailable")
             _record_room(metrics, "about", "unavailable")
@@ -1558,12 +1588,20 @@ def build_tool_specs(
         # `Deliverer` refuses to SAY it, not because she is made to forget
         # what other people said.
         kept = tuple(c for c in memory.conclusions if scan_identifiers(c) is None)
-        withheld = len(memory.conclusions) - len(kept)
+        # THE CARD GETS THE SAME SCREEN, and it needs it more than the
+        # conclusions do: a card renders IDENTITY claims distilled from what
+        # people said, and «Phone: +852…» is exactly the shape of thing that
+        # ends up in one. Scrubbing conclusions but not the card would have put
+        # the identifier back on the reply that R-18 then fails closed on.
+        kept_card = tuple(c for c in card if scan_identifiers(c) is None)
+        withheld = (
+            (len(memory.conclusions) - len(kept)) + (len(card) - len(kept_card))
+        )
         # COUNTS, never the conclusions themselves. A conclusion is distilled
         # from what somebody actually said about a person; `data/nora.log` is
         # not where that belongs, and `withheld` is already the signal that
         # matters — a `withheld` that keeps climbing is the DEC-30 bug's shape.
-        if not kept:
+        if not kept and not kept_card:
             metrics.inc("nora_recall_total", status="empty")
             _record_room(metrics, "about", "ok", conclusions=0, withheld=withheld)
             return {
@@ -1573,8 +1611,14 @@ def build_tool_specs(
             }
         metrics.inc("nora_recall_total", status="ok")
         _record_room(metrics, "about", "ok", conclusions=len(kept), withheld=withheld)
+        # TWO KEYS, never merged into one list. `identity` is who they are,
+        # `profile` is what has happened with them — the same split the prefill
+        # draws between `<peer_card>` and `<peer_history>`, and flattening them
+        # here would hand the model one undifferentiated pile in which a durable
+        # fact and a dated episode carry equal weight.
         return {
-            "status": "ok", "person": ref.name, "profile": list(kept),
+            "status": "ok", "person": ref.name,
+            "identity": list(kept_card), "profile": list(kept),
             "withheld": withheld,
             "partial_view": view.degraded,
         }
