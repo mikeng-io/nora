@@ -647,6 +647,15 @@ class ReplyGuard(HookProvider):
         # at all (its own budget is 1, and this veto does not consume it —
         # see `evaluate`).
         self._context_nudge_given = False
+        # R-45's status-aware half (tool-recall-log spec §5): did the LAST
+        # `recall_lookups` call this turn actually find something? `counts`
+        # alone can't answer this — it increments for any non-cancelled
+        # call regardless of what the tool itself answered — so this is
+        # read directly off the event in `_after_tool`, the one place that
+        # sees the raw result. Overwritten on every `recall_lookups` call,
+        # not accumulated: only the MOST RECENT call's own answer is what
+        # "have I just seen something to reuse" means.
+        self._recall_found_something = False
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
@@ -785,16 +794,22 @@ class ReplyGuard(HookProvider):
         if (
             tool_name == "make_artifact" and not self._context_nudge_given
             and not (tool_input or {}).get("context")
-            and self.counts.get("place_info", 0) + self.counts.get("route", 0) > 0
+            and (
+                self.counts.get("place_info", 0) + self.counts.get("route", 0) > 0
+                or self._recall_found_something
+            )
         ):
             self._context_nudge_given = True
             gathered = self.counts.get("place_info", 0) + self.counts.get("route", 0)
+            source = (
+                f"place_info/route {gathered} time(s)" if gathered > 0
+                else "recall_lookups"
+            )
             return self._veto(
                 "R-45",
-                f"You already called place_info/route {gathered} time(s) this "
-                "turn and have those typed results. Pass them as `context` — "
-                "the small dicts you already have — instead of typing them "
-                "into `task` as prose.",
+                f"You already called {source} this turn and have real data "
+                "from it. Pass it as `context` — the small dicts you already "
+                "have — instead of typing it into `task` as prose.",
             )
         return None
 
@@ -945,6 +960,10 @@ class ReplyGuard(HookProvider):
                 return
             name = (getattr(event, "tool_use", None) or {}).get("name", "")
             self.record(name)
+            if name == "recall_lookups":
+                self._recall_found_something = (
+                    _unwrap_tool_status(getattr(event, "result", None)) == "ok"
+                )
             if name in self._terminal:
                 # She has spoken: `_before_model` relaxes `tool_choice` from
                 # here on, and ends the turn once every terminal verb's budget

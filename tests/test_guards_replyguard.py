@@ -354,3 +354,33 @@ def test_the_context_nudge_does_not_spend_make_artifacts_own_budget():
         {"task": "build a report", "context": [{"name": "Yoho Mall"}]},
     )
     assert allowed is None
+
+
+# ---- R-45 extended for recall_lookups (tool-recall-log spec §5) ----
+
+
+from tests.test_guards_tool_call_log import _wrapped as _wrap_result
+
+
+def _wrapped_ok_recall():
+    return _wrap_result({"status": "ok", "entries": [{"tool_name": "place_info"}]})
+
+
+def _wrapped_nothing_found_recall():
+    return _wrap_result({"status": "nothing_found"})
+
+
+def test_a_successful_recall_lookups_also_triggers_the_nudge():
+    g = _guard()
+    g.record("recall_lookups")
+    g._recall_found_something = True
+    msg = g.evaluate("make_artifact", {"task": "build a report"})
+    assert msg is not None
+
+
+def test_a_nothing_found_recall_lookups_does_not_trigger_the_nudge():
+    g = _guard()
+    g.record("recall_lookups")
+    g._recall_found_something = False
+    msg = g.evaluate("make_artifact", {"task": "build a report"})
+    assert msg is None
