@@ -4,9 +4,11 @@ are per-invocation by construction rather than by bookkeeping.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
+from datetime import datetime
 from typing import Any, Protocol
 
 from strands.hooks import (
@@ -487,6 +489,104 @@ def _list_tool_names(names: Any) -> str:
     if len(ordered) <= 1:
         return ", ".join(ordered)
     return ", ".join(ordered[:-1]) + " or " + ordered[-1]
+
+
+def _unwrap_tool_status(result: Any) -> str | None:
+    """The tool's OWN status (`ok`/`refused`/`unavailable`/...), unwrapped
+    from Strands' own success/error envelope.
+
+    `AfterToolCallEvent.result` is a `strands.types.tools.ToolResult` —
+    `{"status": "success"/"error", "content": [...], "toolUseId": ...}` —
+    which is STRANDS' verdict on whether the call raised, not the tool's
+    own semantic answer. Every native tool in this codebase returns a plain
+    dict with no `content` key, so `DecoratedFunctionTool._wrap_tool_result`
+    always takes its ELSE branch: `content` becomes `[{"text":
+    json.dumps(the_tools_own_dict)}]`. Reaching the real status means
+    parsing that text back out — this is the one place in the codebase that
+    does, shared by `ToolCallLog` (this module) and `ReplyGuard`'s R-45
+    check (`evaluate`, below) so the unwrap logic exists exactly once.
+
+    Returns `None` for a result shaped in a way this cannot parse (a tool
+    that returns a bare value with no `status` key at all — `now`,
+    `send_reply`, `load_transcript` all do this today) — callers treat
+    `None` as "not `ok`", never as "assume ok"."""
+    try:
+        content = result["content"]
+        payload = json.loads(content[0]["text"])
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+        return None
+    return payload.get("status") if isinstance(payload, dict) else None
+
+
+class ToolCallLog(HookProvider):
+    """Write path for the tool-recall log (R-46, tool-recall-log spec §3).
+    Constructed fresh per tag, like `ReplyGuard`.
+
+    A DIFFERENT responsibility from `ReplyGuard` (veto/budget logic) — this
+    is persistence, so it is its own small collaborator and its own
+    `HookProvider`, not a method bolted onto `ReplyGuard`. `store=None` is
+    the honest INERT default (offline/eval compositions, or any deployment
+    that has not wired one) — a missing store means every write is a no-op,
+    never a raised error and never a fallback that pretends to remember
+    something it didn't (R-5's shape, applied to a write path rather than a
+    read).
+    """
+
+    def __init__(
+        self, *, conversation_id: str, conversation_type: str, tag_id: str,
+        cacheable: frozenset[str], store: Any, metrics: Metrics,
+        clock: Callable[[], datetime] = datetime.now,
+    ) -> None:
+        self._conversation_id = conversation_id
+        self._conversation_type = conversation_type
+        self._tag_id = tag_id
+        self._cacheable = cacheable
+        self._store = store
+        self._metrics = metrics
+        self._clock = clock
+
+    async def _after_tool_async(self, event: Any) -> None:
+        try:
+            if getattr(event, "cancel_message", None) is not None:
+                return
+            name = (getattr(event, "tool_use", None) or {}).get("name", "")
+            if name not in self._cacheable:
+                return
+            if _unwrap_tool_status(event.result) != "ok":
+                return
+            if self._store is None:
+                return
+            tool_input = (getattr(event, "tool_use", None) or {}).get("input") or {}
+            # `content[0]["text"]` is `json.dumps(the tool's own dict)` —
+            # see `_unwrap_tool_status`'s own docstring — so this second
+            # `json.loads` is the tool's REAL return value, not Strands'
+            # wrapper. Guarded the same way `_unwrap_tool_status` is;
+            # unreachable here in practice since that call already
+            # succeeded above, but never assume a second parse of the same
+            # string cannot fail for a reason the first one didn't hit.
+            try:
+                tool_result = json.loads(event.result["content"][0]["text"])
+            except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+                return
+            from uuid import uuid4
+
+            from nora.domain.tool_call_log import ToolCallLogEntry
+
+            entry = ToolCallLogEntry(
+                id=uuid4(), conversation_id=self._conversation_id,
+                conversation_type=self._conversation_type, tag_id=self._tag_id,
+                tool_name=name, tool_input=tool_input, tool_result=tool_result,
+                created_at=self._clock(),
+            )
+            await self._store.append(entry)
+        except Exception:
+            # Decoration on a turn that has already completed correctly
+            # without it (spec §3) — never let a log write cost the reply
+            # that already went out.
+            log.exception("ToolCallLog write failed; ignoring")
+
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
+        registry.add_callback(AfterToolCallEvent, self._after_tool_async)
 
 
 class ReplyGuard(HookProvider):
