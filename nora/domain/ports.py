@@ -237,6 +237,7 @@ class OutboundAttachment:
     filename: str
 
 
+@runtime_checkable
 class GifSource(Protocol):
     """Provider boundary for finding and retrieving reaction GIFs."""
 

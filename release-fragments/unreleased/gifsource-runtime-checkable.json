@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Internal correctness only: a port declaration was missing its runtime-checkable marker, and two tests held stale copies of facts owned elsewhere. No change to Nora's behaviour — the suite is green for the first time in this line of work."
+}

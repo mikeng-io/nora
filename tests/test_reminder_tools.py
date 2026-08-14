@@ -485,10 +485,17 @@ async def test_cancel_says_so_when_the_row_already_fired():
 def test_none_of_the_three_is_a_terminal_verb():
     """§6.1 adds no terminal verb. One would break
     `_terminal_budget_spent`'s AND — a turn would end when the model had merely
-    set a reminder and said nothing — and `tests/test_guards_terminal.py` pins
-    `terminal_tools() == frozenset({"send_reply"})`."""
+    set a reminder and said nothing.
+
+    This asserts only ITS OWN claim: that none of the three reminder tools is
+    terminal. It used to also pin the whole set to `{"send_reply"}`, which was
+    a THIRD copy of a fact owned by `tests/test_guards_terminal.py` and
+    `tests/unit/test_tool_registry.py` — so when `send_gif` legitimately became
+    terminal, those two were updated and this one went red while asserting
+    nothing about reminders at all. A duplicated pin does not double-check a
+    fact; it just picks a second place to break.
+    """
     registry = ToolRegistry()
-    assert registry.terminal_tools() == frozenset({"send_reply"})
     for name in ("remind", "list_reminders", "cancel_reminder"):
         assert name not in registry.terminal_tools()
         assert name in registry.budgets()

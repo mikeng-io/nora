@@ -197,12 +197,25 @@ def test_every_decoration_comes_from_that_same_object():
         assert isinstance(value.value, ast.Name) and value.value.id == composed
 
 
-def test_the_audited_body_is_also_the_composed_text():
+def test_the_audited_body_is_the_composed_text_or_an_explicit_override():
     """A9 stores what she SENT. A row holding a different string from the one
     the wire carried makes the transcript a record of a message that never
     existed — and `MentionRenderer` cannot repair one of Nora's own rows (her
     `raw` is tag bookkeeping, not an envelope), so nothing downstream would
-    ever notice."""
+    ever notice.
+
+    THERE IS NOW ONE DELIBERATE EXCEPTION, and this test admits exactly it and
+    nothing else. `send_gif` audits `"<caption> [GIF via giphy]"` while the
+    wire carries the caption alone, because the row has to record that a GIF
+    was sent — the bytes are not in the transcript and the caption by itself
+    would read as a bare remark. So the body is `<composed>.text` UNLESS the
+    caller passed an explicit `record_text`.
+
+    The shape is pinned rather than loosened: both branches are checked, so a
+    THIRD string still cannot appear here. This test asserted the plain
+    attribute and went red when `record_text` landed — correctly, because the
+    invariant it guarded really had changed; what was missing was this
+    rewrite."""
     fn = _deliver()
     composed = _compose_target(fn)
     for node in ast.walk(fn):
@@ -212,7 +225,24 @@ def test_the_audited_body_is_also_the_composed_text():
             and node.func.id == "NormalizedMessage"
         ):
             body = _kwarg(node, "body")
-            assert isinstance(body, ast.Attribute)
+            if isinstance(body, ast.IfExp):
+                # `<composed>.text if record_text is None else record_text`
+                assert isinstance(body.body, ast.Attribute), (
+                    "the default branch must still be the composed text"
+                )
+                assert isinstance(body.body.value, ast.Name)
+                assert body.body.value.id == composed
+                assert body.body.attr == "text"
+                assert isinstance(body.orelse, ast.Name), (
+                    "the override branch must be a plain name the caller passed "
+                    "in, never an expression built here"
+                )
+                assert body.orelse.id == "record_text"
+                return
+            assert isinstance(body, ast.Attribute), (
+                "body= must be the composed text, or that text with an explicit "
+                "record_text override — nothing else"
+            )
             assert isinstance(body.value, ast.Name) and body.value.id == composed
             assert body.attr == "text"
             return
