@@ -8,7 +8,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Collection, Mapping
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Protocol
 
 from strands.hooks import (
@@ -28,6 +28,7 @@ from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
 from .outbound import Outbound, OutboundComposer
+from .tools import utc_now
 
 log = logging.getLogger("nora.guards")
 
@@ -535,7 +536,7 @@ class ToolCallLog(HookProvider):
     def __init__(
         self, *, conversation_id: str, conversation_type: str, tag_id: str,
         cacheable: frozenset[str], store: Any, metrics: Metrics,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        clock: Callable[[], datetime] = utc_now,
     ) -> None:
         self._conversation_id = conversation_id
         self._conversation_type = conversation_type
