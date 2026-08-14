@@ -39,14 +39,22 @@ class DiscordAdapter:
     def __init__(self, token: str, *, base_url: str = DEFAULT_API_BASE) -> None:
         self._token = token
         self._base_url = base_url
-        intents = discord.Intents.default()
-        intents.message_content = True  # privileged; see design/discord-integration/01
-        intents.guilds = True
-        self._listener = DiscordListener(discord.Client(intents=intents), token)
         self._sender = DiscordSender(token, base_url=base_url)
         self._reactor = DiscordReactor(token, base_url=base_url)
         self._identity: PlatformIdentity | None = None
         self._own_id = ""
+        # Built fresh in `listen()`, NOT here. A `discord.Client` is single-use:
+        # once it closes, `is_closed()` stays True for that instance forever
+        # (`_closing_task` is never cleared except by `Client.clear()`), so
+        # `start()` on a closed client returns IMMEDIATELY without connecting.
+        # `nora.app.runtime.supervise_adapter` only backs off in its `except`
+        # branch, so a `listen()` that RETURNS rather than raising becomes a
+        # hot loop — re-running `login()` against Discord with no delay, no
+        # `nora_adapter_restarts_total`, and no log line, with the Gateway
+        # permanently down. Holding one client for the process lifetime turned
+        # the supervisor's restart into a silent no-op; a per-attempt client is
+        # what makes the restart real.
+        self._listener: DiscordListener | None = None
 
     async def resolve_identity(self) -> PlatformIdentity:
         """Memoized after the first call — same rationale as
@@ -67,6 +75,13 @@ class DiscordAdapter:
         `parse_discord_message`, mirroring `SignalAdapter.listen`'s Trap B."""
         if self._identity is None:
             await self.resolve_identity()
+
+        # One client, one listener, PER ATTEMPT — see `__init__`.
+        intents = discord.Intents.default()
+        intents.message_content = True  # privileged; see design/discord-integration/01
+        intents.guilds = True
+        intents.members = True          # privileged; the roster read needs it
+        self._listener = DiscordListener(discord.Client(intents=intents), self._token)
 
         async def _on_discord_message(raw_message: Any) -> None:
             message = parse_discord_message(raw_message, own_id=self._own_id)
@@ -115,9 +130,13 @@ class DiscordAdapter:
         )
 
     async def health(self) -> AdapterHealth:
-        last = self._listener.last_event_at
+        # `None` until the first `listen()` builds one. Reported as NOT
+        # connected rather than as an error: before the listener exists there
+        # genuinely is no Gateway, and that is the honest answer.
+        listener = self._listener
+        last = listener.last_event_at if listener is not None else None
         return AdapterHealth(
             platform=self.platform,
-            connected=self._listener.connected,
+            connected=listener.connected if listener is not None else False,
             last_event_age_seconds=None if last is None else time.monotonic() - last,
         )

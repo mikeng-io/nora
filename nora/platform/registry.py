@@ -176,6 +176,35 @@ class AdapterRegistry:
     def identity_for(self, platform: str) -> PlatformIdentity:
         return self.identities[platform]
 
+    def self_aliases(self) -> frozenset[str]:
+        """Every id form Nora answers to, ACROSS every enabled platform.
+
+        What `MentionPolicy`/`ReplyToNoraPolicy` test membership in, so that
+        "did somebody tag Nora?" is answered the same way wherever the message
+        came from. Built here rather than inline at the composition root
+        because it is a property of the registry — and because an expression
+        living only inside `build_dependencies` cannot be called by a test
+        without re-typing it, which is a test that asserts about its own copy
+        rather than about the code.
+
+        A UNION, and safe as one: the id spaces are disjoint by construction (a
+        Signal phone is `+…`, its ACI a hyphenated UUID, a Discord id a bare
+        17-19 digit snowflake), so no cross-platform false positive is
+        reachable. Identity is matched on IMMUTABLE ids only — a renameable
+        handle can never appear here, because `username` is not a matchable
+        kind on any platform (`nora.domain.identity`) and `Identifier` refuses
+        to carry one.
+
+        R-12's self-tag check is deliberately NOT this set: it must stay
+        strictly per-platform and reads `identity_for(message.platform)`
+        (DEC-102).
+        """
+        if not self.identities:
+            return frozenset()
+        return frozenset().union(
+            *(identity.aliases for identity in self.identities.values())
+        )
+
     def __contains__(self, platform: str) -> bool:
         return platform in self.adapters
 

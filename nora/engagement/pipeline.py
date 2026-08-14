@@ -107,7 +107,7 @@ class EngagementPipeline:
         slots: ConversationSlots,
         llm_state: Any = None,
         reactions: bool = True,
-        roster_source: RosterSource | None = None,
+        rosters: Mapping[str, RosterSource] | None = None,
         preview_source: LinkPreviewSource | None = None,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
@@ -151,7 +151,21 @@ class EngagementPipeline:
         # as UNAVAILABLE rather than as an empty room, so a harness — or a
         # wiring mistake — degrades honestly instead of answering "nobody is
         # here" (R-5).
-        self._roster_source = roster_source
+        # Platform -> roster source. ONE source used to serve every platform,
+        # which meant a Discord room was looked up in signal-cli: the daemon
+        # does not know that conversation id, so the roster came back
+        # `available=False` and every room-scoped tool — `where_is` included —
+        # answered «I could not look». Correct fail-closed behaviour (R-5) on
+        # top of a wiring gap, which is the shape that hides longest, because
+        # nothing errors and the honest refusal looks like the feature working.
+        #
+        # A MISSING platform here degrades rather than raising, unlike
+        # `_adapter_for`: `Room` already documents an absent source as
+        # UNAVAILABLE (never as an empty room), so the honest answer is already
+        # built, and an offline/eval composition legitimately has no roster at
+        # all. Delivering to the wrong platform is catastrophic; failing to
+        # read a roster is merely blind, and blind-but-saying-so is allowed.
+        self._rosters: Mapping[str, RosterSource] = rosters or {}
         # The OpenGraph fetcher behind an outbound link-preview card. `None`
         # whenever `[preview].enabled` is false — the shipped default — and in
         # every offline composition, which is why it defaults rather than being
@@ -351,7 +365,13 @@ class EngagementPipeline:
                 doctrine=doctrine, canary=self._canary, tag_id=request.tag_id,
                 # Her own id on THIS platform, resolved from the platform
                 # itself (see `FirePath._turn` for the full argument).
-                nora_sender_id=getattr(identity, "primary", ""),
+                # `identity.primary`, NOT `getattr(..., "")`: a default here
+                # can only ever hide a defect, and it would write a
+                # plausible-looking empty sender onto her own audit rows — in
+                # the one place this change argues hardest against guessing at
+                # identity. `PlatformIdentity.primary` is required, so an
+                # AttributeError here is a real fault worth surfacing.
+                nora_sender_id=identity.primary,
                 conversation_id=msg.conversation_id,
                 budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
@@ -364,7 +384,7 @@ class EngagementPipeline:
                 composer=OutboundComposer(
                     platform=msg.platform, conversation_id=msg.conversation_id,
                     persons=self._persons, metrics=self._metrics,
-                    roster_source=self._roster_source,
+                    roster_source=self._rosters.get(msg.platform),
                     preview_source=self._preview_source,
                 ),
                 # Phase 2 routing: a precision-first, abstaining classifier over the
@@ -388,7 +408,7 @@ class EngagementPipeline:
             # both the ingest path and the front of the model call.
             room = Room(
                 platform=msg.platform, conversation_id=msg.conversation_id,
-                roster_source=self._roster_source, persons=self._persons,
+                roster_source=self._rosters.get(msg.platform), persons=self._persons,
                 tagger=ctx.tagger, self_ids=frozenset(getattr(identity, "aliases", ())),
             )
             tools = self._tool_registry.build(

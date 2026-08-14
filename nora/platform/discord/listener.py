@@ -1,15 +1,27 @@
 """Discord Gateway listener (design/discord-integration/01).
 
-Wraps a discord.py-shaped `Client`: registers `on_ready`/`on_message`/
-`on_disconnect` and tracks connection state the way
+Wraps a discord.py-shaped `Client`: registers `on_ready`/`on_resumed`/
+`on_message`/`on_disconnect` and tracks connection state the way
 `nora.platform.signal.listener.SignalListener` tracks `connected`/
 `last_event_at` for the SSE stream.
 
 Unlike `SignalListener`, there is no manual reconnect-with-backoff loop here:
 `discord.py`'s `Client.start()` owns the Gateway handshake, heartbeat, and
 RESUME-on-disconnect internally (design/discord-integration/01), the same way
-signal-cli's own daemon owns Signal's reconnect. `on_ready` and
+signal-cli's own daemon owns Signal's reconnect. `on_ready`, `on_resumed` and
 `on_disconnect` exist to observe that internal state, not to drive it.
+
+**`on_resumed` IS LOAD-BEARING, and its absence was a live defect.** discord.py
+dispatches `disconnect` on EVERY reconnect cycle — including the routine op-7
+RECONNECT the Gateway issues to rebalance sessions, which is ordinary operation
+and not a fault — and then dispatches **`resumed`**, not `ready`, when the
+session comes back (`discord/state.py`: `ready` is dispatched only on a full
+IDENTIFY). Registering `ready` alone therefore latched `connected = False` on
+the first routine blip and never cleared it, while messages kept flowing and
+Nora kept answering. `/health` marks the process unhealthy when any enabled
+platform reports disconnected, so a perfectly healthy Nora served a permanent
+503 and the container sat `unhealthy` — the signal that exists to make "deaf on
+Discord" loud instead became a constant alarm, which is an absent one.
 
 Built against a narrow structural Protocol rather than `discord.Client`
 directly, so a test can supply a fake that records registered coroutines by
@@ -57,6 +69,13 @@ class DiscordListener:
             self.connected = True
             log.info("discord gateway connected")
 
+        async def on_resumed() -> None:
+            # A RESUME is a live session again, so this is a CONNECTED edge
+            # exactly as `on_ready` is — see the module docstring for why
+            # observing only `ready` latched this False forever.
+            self.connected = True
+            log.info("discord gateway resumed")
+
         async def on_message(message: Any) -> None:
             self.last_event_at = self._clock()
             try:
@@ -69,8 +88,9 @@ class DiscordListener:
             log.warning("discord gateway disconnected")
 
         # Registration binds on `coro.__name__` (discord.py's own convention),
-        # which is exactly what the three closures above are named for.
+        # which is exactly what the four closures above are named for.
         self._client.event(on_ready)
+        self._client.event(on_resumed)
         self._client.event(on_message)
         self._client.event(on_disconnect)
         await self._client.start(self._token)

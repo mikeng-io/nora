@@ -6,6 +6,7 @@ from nora.domain.identity import Identifier
 from nora.domain.models import ConversationTarget
 from nora.domain.ports import PlatformIdentity
 from nora.platform.discord.adapter import DiscordAdapter
+from nora.platform.discord.listener import DiscordListener
 
 
 @dataclass
@@ -44,7 +45,7 @@ def test_parse_is_not_on_the_public_surface():
     assert not hasattr(DiscordAdapter, "parse")
 
 
-async def test_listen_parses_and_forwards_only_parseable_events():
+async def test_listen_parses_and_forwards_only_parseable_events(monkeypatch):
     """White-box swap of `adapter._listener.listen`, mirroring
     `tests/test_signal_adapter.py::test_listen_parses_and_forwards_only_parseable_events`
     — the Gateway connection itself is `test_discord_listener.py`'s job."""
@@ -65,11 +66,15 @@ async def test_listen_parses_and_forwards_only_parseable_events():
         ),
     ]
 
-    async def _fake_listen(on_message_cb):
+    async def _fake_listen(self, on_message_cb):
         for event in events:
             await on_message_cb(event)
 
-    adapter._listener.listen = _fake_listen
+    # Patched on the CLASS, not on an instance: `listen()` builds a fresh
+    # `DiscordListener` (and a fresh `discord.Client`) per attempt, because a
+    # closed client cannot be restarted — so an instance-level patch applied
+    # beforehand would be thrown away by the very call under test.
+    monkeypatch.setattr(DiscordListener, "listen", _fake_listen)
 
     received = []
 

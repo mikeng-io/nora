@@ -37,10 +37,18 @@ from nora.domain.ports import (
     TextStyle,
 )
 from nora.obs.metrics import Metrics
+from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.signal.adapter import SignalAdapter
 from nora.testing import FakeAdapter
 
 GROUP = ConversationTarget("signal", "Z3JvdXA=", "group")
+DISCORD_GROUP = ConversationTarget("discord", "111/222", "group")
+
+
+def _target_for(adapter):
+    """Each implementation's own room — a Discord adapter cannot address a
+    Signal group id, and vice versa."""
+    return DISCORD_GROUP if getattr(adapter, "platform", "") == "discord" else GROUP
 ACI = "b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b"
 MENTION = Mention(start=0, length=8, recipient=ACI)
 STYLE = TextStyle(start=0, length=5, style=Style.BOLD)
@@ -64,22 +72,39 @@ async def _signal_adapter(aiohttp_server, *, status: int = 200):
     return SignalAdapter(str(server.make_url("")).rstrip("/"), "+15550000000", metrics=Metrics())
 
 
-@pytest.fixture(params=["signal", "fake"])
+async def _discord_adapter(aiohttp_server, *, status: int = 200):
+    """A `DiscordAdapter` pointed at a stand-in for the messages endpoint."""
+    async def handler(request: web.Request) -> web.Response:
+        if status != 200:
+            return web.json_response({"message": "boom"}, status=status)
+        return web.json_response({"id": "100000000000000208"})
+
+    app = web.Application()
+    app.router.add_post("/channels/{channel}/messages", handler)
+    server = await aiohttp_server(app)
+    return DiscordAdapter("tok", base_url=str(server.make_url("")).rstrip("/"))
+
+
+@pytest.fixture(params=["signal", "discord", "fake"])
 async def working(request, aiohttp_server):
     if request.param == "signal":
         return await _signal_adapter(aiohttp_server)
+    if request.param == "discord":
+        return await _discord_adapter(aiohttp_server)
     return FakeAdapter(account="+15550000000")
 
 
-@pytest.fixture(params=["signal", "fake"])
+@pytest.fixture(params=["signal", "discord", "fake"])
 async def broken(request, aiohttp_server):
     """An adapter whose transport refuses the send."""
     if request.param == "signal":
         return await _signal_adapter(aiohttp_server, status=500)
+    if request.param == "discord":
+        return await _discord_adapter(aiohttp_server, status=500)
     return FakeAdapter(account="+15550000000", succeed=False)
 
 
-@pytest.mark.parametrize("impl", [SignalAdapter, FakeAdapter])
+@pytest.mark.parametrize("impl", [SignalAdapter, DiscordAdapter, FakeAdapter])
 def test_send_accepts_the_ports_decoration_parameters(impl):
     """`isinstance` against a runtime_checkable Protocol only checks NAMES, so
     a fake whose `send` had kept the old two-parameter shape would still be a
@@ -93,39 +118,44 @@ def test_send_accepts_the_ports_decoration_parameters(impl):
     assert params["preview"].default is None
 
 
-@pytest.mark.parametrize("impl", [SignalAdapter, FakeAdapter])
+@pytest.mark.parametrize("impl", [SignalAdapter, DiscordAdapter, FakeAdapter])
 def test_both_implementations_are_platform_adapters(impl):
-    instance = (
-        impl("http://x", "+1", metrics=Metrics()) if impl is SignalAdapter else impl()
-    )
+    if impl is SignalAdapter:
+        instance = impl("http://x", "+1", metrics=Metrics())
+    elif impl is DiscordAdapter:
+        instance = impl("tok")
+    else:
+        instance = impl()
     assert isinstance(instance, PlatformAdapter)
 
 
 async def test_a_plain_send_still_succeeds(working):
-    result = await working.send(target=GROUP, text="hello")
+    result = await working.send(target=_target_for(working), text="hello")
     assert result.ok is True
 
 
 async def test_a_send_carrying_a_mention_succeeds(working):
-    result = await working.send(target=GROUP, text="@Grant hi", mentions=(MENTION,))
+    result = await working.send(
+        target=_target_for(working), text="@Grant hi", mentions=(MENTION,),
+    )
     assert result.ok is True
 
 
 async def test_a_send_carrying_a_style_succeeds(working):
-    result = await working.send(target=GROUP, text="hello there", styles=(STYLE,))
+    result = await working.send(target=_target_for(working), text="hello there", styles=(STYLE,))
     assert result.ok is True
 
 
 async def test_a_send_carrying_a_preview_succeeds(working):
     result = await working.send(
-        target=GROUP, text="https://n.example.net/a", preview=PREVIEW,
+        target=_target_for(working), text="https://n.example.net/a", preview=PREVIEW,
     )
     assert result.ok is True
 
 
 async def test_a_send_carrying_every_decoration_at_once_succeeds(working):
     result = await working.send(
-        target=GROUP, text="@Grant https://n.example.net/a",
+        target=_target_for(working), text="@Grant https://n.example.net/a",
         mentions=(MENTION,), styles=(STYLE,), preview=PREVIEW,
     )
     assert result.ok is True
@@ -137,7 +167,7 @@ async def test_a_refused_send_reports_failure_rather_than_raising(broken):
     is what lets it record the FAILED delivery status and count
     `send_failed` — an exception loses the outcome distinction."""
     try:
-        result = await broken.send(target=GROUP, text="hi", mentions=(MENTION,))
+        result = await broken.send(target=_target_for(broken), text="hi", mentions=(MENTION,))
     except Exception as exc:  # noqa: BLE001 — catching broadly IS the assertion here
         pytest.fail(f"send() raised {type(exc).__name__}; it must always return")
     assert isinstance(result, SendResult)
@@ -150,7 +180,7 @@ async def test_a_malformed_mention_range_never_costs_the_message(working):
     degrade to a missing chip, it degrades to silence (R-5's shape). Both
     implementations must send the message anyway."""
     result = await working.send(
-        target=GROUP, text="hello",
+        target=_target_for(working), text="hello",
         mentions=(Mention(start=-1, length=0, recipient=""),),
     )
     assert result.ok is True
@@ -165,7 +195,7 @@ async def test_a_style_range_that_does_not_fit_never_costs_the_message(working):
     bound the range against the message rather than merely parsing it.
     """
     result = await working.send(
-        target=GROUP, text="hello",
+        target=_target_for(working), text="hello",
         styles=(
             TextStyle(start=-1, length=3, style=Style.BOLD),
             TextStyle(start=12, length=9, style=Style.BOLD),

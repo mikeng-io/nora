@@ -25,21 +25,21 @@ class _Recorder:
     platform = "signal"
 
     def __init__(self, *, fails: bool = False, raises: bool = False) -> None:
-        self.calls: list[tuple[str, str, int, bool]] = []
+        self.calls: list[tuple[str, str, int, str, bool]] = []
         self._fails = fails
         self._raises = raises
 
     async def react(
         self, *, target, emoji, to_author, to_timestamp, to_message_id="", remove=False,
     ):
-        self.calls.append((emoji, to_author, to_timestamp, remove))
+        self.calls.append((emoji, to_author, to_timestamp, to_message_id, remove))
         if self._raises:
             raise RuntimeError("daemon exploded")
         return ReactionResult(ok=not self._fails)
 
     @property
     def emojis(self) -> list[str]:
-        return [emoji for emoji, _, _, remove in self.calls if not remove]
+        return [emoji for emoji, _, _, _, remove in self.calls if not remove]
 
 
 class _NoReactions:
@@ -85,7 +85,7 @@ async def test_accepting_a_tag_reacts_with_eyes_to_the_tagging_message():
     fails."""
     adapter = _Recorder()
     metrics, _ = await _run(adapter, delivered=True)
-    assert adapter.calls[0] == (indicate.ACK, "+852111", 1754300000000, False)
+    assert adapter.calls[0] == (indicate.ACK, "+852111", 1754300000000, "", False)
     assert indicate.ACK == "\N{EYES}"
     assert metrics.get("nora_reactions_total", phase="ack", status="sent") == 1.0
 
@@ -123,7 +123,7 @@ async def test_the_eyes_are_always_retracted_before_the_terminal_emoji():
     or a platform that does not auto-replace ends up showing both."""
     adapter = _Recorder()
     await _run(adapter, delivered=True)
-    removes = [i for i, c in enumerate(adapter.calls) if c[3]]
+    removes = [i for i, c in enumerate(adapter.calls) if c[4]]
     finals = [i for i, c in enumerate(adapter.calls) if c[0] == indicate.DONE]
     assert removes and finals and max(removes) < min(finals)
 
@@ -208,3 +208,48 @@ async def test_the_reaction_targets_the_tagging_conversation_only():
     assert indicator is not None
     assert indicator.target == _msg().target()
     assert metrics.get("nora_reactions_total", platform="signal") == 3.0
+
+
+async def test_the_platforms_own_message_handle_reaches_the_reaction():
+    """The whole reason `NormalizedMessage.message_id` exists.
+
+    Discord's reaction endpoint accepts NOTHING but the message snowflake —
+    `(author, timestamp)` cannot reconstruct one, because
+    `snowflake.timestamp_ms` throws the low 22 bits away. So the parser puts
+    the platform's own handle on the message, `begin` carries it onto the
+    `Indicator`, and `_react` passes it as `to_message_id`.
+
+    Every link in that chain was previously unmeasured: the recorders all
+    ACCEPTED `to_message_id` and dropped it, so blanking it anywhere left the
+    whole suite green while shipping a bot that answers `supported=False` on
+    every reaction forever. This asserts the value that actually arrives at the
+    adapter, which is the only place the chain can be observed end to end.
+    """
+    adapter = _Recorder()
+    message = NormalizedMessage(
+        platform="discord", conversation_id="111/222", conversation_type="group",
+        sender_id="900001", sender_name="Miles", timestamp=1754300000000,
+        body="nora.000 hi", raw={}, message_id="100000000000000208",
+    )
+
+    await _run(adapter, delivered=True, message=message)
+
+    assert adapter.calls, "the 👀 must have been attempted"
+    assert {c[3] for c in adapter.calls} == {"100000000000000208"}, (
+        "the platform's own message handle must reach EVERY react() call; "
+        "without it Discord cannot identify the message and the reaction is a "
+        "silent no-op"
+    )
+
+
+async def test_a_platform_with_no_message_handle_still_reacts():
+    """Signal's counterpart, and the reason `to_message_id` was ADDED beside
+    `(to_author, to_timestamp)` rather than replacing them: Signal names a
+    message by who sent it and when, has no per-message handle, and must go on
+    reacting exactly as before."""
+    adapter = _Recorder()
+
+    await _run(adapter, delivered=True)
+
+    assert adapter.calls[0][1] == "+852111"      # the author is still carried
+    assert adapter.calls[0][3] == ""             # no handle, and that is correct

@@ -208,9 +208,10 @@ async def test_mention_match_set_covers_every_platform_not_just_signal():
         adapters={}, identities={"signal": signal, "discord": discord},
     )
 
-    self_aliases = frozenset().union(
-        *(i.aliases for i in registry.identities.values())
-    )
+    # THE PRODUCTION EXPRESSION, called — not a copy of it re-typed here.
+    # This test previously rebuilt the union in its own body and asserted about
+    # that local, so reverting the fix left it green: it measured itself.
+    self_aliases = registry.self_aliases()
 
     assert "100000000000000100" in self_aliases, (
         "a Discord @mention must be able to match Nora's own id"

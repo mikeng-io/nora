@@ -383,7 +383,7 @@ class FakeAdapter:
         self.sent_mentions: list[tuple[Mention, ...]] = []
         self.sent_styles: list[tuple[TextStyle, ...]] = []
         self.sent_previews: list[LinkPreview | None] = []
-        self.reactions: list[tuple[ConversationTarget, str, str, int, bool]] = []
+        self.reactions: list[tuple[ConversationTarget, str, str, int, str, bool]] = []
         self._succeed = succeed
         self._react_fails = react_fails
         self._account = account
@@ -485,7 +485,9 @@ class FakeAdapter:
         `react_fails=True` simulates a working platform whose reaction call is
         rejected — the R-5 path where the reply must still go out.
         """
-        self.reactions.append((target, emoji, to_author, to_timestamp, remove))
+        self.reactions.append(
+            (target, emoji, to_author, to_timestamp, to_message_id, remove)
+        )
         return ReactionResult(ok=not self._react_fails)
 
     async def health(self) -> AdapterHealth:

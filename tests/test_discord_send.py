@@ -99,3 +99,37 @@ async def test_send_never_raises_on_a_connection_failure():
     result = await sender.send(TARGET, "hello")
 
     assert result.ok is False
+
+
+async def test_an_attachment_is_refused_rather_than_silently_dropped(rest_server):
+    """`attachments` is the payload, not decoration.
+
+    The sender has no multipart upload yet. Sending the caption alone and
+    answering `ok=True` would make `Deliverer` write the row SENT with its
+    media metadata, tell the model `send_gif` succeeded, tick
+    `nora_replies_total{status="sent"}` and raise the ✅ — while the channel
+    saw a caption pointing at nothing. Every instrument would agree on a
+    delivery that did not happen, which is the exact silent-failure shape R-5
+    exists to forbid.
+
+    Asserts `rest_server.calls == []` too: the refusal must happen BEFORE the
+    network, so no half-message is posted.
+    """
+    from nora.domain.ports import OutboundAttachment
+
+    sender = DiscordSender("tok", base_url=str(rest_server.make_url("")).rstrip("/"))
+
+    result = await sender.send(
+        # TARGET, whose channel the stand-in server actually routes — an
+        # unrouted channel would 404 and make this pass without the guard.
+        TARGET,
+        "here you go",
+        attachments=(
+            OutboundAttachment(
+                content=b"GIF89a", media_type="image/gif", filename="a.gif",
+            ),
+        ),
+    )
+
+    assert result.ok is False
+    assert rest_server.calls == [], "nothing may be posted when the payload cannot be"

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -427,17 +427,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # stay strictly per-platform, and it does: it reads the resolved identity
     # for the tag's own platform (DEC-102).
     #
-    # IDENTITY IS MATCHED ON IMMUTABLE IDS ONLY — never a display name, never a
-    # handle (operator, 2026-08-14: "i can easily change my username on signal
-    # or discord and nora dont even know"). That is enforced ONE level down, in
-    # `nora.domain.identity`: `username` is not a matchable kind on any
-    # platform, so `Identifier` refuses to carry one and no `aliases` set can
-    # contain one. Filtering again here would be a second copy of a rule that
-    # already holds — the shape this codebase argues against everywhere else —
-    # so this reads `.aliases` plainly and trusts the domain.
-    self_aliases = frozenset().union(
-        *(identity.aliases for identity in registry.identities.values())
-    ) if registry.identities else frozenset()
+    # Every id form Nora answers to, on every enabled platform — see
+    # `AdapterRegistry.self_aliases`. Built from Signal's identity ALONE until
+    # 2026-08-14, so on Discord an @mention carried her snowflake while the
+    # match set held a phone number and a UUID: the obvious way to address her
+    # produced ingest, attribution and silence, which is the exact failure
+    # `MentionPolicy` was written to end, reintroduced by a second platform.
+    self_aliases = registry.self_aliases()
     policy = CompositePolicy((
         TriggerTextPolicy(cfg.engagement.trigger.text),
         MentionPolicy(self_aliases),
@@ -833,9 +829,25 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # taken off the adapter because membership is a read-only DIRECTORY query
     # (`nora.platform.signal.directory`'s two-method allowlist), not part of the
     # send/receive/react lifecycle — see `nora.domain.ports.RosterSource`.
-    roster_source: RosterSource = SignalRoster(
-        base_url=cfg.platforms.signal.base_url, account=cfg.platforms.signal.account,
-    )
+    # ONE PER PLATFORM, not one for all of them. A single `SignalRoster` used
+    # to serve every platform, so a Discord room was looked up in signal-cli —
+    # which has never heard of that conversation id — and came back
+    # `available=False`. `where_is` and every other room-scoped tool then
+    # answered «I could not look», forever, on Discord. Fail-closed and
+    # therefore harmless, but invisible: nothing errored and the honest refusal
+    # is indistinguishable from the guard doing its job.
+    #
+    # Keyed the same way the adapter map is (DEC-102), and built only for
+    # platforms that are actually enabled — a roster for a platform with no
+    # adapter would be a client nothing can use.
+    rosters: dict[str, RosterSource] = {}
+    if "signal" in registry:
+        rosters["signal"] = SignalRoster(
+            base_url=cfg.platforms.signal.base_url, account=cfg.platforms.signal.account,
+        )
+    if "discord" in registry:
+        from nora.platform.discord.roster import DiscordRoster
+        rosters["discord"] = DiscordRoster(discord_token)
     if presence_store is not None:
         # The R-21/R-31 startup invariant (design/19 §7.7, wired with `whereis`
         # per DEC-54(4)): alarm the day a policy conversation is no longer a
@@ -844,7 +856,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # (the AUTHORITATIVE fail-closed check is per-call in `Whereis.locate`;
         # this is the belt-and-braces pre-flight its docstring names).
         background.spawn(_presence_preflight(
-            allowlist=allowlist, roster_source=roster_source, persons=persons,
+            allowlist=allowlist, rosters=rosters, persons=persons,
             circles=presence_circles, metrics=metrics,
             # Without her aliases Nora HERSELF is the «1 unmapped account» —
             # found live 2026-08-07, first boot of this pre-flight: her own
@@ -877,7 +889,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
         reactions=cfg.engagement.reactions.enabled,
-        roster_source=roster_source,
+        rosters=rosters,
         preview_source=preview_source,
         slots=slots,
     )
@@ -951,7 +963,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # bound (§5.4).
             timeout_seconds=cfg.heartbeat.timeout_seconds,
             clock=lambda: datetime.now(UTC),
-            roster_source=roster_source,
+            rosters=rosters,
             # The SAME preview source the tag path holds. A fire turn is a
             # message into the same group, so a link in it earns the same card.
             preview_source=preview_source,
@@ -1052,7 +1064,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
 async def _presence_preflight(
     *,
     allowlist: Policy,
-    roster_source: RosterSource,
+    rosters: Mapping[str, RosterSource],
     persons: Persons,
     circles: tuple[Circle, ...],
     metrics: Metrics,
@@ -1081,7 +1093,13 @@ async def _presence_preflight(
     UNVERIFIED (warned, not alarmed), and the per-call guard refuses on exactly
     that unverifiability."""
     for conv in allowlist.conversations:
-        if conv.platform != "signal":
+        # Every platform that HAS a roster, not just Signal. Skipping a
+        # platform here does not make it safe — the authoritative check is
+        # per-call in `Whereis.locate` — but it does mean the gauge and the
+        # operator's boot-time warning silently covered only half the rooms
+        # once a second platform existed.
+        roster_source = rosters.get(conv.platform)
+        if roster_source is None:
             continue
         try:
             view = None

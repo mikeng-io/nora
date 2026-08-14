@@ -5,14 +5,21 @@ construction, same status handling, same "log and return, never raise"
 contract — for the same reason that module gives: a reader who has read one
 should not have to re-read the other.
 
-`mentions`/`styles`/`preview`/`attachments` are the port's DECORATION
+`mentions`/`styles`/`preview` are the port's DECORATION
 parameters (`nora.domain.ports.PlatformAdapter.send`'s own docstring: "a
 platform with no mention concept ignores them"). Discord expresses mentions
 and rich text inline in `content` itself (`<@id>`, markdown) — a different
 mechanism from Signal's parallel-array approach — and wiring that up is not
 in v1 scope (design/discord-integration/00-overview.md). This sends plain
-text only; the four decoration parameters exist so this satisfies the port's
-signature and are otherwise unused.
+text only; those three decoration parameters exist so this satisfies the
+port's signature and are otherwise unused.
+
+**`attachments` is NOT among them, and is REFUSED rather than ignored.** It
+carries the message's payload, not its ornament — a GIF, a rendered map, a
+generated file. Dropping it and answering `ok=True` would have the audit row,
+the model, the ✅ and `nora_replies_total{status="sent"}` all assert a delivery
+the channel never received (found by review, 2026-08-14). Until multipart
+upload lands, an attachment send fails honestly.
 """
 
 from __future__ import annotations
@@ -53,6 +60,24 @@ class DiscordSender:
             log.error(
                 "refusing to send to conversation_type=%r (v1 is guild channels only)",
                 target.conversation_type,
+            )
+            return SendResult(ok=False)
+        if attachments:
+            # `attachments` is NOT decoration, whatever the docstring below
+            # groups it with: it is the payload. Discord needs a multipart
+            # upload for it, which v1 does not implement — and sending the
+            # caption alone while answering `ok=True` is the worst available
+            # outcome. `Deliverer` would write the audit row as SENT with its
+            # media metadata, `send_gif` would tell the model it succeeded,
+            # `nora_replies_total{status="sent"}` would tick, and the ✅ would
+            # go up — while the group saw a caption pointing at nothing.
+            # Refusing is honest and loud (R-5), and it is recoverable: the
+            # tool reports the failure to the model, which can answer in words.
+            log.error(
+                "refusing to send %d attachment(s) to channel %s — the Discord "
+                "sender has no multipart upload, and delivering the caption "
+                "alone would report a success the channel never saw",
+                len(attachments), target.conversation_id,
             )
             return SendResult(ok=False)
         # conversation_id is "<guild_id>/<channel_id>" (policy.example.toml);

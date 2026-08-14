@@ -118,7 +118,9 @@ def build_offline_pipeline(
         # than as an empty room — so the three room-scoped tools degrade
         # honestly here instead of claiming the group is empty. A harness that
         # wants to exercise them passes a `RosterSource`.
-        roster_source=roster_source,
+        # One platform's roster, keyed by the adapter's own platform — the
+        # same shape `adapters` above takes, for the same reason.
+        rosters={adapter.platform: roster_source} if roster_source else {},
         slots=ConversationSlots(
             maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
         ),

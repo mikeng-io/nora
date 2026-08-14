@@ -94,6 +94,12 @@ def test_parses_a_plain_text_message_in_a_guild_channel():
     assert result.sender_name == "someone"
     assert result.timestamp == EXPECTED_TIMESTAMP_MS
     assert result.body == "hello"
+    # The platform's OWN handle for this message, as a string. Discord's
+    # reaction endpoint accepts nothing else — `(author, timestamp)` cannot
+    # reconstruct a snowflake, because `snowflake.timestamp_ms` discards the
+    # low 22 bits — so dropping this here makes every Discord reaction a
+    # silent no-op with nothing else in the system able to notice.
+    assert result.message_id == "51778682880"
 
 
 def test_dm_messages_are_dropped():

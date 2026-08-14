@@ -275,6 +275,7 @@ def _fire_path(
     metrics: Metrics,
     runner,
     adapter: _FireAdapter | None = None,
+    adapters: dict | None = None,
     memory: FakeMemoryStore | None = None,
     records: FakeRecordStore | None = None,
     registry: ToolRegistry | None = None,
@@ -285,7 +286,9 @@ def _fire_path(
         records=records if records is not None else FakeRecordStore(),
         memory=memory if memory is not None else FakeMemoryStore(),
         doctrine_store=doctrine_store, metrics=metrics, runner=runner,
-        adapters={"signal": adapter if adapter is not None else _FireAdapter()},
+        adapters=adapters if adapters is not None else {
+            "signal": adapter if adapter is not None else _FireAdapter()
+        },
         registry=registry if registry is not None else ToolRegistry(),
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40,
@@ -753,3 +756,70 @@ def test_a_failure_with_no_error_says_so_rather_than_reading_as_success() -> Non
 
     assert "It failed: no reason given" in occasion.body
     assert "None" not in occasion.body
+
+
+class _DiscordFireAdapter(_FireAdapter):
+    """A second platform for the fire path, identical but for which one it is."""
+
+    platform = "discord"
+
+
+async def test_a_fire_turn_speaks_on_the_platform_the_occasion_names(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """`design/discord-integration/02`: fire-path eligibility is explicitly NOT
+    platform-specific, so a reminder owed in a Discord channel fires there.
+
+    `FirePath` held ONE adapter until DEC-102, so every occasion — reminder,
+    version announcement, finished compute job — was spoken into Signal
+    regardless of where it was owed. Under R-42 that is unrecoverable for an
+    announcement: it is CLAIMED for the Discord room and delivered to a Signal
+    one, and the claim bars a second attempt forever.
+    """
+    signal_adapter = _FireAdapter()
+    discord_adapter = _DiscordFireAdapter()
+    records = FakeRecordStore()
+    fire = _fire_path(
+        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
+        runner=FakeAgentRunner([ScriptedTurn(
+            tool_calls=[("send_reply", {"text": "收到"})], final_text="收到",
+        )]),
+        records=records,
+        adapters={"signal": signal_adapter, "discord": discord_adapter},
+    )
+
+    outcome = await fire.speak(reminder_occasion(
+        [_reminder(platform="discord", conversation_id="111/222")]
+    ))
+
+    assert outcome == fire_module.SENT
+    assert discord_adapter.texts == ["收到"]
+    assert signal_adapter.sent == [], (
+        "an occasion owed on Discord must not be spoken into Signal"
+    )
+
+
+async def test_a_fire_turn_for_an_unwired_platform_fails_rather_than_speaking(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The absent-route case, and why `_adapter_for` raises rather than falling
+    back: speaking a reminder into a room on another platform is worse than not
+    speaking it. `_turn`'s outer guard turns the raise into `failed_error` plus
+    `nora_silent_failures_total{reason="handler_error"}` — loud and counted,
+    with nothing delivered."""
+    signal_adapter = _FireAdapter()
+    fire = _fire_path(
+        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
+        runner=FakeAgentRunner([ScriptedTurn(final_text="never reached")]),
+        adapters={"signal": signal_adapter},
+    )
+
+    outcome = await fire.speak(reminder_occasion(
+        [_reminder(platform="discord", conversation_id="111/222")]
+    ))
+
+    assert outcome == fire_module.FAILED_ERROR
+    assert signal_adapter.sent == [], "an unroutable occasion must not fall back"
+    assert metrics.get(
+        "nora_silent_failures_total", reason="handler_error", audience="heartbeat",
+    ) >= 1.0

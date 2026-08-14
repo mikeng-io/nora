@@ -267,7 +267,7 @@ class FirePath:
         limits: dict[str, Any],
         timeout_seconds: float,
         clock: Callable[[], datetime],
-        roster_source: RosterSource | None = None,
+        rosters: Mapping[str, RosterSource] | None = None,
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
     ) -> None:
@@ -297,7 +297,21 @@ class FirePath:
         # Optional for the reason it is optional on the pipeline: `Room` reports
         # an absent source as UNAVAILABLE rather than as an empty room, so a
         # harness degrades honestly instead of answering "nobody is here" (R-5).
-        self._roster_source = roster_source
+        # Platform -> roster source. ONE source used to serve every platform,
+        # which meant a Discord room was looked up in signal-cli: the daemon
+        # does not know that conversation id, so the roster came back
+        # `available=False` and every room-scoped tool — `where_is` included —
+        # answered «I could not look». Correct fail-closed behaviour (R-5) on
+        # top of a wiring gap, which is the shape that hides longest, because
+        # nothing errors and the honest refusal looks like the feature working.
+        #
+        # A MISSING platform here degrades rather than raising, unlike
+        # `_adapter_for`: `Room` already documents an absent source as
+        # UNAVAILABLE (never as an empty room), so the honest answer is already
+        # built, and an offline/eval composition legitimately has no roster at
+        # all. Delivering to the wrong platform is catastrophic; failing to
+        # read a roster is merely blind, and blind-but-saying-so is allowed.
+        self._rosters: Mapping[str, RosterSource] = rosters or {}
         # The link-preview fetcher, `None` unless `[preview].enabled` — see the
         # engagement pipeline's identical field for why this one defaults while
         # `deliver.build`'s `composer` does not.
@@ -573,13 +587,13 @@ class FirePath:
                 composer=OutboundComposer(
                     platform=occasion.platform, conversation_id=occasion.conversation_id,
                     persons=self._persons, metrics=self._metrics,
-                    roster_source=self._roster_source,
+                    roster_source=self._rosters.get(occasion.platform),
                     preview_source=self._preview_source,
                 ),
             )
             room = Room(
                 platform=occasion.platform, conversation_id=occasion.conversation_id,
-                roster_source=self._roster_source, persons=self._persons,
+                roster_source=self._rosters.get(occasion.platform), persons=self._persons,
                 # `None` for an occasion nobody asked for, which is what makes
                 # `Room.scope()` report UNAVAILABLE there rather than a room —
                 # the honest state (R-21), not a degraded one.

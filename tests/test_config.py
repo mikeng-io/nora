@@ -234,8 +234,22 @@ def test_discord_platform_can_be_enabled(toml_path):
 
 
 def test_an_unknown_discord_key_is_a_startup_failure(toml_path):
-    toml_path.write_text(toml_path.read_text() + '\n[platforms.discord]\nbot_tokenn = "x"\n')
-    with pytest.raises(ConfigError):
+    """A typo'd key must be refused by pydantic's `extra="forbid"`, not merely
+    ignored — a silently-dropped line is an operator certain they configured
+    something that never took effect.
+
+    The key is edited INTO the existing section. Appending a second
+    `[platforms.discord]` table would make TOML itself reject the file for
+    declaring the table twice, and `load` wraps `TOMLDecodeError` in
+    `ConfigError` too — so the assertion passed without pydantic ever running,
+    and `extra="allow"` left it green.
+    """
+    toml_path.write_text(
+        toml_path.read_text().replace(
+            'token_env = "DISCORD_BOT_TOKEN"', 'bot_tokenn = "x"',
+        )
+    )
+    with pytest.raises(ConfigError, match="bot_tokenn"):
         load(toml_path)
 
 

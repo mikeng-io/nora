@@ -282,7 +282,7 @@ def _build_pipeline(
         spawn=background.spawn,
         llm_state=llm_state,
         reactions=reactions,
-        roster_source=roster_source,
+        rosters={"signal": roster_source} if roster_source else {},
         slots=ConversationSlots(maxlen=queue_max, spawn=background.spawn),
         policy=policy if policy is not None else permissive_policy(),
     )
@@ -1700,14 +1700,24 @@ async def test_a_discord_tag_is_answered_on_discord_not_signal():
     Discord question answered into a Signal group, in front of people who never
     asked it. Both adapters are wired here and only one may speak.
     """
-    signal_adapter = _FakeAdapter()
-    discord_adapter = _DiscordFakeAdapter()
-    pipeline, *_ = _build_pipeline(
+    # DISTINCT accounts, deliberately: both doubles defaulted to the same one,
+    # so a turn that resolved the WRONG platform's identity was invisible — the
+    # rows it wrote were byte-identical either way.
+    signal_adapter = _FakeAdapter(account="+852000")
+    discord_adapter = _DiscordFakeAdapter(account="555000111")
+    pipeline, _m, audit, *_ = _build_pipeline(
         adapters={"signal": signal_adapter, "discord": discord_adapter},
     )
 
     await pipeline.run(_request(_discord_msg()))
 
+    # Her OWN audited row carries `identity.primary` as its sender_id, so this
+    # is where a turn that resolved the wrong platform's identity becomes
+    # visible — R-12's self-tag check reads that same per-platform set.
+    own = [r for r in audit.rows if r.get("is_nora")]
+    assert own and all(r["sender_id"] == "555000111" for r in own), (
+        "a Discord turn must resolve DISCORD's identity, not Signal's"
+    )
     assert discord_adapter.texts == ["今晚七點半得"], (
         "a Discord tag must be answered through the Discord adapter"
     )
@@ -1736,17 +1746,29 @@ async def test_each_platform_resolves_its_own_identity_for_the_self_tag_check():
 
     Resolving Signal's identity for a Discord tag would compare a Discord
     sender id against Signal aliases — an id space it shares nothing with — so
-    Nora could neither recognise her own Discord messages nor be certain she
-    was recognising anyone else's. Distinct accounts make the mix-up visible.
+    Nora could neither recognise her own Discord messages nor be sure she was
+    recognising anyone else's.
+
+    Driven through `run()` on purpose. An earlier version of this test called
+    `_adapter_for(...).resolve_identity()` directly, which asserts that a dict
+    lookup returns what was put in the dict: hardcoding BOTH call sites in the
+    pipeline to `self._adapters["signal"]` left it green.
     """
     signal_adapter = _FakeAdapter(account="+852000")
     discord_adapter = _DiscordFakeAdapter(account="555000111")
-    pipeline, *_ = _build_pipeline(
+    pipeline, _m, audit, *_ = _build_pipeline(
         adapters={"signal": signal_adapter, "discord": discord_adapter},
     )
 
-    assert (await pipeline._adapter_for("discord").resolve_identity()).primary == "555000111"
-    assert (await pipeline._adapter_for("signal").resolve_identity()).primary == "+852000"
+    await pipeline.run(_request(_msg()))
+    await pipeline.run(_request(_discord_msg(), tag_id="tag-2"))
+
+    by_platform = {
+        r["platform"]: r["sender_id"] for r in audit.rows if r.get("is_nora")
+    }
+    assert by_platform == {"signal": "+852000", "discord": "555000111"}, (
+        "each turn must stamp the identity of ITS OWN platform"
+    )
 
 
 async def test_an_unwired_platform_refuses_rather_than_picking_an_adapter():
