@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import inspect
 from collections.abc import Callable
 
 
@@ -171,9 +172,12 @@ class _HookRegistry:
     def add_callback(self, event_type, callback) -> None:
         self.callbacks.setdefault(event_type.__name__, []).append(callback)
 
-    def dispatch(self, event):
+    async def dispatch(self, event):
         for callback in self.callbacks.get(event.sdk_event, ()):
-            callback(event)
+            if inspect.iscoroutinefunction(callback):
+                await callback(event)
+            else:
+                callback(event)
         return event
 
 
@@ -350,7 +354,7 @@ class FakeAgentRunner:
         agent = _Agent(model)
         cycles = total_tokens = output_tokens = 0
         for turn in self.turns:
-            cancel = hooks.dispatch(_BeforeModelCall(agent)).cancel
+            cancel = (await hooks.dispatch(_BeforeModelCall(agent))).cancel
             if cancel:
                 # A terminal verb has run and the guard ended the turn, so the
                 # SDK never calls the MODEL. It does still synthesise an
@@ -368,15 +372,15 @@ class FakeAgentRunner:
             self.tool_choices.append(model.tool_choice)
             for name, args in turn.tool_calls:
                 if not turn.bypass_guard:
-                    veto = hooks.dispatch(_BeforeToolCall(name, args)).cancel_tool
+                    veto = (await hooks.dispatch(_BeforeToolCall(name, args))).cancel_tool
                     if veto:
                         # The model sees the correction and moves on — but the
                         # SDK still fires the after-tool hook for the cancelled
                         # call, so the guard still gets to decide what it costs.
-                        hooks.dispatch(_AfterToolCall(name, args, cancel_message=veto))
+                        await hooks.dispatch(_AfterToolCall(name, args, cancel_message=veto))
                         continue
                 await _invoke_tool(tools_by_name[name], **args)
-                hooks.dispatch(_AfterToolCall(name, args))
+                await hooks.dispatch(_AfterToolCall(name, args))
             cycles += 1
             total_tokens += turn.total_tokens
             output_tokens += turn.output_tokens
