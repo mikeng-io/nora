@@ -1,6 +1,7 @@
 from nora.agent.guards import ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.obs.metrics import Metrics
+from tests.test_guards_tool_call_log import _wrapped as _wrap_result
 
 BUDGETS = ToolRegistry().budgets()
 TERMINAL = ToolRegistry().terminal_tools()
@@ -359,9 +360,6 @@ def test_the_context_nudge_does_not_spend_make_artifacts_own_budget():
 # ---- R-45 extended for recall_lookups (tool-recall-log spec §5) ----
 
 
-from tests.test_guards_tool_call_log import _wrapped as _wrap_result
-
-
 def _wrapped_ok_recall():
     return _wrap_result({"status": "ok", "entries": [{"tool_name": "place_info"}]})
 
@@ -370,17 +368,25 @@ def _wrapped_nothing_found_recall():
     return _wrap_result({"status": "nothing_found"})
 
 
+class _RecallEvent:
+    """A mock AfterToolCallEvent for recall_lookups testing."""
+
+    def __init__(self, result):
+        self.tool_use = {"name": "recall_lookups", "input": {}}
+        self.result = result
+        self.cancel_message = None
+        self.exception = None
+
+
 def test_a_successful_recall_lookups_also_triggers_the_nudge():
     g = _guard()
-    g.record("recall_lookups")
-    g._recall_found_something = True
+    g._after_tool(_RecallEvent(_wrapped_ok_recall()))
     msg = g.evaluate("make_artifact", {"task": "build a report"})
     assert msg is not None
 
 
 def test_a_nothing_found_recall_lookups_does_not_trigger_the_nudge():
     g = _guard()
-    g.record("recall_lookups")
-    g._recall_found_something = False
+    g._after_tool(_RecallEvent(_wrapped_nothing_found_recall()))
     msg = g.evaluate("make_artifact", {"task": "build a report"})
     assert msg is None
