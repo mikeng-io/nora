@@ -62,6 +62,7 @@ def test_the_registry_exposes_every_declared_tool():
     assert {t.tool_name for t in tools} == {
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
+        "recall_lookups",
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
@@ -92,6 +93,10 @@ def test_budgets_match_todays_table():
         # 1 — the dialectic reasoning verb is slow (~14-19s), so one call per
         # turn is the ceiling; it is the escalation from `about` (design/24 §4).
         "ask_memory": 1, "search_memory": 4,
+        # 2 (tool-recall-log spec §4): the same shape `ask_memory`'s own
+        # note describes for a recall verb — run once, notice a different
+        # `limit` is needed, run once more.
+        "recall_lookups": 2,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.

@@ -70,6 +70,7 @@ from ..domain.reminders import (
     UnknownRecurrenceZoneError,
     remaining_occurrences,
 )
+from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
 from .arithmetic import evaluate as evaluate_expression
@@ -372,6 +373,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                    "reaches — a phrase or a topic; not a profile "
                                    "(«about») and not a reasoned answer («ask_memory»)",
                                 source_tier="remembered"),
+    # 2 (tool-recall-log spec §4): run once, notice a different `limit` is
+    # needed, run once more — the same shape `ask_memory`'s own budget
+    # note describes for a recall verb. NOT time_shiftable (a recalled
+    # lookup either exists for this conversation or it doesn't; there's no
+    # "ask about later" version of "what did I already check"). Not
+    # terminal. `source_tier=None`: this isn't a fact SOURCE of its own —
+    # it reads what another cacheable tool already sourced.
+    "recall_lookups": NativeTool(2, "something you or an earlier turn already "
+                                    "looked up in this conversation, within the "
+                                    "last 7 days — call this before re-running "
+                                    "place_info/route/web_search/weather/transit "
+                                    "for something that might already be known"),
     # 2, sized like the other look-it-up tools: one message can name two images
     # (a photo AND a screenshot), and two describe calls plus a reply still leave
     # the turn. The number is not what keeps two calls inside the loop budget —
@@ -594,6 +607,13 @@ LOAD_TRANSCRIPT_DEFAULT = 25
 # names directly rather than threading a new hook through production code.
 _SYNC_POLL_SECONDS = 15.0
 _SYNC_POLL_INTERVAL = 1.0
+
+# `recall_lookups`'s own clamp (tool-recall-log spec §4) — smaller than
+# `LOAD_TRANSCRIPT_MAX` (60) because a logged tool result is denser than
+# one transcript message.
+RECALL_LOOKUPS_DEFAULT = 10
+RECALL_LOOKUPS_MAX = 30
+RECALL_LOOKUPS_WINDOW_DAYS = 7
 
 # Honcho's dialectic reasoning levels (DialecticOptions.reasoning_level), from
 # the live schema. `ask_memory` lets the model pick; anything off-list falls back
@@ -1171,6 +1191,7 @@ def build_tool_specs(
     giphy_source: GifSource | None = None,
     compute_backend: ComputeBackend | None = None,
     compute_jobs: ComputeJobStore | None = None,
+    tool_call_log_store: ToolCallLogStore | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -1203,6 +1224,11 @@ def build_tool_specs(
     offline/eval compositions and any composition that has not wired Nora
     Compute, which is exactly what makes `make_artifact` answer `unavailable`
     (R-5) rather than crash.
+
+    `tool_call_log_store` is `recall_lookups`'s own collaborator (tool-recall-log
+    spec §4), wired the identical way: `None` in the offline/eval compositions
+    and any composition that has not wired the tool-recall log, which is what
+    makes `recall_lookups` answer `unavailable` (R-5) rather than crash.
     """
     caps = reminder_caps or ReminderCaps()
     now_fn = clock or utc_now
@@ -3023,6 +3049,42 @@ def build_tool_specs(
         _record(metrics, "cancel_reminder", "ok")
         return {"status": "ok"}
 
+    async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
+        """Pull back facts you (or an earlier turn) already looked up in
+        THIS conversation, within the last 7 days — a place's rating, a
+        route's duration, a web search's results. Call this before
+        re-running place_info/route/web_search/weather/transit for
+        something that might already be known: reusing what you already
+        have costs nothing; re-searching costs a live call and may not
+        even find the same result twice.
+
+        Args:
+            limit: how many recent lookups to pull back, newest first.
+                Defaults to 10; capped regardless of what you ask for.
+        """
+        if tool_call_log_store is None:
+            _record(metrics, "recall_lookups", "unavailable")
+            return {"status": "unavailable"}
+        clamped = max(1, min(limit, RECALL_LOOKUPS_MAX))
+        since = datetime.now(UTC) - timedelta(days=RECALL_LOOKUPS_WINDOW_DAYS)
+        rows = await tool_call_log_store.recent(
+            conversation_id=bound_conversation_id, since=since, limit=clamped,
+        )
+        if not rows:
+            _record(metrics, "recall_lookups", "nothing_found")
+            return {"status": "nothing_found"}
+        now_ts = datetime.now(UTC)
+        entries = [
+            {
+                "tool_name": r.tool_name, "tool_input": r.tool_input,
+                "tool_result": r.tool_result,
+                "age_seconds": (now_ts - r.created_at).total_seconds(),
+            }
+            for r in rows
+        ]
+        _record(metrics, "recall_lookups", "ok", count=len(entries))
+        return {"status": "ok", "entries": entries}
+
     async def make_artifact(
         task: str, context: list[dict] | None = None, artifact_id: str | None = None,
     ) -> dict:
@@ -3317,6 +3379,7 @@ def build_tool_specs(
         _spec("about", about),
         _spec("ask_memory", ask_memory),
         _spec("search_memory", search_memory),
+        _spec("recall_lookups", recall_lookups),
         _spec("media_fetch", media_fetch),
         _spec("web_search", web_search),
         _spec("weather", weather),

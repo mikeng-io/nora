@@ -32,6 +32,7 @@ from typing import Any
 from ..domain.compute import ComputeJobStore
 from ..domain.ports import BlobStore, ComputeBackend, GifSource, SearchProvider, WeatherProvider
 from ..domain.reminders import ReminderCaps, ReminderStore
+from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.routes import RouteClient
 from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
@@ -85,6 +86,7 @@ class ToolRegistry:
         reminder_caps: ReminderCaps | None = None,
         compute_backend: ComputeBackend | None = None,
         compute_jobs: ComputeJobStore | None = None,
+        tool_call_log_store: ToolCallLogStore | None = None,
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
@@ -173,6 +175,12 @@ class ToolRegistry:
         # None and `make_artifact` answers `unavailable` (R-5).
         self._compute_backend = compute_backend
         self._compute_jobs = compute_jobs
+        # `recall_lookups`'s own collaborator (tool-recall-log spec §4), wired
+        # the identical honest way `compute_backend`/`compute_jobs` are: `None`
+        # in the offline/eval compositions and any composition that has not
+        # wired the tool-recall log, which is what makes `recall_lookups`
+        # answer `unavailable` (R-5) rather than crash.
+        self._tool_call_log_store = tool_call_log_store
         # §9's three anti-runaway caps, as the DOMAIN value — never
         # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
         # read config" contract names `nora.agent` as a source module and
@@ -495,6 +503,7 @@ class ToolRegistry:
             versions=self._versions,
             giphy_source=self._giphy,
             compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,
+            tool_call_log_store=self._tool_call_log_store,
         )
 
     def build(

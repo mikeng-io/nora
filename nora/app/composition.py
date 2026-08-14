@@ -312,9 +312,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # (`compute_backend`, further down) is behind the flag.
     compute_jobs: ComputeJobStore = SqlComputeJobStore(engine)
     # Second consumer wired here (EngagementPipeline/FirePath, via
-    # deliver.build); a THIRD — ToolRegistry(...) below, for
-    # recall_lookups — is wired in the tool-recall-log plan's Task 7,
-    # once ToolRegistry.__init__ accepts the keyword.
+    # deliver.build); the THIRD — ToolRegistry(...) below, for
+    # recall_lookups — is Task 7's own wiring.
     tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
 
     try:
@@ -761,6 +760,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # `[compute] enabled` is false — the tool answers `unavailable` in
         # that case (R-5), never a silent no-op.
         compute_backend=compute_backend, compute_jobs=compute_jobs,
+        # The third consumer of `tool_call_log_store` (Task 6 Step 8 wired the
+        # first two: EngagementPipeline/FirePath, via `deliver.build`) —
+        # `recall_lookups`'s own collaborator, tool-recall-log spec §4.
+        tool_call_log_store=tool_call_log_store,
         # §9's caps as the DOMAIN value. `nora.agent` may not import
         # `nora.config` (import-linter's "only app and __main__ read config"),
         # so THIS is the conversion point: `RemindersConfig`'s fields are
