@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "A turn where Nora looks several things up at once can no longer blow through its own limits and end up saying nothing at all.",
+  "details": [
+    "Her per-tool limits are now counted while a lookup is still running, not only once it has finished — so a burst of lookups fired together is held to the same ceiling as the same lookups made one after another.",
+    "One real turn was lost to this: asked for a dinner place and a second venue for drinks, she made nine place lookups against a limit of four, ran out of room mid-turn, and replied with nothing."
+  ],
+  "limitations": [
+    "Rare — it needs her to fire a large burst of lookups in one go, which she usually does not."
+  ]
+}

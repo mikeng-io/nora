@@ -390,3 +390,71 @@ def test_a_nothing_found_recall_lookups_does_not_trigger_the_nudge():
     g._after_tool(_RecallEvent(_wrapped_nothing_found_recall()))
     msg = g.evaluate("make_artifact", {"task": "build a report"})
     assert msg is None
+
+
+def test_a_parallel_batch_cannot_exceed_the_budget():
+    """R-7's ceiling must hold WITHIN one model turn, not only between turns.
+
+    Every other budget test in this file loops `evaluate` -> `record` ->
+    `evaluate`, which is the SEQUENTIAL shape. A model emitting its tool calls
+    as a parallel batch produces a different one: the guard is asked about
+    every call in the batch before any of them completes, so with `record`
+    firing only in `AfterToolCallEvent` they all saw the pre-batch count and
+    all passed.
+
+    Found in a live Langfuse trace (2026-08-13): NINE `place_info` calls
+    against a budget of four, in two batches, carrying the turn to 148k input
+    tokens against a 128k ceiling. It ended `limit_total_tokens` with an empty
+    message, so the group heard nothing — R-23's shape, and the worst way for
+    a budget to fail.
+
+    PROBE: delete the `_in_flight` term from `evaluate`'s ceiling check and
+    this goes red while every sequential budget test above stays green.
+    """
+    g = _guard()
+
+    admitted = 0
+    for _ in range(9):                       # one batch, nothing completes yet
+        if g.evaluate("place_info", {"name": "x"}) is None:
+            admitted += 1
+            g.reserve("place_info")
+
+    assert admitted == BUDGETS["place_info"], (
+        f"a parallel batch admitted {admitted} calls against a budget of "
+        f"{BUDGETS['place_info']}"
+    )
+
+
+def test_an_admitted_call_that_never_completes_gives_its_budget_back():
+    """DEC-33's rule, which the reservation must not break: budget is spent by
+    a call that RAN, not by one that was admitted. A veto, an exception, or a
+    cancelled call releases its hold — otherwise a failed first attempt would
+    silently cost the model a retry it is entitled to.
+    """
+    g = _guard()
+
+    g.evaluate("place_info", {"name": "x"})
+    g.reserve("place_info")
+    g.release("place_info")                  # it never ran
+
+    admitted = 0
+    for _ in range(BUDGETS["place_info"]):
+        assert g.evaluate("place_info", {"name": "x"}) is None
+        g.reserve("place_info")
+        admitted += 1
+    assert admitted == BUDGETS["place_info"], "the whole budget must still be there"
+
+
+def test_the_veto_names_the_number_it_is_counting():
+    """A batch's fifth call vetoed with «you already called it 0 time(s)» is a
+    sentence that contradicts itself, and a model reads that as a reason to
+    retry. The number quoted is finished PLUS in-flight."""
+    g = _guard()
+    for _ in range(BUDGETS["place_info"]):
+        g.evaluate("place_info", {"name": "x"})
+        g.reserve("place_info")
+
+    message = g.evaluate("place_info", {"name": "x"})
+
+    assert message is not None
+    assert f"{BUDGETS['place_info']} time(s)" in message

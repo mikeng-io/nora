@@ -630,6 +630,11 @@ class ReplyGuard(HookProvider):
         self._deliverer = deliverer
         self._metrics = metrics
         self.counts: dict[str, int] = dict.fromkeys(self._budgets, 0)
+        # Calls ADMITTED but not yet finished — see `reserve`. Separate from
+        # `counts` because a call that never runs must consume no budget
+        # (DEC-33) while still holding the ceiling closed while it is in
+        # flight.
+        self._in_flight: dict[str, int] = {}
         # Set by `_after_tool` when a terminal verb has actually RUN — not
         # when one was merely attempted. See `_before_model`.
         self._spoke = False
@@ -672,6 +677,37 @@ class ReplyGuard(HookProvider):
     def record(self, tool_name: str) -> None:
         if tool_name in self.counts:
             self.counts[tool_name] += 1
+
+    def reserve(self, tool_name: str) -> None:
+        """Mark a call ADMITTED BUT NOT YET FINISHED, so it counts against the
+        ceiling while it runs.
+
+        R-7's budget check reads `counts`, which `record` only increments in
+        `AfterToolCallEvent`. A model that emits its tool calls as a PARALLEL
+        BATCH is therefore asked about every call in the batch before any of
+        them completes — so all of them see the pre-batch count, all pass, and
+        the ceiling holds only BETWEEN model turns, not within one.
+
+        Found in a live Langfuse trace (2026-08-13): nine `place_info` calls
+        against a budget of four, in two batches, which carried the turn to
+        148k input tokens against a 128k ceiling. It ended
+        `limit_total_tokens` with an empty message — so the group heard
+        nothing, which is R-23's shape and the worst way for a budget to fail.
+
+        Separate from `counts` rather than folded into it because the two mean
+        different things and DEC-33 depends on the difference: a call that is
+        vetoed or never runs must consume no budget, so a reservation is
+        RELEASED on those paths while `counts` is only ever incremented by a
+        call that genuinely completed.
+        """
+        if tool_name in self.counts:
+            self._in_flight[tool_name] = self._in_flight.get(tool_name, 0) + 1
+
+    def release(self, tool_name: str) -> None:
+        """Drop a reservation, whatever the call's outcome. Idempotent below
+        zero because a hook that fires twice must not lend budget back."""
+        if self._in_flight.get(tool_name):
+            self._in_flight[tool_name] -= 1
 
     def evaluate(self, tool_name: str, tool_input: dict) -> str | None:
         if tool_name not in self._budgets:
@@ -730,7 +766,10 @@ class ReplyGuard(HookProvider):
         # and the latch below is what refuses the second message once it is
         # raised. Both halves are pinned in `tests/test_guards_replyguard.py`,
         # under "the message cap lives in the budget, not in R-2's latch".
-        if self.counts[tool_name] >= self._budgets[tool_name]:
+        # `counts` (finished) PLUS `_in_flight` (admitted, still running). The
+        # second term is what makes the ceiling hold inside one model turn's
+        # parallel batch — see `reserve`.
+        if self.counts[tool_name] + self._in_flight.get(tool_name, 0) >= self._budgets[tool_name]:
             if tool_name == "send_reply":
                 # Labelled R-2 although the BUDGET is what refused it: the
                 # model-facing sentence is the same either way, and the rule an
@@ -754,9 +793,14 @@ class ReplyGuard(HookProvider):
                            "again. If you still need something, use one of the "
                            "other tools; otherwise finish your turn.",
                 )
+            # The number the model is TOLD is finished plus in-flight, not
+            # `counts` alone. Vetoing the fifth call of a parallel batch while
+            # saying "you already called it 0 time(s)" is a sentence that
+            # contradicts itself, and the model reads it as a reason to retry.
+            spent = self.counts[tool_name] + self._in_flight.get(tool_name, 0)
             return self._veto(
                 "R-7", f"You already called {tool_name} "
-                       f"{self.counts[tool_name]} time(s) and have that context. "
+                       f"{spent} time(s) and have that context. "
                        "Answer from what you already have.",
             )
 
@@ -940,6 +984,14 @@ class ReplyGuard(HookProvider):
             message = self.evaluate(name, tool_input)
             if message:
                 event.cancel_tool = message
+                return
+            # ADMITTED. Held against the ceiling from here until `_after_tool`
+            # releases it, so the rest of a parallel batch is measured against
+            # this call too. The mutation lives HERE rather than in `evaluate`
+            # on purpose: `evaluate` is pure and SDK-free so every rule stays
+            # testable without strands, and this hook is the thin translation
+            # layer that owns lifecycle.
+            self.reserve(name)
         except Exception:
             log.exception("ReplyGuard._before_tool raised; allowing the call")
 
@@ -963,9 +1015,12 @@ class ReplyGuard(HookProvider):
             # budget check with "you already sent your reply". One recoverable
             # mistake, and the RECOVERY was what got blocked — silently, since
             # under R-5 the group just hears nothing.
+            name = (getattr(event, "tool_use", None) or {}).get("name", "")
+            # The reservation goes back on EVERY path — vetoed, failed, or
+            # done. It is not budget; it is "this call is still running".
+            self.release(name)
             if getattr(event, "cancel_message", None) is not None:
                 return
-            name = (getattr(event, "tool_use", None) or {}).get("name", "")
             self.record(name)
             if name == "recall_lookups":
                 self._recall_found_something = (
