@@ -180,6 +180,85 @@ async def test_the_prune_sweep_actually_prunes(pg_url, monkeypatch):
         await store.aclose()
 
 
+async def _run_briefly_and_record_prune_wiring(env, monkeypatch) -> list[dict]:
+    """Drive `App.run()` far enough to reach its background spawns, with
+    `runtime.prune_loop` replaced by a recorder.
+
+    A spy rather than a row count on purpose: the question here is the WIRING
+    (does `App.run` spawn the sweep at all), which is a different question from
+    `test_the_prune_sweep_actually_prunes` above — that one drives `prune_loop`
+    directly and stays green whether or not anything wires it in. Between the
+    two, both halves are covered: the sweep works, and the flag decides whether
+    it runs.
+    """
+    import asyncio
+    import contextlib
+
+    import nora.__main__ as main_module
+
+    calls: list[dict] = []
+
+    async def _never() -> None:
+        await asyncio.sleep(3600)
+
+    def _spy(*args: object, **kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        return _never()
+
+    monkeypatch.setattr(main_module.runtime, "prune_loop", _spy)
+    app = await build_app(env)
+    try:
+        task = asyncio.create_task(app.run())
+        for _ in range(50):
+            await asyncio.sleep(0.02)
+            if calls:
+                break
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    finally:
+        await app.shutdown()
+    return calls
+
+
+async def test_the_retention_sweep_is_not_spawned_when_the_flag_is_off(env, monkeypatch):
+    """`store.prune_enabled = false` must stop the sweep being wired in at all.
+
+    Not merely widened: `prune_all` runs a `row_number()` window over the WHOLE
+    `messages` table on every tick, so a huge `max_per_conversation` would keep
+    paying for that scan forever in order to delete nothing. The flag has to
+    reach the spawn, which is what this asserts.
+    """
+    import tomllib
+
+    import tomli_w
+
+    cfg = tomllib.loads(env.read_text())
+    cfg["store"]["prune_enabled"] = False
+    env.write_text(tomli_w.dumps(cfg))
+
+    assert await _run_briefly_and_record_prune_wiring(env, monkeypatch) == [], (
+        "prune_enabled = false must not spawn the retention sweep"
+    )
+
+
+async def test_the_retention_sweep_is_spawned_when_the_flag_is_on(env, monkeypatch):
+    """The control for the test above — without it, deleting the spawn entirely
+    would leave that one green and this file would assert nothing about pruning
+    ever happening. `config.example.toml` carries no `prune_enabled`, so this
+    also pins the DEFAULT: absent means enabled, i.e. today's behaviour."""
+    import tomllib
+
+    cfg = tomllib.loads(env.read_text())
+    assert "prune_enabled" not in cfg["store"], (
+        "this test's point is the DEFAULT; the fixture must not set the flag"
+    )
+
+    assert await _run_briefly_and_record_prune_wiring(env, monkeypatch), (
+        "an unset prune_enabled must keep spawning the retention sweep"
+    )
+
+
 async def test_app_run_spawns_the_lazy_adoption_backfill(env, monkeypatch):
     """The wiring, not the coroutine: build the real app, audit a message from a
     sender identity.toml *does* know, then drive `App.run()` long enough for the

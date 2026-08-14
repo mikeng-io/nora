@@ -236,6 +236,17 @@ database_url_env = "DATABASE_URL"
 data_dir = "data"
 max_per_conversation = 500
 context_window = 40
+# OFF: the conversation record is kept in full. `max_per_conversation` above is
+# the window the sweep WOULD trim to and stays here so re-enabling is one word,
+# but nothing prunes while this is false.
+#
+# Measured 2026-08-15, which is why it is off: the busy group was sitting at
+# exactly 500 rows — at the cap, evicting its oldest message every time a new one
+# arrived, on a sweep that runs every 300s — with its earliest surviving message
+# only eight days old and ids below 121 already gone. History is the input to
+# everything downstream (the transcript window's own past, any consolidator built
+# on the record), and a rolling 500 is not history.
+prune_enabled = false
 
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version

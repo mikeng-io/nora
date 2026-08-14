@@ -126,6 +126,21 @@ database_url_env = "DATABASE_URL"
 data_dir = "~/workspace/nora/data"
 max_per_conversation = 500
 context_window = 40
+# Whether the retention sweep runs at all. Defaults TRUE (this file's convention:
+# a config.toml written before a key existed keeps its behaviour), so leaving it
+# out prunes to `max_per_conversation` above every 300s.
+#
+# Set it false to keep the conversation record IN FULL. That is a real decision,
+# not a tuning knob: at 500 rows a busy group reaches the cap in days and then
+# evicts its oldest message every time a new one lands, silently — the record
+# still looks healthy, it is just a rolling window rather than a history. Turn it
+# off if anything downstream reads the past (an aggregator over the record, an
+# audit, an export), and watch disk instead.
+#
+# Do NOT fake it by widening `max_per_conversation`: `prune_all` runs a
+# `row_number()` window over the whole `messages` table on every tick, so a huge
+# number keeps paying for that scan in order to delete nothing.
+# prune_enabled = false
 
 # Attachment byte custody (DEC-43), encrypted at rest (DEC-47). The WHOLE
 # SECTION IS OPTIONAL — every key below is its own default — so a config.toml
@@ -147,8 +162,13 @@ context_window = 40
 # names an env var holding a valid key; a missing/malformed key degrades to
 # custody OFF (never plaintext-by-accident, never a crash).
 #
-# RETENTION IS NOT DECIDED. `store.max_per_conversation` prunes MESSAGES; no
-# sweep deletes blobs yet, so today this grows without bound. That is DEC-43's
+# RETENTION IS NOT DECIDED, and `store.prune_enabled = false` sharpens it: with
+# the message sweep off, NOTHING in the system deletes anything, and blobs are
+# far larger than rows. Even with it on, `store.max_per_conversation` prunes
+# MESSAGES only — no sweep deletes blobs, so today this grows without bound in
+# either configuration. The blob outliving the row that named it is the shape to
+# watch for: a message pruned or an export taken leaves bytes on disk that
+# nothing references and nothing will ever collect. That is DEC-43's
 # open question and it is the operator's to answer — this is the most PII-heavy
 # data in the system. `enabled = false` is the honest off switch in the
 # meantime: attachments are then recorded exactly as before (a placeholder, no

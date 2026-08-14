@@ -315,6 +315,25 @@ class StoreConfig(BaseModel):
     data_dir: Path
     max_per_conversation: int
     context_window: int
+    # Whether the retention sweep runs AT ALL. `max_per_conversation` is the
+    # window when it does; this is the switch, and the two are separate keys on
+    # purpose — «keep everything» is not expressible as a number. Widening the
+    # window to fake it keeps `prune_all`'s `row_number()` scan over the whole
+    # `messages` table running every tick in order to delete nothing, and leaves
+    # a figure in the file that reads like a policy nobody holds.
+    #
+    # Defaults TRUE, which is this file's convention (a config.toml written
+    # before a key existed keeps its behaviour), NOT a recommendation: at
+    # `max_per_conversation = 500` a busy group evicts its oldest message every
+    # time a new one lands, and on 2026-08-15 the deployed group was sitting at
+    # exactly 500 with its earliest surviving message eight days old. Anything
+    # that wants to read history — the transcript window's own past, a future
+    # consolidator — needs this OFF, and Nora's own config.toml sets it so.
+    #
+    # `SqlRecordStore.prune_all` and the `_PrunableStore` port stay wired
+    # either way; only the spawn in `__main__` is conditional, so turning this
+    # back on is a restart rather than a code change.
+    prune_enabled: bool = True
 
     @model_validator(mode="after")
     def _resolve_paths(self, info: ValidationInfo) -> StoreConfig:

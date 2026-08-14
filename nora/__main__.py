@@ -112,9 +112,16 @@ class App:
         # Nothing awaits it — a slow or failing backfill must not delay the
         # adapters coming up.
         deps.background.spawn(self._adopt_pending())
-        deps.background.spawn(runtime.prune_loop(
-            deps.audit, deps.metrics, interval_seconds=PRUNE_INTERVAL_SECONDS,
-        ))
+        # Conditional, unlike its neighbours: `store.prune_enabled = false` means
+        # the record is kept in full, and the sweep is not merely widened but
+        # never started — `prune_all` scans the whole `messages` table per tick,
+        # so a huge window would pay for that forever to delete nothing.
+        if self.cfg.store.prune_enabled:
+            deps.background.spawn(runtime.prune_loop(
+                deps.audit, deps.metrics, interval_seconds=PRUNE_INTERVAL_SECONDS,
+            ))
+        else:
+            log.info("retention sweep disabled (store.prune_enabled = false)")
         deps.background.spawn(runtime.debounce_sweep_loop(
             deps.debounce, deps.metrics,
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,
