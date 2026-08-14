@@ -37,6 +37,7 @@ class _FakeAdapter:
     async def send(
         self, *, target: ConversationTarget, text: str,
         mentions: tuple = (), styles: tuple = (), preview: object | None = None,
+        attachments: tuple = (),
     ) -> SendResult:
         self.sent.append((target, text))
         return SendResult(ok=self._succeed)

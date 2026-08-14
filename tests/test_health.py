@@ -147,3 +147,55 @@ def test_config_staleness_missing_file_never_raises_and_is_not_stale():
 
     out = config_staleness({"identity": "/nonexistent/identity.toml"}, started_at=0.0)
     assert out["identity"] == {"disk_mtime": None, "stale": False}
+
+
+class _DeafAdapter:
+    """A platform that is up enough to answer, and not connected."""
+
+    platform = "discord"
+
+    async def health(self):
+        from nora.domain.ports import AdapterHealth
+        return AdapterHealth(platform=self.platform, connected=False,
+                             last_event_age_seconds=None)
+
+    async def resolve_identity(self):
+        from nora.domain.ports import PlatformIdentity
+        return PlatformIdentity(platform=self.platform, primary="555000111")
+
+
+async def test_health_reports_every_enabled_platform(aiohttp_client, store):
+    """`/health` reported `deps.adapter` alone, so a second platform could be
+    wedged — Gateway down, every message dropped — while `/health` answered 200
+    on Signal's state. Additive: `sse` is untouched (`deploy/watchdog.sh` parses
+    it), `platforms` is the new per-platform block."""
+    from nora.doctrine.loader import DoctrineStore
+
+    metrics = Metrics()
+    signal = SinkSender()
+    app = build_health_app(
+        adapter=signal, adapters={"signal": signal, "discord": _DeafAdapter()},
+        store=store, honcho=FakeHoncho(),
+        doctrine_store=DoctrineStore(
+            __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
+        metrics=metrics, started_at=0.0, llm_state=LLMState(),
+    )
+    client = await aiohttp_client(app)
+    response = await client.get("/health")
+    body = await response.json()
+
+    assert set(body["platforms"]) == {"signal", "discord"}
+    assert body["platforms"]["discord"]["connected"] is False
+    assert body["platforms"]["discord"]["account"] == "555000111"
+    assert body["sse"]["platform"] == "signal", "the pinned sse block stays Signal's"
+    assert response.status == 503, (
+        "a platform Nora cannot hear on must make the process unhealthy — "
+        "Signal being up is not the whole answer once a second platform exists"
+    )
+
+
+async def test_health_platforms_defaults_to_the_single_adapter(client):
+    """No `adapters=` (every existing caller before this change) still reports
+    the one adapter, so the new block is never empty on a Signal-only deploy."""
+    body = await (await client.get("/health")).json()
+    assert set(body["platforms"]) == {"signal"}

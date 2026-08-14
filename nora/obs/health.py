@@ -49,10 +49,25 @@ def _sum_series(metrics, name: str) -> float:
 def build_health_app(
     *, adapter, store, honcho, doctrine_store, metrics, started_at: float,
     llm_state: LLMState,
+    adapters=None,
     identity_file: str | Path | None = None, policy_file: str | Path | None = None,
 ) -> web.Application:
     app = web.Application()
     app["adapter"] = adapter
+    # Every platform's adapter, keyed by name — ADDITIVE beside `adapter`, which
+    # stays the Signal one because `sse` is a pinned top-level contract
+    # (`deploy/watchdog.sh` parses `body['sse']['last_event_age_seconds']`;
+    # `tests/test_health.py::test_health_sse_key_set_is_pinned`). Without this a
+    # second platform could be wedged — Gateway down, every Discord message
+    # dropped — while `/health` reported 200 on Signal alone, which is exactly
+    # the silent wiring gap R-5 exists to make loud.
+    # `is not None`, so an explicitly empty mapping means "no platforms" rather
+    # than silently falling back to `adapter` — the fallback is for callers
+    # predating this parameter, not a way to mean nothing.
+    if adapters is not None:
+        app["adapters"] = dict(adapters)
+    else:
+        app["adapters"] = {adapter.platform: adapter} if adapter is not None else {}
     app["store"] = store
     app["honcho"] = honcho
     app["doctrine_store"] = doctrine_store
@@ -91,6 +106,30 @@ def build_health_app(
         if not sse.get("connected", False):
             healthy = False
 
+        # One entry per enabled platform, same three facts `sse` carries. A
+        # platform that cannot report at all is recorded disconnected rather
+        # than omitted — an absent key would read as "not enabled" and hide
+        # exactly the outage this block exists to surface. Every enabled
+        # platform counts toward `healthy`: Nora deaf on Discord is not a
+        # healthy Nora just because Signal happens to be up.
+        platforms = {}
+        for name, plat_adapter in a["adapters"].items():
+            try:
+                plat_health = await plat_adapter.health()
+                entry = {
+                    "connected": plat_health.connected,
+                    "last_event_age_seconds": plat_health.last_event_age_seconds,
+                }
+                try:
+                    entry["account"] = (await plat_adapter.resolve_identity()).primary
+                except Exception:              # noqa: BLE001 — a health check never raises
+                    entry["account"] = None
+            except Exception:                  # noqa: BLE001 — a health check never raises
+                entry = {"connected": False, "last_event_age_seconds": None, "account": None}
+            if not entry["connected"]:
+                healthy = False
+            platforms[name] = entry
+
         try:
             stats = await a["store"].stats()
             store = {"reachable": True, "rows": stats["messages"]}
@@ -114,6 +153,7 @@ def build_health_app(
 
         body = {
             "sse": sse,
+            "platforms": platforms,
             "store": store,
             "honcho": honcho_health,
             "omniroute": {"last_success_at": a["llm_state"].last_success_at},

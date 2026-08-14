@@ -710,6 +710,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
     _GaugeSpec("nora_last_event_age_seconds", "Seconds since the last ingest event."),
+    # The per-platform answer to the same question, added rather than folded
+    # into the line above as a label: that series is UNLABELLED on purpose —
+    # `deploy/watchdog.sh` parses it to decide whether to restart the process,
+    # and adding a label changes the series identity a live watchdog is
+    # matching on. This one covers every enabled platform, so a wedged Discord
+    # Gateway is alertable instead of invisible.
+    _GaugeSpec(
+        "nora_adapter_last_event_age_seconds",
+        "Seconds since the last ingest event, per platform.",
+        ("platform",),
+    ),
     # `Gauge`, not `Counter`, on purpose: prometheus-client's exposition format
     # unconditionally appends `_total` to every counter-typed series' rendered
     # name (`exposition.py::generate_latest`, hardcoded, not configurable —

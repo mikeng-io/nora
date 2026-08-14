@@ -195,11 +195,15 @@ class Dependencies:
     concrete class conforms to the port, not just a one-time `isinstance`
     name-check. `adapter` stays concrete (`SignalAdapter`, not
     `PlatformAdapter`) even though the platforms phase closed every gap
-    between them (`tests/contract/test_port_conformance.py`) — `nora.app`
-    still only ever builds one concrete adapter type, so there is nothing yet
-    for the port annotation to buy here; `nora.platform.registry.
-    AdapterRegistry` is where a second adapter type would actually need the
-    port. `persons`, `metrics`, `doctrine`, `doctrine_store`, `debounce`,
+    between them (`tests/contract/test_port_conformance.py`) — but no longer
+    because Signal is the only adapter this process builds. It isn't, as of
+    `design/discord-integration/`. It stays concrete because the few things
+    still reading it are Signal-specific BY CONSTRUCTION and should say so out
+    loud rather than pretend to be platform-neutral: `nora_sender_id`, the
+    signal-cli roster, and the `sse` block `/health` pins for the watchdog.
+    Everything that must work across platforms reads `registry` instead
+    (DEC-102) — so widening this field would hide the split rather than close
+    it. `persons`, `metrics`, `doctrine`, `doctrine_store`, `debounce`,
     `background`, `llm_state`, `ingest`, `engagement`, `dispatcher` stay
     concrete too: none has a port at all.
 
@@ -221,6 +225,12 @@ class Dependencies:
     engagement: EngagementPipeline
     dispatcher: Dispatcher
     adapter: SignalAdapter
+    # EVERY built adapter, keyed by platform. `adapter` above stays the concrete
+    # Signal one because a handful of call sites are still Signal-specific by
+    # construction (`nora_sender_id`, the signal-cli roster); this is what the
+    # paths that must not be — starting each listener, routing a reply back to
+    # the platform it came from, reporting health per platform — read instead.
+    registry: AdapterRegistry
     account: str
     doctrine: Doctrine
     doctrine_store: DoctrineStore
@@ -310,8 +320,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # (`compute_backend`, further down) is behind the flag.
     compute_jobs: ComputeJobStore = SqlComputeJobStore(engine)
 
+    # Resolved here, not inside AdapterRegistry — the same convention every
+    # other `*_env` secret (the LLM key, the route key) follows: composition.py
+    # reads the environment once and hands the already-resolved value to
+    # whatever constructs the client that needs it (design/discord-integration/).
+    discord_token = os.environ.get(cfg.platforms.discord.token_env, "")
     try:
-        registry = await AdapterRegistry.from_config(cfg.platforms, metrics=metrics)
+        registry = await AdapterRegistry.from_config(
+            cfg.platforms, metrics=metrics, discord_token=discord_token,
+        )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
     if "signal" not in registry:
@@ -321,7 +338,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # startup state yet, even though AdapterRegistry itself tolerates zero
         # enabled platforms.
         raise StartupError("no platform adapter is enabled (platforms.signal.enabled = false)")
-    adapter = registry.get("signal")
+    signal_adapter = registry.get("signal")
+    # `AdapterRegistry.get` returns the port type now that a second concrete
+    # adapter exists (design/discord-integration/) — narrowed back to the
+    # concrete class here because `Dependencies.adapter` stays SignalAdapter
+    # (nora.app still only ever builds Signal-specific tool wiring around it;
+    # see that field's own docstring). An internal invariant violation, not a
+    # config error, so it fails loudly rather than via a silent type lie.
+    if not isinstance(signal_adapter, SignalAdapter):
+        raise StartupError("internal error: registry's 'signal' entry is not a SignalAdapter")
+    adapter = signal_adapter
     # Static conformance proof (DEC-12): `isinstance` against a `runtime_checkable`
     # `Protocol` only checks method/attribute NAMES, not signatures
     # (tests/contract/test_port_conformance.py::
@@ -806,7 +832,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
     )
     engagement = EngagementPipeline(
-        adapter=adapter, audit=audit, memory=memory, persons=persons,
+        # EVERY built adapter, not just Signal's: a tag is answered on the
+        # platform it arrived from, and `registry.adapters` is exactly the set
+        # of platforms this process can both hear and speak on.
+        adapters=dict(registry.adapters),
+        audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
         # `allowlist` — policy.toml, the SAME instance the ingest pipeline
@@ -815,7 +845,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # at all (DEC-71).
         policy=allowlist,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        nora_sender_id=cfg.platforms.signal.nora_sender_id,
         ai_peer=cfg.memory.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
@@ -884,10 +913,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         fire_path = FirePath(
             persons=persons, records=audit, memory=memory,
             doctrine_store=doctrine_store, metrics=metrics,
-            runner=runner, adapter=adapter, registry=tool_registry,
+            runner=runner, adapters=dict(registry.adapters), registry=tool_registry,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-            nora_sender_id=cfg.platforms.signal.nora_sender_id,
-            ai_peer=cfg.memory.ai_peer,
+                ai_peer=cfg.memory.ai_peer,
             context_window=cfg.store.context_window,
             limits=limits,
             # `[heartbeat]`, not `[llm]`: nobody is waiting on a fire turn, so
@@ -926,14 +954,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # an arbitrary member of `ids`: `also_ids` holds the id forms a platform
         # RETIRED, and sending to one of those fails.
         #
-        # Filtered to the fire path's own platform, because `FirePath` holds one
-        # adapter: a conversation on a platform this process has no adapter for
-        # could be claimed and then never spoken into, which under R-42 would
-        # burn the announcement for good.
+        # Filtered to the platforms this process actually built an adapter for.
+        # The reason is unchanged now that `FirePath` routes per platform: a
+        # conversation on a platform with no adapter could be CLAIMED and then
+        # never spoken into, which under R-42 burns the announcement for good.
+        # What changed is that the answer is no longer the literal "signal" —
+        # an allowlisted Discord channel is announced into whenever Discord is
+        # enabled, and skipped when it is not.
         targets = tuple(
             AnnouncementTarget(platform=conv.platform, conversation_id=conv.primary_id)
             for conv in allowlist.conversations
-            if conv.platform == "signal" and conv.primary_id
+            if conv.platform in registry and conv.primary_id
         )
         announcer = VersionAnnouncer(
             manifest=version_manifest,
@@ -983,7 +1014,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
-        dispatcher=dispatcher, adapter=adapter, account=account, doctrine=doctrine,
+        dispatcher=dispatcher, adapter=adapter, registry=registry,
+        account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client,
     )

@@ -25,6 +25,8 @@ from __future__ import annotations
 import asyncio
 import time
 
+import pytest
+
 from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
@@ -104,6 +106,7 @@ class _FakeAdapter:
     async def send(
         self, *, target: ConversationTarget, text: str,
         mentions: tuple = (), styles: tuple = (), preview: object | None = None,
+        attachments: tuple = (),
     ) -> SendResult:
         self.sent.append((target, text))
         self.sent_mentions.append(tuple(mentions))
@@ -236,6 +239,7 @@ def _build_pipeline(
     memory=None,
     audit=None,
     adapter=None,
+    adapters=None,
     metrics=None,
     llm_state=None,
     timeout_seconds: float = 5.0,
@@ -255,8 +259,11 @@ def _build_pipeline(
     context_assembler = context_assembler or TranscriptInjection(
         audit=audit, memory=memory, persons=PERSONS, context_window=10, metrics=metrics,
     )
+    if adapters is None:
+        the_adapter = adapter or _FakeAdapter()
+        adapters = {the_adapter.platform: the_adapter}
     pipeline = EngagementPipeline(
-        adapter=adapter or _FakeAdapter(),
+        adapters=adapters,
         audit=audit,
         memory=memory,
         persons=PERSONS,
@@ -267,7 +274,6 @@ def _build_pipeline(
         debounce=Debounce(debounce_seconds, clock=clock or _FakeClock()),
         canary="CANARY-XYZ",
         display_name="Nora",
-        nora_sender_id="+8520000",
         ai_peer="nora",
         context_window=10,
         timeout_seconds=timeout_seconds,
@@ -1656,3 +1662,110 @@ async def test_the_scripted_double_returns_the_cancel_text_like_the_real_sdk():
     assert stop_reason == "end_turn"
     assert final_text == "Reply already sent — the turn is finished."
     assert guard.cancelled_model_call is True     # and the setter really fires
+
+
+# ---------------------------------------------------------------------------
+# per-platform outbound routing
+# ---------------------------------------------------------------------------
+
+
+class _DiscordFakeAdapter(_FakeAdapter):
+    """A second platform, identical in every respect except which one it is.
+
+    Subclassing `_FakeAdapter` rather than re-declaring it is the point: the
+    two doubles cannot drift apart, so a test that shows a reply landing on one
+    and not the other is showing ROUTING, not two differently-shaped fakes.
+    """
+
+    platform = "discord"
+
+
+def _discord_msg(conversation_id: str = "111/222") -> NormalizedMessage:
+    """`<guild_id>/<channel_id>`, the convention `policy.example.toml` already
+    documents for a Discord room."""
+    return NormalizedMessage(
+        platform="discord", conversation_id=conversation_id, conversation_type="group",
+        sender_id="900001", sender_name="Miles", timestamp=1,
+        body="nora.000 幾點食飯", raw={},
+    )
+
+
+async def test_a_discord_tag_is_answered_on_discord_not_signal():
+    """The defect this whole mapping exists for.
+
+    `EngagementPipeline` held ONE adapter until Nora reached a second platform,
+    so every reply left on Signal regardless of where its tag arrived — a
+    Discord question answered into a Signal group, in front of people who never
+    asked it. Both adapters are wired here and only one may speak.
+    """
+    signal_adapter = _FakeAdapter()
+    discord_adapter = _DiscordFakeAdapter()
+    pipeline, *_ = _build_pipeline(
+        adapters={"signal": signal_adapter, "discord": discord_adapter},
+    )
+
+    await pipeline.run(_request(_discord_msg()))
+
+    assert discord_adapter.texts == ["今晚七點半得"], (
+        "a Discord tag must be answered through the Discord adapter"
+    )
+    assert signal_adapter.sent == [], (
+        "the Signal adapter must not see a Discord conversation's reply"
+    )
+
+
+async def test_a_signal_tag_still_goes_to_signal_when_discord_is_also_wired():
+    """The other direction, because a routing bug that sent EVERYTHING to the
+    newest adapter would pass the test above on its own."""
+    signal_adapter = _FakeAdapter()
+    discord_adapter = _DiscordFakeAdapter()
+    pipeline, *_ = _build_pipeline(
+        adapters={"signal": signal_adapter, "discord": discord_adapter},
+    )
+
+    await pipeline.run(_request(_msg()))
+
+    assert signal_adapter.texts == ["今晚七點半得"]
+    assert discord_adapter.sent == []
+
+
+async def test_each_platform_resolves_its_own_identity_for_the_self_tag_check():
+    """R-12 tests membership in the TAGGING platform's alias set.
+
+    Resolving Signal's identity for a Discord tag would compare a Discord
+    sender id against Signal aliases — an id space it shares nothing with — so
+    Nora could neither recognise her own Discord messages nor be certain she
+    was recognising anyone else's. Distinct accounts make the mix-up visible.
+    """
+    signal_adapter = _FakeAdapter(account="+852000")
+    discord_adapter = _DiscordFakeAdapter(account="555000111")
+    pipeline, *_ = _build_pipeline(
+        adapters={"signal": signal_adapter, "discord": discord_adapter},
+    )
+
+    assert (await pipeline._adapter_for("discord").resolve_identity()).primary == "555000111"
+    assert (await pipeline._adapter_for("signal").resolve_identity()).primary == "+852000"
+
+
+async def test_an_unwired_platform_refuses_rather_than_picking_an_adapter():
+    """Fail closed, loudly. A fallback to «whatever adapter is wired» is the
+    exact bug the mapping replaced, so the absence of a route must raise rather
+    than quietly deliver a reply into a room on another platform (R-5: a reply
+    sent to the wrong group is a wrong answer made public)."""
+    signal_adapter = _FakeAdapter()
+    pipeline, *_ = _build_pipeline(adapters={"signal": signal_adapter})
+
+    with pytest.raises(KeyError, match="discord"):
+        pipeline._adapter_for("discord")
+
+    # And the whole turn refuses the same way rather than degrading into a
+    # send on the wrong platform. `run` raises rather than absorbing it: the
+    # lookup happens before the turn's own guard block, and in production `run`
+    # is spawned through `BackgroundTasks`, whose done-callback logs the
+    # failure — loud, and with nothing delivered.
+    with pytest.raises(KeyError, match="discord"):
+        await pipeline.run(_request(_discord_msg()))
+
+    assert signal_adapter.sent == [], (
+        "an unroutable tag must not fall back to another platform's adapter"
+    )

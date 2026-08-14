@@ -95,7 +95,11 @@ def build_offline_pipeline(
     tool_registry = tool_registry if tool_registry is not None else ToolRegistry(
         budget_overrides=cfg.llm.budgets)
     engagement = EngagementPipeline(
-        adapter=adapter, audit=audit, memory=memory, persons=persons,
+        # One adapter, keyed by the platform it declares itself to be: an
+        # offline harness replays a single platform's traffic, so this is the
+        # whole routing table rather than a degenerate case of it.
+        adapters={adapter.platform: adapter},
+        audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
         # `permissive_policy()`, matching `ingest`'s `allowlist` above: an
@@ -106,7 +110,6 @@ def build_offline_pipeline(
         # to exercise MCP scoping supplies its own `EngagementPipeline`.
         policy=permissive_policy(),
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        nora_sender_id=cfg.platforms.signal.nora_sender_id,
         ai_peer=cfg.memory.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, metrics=metrics, spawn=background.spawn, llm_state=None,

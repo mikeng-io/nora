@@ -182,6 +182,9 @@ RULE_TESTS = {
     # R-44 was withdrawn 2026-08-14 (the prior occupant of this range); the
     # next free number is R-45, not a reuse.
     "R-45": "test_make_artifact_is_nudged_once_when_context_is_empty_after_gathering",
+    # design/discord-integration/ — a reply leaves on the platform its tag
+    # arrived on; an unroutable platform refuses rather than falling back.
+    "R-46": "test_a_discord_tag_is_answered_on_discord_not_signal",
 }
 
 

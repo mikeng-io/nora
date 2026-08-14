@@ -18,9 +18,11 @@ name = "nora"
 [platforms.signal]
 base_url = "http://signal-cli:18080"
 account = "+85290000100"         # Nora's Signal number (the linked account)
-nora_sender_id = "nora"          # how Nora's own rows are tagged in the audit
-enabled = true                   # NOT YET HONOURED — SignalAdapter starts regardless;
-                                  # wiring lands with the Phase 4 adapter registry
+enabled = true                   # honoured by the adapter registry (DEC-102)
+
+[platforms.discord]
+enabled = true                   # Zone 42 + Ridgeline test, see policy.toml
+token_env = "DISCORD_BOT_TOKEN"  # env var name, never the token itself
 
 [memory]
 base_url = "http://host.docker.internal:8000"
@@ -401,6 +403,12 @@ api_key_env = "GOOGLE_MAPS_API_KEY"
 # an identity not in the circle simply cannot be located, by design.
 enabled = true
 cadence_seconds = 90
+# Adaptive cadence (design/19 §4.1): floor while a circle has a driver, ceiling
+# once it's been still long enough to hit the ramp. cadence_seconds above stays
+# the base for the SEPARATE ban-safe backoff (cadence_seconds * 2^auth_failures),
+# not the steady-state poll interval anymore.
+cadence_moving_seconds = 5
+cadence_still_seconds = 60
 retention_days = 180
 # On-demand LIVE refresh (DEC-67): where_is pings the phone for a fresh position
 # before answering, so it reports where they ARE, not where they were last seen.

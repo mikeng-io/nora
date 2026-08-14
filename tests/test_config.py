@@ -124,7 +124,11 @@ def test_config_uses_the_target_shape(toml_path):
     # platforms replaces signal_cli, keyed by adapter name
     assert cfg.platforms.signal.base_url.startswith("http")
     assert cfg.platforms.signal.enabled is True
-    assert cfg.platforms.signal.nora_sender_id == "nora"
+    # `nora_sender_id` is GONE (DEC-102): Nora's id in her own rows now comes
+    # from the platform (`resolve_identity().primary`), never from a string an
+    # operator typed — with two platforms wired one configured name is
+    # necessarily wrong for one of them.
+    assert not hasattr(cfg.platforms.signal, "nora_sender_id")
     # memory replaces honcho
     assert cfg.memory.workspace_id == "nora"
     # store replaces buffer
@@ -200,6 +204,37 @@ def test_an_unknown_media_key_is_still_a_startup_failure(toml_path):
     """Defaulted does not mean lenient: a typo in this section must not
     silently mean "custody off"."""
     toml_path.write_text(toml_path.read_text() + '\n[media]\nenabledd = true\n')
+    with pytest.raises(ConfigError):
+        load(toml_path)
+
+
+def test_discord_platform_section_is_optional_and_defaults_to_disabled(toml_path):
+    """A config.toml written before Discord existed must still load — extra="forbid"
+    only forbids UNKNOWN keys, an absent optional section is fine (same probe
+    shape as test_the_media_section_is_optional_and_defaults_to_custody_on)."""
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[platforms.discord]\n")
+    assert tail, "config.example.toml no longer declares [platforms.discord]"
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
+
+    cfg = load(toml_path)
+
+    assert cfg.platforms.discord.enabled is False
+    assert cfg.platforms.discord.token_env == "DISCORD_BOT_TOKEN"  # noqa: S105 — an env-var NAME
+
+
+def test_discord_platform_can_be_enabled(toml_path):
+    toml_path.write_text(
+        toml_path.read_text().replace(
+            "[platforms.discord]\nenabled = false", "[platforms.discord]\nenabled = true"
+        )
+    )
+    assert load(toml_path).platforms.discord.enabled is True
+
+
+def test_an_unknown_discord_key_is_a_startup_failure(toml_path):
+    toml_path.write_text(toml_path.read_text() + '\n[platforms.discord]\nbot_tokenn = "x"\n')
     with pytest.raises(ConfigError):
         load(toml_path)
 
