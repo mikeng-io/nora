@@ -105,6 +105,13 @@ class StartupError(Exception):
 # two paths handed to `LocalDockerBackend` cannot name different directories.
 COMPUTE_WORKSPACE_DIRNAME = "compute-workspaces"
 
+# Id kinds whose VALUE the owner can change at will, and which therefore may
+# never be part of an identity match (operator, 2026-08-14). Nora's own
+# `PlatformIdentity.aliases` flattens every kind, so her Discord `username`
+# sits beside her snowflake in it — matching on that would let a rename, by
+# her or by anyone able to take the name, move who Nora is.
+MUTABLE_ID_KINDS = frozenset({"username"})
+
 
 def _compute_workspace_host_root(cfg: Config) -> Path:
     """The host-side path of whatever is bind-mounted at `store.data_dir`.
@@ -426,9 +433,25 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # policy — buys nothing here. R-12's self-tag check is the one that must
     # stay strictly per-platform, and it does: it reads the resolved identity
     # for the tag's own platform (DEC-102).
-    self_aliases = frozenset().union(
-        *(identity.aliases for identity in registry.identities.values())
-    ) if registry.identities else frozenset()
+    #
+    # IDENTITY IS MATCHED ON IMMUTABLE IDS ONLY — never a display name, never a
+    # handle (operator, 2026-08-14). `PlatformIdentity.aliases` deliberately
+    # FLATTENS every identifier kind, and `discord.self_id.derive_identity`
+    # puts her `username` in beside her snowflake — so `.aliases` carries a
+    # value its owner can change at will. Nothing routes on it today (a Discord
+    # mention arrives as an id, and a Signal quote carries an ACI), which is
+    # exactly what makes it dangerous: it is an inert trap that silently arms
+    # the first time any matcher compares a name. `identity.toml` already holds
+    # ids alone for every person; this keeps Nora's own set to the same
+    # standard.
+    self_aliases = frozenset(
+        identifier.value
+        for identity in registry.identities.values()
+        for identifier in identity.identifiers
+        if identifier.kind not in MUTABLE_ID_KINDS
+    ) | frozenset(
+        identity.primary for identity in registry.identities.values() if identity.primary
+    )
     policy = CompositePolicy((
         TriggerTextPolicy(cfg.engagement.trigger.text),
         MentionPolicy(self_aliases),
