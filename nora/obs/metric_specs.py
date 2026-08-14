@@ -92,6 +92,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec("nora_guard_vetoes_total", "ReplyGuard vetoes, by rule.", ("rule",)),
     _CounterSpec(
+        "nora_tool_call_log_writes_total",
+        "ToolCallLog write attempts (R-48), by tool and outcome (ok / failed).",
+        ("tool", "outcome"),
+    ),
+    _CounterSpec(
         "nora_leak_blocks_total", "Replies blocked by the doctrine/canary leak guard.",
     ),
     _CounterSpec(

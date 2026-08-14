@@ -33,11 +33,12 @@ from typing import Any
 from openai import AsyncOpenAI
 from strands import Agent, ModelRetryStrategy
 from strands.agent.conversation_manager import NullConversationManager
+from strands.hooks import HookCallback, HookProvider
 from strands.models.openai import OpenAIModel
 from strands.plugins import Plugin
 from strands.vended_plugins.skills import AgentSkills
 
-from .guards import ReplyGuard
+from .guards import ReplyGuard, ToolCallLog
 from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
@@ -282,6 +283,7 @@ def create_agent(
     tools: list,
     pre_fill: list[dict],
     guard: ReplyGuard,
+    tool_call_log: ToolCallLog | None = None,
     trace_attributes: dict,
     retry: RetryPolicy,
     skills_dir: str | Path | None = None,
@@ -322,6 +324,14 @@ def create_agent(
     plugins: list[Plugin] = (
         [AgentSkills(str(skills_dir), strict=False)] if skills_dir is not None else []
     )
+    # `list[HookProvider]`, explicitly — `[guard] + ([tool_call_log] if ...
+    # else [])` infers `list[ToolCallLog | ReplyGuard]`, which mypy's
+    # invariant-list check then refuses to hand to `Agent(hooks=...)`
+    # (`list[HookProvider | HookCallback[Any]] | None`) even though both
+    # elements ARE `HookProvider`s.
+    hooks: list[HookProvider | HookCallback[Any]] = [guard]
+    if tool_call_log is not None:
+        hooks.append(tool_call_log)
     return Agent(
         model=model,
         plugins=plugins,
@@ -349,7 +359,7 @@ def create_agent(
         # is out of scope for this fix. The dicts already have the right shape at
         # runtime; only the static type is being asserted here.
         messages=list(pre_fill),  # type: ignore[arg-type]
-        hooks=[guard],
+        hooks=hooks,
         conversation_manager=NullConversationManager(),
         session_manager=None,
         callback_handler=None,

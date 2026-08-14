@@ -18,7 +18,10 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import inspect
+import json
 from collections.abc import Callable
+from typing import Any
 
 
 def group_event(*, body: str, sender: str = "+852111", conv: str = "g1",
@@ -171,9 +174,12 @@ class _HookRegistry:
     def add_callback(self, event_type, callback) -> None:
         self.callbacks.setdefault(event_type.__name__, []).append(callback)
 
-    def dispatch(self, event):
+    async def dispatch(self, event):
         for callback in self.callbacks.get(event.sdk_event, ()):
-            callback(event)
+            if inspect.iscoroutinefunction(callback):
+                await callback(event)
+            else:
+                callback(event)
         return event
 
 
@@ -199,15 +205,21 @@ class _AfterToolCall:
     sdk_event = "AfterToolCallEvent"
 
     def __init__(self, name: str, tool_input: dict, *,
-                 cancel_message: str | None = None) -> None:
+                 cancel_message: str | None = None, result: Any = None) -> None:
         self.tool_use = {"name": name, "input": tool_input, "toolUseId": "t1"}
         self.exception = None
         self.cancel_message = cancel_message
-        self.result = (
-            {"toolUseId": "t1", "status": "error", "content": [{"text": cancel_message}]}
-            if cancel_message is not None
-            else {"toolUseId": "t1", "status": "success", "content": [{"text": "True"}]}
-        )
+        if cancel_message is not None:
+            self.result = {
+                "toolUseId": "t1", "status": "error", "content": [{"text": cancel_message}],
+            }
+        elif result is not None:
+            self.result = {
+                "toolUseId": "t1", "status": "success",
+                "content": [{"text": json.dumps(result)}],
+            }
+        else:
+            self.result = {"toolUseId": "t1", "status": "success", "content": [{"text": "True"}]}
 
 
 #: `nora.agent.tool_choice.FIRST_CALL`, transcribed rather than imported —
@@ -339,15 +351,18 @@ class FakeAgentRunner:
             raise self.raises
         tools_by_name = {t.tool_name: t for t in kwargs["tools"]}
         guard = kwargs["guard"]
+        tool_call_log = kwargs.get("tool_call_log")
         limits = kwargs.get("limits")
         hooks = _HookRegistry()
         guard.register_hooks(hooks)
+        if tool_call_log is not None:
+            tool_call_log.register_hooks(hooks)
         model = ScriptedModel()
         self.models.append(model)
         agent = _Agent(model)
         cycles = total_tokens = output_tokens = 0
         for turn in self.turns:
-            cancel = hooks.dispatch(_BeforeModelCall(agent)).cancel
+            cancel = (await hooks.dispatch(_BeforeModelCall(agent))).cancel
             if cancel:
                 # A terminal verb has run and the guard ended the turn, so the
                 # SDK never calls the MODEL. It does still synthesise an
@@ -365,15 +380,15 @@ class FakeAgentRunner:
             self.tool_choices.append(model.tool_choice)
             for name, args in turn.tool_calls:
                 if not turn.bypass_guard:
-                    veto = hooks.dispatch(_BeforeToolCall(name, args)).cancel_tool
+                    veto = (await hooks.dispatch(_BeforeToolCall(name, args))).cancel_tool
                     if veto:
                         # The model sees the correction and moves on — but the
                         # SDK still fires the after-tool hook for the cancelled
                         # call, so the guard still gets to decide what it costs.
-                        hooks.dispatch(_AfterToolCall(name, args, cancel_message=veto))
+                        await hooks.dispatch(_AfterToolCall(name, args, cancel_message=veto))
                         continue
-                await _invoke_tool(tools_by_name[name], **args)
-                hooks.dispatch(_AfterToolCall(name, args))
+                tool_result = await _invoke_tool(tools_by_name[name], **args)
+                await hooks.dispatch(_AfterToolCall(name, args, result=tool_result))
             cycles += 1
             total_tokens += turn.total_tokens
             output_tokens += turn.output_tokens

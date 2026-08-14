@@ -410,3 +410,37 @@ COMPUTE_JOBS = sa.Table(
 COMPUTE_JOBS_STATE_IDX = sa.Index(
     "idx_compute_jobs_state", COMPUTE_JOBS.c.state,
 )
+
+
+# `tool_call_log` — one row per successful call to a `cacheable=True` tool
+# (tool-recall-log spec §2, §7), scoped to one conversation and read back only
+# by `recall_lookups`, itself scoped to the same conversation.
+TOOL_CALL_LOG = sa.Table(
+    "tool_call_log",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("conversation_type", sa.Text, nullable=False),
+    sa.Column("tag_id", sa.Text, nullable=False),
+    sa.Column("tool_name", sa.Text, nullable=False),
+    sa.Column("tool_input", pg.JSONB, nullable=False),
+    sa.Column("tool_result", pg.JSONB, nullable=False),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+)
+
+# Declared after the table so the expression index can reference its
+# columns — same reason `IDX_CONV_TS` (messages) is. Excluded from Alembic
+# autogenerate by `migrations/env.py::include_object` (registered in
+# `_DESC_EXPRESSION_INDEXES`) for the identical reason
+# `idx_messages_conv_ts` is: autogenerate cannot see `sa.text("created_at
+# DESC")`'s per-column ordering and reports permanent phantom drift.
+# Authored by hand in `0010_tool_call_log`; its DESC ordering is asserted
+# from `pg_index.indoption` by `tests/infra/test_schema_parity.py`, the
+# same assertion `idx_messages_conv_ts`'s own row already gets.
+IDX_TOOL_CALL_LOG_CONV_TS = sa.Index(
+    "idx_tool_call_log_conv_ts", TOOL_CALL_LOG.c.conversation_id,
+    sa.text("created_at DESC"),
+)

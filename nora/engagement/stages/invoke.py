@@ -64,6 +64,7 @@ class AgentRunner(Protocol):
         tools: list,
         pre_fill: list[dict],
         guard: Any,
+        tool_call_log: Any = None,
         tag_message: str,
         limits: dict,
         ctx: TagContext,
@@ -78,6 +79,7 @@ async def run(
     tools: list,
     pre_fill: list[dict],
     guard: Any,
+    tool_call_log: Any = None,
     tag_message: str,
     limits: dict,
     ctx: TagContext,
@@ -119,6 +121,7 @@ async def run(
         stop_reason, final_text = await asyncio.wait_for(
             runner.invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
+                tool_call_log=tool_call_log,
                 tag_message=tag_message, limits=limits, ctx=ctx,
                 trace_attributes=build_trace_attributes(ctx, doctrine),
             ),

@@ -189,6 +189,12 @@ RULE_TESTS = {
     # told. Scoping the target to room membership answered «nobody here goes by
     # that» about a friend Nora knows and can locate.
     "R-47": "test_a_circle_member_who_is_not_in_the_room_can_still_be_asked_about",
+    # R-48: only a cacheable tool's successful call ever gets logged for later
+    # recall (tool-recall-log spec). Renumbered from a first-draft R-46 at
+    # merge time (2026-08-14) — R-46/R-47 above landed on master first, from
+    # a concurrent branch that minted them independently for an unrelated
+    # decision (Discord routing).
+    "R-48": "test_a_non_cacheable_tool_is_never_logged",
 }
 
 

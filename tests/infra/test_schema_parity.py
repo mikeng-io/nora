@@ -50,6 +50,9 @@ EXPECTED_DESC_INDEXES = {
     # `(circle_id, person_id, ts DESC)` index — covered here with no bespoke
     # test, exactly as this file's docstring promised it would be.
     "idx_presence_member_ts": {"circle_id": False, "person_id": False, "ts": True},
+    # tool_call_log (tool-recall-log spec §2, §7): the identically
+    # alembic-check-blind `(conversation_id, created_at DESC)` index.
+    "idx_tool_call_log_conv_ts": {"conversation_id": False, "created_at": True},
 }
 
 

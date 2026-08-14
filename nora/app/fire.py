@@ -86,6 +86,7 @@ from nora.domain.ports import (
     RosterSource,
 )
 from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
+from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
@@ -270,6 +271,7 @@ class FirePath:
         rosters: Mapping[str, RosterSource] | None = None,
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
+        tool_call_log_store: ToolCallLogStore | None = None,
     ) -> None:
         self._persons = persons
         self._records = records
@@ -317,6 +319,11 @@ class FirePath:
         # `deliver.build`'s `composer` does not.
         self._preview_source = preview_source
         self._llm_state = llm_state
+        # Same tool-recall-log store the tag path threads (nora.engagement.
+        # pipeline.EngagementPipeline._tool_call_log_store) — `None` keeps
+        # this path exactly as inert as it already is for a deployment that
+        # has not wired one.
+        self._tool_call_log_store = tool_call_log_store
 
     async def build_context(self, occasion: Occasion) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -577,6 +584,8 @@ class FirePath:
                 budgets=self._registry.budgets(),
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
                 audience=AUDIENCE,
+                cacheable_tools=self._registry.cacheable_tools(),
+                tool_call_log_store=self._tool_call_log_store,
                 # A fire turn is still a message into a real group, so it gets
                 # the same outbound decoration the tag path does — the same
                 # `roster_source`, the same `Persons`. Threaded rather than
@@ -637,7 +646,8 @@ class FirePath:
 
             failure, stop_reason = await self._invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill,
-                guard=handle.guard, tag_message=tag_message, ctx=ctx,
+                guard=handle.guard, tool_call_log=handle.tool_call_log,
+                tag_message=tag_message, ctx=ctx,
                 platform=occasion.platform, deliverer=handle.deliverer,
             )
             # `truncation_reason`'s "the turn reached the end of its try block",
@@ -698,6 +708,7 @@ class FirePath:
         tools: list[Any],
         pre_fill: list[dict[str, Any]],
         guard: ReplyGuard,
+        tool_call_log: Any = None,
         tag_message: str,
         ctx: TagContext,
         platform: str,
@@ -731,6 +742,7 @@ class FirePath:
             stop_reason, final_text = await asyncio.wait_for(
                 self._runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
+                    tool_call_log=tool_call_log,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
                     trace_attributes=trace_attributes(ctx, doctrine),
                 ),

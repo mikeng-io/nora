@@ -97,6 +97,7 @@ def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
+        "recall_lookups",
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
@@ -125,6 +126,12 @@ def test_read_peer_card_is_gone_from_the_table_and_the_capability_block():
     assert "read_peer_card" not in NATIVE_TOOLS
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
     assert "read_peer_card" not in ToolRegistry().capability()
+
+
+def test_exactly_five_tools_are_cacheable():
+    from nora.agent.tools import NATIVE_TOOLS
+    cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
+    assert cacheable == {"place_info", "route", "web_search", "weather", "transit"}
 
 
 def test_feed_honcho_is_not_a_tool(wiring):

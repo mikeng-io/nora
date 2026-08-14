@@ -70,6 +70,7 @@ from ..domain.reminders import (
     UnknownRecurrenceZoneError,
     remaining_occurrences,
 )
+from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
 from .arithmetic import evaluate as evaluate_expression
@@ -167,6 +168,17 @@ class NativeTool:
     # renders the clock line — so declaring it is not bookkeeping: it changes
     # what the always-on block tells the model to reach for first.
     source_tier: str | None = None
+    # `cacheable` is the seventh (tool-recall-log spec §2). True only for a
+    # tool whose result carries no room/person-disclosure decision baked
+    # into the MOMENT it ran — `where_is`/`search_memory`/`about` all
+    # decide what they may say against the room's LIVE roster, so replaying
+    # a cached answer days later would skip that check entirely; none of
+    # this table's cacheable=True entries do. Read by `ToolRegistry.
+    # cacheable_tools()` and nowhere else, the same single-reader shape
+    # `terminal`/`time_shiftable` already hold. Defaults False, like every
+    # other declared field on this type — a future tool ships un-cacheable
+    # until its own entry says otherwise.
+    cacheable: bool = False
 
 
 # ONE line per tool, in the order the capability block renders them. Keep each
@@ -229,7 +241,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "transit": NativeTool(4, "a Hong Kong bus or feeder route somebody named by number "
                              "— never state a bus time you did not get from here, and "
                              "never use it for a bus later than now",
-                          time_shiftable=False, source_tier="confirmed"),
+                          time_shiftable=False, source_tier="confirmed", cacheable=True),
     # 2, sized like `transit`: one message can name a route to plan for two
     # people leaving from two places, and two calls plus a reply still leave
     # half the turn. Each call is one or two Google Places lookups plus one
@@ -244,7 +256,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "route": NativeTool(4, "how to travel between two places, or how long a journey "
                            "takes — the only tool that can answer about a trip at a "
                            "later time",
-                        time_shiftable=True, source_tier="confirmed"),
+                        time_shiftable=True, source_tier="confirmed", cacheable=True),
     # 2, and HELD at 2 through the budget doubling (Kimi audit 2026-08-08): each
     # call is no longer a cheap local read — with the DEC-67 live refresh it can
     # BLOCK up to `refresh_timeout_seconds` (~8-10s) pinging the phone, so a
@@ -269,7 +281,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 "its rating, its price, its OPENING HOURS (幾點開/幾點"
                                 "關門) and whether it's open right now; never guess a "
                                 "rating or a time you did not get from here",
-                             source_tier="confirmed"),
+                             source_tier="confirmed", cacheable=True),
     # 1, like `group_members`: it lists a small fixed set for THIS room, and
     # calling it twice in a turn returns the same list. `time_shiftable=None`:
     # the household's saved names don't decay. Not terminal.
@@ -361,6 +373,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                    "reaches — a phrase or a topic; not a profile "
                                    "(«about») and not a reasoned answer («ask_memory»)",
                                 source_tier="remembered"),
+    # 2 (tool-recall-log spec §4): run once, notice a different `limit` is
+    # needed, run once more — the same shape `ask_memory`'s own budget
+    # note describes for a recall verb. NOT time_shiftable (a recalled
+    # lookup either exists for this conversation or it doesn't; there's no
+    # "ask about later" version of "what did I already check"). Not
+    # terminal. `source_tier=None`: this isn't a fact SOURCE of its own —
+    # it reads what another cacheable tool already sourced.
+    "recall_lookups": NativeTool(2, "something you or an earlier turn already "
+                                    "looked up in this conversation, within the "
+                                    "last 7 days — call this before re-running "
+                                    "place_info/route/web_search/weather/transit "
+                                    "for something that might already be known"),
     # 2, sized like the other look-it-up tools: one message can name two images
     # (a photo AND a screenshot), and two describe calls plus a reply still leave
     # the turn. The number is not what keeps two calls inside the loop budget —
@@ -383,7 +407,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                             "the conversation and isn't a bus, a route, the weather, a "
                             "person you know, or a shop/mall's hours or rating — you get "
                             "ranked results, each a title, a link and a content snippet",
-                             source_tier="web"),
+                             source_tier="web", cacheable=True),
     # ONE weather verb, a flag for depth (DEC-72): current conditions + warnings
     # (typhoon/rainstorm) + today's outlook always; the 9-day forecast on request.
     # Warnings ride EVERY answer so a signal in force is never missed. Budget 2 —
@@ -391,7 +415,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "weather": NativeTool(2, "the weather in Hong Kong — current temperature and humidity, "
                           "any warnings in force (typhoon signal, rainstorm, very hot), "
                           "today's outlook, and the multi-day forecast when asked",
-                          source_tier="confirmed"),
+                          source_tier="confirmed", cacheable=True),
     # The three reminder verbs (design spec §7). All 2, and the number is sized
     # by the CONVERSATION rather than by cost: none of the three leaves the host
     # or the database, so a call is one model round trip and nothing else, and
@@ -583,6 +607,20 @@ LOAD_TRANSCRIPT_DEFAULT = 25
 # names directly rather than threading a new hook through production code.
 _SYNC_POLL_SECONDS = 15.0
 _SYNC_POLL_INTERVAL = 1.0
+
+# `recall_lookups`'s own clamp (tool-recall-log spec §4) — smaller than
+# `LOAD_TRANSCRIPT_MAX` (60) because a logged tool result is denser than
+# one transcript message.
+RECALL_LOOKUPS_DEFAULT = 10
+RECALL_LOOKUPS_MAX = 30
+RECALL_LOOKUPS_WINDOW_DAYS = 7
+# A total-character budget across ALL entries, on top of the row-count cap
+# above — `RECALL_LOOKUPS_MAX` bounds how many rows come back, not how big
+# any one of them is, and a `web_search` tool_result can run tens of KB.
+# Mirrors `content_max_chars`'s per-result clamp (`nora/config.py`) at a
+# larger scale, since this is a WHOLE response re-sent on every subsequent
+# model call in the turn, not one search result.
+RECALL_LOOKUPS_MAX_CHARS = 8000
 
 # Honcho's dialectic reasoning levels (DialecticOptions.reasoning_level), from
 # the live schema. `ask_memory` lets the model pick; anything off-list falls back
@@ -1160,6 +1198,7 @@ def build_tool_specs(
     giphy_source: GifSource | None = None,
     compute_backend: ComputeBackend | None = None,
     compute_jobs: ComputeJobStore | None = None,
+    tool_call_log_store: ToolCallLogStore | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -1192,6 +1231,11 @@ def build_tool_specs(
     offline/eval compositions and any composition that has not wired Nora
     Compute, which is exactly what makes `make_artifact` answer `unavailable`
     (R-5) rather than crash.
+
+    `tool_call_log_store` is `recall_lookups`'s own collaborator (tool-recall-log
+    spec §4), wired the identical way: `None` in the offline/eval compositions
+    and any composition that has not wired the tool-recall log, which is what
+    makes `recall_lookups` answer `unavailable` (R-5) rather than crash.
     """
     caps = reminder_caps or ReminderCaps()
     now_fn = clock or utc_now
@@ -3012,6 +3056,73 @@ def build_tool_specs(
         _record(metrics, "cancel_reminder", "ok")
         return {"status": "ok"}
 
+    async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
+        """Pull back facts you (or an earlier turn) already looked up in
+        THIS conversation, within the last 7 days — a place's rating, a
+        route's duration, a web search's results. Call this before
+        re-running place_info/route/web_search/weather/transit for
+        something that might already be known: reusing what you already
+        have costs nothing; re-searching costs a live call and may not
+        even find the same result twice.
+
+        Args:
+            limit: how many recent lookups to pull back, newest first.
+                Defaults to 10; capped regardless of what you ask for.
+        """
+        if tool_call_log_store is None:
+            _record(metrics, "recall_lookups", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "Tool-recall isn't set up here.",
+            }
+        clamped = max(1, min(limit, RECALL_LOOKUPS_MAX))
+        since = datetime.now(UTC) - timedelta(days=RECALL_LOOKUPS_WINDOW_DAYS)
+        try:
+            rows = await tool_call_log_store.recent(
+                conversation_id=bound_conversation_id, since=since, limit=clamped,
+            )
+        except Exception:
+            log.exception("recall_lookups failed")
+            _record(metrics, "recall_lookups", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't check what I've already looked up. Say so — "
+                        "an empty result and a failed read are different answers.",
+            }
+        if not rows:
+            _record(metrics, "recall_lookups", "nothing_found")
+            return {
+                "status": "nothing_found",
+                "note": "Nothing logged for this conversation in the last 7 days.",
+            }
+        now_ts = datetime.now(UTC)
+        entries = [
+            {
+                "tool_name": r.tool_name, "tool_input": r.tool_input,
+                "tool_result": r.tool_result,
+                "age_seconds": (now_ts - r.created_at).total_seconds(),
+            }
+            for r in rows
+        ]
+        # A total-character budget on top of the row-count cap above — rows
+        # come back newest-first, so stopping once the budget is spent drops
+        # the OLDEST (least-relevant) entries, never the newest.
+        budgeted: list[dict] = []
+        spent = 0
+        truncated = False
+        for entry in entries:
+            entry_chars = len(json.dumps(entry["tool_result"]))
+            if budgeted and spent + entry_chars > RECALL_LOOKUPS_MAX_CHARS:
+                truncated = True
+                break
+            spent += entry_chars
+            budgeted.append(entry)
+        _record(metrics, "recall_lookups", "ok", count=len(budgeted))
+        result: dict = {"status": "ok", "entries": budgeted}
+        if truncated:
+            result["truncated"] = True
+        return result
+
     async def make_artifact(
         task: str, context: list[dict] | None = None, artifact_id: str | None = None,
     ) -> dict:
@@ -3306,6 +3417,7 @@ def build_tool_specs(
         _spec("about", about),
         _spec("ask_memory", ask_memory),
         _spec("search_memory", search_memory),
+        _spec("recall_lookups", recall_lookups),
         _spec("media_fetch", media_fetch),
         _spec("web_search", web_search),
         _spec("weather", weather),

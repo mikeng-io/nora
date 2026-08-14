@@ -26,7 +26,7 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from nora.agent.guards import Deliverer, ReplyGuard
+from nora.agent.guards import Deliverer, ReplyGuard, ToolCallLog
 from nora.agent.links import LinkCarry
 from nora.agent.outbound import OutboundComposer
 from nora.doctrine.loader import Doctrine
@@ -52,6 +52,7 @@ class DeliveryHandle:
     deliverer: Deliverer
     guard: ReplyGuard
     links: LinkCarry
+    tool_call_log: ToolCallLog
 
 
 def build(
@@ -71,6 +72,8 @@ def build(
     composer: OutboundComposer | None,
     forced_first_tool: str | None = None,
     on_delivered: Any = None,
+    cacheable_tools: frozenset[str] = frozenset(),
+    tool_call_log_store: Any = None,
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
 
@@ -129,7 +132,14 @@ def build(
         conversation_id=conversation_id, budgets=budgets, terminal=terminal,
         deliverer=deliverer, metrics=metrics, forced_first_tool=forced_first_tool,
     )
-    return DeliveryHandle(deliverer=deliverer, guard=guard, links=links)
+    tool_call_log = ToolCallLog(
+        conversation_id=conversation_id, conversation_type=target.conversation_type,
+        tag_id=tag_id, cacheable=cacheable_tools, store=tool_call_log_store,
+        metrics=metrics,
+    )
+    return DeliveryHandle(
+        deliverer=deliverer, guard=guard, links=links, tool_call_log=tool_call_log,
+    )
 
 
 # The three `stop_reason` values that mean R-8's caps ended the turn, rather

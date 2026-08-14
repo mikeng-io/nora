@@ -4,9 +4,11 @@ are per-invocation by construction rather than by bookkeeping.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
+from datetime import datetime
 from typing import Any, Protocol
 
 from strands.hooks import (
@@ -26,6 +28,7 @@ from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
 from .outbound import Outbound, OutboundComposer
+from .tools import utc_now
 
 log = logging.getLogger("nora.guards")
 
@@ -489,6 +492,110 @@ def _list_tool_names(names: Any) -> str:
     return ", ".join(ordered[:-1]) + " or " + ordered[-1]
 
 
+def _unwrap_tool_status(result: Any) -> str | None:
+    """The tool's OWN status (`ok`/`refused`/`unavailable`/...), unwrapped
+    from Strands' own success/error envelope.
+
+    `AfterToolCallEvent.result` is a `strands.types.tools.ToolResult` —
+    `{"status": "success"/"error", "content": [...], "toolUseId": ...}` —
+    which is STRANDS' verdict on whether the call raised, not the tool's
+    own semantic answer. Every native tool in this codebase returns a plain
+    dict with no `content` key, so `DecoratedFunctionTool._wrap_tool_result`
+    always takes its ELSE branch: `content` becomes `[{"text":
+    json.dumps(the_tools_own_dict)}]`. Reaching the real status means
+    parsing that text back out — this is the one place in the codebase that
+    does, shared by `ToolCallLog` (this module) and `ReplyGuard`'s R-45
+    check (`evaluate`, below) so the unwrap logic exists exactly once.
+
+    Returns `None` for a result shaped in a way this cannot parse (a tool
+    that returns a bare value with no `status` key at all — `now`,
+    `send_reply`, `load_transcript` all do this today) — callers treat
+    `None` as "not `ok`", never as "assume ok"."""
+    try:
+        content = result["content"]
+        payload = json.loads(content[0]["text"])
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+        return None
+    return payload.get("status") if isinstance(payload, dict) else None
+
+
+class ToolCallLog(HookProvider):
+    """Write path for the tool-recall log (R-48, tool-recall-log spec §3).
+    Constructed fresh per tag, like `ReplyGuard`.
+
+    A DIFFERENT responsibility from `ReplyGuard` (veto/budget logic) — this
+    is persistence, so it is its own small collaborator and its own
+    `HookProvider`, not a method bolted onto `ReplyGuard`. `store=None` is
+    the honest INERT default (offline/eval compositions, or any deployment
+    that has not wired one) — a missing store means every write is a no-op,
+    never a raised error and never a fallback that pretends to remember
+    something it didn't (R-5's shape, applied to a write path rather than a
+    read).
+    """
+
+    def __init__(
+        self, *, conversation_id: str, conversation_type: str, tag_id: str,
+        cacheable: frozenset[str], store: Any, metrics: Metrics,
+        clock: Callable[[], datetime] = utc_now,
+    ) -> None:
+        self._conversation_id = conversation_id
+        self._conversation_type = conversation_type
+        self._tag_id = tag_id
+        self._cacheable = cacheable
+        self._store = store
+        self._metrics = metrics
+        self._clock = clock
+
+    async def _after_tool_async(self, event: Any) -> None:
+        try:
+            if getattr(event, "cancel_message", None) is not None:
+                return
+            name = (getattr(event, "tool_use", None) or {}).get("name", "")
+            if name not in self._cacheable:
+                return
+            if _unwrap_tool_status(event.result) != "ok":
+                return
+            if self._store is None:
+                return
+            tool_input = (getattr(event, "tool_use", None) or {}).get("input") or {}
+            # `content[0]["text"]` is `json.dumps(the tool's own dict)` —
+            # see `_unwrap_tool_status`'s own docstring — so this second
+            # `json.loads` is the tool's REAL return value, not Strands'
+            # wrapper. Guarded the same way `_unwrap_tool_status` is;
+            # unreachable here in practice since that call already
+            # succeeded above, but never assume a second parse of the same
+            # string cannot fail for a reason the first one didn't hit.
+            try:
+                tool_result = json.loads(event.result["content"][0]["text"])
+            except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+                return
+            from uuid import uuid4
+
+            from nora.domain.tool_call_log import ToolCallLogEntry
+
+            entry = ToolCallLogEntry(
+                id=uuid4(), conversation_id=self._conversation_id,
+                conversation_type=self._conversation_type, tag_id=self._tag_id,
+                tool_name=name, tool_input=tool_input, tool_result=tool_result,
+                created_at=self._clock(),
+            )
+            await self._store.append(entry)
+            self._metrics.inc("nora_tool_call_log_writes_total", tool=name, outcome="ok")
+        except Exception:
+            # Decoration on a turn that has already completed correctly
+            # without it (spec §3) — never let a log write cost the reply
+            # that already went out.
+            log.exception("ToolCallLog write failed; ignoring")
+            self._metrics.inc(
+                "nora_tool_call_log_writes_total",
+                tool=name if "name" in locals() else "unknown",
+                outcome="failed",
+            )
+
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
+        registry.add_callback(AfterToolCallEvent, self._after_tool_async)
+
+
 class ReplyGuard(HookProvider):
     """Model-facing veto logic (R-2/R-3/R-4/R-7). Constructed fresh per tag.
 
@@ -547,6 +654,15 @@ class ReplyGuard(HookProvider):
         # at all (its own budget is 1, and this veto does not consume it —
         # see `evaluate`).
         self._context_nudge_given = False
+        # R-45's status-aware half (tool-recall-log spec §5): did the LAST
+        # `recall_lookups` call this turn actually find something? `counts`
+        # alone can't answer this — it increments for any non-cancelled
+        # call regardless of what the tool itself answered — so this is
+        # read directly off the event in `_after_tool`, the one place that
+        # sees the raw result. Overwritten on every `recall_lookups` call,
+        # not accumulated: only the MOST RECENT call's own answer is what
+        # "have I just seen something to reuse" means.
+        self._recall_found_something = False
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
@@ -685,16 +801,22 @@ class ReplyGuard(HookProvider):
         if (
             tool_name == "make_artifact" and not self._context_nudge_given
             and not (tool_input or {}).get("context")
-            and self.counts.get("place_info", 0) + self.counts.get("route", 0) > 0
+            and (
+                self.counts.get("place_info", 0) + self.counts.get("route", 0) > 0
+                or self._recall_found_something
+            )
         ):
             self._context_nudge_given = True
             gathered = self.counts.get("place_info", 0) + self.counts.get("route", 0)
+            source = (
+                f"place_info/route {gathered} time(s)" if gathered > 0
+                else "recall_lookups"
+            )
             return self._veto(
                 "R-45",
-                f"You already called place_info/route {gathered} time(s) this "
-                "turn and have those typed results. Pass them as `context` — "
-                "the small dicts you already have — instead of typing them "
-                "into `task` as prose.",
+                f"You already called {source} this turn and have real data "
+                "from it. Pass it as `context` — the small dicts you already "
+                "have — instead of typing it into `task` as prose.",
             )
         return None
 
@@ -845,6 +967,10 @@ class ReplyGuard(HookProvider):
                 return
             name = (getattr(event, "tool_use", None) or {}).get("name", "")
             self.record(name)
+            if name == "recall_lookups":
+                self._recall_found_something = (
+                    _unwrap_tool_status(getattr(event, "result", None)) == "ok"
+                )
             if name in self._terminal:
                 # She has spoken: `_before_model` relaxes `tool_choice` from
                 # here on, and ends the turn once every terminal verb's budget

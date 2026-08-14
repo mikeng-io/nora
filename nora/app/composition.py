@@ -48,6 +48,7 @@ from nora.domain.ports import (
     RosterSource,
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
+from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
@@ -60,6 +61,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import VisionClient, derive_vision_timeout
@@ -319,6 +321,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # even when the poller itself is off. Only the poller's tick loop
     # (`compute_backend`, further down) is behind the flag.
     compute_jobs: ComputeJobStore = SqlComputeJobStore(engine)
+    # Second consumer wired here (EngagementPipeline/FirePath, via
+    # deliver.build); the THIRD — ToolRegistry(...) below, for
+    # recall_lookups — is Task 7's own wiring.
+    tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
 
     # Resolved here, not inside AdapterRegistry — the same convention every
     # other `*_env` secret (the LLM key, the route key) follows: composition.py
@@ -804,6 +810,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # `[compute] enabled` is false — the tool answers `unavailable` in
         # that case (R-5), never a silent no-op.
         compute_backend=compute_backend, compute_jobs=compute_jobs,
+        # The third consumer of `tool_call_log_store` (Task 6 Step 8 wired the
+        # first two: EngagementPipeline/FirePath, via `deliver.build`) —
+        # `recall_lookups`'s own collaborator, tool-recall-log spec §4.
+        tool_call_log_store=tool_call_log_store,
         # §9's caps as the DOMAIN value. `nora.agent` may not import
         # `nora.config` (import-linter's "only app and __main__ read config"),
         # so THIS is the conversion point: `RemindersConfig`'s fields are
@@ -899,6 +909,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         rosters=rosters,
         preview_source=preview_source,
         slots=slots,
+        tool_call_log_store=tool_call_log_store,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 
@@ -975,6 +986,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # message into the same group, so a link in it earns the same card.
             preview_source=preview_source,
             llm_state=llm_state,
+            tool_call_log_store=tool_call_log_store,
         )
     if cfg.heartbeat.enabled and fire_path is not None:
         heartbeat = HeartbeatLoop(

@@ -2,14 +2,15 @@
 
 Two deliberate deviations from the generated template:
 
-- `include_object` excludes `idx_messages_conv_ts` AND `idx_presence_member_ts`.
-  Both are `ts DESC` in production, declared with `sa.text("ts DESC")` in the
-  metadata. Reflection returns a plain column, autogenerate compares the two as
-  different, and the result is a `remove_index`/`add_index` pair on EVERY check,
-  forever. Excluding them is the only way `alembic check` is usable at all. The
-  ordering it can no longer see is asserted by
-  `tests/infra/test_schema_parity.py` via `pg_index.indoption` — parameterised
-  over both, so the presence index is covered with no new test (design/19 §8).
+- `include_object` excludes `idx_messages_conv_ts`, `idx_presence_member_ts`, AND
+  `idx_tool_call_log_conv_ts`. All three are `... DESC` in production, declared
+  with `sa.text("... DESC")` in the metadata. Reflection returns a plain column,
+  autogenerate compares the two as different, and the result is a
+  `remove_index`/`add_index` pair on EVERY check, forever. Excluding them is the
+  only way `alembic check` is usable at all. The ordering it can no longer see is
+  asserted by `tests/infra/test_schema_parity.py` via `pg_index.indoption` —
+  parameterised over all three, so each new one is covered with no new test
+  (design/19 §8).
 - **No `render_as_batch`.** That was SQLite's table-rebuild workaround for
   ALTERs it could not do in place; Postgres alters in place, and batch mode here
   would only obscure migrations. It is gone with the SQLite backend.
@@ -42,8 +43,10 @@ config = context.config
 
 
 # The DESC expression indexes autogenerate reports permanent phantom drift on —
-# see module docstring. Both are `(… , ts DESC)`; both are authored by hand.
-_DESC_EXPRESSION_INDEXES = frozenset({"idx_messages_conv_ts", "idx_presence_member_ts"})
+# see module docstring. All three are authored by hand.
+_DESC_EXPRESSION_INDEXES = frozenset({
+    "idx_messages_conv_ts", "idx_presence_member_ts", "idx_tool_call_log_conv_ts",
+})
 
 
 def include_object(

@@ -80,7 +80,7 @@ what changed and why — this plan implements the CORRECTED spec.
   cacheable_tools() -> frozenset[str]`.
 - Consumes: nothing from a later task (this is the first task).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_tools.py`:
 
@@ -106,7 +106,7 @@ def test_cacheable_tools_is_a_frozenset_not_a_list():
     assert isinstance(ToolRegistry().cacheable_tools(), frozenset)
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_tools.py::test_exactly_five_tools_are_cacheable tests/unit/test_tool_registry.py -k cacheable -v`
 Expected: FAIL — `NativeTool.__init__() got an unexpected keyword argument
@@ -114,7 +114,7 @@ Expected: FAIL — `NativeTool.__init__() got an unexpected keyword argument
 `AttributeError: 'ToolRegistry' object has no attribute 'cacheable_tools'`
 and the tools-side test failing because `spec.cacheable` doesn't exist.
 
-- [ ] **Step 3: Add the field and the five declarations**
+- [x] **Step 3: Add the field and the five declarations**
 
 In `nora/agent/tools.py`, add to `NativeTool` (after `source_tier`, so
 every existing positional-arg call site in `NATIVE_TOOLS` stays valid
@@ -190,12 +190,12 @@ In `nora/agent/registry.py`, add right after `terminal_tools()` (line
         return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.cacheable)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_tools.py::test_exactly_five_tools_are_cacheable tests/unit/test_tool_registry.py -k cacheable -v`
 Expected: all PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nora/agent/tools.py nora/agent/registry.py tests/test_tools.py tests/unit/test_tool_registry.py
@@ -216,7 +216,7 @@ git commit -m "feat(recall): NativeTool gains cacheable, declared on 5 tools"
   (runtime-checkable Protocol) — Task 3/4's implementations satisfy this;
   Task 5/7 construct/read `ToolCallLogEntry` instances.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/domain/test_tool_call_log.py`:
 
@@ -267,12 +267,12 @@ def test_ensure_utc_log_refuses_a_naive_datetime():
         ensure_utc_log(datetime(2026, 8, 14, 12, 0, 0), field="created_at")
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/domain/test_tool_call_log.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'nora.domain.tool_call_log'`.
 
-- [ ] **Step 3: Write the domain module**
+- [x] **Step 3: Write the domain module**
 
 Create `nora/domain/tool_call_log.py`:
 
@@ -354,12 +354,12 @@ class ToolCallLogStore(Protocol):
         ...
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/domain/test_tool_call_log.py -v`
 Expected: all PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nora/domain/tool_call_log.py tests/domain/test_tool_call_log.py
@@ -384,7 +384,7 @@ git commit -m "feat(recall): add the ToolCallLogEntry/ToolCallLogStore domain po
 - Consumes: Task 2's `ToolCallLogEntry`/`ToolCallLogStore`.
 - Produces: `SqlToolCallLogStore(engine)` satisfying `ToolCallLogStore`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/infra/tool_call_log/test_sql_tool_call_log_store.py` (or
 fold into the contract suite directly — Task 4 owns the shared contract
@@ -427,7 +427,7 @@ async def test_a_logged_entry_round_trips(pg_url):
 `tests/contract/test_compute_job_store_contract.py` — check
 `tests/conftest.py` for its exact definition; do not redefine it here.)
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `uv run pytest tests/infra/tool_call_log/test_sql_tool_call_log_store.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'nora.infra.sql.tool_call_log'`
@@ -435,7 +435,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'nora.infra.sql.tool_ca
 also fail once the import succeeds — both errors are expected at this
 stage, in sequence as each is fixed below).
 
-- [ ] **Step 3: Add the schema table + index**
+- [x] **Step 3: Add the schema table + index**
 
 In `nora/infra/sql/schema.py`, add after `COMPUTE_JOBS`'s own block
 (mirroring its exact column style):
@@ -476,7 +476,7 @@ Check the top of `schema.py` for how `pg.JSONB`/`pg.UUID` are imported
 (`COMPUTE_JOBS` already uses `pg.UUID`) — reuse the same `pg` alias; do not
 add a second import for the same module.
 
-- [ ] **Step 4: Register the DESC index exclusion**
+- [x] **Step 4: Register the DESC index exclusion**
 
 In `nora/infra/sql/migrations/env.py`, change:
 
@@ -492,7 +492,7 @@ _DESC_EXPRESSION_INDEXES = frozenset({
 })
 ```
 
-- [ ] **Step 5: Write the migration**
+- [x] **Step 5: Write the migration**
 
 Create `nora/infra/sql/migrations/versions/0010_tool_call_log.py`:
 
@@ -552,7 +552,7 @@ def downgrade() -> None:
 own migrations already use for a DESC index — mirror it precisely rather
 than inventing new SQL syntax; the two should read as the same pattern.)
 
-- [ ] **Step 6: Write `SqlToolCallLogStore`**
+- [x] **Step 6: Write `SqlToolCallLogStore`**
 
 Create `nora/infra/sql/tool_call_log.py`:
 
@@ -620,14 +620,14 @@ class SqlToolCallLogStore:
         return [_row_to_entry(r) for r in rows]
 ```
 
-- [ ] **Step 7: Regenerate the schema-parity baseline**
+- [x] **Step 7: Regenerate the schema-parity baseline**
 
 Run: `uv run python scripts/gen_pg_baseline.py`
 
 This rewrites `tests/infra/pg_schema_baseline.sql` from a live, migrated
 Postgres — do not hand-edit it.
 
-- [ ] **Step 8: Add the DESC-index parity assertion**
+- [x] **Step 8: Add the DESC-index parity assertion**
 
 In `tests/infra/test_schema_parity.py`, change:
 
@@ -651,7 +651,7 @@ EXPECTED_DESC_INDEXES = {
 No new bespoke test needed — `test_desc_index_ordering_from_indoption` is
 already parametrized over `EXPECTED_DESC_INDEXES.items()`.
 
-- [ ] **Step 9: Run the tests to verify they pass**
+- [x] **Step 9: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/infra/tool_call_log/test_sql_tool_call_log_store.py tests/infra/test_schema_parity.py -v`
 Expected: all PASS.
@@ -659,7 +659,7 @@ Expected: all PASS.
 Run: `uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence`
 Expected: `Success: no issues found`.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add nora/infra/sql/schema.py nora/infra/sql/migrations/env.py nora/infra/sql/migrations/versions/0010_tool_call_log.py nora/infra/sql/tool_call_log.py tests/infra/pg_schema_baseline.sql tests/infra/test_schema_parity.py tests/infra/tool_call_log/test_sql_tool_call_log_store.py
@@ -683,7 +683,7 @@ git commit -m "feat(recall): tool_call_log table, migration, SqlToolCallLogStore
 - Produces: `FakeToolCallLogStore` — Task 5/6's tests construct this
   directly for anything not needing real Postgres.
 
-- [ ] **Step 1: Write `FakeToolCallLogStore`**
+- [x] **Step 1: Write `FakeToolCallLogStore`**
 
 In `nora/testing/fakes.py`, add (near `FakeComputeJobStore`, following its
 exact shape):
@@ -720,7 +720,7 @@ Export it from `nora/testing/__init__.py` the same way `FakeComputeJobStore`
 already is (check that file's existing `__all__`/import list and add
 `FakeToolCallLogStore` alongside it).
 
-- [ ] **Step 2: Write the contract suite**
+- [x] **Step 2: Write the contract suite**
 
 Create `tests/contract/test_tool_call_log_store_contract.py`:
 
@@ -828,19 +828,19 @@ async def test_append_refuses_a_naive_created_at(store):
 (Check `tests/conftest.py` for the exact `pg_url` fixture signature already
 shared by every other contract suite — do not redefine it in this file.)
 
-- [ ] **Step 3: Delete Task 3's now-redundant smoke test**
+- [x] **Step 3: Delete Task 3's now-redundant smoke test**
 
 ```bash
 rm tests/infra/tool_call_log/test_sql_tool_call_log_store.py
 rmdir tests/infra/tool_call_log 2>/dev/null || true
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/contract/test_tool_call_log_store_contract.py -v`
 Expected: all PASS, both the `fake` and `sql` arms of every test.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nora/testing/fakes.py nora/testing/__init__.py tests/contract/test_tool_call_log_store_contract.py
@@ -867,7 +867,7 @@ git commit -m "feat(recall): FakeToolCallLogStore + the shared contract suite"
   frozenset[str], store: ToolCallLogStore | None, metrics: Metrics,
   clock: Callable[[], datetime] = datetime.now)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_guards_tool_call_log.py`:
 
@@ -992,12 +992,12 @@ async def test_a_write_failure_is_swallowed_not_raised():
     await log._after_tool_async(event)  # must not raise
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_guards_tool_call_log.py -v`
 Expected: FAIL — `ImportError: cannot import name 'ToolCallLog'`.
 
-- [ ] **Step 3: Write `_unwrap_tool_status` and `ToolCallLog`**
+- [x] **Step 3: Write `_unwrap_tool_status` and `ToolCallLog`**
 
 In `nora/agent/guards.py`, add near the top (module-level, after existing
 imports — add `import json` and `from datetime import datetime` if not
@@ -1107,7 +1107,7 @@ Check `nora/agent/guards.py`'s existing imports for `Callable` (from
 `collections.abc`) and `Any`/`datetime` — add only what's missing, matching
 the file's existing import style exactly.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_guards_tool_call_log.py -v`
 Expected: all PASS.
@@ -1117,7 +1117,7 @@ Expected: `Success: no issues found` (note: `nora/agent` is NOT in this
 gate's scope per CLAUDE.md's own gate command — do not add it; this is
 consistent with every other task in this repo touching `nora/agent/`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nora/agent/guards.py tests/test_guards_tool_call_log.py
@@ -1151,7 +1151,7 @@ git commit -m "feat(recall): ToolCallLog hook provider — the write path (R-46)
   `ToolCallLog`.
 - Produces: nothing new for a later task — this is pure wiring.
 
-- [ ] **Step 1: `DeliveryHandle`/`build()` — `deliver.py`**
+- [x] **Step 1: `DeliveryHandle`/`build()` — `deliver.py`**
 
 In `nora/engagement/stages/deliver.py`, add `tool_call_log` to
 `DeliveryHandle`:
@@ -1211,7 +1211,7 @@ shape `on_delivered` already has, rather than a `TypeError` on every
 existing test that constructs a `DeliveryHandle` without knowing this
 feature exists.
 
-- [ ] **Step 2: `create_agent` — `factory.py`**
+- [x] **Step 2: `create_agent` — `factory.py`**
 
 In `nora/agent/factory.py`, add a parameter and include it in `hooks`:
 
@@ -1238,7 +1238,7 @@ def create_agent(
 Add `from nora.agent.guards import ... ToolCallLog` to this file's existing
 import of `ReplyGuard` (check the exact current import line first).
 
-- [ ] **Step 3: `LiveAgentRunner.invoke` — `agent_runner.py`**
+- [x] **Step 3: `LiveAgentRunner.invoke` — `agent_runner.py`**
 
 In `nora/app/agent_runner.py`, add the same optional parameter and thread
 it through to `factory.create_agent`:
@@ -1274,7 +1274,7 @@ it through to `factory.create_agent`:
         )
 ```
 
-- [ ] **Step 4: the invoke stage — `invoke.py`, and its one caller in `pipeline.py`**
+- [x] **Step 4: the invoke stage — `invoke.py`, and its one caller in `pipeline.py`**
 
 `nora/engagement/stages/invoke.py`'s `run()` (line 74) is the shared tag-path
 wrapper `pipeline.py` calls; `nora/app/fire.py` calls `self._runner.invoke(...)`
@@ -1322,7 +1322,7 @@ the new argument to the existing call:
             )
 ```
 
-- [ ] **Step 5: `pipeline.py`'s `deliver.build` call**
+- [x] **Step 5: `pipeline.py`'s `deliver.build` call**
 
 In `nora/engagement/pipeline.py`, at the existing `deliver.build(...)`
 call (~line 320), add two arguments:
@@ -1337,7 +1337,7 @@ add it as a constructor parameter (`tool_call_log_store: ToolCallLogStore
 | None = None`) next to wherever `self._audit`/`self._tool_registry` are
 already assigned in `__init__` (~line 115), following that exact pattern.
 
-- [ ] **Step 6: `fire.py`'s `deliver.build` AND `runner.invoke` calls**
+- [x] **Step 6: `fire.py`'s `deliver.build` AND `runner.invoke` calls**
 
 `fire.py` bypasses `invoke.run` and calls `self._runner.invoke(...)`
 directly (line 689), inside its own `asyncio.wait_for`. At the existing
@@ -1367,7 +1367,7 @@ point in `fire.py` — it may already be unpacked into separate `guard`/
 other locals rather than kept as `handle`; use whatever name this file's
 own `deliver.build(...)` call assigns its result to.)
 
-- [ ] **Step 7: `scripted_agent.py`'s hook registration**
+- [x] **Step 7: `scripted_agent.py`'s hook registration**
 
 `FakeAgentRunner`'s `invoke` (or whichever method contains the block at
 `nora/testing/scripted_agent.py:333-344`) takes `**kwargs`, so no formal
@@ -1396,7 +1396,7 @@ to:
             tool_call_log.register_hooks(hooks)
 ```
 
-- [ ] **Step 8: `composition.py` — construct the real store**
+- [x] **Step 8: `composition.py` — construct the real store**
 
 In `nora/app/composition.py`, near where `compute_jobs: ComputeJobStore =
 SqlComputeJobStore(engine)` is already constructed (~line 311), add:
@@ -1411,6 +1411,31 @@ and thread `tool_call_log_store` into wherever `EngagementPipeline`/
 Add the two imports (`ToolCallLogStore` from `nora.domain.tool_call_log`,
 `SqlToolCallLogStore` from `nora.infra.sql.tool_call_log`).
 
+**This same `tool_call_log_store` variable has a THIRD consumer, arriving
+in Task 7, not this task.** `ToolRegistry(...)`'s own construction
+(`nora/app/composition.py:739`) takes `compute_backend=compute_backend,
+compute_jobs=compute_jobs` — `recall_lookups` (Task 7) needs
+`tool_call_log_store` threaded through this SAME registry, because
+`ToolRegistry.specs()` closes over registry-owned collaborators bound once
+at `__init__` (`self._compute_backend`/`self._compute_jobs`, confirmed at
+`nora/agent/registry.py:174-175`, passed into its own `build_tool_specs(...)`
+call at line ~487), never per-tag arguments — `specs()`'s own docstring
+states this explicitly ("NOT in this signature and must not become one:
+each is the registry's own long-lived collaborator"). Do NOT add this third
+wiring here: `ToolRegistry.__init__` doesn't accept the keyword yet (Task 7
+adds it), so passing it now would break this task's own tests with a
+`TypeError`. Leave a one-line comment at the `tool_call_log_store`
+declaration this step just added, so Task 7's implementer finds it instead
+of missing the connection:
+
+```python
+    # Second consumer wired here (EngagementPipeline/FirePath, via
+    # deliver.build); a THIRD — ToolRegistry(...) below, for
+    # recall_lookups — is wired in the tool-recall-log plan's Task 7,
+    # once ToolRegistry.__init__ accepts the keyword.
+    tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
+```
+
 In the offline/eval compositions (wherever they construct
 `EngagementPipeline`/`FirePath` without a real DB — check
 `nora/app/offline.py`/`nora/app/eval_support.py` or equivalent), do NOT
@@ -1418,7 +1443,7 @@ pass `tool_call_log_store` — the parameter's `None` default (Step 5/6)
 keeps them exactly as inert as they already are for `compute_jobs`/
 `compute_backend`.
 
-- [ ] **Step 9: Run the tests to verify nothing broke**
+- [x] **Step 9: Run the tests to verify nothing broke**
 
 Run: `uv run pytest tests/test_composition.py tests/test_guards_replyguard.py tests/unit/test_agent_mcp.py -v`
 Expected: all PASS (these are the files most likely to import something
@@ -1437,7 +1462,7 @@ Expected: `Success: no issues found`.
 Run: `uv run lint-imports`
 Expected: `Contracts: 5 kept, 0 broken.`
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add nora/engagement/stages/deliver.py nora/agent/factory.py nora/app/agent_runner.py nora/engagement/stages/invoke.py nora/engagement/pipeline.py nora/app/fire.py nora/testing/scripted_agent.py nora/app/composition.py
@@ -1450,23 +1475,27 @@ git commit -m "feat(recall): wire ToolCallLog through composition (tag + fire pa
 
 **Files:**
 - Modify: `nora/agent/tools.py` (new `recall_lookups` native tool + its
-  `NATIVE_TOOLS` entry)
+  `NATIVE_TOOLS` entry, `build_tool_specs`'s own signature)
+- Modify: `nora/agent/registry.py` (`ToolRegistry.__init__` and `.specs()`)
+- Modify: `nora/app/composition.py` (the `ToolRegistry(...)` construction
+  at line 739 — the third consumer of the `tool_call_log_store` variable
+  Task 6 Step 8 already declared)
 - Test: `tests/test_reminder_tools.py` or a new
   `tests/test_recall_lookups.py` — follow whichever existing test file
   this repo's own convention puts `make_artifact`'s tests in (check first;
   match it rather than guessing a new location)
 
 **Interfaces:**
-- Consumes: Task 2's `ToolCallLogEntry`, whatever store the tool closure
-  already receives (this task threads a `tool_call_log_store:
-  ToolCallLogStore | None` parameter into the SAME factory function
-  `make_artifact`/`place_info`/etc. already close over — check that
-  function's exact name and existing parameter list, e.g.
-  `build_tool_specs(...)`, before adding).
+- Consumes: Task 2's `ToolCallLogEntry`/`ToolCallLogStore`, Task 6 Step 8's
+  `tool_call_log_store` variable in `composition.py` (declared there, wired
+  into `ToolRegistry(...)` HERE — `compute_backend`/`compute_jobs` are the
+  exact precedent for a registry-owned collaborator bound once at
+  `ToolRegistry.__init__` and closed over by every `specs()` call,
+  confirmed at `nora/agent/registry.py:174-175,487`).
 - Produces: `recall_lookups(limit: int = 10) -> dict`, budget 2 in
   `NATIVE_TOOLS`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 async def test_recall_lookups_returns_recent_entries():
@@ -1545,13 +1574,13 @@ async def test_recall_lookups_clamps_a_limit_above_the_max():
 existing native-tool tests already use — do not invent new ones; import
 from whichever module already has them for `make_artifact`'s own tests.)
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest -k recall_lookups -v`
 Expected: FAIL — `KeyError: 'recall_lookups'` (the tool doesn't exist in
 the registry yet).
 
-- [ ] **Step 3: Add the tool and its `NATIVE_TOOLS` entry**
+- [x] **Step 3: Add the tool and its `NATIVE_TOOLS` entry**
 
 Add module constants near `_SYNC_POLL_SECONDS`/`LOAD_TRANSCRIPT_MAX`
 (`nora/agent/tools.py`):
@@ -1565,11 +1594,33 @@ RECALL_LOOKUPS_MAX = 30
 RECALL_LOOKUPS_WINDOW_DAYS = 7
 ```
 
-Add the tool function inside the same factory function that already
-builds `make_artifact`/`place_info` (find its exact name and signature
-first — it takes `metrics`, `route_source`, etc. as closure variables
-already; add `tool_call_log_store: ToolCallLogStore | None = None` to
-that SAME function's own parameter list):
+**Four call sites need `tool_call_log_store` threaded through, not one** —
+`compute_backend`/`compute_jobs` (`make_artifact`'s own collaborators) are
+the exact precedent to mirror at every one of them:
+
+1. `nora/agent/tools.py:1128`, `build_tool_specs(...)`'s own signature —
+   add `tool_call_log_store: ToolCallLogStore | None = None,` right after
+   the existing `compute_jobs: ComputeJobStore | None = None,` parameter.
+   Add the `recall_lookups` closure (below) inside this same function, the
+   same way `make_artifact`/`place_info` already are.
+2. `nora/agent/registry.py:174-175`, `ToolRegistry.__init__` — add
+   `tool_call_log_store: ToolCallLogStore | None = None,` to the
+   constructor's own parameter list (mirroring `compute_backend`/
+   `compute_jobs` at those exact lines) and `self._tool_call_log_store =
+   tool_call_log_store` beside `self._compute_backend = compute_backend`.
+3. `nora/agent/registry.py:487`, inside `ToolRegistry.specs()`'s existing
+   call to `build_tool_specs(...)` — add
+   `tool_call_log_store=self._tool_call_log_store,` right after the
+   existing `compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,`
+   line.
+4. `nora/app/composition.py:739`, the `ToolRegistry(...)` construction —
+   add `tool_call_log_store=tool_call_log_store,` (the variable Task 6
+   Step 8 already declared, with a comment pointing at this exact step).
+
+Then add the tool function inside `build_tool_specs` itself, alongside
+`make_artifact`/`place_info` (it closes over the new
+`tool_call_log_store` parameter and the SAME `conversation_id` closure
+variable those two already use):
 
 ```python
     async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
@@ -1634,7 +1685,7 @@ end):
                                     "for something that might already be known"),
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest -k recall_lookups -v`
 Expected: all PASS.
@@ -1644,7 +1695,7 @@ Expected: all PASS still (confirms the new `NATIVE_TOOLS` entry doesn't
 break the capability-block/budget-derivation tests every tool addition
 touches).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add nora/agent/tools.py tests/test_reminder_tools.py  # or wherever Step 1's test file landed
@@ -1664,7 +1715,7 @@ git commit -m "feat(recall): add recall_lookups, the on-demand read path"
 - Consumes: Task 5's `_unwrap_tool_status`.
 - Produces: nothing new for a later task.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_guards_replyguard.py`, in the R-45 section:
 
@@ -1700,13 +1751,13 @@ def _wrapped_nothing_found_recall():
     return _wrap_result({"status": "nothing_found"})
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_guards_replyguard.py -k recall_lookups -v`
 Expected: FAIL — `AttributeError: 'ReplyGuard' object has no attribute
 '_last_recall_lookups_result'`.
 
-- [ ] **Step 3: Make `ReplyGuard` status-aware for `recall_lookups`**
+- [x] **Step 3: Make `ReplyGuard` status-aware for `recall_lookups`**
 
 `ReplyGuard.counts` (incremented by `record()`) has no visibility into
 what a tool actually answered — spec §5's own finding. Rather than
@@ -1790,7 +1841,7 @@ results", since `recall_lookups`'s own result shape is `{"entries":
 return — check whichever existing R-45 test asserts on the EXACT prior
 wording and update it to match, per this step's own test file.)
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_guards_replyguard.py -v`
 Expected: all PASS, including every pre-existing R-45 test (re-read their
@@ -1798,7 +1849,7 @@ assertions first — if any asserts the OLD exact veto message text
 verbatim, update it to the new wording in this same step, not as an
 afterthought).
 
-- [ ] **Step 5: Amend DEC-101's decision-index row**
+- [x] **Step 5: Amend DEC-101's decision-index row**
 
 In `design/09-decision-index.md`, find the `DEC-101` row and append one
 clause after its existing sentence about the trigger condition (do not
@@ -1814,7 +1865,7 @@ the budget-non-consumption mechanism are both still accurate as written):
  chain.
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add nora/agent/guards.py tests/test_guards_replyguard.py design/09-decision-index.md
@@ -1835,13 +1886,13 @@ git commit -m "fix(guards): R-45 becomes status-aware, covers recall_lookups (DE
   bookkeeping task).
 - Produces: nothing for a later task — this plan's last task.
 
-- [ ] **Step 1: Confirm the structural gate**
+- [x] **Step 1: Confirm the structural gate**
 
 Run: `uv run pytest tests/test_acceptance_rules.py -v`
 Expected: all PASS (before this task's own edit — confirms the starting
 point is clean).
 
-- [ ] **Step 2: Add the `RULE_TESTS` entry**
+- [x] **Step 2: Add the `RULE_TESTS` entry**
 
 In `tests/test_acceptance_rules.py`, add after the `"R-45"` entry:
 
@@ -1849,7 +1900,7 @@ In `tests/test_acceptance_rules.py`, add after the `"R-45"` entry:
     "R-46": "test_a_non_cacheable_tool_is_never_logged",
 ```
 
-- [ ] **Step 3: Add the DEC-102 row**
+- [x] **Step 3: Add the DEC-102 row**
 
 In `design/09-decision-index.md`, append after the `DEC-101` row (which
 Task 8 already amended):
@@ -1858,7 +1909,7 @@ Task 8 already amended):
 | DEC-102 | **The tool-recall log (tool-recall-log spec, 2026-08-14): a gathered fact — a place's rating, a route's duration, a web search — can be reused later in the SAME conversation instead of forcing a re-query.** `NativeTool` gains `cacheable: bool = False` (R-46), true for exactly five tools (`place_info`, `route`, `web_search`, `weather`, `transit`) chosen because none carries a room/person-disclosure decision baked into the moment it ran — `where_is`/`search_memory`/`about` are explicitly NOT cacheable, since each decides what it may say against the room's LIVE roster at the moment it's asked, and a cached answer replayed days later would skip that check entirely. `ToolCallLog` (`nora.agent.guards`), a second `HookProvider` alongside `ReplyGuard`, writes one row to `tool_call_log` per successful (`status: "ok"`) cacheable call — R-46: a vetoed call, or a non-`ok` one, writes nothing. `recall_lookups`, a new on-demand native tool (never auto-injected), reads the last N rows for this conversation within a 7-day window, newest first, and hands them back unsummarised — the model decides what's relevant. No vector similarity, no embeddings: this stack wires no embedding model and `db` carries no pgvector extension, and a similarity-threshold cache risks serving a stale or wrong result as fresh, which recency-bound recall does not. R-45 (DEC-101) extended, status-aware, to also nudge when a `recall_lookups` call found something and `make_artifact` still got empty `context`.** | `test_exactly_five_tools_are_cacheable`, `test_cacheable_tools_matches_the_declared_set` (`tests/test_tools.py`, `tests/unit/test_tool_registry.py`), `test_a_non_cacheable_tool_is_never_logged`, `test_a_refused_call_is_never_logged`, `test_a_vetoed_call_is_never_logged` (`tests/test_guards_tool_call_log.py`), `test_recall_lookups_returns_recent_entries`, `test_recall_lookups_is_nothing_found_when_empty` (recall_lookups's own test file), `test_a_successful_recall_lookups_also_triggers_the_nudge` (`tests/test_guards_replyguard.py`) |
 ```
 
-- [ ] **Step 4: Write the release fragment**
+- [x] **Step 4: Write the release fragment**
 
 Create `release-fragments/unreleased/tool-recall-log.json`:
 
@@ -1877,7 +1928,7 @@ Create `release-fragments/unreleased/tool-recall-log.json`:
 }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_acceptance_rules.py -v`
 Expected: all PASS.
@@ -1885,7 +1936,7 @@ Expected: all PASS.
 Run: `uv run python scripts/check_release_fragments.py --base origin/master`
 Expected: passes.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add design/09-decision-index.md tests/test_acceptance_rules.py release-fragments/unreleased/tool-recall-log.json
@@ -1898,46 +1949,46 @@ git commit -m "docs(decisions): add DEC-102 (the tool-recall log), R-46"
 
 **Files:** none (verification only).
 
-- [ ] **Step 1: Full test suite**
+- [x] **Step 1: Full test suite**
 
 Run: `uv run pytest -q`
 Expected: no NEW failures versus the pre-existing baseline (check with a
 `git stash`/re-run comparison if any count seems off — do not assume a
 failure is pre-existing without verifying).
 
-- [ ] **Step 2: Lint**
+- [x] **Step 2: Lint**
 
 Run: `uv run ruff check nora/ evals/ tests/`
 Expected: clean.
 
-- [ ] **Step 3: Types**
+- [x] **Step 3: Types**
 
 Run: `uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence`
 Expected: `Success: no issues found`.
 
-- [ ] **Step 4: Import boundaries**
+- [x] **Step 4: Import boundaries**
 
 Run: `uv run lint-imports`
 Expected: clean.
 
-- [ ] **Step 5: Schema parity**
+- [x] **Step 5: Schema parity**
 
 Run: `uv run pytest tests/infra/test_schema_parity.py -v`
 Expected: all PASS, including the new `idx_tool_call_log_conv_ts` row.
 
-- [ ] **Step 6: Release fragment gate**
+- [x] **Step 6: Release fragment gate**
 
 Run: `uv run python scripts/check_release_fragments.py --base origin/master`
 Expected: passes.
 
-- [ ] **Step 7: Confirm the five-tool boundary held**
+- [x] **Step 7: Confirm the five-tool boundary held**
 
 Run: `uv run python -c "from nora.agent.tools import NATIVE_TOOLS; print(sorted(n for n,s in NATIVE_TOOLS.items() if s.cacheable))"`
 Expected: exactly `['place_info', 'route', 'transit', 'weather',
 'web_search']` — no `where_is`, `search_memory`, `about`, `ask_memory`,
 `load_transcript`, or anything else in the list.
 
-- [ ] **Step 8: Confirm no checkbox in this plan is unticked**
+- [x] **Step 8: Confirm no checkbox in this plan is unticked**
 
 Re-read this file; every `- [ ]` above should now be `- [x]`.
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -38,6 +39,10 @@ from nora.domain.ports import (
     Roster,
     SendResult,
     TextStyle,
+)
+from nora.domain.tool_call_log import (
+    ToolCallLogEntry,
+    normalise_tool_call_log_entry,
 )
 from nora.domain.utf16 import utf16_len
 
@@ -865,3 +870,25 @@ class FakeComputeJobStore:
 
     async def aclose(self) -> None:
         pass
+
+
+class FakeToolCallLogStore:
+    """In-memory `ToolCallLogStore`. Bound to
+    `nora.infra.sql.tool_call_log.SqlToolCallLogStore` by
+    `tests/contract/test_tool_call_log_store_contract.py`."""
+
+    def __init__(self) -> None:
+        self._entries: list[ToolCallLogEntry] = []
+
+    async def append(self, entry: ToolCallLogEntry) -> None:
+        self._entries.append(normalise_tool_call_log_entry(entry))
+
+    async def recent(
+        self, *, conversation_id: str, since: datetime, limit: int,
+    ) -> list[ToolCallLogEntry]:
+        rows = [
+            e for e in self._entries
+            if e.conversation_id == conversation_id and e.created_at >= since
+        ]
+        rows.sort(key=lambda e: e.created_at, reverse=True)
+        return rows[:limit]
