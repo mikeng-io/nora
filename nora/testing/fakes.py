@@ -512,13 +512,14 @@ class FakeMediaSource:
     reason it is written like this.** A fake that returned bytes for any ref
     would let the custody stage pass while the real adapter asked signal-cli
     for the wrong thing — the exact shape of the three no-ops CLAUDE.md
-    records. So it behaves like the daemon does: it holds a dict keyed by the
-    attachment id the platform actually issued, answers `not_found` for an id
-    it does not hold (which is what `getAttachment` returned to a live probe on
-    2026-08-06), `no_id` for a ref with no id at all, and `too_large` against
-    the same ceiling. `unavailable` is a switch, because "the daemon is down"
-    is a state the ingest stage has to degrade through and there is no id that
-    means it.
+    records. So it behaves like the daemon does: it holds a dict keyed by
+    `ref.fetch_token or ref.platform_id` — stickers are addressed by TOKEN,
+    attachments by id, the same split the real adapters make — answers
+    `not_found` for a key it does not hold (which is what `getAttachment`
+    returned to a live probe on 2026-08-06), `no_id` for a ref with neither,
+    and `too_large` against the same ceiling. `unavailable` is a switch,
+    because "the daemon is down" is a state the ingest stage has to degrade
+    through and there is no id that means it.
     """
 
     platform = "signal"
@@ -536,14 +537,20 @@ class FakeMediaSource:
         self._max_bytes = max_bytes
 
     async def fetch(self, *, ref: MediaRef) -> MediaBytes:
-        if not ref.platform_id:
+        # Stickers are addressed by TOKEN, attachments by id — the same split
+        # the real adapters make. A fake that answered both off `platform_id`
+        # would let a stage that routes a sticker to `getAttachment` pass.
+        # Lookup and recording share this one key so "no RPC happened"
+        # assertions in a caller's tests stay readable.
+        key = ref.fetch_token or ref.platform_id
+        if not key:
             return MediaBytes(available=False, reason="no_id")
         if ref.size is not None and ref.size > self._max_bytes:
             return MediaBytes(available=False, reason="too_large")
-        self.fetched.append(ref.platform_id)
+        self.fetched.append(key)
         if self.unavailable:
             return MediaBytes(available=False, reason="unreachable")
-        data = self.blobs.get(ref.platform_id)
+        data = self.blobs.get(key)
         if data is None:
             return MediaBytes(available=False, reason="not_found")
         if len(data) > self._max_bytes:
