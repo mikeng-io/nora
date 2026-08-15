@@ -44,7 +44,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
+from typing import Any
 
 from nora.domain.media import MediaBlob, MediaRef, resolve_media_type
 from nora.domain.ports import (
@@ -89,11 +91,13 @@ class StickerReader:
         descriptions: MediaDescriptionStore,
         interpreter: MediaInterpreter,
         model: str,
+        metrics: Any,
     ) -> None:
         self._blobs = blobs
         self._descriptions = descriptions
         self._interpreter = interpreter
         self._model = model
+        self._metrics = metrics
         # Per-instance, not module-level — the test-seam policy's whole point:
         # a module-level singleton would let one test's in-flight sticker leak
         # into the next test's reader.
@@ -173,7 +177,13 @@ class StickerReader:
             if not data:
                 return StickerOutcome(blob=blob, cached=cached, reason="blob_missing")
 
+        # `nora_sticker_describe_seconds` (sticker spec §5.2): the interpreter
+        # call ALONE, not the ladder around it — a cache hit never reaches
+        # this line, so the ladder's near-zero lookups cannot dilute what this
+        # says about the vision model's own latency.
+        started = time.perf_counter()
         result = await self._interpreter.describe(data=data, media_type=blob.media_type)
+        self._metrics.observe("nora_sticker_describe_seconds", time.perf_counter() - started)
         if not result.available or not result.text:
             # Never cached. A failure that got remembered would make every
             # later sighting serve the failure as if it were an answer.

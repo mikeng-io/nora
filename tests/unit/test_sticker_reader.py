@@ -32,6 +32,7 @@ import hashlib
 
 from nora.domain.media import MediaBlob, MediaRef
 from nora.ingest.stickers import StickerReader
+from nora.obs.metrics import Metrics
 from nora.testing import (
     FakeBlobStore,
     FakeMediaDescriptionStore,
@@ -50,10 +51,11 @@ def _source(payload: bytes | None = BYTES) -> FakeMediaSource:
     return src
 
 
-def _reader(store, interpreter, blobs=None) -> StickerReader:
+def _reader(store, interpreter, blobs=None, metrics=None) -> StickerReader:
     return StickerReader(
         blobs=blobs or FakeBlobStore(), descriptions=store,
         interpreter=interpreter, model="fake-vision",
+        metrics=metrics if metrics is not None else Metrics(),
     )
 
 

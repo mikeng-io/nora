@@ -492,7 +492,7 @@ async def test_only_a_sticker_reaches_the_interpreter():
     interpreter = FakeMediaInterpreter()
     reader = StickerReader(
         blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
-        interpreter=interpreter, model="fake",
+        interpreter=interpreter, model="fake", metrics=Metrics(),
     )
     media = (
         MediaRef(platform_id="i1", media_type="image/jpeg"),
@@ -519,6 +519,7 @@ async def test_a_described_sticker_lands_in_the_body_with_its_handle():
     reader = StickerReader(
         blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
         interpreter=FakeMediaInterpreter("a cartoon cat"), model="fake",
+        metrics=Metrics(),
     )
     ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
                    fetch_token="sticker:p:1")  # noqa: S106
@@ -540,6 +541,7 @@ async def test_an_identifier_in_a_description_costs_the_description_not_the_mess
     reader = StickerReader(
         blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
         interpreter=FakeMediaInterpreter("a note reading +85212345678"), model="fake",
+        metrics=metrics,
     )
     ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
                    fetch_token="sticker:p:1")  # noqa: S106
@@ -569,3 +571,33 @@ async def test_a_sticker_with_no_reader_wired_keeps_its_handle():
     )
 
     assert out.body.startswith("[sticker ") and ":" not in out.body
+
+
+async def test_a_failing_attachment_does_not_shift_the_stickers_own_handle():
+    """`handles.append(blob.handle if blob else "")` and the description
+    append beside it run unconditionally, shared by both branches of the
+    per-ref loop — the reviewer could certify that by construction for the
+    plain-custody path, but not for the sticker branch specifically. A desync
+    here would silently attach one attachment's description to a NEIGHBOUR's
+    placeholder: a wrong claim in the durable record, not a crash."""
+    sticker_png = b"\x89PNG sticker bytes"
+    reader = StickerReader(
+        blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
+        interpreter=FakeMediaInterpreter("a cartoon cat"), model="fake",
+        metrics=Metrics(),
+    )
+    refs = (
+        # Fails: not present in the source's blob dict at all.
+        MediaRef(platform_id="gone", media_type="image/jpeg"),
+        MediaRef(platform_id="", media_type="image/png", sticker=True,
+                 fetch_token="sticker:p:1"),  # noqa: S106
+    )
+
+    out = await media_stage.run(
+        message=_msg(body="[image] [sticker]", refs=refs),
+        sources=MediaSourceRegistry([FakeMediaSource({"sticker:p:1": sticker_png})]),
+        blobs=FakeBlobStore(), metrics=Metrics(), stickers=reader,
+    )
+
+    sticker_handle = hashlib.sha256(sticker_png).hexdigest()[:6]
+    assert out.body == f"[image] [sticker {sticker_handle}: a cartoon cat]"

@@ -127,6 +127,18 @@ async def run(
             blob, raw = outcome.blob, outcome.description
             _count(metrics, platform=message.platform,
                    status="stored" if blob else (outcome.reason or "unavailable"))
+            # `nora_sticker_descriptions_total` — the dedup ladder's cache hit
+            # rate as an OBSERVATION, not a belief (spec §5.2's justification
+            # for putting a vision call inline on the ingest path at all).
+            # `cached` is `StickerOutcome.cached`'s own vocabulary
+            # (identity/content/none), NOT `nora_media_fetch_total`'s
+            # true/false — see that counter's spec comment.
+            metrics.inc(
+                "nora_sticker_descriptions_total",
+                platform=message.platform,
+                status="ok" if raw else (outcome.reason or "unavailable"),
+                cached=outcome.cached,
+            )
         else:
             blob = await _take(ref=ref, source=source, blobs=blobs, metrics=metrics,
                                platform=message.platform)

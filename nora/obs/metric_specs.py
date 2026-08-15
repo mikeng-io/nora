@@ -732,6 +732,24 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "not_allowed_there / egress_blocked / no_adapter / failed.",
         ("outcome",),
     ),
+    # Task 14 fix round 1: what makes the dedup ladder's 41%-and-rising hit
+    # rate an OBSERVATION rather than a belief. `status` is `ok` when the
+    # sticker branch produced a description, else the `StickerOutcome.reason`
+    # that stopped it (unavailable / store_failed / blob_missing / vision /
+    # error / not_found / no_id / too_large / unreachable). `cached` is
+    # `StickerReader`'s own ladder-level label — identity / content / none —
+    # and it is DELIBERATELY NOT the same vocabulary as `nora_media_fetch_
+    # total`'s `cached` label (true/false): two series named `cached` with two
+    # different value sets is a legibility trap for whoever reads these in
+    # Grafana, so read this one as identity/content/none, never as a boolean.
+    _CounterSpec(
+        "nora_sticker_descriptions_total",
+        "Sticker-branch outcomes in the media custody stage, by platform, "
+        "status (ok / the StickerOutcome reason), and which ladder level "
+        "answered — cached=identity/content/none. NOT the boolean cached= "
+        "true/false vocabulary nora_media_fetch_total's cached label uses.",
+        ("platform", "status", "cached"),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -883,6 +901,18 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "nora_messages_per_tag",
         "Messages actually delivered to the group per admitted tag.",
         (0, 1, 2, 3, 4, 5, 10),
+    ),
+    # Task 14 fix round 1, sticker spec §5.2: the 6-second sticker vision
+    # budget must be MEASURED, not assumed. Observes only the interpreter
+    # call itself (`StickerReader._read`'s `self._interpreter.describe(...)`)
+    # — never the identity/content cache lookups around it, which would dilute
+    # the model's own latency with near-zero cache hits and hide a slow
+    # interpreter behind a fast ladder. The default buckets already top out at
+    # 30s, past any sane sticker timeout, so they are used as-is.
+    _HistogramSpec(
+        "nora_sticker_describe_seconds",
+        "Sticker interpreter (vision model) call latency, measured around "
+        "the describe() call alone — not the dedup ladder around it.",
     ),
 )
 
