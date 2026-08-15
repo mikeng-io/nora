@@ -15,7 +15,7 @@ from nora.domain.compute import (
     ensure_utc_job,
     normalise_compute_job,
 )
-from nora.domain.media import MediaBytes, MediaRef, media_json
+from nora.domain.media import MediaBlob, MediaBytes, MediaRef, media_json
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -581,6 +581,52 @@ class FakeBlobStore:
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
             raise ValueError("blob key must be a lowercase sha256 hex digest")
         return self.blobs.get(key)
+
+
+class FakeMediaDescriptionStore:
+    """In-memory `MediaDescriptionStore`, bound to `SqlMediaDescriptionStore` by
+    `tests/contract/test_media_description_store_contract.py`.
+
+    **It does not answer every request the same way.** Both levels are real
+    dicts keyed the way production keys them, so a stage that looks up the
+    wrong key misses here exactly as it would against Postgres. A fake that
+    always hit would make every dedup test decorative — and dedup is the half
+    of this feature that is supposed to save the calls.
+
+    `unavailable` is the store being down. Both reads must degrade to a miss
+    and `remember` must swallow, which is the behaviour the ingest stage has to
+    be testable against.
+    """
+
+    def __init__(self, *, unavailable: bool = False) -> None:
+        self.unavailable = unavailable
+        self.index: dict[tuple[str, str], MediaBlob] = {}
+        self.descriptions: dict[str, str] = {}
+        self.resolved: list[tuple[str, str]] = []
+        self.described: list[str] = []
+        self.remembered: list[tuple[str, str, str]] = []
+
+    async def resolve(self, *, platform: str, token: str) -> MediaBlob | None:
+        self.resolved.append((platform, token))
+        if self.unavailable:
+            return None
+        return self.index.get((platform, token))
+
+    async def describe(self, *, sha256: str) -> str | None:
+        self.described.append(sha256)
+        if self.unavailable:
+            return None
+        return self.descriptions.get(sha256)
+
+    async def remember(
+        self, *, platform: str, token: str, blob: MediaBlob,
+        description: str, model: str,
+    ) -> None:
+        self.remembered.append((platform, token, blob.sha256))
+        if self.unavailable:
+            return
+        self.index[(platform, token)] = blob
+        self.descriptions[blob.sha256] = description
 
 
 class FakeArtifactIngest:

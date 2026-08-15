@@ -6,6 +6,7 @@ from nora.domain import ports
 from nora.domain.ports import (
     AdapterHealth,
     EngageDecision,
+    MediaDescriptionStore,
     PlatformIdentity,
     SendResult,
 )
@@ -105,3 +106,15 @@ def test_port_methods_are_keyword_only_after_self():
 def test_adapter_health_is_typed_not_a_bare_dict():
     h = AdapterHealth(platform="signal", connected=True, last_event_age_seconds=None)
     assert h.connected is True
+
+
+def test_media_description_store_methods_are_keyword_only():
+    """This file's standing convention: a positional parameter added to a port
+    later is a breaking change at every call site."""
+    for name in ("resolve", "describe", "remember"):
+        sig = inspect.signature(getattr(MediaDescriptionStore, name))
+        positional = [
+            p for p in sig.parameters.values()
+            if p.name != "self" and p.kind is not p.KEYWORD_ONLY
+        ]
+        assert positional == [], f"{name} takes a positional parameter"

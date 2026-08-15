@@ -192,6 +192,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
+from nora.domain.media import MediaBlob as MediaBlob
 from nora.domain.media import MediaBytes as MediaBytes
 from nora.domain.media import MediaRef as MediaRef
 from nora.domain.models import (
@@ -735,6 +736,43 @@ class BlobStore(Protocol):
     async def put(self, *, data: bytes) -> str: ...
 
     async def get(self, *, key: str) -> bytes | None: ...
+
+
+@runtime_checkable
+class MediaDescriptionStore(Protocol):
+    """The durable half of media dedup (sticker spec §4.1). Never raises.
+
+    Two levels, because they answer different questions at different moments:
+
+    * `resolve` is keyed on the platform's own sticker IDENTITY, which is known
+      at parse time — before any bytes move. It is the only level that can turn
+      a repeat sighting into zero platform RPC, which is the whole point: this
+      runs on the ingest path the listener awaits.
+    * `describe` is keyed on the sha256 of the CONTENT, because a description
+      is a pure function of the bytes. The same art in two packs, or on two
+      platforms, is one row and one vision call.
+
+    The second level is deliberately shared with `media_fetch`'s existing
+    `VisionCache`, which becomes a read-through in front of it. Two caches that
+    could disagree about what one image is would be exactly the drift the
+    comprehend-once rule exists to prevent, and would surface as Nora
+    describing one picture two ways.
+
+    Never raises for `MediaSource`'s reason: it sits on the ingest path, and a
+    cache failure must degrade to a MISS — costing one re-description, never
+    the message. `remember` therefore returns None on failure rather than
+    signalling it; the caller has already produced a usable description and has
+    nothing to do differently.
+    """
+
+    async def resolve(self, *, platform: str, token: str) -> MediaBlob | None: ...
+
+    async def describe(self, *, sha256: str) -> str | None: ...
+
+    async def remember(
+        self, *, platform: str, token: str, blob: MediaBlob,
+        description: str, model: str,
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
