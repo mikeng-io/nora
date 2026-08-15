@@ -633,7 +633,19 @@ class FakeMediaDescriptionStore:
 class FakeMediaInterpreter:
     """In-memory `MediaInterpreter`. `calls` is the point of it: the invariant
     that only stickers are interpreted (spec §5.3) is proved by what this
-    RECORDS, not by reading the stage and believing it."""
+    RECORDS, not by reading the stage and believing it.
+
+    Mirrors `StickerInterpreter`'s own `media_type` gate (the review that
+    added `tests/contract/test_media_interpreter_contract.py`, fix round 1):
+    a non-image `media_type` refuses with `unsupported_format` before
+    touching `available`/`text`, exactly like production refuses a lottie
+    before any vision call goes out. Without this gate a test could feed a
+    lottie through the fake and see "no description" even if the real
+    pipeline never checked the format at all — the fake would mask the
+    omission instead of proving it absent. The refusal is still RECORDED in
+    `.calls`: only the result changes, because Task 14's sticker-only
+    invariant test asserts on what was asked, not just what was answered.
+    """
 
     def __init__(self, text: str = "a cartoon cat", *, available: bool = True,
                  reason: str = "") -> None:
@@ -645,6 +657,8 @@ class FakeMediaInterpreter:
 
     async def describe(self, *, data: bytes, media_type: str) -> MediaDescription:
         self.calls.append((media_type, len(data)))
+        if not media_type.startswith("image/"):
+            return MediaDescription(available=False, reason="unsupported_format")
         if not self.available:
             return MediaDescription(available=False, reason=self.reason or "vision")
         return MediaDescription(available=True, text=self.text)
