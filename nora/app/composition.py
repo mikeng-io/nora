@@ -41,7 +41,6 @@ from nora.domain.ports import (
     ComputeBackend,
     ContextAssembler,
     EngagePolicy,
-    MediaSource,
     MemoryStore,
     PlatformAdapter,
     RecordStore,
@@ -76,7 +75,8 @@ from nora.ingest.policy import (
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
-from nora.platform.registry import AdapterRegistry, AdapterRegistryError
+from nora.platform.discord.media import DiscordMediaSource
+from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaSourceRegistry
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
@@ -461,11 +461,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # return value rather than widening the pipeline's port to match.
         background.spawn(coro)
 
-    media_source, blobs = _build_media_custody(cfg)
+    media_sources, blobs = _build_media_custody(cfg)
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
         policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
-        media_source=media_source, blobs=blobs,
+        media_sources=media_sources, blobs=blobs,
     )
 
     tier = cfg.llm
@@ -1270,8 +1270,8 @@ async def _presence_preflight(
             log.exception("presence pre-flight failed for a policy conversation")
 
 
-def _build_media_custody(cfg: Config) -> tuple[MediaSource | None, BlobStore | None]:
-    """The `(source, blobs)` pair the ingest pipeline takes for byte custody, or
+def _build_media_custody(cfg: Config) -> tuple[MediaSourceRegistry | None, BlobStore | None]:
+    """The `(sources, blobs)` pair the ingest pipeline takes for byte custody, or
     `(None, None)` when custody is OFF (DEC-43 wiring, DEC-47 encryption).
 
     Custody turns ON only when `[media] enabled` is true AND a valid encryption
@@ -1319,10 +1319,13 @@ def _build_media_custody(cfg: Config) -> tuple[MediaSource | None, BlobStore | N
             media.encryption_key_env, exc,
         )
         return None, None
-    source = SignalMediaSource(
-        base_url=cfg.platforms.signal.base_url,
-        timeout_seconds=media.timeout_seconds,
-        max_bytes=media.max_bytes,
-    )
+    sources = MediaSourceRegistry([
+        SignalMediaSource(
+            base_url=cfg.platforms.signal.base_url,
+            timeout_seconds=media.timeout_seconds,
+            max_bytes=media.max_bytes,
+        ),
+        DiscordMediaSource(timeout_seconds=media.timeout_seconds),
+    ])
     blobs = FilesystemBlobStore(cfg.store.data_dir / "media", cipher=cipher)
-    return source, blobs
+    return sources, blobs

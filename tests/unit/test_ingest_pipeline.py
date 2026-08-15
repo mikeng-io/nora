@@ -22,6 +22,7 @@ from nora.ingest.pipeline import IngestPipeline, IngestResult
 from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.platform.registry import MediaSourceRegistry
 from nora.policy import permissive_policy
 from nora.testing import FakeBlobStore, FakeMediaSource, FakeRecordStore
 
@@ -59,7 +60,7 @@ class FakeMemory:
 
 
 def _pipeline(*, memory, persons, policy, spawn, audit=None, allowlist=None,
-              media_source=None, blobs=None, metrics=None):
+              media_sources=None, blobs=None, metrics=None):
     return IngestPipeline(
         audit=audit if audit is not None else FakeRecordStore(),
         memory=memory,
@@ -70,7 +71,7 @@ def _pipeline(*, memory, persons, policy, spawn, audit=None, allowlist=None,
         allowlist=allowlist if allowlist is not None else permissive_policy(),
         metrics=metrics if metrics is not None else Metrics(),
         spawn=spawn,
-        media_source=media_source,
+        media_sources=media_sources,
         blobs=blobs,
     )
 
@@ -230,7 +231,8 @@ async def test_custody_runs_before_the_audit_write_so_one_row_carries_both():
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        audit=store, media_source=FakeMediaSource({"att1": JPEG}), blobs=blobs,
+        audit=store, media_sources=MediaSourceRegistry([FakeMediaSource({"att1": JPEG})]),
+        blobs=blobs,
     )
 
     result = await pipeline.run(message=msg)

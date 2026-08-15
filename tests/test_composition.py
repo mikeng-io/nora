@@ -16,6 +16,8 @@ from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.config import load
 from nora.infra.blobs import FilesystemBlobStore
+from nora.platform.discord.media import DiscordMediaSource
+from nora.platform.registry import MediaSourceRegistry
 from nora.platform.signal.media import SignalMediaSource
 from nora.policy import load_policy
 from tests.builders import override_config
@@ -176,16 +178,19 @@ async def test_media_custody_is_off_when_the_key_env_is_unset(cfg):
     the ingest pipeline is wired with no source and no store. That is the one
     state `nora.ingest.stages.media` counts as `not_configured`."""
     deps = await build_dependencies(cfg)
-    assert deps.ingest._media_source is None
+    assert deps.ingest._media_sources is None
     assert deps.ingest._blobs is None
 
 
 async def test_a_valid_key_turns_media_custody_on_with_an_encrypting_store(cfg, monkeypatch):
     """A base64 32-byte key present in the named env var is what wires the
-    SignalMediaSource + the encrypting FilesystemBlobStore into the pipeline."""
+    MediaSourceRegistry (Signal + Discord) + the encrypting FilesystemBlobStore
+    into the pipeline."""
     monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
     deps = await build_dependencies(cfg)
-    assert isinstance(deps.ingest._media_source, SignalMediaSource)
+    assert isinstance(deps.ingest._media_sources, MediaSourceRegistry)
+    assert isinstance(deps.ingest._media_sources.for_platform("signal"), SignalMediaSource)
+    assert isinstance(deps.ingest._media_sources.for_platform("discord"), DiscordMediaSource)
     assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
 
 
@@ -194,14 +199,14 @@ async def test_a_malformed_key_degrades_to_off_rather_than_crashing(cfg, monkeyp
     is custody OFF (warned), never a startup failure and never plaintext."""
     monkeypatch.setenv("NORA_MEDIA_KEY", "not-a-valid-base64-32-byte-key!!")
     deps = await build_dependencies(cfg)
-    assert deps.ingest._media_source is None
+    assert deps.ingest._media_sources is None
     assert deps.ingest._blobs is None
 
 
 async def test_media_disabled_is_off_even_with_a_valid_key(cfg, monkeypatch):
     monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
     deps = await build_dependencies(override_config(cfg, {"media.enabled": False}))
-    assert deps.ingest._media_source is None
+    assert deps.ingest._media_sources is None
     assert deps.ingest._blobs is None
 
 

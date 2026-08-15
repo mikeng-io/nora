@@ -57,6 +57,7 @@ from nora.domain.media import (
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import BlobStore, MediaSource
 from nora.ingest.exif import strip_exif
+from nora.platform.registry import MediaSourceRegistry
 
 log = logging.getLogger("nora.ingest.media")
 
@@ -64,7 +65,7 @@ log = logging.getLogger("nora.ingest.media")
 async def run(
     *,
     message: NormalizedMessage,
-    source: MediaSource | None,
+    sources: MediaSourceRegistry | None,
     blobs: BlobStore | None,
     metrics: Any,
 ) -> NormalizedMessage:
@@ -74,11 +75,15 @@ async def run(
     is returned unchanged without touching either collaborator, so the ordinary
     case — every message this deployment has ever seen — costs one `if`.
 
-    `source`/`blobs` are `None` when media custody is not wired at the
-    composition root. That is COUNTED (`status="not_configured"`) rather than
+    `sources`/`blobs` are `None` when media custody is not wired at the
+    composition root at all — COUNTED as `status="not_configured"` rather than
     passed over in silence: a message that carried an attachment while custody
     was switched off is precisely the loss an operator needs to see, and it is
     invisible in every other series.
+
+    When custody IS wired but `sources` brought no fetcher for THIS message's
+    platform, that is a different operator problem — `status="not_supported"`
+    — and is resolved once, here, rather than re-derived per attachment.
     """
     if not message.media:
         return message
@@ -88,9 +93,13 @@ async def run(
             platform=message.platform,
             label=label_for(ref),
         )
+    source = sources.for_platform(message.platform) if sources is not None else None
     if source is None or blobs is None:
-        _count(metrics, platform=message.platform, status="not_configured",
-               n=len(message.media))
+        # `not_configured` when custody is off entirely; `not_supported` when
+        # custody is on but THIS platform brought no fetcher. Two different
+        # things to go fix, so two labels.
+        status = "not_configured" if sources is None or blobs is None else "not_supported"
+        _count(metrics, platform=message.platform, status=status, n=len(message.media))
         return message
 
     held: list[MediaBlob] = []

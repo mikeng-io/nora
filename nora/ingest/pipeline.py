@@ -36,11 +36,11 @@ from nora.domain.ports import (
     BlobStore,
     EngageDecision,
     EngagePolicy,
-    MediaSource,
     MemoryStore,
     RecordStore,
 )
 from nora.persons import Persons
+from nora.platform.registry import MediaSourceRegistry
 from nora.policy import Policy
 
 from .stages import audit as audit_stage
@@ -70,18 +70,20 @@ class IngestPipeline:
         allowlist: Policy,
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], None],
-        media_source: MediaSource | None = None,
+        media_sources: MediaSourceRegistry | None = None,
         blobs: BlobStore | None = None,
     ) -> None:
-        """`media_source`/`blobs` default to None — media custody OFF — and
+        """`media_sources`/`blobs` default to None — media custody OFF — and
         that default is a wiring state, not a design position (DEC-43).
 
         Both are optional so this constructor stayed compatible with a
         composition root being edited in another worktree on the same day.
         With either absent, `media` counts every attachment it sees as
         `not_configured` and records the message exactly as before; nothing is
-        silently skipped. Supplying both is what turns custody on, and it is
-        the one line the composition root owes this feature.
+        silently skipped. Supplying both is what turns custody on — the
+        registry is what then picks the RIGHT fetcher per message, by
+        platform — and it is the one line the composition root owes this
+        feature.
         """
         self._audit = audit
         self._memory = memory
@@ -90,7 +92,7 @@ class IngestPipeline:
         self._allowlist = allowlist
         self._metrics = metrics
         self._spawn = spawn
-        self._media_source = media_source
+        self._media_sources = media_sources
         self._blobs = blobs
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
@@ -121,7 +123,7 @@ class IngestPipeline:
         # blob it names are committed by the same INSERT. See that module for
         # why it is inline rather than spawned like `memory_feed`.
         message = await media_stage.run(
-            message=message, source=self._media_source, blobs=self._blobs, metrics=m,
+            message=message, sources=self._media_sources, blobs=self._blobs, metrics=m,
         )
         recorded = await audit_stage.run(
             message=message, audit=self._audit, metrics=m, person=person

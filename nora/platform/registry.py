@@ -28,10 +28,11 @@ Nora?" and "which person is this sender?" are answered by the same flattening.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from nora.domain.ports import PlatformAdapter, PlatformIdentity
+from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.signal.account import AccountError, derive_account
 from nora.platform.signal.adapter import SignalAdapter
@@ -213,3 +214,21 @@ class AdapterRegistry:
 
     def __len__(self) -> int:
         return len(self.adapters)
+
+
+class MediaSourceRegistry:
+    """The `MediaSource` for one platform, or None — the sibling of
+    `AdapterRegistry`, and for the same reason (design/proposed/26 §1).
+
+    Before it, the composition root built one `SignalMediaSource` and the
+    custody stage handed it every ref regardless of platform, so a Discord
+    attachment was fetched by asking signal-cli for a Discord snowflake. A
+    registry makes "this platform has no fetcher" a value the stage can count
+    rather than a wrong call it cannot see.
+    """
+
+    def __init__(self, sources: Iterable[MediaSource]) -> None:
+        self._by_platform: dict[str, MediaSource] = {s.platform: s for s in sources}
+
+    def for_platform(self, platform: str) -> MediaSource | None:
+        return self._by_platform.get(platform)

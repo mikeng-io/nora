@@ -30,6 +30,7 @@ from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.ingest.stages import media as media_stage
 from nora.obs.metrics import Metrics
+from nora.platform.registry import MediaSourceRegistry
 from nora.testing import FakeBlobStore, FakeMediaSource
 
 JPEG = b"\xff\xd8\xff\xe0 pretend jpeg"
@@ -42,9 +43,9 @@ JPEG_SHA = hashlib.sha256(JPEG).hexdigest()
 _CIPHER = BlobCipher(bytes(range(32)))
 
 
-def _msg(*, body: str, refs: tuple[MediaRef, ...]) -> NormalizedMessage:
+def _msg(*, body: str, refs: tuple[MediaRef, ...], platform: str = "signal") -> NormalizedMessage:
     return NormalizedMessage(
-        platform="signal", conversation_id="g1", conversation_type="group",
+        platform=platform, conversation_id="g1", conversation_type="group",
         sender_id="+85212345678", sender_name="Miles", timestamp=1700,
         body=body, raw={}, media=refs,
     )
@@ -236,11 +237,33 @@ async def test_a_message_with_no_attachments_never_touches_the_collaborators():
     source = FakeMediaSource()
     message = _msg(body="早晨", refs=())
     out = await media_stage.run(
-        message=message, source=source, blobs=FakeBlobStore(), metrics=metrics,
+        message=message, sources=MediaSourceRegistry([source]),
+        blobs=FakeBlobStore(), metrics=metrics,
     )
     assert out is message
     assert source.fetched == []
     assert metrics.get("nora_media_custody_total") == 0
+
+
+async def test_a_discord_ref_is_never_fetched_by_the_signal_source():
+    """The latent defect this closes (spec §1, finding 6): one
+    `SignalMediaSource` served every platform, so a Discord snowflake was
+    handed to signal-cli's `getAttachment`, which can only say `not_found` —
+    a reason that reads like Discord lost the file."""
+    signal_source = FakeMediaSource({"sig-1": b"bytes"})
+    metrics = Metrics()
+
+    message = _msg(platform="discord", body="[image]",
+                    refs=(MediaRef(platform_id="sig-1", media_type="image/jpeg"),))
+    out = await media_stage.run(
+        message=message, sources=MediaSourceRegistry([signal_source]),
+        blobs=FakeBlobStore(), metrics=metrics,
+    )
+
+    assert signal_source.fetched == [], "the Signal source must not see a Discord ref"
+    assert out.body == message.body
+    assert metrics.get("nora_media_custody_total", platform="discord",
+                        status="not_supported") == 1
 
 
 async def test_custody_puts_the_handle_in_the_body_and_the_hash_in_the_row():
@@ -251,7 +274,8 @@ async def test_custody_puts_the_handle_in_the_body_and_the_hash_in_the_row():
         refs=(MediaRef(platform_id="att1", media_type="image/jpeg", filename="a.jpg"),),
     )
     out = await media_stage.run(
-        message=message, source=FakeMediaSource({"att1": JPEG}), blobs=blobs, metrics=metrics,
+        message=message, sources=MediaSourceRegistry([FakeMediaSource({"att1": JPEG})]),
+        blobs=blobs, metrics=metrics,
     )
     assert out.body == f"睇下 [image {JPEG_SHA[:6]}]"
     assert out.media_blobs == (
@@ -269,7 +293,8 @@ async def test_the_recorded_size_is_measured_not_the_platforms_claim():
         message=_msg(body="[image]", refs=(
             MediaRef(platform_id="att1", media_type="image/jpeg", size=999_999),
         )),
-        source=FakeMediaSource({"att1": JPEG}), blobs=FakeBlobStore(), metrics=Metrics(),
+        sources=MediaSourceRegistry([FakeMediaSource({"att1": JPEG})]),
+        blobs=FakeBlobStore(), metrics=Metrics(),
     )
     assert out.media_blobs[0].size == len(JPEG)
 
@@ -282,7 +307,8 @@ async def test_an_unfetchable_attachment_records_the_message_without_a_claim():
         MediaRef(platform_id="gone", media_type="image/jpeg"),
     ))
     out = await media_stage.run(
-        message=message, source=FakeMediaSource({}), blobs=FakeBlobStore(), metrics=metrics,
+        message=message, sources=MediaSourceRegistry([FakeMediaSource({})]),
+        blobs=FakeBlobStore(), metrics=metrics,
     )
     assert out.body == "[image]"
     assert out.media_blobs == ()
@@ -296,7 +322,7 @@ async def test_a_daemon_that_is_down_costs_the_bytes_and_never_the_message():
         message=_msg(body="[voice note]", refs=(
             MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),
         )),
-        source=FakeMediaSource({"att1": JPEG}, unavailable=True),
+        sources=MediaSourceRegistry([FakeMediaSource({"att1": JPEG}, unavailable=True)]),
         blobs=FakeBlobStore(), metrics=metrics,
     )
     assert out.body == "[voice note]"
@@ -309,7 +335,7 @@ async def test_a_disk_that_refuses_the_write_is_counted_not_swallowed():
         message=_msg(body="[image]", refs=(
             MediaRef(platform_id="att1", media_type="image/jpeg"),
         )),
-        source=FakeMediaSource({"att1": JPEG}),
+        sources=MediaSourceRegistry([FakeMediaSource({"att1": JPEG})]),
         blobs=FakeBlobStore(fail_on_put=True), metrics=metrics,
     )
     assert out.body == "[image]"
@@ -327,7 +353,7 @@ async def test_custody_not_being_wired_is_counted_rather_than_passed_over():
             MediaRef(platform_id="a", media_type="image/png"),
             MediaRef(platform_id="b", media_type="video/mp4"),
         )),
-        source=None, blobs=None, metrics=metrics,
+        sources=None, blobs=None, metrics=metrics,
     )
     assert out.body == "[image] [video]"
     assert metrics.get("nora_media_custody_total", status="not_configured") == 2
@@ -344,7 +370,7 @@ async def test_one_failure_among_several_does_not_cost_the_others_their_handles(
     ))
     out = await media_stage.run(
         message=message,
-        source=FakeMediaSource({"ok1": png, "ok2": JPEG}),
+        sources=MediaSourceRegistry([FakeMediaSource({"ok1": png, "ok2": JPEG})]),
         blobs=FakeBlobStore(), metrics=metrics,
     )
     assert out.body == (
@@ -365,7 +391,7 @@ async def test_the_same_bytes_twice_are_stored_once_and_share_a_handle():
             MediaRef(platform_id="first", media_type="image/jpeg", filename="a.jpg"),
             MediaRef(platform_id="second", media_type="image/jpeg", filename="forwarded.jpg"),
         )),
-        source=FakeMediaSource({"first": JPEG, "second": JPEG}),
+        sources=MediaSourceRegistry([FakeMediaSource({"first": JPEG, "second": JPEG})]),
         blobs=blobs, metrics=Metrics(),
     )
     assert out.body == f"[image {JPEG_SHA[:6]}] [image {JPEG_SHA[:6]}]"
@@ -382,6 +408,6 @@ async def test_the_stage_asks_the_source_for_the_platforms_own_id():
         message=_msg(body="[image]", refs=(
             MediaRef(platform_id="att-xyz", media_type="image/jpeg", filename="a.jpg"),
         )),
-        source=source, blobs=FakeBlobStore(), metrics=Metrics(),
+        sources=MediaSourceRegistry([source]), blobs=FakeBlobStore(), metrics=Metrics(),
     )
     assert source.fetched == ["att-xyz"]
