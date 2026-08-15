@@ -219,6 +219,9 @@ def parse_discord_message(
                 "channel_id": message.channel.id,
                 "content": message.content,
                 "attachment_ids": [a.id for a in message.attachments],
+                "sticker_ids": [
+                    getattr(s, "id", None) for s in getattr(message, "stickers", None) or ()
+                ],
             },
             mentions=frozenset(str(u.id) for u in message.mentions),
             quote=_quoted(message.reference),

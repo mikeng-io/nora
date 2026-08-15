@@ -85,6 +85,13 @@ class SqlMediaDescriptionStore:
                     )
                     index_stmt = index_stmt.on_conflict_do_update(
                         index_elements=[STICKER_INDEX.c.platform, STICKER_INDEX.c.fetch_token],
+                        # `sha256`/`media_type`/`size` are updated TOGETHER,
+                        # deliberately: they are one indivisible fact about
+                        # the held blob (`MediaBlob`), so a future column
+                        # derived from the blob (e.g. a dimension, a
+                        # duration) belongs in this same set, never added to
+                        # only one of the three and left to drift from the
+                        # others on a re-upsert.
                         set_={
                             "sha256": index_stmt.excluded.sha256,
                             "media_type": index_stmt.excluded.media_type,

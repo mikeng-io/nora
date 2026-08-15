@@ -568,7 +568,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         ),
     )
     # A SECOND VisionClient, not a second connection: same process-wide
-    # OmniRoute client, a sticker-sized budget and a sticker-specific timeout.
+    # OmniRoute client, the SAME token budget as `media_fetch`'s vision call
+    # (the 2026-08-07 probe refuted a smaller one — see `StickerInterpreter`'s
+    # docstring) and a sticker-specific timeout.
     # `derive_vision_timeout` is deliberately not used — see MediaConfig.
     sticker_reader = None
     if cfg.media.sticker_descriptions and blobs is not None:

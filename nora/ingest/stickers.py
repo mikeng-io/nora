@@ -48,7 +48,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.media import MediaBlob, MediaRef, resolve_media_type
+from nora.domain.media import MediaBlob, MediaRef, resolve_media_type, sniff_media_type
 from nora.domain.ports import (
     BlobStore,
     MediaDescriptionStore,
@@ -67,13 +67,17 @@ class StickerOutcome:
     `description` is RAW. The caller screens it on render, never this module at
     store time — a screen applied before caching is one a cache hit skips.
 
-    `cached` is a metric label, not a branch: `identity` / `content` / `none`.
-    It is what makes "the cache is working" an observation instead of a belief.
+    `level` is a metric label, not a branch: `identity` / `content` / `none` —
+    which rung of the ladder actually answered. It is what makes "the cache is
+    working" an observation instead of a belief, and it is a SEPARATE
+    vocabulary from `nora_media_fetch_total`'s boolean `cached` label; the two
+    were once spelled the same way and that was the wrong call (whole-branch
+    review, 2026-08-15) — enumerated here so a caller cannot confuse the two.
     """
 
     blob: MediaBlob | None
     description: str = ""
-    cached: str = "none"
+    level: str = "none"
     reason: str = ""
 
 
@@ -119,20 +123,36 @@ class StickerReader:
         )
         self._inflight[key] = future
         try:
-            outcome = await self._read(platform=platform, ref=ref, source=source)
-        except Exception:
-            # Total, like every ingest collaborator: a sticker must never cost
-            # the message. The waiters get the same honest answer.
-            log.exception("sticker read raised; degrading to unavailable")
-            outcome = StickerOutcome(blob=None, reason="error")
+            # NESTED try, deliberately: `except Exception` below must not catch
+            # `asyncio.CancelledError` (a `BaseException` since 3.8) — a
+            # cancelled winner has to stay cancelled, not degrade to an
+            # "error" outcome it never actually reached. But a cancellation
+            # DOES skip `future.set_result` on this line, and the outer
+            # `finally` runs regardless — which is exactly how a cancelled
+            # winner used to leave every waiter blocked on this future
+            # forever ("LOSER HUNG"). The outer `finally`'s job is the safety
+            # net for that one case; this inner block is the ordinary one.
+            try:
+                outcome = await self._read(platform=platform, ref=ref, source=source)
+            except Exception:
+                # Total, like every ingest collaborator: a sticker must never
+                # cost the message. The waiters get the same honest answer.
+                log.exception("sticker read raised; degrading to unavailable")
+                outcome = StickerOutcome(blob=None, reason="error")
+            future.set_result(outcome)
         finally:
-            # Cleaned up on BOTH paths, and before `future.set_result` — no
-            # `await` sits between them, so no other task can observe a state
-            # where the future is resolved but still claims to be in flight,
-            # or vice versa.
+            # Cleaned up on EVERY path — success, the caught-exception
+            # degrade, and cancellation alike.
             del self._inflight[key]
-        future.set_result(outcome)
-        return outcome
+            if not future.done():
+                # Reached only when the inner `try` was cancelled before
+                # `future.set_result` above ran. Resolving it here — rather
+                # than leaving it pending — is what keeps `read` total for
+                # every OTHER task already awaiting this same future; the
+                # cancelled task itself still propagates `CancelledError`
+                # past this `finally`, unaffected.
+                future.set_result(StickerOutcome(blob=None, reason="cancelled"))
+        return await future
 
     async def _read(
         self, *, platform: str, ref: MediaRef, source: MediaSource
@@ -141,12 +161,23 @@ class StickerReader:
         known = await self._descriptions.resolve(platform=platform, token=ref.fetch_token)
         data: bytes | None = None
         if known is not None:
-            blob, cached = known, "identity"
+            blob, level = known, "identity"
         else:
             fetched = await source.fetch(ref=ref)
             if not fetched.available:
                 return StickerOutcome(blob=None, reason=fetched.reason or "unavailable")
-            media_type = resolve_media_type(declared=ref.media_type, filename=ref.filename)
+            # The type as DECLARED (or filename-guessed) — but Signal declares
+            # none for a sticker at all (spec §1: no `contentType` on
+            # `dataMessage.sticker`), so `sniff_media_type` reads the real
+            # container off the fetched bytes and wins when it recognises one.
+            # BEFORE `strip_exif`/hashing: the media type decides whether
+            # stripping happens and is what lands in the `MediaBlob` and the
+            # interpreter call — an unresolved `""` here is what made the
+            # interpreter's `_INTERPRETABLE` gate refuse every real Signal
+            # sticker (whole-branch review C1). Never invented when neither
+            # source resolves one: the declared/guessed fallback stays `""`.
+            declared = resolve_media_type(declared=ref.media_type, filename=ref.filename)
+            media_type = sniff_media_type(fetched.data) or declared
             # Strip before hashing, so the key is the key of the PICTURE — the
             # same rule `stages.media._take` follows, for the same reason.
             data = strip_exif(fetched.data, media_type)
@@ -155,7 +186,7 @@ class StickerReader:
             except Exception:
                 log.exception("blob store refused a sticker; recording without custody")
                 return StickerOutcome(blob=None, reason="store_failed")
-            blob, cached = (
+            blob, level = (
                 MediaBlob(sha256=sha256, media_type=media_type, size=len(data)),
                 "content",
             )
@@ -164,7 +195,7 @@ class StickerReader:
         # the same art under a second identity is one row and one call.
         existing = await self._descriptions.describe(sha256=blob.sha256)
         if existing is not None:
-            return StickerOutcome(blob=blob, description=existing, cached=cached)
+            return StickerOutcome(blob=blob, description=existing, level=level)
 
         # LEVEL 3 — the model. On an identity hit the bytes were never fetched,
         # so they come from Nora's own custody: still zero platform RPC.
@@ -175,7 +206,12 @@ class StickerReader:
                 log.exception("could not open a held sticker blob")
                 data = None
             if not data:
-                return StickerOutcome(blob=blob, cached=cached, reason="blob_missing")
+                # `blob=None`, not `blob=blob`: custody just PROVED the bytes
+                # are absent (an identity hit whose blob store no longer has
+                # them), so returning the blob here would claim
+                # `[sticker a3f2c1]`'s promise — "a3f2c1 can be produced" —
+                # for a hash that cannot be (whole-branch review I2).
+                return StickerOutcome(blob=None, reason="blob_missing")
 
         # `nora_sticker_describe_seconds` (sticker spec §5.2): the interpreter
         # call ALONE, not the ladder around it — a cache hit never reaches
@@ -185,13 +221,15 @@ class StickerReader:
         result = await self._interpreter.describe(data=data, media_type=blob.media_type)
         self._metrics.observe("nora_sticker_describe_seconds", time.perf_counter() - started)
         if not result.available or not result.text:
-            # Never cached. A failure that got remembered would make every
-            # later sighting serve the failure as if it were an answer.
-            return StickerOutcome(
-                blob=blob, cached=cached, reason=result.reason or "vision"
-            )
+            # Never cached, AND `level="none"` — not the `level` this call
+            # entered with. A fetch-then-fail (or an identity hit whose model
+            # call then fails) reached this line because NOTHING answered it
+            # yet; reporting the ladder rung that merely supplied the bytes
+            # over-reports "the cache is working" on the one path an operator
+            # is watching it for (whole-branch review I4).
+            return StickerOutcome(blob=blob, level="none", reason=result.reason or "vision")
         await self._descriptions.remember(
             platform=platform, token=ref.fetch_token, blob=blob,
             description=result.text, model=self._model,
         )
-        return StickerOutcome(blob=blob, description=result.text, cached="none")
+        return StickerOutcome(blob=blob, description=result.text, level="none")

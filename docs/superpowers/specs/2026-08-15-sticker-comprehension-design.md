@@ -298,11 +298,16 @@ audit record and should not grow a cache.
 
 ```python
 class MediaDescriptionStore(Protocol):
-    async def resolve(self, *, platform: str, token: str) -> str | None      # -> sha256
+    async def resolve(self, *, platform: str, token: str) -> MediaBlob | None
     async def describe(self, *, sha256: str) -> str | None                   # -> raw description
-    async def remember(self, *, platform: str, token: str, sha256: str,
+    async def remember(self, *, platform: str, token: str, blob: MediaBlob,
                        description: str, model: str) -> None
 ```
+
+(As shipped, not as first sketched: `resolve` returns a whole `MediaBlob`
+— `sha256` plus `media_type` and `size` — not a bare sha256, so a caller never
+has to guess the type of an identity hit. `remember` takes the same `MediaBlob`
+rather than a lone `sha256`, for the same reason.)
 
 **None of these ever raise.** The port sits on the ingest path; a store failure
 degrades to a cache miss, counted, and never costs the message. This is the
@@ -311,9 +316,11 @@ same contract `MediaSource` carries and for the same reason.
 Two tables, written in one transaction:
 
 - **`sticker_index`** — `(platform, fetch_token)` primary key, `sha256`,
-  `first_seen`, `last_seen`, `hits`. The only level checkable before the bytes
-  move, and therefore the entire reason a repeat costs about a millisecond
-  instead of a 250 KB RPC on the path the listener awaits.
+  `media_type`, `size`, `first_seen`, `last_seen`, `hits`. The only level
+  checkable before the bytes move, and therefore the entire reason a repeat
+  costs about a millisecond instead of a 250 KB RPC on the path the listener
+  awaits. `media_type`/`size` ride alongside `sha256` so an identity hit
+  resolves a complete `MediaBlob` without a second lookup.
 - **`media_descriptions`** — `sha256` primary key, `description`, `model`,
   `created_at`.
 
@@ -559,7 +566,44 @@ latency is worth turning the flag on is the operator's, per §6.
 
 Follow-ons, explicitly not in this spec: Discord attachment custody (§3.5),
 outbound media and Giphy (document 26 §2), native Signal sticker sending
-(document 26 §6, out of scope there too).
+(document 26 §6, out of scope there too), and four more surfaced by the
+whole-branch review (2026-08-15) that are documented here rather than fixed,
+because each is a genuine policy question rather than a bug:
+
+4. **`sticker_index` is an untracked reference into the blob store.**
+   `nora/infra/blobs/filesystem.py` documents a planned media GC whose live
+   set is "every hash named by a surviving row's `media_json`". `sticker_index`
+   now names blobs too, via `resolve`, and never expires — so that sweep, once
+   built, would delete blobs `sticker_index` still points at, and a level-1
+   (identity) hit would never notice, because it never touches the bytes. The
+   sweep's live-set query has to be widened to `media_json` UNION
+   `sticker_index.sha256` before it may run, or `sticker_index` needs its own
+   expiry wired to the same policy.
+5. **`media_descriptions` has no retention story.** Via `media_fetch`
+   (flag-independent, already shipped), descriptions of members' own
+   photographs now persist indefinitely in this table, outside the message
+   retention sweep entirely. §2.2's argument — that reading a photograph
+   permanently into the durable record is materially different from reading
+   pack art, which is why the sticker interpreter is scoped to stickers only —
+   applies with equal force to this table's retention, which nothing here
+   bounds.
+6. **One content-hash row, two prompts.** A `media_fetch` transcription and a
+   sticker depiction share `media_descriptions`, keyed only on `sha256`; the
+   row records `model` but not which question was asked, so whichever call
+   arrives first wins the row. §4.1 chose the shared cache deliberately (the
+   comprehend-once argument: two caches that could disagree about one image is
+   the drift to avoid), but the consequence is real: a 1024-token
+   `media_fetch` transcription, truncated by `sanitize_description` to 200
+   chars, can be served back as a sticker's depiction if the same bytes were
+   transcribed first.
+7. **`sticker_index.hits`/`last_seen` only move on a cold describe.**
+   `remember` is the sole writer of both columns and is never called on a
+   ladder hit (identity or content) — only when level 3 actually ran. So
+   `last_seen` means "last DESCRIBED", not "last SIGHTED", and a sticker in
+   heavy daily rotation whose description was cached months ago will show a
+   stale `last_seen` throughout. Either document that meaning explicitly
+   wherever the column is read, or drop the two columns if nothing reads them
+   under the assumption they track sightings.
 
 ## 9. Testing
 

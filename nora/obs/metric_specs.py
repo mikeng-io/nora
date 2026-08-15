@@ -736,19 +736,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # rate an OBSERVATION rather than a belief. `status` is `ok` when the
     # sticker branch produced a description, else the `StickerOutcome.reason`
     # that stopped it (unavailable / store_failed / blob_missing / vision /
-    # error / not_found / no_id / too_large / unreachable). `cached` is
-    # `StickerReader`'s own ladder-level label — identity / content / none —
-    # and it is DELIBERATELY NOT the same vocabulary as `nora_media_fetch_
-    # total`'s `cached` label (true/false): two series named `cached` with two
-    # different value sets is a legibility trap for whoever reads these in
-    # Grafana, so read this one as identity/content/none, never as a boolean.
+    # error / not_found / no_id / too_large / unreachable). `level` is
+    # `StickerReader`'s own ladder-level label — identity / content / none.
     _CounterSpec(
         "nora_sticker_descriptions_total",
         "Sticker-branch outcomes in the media custody stage, by platform, "
         "status (ok / the StickerOutcome reason), and which ladder level "
-        "answered — cached=identity/content/none. NOT the boolean cached= "
-        "true/false vocabulary nora_media_fetch_total's cached label uses.",
-        ("platform", "status", "cached"),
+        "answered — level=identity/content/none.",
+        ("platform", "status", "level"),
     ),
 )
 
@@ -902,8 +897,10 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "Messages actually delivered to the group per admitted tag.",
         (0, 1, 2, 3, 4, 5, 10),
     ),
-    # Task 14 fix round 1, sticker spec §5.2: the 6-second sticker vision
-    # budget must be MEASURED, not assumed. Observes only the interpreter
+    # Task 14 fix round 1, sticker spec §5.2: the sticker vision timeout
+    # (`media.sticker_timeout_seconds`, shipped at 20.0s — the 2026-08-07
+    # probe refuted the original 6s guess) must be MEASURED, not assumed.
+    # Observes only the interpreter
     # call itself (`StickerReader._read`'s `self._interpreter.describe(...)`)
     # — never the identity/content cache lookups around it, which would dilute
     # the model's own latency with near-zero cache hits and hide a slow

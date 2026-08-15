@@ -232,6 +232,37 @@ def resolve_media_type(*, declared: str, filename: str | None) -> str:
     return ""
 
 
+def sniff_media_type(data: bytes) -> str:
+    """The container type read off the leading bytes, or `""` if none of the
+    known signatures match.
+
+    Stickers are the reason this exists: a platform declares a type when it
+    has one — Discord's sticker format maps straight to `image/png` /
+    `image/apng` / `image/gif` — and Signal never does at all (spec §1:
+    `dataMessage.sticker` carries only `packId`/`stickerId`, no `contentType`).
+    `resolve_media_type` can only resolve what was DECLARED or guessable from
+    a FILENAME, and a Signal sticker has neither, so the type has to come from
+    the bytes actually fetched, or the description never reaches the vision
+    model at all — `StickerInterpreter`'s `_INTERPRETABLE` gate (correctly)
+    refuses anything not starting with `image/`, and an unresolved sticker
+    resolves to `""`.
+
+    Deliberately a sniff of a closed, small set of magic numbers observed on
+    real Signal stickers (spec §1's evidence table), not a general-purpose
+    format detector: `RIFF`...`WEBP` (animated or static WebP), the PNG
+    signature, and the GIF89a/GIF87a `GIF8` prefix. An unrecognised signature
+    is never guessed at — the caller falls back to whatever was already
+    resolved from the declared type.
+    """
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:4] == b"GIF8":
+        return "image/gif"
+    return ""
+
+
 def label_for(ref: MediaRef) -> str:
     """What KIND of thing this is, in words the group would use.
 

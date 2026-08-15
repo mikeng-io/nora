@@ -215,8 +215,13 @@ class StickerInterpreter:
     """Satisfies `nora.domain.ports.MediaInterpreter` over `VisionClient`.
 
     A thin adapter, not a second client: the same process-wide OmniRoute
-    connection, a different prompt and a much smaller budget. A sticker needs a
-    sentence, not `media_fetch`'s 1024-token transcription allowance.
+    connection, a different prompt and its own timeout. NOT a smaller token
+    budget — that was the original reasoning ("a sticker needs a sentence, not
+    `media_fetch`'s 1024-token transcription allowance"), and the 2026-08-07
+    probe refuted it: MiMo's reasoning tokens share the same `max_tokens`
+    budget as its answer, and 128 failed 0/4 attempts to get a sentence back.
+    The shipped `sticker_prompt_max_tokens` is 1024, identical to
+    `vision_max_tokens`.
     """
 
     def __init__(self, client: VisionClient, *, model: str) -> None:

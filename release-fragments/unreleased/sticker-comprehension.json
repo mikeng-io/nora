@@ -8,7 +8,8 @@
   ],
   "limitations": [
     "Off by default (`media.sticker_descriptions`). Stickers only — photos, voice notes and video are still described only when Nora chooses to look at them herself.",
-    "Discord's animated (lottie/JSON) stickers are held but not described — there is nothing for a vision model to read.",
+    "Discord's lottie (JSON animation) stickers are held but not described — there is nothing for a vision model to read. png/apng/gif stickers, including Discord's animated ones, ARE described.",
+    "A repeat sticker skips the vision call, not the platform fetch: a content-level hit (the same art under a new identity) still costs one fetch from the platform, only the identity-level hit is free of both.",
     "Verified against the deployed gateway: the vision model reads an animated WebP sticker correctly, not just its first frame."
   ]
 }

@@ -30,9 +30,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 
+import pytest
+
 from nora.domain.media import MediaBlob, MediaRef
 from nora.ingest.stickers import StickerReader
 from nora.obs.metrics import Metrics
+from nora.platform.signal.parser import parse_event
 from nora.testing import (
     FakeBlobStore,
     FakeMediaDescriptionStore,
@@ -87,7 +90,7 @@ async def test_an_identity_hit_makes_no_platform_call_and_no_vision_call():
 
     assert out.blob == blob
     assert out.description == "a cartoon cat"
-    assert out.cached == "identity"
+    assert out.level == "identity"
     assert source.fetched == [], "no platform RPC on a repeat sticker"
     assert interpreter.calls == [], "no vision call on a repeat sticker"
 
@@ -105,7 +108,7 @@ async def test_a_content_hit_fetches_but_does_not_describe():
     out = await _reader(store, interpreter, blobs).read(
         platform="signal", ref=REF, source=source)
 
-    assert out.cached == "content"
+    assert out.level == "content"
     assert out.description == "a cartoon cat"
     assert source.fetched == [TOKEN]
     assert interpreter.calls == []
@@ -118,7 +121,7 @@ async def test_a_cold_sticker_pays_once_and_is_remembered():
     out = await _reader(store, interpreter).read(
         platform="signal", ref=REF, source=source)
 
-    assert out.cached == "none"
+    assert out.level == "none"
     assert out.description == "a cartoon cat"
     assert len(interpreter.calls) == 1
     assert store.remembered == [("signal", TOKEN, out.blob.sha256)]
@@ -174,6 +177,11 @@ async def test_a_failed_interpretation_still_yields_the_blob():
     assert out.description == ""
     assert out.reason == "timeout"
     assert store.remembered == [], "a failure is never cached as a description"
+    # I4 (whole-branch review): a fetch-then-fail is not a content-level hit.
+    # `level` was set to "content" as a side effect of the fetch above, before
+    # level 2 was ever consulted — over-reporting "the cache is working" on
+    # exactly the failure path an operator would be watching it for.
+    assert out.level == "none"
 
 
 async def test_a_store_outage_costs_a_re_description_not_the_sticker():
@@ -212,3 +220,111 @@ async def test_a_reader_raising_mid_ladder_degrades_to_unavailable_and_cleans_up
         reader.read(platform="signal", ref=REF, source=_source()), timeout=2.0)
     assert out2.blob is None
     assert out2.reason == "error"
+
+
+async def test_an_identity_hit_whose_blob_is_gone_claims_no_custody():
+    """I2 (whole-branch review). `blob_missing` used to return `blob=blob`
+    after `BlobStore.get` had just PROVEN the bytes absent — the custody
+    stage would then append `blob.handle`, render `[sticker a3f2c1]`, and
+    count a stored hit, all for a hash that had just been shown NOT to be
+    producible. This is the identity-hit-then-gone-blob path the module
+    docstring calls out as "the subtle case", and it was untested."""
+    store = FakeMediaDescriptionStore()
+    blob = MediaBlob(sha256="b" * 64, media_type="image/png", size=123)
+    store.index[("signal", TOKEN)] = blob
+    # No entry in `store.descriptions[blob.sha256]` (level 2 misses) and no
+    # entry in the blob store for that sha256 (level 3's own-custody read
+    # comes up empty) — the exact combination that reaches `blob_missing`.
+    interpreter = FakeMediaInterpreter()
+
+    out = await _reader(store, interpreter, FakeBlobStore()).read(
+        platform="signal", ref=REF, source=_source())
+
+    assert out.blob is None, "custody was just disproven; must not claim it"
+    assert out.reason == "blob_missing"
+    assert interpreter.calls == []
+
+
+async def test_a_real_signal_sticker_envelope_survives_the_ladder():
+    """C1 (whole-branch review, CRITICAL). Every other test in this file
+    hand-builds a `MediaRef` with `media_type="image/png"` — but the REAL
+    Signal parser emits a sticker ref with NO media type at all (spec §3.1:
+    the envelope declares none). Feeding that ref through the ladder used to
+    reach `StickerInterpreter`'s `_INTERPRETABLE` gate with `media_type=""`,
+    which correctly refuses it — so 100% of real Signal stickers failed with
+    `unsupported_format`, on the one platform whose entire evidence case this
+    feature is built from. This test drives the real `parse_event` output
+    into the real ladder rather than a hand-built ref, so it fails against
+    that bug instead of a fake with the fix already baked into its fixture.
+    """
+    envelope = {
+        "envelope": {
+            "source": "+15555550123",
+            "timestamp": 1755280000000,
+            "dataMessage": {
+                "message": "",
+                "timestamp": 1755280000000,
+                "groupInfo": {"groupId": "group.abc123="},
+                "sticker": {
+                    "packId": "8c6ce85a3156b8e498e1ba0e97bc6620",
+                    "stickerId": 15,
+                },
+            },
+        }
+    }
+    message = parse_event(envelope, own_account="")
+    assert message is not None
+    assert len(message.media) == 1
+    ref = message.media[0]
+    assert ref.sticker is True
+    assert ref.media_type == "", "the real parser declares no type for a sticker"
+
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"sticker-payload" * 4
+    source = FakeMediaSource({ref.fetch_token: png_bytes})
+    source.platform = "signal"
+    store = FakeMediaDescriptionStore()
+    interpreter = FakeMediaInterpreter("a cartoon otter waving")
+
+    out = await _reader(store, interpreter).read(
+        platform="signal", ref=ref, source=source)
+
+    assert out.blob is not None
+    assert out.blob.media_type == "image/png", "sniffed from the PNG signature"
+    assert out.description == "a cartoon otter waving"
+    assert interpreter.calls == [("image/png", len(png_bytes))]
+
+
+async def test_a_cancelled_winner_does_not_hang_its_waiters():
+    """Measured as `LOSER HUNG`. `except Exception` in `read` never catches
+    `asyncio.CancelledError` (a `BaseException` since 3.8), so a cancelled
+    winner used to skip `future.set_result` entirely while `finally` still
+    deleted the in-flight map entry — every waiter already awaiting that
+    future then blocked forever on a future nobody would ever resolve."""
+    store = FakeMediaDescriptionStore()
+    interpreter = _SlowMediaInterpreter(delay=0.2)
+    reader = _reader(store, interpreter)
+
+    winner = asyncio.create_task(
+        reader.read(platform="signal", ref=REF, source=_source()))
+    # One tick is enough for `winner` to register itself and reach the
+    # interpreter's genuine suspension point — the same shape the
+    # single-flight test above relies on.
+    await asyncio.sleep(0)
+    loser = asyncio.create_task(
+        reader.read(platform="signal", ref=REF, source=_source()))
+    await asyncio.sleep(0)  # let `loser` observe the winner's in-flight future
+
+    winner.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await winner
+
+    # The loser must resolve — not hang — even though the winner never did.
+    loser_outcome = await asyncio.wait_for(loser, timeout=2.0)
+    assert loser_outcome.blob is None
+    assert loser_outcome.reason == "cancelled"
+
+    # No leaked in-flight entry: a fresh sighting runs its own attempt rather
+    # than hanging on the cancelled winner's future.
+    fresh = await asyncio.wait_for(
+        reader.read(platform="signal", ref=REF, source=_source()), timeout=2.0)
+    assert fresh.blob is not None
