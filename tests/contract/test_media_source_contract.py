@@ -34,6 +34,7 @@ import pytest
 from aiohttp import web
 
 from nora.domain.media import MediaRef
+from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.signal.media import SignalMediaSource
 from nora.testing import FakeMediaSource
 
@@ -286,3 +287,65 @@ async def test_a_malformed_token_is_bad_token_and_makes_no_call(aiohttp_server):
 
     assert got.available is False
     assert got.reason == "bad_token"
+
+
+# --- Discord: `DiscordMediaSource`, the port's second implementation --------
+
+
+async def test_discord_fetches_a_sticker_by_cdn_url(aiohttp_server):
+    async def cdn(request):
+        return web.Response(body=STICKER_BYTES, content_type="image/png")
+
+    app = web.Application()
+    app.router.add_get("/stickers/900.png", cdn)
+    server = await aiohttp_server(app)
+    source = DiscordMediaSource(cdn_base=str(server.make_url("")))
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="900", media_type="image/png", sticker=True,
+        fetch_token="sticker:900:png"))  # noqa: S106
+
+    assert got.available is True
+    assert got.data == STICKER_BYTES
+
+
+async def test_discord_refuses_an_attachment_explicitly():
+    """Not `not_found`, which is what today's cross-wiring produces when a
+    Discord ref is handed to signal-cli. `not_supported` says the truth: this
+    adapter does not fetch attachments, and the operator can see the count."""
+    source = DiscordMediaSource(cdn_base="http://unused.invalid")
+
+    got = await source.fetch(ref=MediaRef(platform_id="123", media_type="image/png"))
+
+    assert got.available is False
+    assert got.reason == "not_supported"
+
+
+async def test_discord_reports_a_missing_sticker_as_not_found(aiohttp_server):
+    app = web.Application()
+    server = await aiohttp_server(app)
+    source = DiscordMediaSource(cdn_base=str(server.make_url("")))
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="404", media_type="image/png", sticker=True,
+        fetch_token="sticker:404:png"))  # noqa: S106
+
+    assert got.available is False
+    assert got.reason == "not_found"
+
+
+async def test_discord_refuses_an_oversize_body(aiohttp_server):
+    async def cdn(request):
+        return web.Response(body=b"x" * 4096, content_type="image/png")
+
+    app = web.Application()
+    app.router.add_get("/stickers/900.png", cdn)
+    server = await aiohttp_server(app)
+    source = DiscordMediaSource(cdn_base=str(server.make_url("")), max_bytes=1024)
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="900", media_type="image/png", sticker=True,
+        fetch_token="sticker:900:png"))  # noqa: S106
+
+    assert got.available is False
+    assert got.reason == "too_large"
