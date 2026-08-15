@@ -34,9 +34,14 @@ handle — and increments `nora_media_custody_total{status=...}` with the reason
 The message is still recorded, in full, with its envelope. Nothing is silent
 and nothing is claimed.
 
-**Bytes never reach a prompt.** This stage produces a type and a key. Nora
-cannot read an image and this does not change that; a retrieval tool, if one is
-ever wanted, is a separate decision with a separate model behind it.
+**Bytes reach a prompt for STICKERS ONLY, and nothing else.** This stage still
+produces a type and a key for every attachment — Nora cannot read an arbitrary
+image, voice note or video, and this does not change that. A sticker is
+different: it is published pack art, identical for everyone who has the pack,
+not a photograph of somebody's life, so `stickers` (when wired) hands its bytes
+to one vision call and the description rides in the body beside the handle.
+See `nora/ingest/stickers.py` for the dedup ladder that makes that call cheap
+and the reasoning behind restricting it to stickers alone.
 """
 
 from __future__ import annotations
@@ -53,10 +58,12 @@ from nora.domain.media import (
     label_for,
     placeholder_suffix,
     resolve_media_type,
+    sanitize_description,
 )
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import BlobStore, MediaSource
 from nora.ingest.exif import strip_exif
+from nora.ingest.stickers import StickerReader
 from nora.platform.registry import MediaSourceRegistry
 
 log = logging.getLogger("nora.ingest.media")
@@ -68,6 +75,8 @@ async def run(
     sources: MediaSourceRegistry | None,
     blobs: BlobStore | None,
     metrics: Any,
+    stickers: StickerReader | None = None,
+    max_description_chars: int = 200,
 ) -> NormalizedMessage:
     """Return `message` with every attachment Nora could copy in her custody.
 
@@ -104,38 +113,65 @@ async def run(
 
     held: list[MediaBlob] = []
     handles: list[str] = []
+    descriptions: list[str] = []
     for ref in message.media:
-        blob = await _take(ref=ref, source=source, blobs=blobs, metrics=metrics,
-                           platform=message.platform)
+        if ref.sticker and stickers is not None:
+            # STICKERS ONLY (spec §2.2, §5.3). Everything else keeps the
+            # pull-based path below: custody plus a bare placeholder, described
+            # only if Nora chooses to call the `media_fetch` tool. A sticker is
+            # published pack art; a photo is somebody's life — see this
+            # module's docstring and `nora/ingest/stickers.py`.
+            outcome = await stickers.read(
+                platform=message.platform, ref=ref, source=source
+            )
+            blob, raw = outcome.blob, outcome.description
+            _count(metrics, platform=message.platform,
+                   status="stored" if blob else (outcome.reason or "unavailable"))
+        else:
+            blob = await _take(ref=ref, source=source, blobs=blobs, metrics=metrics,
+                               platform=message.platform)
+            raw = ""
         # A gap is a real position, not a skipped one: handles are matched to
         # placeholders by INDEX, so a failed attachment must contribute an
         # empty handle rather than shifting every later one onto the wrong
         # placeholder.
         handles.append(blob.handle if blob else "")
+        # A description rides only WITH a handle; `render_placeholder` enforces
+        # that too, and the empty string here is what makes a failed read read
+        # as `[sticker a3f2c1]` rather than as a colon with nothing after it.
+        descriptions.append(
+            sanitize_description(raw, max_chars=max_description_chars)
+            if blob and raw else ""
+        )
         if blob:
             held.append(blob)
 
     labels = tuple(label_for(ref) for ref in message.media)
-    rendered = placeholder_suffix(labels, tuple(handles))
+    rendered = placeholder_suffix(labels, tuple(handles), tuple(descriptions))
     # R-18's floor, applied to exactly the text THIS stage composed — the
     # placeholder run, not the sender's own words, which are the audit's
-    # business and not this stage's to censor. Nothing composed here can carry
-    # an identifier by construction (the labels are a closed set, a handle is
-    # hex), so this asserts that property rather than filtering for it; a hit
-    # means the construction broke. It costs the handles, never the message.
+    # business and not this stage's to censor. The LABEL and HANDLE halves
+    # cannot carry an identifier by construction (a closed label set plus
+    # hex); the DESCRIPTION half is free text a vision model wrote about a
+    # sticker's bytes, so this is no longer an assertion on an impossible
+    # state — it is a real guard. A hit costs the descriptions, never the
+    # handles: the sticker is unread, not lost, and the blob really is held.
     kind = scan_identifiers(rendered)
     if kind is not None:
-        log.error(
-            "media placeholders would have carried a %s identifier — rendering "
-            "without handles; this should be impossible, see nora/domain/media.py",
-            kind,
+        log.warning(
+            "a media description would have carried a %s identifier — "
+            "rendering without descriptions", kind,
         )
         metrics.inc("nora_egress_blocks_total", kind=kind)
-        return replace(message, media_blobs=tuple(held))
+        return replace(
+            message,
+            body=body_with_handles(message.body, labels, tuple(handles)),
+            media_blobs=tuple(held),
+        )
 
     return replace(
         message,
-        body=body_with_handles(message.body, labels, tuple(handles)),
+        body=body_with_handles(message.body, labels, tuple(handles), tuple(descriptions)),
         media_blobs=tuple(held),
     )
 

@@ -39,6 +39,7 @@ from nora.domain.ports import (
     MemoryStore,
     RecordStore,
 )
+from nora.ingest.stickers import StickerReader
 from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
 from nora.policy import Policy
@@ -72,6 +73,8 @@ class IngestPipeline:
         spawn: Callable[[Coroutine[Any, Any, None]], None],
         media_sources: MediaSourceRegistry | None = None,
         blobs: BlobStore | None = None,
+        stickers: StickerReader | None = None,
+        max_description_chars: int = 200,
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
         that default is a wiring state, not a design position (DEC-43).
@@ -84,6 +87,12 @@ class IngestPipeline:
         registry is what then picks the RIGHT fetcher per message, by
         platform — and it is the one line the composition root owes this
         feature.
+
+        `stickers` is `sticker_descriptions`'s wiring state, and it is a
+        SEPARATE switch from custody: `None` is the deployment default and
+        behaves exactly like custody-without-interpretation (a handle, no
+        description), never like a failure. Only stickers are ever read this
+        way — see `nora/ingest/stages/media.py`'s docstring for why.
         """
         self._audit = audit
         self._memory = memory
@@ -94,6 +103,8 @@ class IngestPipeline:
         self._spawn = spawn
         self._media_sources = media_sources
         self._blobs = blobs
+        self._stickers = stickers
+        self._max_description_chars = max_description_chars
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
@@ -124,6 +135,7 @@ class IngestPipeline:
         # why it is inline rather than spawned like `memory_feed`.
         message = await media_stage.run(
             message=message, sources=self._media_sources, blobs=self._blobs, metrics=m,
+            stickers=self._stickers, max_description_chars=self._max_description_chars,
         )
         recorded = await audit_stage.run(
             message=message, audit=self._audit, metrics=m, person=person

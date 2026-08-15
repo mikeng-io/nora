@@ -30,9 +30,15 @@ from nora.domain.models import NormalizedMessage
 from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.ingest.stages import media as media_stage
+from nora.ingest.stickers import StickerReader
 from nora.obs.metrics import Metrics
 from nora.platform.registry import MediaSourceRegistry
-from nora.testing import FakeBlobStore, FakeMediaSource
+from nora.testing import (
+    FakeBlobStore,
+    FakeMediaDescriptionStore,
+    FakeMediaInterpreter,
+    FakeMediaSource,
+)
 
 JPEG = b"\xff\xd8\xff\xe0 pretend jpeg"
 JPEG_SHA = hashlib.sha256(JPEG).hexdigest()
@@ -473,3 +479,93 @@ async def test_the_stage_asks_the_source_for_the_platforms_own_id():
         sources=MediaSourceRegistry([source]), blobs=FakeBlobStore(), metrics=Metrics(),
     )
     assert source.fetched == ["att-xyz"]
+
+
+# --- stickers, and stickers only ---------------------------------------------
+
+
+async def test_only_a_sticker_reaches_the_interpreter():
+    """Spec §5.3, and the operator's explicit constraint: NOT image, audio or
+    video. A sticker is published pack art; a photo is a photograph of
+    somebody's life, and reading it permanently into the record, the Honcho
+    feed and every future transcript is a different act."""
+    interpreter = FakeMediaInterpreter()
+    reader = StickerReader(
+        blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
+        interpreter=interpreter, model="fake",
+    )
+    media = (
+        MediaRef(platform_id="i1", media_type="image/jpeg"),
+        MediaRef(platform_id="a1", media_type="audio/aac", voice_note=True),
+        MediaRef(platform_id="v1", media_type="video/mp4"),
+        MediaRef(platform_id="", media_type="image/png", sticker=True,
+                 fetch_token="sticker:p:1"),  # noqa: S106
+    )
+    source = FakeMediaSource({"i1": b"jpeg", "a1": b"aac", "v1": b"mp4",
+                              "sticker:p:1": b"\x89PNG"})
+
+    await media_stage.run(
+        message=_msg(platform="signal", body="[image] [voice note] [video] [sticker]",
+                     refs=media),
+        sources=MediaSourceRegistry([source]), blobs=FakeBlobStore(),
+        metrics=Metrics(), stickers=reader,
+    )
+
+    assert len(interpreter.calls) == 1
+    assert interpreter.calls[0][0] == "image/png"
+
+
+async def test_a_described_sticker_lands_in_the_body_with_its_handle():
+    reader = StickerReader(
+        blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
+        interpreter=FakeMediaInterpreter("a cartoon cat"), model="fake",
+    )
+    ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
+                   fetch_token="sticker:p:1")  # noqa: S106
+
+    out = await media_stage.run(
+        message=_msg(body="haha [sticker]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"sticker:p:1": b"\x89PNG"})]),
+        blobs=FakeBlobStore(), metrics=Metrics(), stickers=reader,
+    )
+
+    assert out.body.startswith("haha [sticker ")
+    assert out.body.endswith(": a cartoon cat]")
+
+
+async def test_an_identifier_in_a_description_costs_the_description_not_the_message():
+    """R-18/R-28's floor. The description is text a vision model wrote about
+    bytes a group member sent — the trust class of a fetched web page."""
+    metrics = Metrics()
+    reader = StickerReader(
+        blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
+        interpreter=FakeMediaInterpreter("a note reading +85212345678"), model="fake",
+    )
+    ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
+                   fetch_token="sticker:p:1")  # noqa: S106
+
+    out = await media_stage.run(
+        message=_msg(body="[sticker]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"sticker:p:1": b"\x89PNG"})]),
+        blobs=FakeBlobStore(), metrics=metrics, stickers=reader,
+    )
+
+    assert "85212345678" not in out.body
+    assert out.body.startswith("[sticker ") and out.body.endswith("]")
+    assert ":" not in out.body, "the whole description is dropped, not edited"
+    assert metrics.get("nora_egress_blocks_total", kind="phone") == 1
+
+
+async def test_a_sticker_with_no_reader_wired_keeps_its_handle():
+    """`stickers=None` is the `sticker_descriptions = false` deployment. It must
+    behave exactly like custody-without-interpretation, not like a failure."""
+    ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
+                   fetch_token="sticker:p:1")  # noqa: S106
+
+    out = await media_stage.run(
+        message=_msg(body="[sticker]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"sticker:p:1": b"\x89PNG"})]),
+        blobs=FakeBlobStore(), metrics=Metrics(), stickers=None,
+    )
+
+    assert out.body.startswith("[sticker ") and ":" not in out.body
