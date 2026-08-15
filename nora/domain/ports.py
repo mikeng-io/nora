@@ -776,6 +776,34 @@ class MediaDescriptionStore(Protocol):
 
 
 @dataclass(frozen=True)
+class MediaDescription:
+    """What an interpreter made of some bytes. Two axes, like `MediaBytes` and
+    `Roster`: "could not describe" must stay distinguishable from "described
+    nothing", or a wedged model and a blank image become the same value and the
+    counter that says interpretation is failing sits at zero."""
+
+    available: bool
+    text: str = ""
+    reason: str = ""
+
+
+@runtime_checkable
+class MediaInterpreter(Protocol):
+    """Bytes to a plain-text description. Never raises.
+
+    Called from the ingest path for STICKERS ONLY (sticker spec §2.2, §5.3).
+    Images, audio and video are not automatically interpreted: a sticker is
+    published pack art, identical for everyone who has the pack, and a photo is
+    a photograph of somebody's life. Reading the second one permanently into
+    the durable record, the Honcho feed and every future transcript is a
+    materially different act, and `media_fetch` already exists for the case
+    where Nora has a reason to look.
+    """
+
+    async def describe(self, *, data: bytes, media_type: str) -> MediaDescription: ...
+
+
+@dataclass(frozen=True)
 class ArtifactRegistration:
     """What `ArtifactIngest.register` hands back.
 

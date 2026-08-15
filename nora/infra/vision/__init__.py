@@ -5,6 +5,7 @@ content-hash description cache the tool checks before it."""
 from .cache import VisionCache
 from .client import (
     VISION_LOOP_SHARE,
+    StickerInterpreter,
     VisionClient,
     VisionResult,
     derive_vision_timeout,
@@ -12,6 +13,7 @@ from .client import (
 
 __all__ = [
     "VISION_LOOP_SHARE",
+    "StickerInterpreter",
     "VisionCache",
     "VisionClient",
     "VisionResult",

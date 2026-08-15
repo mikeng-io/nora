@@ -25,12 +25,13 @@ from nora.agent.tools import NATIVE_TOOL_BUDGETS, build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import MediaBlob
 from nora.domain.models import ConversationTarget, NormalizedMessage
+from nora.domain.ports import MediaDescription
 from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.vision import VisionCache, VisionResult
+from nora.infra.vision import StickerInterpreter, VisionCache, VisionResult
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeMediaDescriptionStore
@@ -493,3 +494,59 @@ def test_the_advertised_schema_names_the_parameter_code(wiring):
     # The description the model reads must use the same word as the parameter,
     # or the mismatch simply returns in a new place.
     assert "code" in schema["properties"]["code"]["description"]
+
+
+# ---- StickerInterpreter (Task 11): bytes to a sentence, sticker-only ---------
+# Nothing in the ingest path calls this yet — the dedup ladder that wires it in
+# is two tasks away. These tests pin the adapter's own contract in isolation.
+
+
+class _RecordingVisionClient:
+    """A minimal `VisionClient` stand-in that records every `describe` call it
+    received. Recording is the point: `client.calls == []` is what proves a
+    lottie's JSON bytes never reached a vision model — a double that didn't
+    record would make that assertion vacuous."""
+
+    def __init__(self, *, result: VisionResult | None = None) -> None:
+        self.result = result or VisionResult(available=True, description="a cartoon cat")
+        self.calls: list[tuple[bytes, str, str]] = []
+
+    async def describe(self, *, data: bytes, media_type: str, prompt: str = "") -> VisionResult:
+        self.calls.append((data, media_type, prompt))
+        return self.result
+
+
+async def test_a_sticker_interpreter_refuses_a_non_image_without_calling_out():
+    """Discord lottie stickers are JSON. Handing JSON to a vision model is not
+    a degraded read, it is a wrong one — and the model would answer something."""
+    client = _RecordingVisionClient()
+    interpreter = StickerInterpreter(client, model="mimo")
+
+    got = await interpreter.describe(data=b'{"v":"5.5"}', media_type="application/json")
+
+    assert got.available is False
+    assert got.reason == "unsupported_format"
+    assert client.calls == [], "nothing was sent"
+
+
+async def test_an_unavailable_vision_result_never_becomes_a_blank_description():
+    """R-51. A timeout must not turn into `[sticker a3f2c1: ]`."""
+    client = _RecordingVisionClient(result=VisionResult(available=False, reason="timeout"))
+    interpreter = StickerInterpreter(client, model="mimo")
+
+    got = await interpreter.describe(data=b"\x89PNG...", media_type="image/png")
+
+    assert got.available is False
+    assert got.reason == "timeout"
+    assert got.text == ""
+
+
+async def test_a_described_sticker_carries_its_text():
+    client = _RecordingVisionClient(
+        result=VisionResult(available=True, description="a cartoon cat collapsing")
+    )
+    interpreter = StickerInterpreter(client, model="mimo")
+
+    got = await interpreter.describe(data=b"\x89PNG...", media_type="image/png")
+
+    assert got == MediaDescription(available=True, text="a cartoon cat collapsing")

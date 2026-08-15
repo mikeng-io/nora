@@ -39,6 +39,8 @@ from dataclasses import dataclass
 
 from openai import AsyncOpenAI
 
+from nora.domain.ports import MediaDescription
+
 log = logging.getLogger("nora.vision")
 
 # How much of the loop's own timeout one vision call may spend. A fraction < 1
@@ -118,8 +120,17 @@ class VisionClient:
         self._max_bytes = max_bytes
         self._timeout = timeout_seconds
 
-    async def describe(self, *, data: bytes, media_type: str) -> VisionResult:
-        """MiMo's sentence about `data`, or an unavailable result. Never raises."""
+    async def describe(
+        self, *, data: bytes, media_type: str, prompt: str = _PROMPT
+    ) -> VisionResult:
+        """MiMo's sentence about `data`, or an unavailable result. Never raises.
+
+        `prompt` defaults to the transcription prompt `media_fetch` has always
+        used — that call site omits the argument and keeps its exact existing
+        behaviour. `StickerInterpreter` is the other caller, passing
+        `_STICKER_PROMPT` instead: same connection, same budget, a different
+        question.
+        """
         if len(data) > self._max_bytes:
             log.warning(
                 "vision blob %d bytes over the %d ceiling — not sent",
@@ -130,7 +141,7 @@ class VisionClient:
             # The whole retry loop is inside ONE wait_for, so even two attempts
             # cannot push the total past the derived budget (< the loop's own).
             text = await asyncio.wait_for(
-                self._describe_with_retry(data=data, media_type=media_type),
+                self._describe_with_retry(data=data, media_type=media_type, prompt=prompt),
                 timeout=self._timeout,
             )
         except TimeoutError:
@@ -146,18 +157,20 @@ class VisionClient:
             return VisionResult(available=False, reason="error")
         return VisionResult(available=True, description=text)
 
-    async def _describe_with_retry(self, *, data: bytes, media_type: str) -> str:
+    async def _describe_with_retry(
+        self, *, data: bytes, media_type: str, prompt: str
+    ) -> str:
         data_uri = f"data:{media_type};base64,{base64.b64encode(data).decode('ascii')}"
         last_exc: Exception = RuntimeError("vision retry loop did not run")
         for attempt in range(2):
             try:
-                return await self._create(data_uri)
+                return await self._create(data_uri, prompt)
             except Exception as exc:  # noqa: BLE001 — retried once, then re-raised
                 last_exc = exc
                 log.warning("vision attempt %d failed: %s", attempt + 1, exc)
         raise last_exc
 
-    async def _create(self, data_uri: str) -> str:
+    async def _create(self, data_uri: str, prompt: str) -> str:
         response = await self._client.chat.completions.create(
             model=self._model,
             max_tokens=self._max_tokens,
@@ -165,7 +178,7 @@ class VisionClient:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": _PROMPT},
+                        {"type": "text", "text": prompt},
                         {"type": "image_url", "image_url": {"url": data_uri}},
                     ],
                 }
@@ -178,3 +191,48 @@ class VisionClient:
         )
         choice = response.choices[0]
         return (choice.message.content or "").strip()
+
+
+# Authored, fixed, and small — never model-supplied, like `_PROMPT` above. The
+# final clause is load-bearing rather than polite: ingest holds the sticker and
+# NOT the conversation, so an intent judgment made here is made blind, cannot be
+# checked against anything, and would replace the evidence that lets anything
+# downstream disagree with it (spec §2.1). The pixels are the claim; the
+# conversational force is Nora's, made where the transcript is.
+_STICKER_PROMPT = (
+    "This is a chat sticker. In one sentence, describe what it depicts, "
+    "including any text written in it. Describe only what is shown — do not "
+    "interpret the sender's mood or intent."
+)
+
+# What a vision model can actually decode. `application/json` (Discord lottie)
+# is the case this exists for: handing JSON to a vision model is not a degraded
+# read, it is a wrong one, and the model would answer something anyway.
+_INTERPRETABLE = ("image/",)
+
+
+class StickerInterpreter:
+    """Satisfies `nora.domain.ports.MediaInterpreter` over `VisionClient`.
+
+    A thin adapter, not a second client: the same process-wide OmniRoute
+    connection, a different prompt and a much smaller budget. A sticker needs a
+    sentence, not `media_fetch`'s 1024-token transcription allowance.
+    """
+
+    def __init__(self, client: VisionClient, *, model: str) -> None:
+        self._client = client
+        self._model = model
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    async def describe(self, *, data: bytes, media_type: str) -> MediaDescription:
+        if not media_type.startswith(_INTERPRETABLE):
+            return MediaDescription(available=False, reason="unsupported_format")
+        result = await self._client.describe(
+            data=data, media_type=media_type, prompt=_STICKER_PROMPT
+        )
+        if not result.available:
+            return MediaDescription(available=False, reason=result.reason or "vision")
+        return MediaDescription(available=True, text=result.description)

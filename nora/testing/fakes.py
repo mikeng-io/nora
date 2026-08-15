@@ -29,6 +29,7 @@ from nora.domain.ports import (
     JobResult,
     JobStatus,
     LinkPreview,
+    MediaDescription,
     MemoryHealth,
     Mention,
     MessageHits,
@@ -627,6 +628,26 @@ class FakeMediaDescriptionStore:
             return
         self.index[(platform, token)] = blob
         self.descriptions[blob.sha256] = description
+
+
+class FakeMediaInterpreter:
+    """In-memory `MediaInterpreter`. `calls` is the point of it: the invariant
+    that only stickers are interpreted (spec §5.3) is proved by what this
+    RECORDS, not by reading the stage and believing it."""
+
+    def __init__(self, text: str = "a cartoon cat", *, available: bool = True,
+                 reason: str = "") -> None:
+        self.text = text
+        self.available = available
+        self.reason = reason
+        self.calls: list[tuple[str, int]] = []
+        self.model = "fake-vision"
+
+    async def describe(self, *, data: bytes, media_type: str) -> MediaDescription:
+        self.calls.append((media_type, len(data)))
+        if not self.available:
+            return MediaDescription(available=False, reason=self.reason or "vision")
+        return MediaDescription(available=True, text=self.text)
 
 
 class FakeArtifactIngest:
