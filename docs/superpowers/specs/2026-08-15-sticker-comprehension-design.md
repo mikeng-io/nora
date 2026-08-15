@@ -466,12 +466,15 @@ none invents one. An ERROR is never a PASS.
 
 ## 6. Configuration
 
-Under `[media]`, shipping dark per document 26's slice 5:
+Under `[media]`, shipping dark per document 26's slice 5. `sticker_timeout_seconds`
+and `sticker_prompt_max_tokens` are the §7 probe's measured values, not the
+sentence-sized guesses this section originally shipped with — see §7's
+2026-08-15 addendum for why:
 
 ```toml
-sticker_descriptions          = false   # off until the §7 probe passes
-sticker_timeout_seconds       = 6.0
-sticker_prompt_max_tokens     = 128
+sticker_descriptions          = false   # off until the operator opts in, §6/§7
+sticker_timeout_seconds       = 20.0
+sticker_prompt_max_tokens     = 1024
 sticker_description_max_chars = 200
 ```
 
