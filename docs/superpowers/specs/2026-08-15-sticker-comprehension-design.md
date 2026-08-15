@@ -465,8 +465,10 @@ none invents one. An ERROR is never a PASS.
 
 ### 5.6 Metrics
 
-- `nora_sticker_descriptions_total{platform, status, cached}` where `cached` is
-  `identity` / `content` / `none`.
+- `nora_sticker_descriptions_total{platform, status, level}` where `level` is
+  `identity` / `content` / `none` — renamed from `cached` (whole-branch
+  review) to stop it clashing with `nora_media_fetch_total`'s own, unrelated
+  boolean `cached` label.
 - `nora_sticker_describe_seconds` histogram, so §5.2's budget is observed.
 - Existing `nora_media_custody_total` and `nora_media_attachments_total` gain
   the `sticker` label for free, since stickers are now ordinary refs.

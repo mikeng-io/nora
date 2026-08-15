@@ -55,7 +55,6 @@ from nora.domain.ports import (
     MediaInterpreter,
     MediaSource,
 )
-from nora.ingest.exif import strip_exif
 
 log = logging.getLogger("nora.ingest.stickers")
 
@@ -170,17 +169,37 @@ class StickerReader:
             # none for a sticker at all (spec §1: no `contentType` on
             # `dataMessage.sticker`), so `sniff_media_type` reads the real
             # container off the fetched bytes and wins when it recognises one.
-            # BEFORE `strip_exif`/hashing: the media type decides whether
-            # stripping happens and is what lands in the `MediaBlob` and the
-            # interpreter call — an unresolved `""` here is what made the
-            # interpreter's `_INTERPRETABLE` gate refuse every real Signal
-            # sticker (whole-branch review C1). Never invented when neither
-            # source resolves one: the declared/guessed fallback stays `""`.
+            # Resolved BEFORE hashing: it is what lands in the `MediaBlob`
+            # and the interpreter call — an unresolved `""` here is what
+            # made the interpreter's `_INTERPRETABLE` gate refuse every real
+            # Signal sticker (whole-branch review C1). Never invented when
+            # neither source resolves one: the declared/guessed fallback
+            # stays `""`.
             declared = resolve_media_type(declared=ref.media_type, filename=ref.filename)
             media_type = sniff_media_type(fetched.data) or declared
-            # Strip before hashing, so the key is the key of the PICTURE — the
-            # same rule `stages.media._take` follows, for the same reason.
-            data = strip_exif(fetched.data, media_type)
+            # STICKERS SKIP THE STRIP — deliberately, NOT "not yet wired up",
+            # and do not "restore consistency" with `stages.media._take`'s
+            # strip later without re-reading both reasons below.
+            #
+            # 1. DEC-47 exists to remove GPS/device-id PII from photographs a
+            #    PERSON took. Sticker pack art is published, platform-
+            #    distributed, and byte-identical for everyone who has the
+            #    pack — there is no personal metadata in it to strip, so
+            #    re-encoding here is pure loss for no PII benefit.
+            # 2. Re-encoding makes the content hash depend on the PILLOW
+            #    VERSION, not just the bytes — and `strip_exif` does not pass
+            #    `save_all`, so an animated image is silently flattened to
+            #    its first frame before it is ever hashed (measured: a
+            #    3-frame WebP sticker, 328B -> 84B, one frame). Both failure
+            #    modes land on `media_descriptions`/`sticker_index`, which
+            #    are DURABLE caches keyed on this exact hash: a Pillow
+            #    upgrade would silently change every sticker's sha256 and
+            #    orphan every existing row, and flattening would mean the
+            #    2026-08-07 probe's headline result — MiMo reads an animated
+            #    WebP correctly, not just its first frame — is unreachable in
+            #    the shipped path even though the probe itself never lied.
+            #    Hashing the platform's own bytes is stable by construction.
+            data = fetched.data
             try:
                 sha256 = await self._blobs.put(data=data)
             except Exception:

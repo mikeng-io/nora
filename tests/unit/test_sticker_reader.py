@@ -29,8 +29,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from io import BytesIO
 
 import pytest
+from PIL import Image
 
 from nora.domain.media import MediaBlob, MediaRef
 from nora.ingest.stickers import StickerReader
@@ -328,3 +330,54 @@ async def test_a_cancelled_winner_does_not_hang_its_waiters():
     fresh = await asyncio.wait_for(
         reader.read(platform="signal", ref=REF, source=_source()), timeout=2.0)
     assert fresh.blob is not None
+
+
+def _animated_webp(n_frames: int = 3) -> bytes:
+    frames = [Image.new("RGB", (4, 4), color=(i * 40, 0, 0)) for i in range(n_frames)]
+    out = BytesIO()
+    frames[0].save(
+        out, format="WEBP", save_all=True, append_images=frames[1:],
+        duration=100, loop=0,
+    )
+    return out.getvalue()
+
+
+async def test_an_animated_sticker_keeps_all_its_frames():
+    """A (whole-branch review, round 2). C1's sniffer fix made a Signal
+    sticker arrive at the ladder with `media_type="image/webp"` instead of
+    `""` — which activated `strip_exif`'s Pillow re-encode where it used to
+    be a no-op. `strip_exif` does not pass `save_all`, so a real animated
+    WebP was silently flattened to ONE frame before it was ever hashed,
+    held, or sent to the model (measured: 328B -> 84B on a 3-frame sticker).
+    That made the 2026-08-07 probe's headline result — MiMo reads an
+    animated WebP correctly, not just its first frame — unreachable in the
+    shipped path.
+
+    Stickers now skip `strip_exif` entirely and hash the fetched bytes
+    directly (DEC-47's PII argument does not apply to published pack art,
+    and content-addressing a re-encoded copy would make the cache key
+    depend on the Pillow version). This asserts on the STORED bytes'
+    frame count, not merely that something was stored — a re-encode that
+    happened to preserve frame count would still fail the "stable hash"
+    half of the fix, so the byte-for-byte equality check below is the one
+    that actually proves the strip was skipped.
+    """
+    original = _animated_webp(3)
+    with Image.open(BytesIO(original)) as probe:
+        assert getattr(probe, "n_frames", 1) == 3, "the fixture itself must be animated"
+
+    store = FakeMediaDescriptionStore()
+    blobs = FakeBlobStore()
+    source = FakeMediaSource({TOKEN: original})
+    source.platform = "signal"
+    interpreter = FakeMediaInterpreter()
+
+    out = await _reader(store, interpreter, blobs).read(
+        platform="signal", ref=REF, source=source)
+
+    assert out.blob is not None
+    stored = blobs.blobs[out.blob.sha256]
+    assert stored == original, "a sticker must hash the FETCHED bytes, never a re-encoded copy"
+    assert out.blob.size == len(original)
+    with Image.open(BytesIO(stored)) as held:
+        assert getattr(held, "n_frames", 1) == 3, "the animation must survive intact"

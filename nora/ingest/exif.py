@@ -47,10 +47,18 @@ log = logging.getLogger("nora.ingest.exif")
 def strip_exif(data: bytes, media_type: str) -> bytes:
     """Return `data` with embedded image metadata removed, for image types only.
 
-    `media_type` is the RESOLVED type (`nora.domain.media.resolve_media_type`),
-    so the decision to strip is driven off the registered top-level type rather
-    than sniffing the bytes. A non-image, or an image Pillow cannot read, comes
-    back byte-for-byte unchanged.
+    `media_type` is the RESOLVED type — `nora.domain.media.resolve_media_type`
+    for an ordinary attachment (the registered top-level type, never sniffed
+    here), or `nora.domain.media.sniff_media_type` upstream for a sticker
+    (Signal declares none at all). A non-image, or an image Pillow cannot
+    read, comes back byte-for-byte unchanged.
+
+    **Never called for a sticker at all** — `nora.ingest.stickers` hashes the
+    fetched bytes directly and skips this function, deliberately: DEC-47's
+    PII argument does not apply to published, platform-distributed pack art,
+    and this function's re-encode has no `save_all`, so it would silently
+    flatten an animated sticker to one frame before it was ever hashed. See
+    that module's `_read` for both reasons in full.
     """
     if not media_type.startswith("image/"):
         return data
