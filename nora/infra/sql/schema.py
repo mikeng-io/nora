@@ -455,3 +455,57 @@ IDX_TOOL_CALL_LOG_CONV_TS = sa.Index(
     "idx_tool_call_log_conv_ts", TOOL_CALL_LOG.c.conversation_id,
     sa.text("created_at DESC"),
 )
+
+
+# `sticker_index` — the platform's own sticker identity to the blob it turned
+# out to be (sticker spec §4.1). The ONLY dedup level checkable before bytes
+# move, which is what turns a repeat sighting into zero platform RPC on the
+# ingest path the listener awaits.
+#
+# The raw `fetch_token` is stored rather than a hash of it. A Signal pack id is
+# not a person identifier — R-18/R-28 screen for phone numbers, service ids and
+# coordinates — it never leaves this table, and hashing would buy nothing while
+# making "why does this sticker keep missing?" permanently undebuggable.
+#
+# `media_type` and `size` ride along so an identity hit can reconstruct the
+# whole `MediaBlob` without touching the bytes; without them a hit would still
+# have to open the blob to fill in the row it claims.
+STICKER_INDEX = sa.Table(
+    "sticker_index",
+    METADATA,
+    sa.Column("platform", sa.Text, primary_key=True),
+    sa.Column("fetch_token", sa.Text, primary_key=True),
+    sa.Column("sha256", sa.Text, nullable=False),
+    sa.Column("media_type", sa.Text, nullable=False, server_default=""),
+    sa.Column("size", sa.Integer, nullable=False, server_default="0"),
+    sa.Column(
+        "first_seen", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column(
+        "last_seen", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+    sa.Column("hits", sa.Integer, nullable=False, server_default="0"),
+)
+
+# `media_descriptions` — content hash to what a vision model said the bytes
+# depict. Keyed on the CONTENT and not on sticker identity because a
+# description is a pure function of the bytes, so the same art in two packs is
+# one row and one call.
+#
+# Shared with `media_fetch`: `nora.infra.vision.VisionCache` becomes a
+# read-through in front of this table rather than a second, disagreeing copy.
+# The RAW description is stored; the identifier screen runs on every SERVE, so
+# a cache hit can never bypass it.
+MEDIA_DESCRIPTIONS = sa.Table(
+    "media_descriptions",
+    METADATA,
+    sa.Column("sha256", sa.Text, primary_key=True),
+    sa.Column("description", sa.Text, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+)
