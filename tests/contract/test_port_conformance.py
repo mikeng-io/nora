@@ -200,6 +200,26 @@ def test_hko_provider_satisfies_the_weather_provider_port():
     assert isinstance(HkoWeatherProvider(), WeatherProvider)
 
 
+def test_the_media_description_stores_conform_to_the_port():
+    """`MediaDescriptionStore`'s two implementations, at the name level — the
+    floor every other port gets (`test_the_reminder_stores_conform_to_the_port`'s
+    own precedent). Shape stays mypy's job for the SQL side (`nora.infra` is in
+    the scoped strict override), behaviour is
+    `tests/contract/test_media_description_store_contract.py`'s for both.
+
+    `create_sql_engine` is lazy — no connection opens until a statement runs,
+    so this needs no live database.
+    """
+    from nora.domain.ports import MediaDescriptionStore
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
+    from nora.testing import FakeMediaDescriptionStore
+
+    engine = create_sql_engine("postgresql+asyncpg://u:p@127.0.0.1:1/db")
+    assert isinstance(SqlMediaDescriptionStore(engine), MediaDescriptionStore)
+    assert isinstance(FakeMediaDescriptionStore(), MediaDescriptionStore)
+
+
 def test_tavily_provider_satisfies_the_search_provider_port():
     """`TavilySearchProvider` is `SearchProvider`'s only implementation today; the
     port (DEC-73) exists so another search backend plugs in behind `web_search`
