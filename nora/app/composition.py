@@ -65,7 +65,7 @@ from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
-from nora.infra.vision import VisionClient, derive_vision_timeout
+from nora.infra.vision import StickerInterpreter, VisionClient, derive_vision_timeout
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
     CompositePolicy,
@@ -73,6 +73,7 @@ from nora.ingest.policy import (
     ReplyToNoraPolicy,
     TriggerTextPolicy,
 )
+from nora.ingest.stickers import StickerReader
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -463,11 +464,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         background.spawn(coro)
 
     media_sources, blobs = _build_media_custody(cfg)
-    ingest = IngestPipeline(
-        audit=audit, memory=memory, persons=persons,
-        policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
-        media_sources=media_sources, blobs=blobs,
-    )
 
     tier = cfg.llm
     api_key = os.environ.get(cfg.llm.api_key_env, "")  # presence already checked by config.load
@@ -570,6 +566,34 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             budget=ToolRegistry(
                 budget_overrides=cfg.llm.budgets).budgets()["media_fetch"],
         ),
+    )
+    # A SECOND VisionClient, not a second connection: same process-wide
+    # OmniRoute client, a sticker-sized budget and a sticker-specific timeout.
+    # `derive_vision_timeout` is deliberately not used — see MediaConfig.
+    sticker_reader = None
+    if cfg.media.sticker_descriptions and blobs is not None:
+        sticker_reader = StickerReader(
+            blobs=blobs,
+            descriptions=media_descriptions,
+            interpreter=StickerInterpreter(
+                VisionClient(
+                    client=client,
+                    model=cfg.media.vision_model,
+                    max_tokens=cfg.media.sticker_prompt_max_tokens,
+                    reasoning_effort=cfg.media.vision_reasoning_effort,
+                    max_bytes=cfg.media.vision_max_bytes,
+                    timeout_seconds=cfg.media.sticker_timeout_seconds,
+                ),
+                model=cfg.media.vision_model,
+            ),
+            model=cfg.media.vision_model,
+            metrics=metrics,
+        )
+    ingest = IngestPipeline(
+        audit=audit, memory=memory, persons=persons,
+        policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
+        media_sources=media_sources, blobs=blobs,
+        stickers=sticker_reader, max_description_chars=cfg.media.sticker_description_max_chars,
     )
     # `web_search` (Tavily, DEC-73) is wired ONLY when `[search] enabled` AND a
     # key is present — the `route`-keyless gate. Off (or keyless) leaves the

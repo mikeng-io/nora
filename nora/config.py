@@ -416,6 +416,31 @@ class MediaConfig(BaseModel):
     # its backoff from the same timeout).
     vision_timeout_seconds: float = 20.0
 
+    # ---- reading a sticker at INGEST (sticker spec §6) -----------------------
+    #
+    # The vision fields above govern `media_fetch`, which Nora CHOOSES to call.
+    # These govern the automatic read that happens to every sticker before the
+    # audit row is written, and they are separate because the two calls have
+    # different budgets and different risk. Ships FALSE: document 26 slice 5's
+    # position, and the animated-WebP question (spec §7) is unresolved until a
+    # probe answers it on the deployed gateway.
+    sticker_descriptions: bool = False
+    # A sentence, not a transcription. `media_fetch`'s 1024 exists for a busy
+    # screenshot; a sticker that needs 1024 tokens is one the model is padding.
+    sticker_prompt_max_tokens: int = 128
+    # DELIBERATELY not derived from `llm.timeout_seconds` the way
+    # `derive_vision_timeout` is. That invariant protects the agent LOOP from a
+    # hung call; this call runs on the ingest path before the loop exists, so
+    # reusing it would borrow a guarantee about the wrong thing. The real
+    # constraint: the custody stage is inline and the listener awaits it, so
+    # this stall delays the next message — and when the sticker rides on the
+    # TAGGING message it is added straight to Nora's reply latency.
+    sticker_timeout_seconds: float = 6.0
+    # The description is untrusted model output rendered into the durable body.
+    # Bounded here; newline, bracket and identifier screening live in
+    # `nora.domain.media.sanitize_description` and the custody stage.
+    sticker_description_max_chars: int = 200
+
 
 class RouteConfig(BaseModel):
     """Google routing for the `route` tool (DEC-46, design/14 §3).

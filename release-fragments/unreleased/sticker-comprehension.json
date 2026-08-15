@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Nora can read stickers on Signal and Discord, instead of the chat just saying `[sticker]`.",
+  "details": [
+    "A sticker's bytes are taken into her own custody and described once by a bounded vision call, so she can see what a sticker sent as a conversational booster actually depicts and read it beside the messages around it.",
+    "Descriptions are deduplicated by the sticker's own identity and by content, so a repeat sticker — even under a different pack, or on the other platform — costs nothing.",
+    "A sticker sent WITH a caption now appears in the transcript at all. Previously the caption was recorded and the sticker itself was dropped entirely."
+  ],
+  "limitations": [
+    "Off by default (`media.sticker_descriptions`). Stickers only — photos, voice notes and video are still described only when Nora chooses to look at them herself.",
+    "Discord's animated (lottie/JSON) stickers are held but not described — there is nothing for a vision model to read.",
+    "Whether the vision model reads an animated WebP sticker, or only its first frame, has not yet been verified against the deployed gateway."
+  ]
+}

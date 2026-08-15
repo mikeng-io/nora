@@ -3,6 +3,19 @@
 import subprocess
 from pathlib import Path
 
+from nora.domain.media import MediaRef
+from nora.domain.models import NormalizedMessage
+from nora.ingest.stages import media as media_stage
+from nora.ingest.stickers import StickerReader
+from nora.obs.metrics import Metrics
+from nora.platform.registry import MediaSourceRegistry
+from nora.testing import (
+    FakeBlobStore,
+    FakeMediaDescriptionStore,
+    FakeMediaInterpreter,
+    FakeMediaSource,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 
 # The named test the spec's B.1 table assigns to each rule.
@@ -202,6 +215,12 @@ RULE_TESTS = {
     # tool that would fetch it again points at the block instead. The duplicate
     # is the whole risk the block carries, so the guard is the named rule.
     "R-50": "test_about_the_tagger_points_at_the_block_instead_of_fetching_it",
+    # R-51: a sticker description is never invented (sticker spec §6). Every
+    # way `StickerReader`/`StickerInterpreter` can fail to produce one — a
+    # timeout, an unreadable format, an empty read-back — must leave the bare
+    # `[sticker a3f2c1]` placeholder, never a blank `[sticker a3f2c1: ]` and
+    # never a guessed sentence. Next free number after R-50.
+    "R-51": "test_r51_a_sticker_description_is_never_invented",
 }
 
 
@@ -233,3 +252,37 @@ def test_r41_is_covered_by_the_identity_grounding_corpus():
     findable, not that the rule holds; see DEC-75 for the honest number.
     """
     assert (ROOT / "evals" / "adversarial" / "identity_grounding.yaml").exists()
+
+
+def _message(*, platform: str, body: str, media: tuple[MediaRef, ...]) -> NormalizedMessage:
+    return NormalizedMessage(
+        platform=platform, conversation_id="g1", conversation_type="group",
+        sender_id="+85212345678", sender_name="Miles", timestamp=1700,
+        body=body, raw={}, media=media,
+    )
+
+
+async def test_r51_a_sticker_description_is_never_invented():
+    """R-51. Every way reading a sticker can fail — the model timing out, the
+    format being unreadable, the bytes being gone, the description carrying an
+    identifier — leaves the placeholder and is counted. None of them produces a
+    blank description, and none produces a guessed one. An ERROR is never a
+    PASS."""
+    ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
+                   fetch_token="sticker:p:1")  # noqa: S106
+    for interpreter in (
+        FakeMediaInterpreter(available=False, reason="timeout"),
+        FakeMediaInterpreter(available=False, reason="unsupported_format"),
+        FakeMediaInterpreter(""),
+    ):
+        reader = StickerReader(
+            blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
+            interpreter=interpreter, model="fake", metrics=Metrics(),
+        )
+        out = await media_stage.run(
+            message=_message(platform="signal", body="[sticker]", media=(ref,)),
+            sources=MediaSourceRegistry([FakeMediaSource({"sticker:p:1": b"\x89PNG"})]),
+            blobs=FakeBlobStore(), metrics=Metrics(), stickers=reader,
+        )
+        assert out.body.startswith("[sticker ")
+        assert ": " not in out.body, f"{interpreter.reason} invented a description"

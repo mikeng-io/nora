@@ -374,6 +374,14 @@ vision_max_tokens = 1024
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608
 vision_timeout_seconds = 20.0
+# Reading a sticker automatically at INGEST (sticker spec §6) — separate from
+# media_fetch above because the two calls have different budgets and risk.
+# sticker_descriptions ships false: the animated-WebP question (spec §7) is
+# unresolved until a probe answers it on the deployed gateway.
+# sticker_descriptions = false
+# sticker_prompt_max_tokens = 128
+# sticker_timeout_seconds = 6.0
+# sticker_description_max_chars = 200
 
 [shortener]
 # Nora's own link shortener/drop delivery (deploy/drop/, this repo's own
