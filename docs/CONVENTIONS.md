@@ -9,13 +9,28 @@ out of `CLAUDE.md` so that file can stay scannable.
 
 ## Gate commands — the detail
 
-The schema gate is `tests/infra/test_schema_parity.py`, not `alembic check`.
-`alembic check` guards column presence, column type and server defaults; it is
-provably blind to the CHECK constraint and to the `ts DESC` index ordering, and
-`idx_messages_conv_ts` is excluded from autogenerate because the expression
-index otherwise reports drift on every run. Both run in `uv run pytest -q`.
-See DEC-11 in the decision index for the full story, including a 2026-08-05
-correction to its original server-default claim.
+The schema gate is `tests/infra/test_schema_parity.py`, not the `alembic check`
+CLI. `alembic check` guards column presence, column type and server defaults;
+it is provably blind to the CHECK constraint and to the `ts DESC` index
+ordering, and `idx_messages_conv_ts` is excluded from autogenerate because the
+expression index otherwise reports drift on every run. Both run in
+`uv run pytest -q`. See DEC-11 in the decision index for the full story,
+including a 2026-08-05 correction to its original server-default claim.
+
+**Dropping the CLI once meant dropping the half of the job it was good at**
+(2026-08-16). The two tools were complementary and only one survived: the
+catalogue reads above cover the CHECK and the DESC ordering, but for a while
+nothing compared `schema.py`'s `MetaData` against the migrated database at
+column level. Every other assertion in that file compares the database against
+something else derived from the migrations — the existence check never looks at
+a column, and the dump/baseline test compares a `pg_dump` against a file
+regenerated from that same dump — so `schema.py` was in no loop at all, and a
+metadata type that disagreed with its migration was invisible. That matters
+because `METADATA` is what the ORM issues queries through: a type it is wrong
+about is a query built on a false premise. `test_the_metadata_matches_the_
+migrated_database` restores that half in-process, via the same autogenerate
+comparison the CLI uses, filtered through the same DESC-index exclusions so the
+phantom drift that made the CLI unusable here does not come back with it.
 
 `uv run lint-imports` uses a local cache (`.import_linter_cache/`, gitignored).
 If it reports a phantom contract failure that doesn't reproduce after a clean

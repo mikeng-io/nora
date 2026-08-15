@@ -34,6 +34,8 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
 
 from nora.infra.sql.migrations_runner import run_migrations, sync_url_for
 from nora.infra.sql.schema import METADATA
@@ -162,6 +164,95 @@ def test_desc_index_ordering_from_indoption(migrated, index, expected):
     assert orders == expected
 
 
+def _metadata_diffs(sync: str) -> list:
+    """`compare_metadata` between `schema.py`'s METADATA and a live database.
+
+    The `include_object` filter mirrors `migrations/env.py`'s, but derives its
+    exclusion set from `EXPECTED_DESC_INDEXES` above rather than importing
+    env.py — that module reads `context.config` at import time and cannot be
+    imported outside an alembic run. Deriving it from the dict is better than a
+    second hardcoded copy anyway: the indexes this comparison skips are exactly
+    the ones `test_desc_index_ordering_from_indoption` asserts the ordering of,
+    so nothing is dropped, only checked by a sibling. If env.py's set and this
+    dict ever disagree, the extra index shows up here as phantom drift — a loud
+    failure saying the two lists parted company, which is the right way to find
+    out.
+    """
+    def include_object(obj, name, type_, reflected, compare_to) -> bool:
+        return not (type_ == "index" and name in EXPECTED_DESC_INDEXES)
+
+    engine = sa.create_engine(sync)
+    try:
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(
+                conn,
+                opts={
+                    "target_metadata": METADATA,
+                    "include_object": include_object,
+                    # Both default to False. Without them this degrades to
+                    # presence-only and would not catch the very drift it is
+                    # here for.
+                    "compare_type": True,
+                    "compare_server_default": True,
+                },
+            )
+            return list(compare_metadata(ctx, METADATA))
+    finally:
+        engine.dispose()
+
+
+def _diff_kinds(diffs: list) -> set[str]:
+    """The operation names in a `compare_metadata` result.
+
+    Its return shape is not flat, which is easy to get wrong and did get wrong
+    here first: table-level operations arrive as bare tuples
+    (`('add_table', Table(...))`), while COLUMN-level ones arrive grouped one
+    list per table (`[[('modify_type', None, 'sticker_index', 'size', …)]]`).
+    Iterating naively yields a `list` where a tuple was expected and the
+    operation name is never seen — which reads as "no drift detected" against
+    a database that has drifted. Flatten one level before looking.
+    """
+    kinds: set[str] = set()
+    for entry in diffs:
+        for op in (entry if isinstance(entry, list) else [entry]):
+            if isinstance(op, tuple) and op:
+                kinds.add(str(op[0]))
+    return kinds
+
+
+def test_the_metadata_matches_the_migrated_database(migrated):
+    """`schema.py` and the migrations agree, column for column.
+
+    THE GAP THIS CLOSES. Every other assertion in this file compares the live
+    database against something else derived from the migrations —
+    `test_every_table_in_the_metadata_exists` checks a table EXISTS and never
+    looks at its columns, and the dump/baseline test compares a `pg_dump`
+    against a checked-in file regenerated from that same dump. `schema.py`
+    appears in neither loop. So a `sa.Column("size", sa.Integer)` in the
+    metadata against a `TEXT` column in the migration was invisible: four tests
+    blind to it, and the fifth satisfied by regenerating the file it compares
+    against.
+
+    That mattered because `METADATA` is what the ORM issues queries through at
+    runtime. A type it is wrong about is a query built on a false premise, not
+    a documentation nit.
+
+    `alembic check` is the tool for exactly this — CONVENTIONS.md says so in as
+    many words ("guards column presence, column type and server defaults") —
+    and it was dropped from the gate because it is blind to the CHECK
+    constraint and the DESC ordering, which the tests above now cover. The two
+    were always complementary; only one half got kept. This restores the other
+    half using the same autogenerate comparison, in-process, without reopening
+    the phantom-drift problem that made the CLI unusable here.
+    """
+    assert _metadata_diffs(sync_url_for(migrated)) == [], (
+        "nora/infra/sql/schema.py disagrees with the migrated database — the "
+        "ORM would issue queries against a shape the database does not have. "
+        "Fix the migration or the metadata; do NOT regenerate the baseline, "
+        "which cannot see this."
+    )
+
+
 def test_normalised_pg_dump_matches_the_checked_in_baseline(migrated, pg_admin):
     """metadata+baseline parity. The baseline is regenerated with
     `scripts/gen_pg_baseline` if the schema legitimately changes."""
@@ -170,6 +261,62 @@ def test_normalised_pg_dump_matches_the_checked_in_baseline(migrated, pg_admin):
         "schema drifted from tests/infra/pg_schema_baseline.sql — regenerate it "
         "deliberately if this change is intended"
     )
+
+
+def test_a_deliberate_column_type_drift_is_caught(pg_url, pg_admin):
+    """The instrument check for the test above, in this file's own idiom.
+
+    `test_a_deliberate_drift_is_caught` exists because a gate that has never
+    been shown to fail is not evidence. The metadata comparison needs the same
+    proof, and it needs it on the specific axis the dump/baseline test cannot
+    see: a column whose TYPE diverges from `schema.py`.
+
+    `sticker_index.size` is `sa.Integer` in the metadata. Alter it to `text` in
+    a scratch database and the comparison must report a `modify_type` for it —
+    if it reports nothing, `compare_type` is not doing what the opts claim and
+    the new test is decoration.
+    """
+    dbname = "t_" + uuid.uuid4().hex
+    import psycopg
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{dbname}"')
+    sync = (
+        f"postgresql+psycopg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
+    )
+    async_url = (
+        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
+    )
+    try:
+        run_migrations(async_url)
+        # Precondition: undrifted, the comparison is silent. Without this the
+        # test could pass on a database that was never in agreement.
+        assert _metadata_diffs(sync) == []
+
+        engine = sa.create_engine(sync)
+        try:
+            with engine.begin() as conn:
+                conn.execute(sa.text(
+                    "ALTER TABLE sticker_index ALTER COLUMN size TYPE text"
+                ))
+        finally:
+            engine.dispose()
+
+        diffs = _metadata_diffs(sync)
+        assert "modify_type" in _diff_kinds(diffs), (
+            f"compare_type did not report the integer->text drift; got {diffs!r}"
+        )
+    finally:
+        with psycopg.connect(
+            pg_admin.dsn(pg_admin.maintenance_db), autocommit=True
+        ) as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()",
+                (dbname,),
+            )
+            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
 
 
 def test_a_deliberate_drift_is_caught(pg_url, pg_admin):
