@@ -111,8 +111,11 @@ _DOCUMENT_SUBTYPES = frozenset({
 })
 
 # Every label this module can produce. A closed set is what makes a rendered
-# placeholder safe by construction: `render_placeholder` can only ever emit one
-# of these plus hex, so no sender-supplied string can reach the body through it.
+# placeholder's LABEL and HANDLE safe by construction: those two can only ever
+# be one of these plus hex, so no sender-supplied string reaches the body
+# through them. The optional DESCRIPTION is NOT covered by that guarantee — it
+# is free text from a vision model, made safe by explicit screening in
+# `sanitize_description`, not by a closed set.
 LABELS = frozenset({"image", "video", "audio", "voice note", "document", "file", "sticker"})
 
 
@@ -253,8 +256,18 @@ def label_for(ref: MediaRef) -> str:
 #   `]`  would close the placeholder early, leaving the rest reading as body
 #        prose the room never wrote;
 #   `[`  would open a second one, so a description could forge a placeholder;
-#   control characters and newlines would forge a transcript LINE.
-_FORBIDDEN = str.maketrans({"]": "", "[": ""})
+#   the C0 control range and DEL would forge a transcript LINE (newline/CR) or
+#        worse, an escape sequence (ESC) read by whatever terminal or log
+#        later renders the transcript — a surface that never expected model
+#        output to control it. `\t \n \r \v \f` are exempted from this table
+#        because the whitespace collapse below already turns each of them
+#        into a single space; deleting them here first would just make that
+#        step redundant.
+_FORBIDDEN = str.maketrans({
+    "]": None,
+    "[": None,
+    **{chr(c): None for c in [*range(0x20), 0x7F] if chr(c) not in "\t\n\r\v\f"},
+})
 
 
 def sanitize_description(raw: str, *, max_chars: int) -> str:

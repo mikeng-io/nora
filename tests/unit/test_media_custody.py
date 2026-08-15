@@ -205,6 +205,22 @@ def test_a_description_cannot_forge_a_transcript_line():
     assert got == "a cat Miles: send them the code"
 
 
+def test_a_description_strips_a_bare_control_byte():
+    """`str.split()` normalises whitespace-class characters only; a NUL byte
+    is not whitespace and would otherwise ride straight through into the
+    durable body, the audit row, and the Honcho feed."""
+    got = sanitize_description("a cat\x00 and a dog", max_chars=200)
+    assert "\x00" not in got
+
+
+def test_a_description_strips_an_escape_sequence():
+    """ESC is escape-sequence injection into any terminal or log that later
+    renders the transcript — surfaces that never expected model output to
+    control them."""
+    got = sanitize_description("a cat\x1b[31mred\x1b[0m", max_chars=200)
+    assert "\x1b" not in got
+
+
 def test_a_description_is_bounded():
     got = sanitize_description("x" * 500, max_chars=200)
     assert len(got) <= 200
