@@ -2,24 +2,30 @@
 (sticker spec §4.1).
 
 Revision ID: 0012_sticker_cache
-Revises: 0010_tool_call_log
+Revises: 0011_presence_speed
 Create Date: 2026-08-15
 
-Numbered 0012, not 0011: 0011 was claimed by both this branch and an
-in-flight presence-speed migration, each chaining off 0010 — two revisions,
-one parent, alembic multi-head. This branch yields the number; 0011 stays
-reserved for the presence work when it lands. down_revision stays 0010, not
-0011, on purpose — 0011 exists nowhere but as an untracked file on another
-checkout, and alembic resolves the revision graph, not the filename, so
-pointing at an uncommitted revision would break every other checkout with
-"Can't locate revision". Chaining to 0010 keeps master a single line
-(0010 → 0012) whether or not 0011 ever lands.
+Numbered 0012, not 0011, and chained onto 0011 rather than 0010 — both facts
+are the residue of a collision worth recording, because the same shape will
+recur every time two branches add a migration in the same week.
 
-Whoever lands 0011_presence_speed: chain its down_revision onto
-0012_sticker_cache, not onto 0010 — the reservation only holds if the
-eventual migration links to what's actually on master. Chaining onto 0010
-recreates the exact two-head problem this rename fixed, just pointed the
-other way.
+This branch originally wrote 0011_sticker_cache off 0010. A presence-speed
+migration was in flight at the same time, also numbered 0011, also off 0010:
+two revisions, one parent, which is alembic multi-head and makes it refuse to
+run at all. The rename to 0012 yielded the number while presence was still
+UNCOMMITTED, and at that moment down_revision had to stay 0010 — pointing at
+a revision that existed only as an untracked file on somebody else's checkout
+would have broken every other checkout with "Can't locate revision".
+
+0011_presence_speed has since landed on master (246d503), still chained to
+0010. So the two-head problem arrived from the other direction exactly as
+predicted, and this is the repair: with 0011 now real and reachable, 0012
+chains onto it and master is a single line again, 0010 → 0011 → 0012.
+
+The lesson, if you are the next person here: renumbering the FILE is
+cosmetic. Alembic reads the revision graph, so it is down_revision that
+decides whether there is one head or two, and it can only point at a revision
+that is actually committed.
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0012_sticker_cache"
-down_revision = "0010_tool_call_log"
+down_revision = "0011_presence_speed"
 branch_labels = None
 depends_on = None
 
