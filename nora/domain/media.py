@@ -133,6 +133,18 @@ class MediaRef:
     filename: str | None = None
     size: int | None = None
     voice_note: bool = False
+    # A SEPARATE axis from the media type, exactly like `voice_note` above and
+    # for the identical reason: a sticker IS an image, so `image/webp` cannot
+    # tell pack art from somebody's photograph — and Signal declares no type
+    # for a sticker at all. The flag is what finally makes the `"sticker"`
+    # member of LABELS something produced rather than merely declared.
+    sticker: bool = False
+    # The platform's OWN handle for something `platform_id` cannot name — a
+    # Signal `(packId, stickerId)` pair, a Discord sticker id and format.
+    # Opaque: the domain transports and stores it and never parses it. It is
+    # never rendered, never logged above debug, never fed to Honcho, and never
+    # placed in model context. Only the adapter that wrote it reads it.
+    fetch_token: str = ""
 
 
 @dataclass(frozen=True)
@@ -224,6 +236,8 @@ def label_for(ref: MediaRef) -> str:
     id: a message whose only content was an attachment must still say that
     something arrived, or it reads as an empty turn.
     """
+    if ref.sticker:
+        return "sticker"
     media_type = resolve_media_type(declared=ref.media_type, filename=ref.filename)
     top, subtype = parse_media_type(media_type)
     if not top:

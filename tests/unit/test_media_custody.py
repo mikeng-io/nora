@@ -105,6 +105,24 @@ def test_a_voice_note_flag_on_a_non_audio_type_does_not_rename_it():
     assert label_for(ref) == "document"
 
 
+def test_a_sticker_ref_is_labelled_a_sticker_whatever_its_media_type():
+    """A sticker IS an image, so the media type cannot distinguish it from a
+    photo — exactly the argument `voice_note` already makes against `audio/*`.
+    Signal declares no type at all for a sticker; Discord declares image/webp.
+    Both must render `[sticker]`, or the transcript calls pack art a photo."""
+    assert label_for(MediaRef(platform_id="", sticker=True)) == "sticker"
+    assert label_for(MediaRef(platform_id="1", media_type="image/webp", sticker=True)) == "sticker"
+    assert label_for(MediaRef(platform_id="1", media_type="image/webp")) == "image"
+
+
+def test_a_fetch_token_is_carried_but_never_rendered():
+    """The token is adapter-private. Nothing that produces body text may read
+    it — `render_placeholder` takes a label and a handle and nothing else."""
+    ref = MediaRef(platform_id="", sticker=True, fetch_token="sticker:abc:15")  # noqa: S106
+    assert ref.fetch_token == "sticker:abc:15"  # noqa: S105
+    assert "abc" not in render_placeholder(label_for(ref), "a3f2c1")
+
+
 def test_the_filename_is_only_ever_a_fallback_for_the_type():
     assert resolve_media_type(declared="image/png", filename="thing.pdf") == "image/png"
     assert resolve_media_type(declared="", filename="thing.pdf") == "application/pdf"
