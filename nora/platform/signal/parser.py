@@ -207,6 +207,31 @@ def _quoted(data: dict) -> Quote | None:
     return Quote(author_id=str(author_id), text=text, quoted_ts=quoted_ts)
 
 
+def _sticker_ref(data: dict) -> MediaRef | None:
+    """One `MediaRef` for `dataMessage.sticker`, or None if it is unusable.
+
+    Both fields are required because `getSticker` needs both — a half-formed
+    sticker object cannot be fetched, and a ref for it would manufacture a
+    custody failure to count on every one. The token is this adapter's private
+    encoding; `SignalMediaSource` is the only code that reads it back.
+
+    No `media_type`: the envelope declares none, and the bytes are WebP or PNG
+    depending on the pack (spec §1). `label_for` returns "sticker" off the flag
+    rather than off a type nobody sent.
+    """
+    sticker = data.get("sticker")
+    if not isinstance(sticker, dict):
+        return None
+    pack_id, sticker_id = sticker.get("packId"), sticker.get("stickerId")
+    if not isinstance(pack_id, str) or not pack_id:
+        return None
+    if not isinstance(sticker_id, int):
+        return None
+    return MediaRef(
+        platform_id="", fetch_token=f"sticker:{pack_id}:{sticker_id}", sticker=True
+    )
+
+
 def _body_parts(data: dict, refs: tuple[MediaRef, ...]) -> list[str]:
     """The renderable pieces of one dataMessage, in reading order.
 
@@ -216,14 +241,11 @@ def _body_parts(data: dict, refs: tuple[MediaRef, ...]) -> list[str]:
     checks the tail it expects before touching anything. Reordering these parts
     without telling that function costs a handle, not a message.
 
-    A sticker becomes `[sticker]` for the same reason an image becomes
-    `[image]`: a sticker IS an image, and dropping it made a sticker-only
-    message vanish entirely — the sender saw Nora ignore something they had
-    clearly sent. Its payload carries only `packId`/`stickerId` (per
-    signal-cli's sticker schema), no name or emoji, so the bare placeholder is
-    genuinely all there is to render. It is deliberately NOT a `MediaRef`:
-    there is no attachment id to fetch and no bytes to take custody of, so
-    inventing one would create a custody failure to count on every sticker.
+    A sticker is an ordinary ref now, so it renders through the same
+    `render_placeholder` line as an image and lands in the SAME trailing run
+    `body_with_handles` rewrites. It used to be appended only when nothing else
+    had rendered, which silently dropped a sticker sent with a caption — see
+    `_sticker_ref` and spec §3.2.
 
     A REACTION stays dropped, and that is a different judgement rather than an
     oversight: a reaction is metadata attached to somebody else's message, not
@@ -235,8 +257,6 @@ def _body_parts(data: dict, refs: tuple[MediaRef, ...]) -> list[str]:
     if text:
         parts.append(text)
     parts += [render_placeholder(label_for(ref)) for ref in refs]
-    if not parts and isinstance(data.get("sticker"), dict):
-        parts.append("[sticker]")
     return parts
 
 
@@ -305,6 +325,9 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
             return None                       # R-12: Nora never ingests her own sends
 
         refs = _attachments(data)
+        sticker = _sticker_ref(data)
+        if sticker is not None:
+            refs = (*refs, sticker)
         parts = _body_parts(data, refs)
         if not parts:
             return None                       # reaction / empty — no usable body

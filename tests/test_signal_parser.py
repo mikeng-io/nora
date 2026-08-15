@@ -97,15 +97,42 @@ def test_drops_a_reaction_only_payload():
     assert parse_event(envelope(message=None, reaction={"emoji": "👍"}), OWN) is None
 
 
-def test_a_sticker_only_payload_renders_a_placeholder():
-    """Was dropped, which made a sticker-only message vanish entirely — the
-    sender watched Nora ignore something they had clearly sent. A sticker is
-    an image, and images already render `[image]`."""
+def test_a_sticker_becomes_a_fetchable_ref_not_a_bare_string():
+    """A sticker used to render `[sticker]` with no `MediaRef`, because the
+    parser's comment said there was 'no attachment id to fetch'. That was true
+    of `getAttachment` and false of the daemon: `getSticker(packId, stickerId)`
+    is verified to exist on 0.14.7 and to return bytes (spec §1). Without a ref
+    the sticker never enters custody and can never be read."""
     msg = parse_event(
         envelope(message=None, sticker={"packId": "x", "stickerId": 3}), OWN
     )
     assert msg is not None
     assert msg.body == "[sticker]"
+    assert len(msg.media) == 1
+    assert msg.media[0].sticker is True
+    assert msg.media[0].fetch_token == "sticker:x:3"  # noqa: S105
+    assert msg.media[0].platform_id == "", "a sticker has no attachment id"
+
+
+def test_a_captioned_sticker_keeps_both_halves():
+    """The booster used to be the half that was lost: `_body_parts` appended
+    `[sticker]` only when nothing else had rendered, so a sticker sent WITH a
+    caption vanished from the record entirely. That is precisely the case this
+    feature exists for — several messages, then a sticker as a booster."""
+    msg = parse_event(
+        envelope(message="haha", sticker={"packId": "x", "stickerId": 3}), OWN
+    )
+    assert msg is not None
+    assert msg.body == "haha [sticker]"
+
+
+def test_a_malformed_sticker_payload_is_not_a_ref():
+    """A sticker object missing either field cannot be fetched, so inventing a
+    ref for it would manufacture a custody failure to count on every one."""
+    msg = parse_event(envelope(message="hi", sticker={"packId": "x"}), OWN)
+    assert msg is not None
+    assert msg.media == ()
+    assert msg.body == "hi"
 
 
 def test_image_attachment_becomes_a_placeholder():
