@@ -249,18 +249,54 @@ def label_for(ref: MediaRef) -> str:
     return _BY_TOP_LEVEL.get(top, "file")
 
 
-def render_placeholder(label: str, handle: str = "") -> str:
-    """`[image]` before custody, `[image a3f2c1]` after it.
+# Characters a description may never contain, and why each one:
+#   `]`  would close the placeholder early, leaving the rest reading as body
+#        prose the room never wrote;
+#   `[`  would open a second one, so a description could forge a placeholder;
+#   control characters and newlines would forge a transcript LINE.
+_FORBIDDEN = str.maketrans({"]": "", "[": ""})
 
-    The handle is omitted rather than faked when the bytes were not copied.
-    That asymmetry is the whole point: a placeholder with a handle is a promise
-    that the blob exists and can be produced, so it must never be written by a
-    path that failed to store one.
+
+def sanitize_description(raw: str, *, max_chars: int) -> str:
+    """A model's sentence, made safe to render inside a placeholder.
+
+    This module used to be safe BY CONSTRUCTION: `render_placeholder` could
+    only emit a member of a closed label set plus hex, so no sender-supplied
+    string could reach the body through it. A free-text description ends that
+    property, and this function is what replaces it — explicit screening rather
+    than a guarantee.
+
+    It does NOT screen for identifiers. That is `nora.agent.egress
+    .scan_identifiers`' job and it runs in the caller, at every render, for the
+    reason `VisionCache`'s docstring gives: a screen applied at STORE time can
+    be bypassed by a cache hit.
     """
-    return f"[{label} {handle}]" if handle else f"[{label}]"
+    collapsed = " ".join(str(raw).split())
+    cleaned = collapsed.translate(_FORBIDDEN).strip()
+    return cleaned[:max_chars]
 
 
-def placeholder_suffix(labels: tuple[str, ...], handles: tuple[str, ...] = ()) -> str:
+def render_placeholder(label: str, handle: str = "", description: str = "") -> str:
+    """`[image]` before custody, `[image a3f2c1]` after it, and
+    `[sticker a3f2c1: a cartoon cat]` once something has read the bytes.
+
+    The description rides only WITH a handle, never alone. The handle is a
+    promise that the blob exists and can be produced; a description without one
+    would claim Nora read bytes she does not hold, which is the same lie the
+    handle's own asymmetry already refuses to tell.
+    """
+    if not handle:
+        return f"[{label}]"
+    if not description:
+        return f"[{label} {handle}]"
+    return f"[{label} {handle}: {description}]"
+
+
+def placeholder_suffix(
+    labels: tuple[str, ...],
+    handles: tuple[str, ...] = (),
+    descriptions: tuple[str, ...] = (),
+) -> str:
     """The trailing run of placeholders for one message's attachments.
 
     `_body_parts` puts the text first and every placeholder after it, joined by
@@ -268,8 +304,12 @@ def placeholder_suffix(labels: tuple[str, ...], handles: tuple[str, ...] = ()) -
     what lets `body_with_handles` rewrite it without a second copy of the
     parser's assembly rules or any positional guesswork.
     """
-    padded = handles + ("",) * (len(labels) - len(handles))
-    return " ".join(render_placeholder(a, b) for a, b in zip(labels, padded, strict=True))
+    padded_handles = handles + ("",) * (len(labels) - len(handles))
+    padded_descriptions = descriptions + ("",) * (len(labels) - len(descriptions))
+    return " ".join(
+        render_placeholder(a, b, c)
+        for a, b, c in zip(labels, padded_handles, padded_descriptions, strict=True)
+    )
 
 
 def media_json(blobs: tuple[MediaBlob, ...]) -> str | None:
@@ -305,7 +345,12 @@ def media_json(blobs: tuple[MediaBlob, ...]) -> str | None:
     ])
 
 
-def body_with_handles(body: str, labels: tuple[str, ...], handles: tuple[str, ...]) -> str:
+def body_with_handles(
+    body: str,
+    labels: tuple[str, ...],
+    handles: tuple[str, ...],
+    descriptions: tuple[str, ...] = (),
+) -> str:
     """Re-render `body`'s attachment placeholders with the handles now held.
 
     Returns `body` UNCHANGED if its tail is not the placeholder run this
@@ -321,4 +366,4 @@ def body_with_handles(body: str, labels: tuple[str, ...], handles: tuple[str, ..
     old = placeholder_suffix(labels)
     if not body.endswith(old):
         return body
-    return body[: len(body) - len(old)] + placeholder_suffix(labels, handles)
+    return body[: len(body) - len(old)] + placeholder_suffix(labels, handles, descriptions)
