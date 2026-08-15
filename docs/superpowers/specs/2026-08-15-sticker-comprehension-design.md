@@ -500,6 +500,48 @@ The probe is the gate on commit 3 (§8). If it fails, the fallback is to
 transcode the first frame to PNG before the call, which is a new dependency and
 a separate decision — not a silent addition.
 
+**2026-08-15 — the probe ran, against the deployed gateway.** Three real
+stickers pulled from live signal-cli, ground truth fixed by eye before any
+model saw them: a 257258-byte static PNG (a man in tortoiseshell glasses, white
+collared shirt, looking down, caption bar 「點解會咁嘅?」); a 208014-byte
+ANIMATED WebP (a grainy extreme close-up of a cream cat, half-lidded eyes); an
+11798-byte static WebP (a pale cat, mouth open mid-meow, wide eyes).
+
+The predicted risk above is **FALSE**. Given an adequate token budget, MiMo
+decoded the animated WebP correctly — *"A close-up of a white cat with its eyes
+partially closed and mouth slightly open as if mid-meow, with no visible
+text."* — and the static PNG — *"A bespectacled man in a white collared shirt
+looks down, with Cantonese text 「點解會咁嘅?」 (Why is it like this?) at the
+frame's bottom."* Both match ground truth and, critically, distinguish their
+stickers from each other — the pass condition stated above (descriptions that
+distinguish two stickers whose content was confirmed by eye) was met, not
+merely "a plausible sentence." MiMo is not decoding only a first frame and
+guessing; it reads the animated container.
+
+A different, real defect surfaced instead, and it lives in §5.2's reasoning,
+not in the animated-container question. §5.2 and §6's `sticker_prompt_max_tokens
+= 128` argued a sticker "needs a sentence, not media_fetch's 1024-token
+transcription allowance." That reasoning is wrong for a reasoning model: MiMo's
+reasoning tokens are drawn from the **same** `max_tokens` ceiling as the
+answer, so a small allowance can be spent entirely on reasoning with nothing
+left to emit. At 128 tokens the gateway returned HTTP 200 with empty content on
+4 of 4 calls — surfacing as `reason="error"` / "vision call returned no text"
+per §5.5's table, i.e. `unavailable`, never as a timeout and never as a
+fabricated pass. At 256 tokens, 2 of 3 calls succeeded; at 512, 3 of 3; at
+1024, 3 of 3. `nora/config.py` and `config.toml` now ship
+`sticker_prompt_max_tokens = 1024` (matching `vision_max_tokens`, for margin
+over the 512 floor) rather than 128.
+
+The same probe run timed nine successful-or-failed calls end to end: 3.9s to
+12.2s, correlating with neither image size nor token budget (gateway
+variance, not a function of this feature's inputs). `sticker_timeout_seconds`
+is now 20.0 — headroom over the observed maximum — rather than the original
+6.0, which the measured spread shows would have timed out most of these calls.
+
+None of this reopens `sticker_descriptions`, which stays off: verifying the
+model can read the format is this branch's job; deciding whether the added
+latency is worth turning the flag on is the operator's, per §6.
+
 ## 8. Rollout
 
 1. **Custody.** `MediaSourceRegistry`, `MediaRef.sticker` and `fetch_token`,

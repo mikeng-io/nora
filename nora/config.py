@@ -425,17 +425,25 @@ class MediaConfig(BaseModel):
     # position, and the animated-WebP question (spec §7) is unresolved until a
     # probe answers it on the deployed gateway.
     sticker_descriptions: bool = False
-    # A sentence, not a transcription. `media_fetch`'s 1024 exists for a busy
-    # screenshot; a sticker that needs 1024 tokens is one the model is padding.
-    sticker_prompt_max_tokens: int = 128
+    # NOT a sentence-vs-transcription budget — the §7 probe (2026-08-15, live
+    # MiMo-v2.5) found that reasoning tokens and answer tokens share this one
+    # ceiling, so a small allowance is spent thinking with nothing left to
+    # emit. 128 returned HTTP 200 with empty content on 4/4 calls (surfacing
+    # as `unavailable`, not a timeout); 256 succeeded 2/3; 512 was the lowest
+    # value that succeeded 3/3. 1024 matches `vision_max_tokens` above and
+    # buys margin over that floor rather than pricing it exactly.
+    sticker_prompt_max_tokens: int = 1024
     # DELIBERATELY not derived from `llm.timeout_seconds` the way
     # `derive_vision_timeout` is. That invariant protects the agent LOOP from a
     # hung call; this call runs on the ingest path before the loop exists, so
     # reusing it would borrow a guarantee about the wrong thing. The real
     # constraint: the custody stage is inline and the listener awaits it, so
     # this stall delays the next message — and when the sticker rides on the
-    # TAGGING message it is added straight to Nora's reply latency.
-    sticker_timeout_seconds: float = 6.0
+    # TAGGING message it is added straight to Nora's reply latency. The §7
+    # probe timed nine successful-or-failed calls at 3.9s-12.2s, with no
+    # correlation to image size or token budget (gateway variance); 20s is
+    # headroom over that observed maximum, not a guess.
+    sticker_timeout_seconds: float = 20.0
     # The description is untrusted model output rendered into the durable body.
     # Bounded here; newline, bracket and identifier screening live in
     # `nora.domain.media.sanitize_description` and the custody stage.

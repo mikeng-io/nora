@@ -376,11 +376,19 @@ vision_max_bytes = 8388608
 vision_timeout_seconds = 20.0
 # Reading a sticker automatically at INGEST (sticker spec §6) — separate from
 # media_fetch above because the two calls have different budgets and risk.
-# sticker_descriptions ships false: the animated-WebP question (spec §7) is
-# unresolved until a probe answers it on the deployed gateway.
+# sticker_descriptions ships false regardless: the spec §7 probe (2026-08-15,
+# live gateway) cleared the animated-WebP risk this flag was gated on, but
+# turning description-on-by-default on is a latency trade-off left to the
+# operator, not this branch.
 # sticker_descriptions = false
-# sticker_prompt_max_tokens = 128
-# sticker_timeout_seconds = 6.0
+# The probe also found the shipped 128-token default cannot work: MiMo is a
+# reasoning model and reasoning tokens share this budget with the answer, so
+# 128 returned empty content on 4/4 calls. 512 was the lowest value that
+# succeeded 3/3; 1024 matches vision_max_tokens above and buys margin.
+# sticker_prompt_max_tokens = 1024
+# The probe timed nine calls at 3.9s-12.2s with no correlation to image size
+# or token budget (gateway variance); 20s is headroom over that maximum.
+# sticker_timeout_seconds = 20.0
 # sticker_description_max_chars = 200
 
 [shortener]
