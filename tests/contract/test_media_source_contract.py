@@ -187,3 +187,102 @@ async def test_bytes_over_the_ceiling_are_refused_even_when_the_size_was_not_dec
     got = await source.fetch(ref=MediaRef(platform_id=HELD_ID))
     assert got.available is False
     assert got.reason == "too_large"
+
+
+# --- Stickers: `getSticker`, verified against the live daemon 2026-08-15 -----
+
+HELD_STICKER = ("8c6ce85a3156b8e498e1ba0e97bc6620", 15)
+STICKER_BYTES = b"RIFF\x00\x00\x00\x00WEBPVP8 sticker-ish"
+
+
+def _sticker_daemon(*, held: dict[tuple[str, int], bytes]):
+    """Answers per request, in signal-cli 0.14.7's OWN shapes (probed
+    2026-08-15). An unknown pack and an unknown index are the SAME error there,
+    so they are the same error here — a fake that distinguished them would
+    let the adapter claim a precision the daemon does not offer."""
+
+    async def rpc(request):
+        payload = await request.json()
+        method = payload.get("method")
+        if method != "getSticker":
+            return web.json_response({
+                "jsonrpc": "2.0", "id": payload.get("id"),
+                "error": {"code": -32601, "message": "Method not implemented", "data": None},
+            })
+        params = payload.get("params") or {}
+        pack, index = params.get("packId"), params.get("stickerId")
+        if not isinstance(pack, str) or not isinstance(index, int):
+            return web.json_response({
+                "jsonrpc": "2.0", "id": payload.get("id"),
+                "error": {"code": -32603, "message":
+                          'Cannot invoke "String.length()" because "s" is null '
+                          "(NullPointerException)", "data": None},
+            })
+        data = held.get((pack, index))
+        if data is None:
+            return web.json_response({
+                "jsonrpc": "2.0", "id": payload.get("id"),
+                "error": {"code": -1, "message":
+                          f"Could not find sticker with ID: {index} in pack "
+                          f"StickerPackId{{{pack}}}", "data": None},
+            })
+        return web.json_response({
+            "jsonrpc": "2.0", "id": payload.get("id"),
+            "result": {"data": base64.b64encode(data).decode("ascii")},
+        })
+
+    app = web.Application()
+    app.router.add_post("/api/v1/rpc", rpc)
+    return app
+
+
+async def test_a_held_sticker_is_fetched_by_pack_and_index(aiohttp_server):
+    server = await aiohttp_server(_sticker_daemon(held={HELD_STICKER: STICKER_BYTES}))
+    source = SignalMediaSource(base_url=str(server.make_url("")))
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="", sticker=True,
+        fetch_token=f"sticker:{HELD_STICKER[0]}:{HELD_STICKER[1]}",
+    ))
+
+    assert got.available is True
+    assert got.data == STICKER_BYTES
+
+
+async def test_an_unknown_sticker_is_not_found_not_a_crash(aiohttp_server):
+    """Unknown pack and unknown index are indistinguishable at this seam
+    (spec §1, finding 4) — one reason, not two labels implying precision."""
+    server = await aiohttp_server(_sticker_daemon(held={}))
+    source = SignalMediaSource(base_url=str(server.make_url("")))
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="", sticker=True, fetch_token="sticker:deadbeef:1"))  # noqa: S106
+
+    assert got.available is False
+    assert got.reason == "not_found"
+
+
+async def test_a_sticker_ref_never_calls_getattachment(aiohttp_server):
+    """The regression this guards: routing a sticker to `getAttachment` with an
+    empty id returns `no_id` and loses the sticker before the supported call is
+    ever made. The daemon above answers -32601 for any other method, so a
+    misrouted call is red rather than silently empty."""
+    server = await aiohttp_server(_sticker_daemon(held={HELD_STICKER: STICKER_BYTES}))
+    source = SignalMediaSource(base_url=str(server.make_url("")))
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="", sticker=True,
+        fetch_token=f"sticker:{HELD_STICKER[0]}:{HELD_STICKER[1]}"))
+
+    assert got.reason != "no_id"
+
+
+async def test_a_malformed_token_is_bad_token_and_makes_no_call(aiohttp_server):
+    server = await aiohttp_server(_sticker_daemon(held={}))
+    source = SignalMediaSource(base_url=str(server.make_url("")))
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="", sticker=True, fetch_token="sticker:onlyonepart"))  # noqa: S106
+
+    assert got.available is False
+    assert got.reason == "bad_token"

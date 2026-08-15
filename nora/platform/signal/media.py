@@ -29,14 +29,19 @@ Two different errors. The method genuinely exists and genuinely looked, rather
 than a daemon that answers everything alike. `id` alone is accepted — the call
 reached the lookup — so no `recipient`/`groupId` is sent.
 
-**What is NOT verified, and cannot be here:** the shape of a SUCCESSFUL result.
-No attachment has ever arrived on this deployment, so there is no id to fetch.
-`_decode` therefore accepts the two shapes signal-cli plausibly returns — a
-bare base64 string, or an object carrying it under `data` — and anything else
-becomes `available=False, reason="bad_payload"` with the result's KEYS (never
-its values) in the log line, so the first real attachment either works or says
-exactly what to change in one line. Guessing one shape and silently dropping
-the other is how a decorative implementation ships green.
+**What is NOT verified, and cannot be here:** the shape of a SUCCESSFUL
+`getAttachment` result. No attachment has ever arrived on this deployment, so
+there is no id to fetch. `_decode` therefore accepts the two shapes signal-cli
+plausibly returns — a bare base64 string, or an object carrying it under
+`data` — and anything else becomes `available=False, reason="bad_payload"`
+with the result's KEYS (never its values) in the log line, so the first real
+attachment either works or says exactly what to change in one line. Guessing
+one shape and silently dropping the other is how a decorative implementation
+ships green.
+
+`getSticker`'s success shape, by contrast, **is** verified — probed against the
+live daemon 2026-08-15: `{"result":{"data":"<base64>"}}`, the object-with-`data`
+branch `_decode` already has. No new decoder branch was needed for it.
 
 Never raises: `nora.domain.ports.MediaSource`'s contract, for `RosterSource`'s
 reason. The caller is the ingest path, and an exception there costs the whole
@@ -66,6 +71,25 @@ DEFAULT_TIMEOUT_SECONDS = 8.0
 # not a silent truncation.
 DEFAULT_MAX_BYTES = 100 * 1024 * 1024
 
+# The token prefix this adapter writes in `nora.platform.signal.parser`. It is
+# private to Signal: the domain moves the string and never reads it.
+_STICKER_PREFIX = "sticker:"
+
+
+def _sticker_params(token: str) -> dict[str, object] | None:
+    """`getSticker`'s params out of this adapter's own token, or None.
+
+    Shape verified against the live daemon 2026-08-15: `packId` is a string,
+    `stickerId` an int, and passing either under another name returns a
+    NullPointerException rather than a result — so the names are load-bearing
+    and are written once, here.
+    """
+    rest = token[len(_STICKER_PREFIX):]
+    pack, sep, index = rest.rpartition(":")
+    if not sep or not pack or not index.isdigit():
+        return None
+    return {"packId": pack, "stickerId": int(index)}
+
 
 class SignalMediaSource:
     """Satisfies `nora.domain.ports.MediaSource` for Signal."""
@@ -87,15 +111,28 @@ class SignalMediaSource:
         """The bytes for one attachment, or an unavailable answer saying why.
 
         `reason` is a small closed vocabulary because it becomes a metric
-        label: `no_id`, `unreachable`, `not_found`, `bad_payload`, `too_large`.
-        Each names a different thing to go fix, which is the entire reason this
-        is not a `bytes | None`.
+        label: `no_id`, `unreachable`, `not_found`, `bad_payload`, `too_large`,
+        `bad_token`. Each names a different thing to go fix, which is the
+        entire reason this is not a `bytes | None`.
         """
-        if not ref.platform_id:
-            # A sticker, or an attachment signal-cli described without an id.
-            # There is nothing to ask for; saying so is not a failure of the
-            # daemon and must not be counted as one.
+        if ref.fetch_token.startswith(_STICKER_PREFIX):
+            params = _sticker_params(ref.fetch_token)
+            if params is None:
+                # This adapter wrote the token, so a token it cannot read is a
+                # bug here, not a daemon failure. Distinct reason so the metric
+                # says which.
+                log.warning("sticker token this adapter cannot read")
+                return MediaBytes(available=False, reason="bad_token")
+            method, params_out = "getSticker", params
+        elif not ref.platform_id:
+            # An attachment signal-cli described without an id. There is
+            # nothing to ask for; saying so is not a failure of the daemon and
+            # must not be counted as one. (Stickers no longer land here — they
+            # carry a token and take the branch above.)
             return MediaBytes(available=False, reason="no_id")
+        else:
+            method, params_out = "getAttachment", {"id": ref.platform_id}
+
         if ref.size is not None and ref.size > self._max_bytes:
             # Refused on the platform's CLAIM, before transferring anything.
             # The claim can be wrong, which is why `_decode` checks the real
@@ -106,9 +143,9 @@ class SignalMediaSource:
         url = f"{self._base_url.rstrip('/')}/api/v1/rpc"
         payload = {
             "jsonrpc": "2.0",
-            "method": "getAttachment",
-            "params": {"id": ref.platform_id},
-            "id": "nora-getAttachment",
+            "method": method,
+            "params": params_out,
+            "id": f"nora-{method}",
         }
         try:
             async with (
@@ -118,24 +155,28 @@ class SignalMediaSource:
                 session.post(url, json=payload) as resp,
             ):
                 if resp.status != 200:
-                    log.warning("getAttachment: HTTP %s from %s", resp.status, url)
+                    log.warning("%s: HTTP %s from %s", method, resp.status, url)
                     return MediaBytes(available=False, reason="unreachable")
                 body = await resp.json()
         except Exception as exc:                                   # noqa: BLE001
             # Blind, on purpose and narrowly scoped: every transport failure is
             # the same answer to this caller, and the port forbids raising.
-            log.warning("getAttachment unreachable at %s: %s", url, type(exc).__name__)
+            log.warning("%s unreachable at %s: %s", method, url, type(exc).__name__)
             return MediaBytes(available=False, reason="unreachable")
 
         if not isinstance(body, dict):
             return MediaBytes(available=False, reason="bad_payload")
         if body.get("error"):
             # The verified shape: `{"code": -1, "message": "Could not find
-            # attachment with ID: …"}`. The id is signal-cli's own handle, not
-            # a person's identifier, but the message is echoed at debug rather
-            # than warning because a missed attachment is already counted and
-            # the log line adds nothing an operator alerts on.
-            log.info("getAttachment: signal-cli did not produce %s", ref.platform_id)
+            # attachment/sticker with ID: …"}`. The handle is signal-cli's own,
+            # not a person's identifier, but the message is echoed at debug
+            # rather than warning because a miss is already counted and the
+            # log line adds nothing an operator alerts on. Never the token —
+            # only the platform id, or a fixed placeholder for a sticker.
+            log.info(
+                "%s: signal-cli did not produce %s",
+                method, ref.platform_id or "<sticker>",
+            )
             return MediaBytes(available=False, reason="not_found")
         return self._decode(body.get("result"))
 
