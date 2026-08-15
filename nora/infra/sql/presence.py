@@ -87,6 +87,7 @@ class PresenceStore:
             is_driving=None if fix.is_driving is None else int(fix.is_driving),
             battery=fix.battery,
             address=fix.address,
+            speed_kmh=fix.speed_kmh,
             wire_state=fix.wire_state.value,
             recorded_at=fix.recorded_at,
         )
@@ -229,6 +230,7 @@ def _select_fix() -> sa.Select[Any]:
         PRESENCE_FIXES.c.is_driving,
         PRESENCE_FIXES.c.battery,
         PRESENCE_FIXES.c.address,
+        PRESENCE_FIXES.c.speed_kmh,
         PRESENCE_FIXES.c.wire_state,
         PRESENCE_FIXES.c.recorded_at,
     )
@@ -247,4 +249,5 @@ def _row_to_fix(row: Any) -> PresenceFix:
         is_driving=None if row.is_driving is None else bool(row.is_driving),
         battery=row.battery,
         address=row.address,
+        speed_kmh=row.speed_kmh,
     )

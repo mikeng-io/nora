@@ -129,6 +129,11 @@ _EARTH_RADIUS_M = 6_371_000.0
 _MOVEMENT_WINDOW_MS = 15 * 60_000
 _MOVEMENT_FLOOR_M = 150.0
 
+# Below this, Life360's own reported speed is GPS jitter off a stationary or
+# slow-walking phone, not a measurement worth relaying (operator ask
+# 2026-08-16) — below brisk-walking pace. Omitted, never rendered as `0`.
+_SPEED_FLOOR_KMH = 3.0
+
 
 def _distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     p1, p2 = math.radians(lat1), math.radians(lat2)
@@ -556,6 +561,19 @@ class Whereis:
             log.exception("whereis derivation read failed — answering without it")
         if fix.is_driving:
             movement["driving"] = True
+        # Life360's own reported ground speed for THIS fix's instant — not a
+        # 2-fix derivation, so unlike `moving`/`towards` it needs no window
+        # read and is available on a person's very first recorded fix.
+        # Suppressed inside a saved place for the same reason `moving`/
+        # `towards` are (§6's "cannot both be the headline"): indoor/urban
+        # GPS jitter routinely clears the floor below, and «at Home» is a
+        # more useful answer than a spurious walking-pace reading.
+        if (
+            place_name is None
+            and fix.speed_kmh is not None
+            and fix.speed_kmh > _SPEED_FLOOR_KMH
+        ):
+            movement["speed_kmh"] = round(fix.speed_kmh, 1)
         # ON-DEMAND reverse-geocode: only reached when there is no saved-place
         # name AND Life360 gave no address of its own — the two cheaper answers
         # above always win first. This is the ONE live external call `locate`

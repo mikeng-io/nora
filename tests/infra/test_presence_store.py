@@ -103,12 +103,14 @@ async def test_latest_fix_is_none_when_nothing_recorded(store):
 async def test_optional_fields_round_trip(store):
     await store.record_fix(fix=_fix(
         ts=1000, accuracy_m=12.5, is_driving=True, battery=88.0, address="Yoho Mall",
+        speed_kmh=42.3,
     ))
     f = await store.latest_fix(circle_id="c1", person_id="p1")
     assert f.accuracy_m == 12.5
     assert f.is_driving is True
     assert f.battery == 88.0
     assert f.address == "Yoho Mall"
+    assert f.speed_kmh == 42.3
 
 
 async def test_window_is_bounded_and_scoped(store):

@@ -123,9 +123,11 @@ IDX_IS_NORA = sa.Index("idx_messages_is_nora", MESSAGES.c.is_nora)
 #   coordinates). A member with no position produces no row — its state rides
 #   `wire_state` on its last row and the per-cycle metric, never a null-island
 #   fix (design/19 §7.6).
-# - `accuracy_m`/`is_driving`/`battery`/`address` are nullable: Life360 omits
-#   them for a still member, a non-driver, a phone with no battery report, or a
-#   coordinate that did not reverse-geocode.
+# - `accuracy_m`/`is_driving`/`battery`/`address`/`speed_kmh` are nullable:
+#   Life360 omits them for a still member, a non-driver, a phone with no
+#   battery report, a coordinate that did not reverse-geocode, or a fix whose
+#   own `-1` "unknown speed" sentinel `nora.infra.life360.members` already
+#   collapsed to `None` before it ever reaches this table.
 # - `wire_state` is `NOT NULL` TEXT holding a `nora.domain.presence.WireState`
 #   value, so «sharing off» is a stored fact rather than an absent row.
 # - `is_driving` is INT (0/1), matching `messages.is_nora`'s convention rather
@@ -145,6 +147,10 @@ PRESENCE_FIXES = sa.Table(
     sa.Column("is_driving", sa.Integer),
     sa.Column("battery", sa.Float),
     sa.Column("address", sa.Text),
+    # Life360's own reported ground speed, km/h, converted from wire m/s at
+    # parse time; the wire's `-1` "unknown" sentinel is already `None` by the
+    # time it reaches here (`nora.infra.life360.members._speed_kmh`).
+    sa.Column("speed_kmh", sa.Float),
     sa.Column("wire_state", sa.Text, nullable=False),
     # Epoch MILLISECONDS: when Nora wrote this row, distinct from `ts`. Kept
     # separate because a stationary phone holds one fix for many minutes — `ts`
