@@ -349,3 +349,31 @@ async def test_discord_refuses_an_oversize_body(aiohttp_server):
 
     assert got.available is False
     assert got.reason == "too_large"
+
+
+async def test_discord_refuses_an_oversize_body_with_no_declared_length(aiohttp_server):
+    """`test_discord_refuses_an_oversize_body` above sends a plain `web.Response`,
+    which aiohttp gives a correct `Content-Length` header — so that test only
+    ever exercises the DECLARED-length check, never the post-read recheck. A
+    `StreamResponse` carries no `Content-Length` at all, so this response can
+    only be caught by measuring the bytes actually read: deleting the post-read
+    check in `DiscordMediaSource.fetch` turns this test red while leaving the
+    declared-length test above green."""
+    async def cdn(request):
+        resp = web.StreamResponse(status=200, headers={"Content-Type": "image/png"})
+        await resp.prepare(request)
+        await resp.write(b"x" * 4096)
+        await resp.write_eof()
+        return resp
+
+    app = web.Application()
+    app.router.add_get("/stickers/900.png", cdn)
+    server = await aiohttp_server(app)
+    source = DiscordMediaSource(cdn_base=str(server.make_url("")), max_bytes=1024)
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="900", media_type="image/png", sticker=True,
+        fetch_token="sticker:900:png"))  # noqa: S106
+
+    assert got.available is False
+    assert got.reason == "too_large"

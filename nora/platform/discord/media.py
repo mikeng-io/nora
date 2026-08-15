@@ -15,6 +15,16 @@ fetcher that follows one is a fetcher a payload can point anywhere; the id is an
 integer and the format is one of four known words, so a URL built from them can
 only address Discord's own sticker CDN.
 
+**What is NOT verified, and cannot be here:** unlike `SignalMediaSource`'s
+`getSticker`, which was probed against the live signal-cli daemon, nothing in
+this module has been checked against the real Discord CDN. The URL shape
+(`{cdn_base}/stickers/{id}.{ext}` on `media.discordapp.net`), the claim that
+`lottie` is served as `.json` rather than under its own extension, and the
+CDN's actual 404/error behaviour are all asserted by construction from public
+Discord documentation, not by a live probe. No guild sticker has been fetched
+by this deployment yet; the first real fetch either confirms this or is the
+thing to go fix.
+
 Never raises: `nora.domain.ports.MediaSource`'s contract. The caller is the
 ingest path, and an exception there costs the MESSAGE to save bytes that are
 only ever a bonus.
