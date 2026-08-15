@@ -30,7 +30,14 @@ from datetime import datetime
 from typing import Any
 
 from ..domain.compute import ComputeJobStore
-from ..domain.ports import BlobStore, ComputeBackend, GifSource, SearchProvider, WeatherProvider
+from ..domain.ports import (
+    BlobStore,
+    ComputeBackend,
+    GifSource,
+    MediaDescriptionStore,
+    SearchProvider,
+    WeatherProvider,
+)
 from ..domain.reminders import ReminderCaps, ReminderStore
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.routes import RouteClient
@@ -74,7 +81,9 @@ class ToolRegistry:
         transit: TransitClient | None = None,
         route: RouteClient | None = None,
         vision: VisionClient | None = None,
+        vision_model: str = "",
         blobs: BlobStore | None = None,
+        descriptions: MediaDescriptionStore | None = None,
         search: SearchProvider | None = None,
         weather: WeatherProvider | None = None,
         presence: PresenceReader | None = None,
@@ -116,13 +125,24 @@ class ToolRegistry:
         # shape as keyless `route` — so it ships present-but-inert while
         # `[media] enabled=false`.
         self._vision = vision
+        # `vision_model` rides alongside `vision`, the same VALUE-not-object
+        # split `ai_peer` already makes on this class: `nora.agent` may not
+        # import `nora.config` (CLAUDE.md), so the composition root resolves
+        # `cfg.media.vision_model` and hands the plain string in here, exactly
+        # as it resolves the `VisionClient` itself.
+        self._vision_model = vision_model
         self._blobs = blobs
         # The description cache lives HERE, once per process, for the reason the
         # transit catalogue does: keyed by content hash, a per-tag cache would
         # never hit, and a module-level singleton is what the test-seam policy
         # forbids. Held even when `media_fetch` is inert — it costs an empty
         # dict and means turning custody on wires nothing new here.
-        self._vision_cache = VisionCache()
+        #
+        # `store=descriptions` (Task 10) makes it a read-through onto the
+        # durable table rather than a memory-only cache that loses every
+        # description on every deploy — `None` (every composition that has not
+        # wired one) leaves it exactly as it was before this task.
+        self._vision_cache = VisionCache(store=descriptions)
         # `search` (Tavily, DEC-73) is NOT default-constructed, for the same
         # reason `route` is not: `web_search` ships INERT behind `[search] enabled`
         # AND a key, so every composition that has not wired one — offline, eval,
@@ -495,7 +515,7 @@ class ToolRegistry:
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=self._transit, route_source=self._route,
             vision_source=self._vision, blob_store=self._blobs,
-            vision_cache=self._vision_cache,
+            vision_cache=self._vision_cache, vision_model=self._vision_model,
             search_source=self._search, weather_source=self._weather,
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,

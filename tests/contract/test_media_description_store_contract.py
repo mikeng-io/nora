@@ -11,11 +11,13 @@ identity must not raise (a sticker is seen many times).
 from __future__ import annotations
 
 import pytest
+import sqlalchemy as sa
 
 from nora.domain.media import MediaBlob
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.schema import STICKER_INDEX
 from nora.testing import FakeMediaDescriptionStore
 
 BLOB = MediaBlob(sha256="a" * 64, media_type="image/webp", size=11798)
@@ -83,6 +85,33 @@ async def test_remember_moves_all_three_co_dependent_columns_together(store):
                          description="second", model="mimo")
 
     assert await store.resolve(platform="signal", token=TOKEN) == second
+
+
+async def test_an_empty_token_writes_the_description_but_no_junk_index_row(pg_url):
+    """`media_fetch` (`VisionCache.aput`, Task 10) has no platform-side sticker
+    identity for a handle-pointed image — it calls `remember` with
+    `platform=""`, `token=""`. SQL-only: without the `if token:` guard this
+    would insert one `sticker_index` row keyed `("", "")` that every
+    `media_fetch` write fights over, carrying whichever hash wrote last. The
+    description row must still land."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    store = SqlMediaDescriptionStore(engine)
+    try:
+        await store.remember(
+            platform="", token="", blob=BLOB,
+            description="a red one-pixel square", model="mimo",
+        )
+        assert await store.describe(sha256=BLOB.sha256) == "a red one-pixel square"
+        async with engine.connect() as conn:
+            count = (await conn.execute(
+                sa.select(sa.func.count()).select_from(STICKER_INDEX).where(
+                    STICKER_INDEX.c.platform == "", STICKER_INDEX.c.fetch_token == "",
+                )
+            )).scalar_one()
+        assert count == 0, "an empty-token remember must not create a junk index row"
+    finally:
+        await engine.dispose()
 
 
 async def test_the_same_bytes_under_a_second_identity_share_one_description(store):

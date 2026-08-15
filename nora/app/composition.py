@@ -59,6 +59,7 @@ from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
@@ -534,6 +535,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # (the way `factory.build_retry_policy` derives its backoff). The client is
     # always present (the LLM key is required to start); `media_fetch` still
     # answers `unavailable` whenever `blobs` is None, the inert-by-config shape.
+    # The durable half of media dedup (sticker spec §4.1, Task 10): `VisionCache`
+    # becomes a read-through in front of THIS store rather than a second,
+    # disagreeing copy — REUSING `engine` for the reason `reminders`/
+    # `compute_jobs`/`tool_call_log_store` all do above (one pool, one
+    # lifecycle; a second `create_sql_engine` would fork the pool and its own
+    # `aclose()` would dispose the engine everything else is still using).
+    media_descriptions = SqlMediaDescriptionStore(engine)
     vision_client = VisionClient(
         client=client,
         model=cfg.media.vision_model,
@@ -826,7 +834,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         occasion_for=relay_occasion, metrics=metrics,
     )
     tool_registry = ToolRegistry(
-        route=route_client, vision=vision_client, blobs=blobs, search=search_client,
+        route=route_client, vision=vision_client, vision_model=cfg.media.vision_model,
+        blobs=blobs, descriptions=media_descriptions, search=search_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,
         relay=relay,

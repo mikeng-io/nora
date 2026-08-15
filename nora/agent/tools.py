@@ -1191,6 +1191,7 @@ def build_tool_specs(
     vision_source=None,
     blob_store=None,
     vision_cache=None,
+    vision_model: str = "",
     search_source=None,
     weather_source=None,
     presence_source=None,
@@ -2562,9 +2563,12 @@ def build_tool_specs(
 
         # Cache by content hash BEFORE the blob is even decrypted: the sha256 is
         # the content, so a stored description is valid forever for it. A hit
-        # makes no MiMo call and no `store.get` (§3). `scan_identifiers` still
-        # runs below, on the cached text, so a hit can never bypass the screen.
-        cached_description = vision_cache.get(sha256) if vision_cache is not None else None
+        # — memory OR the durable table, `aget` checks both — makes no MiMo
+        # call and no `store.get` (§3). `scan_identifiers` still runs below, on
+        # the cached text, so a hit at either tier can never bypass the screen.
+        cached_description = (
+            await vision_cache.aget(sha256) if vision_cache is not None else None
+        )
         if cached_description is not None:
             return _serve_media(sha256, cached_description, cached=True)
 
@@ -2604,8 +2608,11 @@ def build_tool_specs(
             }
         description = result.description
         if vision_cache is not None:
-            # Store the RAW description; the screen runs on every serve, not here.
-            vision_cache.put(sha256, description)
+            # Store the RAW description, at both tiers; the screen runs on
+            # every serve, not here. `model` is the registry's own configured
+            # vision model, threaded in — never hardcoded — so the durable
+            # `media_descriptions` row records what actually produced it.
+            await vision_cache.aput(sha256, description, model=vision_model)
         return _serve_media(sha256, description, cached=False)
 
     def _serve_media(sha256: str, description: str, *, cached: bool) -> dict:
@@ -3556,6 +3563,7 @@ def build_tools(
     vision_source=None,
     blob_store=None,
     vision_cache=None,
+    vision_model: str = "",
     search_source=None,
     weather_source=None,
     presence_source=None,
@@ -3579,6 +3587,7 @@ def build_tools(
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
         room=room, transit_source=transit_source, route_source=route_source,
         vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
+        vision_model=vision_model,
         search_source=search_source, weather_source=weather_source,
         presence_source=presence_source, presence_circles=presence_circles,
         location_trusted=location_trusted,

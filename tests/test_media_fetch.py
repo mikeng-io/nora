@@ -33,6 +33,7 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.vision import VisionCache, VisionResult
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
+from nora.testing import FakeMediaDescriptionStore
 from tests.fakes import FakeHoncho, SinkSender
 from tests.test_doctrine_loader import write
 
@@ -102,12 +103,13 @@ async def wiring(tmp_path, pg_url):
     vision = CountingVision()
     cache = VisionCache()
 
-    def build(*, vision_source=vision, blob_store=blobs, vision_cache=cache):
+    def build(*, vision_source=vision, blob_store=blobs, vision_cache=cache, vision_model=""):
         tools = build_tools(
             store=store, conversation_id="g1", conversation_type="group",
             persons=persons, honcho=FakeHoncho(), deliverer=deliverer, metrics=metrics,
             room=room, transit_source=None,
             vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
+            vision_model=vision_model,
             question="what is in the photo", context_window=40,
         )
         return {t.tool_name: t for t in tools}["media_fetch"]
@@ -164,6 +166,108 @@ async def test_the_cache_survives_across_tags_not_just_within_one(wiring):
     await _call(wiring["build"](), code=PNG_SHA[:6])       # tag 1
     await _call(wiring["build"](), code=PNG_SHA[:6])       # tag 2, new tool, same cache
     assert wiring["vision"].calls == 1
+
+
+# ---- VisionCache as a read-through over the durable store (Task 10) ----------
+# The defect this closes: the LRU is per-process, so every deploy threw away
+# every description and the next sighting of every image paid MiMo again. Nora
+# restarts often; stickers repeat over weeks.
+
+async def test_a_cold_process_still_hits_the_durable_store():
+    store = FakeMediaDescriptionStore()
+    store.descriptions["a" * 64] = "a cartoon cat"
+    cache = VisionCache(store=store)
+
+    assert cache.get("a" * 64) is None, "memory is genuinely cold"
+    assert await cache.aget("a" * 64) == "a cartoon cat"
+    assert cache.get("a" * 64) == "a cartoon cat", "a durable hit warms memory"
+
+
+async def test_a_memory_hit_never_touches_the_store():
+    store = FakeMediaDescriptionStore()
+    cache = VisionCache(store=store)
+    cache.put("a" * 64, "a cartoon cat")
+
+    assert await cache.aget("a" * 64) == "a cartoon cat"
+    assert store.described == []
+
+
+async def test_a_store_outage_degrades_to_a_miss_not_an_error():
+    cache = VisionCache(store=FakeMediaDescriptionStore(unavailable=True))
+
+    assert await cache.aget("a" * 64) is None
+    await cache.aput("a" * 64, "a cartoon cat", model="mimo")
+    assert cache.get("a" * 64) == "a cartoon cat", "memory still works"
+
+
+async def test_aput_writes_only_the_content_level_no_sticker_identity():
+    """`media_fetch` has no platform-side sticker identity for an image a
+    human pointed at by handle — only content. `aput` must write the CONTENT
+    level (`describe`) with an empty platform/token, never invent one."""
+    store = FakeMediaDescriptionStore()
+    cache = VisionCache(store=store)
+
+    await cache.aput("a" * 64, "a cartoon cat", model="mimo")
+
+    assert store.remembered == [("", "", "a" * 64)]
+    assert await store.describe(sha256="a" * 64) == "a cartoon cat"
+
+
+async def test_a_durable_hit_still_runs_the_identifier_screen_on_serve(wiring):
+    """The property `VisionCache`'s docstring argues for: a hit at EITHER tier
+    can never bypass `scan_identifiers`, because the screen runs on every
+    SERVE, in the tool — never at store time. Simulate a cold process (memory
+    empty, durable store already holds a description with a UUID in it) and
+    confirm the served result is still screened."""
+    uuid = "12345678-1234-1234-1234-1234567890ab"
+    descriptions = FakeMediaDescriptionStore()
+    descriptions.descriptions[PNG_SHA] = f"A screenshot showing id {uuid}."
+    cache = VisionCache(store=descriptions)
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+
+    tool = wiring["build"](vision_cache=cache)
+    out = await _call(tool, code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert out.get("withheld") is True
+    assert uuid not in repr(out)
+    # The durable hit made no MiMo call — it warmed memory instead.
+    assert wiring["vision"].calls == 0
+
+
+class _RecordingDescriptionStore:
+    """A minimal `MediaDescriptionStore` stand-in that records the `model`
+    argument `remember` was called with. `FakeMediaDescriptionStore` doesn't
+    log it (nothing needed it before), so this exists to prove `media_fetch`
+    threads the REAL configured model name through rather than hardcoding
+    one or dropping it."""
+
+    def __init__(self) -> None:
+        self.remembered_models: list[str] = []
+
+    async def resolve(self, *, platform: str, token: str):
+        return None
+
+    async def describe(self, *, sha256: str):
+        return None
+
+    async def remember(self, *, platform, token, blob, description, model) -> None:
+        self.remembered_models.append(model)
+
+
+async def test_media_fetch_threads_the_real_model_name_not_a_hardcoded_one(wiring):
+    """`aput`'s `model` must be whatever the registry's vision client is
+    actually configured with — hardcoding it would silently mislabel every
+    future model change in the durable `media_descriptions` row."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    descriptions = _RecordingDescriptionStore()
+    cache = VisionCache(store=descriptions)
+
+    tool = wiring["build"](vision_cache=cache, vision_model="opencode-go/mimo-v2.5")
+    out = await _call(tool, code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert descriptions.remembered_models == ["opencode-go/mimo-v2.5"]
 
 
 # ---- the untrusted-egress screen, on EVERY serve (§4, criterion 6) -----------

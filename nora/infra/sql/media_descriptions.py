@@ -63,27 +63,37 @@ class SqlMediaDescriptionStore:
         """Both levels in ONE transaction, so a crash between them cannot leave
         an identity pointing at a hash with no description — the state that
         would make every later sighting re-describe while looking like a hit.
+
+        `token=""` means "no sticker identity" (`VisionCache.aput`, called from
+        `media_fetch`: an image a human pointed at by handle has only content,
+        never a platform-side identity). The `sticker_index` write is guarded
+        on a non-empty token for that case — every `media_fetch` write shares
+        `platform=""`/`token=""`, and without the guard they would all upsert
+        the SAME junk row, each one clobbering the last hash it wrote. The
+        description row is written regardless: content-level dedup is the
+        whole point even when there is no identity to index.
         """
-        index_stmt = pg_insert(STICKER_INDEX).values(
-            platform=platform, fetch_token=token, sha256=blob.sha256,
-            media_type=blob.media_type, size=blob.size, hits=1,
-        )
-        index_stmt = index_stmt.on_conflict_do_update(
-            index_elements=[STICKER_INDEX.c.platform, STICKER_INDEX.c.fetch_token],
-            set_={
-                "sha256": index_stmt.excluded.sha256,
-                "media_type": index_stmt.excluded.media_type,
-                "size": index_stmt.excluded.size,
-                "last_seen": sa.text("now()"),
-                "hits": STICKER_INDEX.c.hits + 1,
-            },
-        )
         desc_stmt = pg_insert(MEDIA_DESCRIPTIONS).values(
             sha256=blob.sha256, description=description, model=model,
         ).on_conflict_do_nothing(index_elements=[MEDIA_DESCRIPTIONS.c.sha256])
         try:
             async with self._engine.begin() as conn:
-                await conn.execute(index_stmt)
+                if token:
+                    index_stmt = pg_insert(STICKER_INDEX).values(
+                        platform=platform, fetch_token=token, sha256=blob.sha256,
+                        media_type=blob.media_type, size=blob.size, hits=1,
+                    )
+                    index_stmt = index_stmt.on_conflict_do_update(
+                        index_elements=[STICKER_INDEX.c.platform, STICKER_INDEX.c.fetch_token],
+                        set_={
+                            "sha256": index_stmt.excluded.sha256,
+                            "media_type": index_stmt.excluded.media_type,
+                            "size": index_stmt.excluded.size,
+                            "last_seen": sa.text("now()"),
+                            "hits": STICKER_INDEX.c.hits + 1,
+                        },
+                    )
+                    await conn.execute(index_stmt)
                 await conn.execute(desc_stmt)
         except Exception:
             # The caller already has a usable description and nothing to do
