@@ -68,6 +68,23 @@ async def test_remembering_the_same_sticker_twice_is_not_an_error(store):
     assert await store.describe(sha256=BLOB.sha256) == "a cartoon cat"
 
 
+async def test_remember_moves_all_three_co_dependent_columns_together(store):
+    """`sha256`, `media_type` and `size` are one indivisible fact about one
+    blob — `sha256` is a pure function of the bytes. A second `remember` for
+    the same identity with a DIFFERENT blob must move all three together, or
+    `resolve` hands back a row asserting a size that does not match the bytes
+    its own hash names (the untrue record A9/DEC-43 forbids)."""
+    first = MediaBlob(sha256="c" * 64, media_type="image/webp", size=100)
+    second = MediaBlob(sha256="d" * 64, media_type="image/png", size=999)
+
+    await store.remember(platform="signal", token=TOKEN, blob=first,
+                         description="first", model="mimo")
+    await store.remember(platform="signal", token=TOKEN, blob=second,
+                         description="second", model="mimo")
+
+    assert await store.resolve(platform="signal", token=TOKEN) == second
+
+
 async def test_the_same_bytes_under_a_second_identity_share_one_description(store):
     """The content level is what makes the same art in two packs one vision
     call. If this fails, dedup only works per-pack."""

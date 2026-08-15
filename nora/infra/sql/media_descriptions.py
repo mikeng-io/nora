@@ -72,6 +72,8 @@ class SqlMediaDescriptionStore:
             index_elements=[STICKER_INDEX.c.platform, STICKER_INDEX.c.fetch_token],
             set_={
                 "sha256": index_stmt.excluded.sha256,
+                "media_type": index_stmt.excluded.media_type,
+                "size": index_stmt.excluded.size,
                 "last_seen": sa.text("now()"),
                 "hits": STICKER_INDEX.c.hits + 1,
             },
