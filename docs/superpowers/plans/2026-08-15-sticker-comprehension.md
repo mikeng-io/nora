@@ -45,7 +45,7 @@
 | --- | --- |
 | `nora/platform/discord/media.py` | `DiscordMediaSource` — sticker bytes over the Discord CDN. Stickers only. |
 | `nora/infra/sql/media_descriptions.py` | `SqlMediaDescriptionStore` — the two dedup tables over SQLAlchemy Core. |
-| `nora/infra/sql/migrations/versions/0011_sticker_cache.py` | hand-written revision creating both tables. |
+| `nora/infra/sql/migrations/versions/0012_sticker_cache.py` | hand-written revision creating both tables (renumbered from 0011 — see the file's docstring). |
 | `nora/ingest/stickers.py` | the dedup + describe orchestration and its single-flight map. One public entry. |
 | `tests/contract/test_media_description_store_contract.py` | SQL implementation and fake, one suite. |
 | `tests/test_sticker_pipeline.py` | end-to-end ingest behaviour, one test per failure row. |
@@ -1105,7 +1105,7 @@ git commit -m "feat(media): MediaDescriptionStore port and its fake"
 
 **Files:**
 - Modify: `nora/infra/sql/schema.py`
-- Create: `nora/infra/sql/migrations/versions/0011_sticker_cache.py`
+- Create: `nora/infra/sql/migrations/versions/0012_sticker_cache.py`
 - Test: `tests/infra/test_schema_parity.py` (existing; must stay green)
 
 **Interfaces:**
@@ -1172,13 +1172,19 @@ MEDIA_DESCRIPTIONS = sa.Table(
 
 - [ ] **Step 2: Write the migration**
 
-Create `nora/infra/sql/migrations/versions/0011_sticker_cache.py`:
+Create `nora/infra/sql/migrations/versions/0012_sticker_cache.py`:
+
+(Written as `0011_sticker_cache.py` originally; renumbered to 0012 to yield
+0011 to an in-flight presence-speed migration that collided on the same
+number and the same `down_revision`. See the shipped file's docstring for
+the full reasoning — `down_revision` stays `0010_tool_call_log`, not
+`0011_presence_speed`, since the latter was never committed to master.)
 
 ```python
 """sticker_index + media_descriptions — the two-level media dedup cache
 (sticker spec §4.1).
 
-Revision ID: 0011_sticker_cache
+Revision ID: 0012_sticker_cache
 Revises: 0010_tool_call_log
 Create Date: 2026-08-15
 """
@@ -1188,7 +1194,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0011_sticker_cache"
+revision = "0012_sticker_cache"
 down_revision = "0010_tool_call_log"
 branch_labels = None
 depends_on = None
@@ -1239,7 +1245,7 @@ Expected: PASS — the ORM metadata and the migrated database agree.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add nora/infra/sql/schema.py nora/infra/sql/migrations/versions/0011_sticker_cache.py
+git add nora/infra/sql/schema.py nora/infra/sql/migrations/versions/0012_sticker_cache.py
 git commit -m "feat(sql): sticker_index and media_descriptions tables"
 ```
 
