@@ -274,6 +274,7 @@ class PresenceCollector:
             is_driving=member.is_driving,
             battery=member.battery,
             address=address,
+            speed_kmh=member.speed_kmh,
         )
         try:
             written = await self._store.record_fix(fix=fix)

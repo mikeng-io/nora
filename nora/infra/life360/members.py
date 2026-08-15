@@ -21,6 +21,7 @@ strings; `battery` is a percentage string.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
 from nora.domain.presence import WireState
@@ -33,6 +34,15 @@ log = logging.getLogger("nora.presence.life360")
 # holding one fix for many minutes — and it is the threshold `whereis` degrades
 # around too.
 STALE_AFTER_SECONDS = 15 * 60
+
+# Life360's own `location.speed` is metres/second; converted to km/h here, once,
+# at the wire boundary, so nothing downstream re-derives units.
+_M_S_TO_KMH = 3.6
+
+# A GPS speed glitch, not a real reading, above this — generous enough to cover
+# HK's own cross-border high-speed rail (~350 km/h) without ever passing
+# through a fabricated-looking number like a bad fix's instantaneous jump.
+_MAX_PLAUSIBLE_KMH = 400.0
 
 
 @dataclass(frozen=True)
@@ -54,6 +64,7 @@ class Member:
     is_driving: bool | None = None
     battery: float | None = None
     address: str | None = None
+    speed_kmh: float | None = None
 
     @property
     def has_fix(self) -> bool:
@@ -118,6 +129,7 @@ def _parse_one(raw: dict[str, object], *, now_ms: int) -> Member:
         is_driving=_flag(location, "isDriving"),
         battery=_to_float(location.get("battery")),
         address=_address(location),
+        speed_kmh=_speed_kmh(location),
     )
 
 
@@ -148,6 +160,19 @@ def _to_float(value: object) -> float | None:
         return float(str(value))
     except (TypeError, ValueError):
         return None
+
+
+def _speed_kmh(location: dict[str, object]) -> float | None:
+    """`-1` is Life360's own "cannot derive a GPS speed" sentinel — unknown,
+    not stationary — so it (and any other negative, non-finite, unparseable,
+    or implausibly large value) must not collapse to `0` or pass through as a
+    fabricated number. Rejected outright, never clamped — a clamped value is
+    still a manufactured one (R-5)."""
+    raw = _to_float(location.get("speed"))
+    if raw is None or not math.isfinite(raw) or raw < 0:
+        return None
+    kmh = raw * _M_S_TO_KMH
+    return kmh if kmh <= _MAX_PLAUSIBLE_KMH else None
 
 
 def _address(location: dict[str, object]) -> str | None:

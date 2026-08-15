@@ -81,7 +81,11 @@ class PresenceFix:
     (its state is carried by `WireState` and the per-cycle metric instead, not
     by a null-island row). The optional fields are optional because Life360
     omits them for a member who is not driving, whose phone did not report a
-    battery, or whose coordinate did not reverse-geocode.
+    battery, or whose coordinate did not reverse-geocode. `speed_kmh` is
+    Life360's own reported ground speed, converted from its wire m/s at parse
+    time (`nora.infra.life360.members`); Life360's `-1` "unknown" sentinel is
+    already collapsed to `None` there, so a fix carrying this field is a real
+    speed, never a stand-in for stationary.
     """
 
     circle_id: str
@@ -95,3 +99,4 @@ class PresenceFix:
     is_driving: bool | None = None
     battery: float | None = None
     address: str | None = None
+    speed_kmh: float | None = None

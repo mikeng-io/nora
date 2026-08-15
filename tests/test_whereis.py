@@ -846,6 +846,66 @@ async def test_inside_a_place_the_containment_wins_over_movement(persons, store)
     assert "moving" not in out and "towards" not in out
 
 
+# ── speed (Life360's own reported ground speed, converted to km/h at parse
+# time by `nora.infra.life360.members`; `where_is` only relays it) ───────────
+
+async def test_whereis_reports_speed_when_above_the_jitter_floor(persons, store):
+    await store.record_fix(fix=PresenceFix(
+        circle_id=CIRCLE_ID, person_id="miles_novak", ts=NOW - 60_000,
+        lat=22.44, lng=114.02, wire_state=WireState.LIVE,
+        recorded_at=NOW - 60_000, address="Tjnw Highway", speed_kmh=62.3,
+    ))
+    out = await _whereis(persons, store, members=(MILES, NORA)).locate(
+        "Miles", now_ms=NOW
+    )
+    assert out["status"] == "ok"
+    assert out["speed_kmh"] == 62.3
+
+
+async def test_whereis_omits_speed_when_the_fix_carries_none(persons, store):
+    """Life360's own `-1` "unknown" sentinel is already `None` by the time a
+    fix reaches the store — `where_is` must not render that as stationary."""
+    await _record(store, person="miles_novak", ts=NOW - 60_000, address="Jvvilxgd Road")
+    out = await _whereis(persons, store, members=(MILES, NORA)).locate(
+        "Miles", now_ms=NOW
+    )
+    assert out["status"] == "ok"
+    assert "speed_kmh" not in out
+
+
+async def test_whereis_omits_speed_inside_a_saved_place(persons, store):
+    """«at Home» and a speed reading cannot both be the headline — indoor GPS
+    jitter routinely exceeds the floor, and containment already wins over
+    `moving`/`towards` for the identical reason."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    await store.record_fix(fix=PresenceFix(
+        circle_id=CIRCLE_ID, person_id="miles_novak", ts=NOW - 60_000,
+        lat=22.44, lng=114.02, wire_state=WireState.LIVE,
+        recorded_at=NOW - 60_000, address="Home Road", speed_kmh=8.0,
+    ))
+    out = await _whereis(persons, store, members=(MILES, NORA)).locate(
+        "Miles", now_ms=NOW
+    )
+    assert out["status"] == "ok"
+    assert out["place"] == "Home"
+    assert "speed_kmh" not in out
+
+
+async def test_whereis_omits_speed_below_the_jitter_floor(persons, store):
+    """A near-zero speed off a stationary phone's GPS noise is omitted, not
+    rendered as `0` (R-5: absence, never a manufactured number)."""
+    await store.record_fix(fix=PresenceFix(
+        circle_id=CIRCLE_ID, person_id="miles_novak", ts=NOW - 60_000,
+        lat=22.44, lng=114.02, wire_state=WireState.LIVE,
+        recorded_at=NOW - 60_000, address="Jvvilxgd Road", speed_kmh=1.2,
+    ))
+    out = await _whereis(persons, store, members=(MILES, NORA)).locate(
+        "Miles", now_ms=NOW
+    )
+    assert out["status"] == "ok"
+    assert "speed_kmh" not in out
+
+
 # ── the route tool's saved-place GLUE (council 2026-08-07 HIGH: was untested) ──
 #
 # The seam (`resolvable_places`) and the client (`local_places`) were each

@@ -37,7 +37,8 @@ UA = "com.life360.android.safetymapd/KOKO/24.0.0 android/13"
 NOW_MS = 1_000_000_000_000
 
 
-def _member(mid, *, ts=None, share="1", disconnected="0", lat="22.44", lng="114.02"):
+def _member(mid, *, ts=None, share="1", disconnected="0", lat="22.44", lng="114.02",
+            speed=None):
     m = {
         "id": mid,
         "features": {"shareLocation": share},
@@ -49,6 +50,8 @@ def _member(mid, *, ts=None, share="1", disconnected="0", lat="22.44", lng="114.
             "accuracy": "10", "battery": "80", "isDriving": "0",
             "address1": "Yoho Mall",
         }
+        if speed is not None:
+            m["location"]["speed"] = speed
     return m
 
 
@@ -396,6 +399,52 @@ def test_classification_no_location_is_no_fix():
 def test_a_malformed_body_yields_no_members():
     assert parse_members("not a dict", now_ms=NOW_MS) == []
     assert parse_members({"error": "x"}, now_ms=NOW_MS) == []
+
+
+def test_classification_captures_speed_km_h_from_wire():
+    """Life360 reports `location.speed` in metres/second; converted to km/h at
+    the wire boundary so nothing downstream re-derives units."""
+    body = {"members": [_member("s", ts=NOW_MS // 1000, speed="10")]}
+    (m,) = parse_members(body, now_ms=NOW_MS)
+    assert m.speed_kmh == pytest.approx(36.0)
+
+
+def test_classification_speed_missing_is_none():
+    body = {"members": [_member("s", ts=NOW_MS // 1000)]}
+    (m,) = parse_members(body, now_ms=NOW_MS)
+    assert m.speed_kmh is None
+
+
+def test_classification_negative_speed_sentinel_is_none():
+    """Life360 reports `-1` when it cannot derive a GPS speed — "unknown", not
+    "stationary", so it must not collapse to 0."""
+    body = {"members": [_member("s", ts=NOW_MS // 1000, speed="-1")]}
+    (m,) = parse_members(body, now_ms=NOW_MS)
+    assert m.speed_kmh is None
+
+
+def test_classification_garbage_speed_is_none():
+    body = {"members": [_member("s", ts=NOW_MS // 1000, speed="not-a-number")]}
+    (m,) = parse_members(body, now_ms=NOW_MS)
+    assert m.speed_kmh is None
+
+
+@pytest.mark.parametrize("wire_speed", ["inf", "Infinity", "nan", "-inf"])
+def test_classification_non_finite_speed_is_none(wire_speed):
+    """`float("inf"/"nan")` parses without error but is not a speed — and
+    `json.dumps(float("inf"))` emits invalid JSON, which would fault the
+    tool-call-log/Langfuse write downstream if this ever reached a reply."""
+    body = {"members": [_member("s", ts=NOW_MS // 1000, speed=wire_speed)]}
+    (m,) = parse_members(body, now_ms=NOW_MS)
+    assert m.speed_kmh is None
+
+
+def test_classification_implausibly_large_speed_is_none():
+    """A GPS glitch, not a real reading — rejected outright rather than
+    clamped, which would still be a manufactured number (R-5)."""
+    body = {"members": [_member("s", ts=NOW_MS // 1000, speed="1e9")]}
+    (m,) = parse_members(body, now_ms=NOW_MS)
+    assert m.speed_kmh is None
 
 
 # ── read_places (design/23 §3) ───────────────────────────────────────────────
