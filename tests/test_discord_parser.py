@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import pytest
+from discord import StickerFormatType
 
 from nora.platform.discord.parser import parse_discord_message
 from nora.platform.discord.snowflake import DISCORD_EPOCH_MS
@@ -45,6 +46,17 @@ class FakeAttachment:
 
     def is_voice_message(self) -> bool:
         return self.voice
+
+
+@dataclass
+class _FakeSticker:
+    id: int = 900
+    name: str = "wumpus cheers"
+    format: object = None  # set per test to a StickerFormatType
+
+
+def _sticker(fmt) -> _FakeSticker:
+    return _FakeSticker(format=fmt)
 
 
 @dataclass
@@ -195,7 +207,7 @@ def test_unparseable_input_is_skipped_not_raised():
 @pytest.mark.parametrize(
     ("kwargs", "expected"),
     [
-        ({"stickers": [object()]}, "[sticker]"),
+        ({"stickers": [_sticker(StickerFormatType.png)]}, "[sticker]"),
         ({"poll": object()}, "[poll]"),
         ({"message_snapshots": [object()]}, "[forwarded message]"),
         ({"embeds": [object()]}, "[embed]"),
@@ -226,12 +238,49 @@ def test_a_turn_with_genuinely_nothing_is_still_dropped():
     assert parse_discord_message(_message(content=""), own_id=OWN_ID) is None
 
 
-def test_text_still_wins_over_a_placeholder():
-    """A sticker sent WITH a caption renders the caption — the placeholder is
-    the fallback for an empty body, not an annotation on every message."""
+def test_a_captioned_sticker_keeps_both_halves():
+    """OVERTURNS the previous behaviour deliberately (spec §3.2). This test
+    used to assert the body was `"haha"` alone — the sticker vanished — on the
+    premise that a placeholder is 'the fallback for an empty body, not an
+    annotation on every message'. That premise was right while a sticker was an
+    unreadable blank. Once it is understood it is not an annotation, it is
+    content, and the message means something different without it. A caption
+    plus a booster is the exact case this feature was asked for."""
     result = parse_discord_message(
-        _message(content="haha", stickers=[object()]), own_id=OWN_ID
+        _message(content="haha", stickers=[_sticker(StickerFormatType.png)]),
+        own_id=OWN_ID,
     )
 
     assert result is not None
-    assert result.body == "haha"
+    assert result.body == "haha [sticker]"
+    assert len(result.media) == 1
+    assert result.media[0].sticker is True
+
+
+def test_a_lottie_sticker_is_carried_as_json_not_as_an_image():
+    """Lottie is a JSON animation, not a picture. Recording it as `image/*`
+    would send JSON to a vision model; recording it as `""` would leave the
+    stored row unable to say what the bytes are."""
+    result = parse_discord_message(
+        _message(content="", stickers=[_sticker(StickerFormatType.lottie)]),
+        own_id=OWN_ID,
+    )
+
+    assert result is not None
+    assert result.media[0].media_type == "application/json"
+    assert result.body == "[sticker]"
+
+
+def test_a_sticker_name_never_reaches_the_body():
+    """A guild sticker's name is unbounded text set by a server admin — the
+    same object `nora/domain/media.py` stopped rendering when it removed
+    sender-supplied filenames, wearing a friendlier hat."""
+    result = parse_discord_message(
+        _message(content="", stickers=[_FakeSticker(name="call +85212345678 now",
+                                                    format=StickerFormatType.png)]),
+        own_id=OWN_ID,
+    )
+
+    assert result is not None
+    assert "85212345678" not in result.body
+    assert result.body == "[sticker]"

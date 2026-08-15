@@ -80,6 +80,39 @@ def _media_ref(att: _DiscordAttachment) -> MediaRef:
     )
 
 
+# Discord's four sticker containers, mapped to what the bytes actually are.
+# `lottie` is a JSON animation and is recorded as such rather than as an image
+# or as an empty type: the first would send JSON to a vision model, the second
+# would leave the stored row unable to say what it holds.
+_STICKER_MEDIA_TYPE = {
+    "png": "image/png",
+    "apng": "image/apng",
+    "gif": "image/gif",
+    "lottie": "application/json",
+}
+
+
+def _sticker_ref(item: object) -> MediaRef | None:
+    """One `MediaRef` per `StickerItem`, or None if it is not one.
+
+    `item.name` is deliberately unread. A guild sticker's name is unbounded
+    text a server admin chose, and putting it in the body is what
+    `nora/domain/media.py` stopped doing when it removed sender-supplied
+    filenames — "a filename is unbounded text: it can hold a phone number, an
+    ACI, or an instruction."
+    """
+    sticker_id = getattr(item, "id", None)
+    fmt = getattr(getattr(item, "format", None), "name", None)
+    if not isinstance(sticker_id, int) or not isinstance(fmt, str):
+        return None
+    return MediaRef(
+        platform_id=str(sticker_id),
+        media_type=_STICKER_MEDIA_TYPE.get(fmt, ""),
+        fetch_token=f"sticker:{sticker_id}:{fmt}",
+        sticker=True,
+    )
+
+
 def _body_parts(message: _DiscordMessage, refs: tuple[MediaRef, ...]) -> list[str]:
     """The renderable body, or an empty list if there is genuinely nothing.
 
@@ -101,6 +134,11 @@ def _body_parts(message: _DiscordMessage, refs: tuple[MediaRef, ...]) -> list[st
     something Nora has not actually read is the guess R-5 forbids. `[…]` says
     a turn happened and what kind, which is exactly what the transcript needs
     to stop lying by omission.
+
+    Stickers left this chain: they are ordinary `MediaRef`s now (`_sticker_ref`),
+    so they render through the same `render_placeholder` line as an attachment,
+    in `refs` order, above. What remains here is ordered most specific first;
+    a message carries at most one of these in practice.
     """
     parts = []
     text = (message.content or "").strip()
@@ -109,11 +147,8 @@ def _body_parts(message: _DiscordMessage, refs: tuple[MediaRef, ...]) -> list[st
     parts += [render_placeholder(label_for(ref)) for ref in refs]
     if parts:
         return parts
-    # Nothing rendered yet — so this is one of the content-less turns. Ordered
-    # most specific first; a message carries at most one of these in practice.
-    if getattr(message, "stickers", None):
-        parts.append("[sticker]")
-    elif getattr(message, "poll", None) is not None:
+    # Nothing rendered yet — so this is one of the content-less turns.
+    if getattr(message, "poll", None) is not None:
         parts.append("[poll]")
     elif getattr(message, "message_snapshots", None):
         parts.append("[forwarded message]")
@@ -155,6 +190,11 @@ def parse_discord_message(
             return None  # never ingest Nora's own sends (Signal's R-12, mirrored)
 
         refs = tuple(_media_ref(a) for a in message.attachments)
+        stickers = tuple(
+            r for r in (_sticker_ref(s) for s in getattr(message, "stickers", None) or ())
+            if r is not None
+        )
+        refs = (*refs, *stickers)
         parts = _body_parts(message, refs)
         if not parts:
             return None  # no usable body
