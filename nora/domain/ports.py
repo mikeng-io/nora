@@ -640,6 +640,18 @@ class RecordStore(Protocol):
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
 
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        """Human rows with `id > after_id`, ASCENDING, at most `limit`.
+
+        A cursor read, not a window read — the opposite ordering to `recent`,
+        which is newest-first for the prompt. `is_nora` rows are excluded here
+        rather than by the caller: this is the only read built for derivation,
+        and the exclusion is the property the whole Dreamer rests on.
+        """
+        ...
+
     async def set_delivery_outcome(
         self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
     ) -> None: ...

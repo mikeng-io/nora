@@ -120,16 +120,38 @@ class FakeRecordStore:
         matching = [r for r in self.rows if r["conversation_id"] == conversation_id]
         matching.sort(key=lambda r: (r["ts"], r["id"]))
         window = matching[-limit:] if limit > 0 else []
-        return [
-            TranscriptRow(
-                id=r["id"], sender_id=r["sender_id"], sender_name=r["sender_name"],
-                ts=r["ts"], body=r["body"], is_nora=r["is_nora"],
-                delivery_status=r["delivery_status"], raw_json=r["raw_json"],
-                quoted_ts=r["quoted_ts"], media_json=r["media_json"],
-                person_id=r["person_id"],
-            )
-            for r in window
+        return [self._transcript_row(r) for r in window]
+
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        """Mirrors `SqlRecordStore.since`: ascending by id, `is_nora` rows
+        excluded IN THIS METHOD (not left to the caller), `[]` for a
+        non-positive limit. A fake that returned everything would make the
+        contract test decorative."""
+        if limit <= 0:
+            return []
+        rows = [
+            r for r in self.rows
+            if r["conversation_id"] == conversation_id
+            and r["id"] > after_id
+            and not r["is_nora"]
         ]
+        rows.sort(key=lambda r: r["id"])
+        return [self._transcript_row(r) for r in rows[:limit]]
+
+    @staticmethod
+    def _transcript_row(r: dict[str, Any]) -> TranscriptRow:
+        """The shared row -> `TranscriptRow` mapping for `recent` and
+        `since` — mirrors `SqlRecordStore._row` so the two stay legible
+        side by side."""
+        return TranscriptRow(
+            id=r["id"], sender_id=r["sender_id"], sender_name=r["sender_name"],
+            ts=r["ts"], body=r["body"], is_nora=r["is_nora"],
+            delivery_status=r["delivery_status"], raw_json=r["raw_json"],
+            quoted_ts=r["quoted_ts"], media_json=r["media_json"],
+            person_id=r["person_id"],
+        )
 
     async def set_delivery_outcome(
         self, *, row_id: int, status: DeliveryStatus, ts: int | None = None

@@ -311,6 +311,33 @@ async def test_recent_carries_the_resolved_person_id(store):
     assert [r.person_id for r in rows] == ["miles", None]
 
 
+# ---------------------------------------------------------------------------
+# since — the consolidation cursor (ascending, human-only, opposite of `recent`)
+# ---------------------------------------------------------------------------
+
+
+async def test_since_returns_human_rows_ascending_after_a_cursor(store):
+    """The consolidation cursor. Ascending by id (NOT recent's newest-first),
+    and `is_nora` rows are excluded IN THE QUERY — her own words are never
+    evidence, and a caller that had to remember to filter would eventually
+    forget."""
+    ids = []
+    for i, (body, is_nora) in enumerate(
+        [("a", False), ("b", True), ("c", False), ("d", False)], start=1
+    ):
+        ids.append(await store.append(
+            message=NormalizedMessage(
+                "signal", "g1", "group", "+852111", "Miles", i, body, {}),
+            is_nora=is_nora,
+        ))
+
+    rows = await store.since(conversation_id="g1", after_id=ids[0], limit=10)
+    assert [r.body for r in rows] == ["c", "d"], "ascending, human-only, after the cursor"
+
+    assert await store.since(conversation_id="g1", after_id=0, limit=0) == []
+    assert await store.since(conversation_id="g1", after_id=ids[-1], limit=10) == []
+
+
 def test_both_implementations_satisfy_the_port():
     """`RecordStore` is `@runtime_checkable`, so this `isinstance` check verifies
     method **names only** — not signatures, not keyword-only-ness, not return

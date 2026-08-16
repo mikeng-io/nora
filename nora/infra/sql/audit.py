@@ -129,22 +129,59 @@ class SqlRecordStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [
-            TranscriptRow(
-                id=r.id,
-                sender_id=r.sender_id,
-                sender_name=r.sender_name,
-                ts=r.ts,
-                body=r.body,
-                is_nora=bool(r.is_nora),
-                delivery_status=DeliveryStatus(r.delivery_status),
-                raw_json=r.raw_json,
-                quoted_ts=r.quoted_ts,
-                media_json=r.media_json,
-                person_id=r.person_id,
+        return [self._row(r) for r in reversed(rows)]
+
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        """Human rows with `id > after_id`, ASCENDING, at most `limit`.
+
+        The consolidation cursor, not a window read: unlike `recent`, this is
+        unbounded by recency and never reverses — it already selects ascending.
+        `is_nora` rows are excluded IN THE QUERY (`MESSAGES.c.is_nora == 0`,
+        the INTEGER-column predicate `audit.py`'s `unattributed` already uses)
+        so a caller can never forget to filter Nora's own words out of the
+        evidence the Dreamer derives from. Same `limit <= 0` short-circuit as
+        `recent`, and for the same reason.
+        """
+        if limit <= 0:
+            return []
+        stmt = (
+            sa.select(
+                MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
+                MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
+                MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
+                MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
             )
-            for r in reversed(rows)
-        ]
+            .where(
+                MESSAGES.c.conversation_id == conversation_id,
+                MESSAGES.c.id > after_id,
+                MESSAGES.c.is_nora == 0,
+            )
+            .order_by(MESSAGES.c.id.asc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [self._row(r) for r in rows]
+
+    @staticmethod
+    def _row(r: Any) -> TranscriptRow:
+        """The shared column-row -> `TranscriptRow` mapping for `recent` and
+        `since` — both select the same columns, so the mapping exists once."""
+        return TranscriptRow(
+            id=r.id,
+            sender_id=r.sender_id,
+            sender_name=r.sender_name,
+            ts=r.ts,
+            body=r.body,
+            is_nora=bool(r.is_nora),
+            delivery_status=DeliveryStatus(r.delivery_status),
+            raw_json=r.raw_json,
+            quoted_ts=r.quoted_ts,
+            media_json=r.media_json,
+            person_id=r.person_id,
+        )
 
     async def aclose(self) -> None:
         await self._engine.dispose()
