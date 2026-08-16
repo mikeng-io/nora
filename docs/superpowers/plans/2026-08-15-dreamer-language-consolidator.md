@@ -705,7 +705,7 @@ def state_for(*, score: float, last_seen_ms: int, now_ms: int) -> str:
 - [ ] **Step 5: Run tests and gates**
 
 Run: `uv run pytest tests/unit/test_language_scoring.py -q` → PASS
-Run: `uv run lint-imports` → `Contracts: 6 kept, 0 broken.` (the count rises by the new layer entry being honoured, not by a new contract)
+Run: `uv run lint-imports` → `Contracts: 5 kept, 0 broken.` The count does **not** change: `nora.language` joins the existing `layers` contract's list, it does not add a contract. What changes is that the contract can now see the package at all — before the edit it was invisible in both directions and would have reported clean on any placement.
 Then the remaining gates.
 
 - [ ] **Step 6: Commit**
