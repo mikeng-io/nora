@@ -77,7 +77,7 @@ class TranscriptInjection:
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
-        # Resolved BEFORE the gather because two of the four reads are keyed on
+        # Resolved BEFORE the gather because two of the five reads are keyed on
         # it, and it is a pure dict lookup — no reason for it to be a step.
         ref = self._persons.resolve(msg.platform, msg.sender_id)
 
@@ -90,7 +90,7 @@ class TranscriptInjection:
         # already there and the turn gets FASTER than before the block existed.
         #
         # Every helper is written not to raise, which is what makes `gather` safe
-        # here: one exception would otherwise cancel its three siblings and take
+        # here: one exception would otherwise cancel its four siblings and take
         # the turn down with it. That is the same property `MemoryStore`'s
         # "never load-bearing" rule already claims — this just stops relying on
         # the adapter to honour it. `_room_language` is the fifth sibling
@@ -137,9 +137,9 @@ class TranscriptInjection:
 
         Guarded, unlike the inline call this replaced. `MemoryStore.peer_card`
         answers `[]` rather than raising for both of its failure modes, so in
-        principle this catch is unreachable — but it is now one of four siblings
+        principle this catch is unreachable — but it is now one of five siblings
         in a `gather`, where an unreachable exception stops being a thinner
-        prompt and becomes three cancelled reads and a dead turn.
+        prompt and becomes four cancelled reads and a dead turn.
         """
         if ref is None:
             return ()
