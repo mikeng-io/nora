@@ -1,0 +1,13 @@
+{
+  "type": "feature",
+  "summary": "Nora picks up the words this room has made its own, and knows what they mean here.",
+  "details": [
+    "A word your group uses in its own way — one that means nothing to an outsider and may not have existed a month ago — used to be invisible to her unless somebody had just said it in the last few messages.",
+    "She now builds up a small glossary from what people actually say in the room, with a real quote under each entry so you can see where it came from, and keeps it current as words arrive and fade.",
+    "It is a glossary, not a vocabulary list: it tells her what your words mean, and is not a set of words for her to start using.",
+    "She never learns from her own messages, and nothing in it describes a person."
+  ],
+  "limitations": [
+    "Ships turned off. It is not live in any room yet."
+  ]
+}

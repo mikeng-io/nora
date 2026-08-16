@@ -5,6 +5,9 @@ from pathlib import Path
 
 from nora.domain.media import MediaRef
 from nora.domain.models import NormalizedMessage
+from nora.infra.sql.audit import SqlRecordStore
+from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.migrations_runner import run_migrations
 from nora.ingest.stages import media as media_stage
 from nora.ingest.stickers import StickerReader
 from nora.obs.metrics import Metrics
@@ -221,6 +224,13 @@ RULE_TESTS = {
     # `[sticker a3f2c1]` placeholder, never a blank `[sticker a3f2c1: ]` and
     # never a guessed sentence. Next free number after R-50.
     "R-51": "test_r51_a_sticker_description_is_never_invented",
+    # DEC-111 (the Dreamer, room-language consolidator): her own words are
+    # never evidence for the room lexicon. `RecordStore.since` — the
+    # consolidation cursor `LanguageConsolidator` reads — excludes `is_nora`
+    # rows IN THE QUERY, not in a caller that could forget it. The loop this
+    # prevents is real: she emits a word, it strengthens, the block
+    # normalises it, she emits it more.
+    "DEC-111": "test_her_own_words_are_never_evidence_for_the_room_lexicon",
 }
 
 
@@ -286,3 +296,34 @@ async def test_r51_a_sticker_description_is_never_invented():
         )
         assert out.body.startswith("[sticker ")
         assert ": " not in out.body, f"{interpreter.reason} invented a description"
+
+
+async def test_her_own_words_are_never_evidence_for_the_room_lexicon(pg_url):
+    """DEC-111. The runaway loop this prevents: she emits a word -> it
+    strengthens -> the block normalises it -> she emits it more. `is_nora = 0`
+    lives in `RecordStore.since` itself (`nora/infra/sql/audit.py`) — the
+    Dreamer's consolidation cursor — not in a caller that could forget it.
+
+    Reverting the predicate must turn this red: it is asserted here against
+    the real `SqlRecordStore`, not the fake, because the predicate lives in
+    the SQL `WHERE` clause itself."""
+    run_migrations(pg_url)
+    store = SqlRecordStore(create_sql_engine(pg_url))
+    try:
+        ids = []
+        for i, (body, is_nora) in enumerate(
+            [("what's the play tmr", False), ("the play is at 8pm", True)], start=1
+        ):
+            ids.append(await store.append(
+                message=NormalizedMessage(
+                    "signal", "g1", "group", "+852111", "Miles", i, body, {}),
+                is_nora=is_nora,
+            ))
+
+        rows = await store.since(conversation_id="g1", after_id=0, limit=10)
+
+        assert [r.body for r in rows] == ["what's the play tmr"], (
+            "a Nora-authored row reached the Dreamer's evidence stream"
+        )
+    finally:
+        await store.aclose()
