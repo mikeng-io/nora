@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -283,6 +283,17 @@ class TagContext:
     # TWICE in one turn — `about` on the tagger points at this block instead of
     # fetching it again.
     tagger_card: tuple[str, ...] = ()
+    # What the Dreamer has distilled about THIS ROOM's own slang — the fifth
+    # `TranscriptInjection` gather branch (Task 10). `RoomLanguageReader.
+    # room_language` is documented never to raise, so a failed or not-yet-run
+    # read degrades to the same empty value a room with no evidence yet has —
+    # `nora.language.render.render_room_language` renders no block at all for
+    # either. Defaulted for the same reason `self_card`/`tagger_card` are: the
+    # existing construction sites (tests, the fire path) keep working, and an
+    # absent scope_id is indistinguishable from "nothing known yet" — which is
+    # safe here for the same reason it is safe there: advisory only, never the
+    # ground for a claim.
+    room_language: RoomLanguage = field(default_factory=lambda: RoomLanguage(scope_id=""))
 
 
 @dataclass(frozen=True)

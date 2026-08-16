@@ -13,8 +13,16 @@ from datetime import datetime
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
+from ..language.render import render_room_language
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
+
+# The render-side half of the room-language coupling — see
+# `nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT`, its sibling on
+# the read side, for why the two must NOT be set equal. A default rather than
+# an inline literal so Task 11 has somewhere to wire a config value without
+# another signature change.
+DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES = 6
 
 # `escape`/`_escape_attr` moved to `nora.domain.prompt` when the doctrine loader
 # started rendering frontmatter into section attributes and needed the identical
@@ -396,9 +404,36 @@ def _peer_history_block(ctx: TagContext) -> str:
     )
 
 
+def _room_language_block(ctx: TagContext, *, max_entries: int) -> str:
+    """The room's own slang, distilled by the Dreamer — `""` when there is
+    nothing to say (a new room, or every candidate lacking a quotable
+    example); see `render_room_language`'s own docstring for both rules.
+
+    VOLATILE-TIER ONLY, and that placement is the point of Task 10: a room's
+    lexicon changes on every Dreamer regeneration cycle, so rendering it here
+    (`build_prefill`'s per-turn message) rather than in `_context_header`
+    keeps the static head — the cache PREFIX `_context_header` documents at
+    98-99% hit — byte-identical across every room and every regeneration. A
+    per-room block in the head would fragment one deployment-wide prefix into
+    one per room and re-invalidate it on every dream cycle.
+
+    Trailing newline added here, not by `render_room_language`: every sibling
+    block in this module (`_self_card_block`, `_peer_card_block`,
+    `_peer_history_block`) returns `""` when empty and its own text plus a
+    trailing `"\n"` otherwise, so blocks concatenate onto separate lines
+    without `_transcript_block`'s leading sentence running into the closing
+    tag above it. `render_room_language` itself carries no such convention —
+    it is also called directly by tests pinning its own exact string — so the
+    newline is added at the one call site that needs it instead.
+    """
+    block = render_room_language(ctx.room_language, max_entries=max_entries)
+    return f"{block}\n" if block else ""
+
+
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
+    room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
 ) -> list[dict]:
     """The three prefill messages. **There is deliberately no roster block.**
 
@@ -432,14 +467,20 @@ def build_prefill(
             # `_context_header`'s docstring for the cache measurement that
             # decided this. It is still the first thing after the static
             # instructions, so nothing about how she reads it changes.
-            # `self_card` before `peer_card`/`peer_history` before the
-            # transcript: her own past, then theirs, then the room — widening
-            # scope, and the transcript stays adjacent to the message it
-            # explains. The two person blocks are adjacent because they are one
-            # person: who they are, then what happened with them.
+            # `self_card` before `peer_card`/`peer_history` before
+            # `room_language` before the transcript: her own past, then
+            # theirs, then the room's own slang, then the room — each block
+            # widening scope, and the transcript stays adjacent to the message
+            # it explains. The two person blocks are adjacent because they are
+            # one person: who they are, then what happened with them.
+            # `room_language` sits here — the VOLATILE tier, after
+            # `_peer_history_block` and before `_transcript_block` — and
+            # deliberately not inside `_context_header` above; see
+            # `_room_language_block`'s own docstring for why.
             _now_line(now) + _where_line(ctx.message.platform)
             + _self_card_block(ctx) + _peer_card_block(ctx)
             + _peer_history_block(ctx)
+            + _room_language_block(ctx, max_entries=room_language_max_entries)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),

@@ -1,19 +1,33 @@
 from nora.agent.prefill import build_prefill, build_tag_message, escape
 from nora.domain.models import (
     DeliveryStatus,
+    LexemeExample,
     NormalizedMessage,
     PersonRef,
+    RoomLanguage,
+    RoomLexeme,
     TagContext,
     TranscriptRow,
 )
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
-         quote=None, platform="signal") -> TagContext:
+         quote=None, platform="signal", room_language=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
+    kwargs = {} if room_language is None else {"room_language": room_language}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
-                      tuple(self_card))
+                      tuple(self_card), **kwargs)
+
+
+def _room_language(scope_id="g1") -> RoomLanguage:
+    lexeme = RoomLexeme(
+        canonical_form="on9", sense="clumsy/foolish", occurrence_count=5,
+        distinct_speakers=3, first_seen_ms=1700000000000, last_seen_ms=1700000100000,
+        state="live",
+        examples=(LexemeExample(message_id=1, person_id="miles", text="on9 咁做"),),
+    )
+    return RoomLanguage(scope_id=scope_id, lexemes=(lexeme,))
 
 
 def _row(row_id, name, body, ts, *, quoted_ts=None, is_nora=False, person_name=None):
@@ -674,3 +688,43 @@ def test_the_platform_is_not_in_the_cached_prefix():
     assert signal_prefill[1] != discord_prefill[1], (
         "and the per-turn block is where the difference belongs"
     )
+
+
+# ---- <room_language>: the Dreamer's room-slang block (Task 10) -------------
+
+
+def test_the_room_language_block_is_after_the_context_header():
+    """The static head must stay byte-identical across tags — it is 95-99%
+    cached, re-measured 2026-08-08. A per-room block inside it fragments that
+    prefix into one per room."""
+    prefill = build_prefill(
+        _ctx(room_language=_room_language()), display_name="Nora", context_window=40
+    )
+    body = "\n".join(m["content"][0]["text"] for m in prefill)
+
+    assert body.index("<room_language>") > body.index("</context_header>")
+    # `<group_transcript untrusted="true">` carries an attribute, so this
+    # matches the opening tag's fixed prefix rather than the brief's literal
+    # `<group_transcript>` (which never appears on the wire — see
+    # `_transcript_block`).
+    assert body.index("<room_language>") < body.index("<group_transcript")
+
+
+def test_the_room_language_block_is_not_in_the_static_header():
+    """The head (message index 0) is the cache PREFIX; the room-language block
+    must sit only in the volatile per-turn message, never here."""
+    prefill = build_prefill(
+        _ctx(room_language=_room_language()), display_name="Nora", context_window=40
+    )
+
+    assert "<room_language>" not in prefill[0]["content"][0]["text"]
+    assert "<room_language>" in prefill[1]["content"][0]["text"]
+
+
+def test_the_room_language_block_is_absent_for_a_room_with_no_lexicon():
+    """`ctx.room_language` defaults empty, and an empty `RoomLanguage` must
+    render no block at all — not an empty `<room_language>` tag."""
+    prefill = build_prefill(_ctx(), display_name="Nora", context_window=40)
+    body = "\n".join(m["content"][0]["text"] for m in prefill)
+
+    assert "<room_language>" not in body

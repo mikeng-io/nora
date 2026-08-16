@@ -12,7 +12,13 @@ gains a second implementation without a shared contract suite, and
 
 from __future__ import annotations
 
-from nora.domain.models import NormalizedMessage, PersonRef
+from nora.domain.models import (
+    LexemeExample,
+    NormalizedMessage,
+    PersonRef,
+    RoomLanguage,
+    RoomLexeme,
+)
 from nora.domain.ports import (
     ContextAssembler,
     EngageDecision,
@@ -275,3 +281,95 @@ async def test_the_block_is_off_entirely_when_the_budget_is_zero():
 
     assert ctx.self_card == ()
     assert not any(c[0] == "representation" for c in memory.calls)
+
+
+# ---- <room_language>: the fifth `gather` branch (Task 10) ------------------
+#
+# `RoomLanguageReader.room_language` is documented never to raise, and
+# `SqlLanguageStore` already guards broadly — so in principle the `try/except`
+# in `_room_language` is unreachable. It exists anyway for `_peer_card`'s
+# reason: an unreachable exception here stops being a thinner prompt and
+# becomes four cancelled reads and a dead turn.
+
+
+class RaisingLanguageReader:
+    async def room_language(self, *, scope_id: str, limit: int) -> RoomLanguage:
+        raise RuntimeError("language store is down")
+
+
+class FakeLanguageReader:
+    def __init__(self, language: RoomLanguage) -> None:
+        self._language = language
+        self.calls: list[tuple[str, int]] = []
+
+    async def room_language(self, *, scope_id: str, limit: int) -> RoomLanguage:
+        self.calls.append((scope_id, limit))
+        return self._language
+
+
+def _lexeme() -> RoomLexeme:
+    return RoomLexeme(
+        canonical_form="on9", sense="clumsy/foolish", occurrence_count=4,
+        distinct_speakers=2, first_seen_ms=1, last_seen_ms=2, state="live",
+        examples=(LexemeExample(message_id=1, person_id="miles", text="on9 咁做"),),
+    )
+
+
+async def test_a_failing_language_read_yields_an_empty_block_not_a_dead_turn():
+    """One of five siblings in a `gather` — an exception here would cancel the
+    other four and take the turn down. Same property `_peer_card` already
+    guards."""
+    store = FakeRecordStore()
+    await store.append(message=_msg())
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=Metrics(), language=RaisingLanguageReader(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.room_language == RoomLanguage(scope_id="g1")
+    assert ctx.transcript, "the other reads must still have completed"
+
+
+async def test_a_failing_language_read_counts_nora_errors_total_stage_room_language():
+    metrics = Metrics()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=metrics, language=RaisingLanguageReader(),
+    )
+
+    await assembler.assemble(request=_request())
+
+    assert metrics.get("nora_errors_total", stage="room_language", platform="signal") == 1
+
+
+async def test_room_language_is_empty_when_no_reader_is_configured():
+    """No `language=` collaborator is the default for every existing call site
+    (composition/offline are wired in a later task) — that must degrade the
+    same way an unreachable one does, not raise a construction error."""
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=Metrics(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.room_language == RoomLanguage(scope_id="g1")
+
+
+async def test_the_language_reader_is_called_with_the_conversation_as_scope_and_the_store_limit():
+    """The two limits are coupled (`nora.language.render`'s own docstring):
+    the store must be asked for MORE rows than the render cap, so the store
+    limit is its own constructor parameter, not the render cap reused."""
+    language = RoomLanguage(scope_id="g1", lexemes=(_lexeme(),))
+    reader = FakeLanguageReader(language)
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=Metrics(), language=reader, room_language_store_limit=20,
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.room_language == language
+    assert reader.calls == [("g1", 20)]

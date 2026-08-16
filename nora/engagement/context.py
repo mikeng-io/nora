@@ -23,11 +23,23 @@ import logging
 import time
 from typing import Any
 
-from nora.domain.models import NormalizedMessage, PersonRef, TagContext, TranscriptRow
-from nora.domain.ports import EngagementRequest, MemoryStore, RecordStore
+from nora.domain.models import NormalizedMessage, PersonRef, RoomLanguage, TagContext, TranscriptRow
+from nora.domain.ports import EngagementRequest, MemoryStore, RecordStore, RoomLanguageReader
 from nora.persons import Persons
 
 log = logging.getLogger("nora.engagement.context")
+
+# How many rows `room_language(...)` asks the store for. Deliberately LARGER
+# than `nora.agent.prefill`'s render cap (`DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES`)
+# — see `nora.language.render`'s own docstring: the store filters on
+# `recognition_score` alone, then the renderer additionally drops any entry
+# with no quotable example and cannot reach further down to replace it,
+# because it was only ever handed as many rows as the store returned. Asking
+# the store for the SAME number as the render cap therefore silently
+# under-fills the block whenever any row lacks an example. A constructor
+# default rather than an inline literal so Task 11 has somewhere to wire a
+# config value without another signature change.
+DEFAULT_ROOM_LANGUAGE_STORE_LIMIT = 15
 
 
 class TranscriptInjection:
@@ -44,6 +56,8 @@ class TranscriptInjection:
         ai_peer: str = "",
         self_card_conclusions: int = 0,
         tagger_card_conclusions: int = 0,
+        language: RoomLanguageReader | None = None,
+        room_language_store_limit: int = DEFAULT_ROOM_LANGUAGE_STORE_LIMIT,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -53,6 +67,13 @@ class TranscriptInjection:
         self._ai_peer = ai_peer
         self._self_card_conclusions = self_card_conclusions
         self._tagger_card_conclusions = tagger_card_conclusions
+        # `language` is `None` at every call site until Task 11 wires a real
+        # `RoomLanguageReader` into composition/offline — the same "not yet
+        # configured" shape `ai_peer=""` already uses to disable the self/
+        # tagger card reads below, kept OFF rather than raising so those
+        # existing call sites keep working unchanged.
+        self._language = language
+        self._room_language_store_limit = room_language_store_limit
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -72,12 +93,14 @@ class TranscriptInjection:
         # here: one exception would otherwise cancel its three siblings and take
         # the turn down with it. That is the same property `MemoryStore`'s
         # "never load-bearing" rule already claims — this just stops relying on
-        # the adapter to honour it.
-        transcript, card, self_card, tagger_card = await asyncio.gather(
+        # the adapter to honour it. `_room_language` is the fifth sibling
+        # (Task 10) and holds the same property.
+        transcript, card, self_card, tagger_card, room_language = await asyncio.gather(
             self._recent(msg),
             self._peer_card(ref, msg),
             self._recall_self(msg),
             self._recall_tagger(ref, msg),
+            self._room_language(msg),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
@@ -92,6 +115,7 @@ class TranscriptInjection:
             started_at=time.perf_counter(),
             self_card=self_card,
             tagger_card=tagger_card,
+            room_language=room_language,
         )
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
@@ -228,3 +252,33 @@ class TranscriptInjection:
                 "nora_errors_total", stage="self_card", platform=msg.platform)
             return ()
         return recall.conclusions
+
+    async def _room_language(self, msg: NormalizedMessage) -> RoomLanguage:
+        """What the Dreamer has distilled about THIS ROOM's own slang.
+
+        `scope_id` is the conversation id — the same key `SqlLanguageStore`
+        writes under (`nora.infra.sql.language`'s `lag`/`seconds_since_last_message`
+        both key `WHERE conversation_id = scope_id`), so a room's own history is
+        what comes back, never another room's.
+
+        `language=None` (nothing wired yet — Task 11's job) and the store
+        asking for MORE rows than the render will use are both handled below;
+        see the module-level `DEFAULT_ROOM_LANGUAGE_STORE_LIMIT` for the second.
+
+        `RoomLanguageReader.room_language` is documented never to raise, and
+        `SqlLanguageStore` already guards broadly, so in principle this catch is
+        unreachable — but it is now one of five siblings in a `gather`, where an
+        unreachable exception stops being a thinner prompt and becomes four
+        cancelled reads and a dead turn. Same property `_peer_card` guards.
+        """
+        if self._language is None:
+            return RoomLanguage(scope_id=msg.conversation_id)
+        try:
+            return await self._language.room_language(
+                scope_id=msg.conversation_id, limit=self._room_language_store_limit,
+            )
+        except Exception:
+            log.exception("room-language read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="room_language", platform=msg.platform)
+            return RoomLanguage(scope_id=msg.conversation_id)
