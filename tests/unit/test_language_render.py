@@ -66,6 +66,31 @@ def test_every_entry_carries_a_verbatim_example():
     assert "ghost" not in block
 
 
+def test_an_entry_with_empty_example_text_does_not_render():
+    """An entry whose example has empty or whitespace-only text is not a weaker
+    quote, it is no quote. The gloss without it is an assertion with nothing
+    under it, so it must not render. If it is the only lexeme, the whole block
+    must be empty (no empty `<room_language>` tag)."""
+    block = render_room_language(language_with(
+        lexeme("kam", sense="尷", examples=[example("")]),
+    ), max_entries=10)
+    assert block == ""
+
+    # Whitespace-only text is also not a quote.
+    block = render_room_language(language_with(
+        lexeme("kam", sense="尷", examples=[example("   ")]),
+    ), max_entries=10)
+    assert block == ""
+
+    # But if there are other entries with real quotes, they render.
+    block = render_room_language(language_with(
+        lexeme("kam", sense="尷", examples=[example("")]),
+        lexeme("ghost", sense="失蹤", examples=[example("個ghost")]),
+    ), max_entries=10)
+    assert "個ghost" in block
+    assert "kam" not in block
+
+
 def test_the_block_is_capped_by_score():
     """A room active for a year accumulates entries forever, and this block
     sits in the UNCACHED tier — so the cap is a cost control, not tidiness."""

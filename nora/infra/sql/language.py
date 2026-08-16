@@ -71,10 +71,12 @@ them from behaviour:
   gloss AND "quote" both trace back to the same model call, restating the
   headword under itself and falsifying nothing. `sa.func.coalesce(...,  "")`
   guards the NOT NULL `context` column against a media-only row with no
-  `body` — the prompt (`nora.language.observer._build_prompt`) never shows
-  the model a bodyless row as text to quote, so a candidate naming one is not
-  the expected path, but the column's constraint must survive a candidate
-  that names one anyway rather than failing the whole batch's INSERT.
+  `body` — the prompt (`nora.language.observer._build_prompt`) shows each row
+  to the model as `[{id}] {speaker}: {row.body or ''}`, so a bodyless row is
+  shown (as an empty body) and can be named by it; the empty `context` that
+  results from a candidate naming one is what the render-time guard in
+  `nora.language.render` now excludes, so this column's constraint must survive
+  the candidate anyway rather than failing the whole batch's INSERT.
 
 `score`/`state_for` live in `nora.domain.language_scoring`, not
 `nora.language.scoring` where Task 5 first put them (`0a940c8`) — `nora.infra`

@@ -81,7 +81,10 @@ def render_room_language(language: RoomLanguage, *, max_entries: int) -> str:
     for lex in language.lexemes:
         if len(lines) >= max_entries:
             break
-        if not lex.examples:
+        # Skip entries with no example or with only empty/whitespace text. The
+        # quote is the only thing that can falsify the gloss; an empty quote is
+        # no quote.
+        if not lex.examples or not lex.examples[0].text.strip():
             continue
         lines.append(_render_entry(lex))
 
