@@ -886,10 +886,20 @@ class LanguageConfig(BaseModel):
     several ticks rather than one, which is correct: this is a background
     distillation, not a turn anyone is waiting on.
 
-    `max_rendered_lexemes = 12`: the RENDER cap, threaded to
-    `nora.agent.prefill.build_prefill`'s `room_language_max_entries` (default
-    `DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES = 6` there) via `EngagementPipeline`/
-    `FirePath`. Deliberately smaller than
+    `max_rendered_lexemes = 6`: the RENDER cap, threaded to
+    `nora.agent.prefill.build_prefill`'s `room_language_max_entries` via
+    `EngagementPipeline`/`FirePath` — MATCHES that call's own default
+    (`DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES = 6`, Task 10's reviewed value)
+    rather than raising it. This block sits in the UNCACHED volatile tier, so
+    every extra rendered entry is paid on EVERY turn; doubling that per-turn
+    cost to 12 was an earlier draft's unmeasured guess, and the reasoning
+    for it (below) argues the OPPOSITE direction from what it concluded — a
+    LARGER cap gives the renderer LESS room to drop an exampleless entry
+    before under-filling, not more, so "give it more room" was never a
+    reason to go above 6. Raise this only against a measured per-turn token
+    cost, the same discipline `LLMConfig.max_tokens`'s own docstring insists
+    on for its budget.
+    Deliberately smaller than
     `nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT` (15), which
     this section does NOT override — `SqlLanguageStore.room_language`
     applies its `LIMIT` with no filter on whether an entry has a quotable
@@ -898,6 +908,12 @@ class LanguageConfig(BaseModel):
     block silently under-fill on any tick where even one top-ranked lexeme
     has no example yet; keeping the store fetch wider than what is rendered
     is what gives the renderer room to drop a few and still fill the block.
+    `Config._render_cap_stays_below_the_store_limit` REFUSES to start rather
+    than merely document the relation — the `[reminders]`/`[heartbeat]`
+    precedent (`Config._lead_clears_the_tick`): that relation "was a comment
+    in three files and a rule in none," and an operator raising this value
+    past the store limit would silently under-fill the block instead of
+    being told why.
 
     `model`: the ONE completion `LexemeObserver` makes per cycle. Defaults to
     `[llm].model`'s own value (`"ollamacloud/deepseek-v4-flash"`) — the
@@ -915,7 +931,7 @@ class LanguageConfig(BaseModel):
     quiet_seconds: float = Field(default=1800.0, ge=0)
     max_age_seconds: float = Field(default=86_400.0, gt=0)
     batch_limit: int = Field(default=400, ge=1)
-    max_rendered_lexemes: int = Field(default=12, ge=1)
+    max_rendered_lexemes: int = Field(default=6, ge=1)
     model: str = "ollamacloud/deepseek-v4-flash"
 
 
@@ -1181,6 +1197,56 @@ class Config(BaseModel):
                 f"{self.heartbeat.tick_seconds}: a reminder set with the minimum "
                 "lead would come due inside the tick that is already running, and "
                 "would be answered later than she promised."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _render_cap_stays_below_the_store_limit(self) -> Config:
+        """`[language].max_rendered_lexemes` must stay strictly below
+        `nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT` (15) — the
+        SAME "was a comment in three places and a rule in none" shape
+        `_lead_clears_the_tick` above already fixed for `[reminders]`/
+        `[heartbeat]`.
+
+        `SqlLanguageStore.room_language` applies its `LIMIT` with NO filter on
+        whether an entry has a quotable example, and
+        `nora.language.render.render_room_language` then DROPS exampleless
+        entries and cannot reach further down the ranked list to backfill — it
+        was only ever handed `room_language_store_limit` rows. A render cap at
+        or above the store limit leaves the renderer no room to drop even one
+        exampleless entry before under-filling the block, and nothing in
+        `LanguageConfig` on its own stops an operator from setting it there:
+        `max_rendered_lexemes` is just `Field(ge=1)`, with no upper bound.
+        Refuses rather than warns for the same reason `_lead_clears_the_tick`
+        does — the failure is silent (a smaller-than-expected block, not an
+        error) and only visible by reading a rendered turn by hand.
+
+        The store limit itself is a MODULE CONSTANT, not a second
+        `[language]` field (`LanguageConfig`'s own docstring) — imported here,
+        deferred inside the validator rather than at module scope, the same
+        shape `LLMConfig._budget_names_and_values_are_real` uses for
+        `nora.agent.tools.NATIVE_TOOLS`: `nora.config` is imported by
+        everything, so a module-scope import of an `nora.engagement` symbol
+        would pay that package's whole import cost on every `Config`
+        construction rather than only when this validator actually runs.
+        Safe from a cycle by the SAME contract that protects the `NATIVE_TOOLS`
+        case: `nora.engagement` may not import `nora.config` at all
+        (import-linter's "only app and __main__ read config"), so this edge
+        has no return path.
+        """
+        from nora.engagement.context import DEFAULT_ROOM_LANGUAGE_STORE_LIMIT
+
+        if self.language.max_rendered_lexemes >= DEFAULT_ROOM_LANGUAGE_STORE_LIMIT:
+            raise ValueError(
+                f"[language] max_rendered_lexemes = "
+                f"{self.language.max_rendered_lexemes} must be strictly less "
+                f"than the room-language STORE limit "
+                f"({DEFAULT_ROOM_LANGUAGE_STORE_LIMIT}, "
+                "nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT): "
+                "the renderer drops exampleless entries and cannot reach "
+                "further down the ranked list than the store limit fetched, "
+                "so a render cap at or above it silently under-fills the "
+                "block."
             )
         return self
 

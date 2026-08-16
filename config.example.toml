@@ -402,12 +402,15 @@ max_age_seconds = 86400
 # call's prompt size and the store's single INSERT statement. A scope whose
 # lag exceeds this drains over several ticks rather than one.
 batch_limit = 400
-# The RENDER cap threaded to `build_prefill`'s room-language block.
-# Deliberately smaller than the STORE limit (15, not configurable here) that
-# `TranscriptInjection` reads with — the store fetches wider than what is
+# The RENDER cap threaded to `build_prefill`'s room-language block — matches
+# that call's own default (Task 10's reviewed value) rather than raising it:
+# this block sits in the UNCACHED tier, so every extra entry is paid on every
+# turn. Deliberately smaller than the STORE limit (15, not configurable here)
+# that `TranscriptInjection` reads with — the store fetches wider than what is
 # rendered so the renderer has room to drop a few exampleless entries and
-# still fill the block; equal numbers make it silently under-fill.
-max_rendered_lexemes = 12
+# still fill the block; equal numbers make it silently under-fill. Nora
+# refuses to start if this is raised to or past the store limit.
+max_rendered_lexemes = 6
 # The ONE completion LexemeObserver makes per cycle. Defaults to [llm].model's
 # own value — the Dreamer is a background job nobody is waiting on, so reusing
 # the deployment's already-working tier is reasonable, but this is a SEPARATE

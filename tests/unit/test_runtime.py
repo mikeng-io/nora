@@ -12,10 +12,12 @@ import asyncio
 import contextlib
 import gc
 import logging
+import time
 
 from nora.app.runtime import (
     BackgroundTasks,
     SupervisedAdapter,
+    _backoff_elapsed,
     debounce_sweep_loop,
     dream_loop,
     prune_loop,
@@ -294,6 +296,14 @@ class _FakeLanguage:
         self._order = order
         self.watermarks: dict[str, int] = {}
         self.advance_calls: list[tuple[str, int]] = []
+        # Which scopes have had `advance_watermark` called at least once —
+        # the real store's `updated_at` column, reduced to a boolean. Needed
+        # for `watermark_age_seconds` below: the real bug this fake exists to
+        # catch is a stale `updated_at` that never resets, so THIS fake must
+        # actually reset something when `advance_watermark` runs, or a test
+        # against it could not tell "the fix runs" from "the fix does
+        # nothing" any better than the real store's own age column could.
+        self._age_reset_scopes: set[str] = set()
 
     async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int:
         return self.watermarks.get(scope_id, 0)
@@ -302,10 +312,14 @@ class _FakeLanguage:
         return self._behind
 
     async def lag(self, *, scope_id: str, after_id: int) -> int:
-        # Once THIS scope's watermark has advanced, treat its configured lag
-        # as consumed — otherwise a test whose fake batch never grows would
-        # keep firing forever at the tick cadence, muddying an assertion
-        # that means to observe exactly one cycle.
+        # Once THIS scope's watermark has actually MOVED (advanced past 0),
+        # treat its configured lag as consumed — otherwise a test whose fake
+        # batch never grows would keep firing forever at the tick cadence,
+        # muddying an assertion that means to observe exactly one cycle. The
+        # empty-batch age-refresh case (Task 11 fix) calls `advance_watermark`
+        # with `last_message_id` UNCHANGED (often 0), so it alone must not
+        # trip this — `watermarks.get(...) > 0` already only fires on a REAL
+        # forward move, never on the refresh-in-place case.
         if self.watermarks.get(scope_id, 0) > 0:
             return 0
         return self._lag
@@ -314,6 +328,13 @@ class _FakeLanguage:
         return self._quiet
 
     async def watermark_age_seconds(self, *, consolidator_name: str, scope_id: str) -> float:
+        # Mirrors the real store: `updated_at` (hence age) resets to "now"
+        # the moment `advance_watermark` runs for this scope, REGARDLESS of
+        # whether `last_message_id` actually moved — the empty-batch refresh
+        # (Task 11 fix) relies on exactly this to stop the 24h firing from
+        # relatching every tick.
+        if scope_id in self._age_reset_scopes:
+            return 0.0
         return self._age
 
     async def advance_watermark(
@@ -323,6 +344,7 @@ class _FakeLanguage:
             self._order.append("advance")
         self.advance_calls.append((scope_id, last_message_id))
         self.watermarks[scope_id] = last_message_id
+        self._age_reset_scopes.add(scope_id)
 
 
 async def test_a_second_tick_does_not_re_enter_a_running_scope():
@@ -397,7 +419,12 @@ async def test_the_watermark_advances_only_after_observations_are_committed():
     # The crash-shaped half of the same proof: a consolidator that raises
     # must leave the watermark exactly where it was — reverting the `if
     # batch:`-guarded advance to run unconditionally, or moving it before the
-    # consolidate loop, must turn this red.
+    # consolidate loop, must turn this red. Scope "g2" gets its OWN
+    # `_FakeRecord`, seeded with real rows — reusing the "g1"-only `record`
+    # above would make `record.since(conversation_id="g2", ...)` return `[]`
+    # unconditionally, so `advance_calls == []` would hold whether or not the
+    # consolidator raised (the `if batch:` guard alone, not the crash path) —
+    # exactly the decorative shape a reviewer already caught here once.
     order.clear()
 
     class FailingConsolidator:
@@ -407,9 +434,10 @@ async def test_the_watermark_advances_only_after_observations_are_committed():
             order.append("consolidate")
             raise RuntimeError("model provider down")
 
+    failing_record = _FakeRecord({"g2": [_row(1), _row(2)]})
     failing_language = _FakeLanguage(lag=1000, order=order)
     task2 = asyncio.create_task(dream_loop(
-        record, failing_language, [FailingConsolidator()], metrics,
+        failing_record, failing_language, [FailingConsolidator()], metrics,
         scopes=lambda: ["g2"], tick_seconds=0.02, safety_lag=10,
         quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
     ))
@@ -419,7 +447,11 @@ async def test_the_watermark_advances_only_after_observations_are_committed():
         await task2
 
     assert order == ["consolidate"], "a failed cycle must never reach advance_watermark"
-    assert failing_language.advance_calls == []
+    assert failing_language.advance_calls == [], (
+        "a raising consolidator, fed a REAL non-empty batch, must leave the "
+        "watermark untouched — this only proves something if the batch was "
+        "genuinely non-empty going in"
+    )
     assert metrics.get("nora_errors_total", stage="dream") >= 1
 
 
@@ -481,11 +513,108 @@ async def test_the_daily_firing_rescores_even_with_an_empty_batch():
         scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
         quiet_seconds=999_999, max_age_seconds=100, batch_limit=10,
     ))
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.15)  # several ticks' worth
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
 
     assert batches, "the 24h/age firing must still reach consolidate with an empty batch"
     assert all(b == [] for b in batches)
-    assert language.advance_calls == [], "an empty batch must never advance the watermark"
+    assert len(batches) == 1, (
+        "a dormant scope must fire the age condition ONCE across this whole "
+        "window, not on every subsequent tick. `watermark_age_seconds` reads "
+        "`updated_at`, which ONLY `advance_watermark` writes — an empty "
+        "batch that never refreshes it leaves `age` pinned at its old value "
+        "forever, so a background job meant to run once a day instead reruns "
+        "on every tick (288x/day at the shipped 300s cadence)."
+    )
+    assert language.advance_calls == [("g1", 0)], (
+        "the empty-batch fire must still refresh the watermark row, at the "
+        "SAME last_message_id (0 here — nothing was ever consolidated) — "
+        "this resets the age clock without moving the cursor forward"
+    )
+
+
+# ---------------------------------------------------------------------------
+# dream_loop backoff (non-negotiable 4)
+# ---------------------------------------------------------------------------
+
+
+def test_backoff_elapsed_grows_exponentially_and_caps():
+    """`_backoff_elapsed`'s own arithmetic — `supervise_adapter`'s
+    capped-exponential shape, reused rather than re-derived. Pins the two
+    things that shape means: MORE consecutive failures need MORE elapsed
+    time, and the delay stops growing at `max_delay_seconds`."""
+    last_failure_at: dict[str, float] = {"g1": time.monotonic()}
+
+    # One failure: not enough time has passed even for the smallest delay.
+    assert _backoff_elapsed(
+        "g1", 1, last_failure_at, base_delay_seconds=0.05, max_delay_seconds=10.0,
+    ) is False
+    time.sleep(0.06)
+    assert _backoff_elapsed(
+        "g1", 1, last_failure_at, base_delay_seconds=0.05, max_delay_seconds=10.0,
+    ) is True
+
+    # Five consecutive failures: 0.05 * 2**4 = 0.8s uncapped, but capped here
+    # at 0.1s — so 0.06s must still be "not elapsed" (proves the delay GREW
+    # past the one-failure case above) and 0.11s must be "elapsed" (proves
+    # the cap, not the uncapped 0.8s, is what actually bounds it).
+    last_failure_at["g1"] = time.monotonic()
+    assert _backoff_elapsed(
+        "g1", 5, last_failure_at, base_delay_seconds=0.05, max_delay_seconds=0.1,
+    ) is False
+    time.sleep(0.06)
+    assert _backoff_elapsed(
+        "g1", 5, last_failure_at, base_delay_seconds=0.05, max_delay_seconds=0.1,
+    ) is False, "five failures must need MORE than the one-failure delay"
+    time.sleep(0.05)
+    assert _backoff_elapsed(
+        "g1", 5, last_failure_at, base_delay_seconds=0.05, max_delay_seconds=0.1,
+    ) is True, "but the delay must be CAPPED at max_delay_seconds, not 0.05 * 2**4"
+
+
+async def test_a_failed_scope_is_not_retried_before_its_backoff_elapses():
+    """Non-negotiable 4: the backoff comes from `supervise_adapter`'s shape,
+    not from `prune_loop`'s unconditional-retry-every-tick one. Deleting the
+    `_backoff_elapsed` check in `dream_loop` entirely leaves every OTHER test
+    in this file green — this is the one that goes red without it: with no
+    backoff, a failed scope would be retried on every subsequent tick, and
+    `attempts` would climb well past 1 inside this window.
+
+    Uses the REAL (unpatched) default backoff constants — no need to shrink
+    them: `_DREAM_BACKOFF_BASE_SECONDS` (60s) is enormously longer than the
+    ~0.15s this test observes, so a single retry inside that window can only
+    happen if the backoff check is missing or broken, never from ordinary
+    timing noise.
+    """
+    attempts = 0
+
+    class AlwaysFailingConsolidator:
+        name = "language"
+
+        async def consolidate(self, *, scope_id: str, batch: list[TranscriptRow]) -> int:
+            nonlocal attempts
+            attempts += 1
+            raise RuntimeError("model provider down")
+
+    record = _FakeRecord({"g1": [_row(1)]})
+    language = _FakeLanguage(lag=1000)
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [AlwaysFailingConsolidator()], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+    ))
+    await asyncio.sleep(0.15)  # 7+ ticks, all well inside the 60s backoff base
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert attempts == 1, (
+        "a failed scope must not be retried before its backoff window "
+        "elapses — every tick after the first failure must be a no-op skip, "
+        "not a retry"
+    )
+    assert metrics.get("nora_errors_total", stage="dream") == 1

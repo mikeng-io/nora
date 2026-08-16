@@ -330,12 +330,40 @@ def test_the_language_section_is_optional_and_ships_inert(toml_path):
     assert cfg.language.quiet_seconds == 1800.0
     assert cfg.language.max_age_seconds == 86_400.0
     assert cfg.language.batch_limit == 400
-    assert cfg.language.max_rendered_lexemes == 12
+    assert cfg.language.max_rendered_lexemes == 6
     assert cfg.language.model == "ollamacloud/deepseek-v4-flash"
     assert cfg.language.max_rendered_lexemes < DEFAULT_ROOM_LANGUAGE_STORE_LIMIT, (
         "the render cap must stay below the store limit or the block "
         "silently under-fills"
     )
+
+
+def test_a_render_cap_at_or_above_the_store_limit_is_refused(toml_path):
+    """`[language].max_rendered_lexemes` has no upper bound of its own
+    (`Field(ge=1)`) — this cross-field relation was a comment in
+    `LanguageConfig`'s own docstring and a rule in none, the same gap
+    `_lead_clears_the_tick` closed for `[reminders]`/`[heartbeat]`. Raising
+    the cap to or past the STORE limit (15) must refuse to start rather than
+    silently under-fill the rendered block."""
+    text = toml_path.read_text()
+    toml_path.write_text(
+        text.replace("max_rendered_lexemes = 6", "max_rendered_lexemes = 15")
+    )
+
+    with pytest.raises(ConfigError, match="max_rendered_lexemes"):
+        load(toml_path)
+
+
+def test_a_render_cap_below_the_store_limit_is_accepted(toml_path):
+    """The control for the test above — without it, a bug that refused
+    EVERY value (not just `>= 15`) would leave that one green."""
+    text = toml_path.read_text()
+    toml_path.write_text(
+        text.replace("max_rendered_lexemes = 6", "max_rendered_lexemes = 14")
+    )
+
+    cfg = load(toml_path)
+    assert cfg.language.max_rendered_lexemes == 14
 
 
 def test_a_minimum_lead_inside_the_tick_is_refused(toml_path):

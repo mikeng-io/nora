@@ -360,12 +360,25 @@ async def dream_loop(
                 tasks.add(task)
                 task.add_done_callback(tasks.discard)
     finally:
-        # Best-effort cleanup on cancellation (the same shape
-        # `BackgroundTasks.cancel_all` uses): a dream tick's own per-scope
-        # tasks must not keep running, untracked, after this loop itself has
-        # been asked to stop.
-        for task in tasks:
+        # `BackgroundTasks.cancel_all`'s own shape, not just its `.cancel()`
+        # half: that method's docstring records the exact gap a cancel-only
+        # cleanup leaves — a done-callback (`tasks.discard` here) is
+        # delivered via `call_soon`, one loop tick later, so `task.cancel()`
+        # alone does not guarantee the task has actually finished unwinding
+        # by the time this function returns. Cancel every pending task FIRST,
+        # THEN await each — awaiting inside a `finally` while THIS coroutine
+        # is itself mid-cancellation is safe (the awaits below run to
+        # completion before the outer `CancelledError` continues propagating,
+        # provided this task is not cancelled a second time meanwhile).
+        # `list(tasks)` snapshots before iterating: `add_done_callback` above
+        # mutates `tasks` via `discard` as each one finishes, and iterating a
+        # set while it is being mutated raises.
+        pending = list(tasks)
+        for task in pending:
             task.cancel()
+        for task in pending:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 async def _dream_once(
@@ -418,4 +431,26 @@ async def _dream_once(
         await language.advance_watermark(
             consolidator_name="language", scope_id=scope_id,
             last_message_id=batch[-1].id,
+        )
+    else:
+        # PLAN DEFECT found and fixed: without this, the 24h/age-only firing
+        # (the ONE condition that fires at `lag == 0`) is a LATCH with no
+        # reset. `watermark_age_seconds` reads `updated_at`, and — before this
+        # branch existed — `updated_at` was written ONLY by the `if batch:`
+        # arm above, which an empty batch never reaches. So a scope that has
+        # never been consolidated stays at `age = inf` forever (fires every
+        # tick, and can never write a row to stop it), and a scope that WAS
+        # consolidated once and then went dormant fires once at 24h and then
+        # NEVER STOPS FIRING — `updated_at` stays pinned at its old value,
+        # `age` never drops back under `max_age_seconds`, and a background job
+        # meant to run once a day instead reruns a full `rescore` on every
+        # tick forever (288x/day at the shipped 300s cadence), unattended.
+        # Refresh the row at the SAME `last_message_id` (the watermark did not
+        # move — nothing was appended, so there is nothing to lose) purely to
+        # reset the clock `watermark_age_seconds` reads. `advance_watermark`'s
+        # own natural key makes this an idempotent no-op on the CURSOR value;
+        # only `updated_at` changes.
+        await language.advance_watermark(
+            consolidator_name="language", scope_id=scope_id,
+            last_message_id=watermark,
         )

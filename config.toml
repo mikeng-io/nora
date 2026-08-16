@@ -562,7 +562,7 @@ enabled = false
 # quiet_seconds = 1800
 # max_age_seconds = 86400
 # batch_limit = 400
-# max_rendered_lexemes = 12
+# max_rendered_lexemes = 6
 # model = "ollamacloud/deepseek-v4-flash"
 
 [tools.mcp.pulse]
