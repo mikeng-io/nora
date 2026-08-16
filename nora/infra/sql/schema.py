@@ -515,3 +515,90 @@ MEDIA_DESCRIPTIONS = sa.Table(
         server_default=sa.text("now()"),
     ),
 )
+
+# The Dreamer's cursor, one row per (consolidator, scope). GENERIC on purpose:
+# "how far has this consumer read" is identical for any future consolidator, and
+# this is the one thing the spec abstracts across them.
+#
+# `last_message_id` is `sa.Integer`, matching `messages.id` — which is INT4
+# because it COUNTS UP (see this module's docstring). `updated_at` is
+# `DateTime(timezone=True)`, NOT epoch-ms: the dream cycle compares it against
+# `now` in SQL (`age(watermark) > 24h`), the same case `reminders.due_at` is.
+CONSOLIDATION_WATERMARK = sa.Table(
+    "consolidation_watermark",
+    METADATA,
+    sa.Column("consolidator_name", sa.Text, primary_key=True),
+    sa.Column("scope_id", sa.Text, primary_key=True),
+    sa.Column("last_message_id", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.text("now()")),
+)
+
+# Append-only EVIDENCE. This table, not `messages`, is what the lexicon is
+# answerable to — and it is why `message_id` is a SOFT reference with no foreign
+# key: evidence must outlive the message it came from. `store.prune_enabled` is
+# false today, but the flag exists, and an FK would make this table inherit the
+# record's retention policy — the one property it must not have.
+#
+# The UNIQUE key is natural, not synthetic, and it is load-bearing: without it a
+# retried or concurrent cycle appends the same observation twice and the rendered
+# «12x, 3 people» becomes a fabricated number.
+LANGUAGE_OBSERVATION = sa.Table(
+    "language_observation",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column("scope_id", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("message_id", sa.Integer, nullable=False),
+    sa.Column("person_id", sa.Text),
+    sa.Column("surface_form", sa.Text, nullable=False),
+    sa.Column("canonical_form", sa.Text, nullable=False),
+    sa.Column("sense", sa.Text, nullable=False),
+    sa.Column("part_of_speech", sa.Text),
+    sa.Column("context", sa.Text, nullable=False),
+    # Epoch MILLISECONDS — the MESSAGE's own ts, arriving from a platform wire.
+    sa.Column("observed_at", sa.BigInteger, nullable=False),
+    sa.Column("extractor_confidence", sa.Float, nullable=False),
+    sa.UniqueConstraint("message_id", "canonical_form", "sense"),
+)
+
+# The consolidated lexicon. `sense` is IN the primary key: a word acquiring a
+# second meaning in one room is ordinary, and keying on `(scope_id,
+# canonical_form)` alone would either overwrite the first sense or merge counts
+# from two unrelated meanings — then render a gloss no observation supports.
+#
+# `state` is CHECK-constrained like every other enumerated TEXT column here.
+# `alembic check` is blind to CHECK constraints; the parity test's full-dump
+# diff is what catches a drift.
+ROOM_LEXEME = sa.Table(
+    "room_lexeme",
+    METADATA,
+    sa.Column("scope_id", sa.Text, primary_key=True),
+    sa.Column("canonical_form", sa.Text, primary_key=True),
+    sa.Column("sense", sa.Text, primary_key=True),
+    sa.Column("first_seen_at", sa.BigInteger, nullable=False),
+    sa.Column("last_seen_at", sa.BigInteger, nullable=False),
+    sa.Column("occurrence_count", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("distinct_speakers", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("recognition_score", sa.Float, nullable=False, server_default=sa.text("0")),
+    sa.Column("state", sa.Text, nullable=False, server_default=sa.text("'live'")),
+    # JSONB, following `tool_call_log`'s Postgres-native precedent rather than
+    # `media_json`'s SQLite-era TEXT. Each example carries its OWN message_id and
+    # person_id: a bare array of strings has no query path to redact one person's
+    # quotes, and nothing in this system deletes anything any more.
+    sa.Column("examples", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    sa.CheckConstraint("state IN ('live','fading','stale')"),
+)
+
+# Serves the dream cycle's lag query EXACTLY:
+#   count(*) where conversation_id = :c and id > :watermark and is_nora = 0
+# `idx_messages_conv_ts` is (conversation_id, ts DESC) and carries neither `id`
+# nor `is_nora`; `idx_messages_is_nora` is a majority-class predicate the planner
+# will not choose. `is_nora = 0` is the right predicate for an INTEGER column —
+# the same one `audit.py:210` already uses.
+IDX_MESSAGES_DREAM_LAG = sa.Index(
+    "idx_messages_dream_lag",
+    MESSAGES.c.conversation_id,
+    MESSAGES.c.id,
+    postgresql_where=MESSAGES.c.is_nora == 0,
+)
