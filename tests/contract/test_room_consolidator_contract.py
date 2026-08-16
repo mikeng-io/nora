@@ -340,6 +340,31 @@ async def test_scope_is_honoured(consolidator, store, batch_with_one_lexeme):
     assert g1_language.lexemes[0].canonical_form == "yyds"
 
 
+async def test_the_rendered_example_is_the_message_body_not_a_token(
+    consolidator, store, batch_with_one_lexeme,
+):
+    """Finding 1 (final whole-branch review): `LexemeExample.text` must be
+    the message's own BODY — the verbatim, model-FREE quote that makes a
+    wrong gloss visible — never a model-authored token like `surface_form`.
+    Both implementations are held to this HERE, in the shared contract, not
+    just in one implementation's own suite: before this assertion existed,
+    `_FakeRoomConsolidator.consolidate` above already built
+    `text=row.body`, while `SqlLanguageStore` (via `LanguageConsolidator`)
+    stamped the candidate's `surface_form` instead — two DIFFERENT answers to
+    "what does `examples[].text` mean", and nothing running against both
+    implementations ever noticed, because nothing here asserted on the text
+    at all. CLAUDE.md's own rule: a fake that answers differently from the
+    real server is exactly the defect a contract suite exists to catch.
+    `batch_with_one_lexeme`'s one row has body `"yyds:so good it doesn't
+    need improving"`; `_FakeModelClient` derives `surface_form="yyds"` (the
+    bare form before the colon) from it — DIFFERENT from the body — so this
+    only passes if the rendered example is the body, not the form."""
+    await consolidator.consolidate(scope_id="g1", batch=batch_with_one_lexeme)
+    [lex] = (await store.room_language(scope_id="g1", limit=10)).lexemes
+    [ex] = lex.examples
+    assert ex.text == "yyds:so good it doesn't need improving"
+
+
 @pytest.fixture(params=["fake", "sql"])
 async def unavailable_reader(request):
     """A `RoomLanguageReader` guaranteed to fail on `room_language`, one per

@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from nora.domain.models import LexemeCandidate, TranscriptRow
@@ -49,6 +50,27 @@ log = logging.getLogger(__name__)
 # exists to count (a well-formed item whose evidence is absent from the
 # batch — see `LexemeObserver._extract`).
 _STRING_FIELDS = ("surface_form", "canonical_form", "sense", "part_of_speech")
+
+# Reject, at parse time, a field implausibly longer than any genuine gloss
+# could be — so an over-long MODEL-AUTHORED field never reaches
+# `LanguageConsolidator.append_observations` and the store at all, ahead of
+# (not instead of) `nora.language.render`'s own render-time truncation of
+# `canonical_form`/`sense`/the quote. Render-time truncation alone still
+# bounds what ever reaches a reader, but a huge value would still sit in
+# Postgres, ride every `rescore` pass's `jsonb_agg`, and cost bandwidth on
+# every read even though a reader never sees past the render cap — this is
+# the store-side half of that same defence, generous enough to never reject
+# a genuine gloss (`render.py`'s caps are the DISPLAY bound, an order of
+# magnitude tighter, and are what a legitimate over-length value actually
+# gets cut down to). `surface_form` is bounded too even though it no longer
+# feeds the rendered quote (`context` does, from the message body) — it is
+# still a stored, model-authored column and part of the append's natural key.
+_MAX_FIELD_CHARS = {
+    "surface_form": 300,
+    "canonical_form": 100,
+    "sense": 500,
+    "part_of_speech": 50,
+}
 
 
 class _ModelClient(Protocol):
@@ -121,10 +143,12 @@ def _parse_observations(raw: str) -> list[Any] | None:
 
 def _parse_item(item: Any) -> dict[str, Any] | None:
     """One observation dict -> its typed fields, or None if it is missing
-    any required field or carries the wrong type for one. This is the
-    MALFORMED-ITEM guard, separate from (and checked before) the
-    evidence-join in `LexemeObserver._extract` — an item that fails here
-    never had a real claim to check evidence against."""
+    any required field, carries the wrong type for one, or carries a
+    STRING field longer than `_MAX_FIELD_CHARS` allows (module docstring's
+    "Reject, at parse time" note) — all three are the same MALFORMED-ITEM
+    guard, separate from (and checked before) the evidence-join in
+    `LexemeObserver._extract`: an item that fails here never had a real
+    claim to check evidence against."""
     if not isinstance(item, dict):
         return None
     try:
@@ -133,9 +157,34 @@ def _parse_item(item: Any) -> dict[str, Any] | None:
         fields: dict[str, Any] = {name: str(item[name]) for name in _STRING_FIELDS}
     except (KeyError, TypeError, ValueError):
         return None
+    for name, limit in _MAX_FIELD_CHARS.items():
+        if len(fields[name]) > limit:
+            return None
     fields["message_id"] = message_id
     fields["confidence"] = confidence
     return fields
+
+
+@dataclass(frozen=True)
+class ObservationResult:
+    """`observe()`'s return: the joined candidates, plus whether the model's
+    response PARSED as the expected `{"observations": [...]}` shape at all.
+
+    `parsed=False` means the extraction itself is untrustworthy — `candidates`
+    is always `()` in that case, but the reverse is not true: a well-formed
+    `{"observations": []}` (the model correctly finding nothing) also yields
+    empty `candidates`, with `parsed=True`. That distinction is the whole
+    reason this is a dataclass and not a bare `list` (`observe()`'s original
+    shape): a model degrading into permanent prose looks IDENTICAL to one
+    correctly finding nothing if only `candidates` is inspected — both are an
+    empty list forever — and `LanguageConsolidator.consolidate` needs to tell
+    them apart to decide whether `_dream_once` may advance the watermark past
+    this batch. Advancing over a batch the model never actually read would
+    consume those messages permanently with nothing to retry.
+    """
+
+    candidates: tuple[LexemeCandidate, ...]
+    parsed: bool
 
 
 class LexemeObserver:
@@ -154,21 +203,23 @@ class LexemeObserver:
         self._model = model
         self._metrics = metrics
 
-    async def observe(self, *, batch: Sequence[TranscriptRow]) -> list[LexemeCandidate]:
+    async def observe(self, *, batch: Sequence[TranscriptRow]) -> ObservationResult:
         """One model call over `batch`, or nothing for an empty batch (no
-        call is worth making over zero messages). Never raises on a
-        malformed response — see `_parse_observations`/`_parse_item` — and
-        every returned candidate is guaranteed to point at a row that is
-        actually in `batch` (see `_extract`)."""
+        call is worth making over zero messages — returned as `parsed=True`,
+        `candidates=()`: there was nothing to fail to parse). Never RAISES on
+        a malformed response — see `_parse_observations`/`_parse_item` — that
+        case is reported through `ObservationResult.parsed`, not an
+        exception; every returned candidate is guaranteed to point at a row
+        that is actually in `batch` (see `_extract`)."""
         if not batch:
-            return []
+            return ObservationResult(candidates=(), parsed=True)
         prompt = _build_prompt(batch)
         raw = await self._model.complete(prompt=prompt)
         return self._extract(raw, batch)
 
     def _extract(
         self, raw: str, batch: Sequence[TranscriptRow]
-    ) -> list[LexemeCandidate]:
+    ) -> ObservationResult:
         observations = _parse_observations(raw)
         if observations is None:
             # A model that degrades into returning prose forever is
@@ -177,14 +228,18 @@ class LexemeObserver:
             # `{"observations": []}` never reaches here at all (it parses
             # fine and falls through to an empty `candidates` list below).
             # Both states look identical from the outside (a lexicon that
-            # stops growing); this is the one trace that tells them apart.
+            # stops growing) unless something ALSO carries `parsed=False`
+            # through the return value — the metric alone is observable only
+            # to an operator watching Prometheus, not to
+            # `LanguageConsolidator`, which is what actually has to decide
+            # whether the watermark may advance over this batch.
             if self._metrics is not None:
                 self._metrics.inc("nora_language_parse_failures_total")
             log.warning(
                 "lexeme extraction: model response did not parse as the "
                 "expected JSON shape (%d chars)", len(raw),
             )
-            return []
+            return ObservationResult(candidates=(), parsed=False)
         by_id = {row.id: row for row in batch}
         candidates: list[LexemeCandidate] = []
         for item in observations:
@@ -218,4 +273,4 @@ class LexemeObserver:
                 person_id=row.person_id,
                 confidence=parsed["confidence"],
             ))
-        return candidates
+        return ObservationResult(candidates=tuple(candidates), parsed=True)

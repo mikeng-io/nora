@@ -564,6 +564,7 @@ enabled = false
 # batch_limit = 400
 # max_rendered_lexemes = 6
 # model = "ollamacloud/deepseek-v4-flash"
+# timeout_seconds = 120.0
 
 [tools.mcp.pulse]
 enabled = true

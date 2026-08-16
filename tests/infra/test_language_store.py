@@ -195,6 +195,25 @@ async def test_a_nonexistent_message_id_is_counted_distinctly_from_a_replay(
         await engine.dispose()
 
 
+async def test_a_null_body_does_not_break_the_insert(store):
+    """`context` is now drawn from `messages.body` (Finding 1), and that
+    column is nullable in the schema even though the normal ingest path
+    never writes NULL there — a defensive edge case, not the expected path.
+    `sa.func.coalesce(MESSAGES.c.body, "")` is what keeps a candidate naming
+    such a row from violating `language_observation.context`'s NOT NULL
+    constraint and failing the whole batch's INSERT over one row."""
+    async with store._engine.begin() as conn:
+        mid = (await conn.execute(
+            sa.insert(MESSAGES).values(
+                platform="signal", conversation_id="g1", conversation_type="group",
+                sender_id="+852111", sender_name="Miles", ts=NOW, body=None,
+                is_nora=0, delivery_status="sent",
+            ).returning(MESSAGES.c.id)
+        )).scalar_one()
+    obs = [observation(message_id=mid, canonical_form="kam", sense="尷")]
+    assert await store.append_observations(scope_id="g1", observations=obs) == 1
+
+
 async def test_observed_at_and_conversation_id_come_from_the_real_message_row(
     store, record,
 ):
@@ -333,32 +352,48 @@ async def test_room_language_honours_its_limit(store, record):
 
 
 async def test_room_language_carries_examples_with_attribution(store, record):
-    [mid] = await _seed(record, 1)
+    """Finding 1 (final whole-branch review): the rendered example must be
+    the message's own BODY, never `LexemeCandidate.surface_form` (the
+    model's own echo of the token it saw). `surface_form` here is
+    deliberately the bare token production actually sends ("kam"), and the
+    seeded message body is a full, DIFFERENT sentence — so this only passes
+    if `context` is drawn from `messages.body`. Before the fix, the store
+    stamped `context` from `surface_form`, and this test used a `body`
+    reading identically to the `surface_form` under test
+    (`"好撚kam"` for both), which is exactly why it stayed green through that
+    bug: the two values could never be told apart from a passing assertion
+    alone."""
+    body = "the whole group went quiet, then someone said 好撚kam and it stuck"
+    mid = await record.append(message=_msg(conv="g1", body=body))
     await store.append_observations(scope_id="g1", observations=[
         observation(message_id=mid, person_id="miles", canonical_form="kam",
-                    surface_form="好撚kam"),
+                    surface_form="kam"),
     ])
     await store.rescore(scope_id="g1", now_ms=NOW)
     [lex] = (await store.room_language(scope_id="g1", limit=10)).lexemes
     [example] = lex.examples
-    assert (example.message_id, example.person_id, example.text) == (mid, "miles", "好撚kam")
+    assert (example.message_id, example.person_id, example.text) == (mid, "miles", body)
 
 
 async def test_room_language_caps_examples_and_orders_most_recent_first(store, record):
     """Task 9's renderer needs ONE example per rendered entry, not the whole
     occurrence history — a word said many times must not carry every usage
     into the rendered block, or a JSONB blob that grows without bound into
-    every turn's `room_language` read."""
+    every turn's `room_language` read.
+
+    `_seed`'s own bodies ("seed0".."seed4") are what this asserts against
+    now — `context` is the message BODY (Finding 1), not `surface_form`, so
+    ordering must be provable against the body text, not an
+    observation-supplied token."""
     ids = await _seed(record, 5, step=1000)  # strictly increasing ts
     await store.append_observations(scope_id="g1", observations=[
-        observation(message_id=mid, person_id="miles", canonical_form="kam",
-                    surface_form=f"use{i}")
-        for i, mid in enumerate(ids)
+        observation(message_id=mid, person_id="miles", canonical_form="kam")
+        for mid in ids
     ])
     await store.rescore(scope_id="g1", now_ms=NOW)
     [lex] = (await store.room_language(scope_id="g1", limit=10)).lexemes
     assert len(lex.examples) == 3
-    assert [e.text for e in lex.examples] == ["use4", "use3", "use2"]
+    assert [e.text for e in lex.examples] == ["seed4", "seed3", "seed2"]
 
 
 async def test_rescore_is_idempotent_and_does_not_inflate_counts(store, record):

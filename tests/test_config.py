@@ -332,6 +332,7 @@ def test_the_language_section_is_optional_and_ships_inert(toml_path):
     assert cfg.language.batch_limit == 400
     assert cfg.language.max_rendered_lexemes == 6
     assert cfg.language.model == "ollamacloud/deepseek-v4-flash"
+    assert cfg.language.timeout_seconds == 120.0
     assert cfg.language.max_rendered_lexemes < DEFAULT_ROOM_LANGUAGE_STORE_LIMIT, (
         "the render cap must stay below the store limit or the block "
         "silently under-fills"

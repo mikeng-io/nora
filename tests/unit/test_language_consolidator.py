@@ -16,7 +16,7 @@ import json
 import pytest
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.language.consolidator import LanguageConsolidator
+from nora.language.consolidator import ExtractionUnparseableError, LanguageConsolidator
 from nora.language.observer import LexemeObserver
 
 pytestmark = pytest.mark.asyncio
@@ -133,3 +133,32 @@ async def test_replaying_a_batch_does_not_inflate_the_rendered_count():
     second = await consolidator.consolidate(scope_id="g1", batch=batch)
     assert first == 1
     assert second == 0, "the natural key must make a re-run a no-op"
+
+
+async def test_an_unparseable_response_raises_and_never_appends_or_rescores():
+    """Finding 2 (final whole-branch review): a model returning 200-OK prose
+    for a non-empty batch used to make `consolidate` return `0` — exactly the
+    same value a well-formed, genuinely empty extraction returns
+    (`test_rescore_runs_even_when_nothing_was_appended` above) — and
+    `nora.app.runtime._dream_once` cannot tell the two apart from an int
+    alone. `_dream_once` advances the watermark whenever `batch` is
+    non-empty, so that batch's messages were being consumed FOREVER on every
+    parse failure. `ExtractionUnparseableError` is what makes the two
+    distinguishable: raising (rather than returning `0`) is what lets
+    `_dream_once`'s own crash-path — already proven not to advance the
+    watermark
+    (`tests/unit/test_runtime.py::
+    test_the_watermark_advances_only_after_observations_are_committed`) —
+    apply here too. Reverting `consolidate`'s `if not result.parsed: raise
+    ...` guard back to falling straight through to `append_observations`
+    (which appends nothing for an unparsed batch either way) must turn this
+    red: no exception, and `rescore` would run."""
+    store = _FakeStore()
+    consolidator = LanguageConsolidator(
+        observer=LexemeObserver(_FakeModel(responses=["sorry, can't help with that"])),
+        store=store)
+    with pytest.raises(ExtractionUnparseableError):
+        await consolidator.consolidate(scope_id="g1", batch=[_row(1, "好撚kam")])
+    assert store.rescore_calls == [], (
+        "an unparseable batch must not even rescore — the whole cycle is untrusted"
+    )

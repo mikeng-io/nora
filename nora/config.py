@@ -921,6 +921,20 @@ class LanguageConfig(BaseModel):
     deployment's already-working tier is a reasonable default, but this is a
     SEPARATE knob because an operator may want a cheaper or differently-tuned
     model for a bulk classification task than for a live conversational turn.
+
+    `timeout_seconds = 120.0`: bounds `_LanguageModelClient.complete`
+    (`nora.app.composition`), matching `[llm].timeout_seconds`'s own shipped
+    value rather than inventing a second number with no basis — this call is
+    the same shape (one `chat.completions.create`), just over a batch prompt
+    instead of a turn's tools/doctrine. Every other model call in the
+    codebase is explicitly bounded (`nora.engagement.stages.invoke`'s
+    `asyncio.wait_for`, `nora.infra.vision.client.derive_vision_timeout`);
+    this was the one exception, and quietly so — a hung call here leaves
+    `dream_loop` marking the scope `running` and skipping it tick after tick
+    (`nora_dream_skipped_total{reason="in_flight"}`) with no exception ever
+    raised, so the exponential backoff non-negotiable 4 exists for — which
+    only triggers on an exception — never engages. See
+    `_LanguageModelClient`'s own docstring for the full argument.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -933,6 +947,7 @@ class LanguageConfig(BaseModel):
     batch_limit: int = Field(default=400, ge=1)
     max_rendered_lexemes: int = Field(default=6, ge=1)
     model: str = "ollamacloud/deepseek-v4-flash"
+    timeout_seconds: float = Field(default=120.0, gt=0)
 
 
 class DoctrineConfig(BaseModel):

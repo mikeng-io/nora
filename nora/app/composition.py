@@ -17,6 +17,7 @@ await this function, construct `App`.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import Callable, Coroutine, Mapping, Sequence
@@ -120,16 +121,56 @@ class _LanguageModelClient:
     `LexemeObserver`'s own module docstring) — the model client is INJECTED,
     and this is the one place already holding both the process-wide client
     and `[language].model`.
+
+    Two things every OTHER raw `chat.completions.create` in this repo already
+    has, that this one was missing until the final whole-branch review:
+
+    * `response_format={"type": "json_object"}` — the ask `observer.py`'s
+      prompt already makes ("Respond with ONLY a JSON object... no prose, no
+      markdown fence") was carried entirely by the PROMPT, with nothing on
+      the wire forcing the provider to honour it. The commit that introduced
+      this call was titled "schema-forced lexeme extraction"; without this
+      parameter that title was aspirational, not actual. This does not make
+      `_parse_observations`/`_extract`'s malformed-response handling
+      unnecessary — a provider can still return well-formed JSON of the
+      WRONG shape, or ignore the parameter outright — but it is the one
+      concrete lever this call has to ask the PROVIDER to hold up its side,
+      the same way every other structured call in this codebase does.
+    * **A bounded timeout.** Every other model call in the codebase is
+      explicitly bounded and says why (`nora.engagement.stages.invoke`'s
+      `asyncio.wait_for` around the whole agent loop;
+      `nora.infra.vision.client.derive_vision_timeout`, "so a slow or hung
+      MiMo becomes a bounded failure"). This one ran on the bare
+      `AsyncOpenAI` default (600s x retries) until now — and unlike a tag
+      turn's timeout, a hung Dreamer call is QUIET: `dream_loop` marks the
+      scope `running` and skips it every subsequent tick
+      (`nora_dream_skipped_total{reason="in_flight"}`) without ever raising,
+      so the exponential backoff non-negotiable 4 exists for — which only
+      triggers on an EXCEPTION — never engages. A hung provider would be
+      skipped forever, not backed off. `asyncio.TimeoutError` propagating
+      from here reaches `LexemeObserver.observe` uncaught, then
+      `LanguageConsolidator.consolidate` uncaught, then `_dream_once`'s
+      per-scope call site inside `dream_loop`'s own try/except — which is
+      exactly the already-proven "raising consolidator" path
+      (`tests/unit/test_runtime.py::
+      test_the_watermark_advances_only_after_observations_are_committed`'s
+      crash-shaped half): counted, backed off, and the watermark left
+      untouched, never advanced over a batch a hung call never actually read.
     """
 
-    def __init__(self, *, client: AsyncOpenAI, model: str) -> None:
+    def __init__(self, *, client: AsyncOpenAI, model: str, timeout_seconds: float) -> None:
         self._client = client
         self._model = model
+        self._timeout_seconds = timeout_seconds
 
     async def complete(self, *, prompt: str) -> str:
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[{"role": "user", "content": prompt}],
+        response = await asyncio.wait_for(
+            self._client.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            ),
+            timeout=self._timeout_seconds,
         )
         return (response.choices[0].message.content or "").strip()
 
@@ -539,7 +580,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         language_consolidators = (
             LanguageConsolidator(
                 observer=LexemeObserver(
-                    _LanguageModelClient(client=client, model=cfg.language.model),
+                    _LanguageModelClient(
+                        client=client, model=cfg.language.model,
+                        timeout_seconds=cfg.language.timeout_seconds,
+                    ),
                     metrics=metrics,
                 ),
                 store=language_store,

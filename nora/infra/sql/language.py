@@ -53,13 +53,28 @@ them from behaviour:
   `last_seen_at` set to "now" — rendering everything `live` with a recency
   that never happened, unable to fade for 21 days — and the identical failure
   on any catch-up after downtime.
-* `context` is stamped from `LexemeCandidate.surface_form`
-  ("what the model actually saw on the wire", `LexemeCandidate`'s own
-  docstring), not from the source message's own `body`. It is the one
-  verbatim-ish fragment a candidate carries — `canonical_form`/`sense`/
-  `part_of_speech` are all model-authored by contrast — and the NOT NULL
-  column has nothing else to draw on without a second join this store has no
-  present reason to make.
+* `context` is stamped from the source message's own `body` — the actual
+  utterance — never from `LexemeCandidate.surface_form` ("what the model
+  actually saw on the wire", `LexemeCandidate`'s own docstring). This was
+  gotten backwards once: an earlier revision of this file stamped
+  `surface_form` here on the theory that a second join would be needed to
+  reach `body` and this store had "no present reason to make" one. That
+  reasoning was wrong on its own terms — this SELECT already joins
+  `messages` for `observed_at`/`conversation_id` (the bullet above), so
+  `body` is one more column off the SAME row, not a second join — and it
+  broke the one property the rendered block's safety argument depends on:
+  `nora/language/render.py`'s own docstring calls the quote under the gloss
+  "the only thing that makes a wrong gloss visible to a reader", which is
+  only true if that quote is independent of the model. `surface_form` is
+  model-authored (the model chooses what substring of the message it echoes
+  back as the "form it saw"); stamping it as `context` renders a line whose
+  gloss AND "quote" both trace back to the same model call, restating the
+  headword under itself and falsifying nothing. `sa.func.coalesce(...,  "")`
+  guards the NOT NULL `context` column against a media-only row with no
+  `body` — the prompt (`nora.language.observer._build_prompt`) never shows
+  the model a bodyless row as text to quote, so a candidate naming one is not
+  the expected path, but the column's constraint must survive a candidate
+  that names one anyway rather than failing the whole batch's INSERT.
 
 `score`/`state_for` live in `nora.domain.language_scoring`, not
 `nora.language.scoring` where Task 5 first put them (`0a940c8`) — `nora.infra`
@@ -173,7 +188,8 @@ class SqlLanguageStore:
                 sa.literal(obs.canonical_form, type_=sa.Text).label("canonical_form"),
                 sa.literal(obs.sense, type_=sa.Text).label("sense"),
                 sa.literal(obs.part_of_speech, type_=sa.Text).label("part_of_speech"),
-                sa.literal(obs.surface_form, type_=sa.Text).label("context"),
+                sa.func.coalesce(MESSAGES.c.body, sa.literal("", type_=sa.Text))
+                .label("context"),
                 MESSAGES.c.ts.label("observed_at"),
                 sa.literal(obs.confidence, type_=sa.Float).label("extractor_confidence"),
             ).where(MESSAGES.c.id == obs.message_id)
@@ -244,7 +260,7 @@ class SqlLanguageStore:
                 LO.c.sense,
                 LO.c.message_id,
                 LO.c.person_id,
-                LO.c.surface_form,
+                LO.c.context,
                 LO.c.observed_at,
                 sa.func.row_number()
                 .over(
@@ -272,7 +288,7 @@ class SqlLanguageStore:
         example_obj = sa.func.jsonb_build_object(
             "message_id", ranked.c.message_id,
             "person_id", ranked.c.person_id,
-            "text", ranked.c.surface_form,
+            "text", ranked.c.context,
         )
         examples_cte = (
             sa.select(

@@ -67,14 +67,22 @@ async def test_a_batch_of_ordinary_cantonese_yields_no_candidates():
     returns something for every batch would fill the lexicon with 係/唔係
     and the block would be worthless."""
     observer = LexemeObserver(FakeModel(responses=['{"observations": []}']))
-    assert await observer.observe(batch=rows("今日食咩好", "隨便啦")) == []
+    result = await observer.observe(batch=rows("今日食咩好", "隨便啦"))
+    assert result.candidates == ()
+    assert result.parsed is True, "a well-formed, genuinely empty response DID parse"
 
 
 async def test_malformed_json_yields_nothing_rather_than_raising():
     """R-5: silence beats a wrong answer. The loop must survive a model that
-    returns prose, and the cycle then appends nothing rather than crashing."""
+    returns prose, and the cycle then appends nothing rather than crashing —
+    `observe` itself never raises. But "nothing appended" is not the whole
+    story: `parsed=False` is the signal that distinguishes THIS case from a
+    model that genuinely found nothing (see the sibling test above), which is
+    what lets `LanguageConsolidator` refuse to treat the batch as read."""
     observer = LexemeObserver(FakeModel(responses=["sorry, I can't help with that"]))
-    assert await observer.observe(batch=rows("好撚kam")) == []
+    result = await observer.observe(batch=rows("好撚kam"))
+    assert result.candidates == ()
+    assert result.parsed is False
 
 
 async def test_a_candidate_carries_its_own_message_and_speaker():
@@ -84,7 +92,9 @@ async def test_a_candidate_carries_its_own_message_and_speaker():
         {"surface_form": "kam", "canonical_form": "kam", "sense": "尷",
          "part_of_speech": "adjective", "message_id": 7, "confidence": 0.9},
     ]})]))
-    [c] = await observer.observe(batch=rows_with_id(7, "好撚kam", person_id="tyler"))
+    result = await observer.observe(batch=rows_with_id(7, "好撚kam", person_id="tyler"))
+    assert result.parsed is True
+    [c] = result.candidates
     assert (c.canonical_form, c.message_id, c.person_id) == ("kam", 7, "tyler")
 
 
@@ -96,7 +106,26 @@ async def test_a_candidate_naming_a_message_not_in_the_batch_is_dropped():
         {"surface_form": "kam", "canonical_form": "kam", "sense": "尷",
          "part_of_speech": "adjective", "message_id": 999, "confidence": 0.9},
     ]})]))
-    assert await observer.observe(batch=rows_with_id(7, "好撚kam")) == []
+    result = await observer.observe(batch=rows_with_id(7, "好撚kam"))
+    assert result.candidates == ()
+    assert result.parsed is True, "the response DID parse — the item was dropped, not the batch"
+
+
+async def test_a_candidate_with_an_implausibly_long_field_is_dropped():
+    """A crafted message can make the model emit an oversized `sense`/
+    `canonical_form` — the store-side half of the defence against that
+    (`nora.language.render`'s truncation is the render-side half): an
+    over-long STRING field is a malformed item, dropped exactly like a
+    missing key, so it never reaches `SqlLanguageStore.append_observations`
+    at all. `canonical_form` is capped at 100 chars; 101 is the least input
+    that must trip it."""
+    observer = LexemeObserver(FakeModel(responses=[json.dumps({"observations": [
+        {"surface_form": "kam", "canonical_form": "k" * 101, "sense": "尷",
+         "part_of_speech": "adjective", "message_id": 7, "confidence": 0.9},
+    ]})]))
+    result = await observer.observe(batch=rows_with_id(7, "好撚kam"))
+    assert result.candidates == ()
+    assert result.parsed is True, "the response parsed fine — one item was rejected, not the batch"
 
 
 async def test_an_empty_batch_makes_no_model_call():
@@ -107,7 +136,9 @@ async def test_an_empty_batch_makes_no_model_call():
     enforced — any call to `complete` raises `IndexError` (`list.pop` on
     empty), not just an assertion after the fact."""
     observer = LexemeObserver(FakeModel(responses=[]))
-    assert await observer.observe(batch=[]) == []
+    result = await observer.observe(batch=[])
+    assert result.candidates == ()
+    assert result.parsed is True, "nothing to fail to parse — an empty batch is not a parse failure"
 
 
 async def test_a_parse_failure_is_counted_distinctly_from_an_empty_extraction():

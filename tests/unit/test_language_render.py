@@ -103,6 +103,43 @@ def test_max_entries_one_renders_exactly_one_entry():
     assert "  c  " not in block
 
 
+def test_a_long_quote_is_truncated_with_an_ellipsis():
+    """Finding 3 (final whole-branch review): `max_entries` caps how many
+    LINES render, nothing capped how long ONE line's own fields could be —
+    and `examples[].text` is now a real message body (Finding 1's fix), which
+    is `sa.Text` with no length limit. A message body far past the 160-char
+    quote cap must be cut down, with a visible marker that it was cut, not
+    silently accepted whole."""
+    long_body = "x" * 500
+    block = render_room_language(language_with(
+        lexeme("kam", sense="尷", examples=[example(long_body)]),
+    ), max_entries=10)
+    assert long_body not in block
+    assert ("x" * 159 + "…") in block, "cut to 160 chars total, ellipsis included"
+
+
+def test_canonical_form_and_sense_are_also_truncated():
+    """The same unbounded-field argument applies to `canonical_form`
+    (40 chars) and `sense` (80 chars) — both are model-authored `sa.Text`
+    columns with no length limit of their own."""
+    block = render_room_language(language_with(
+        lexeme("c" * 200, sense="s" * 200, examples=[example("short quote")]),
+    ), max_entries=10)
+    assert "c" * 200 not in block
+    assert "s" * 200 not in block
+    assert ("c" * 39 + "…") in block
+    assert ("s" * 79 + "…") in block
+
+
+def test_a_short_quote_renders_unchanged():
+    """The truncation must not add an ellipsis to text already under the
+    cap — a boundary check against an off-by-one in `_truncate`."""
+    block = render_room_language(language_with(
+        lexeme("kam", sense="尷", examples=[example("好撚kam")]),
+    ), max_entries=10)
+    assert "好撚kam」" in block, "short enough to render whole, no ellipsis"
+
+
 def test_entries_render_in_the_given_order_not_resorted():
     """Ruling 1 is load-bearing: `RoomLexeme` carries no score field so
     nothing downstream can re-rank, and what the model sees must be ranked by

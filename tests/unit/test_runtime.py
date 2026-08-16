@@ -25,6 +25,8 @@ from nora.app.runtime import (
     supervise_adapter,
 )
 from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.language.consolidator import LanguageConsolidator
+from nora.language.observer import LexemeObserver
 from nora.obs.metrics import Metrics
 from nora.tag import Debounce
 
@@ -462,6 +464,108 @@ async def test_the_watermark_advances_only_after_observations_are_committed():
         "genuinely non-empty going in"
     )
     assert metrics.get("nora_errors_total", stage="dream") >= 1
+
+
+class _FakeModel:
+    """The `LexemeObserver` model collaborator for the two tests below —
+    same shape `tests/unit/test_language_observer.py::FakeModel` uses."""
+
+    def __init__(self, responses: list[str]) -> None:
+        self._responses = list(responses)
+
+    async def complete(self, *, prompt: str) -> str:
+        return self._responses.pop(0)
+
+
+class _FakeConsolidatorStore:
+    """The write-side surface `LanguageConsolidator` needs
+    (`append_observations`/`rescore`) — separate from `_FakeLanguage` above,
+    which is `dream_loop`'s own CURSOR surface. Production wires both onto
+    the SAME `SqlLanguageStore` instance; this test keeps them apart on
+    purpose, exactly like `_FakeLanguage`/`RecordingConsolidator` already do,
+    so nothing here depends on the two being one object."""
+
+    def __init__(self) -> None:
+        self.rescore_calls: list[str] = []
+
+    async def append_observations(self, *, scope_id, observations) -> int:
+        return len(observations)
+
+    async def rescore(self, *, scope_id, now_ms) -> None:
+        self.rescore_calls.append(scope_id)
+
+
+async def test_an_unparseable_model_response_leaves_the_watermark_unmoved():
+    """Finding 2 (final whole-branch review), proven at the level that
+    actually matters: through a REAL `LanguageConsolidator` wrapping a REAL
+    `LexemeObserver` fed the exact prose a degraded model returns, run
+    through `dream_loop` itself — not a hand-rolled fake `RoomConsolidator`
+    standing in for the claim. Before the fix, `LexemeObserver.observe`
+    returned `[]` for prose exactly as it does for a genuine empty
+    extraction, `consolidate` returned `0` either way, and `_dream_once`'s
+    `if batch:` guard advanced the watermark over messages the model never
+    actually read — consuming them forever. Reverting
+    `LanguageConsolidator.consolidate`'s `if not result.parsed: raise
+    ExtractionUnparseableError(...)` guard must turn this red."""
+    record = _FakeRecord({"g1": [_row(1), _row(2)]})
+    language = _FakeLanguage(lag=1000)
+    store = _FakeConsolidatorStore()
+    metrics = Metrics()
+    consolidator = LanguageConsolidator(
+        observer=LexemeObserver(
+            _FakeModel(responses=["sorry, can't help with that"]), metrics=metrics,
+        ),
+        store=store,
+    )
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [consolidator], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert language.advance_calls == [], (
+        "an unparseable batch, fed a REAL non-empty batch, must leave the "
+        "watermark untouched"
+    )
+    assert store.rescore_calls == [], "an untrusted cycle must not rescore either"
+    assert metrics.get("nora_errors_total", stage="dream") >= 1
+    assert metrics.get("nora_language_parse_failures_total") >= 1
+
+
+async def test_a_batch_that_parses_to_zero_candidates_still_advances():
+    """The sibling proof: a WELL-FORMED, genuinely empty extraction
+    (`{"observations": []}`) is not the same case as the test above and must
+    not be treated like it — `_dream_once` must still advance the watermark,
+    or a room that genuinely has nothing new would never drain its
+    backlog."""
+    record = _FakeRecord({"g1": [_row(1), _row(2)]})
+    language = _FakeLanguage(lag=1000)
+    store = _FakeConsolidatorStore()
+    consolidator = LanguageConsolidator(
+        observer=LexemeObserver(_FakeModel(responses=['{"observations": []}'])),
+        store=store,
+    )
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [consolidator], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert language.advance_calls == [("g1", 2)], (
+        "a batch that genuinely parsed to nothing new must still advance"
+    )
+    assert store.rescore_calls == ["g1"]
 
 
 async def test_a_failing_extraction_does_not_starve_the_other_scopes():

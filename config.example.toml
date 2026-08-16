@@ -417,6 +417,12 @@ max_rendered_lexemes = 6
 # knob for an operator who wants a cheaper or differently-tuned model for a
 # bulk classification task than for a live conversational turn.
 model = "ollamacloud/deepseek-v4-flash"
+# Bounds _LanguageModelClient.complete (nora.app.composition) — matches
+# [llm].timeout_seconds's own value; every other model call in the codebase
+# is explicitly bounded and this was the one quiet exception (a hung call
+# here gets skipped tick after tick instead of ever raising, so the backoff
+# non-negotiable 4 exists for never engages without this).
+timeout_seconds = 120.0
 
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version
