@@ -49,10 +49,22 @@ class _FakeRoomConsolidator:
     UNIQUE constraint, `(message_id, canonical_form, sense)` — schema.py
     omits `scope_id` from it because `message_id` already pins the
     conversation, and this fake holds itself to the same key.
+
+    `fail` simulates the read side's backing store being unreachable — the
+    same role `FakeArtifactIngest.fail` plays for `ArtifactIngest.register`,
+    but the INVERSE contract: `ArtifactIngest.register` documents raising on
+    a backend failure, while `RoomLanguageReader.room_language` documents the
+    opposite — it must NEVER raise, degrading to an empty `RoomLanguage`
+    instead. `_read_lexemes` is split out so `room_language` has something
+    concrete to catch: with `fail=True` it raises, and `room_language`'s own
+    try/except is what turns that into the honest empty degradation a live
+    turn's `asyncio.gather` needs (one raised exception there cancels its
+    sibling reads and silences the whole turn).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, fail: bool = False) -> None:
         self.name = "fake"
+        self._fail = fail
         self._lexemes: dict[tuple[str, str, str], RoomLexeme] = {}
         self._natural_keys: set[tuple[int, str, str]] = set()
 
@@ -107,8 +119,16 @@ class _FakeRoomConsolidator:
             appended += 1
         return appended
 
+    def _read_lexemes(self, scope_id: str) -> list[RoomLexeme]:
+        if self._fail:
+            raise ConnectionError("room_lexeme unreachable")
+        return [lx for (sid, _, _), lx in self._lexemes.items() if sid == scope_id]
+
     async def room_language(self, *, scope_id: str, limit: int) -> RoomLanguage:
-        lexemes = [lx for (sid, _, _), lx in self._lexemes.items() if sid == scope_id]
+        try:
+            lexemes = self._read_lexemes(scope_id)
+        except ConnectionError:
+            return RoomLanguage(scope_id=scope_id)
         lexemes.sort(key=lambda lx: lx.occurrence_count, reverse=True)
         return RoomLanguage(scope_id=scope_id, lexemes=tuple(lexemes[:limit]))
 
@@ -174,3 +194,21 @@ async def test_scope_is_honoured(consolidator, store, batch_with_one_lexeme):
     g1_language = await store.room_language(scope_id="g1", limit=10)
     assert g1_language, "the batch DID contain a lexeme — g1 must not be empty too"
     assert g1_language.lexemes[0].canonical_form == "yyds"
+
+
+async def test_an_unavailable_backend_degrades_to_an_empty_room_language():
+    """`RoomLanguageReader.room_language`'s own docstring: "Never raises: an
+    unavailable store yields an EMPTY `RoomLanguage`." This is why the read
+    side is split from the write side at all — `room_language` runs inside a
+    turn's `asyncio.gather` alongside other reads, where one uncaught
+    exception cancels every sibling and silences Nora for the whole turn.
+
+    Meaningful only because `_FakeRoomConsolidator._read_lexemes` actually
+    raises when `fail=True` (mirroring `FakeArtifactIngest.fail`) — if
+    `room_language`'s own try/except were deleted and the exception allowed
+    to escape, this test goes red with a `ConnectionError` instead of green.
+    """
+    failing = _FakeRoomConsolidator(fail=True)
+    result = await failing.room_language(scope_id="g1", limit=10)
+    assert result == RoomLanguage(scope_id="g1")
+    assert not result, "__bool__ is what a caller actually branches on"
