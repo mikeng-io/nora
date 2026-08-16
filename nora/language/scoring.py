@@ -20,7 +20,7 @@ FADING_AFTER_DAYS = 21.0
 STALE_AFTER_DAYS = 120.0
 
 W_FREQUENCY = 0.4
-W_SPREAD = 1.0
+W_SPREAD = 2.0
 W_RECENCY = 0.6
 
 
@@ -29,7 +29,7 @@ def score(*, occurrences: int, distinct_speakers: int,
     """Frequency is logged so a single loud thread cannot dominate; spread is
     linear-ish and weighted hardest; recency is an exponential decay."""
     frequency = math.log1p(max(occurrences, 0))
-    spread = math.log1p(max(distinct_speakers, 0)) * 2.0
+    spread = math.log1p(max(distinct_speakers, 0))
     age_days = max(now_ms - last_seen_ms, 0) / DAY_MS
     recency = 0.5 ** (age_days / HALF_LIFE_DAYS)
     return W_FREQUENCY * frequency + W_SPREAD * spread + W_RECENCY * recency

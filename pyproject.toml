@@ -143,7 +143,7 @@ layers = [
 name = "only app and __main__ read config"
 type = "forbidden"
 source_modules = [
-    "nora.agent", "nora.obs", "nora.doctrine", "nora.platform",
+    "nora.agent", "nora.obs", "nora.doctrine", "nora.language", "nora.platform",
     "nora.domain", "nora.persons", "nora.tag",
     "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
     "nora.skills",
