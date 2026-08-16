@@ -6,25 +6,26 @@ thing standing between that and a fabricated «12x, 3 people» is the
 natural-key constraint. A fake that simply appended would make this suite
 decorative.
 
-Only `"fake"` runs the FULL `consolidate`+`room_language` contract today.
-`RoomConsolidatorSQL` — the real implementation over `b974afe`'s
-`language_observation`/`room_lexeme` tables — is Task 8's job; no concrete
-class satisfying `RoomConsolidator` exists anywhere in this repo yet. The
-`consolidator` fixture is parametrized already so Task 8 adds an `"sql"`
-branch to it rather than writing a second suite, the same precedent
-`tests/contract/test_artifact_ingest_contract.py` set for `ArtifactIngest`
-("shipped with zero implementations… paired with `FakeArtifactIngest` anyway,
-… so the shape is exercised by something rather than declared into a
-vacuum"). `_FakeRoomConsolidator` is deliberately NOT in `nora.testing` yet —
-CLAUDE.md's contract-suite rule binds a fake to a suite, not to a module, and
+Both `"fake"` and `"sql"` now run the FULL `consolidate`+`room_language`
+contract. `nora.language.consolidator.LanguageConsolidator` — the real
+implementation, pairing `LexemeObserver` (Task 6) with `SqlLanguageStore`
+over `b974afe`'s `language_observation`/`room_lexeme` tables (Task 7) — is
+Task 8's own class; the `consolidator`/`store` fixtures below join a real
+`LanguageConsolidator` to that same `SqlLanguageStore` the same way
+`tests/contract/test_artifact_ingest_contract.py` joined `FakeArtifactIngest`
+to `DropArtifactIngest` ("shipped with zero implementations… so the shape is
+exercised by something rather than declared into a vacuum" — the same
+argument in reverse now that the second implementation exists).
+`_FakeRoomConsolidator` stays out of `nora.testing` regardless: CLAUDE.md's
+contract-suite rule binds a fake to a suite, not to a module, and
 `nora/testing/fakes.py`'s own docstring enumerates every fake there as bound
-to a *production* implementation by name; moving this one there before Task 8
-exists would document a pairing that isn't real yet.
+to a *production* implementation it stands in for at OTHER call sites — this
+fake has none; its only job is exercising this one contract.
 
 Task 7 (`nora.infra.sql.language.SqlLanguageStore`) DOES exist now, and it
 satisfies the `RoomLanguageReader` HALF of this contract on its own —
 `SqlLanguageStore` carries no `consolidate`, so it cannot join the
-`consolidator`/`store` fixtures above, which is exactly why
+`consolidator`/`store` fixtures above on its own, which is exactly why
 `RoomConsolidator`/`RoomLanguageReader` are two Protocols rather than one (see
 `nora.domain.ports`' own docstring). What it CAN join today is
 `test_an_unavailable_backend_degrades_to_an_empty_room_language` below, which
@@ -32,22 +33,44 @@ is parametrized over `["fake", "sql"]` for exactly that reason: a contract
 only a fake satisfies is not a contract, and `RoomLanguageReader.room_language`
 NEVER raising is the guarantee `TranscriptInjection`'s `asyncio.gather` (a
 later task) depends on for every implementation, not just the fake one.
+
+Task 8 (`nora.language.consolidator.LanguageConsolidator`) supplies the
+missing write-side pairing: `LanguageConsolidator(observer, store)` wraps a
+`LexemeObserver` around exactly that same `SqlLanguageStore`, so the two now
+join together into one real `RoomConsolidator`/`RoomLanguageReader` pair.
+`_backing` below is the single fixture both `consolidator` and `store` derive
+from — mirroring `unavailable_reader`'s own shape (conditional yield, real
+`pg_url`-backed engine disposed in a `finally`) rather than inventing a
+second one — so `consolidator.consolidate` and `store.room_language` read and
+write the SAME backing state for the `"sql"` branch exactly as they already
+do for `"fake"` via `_shared_fake`. `_FakeModelClient` stands in for the one
+model call `LexemeObserver` makes, applying the identical `"<form>:<sense>"`
+rule `_FakeRoomConsolidator._extract` already applies, so a batch produces the
+same observed lexeme regardless of which `RoomConsolidator` ran it.
 """
 
 from __future__ import annotations
+
+import json
+import time
 
 import pytest
 
 from nora.domain.models import (
     DeliveryStatus,
     LexemeExample,
+    NormalizedMessage,
     RoomLanguage,
     RoomLexeme,
     TranscriptRow,
 )
 from nora.domain.ports import RoomConsolidator, RoomLanguageReader
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.language import SqlLanguageStore
+from nora.infra.sql.migrations_runner import run_migrations
+from nora.language.consolidator import LanguageConsolidator
+from nora.language.observer import LexemeObserver
 
 
 class _FakeRoomConsolidator:
@@ -148,6 +171,10 @@ class _FakeRoomConsolidator:
         return RoomLanguage(scope_id=scope_id, lexemes=tuple(lexemes[:limit]))
 
 
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
 def _row(id: int, body: str, ts: int = 1, person_id: str | None = "miles") -> TranscriptRow:
     return TranscriptRow(
         id=id, sender_id="+852111", sender_name="Miles", ts=ts, body=body,
@@ -156,40 +183,140 @@ def _row(id: int, body: str, ts: int = 1, person_id: str | None = "miles") -> Tr
     )
 
 
+class _FakeModelClient:
+    """The `LexemeObserver` collaborator for the `"sql"` branch below —
+    same structural shape `nora.language.observer._ModelClient` documents
+    (one `complete(prompt=...) -> str` call). It re-derives, from the
+    rendered prompt text alone, the identical `"<form>:<sense>"` rule
+    `_FakeRoomConsolidator._extract` applies directly to a row's body — so a
+    batch yields the SAME observed lexeme whether it is run through the fake
+    consolidator or through a real `LanguageConsolidator` wrapping this. Each
+    prompt line is `nora.language.observer._build_prompt`'s own format,
+    `"[<id>] <speaker>: <body>"`; the speakers this suite uses (`"Miles"`)
+    never contain a colon, so splitting on the first `": "` recovers the body
+    exactly."""
+
+    async def complete(self, *, prompt: str) -> str:
+        observations = []
+        for line in prompt.splitlines():
+            if not line.startswith("["):
+                continue
+            _, _, rest = line.partition("] ")
+            _speaker, sep, body = rest.partition(": ")
+            if not sep or ":" not in body:
+                continue
+            message_id = int(line[1:line.index("]")])
+            form, _, sense = body.partition(":")
+            observations.append({
+                "surface_form": form.strip(),
+                "canonical_form": form.strip(),
+                "sense": sense.strip(),
+                "part_of_speech": "noun",
+                "message_id": message_id,
+                "confidence": 0.9,
+            })
+        return json.dumps({"observations": observations})
+
+
 @pytest.fixture
 def _shared_fake() -> _FakeRoomConsolidator:
     return _FakeRoomConsolidator()
 
 
-@pytest.fixture(params=["fake"])
-def consolidator(request, _shared_fake: _FakeRoomConsolidator):
-    return _shared_fake
+@pytest.fixture(params=["fake", "sql"])
+async def _backing(request, _shared_fake: _FakeRoomConsolidator):
+    """The single object BOTH `consolidator` and `store` derive from, so a
+    real implementation's write and read sides share one backing table —
+    exactly `unavailable_reader`'s own shape (Task 7): conditional yield, a
+    real `pg_url`-backed engine disposed in a `finally` for `"sql"`, nothing
+    at all extra for `"fake"`."""
+    if request.param == "fake":
+        yield _shared_fake
+        return
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        yield SqlLanguageStore(engine)
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture
-def store(_shared_fake: _FakeRoomConsolidator) -> _FakeRoomConsolidator:
+def consolidator(_backing):
+    """`_backing` itself for `"fake"` (it already implements `consolidate`);
+    a real `LanguageConsolidator` wrapping it for `"sql"`, since
+    `SqlLanguageStore` alone carries no `consolidate` — the write half needs
+    Task 8's own class to pair it with a `LexemeObserver`."""
+    if isinstance(_backing, SqlLanguageStore):
+        return LanguageConsolidator(
+            observer=LexemeObserver(_FakeModelClient()), store=_backing)
+    return _backing
+
+
+@pytest.fixture
+def store(_backing):
     """The `RoomLanguageReader` half of the SAME backing state `consolidator`
     writes to — a real implementation's write and read sides share a table,
     and a suite that gave them separate state would not be testing what
-    `test_scope_is_honoured` claims to test."""
-    return _shared_fake
+    `test_scope_is_honoured` claims to test. `SqlLanguageStore` already
+    satisfies `RoomLanguageReader` on its own, so `_backing` needs no
+    wrapping here even for `"sql"`."""
+    return _backing
 
 
 @pytest.fixture
-def batch_with_one_lexeme() -> list[TranscriptRow]:
-    return [_row(1, "yyds:so good it doesn't need improving")]
+async def batch_with_one_lexeme(request, _backing) -> list[TranscriptRow]:
+    """One row whose body is `"<form>:<sense>"` — the fake's own extraction
+    rule, reproduced verbatim by `_FakeModelClient` for the `"sql"` branch.
+
+    For `"sql"`, `message_id` MUST be a real `messages.id`:
+    `SqlLanguageStore.append_observations` joins every candidate back to that
+    table to read `conversation_id`/`observed_at` off it (its own module
+    docstring), so an invented id resolves to zero rows and silently drops
+    every observation — the same seeding `tests/infra/test_language_store.py`
+    already requires for exactly this reason. A real `SqlRecordStore` sharing
+    `_backing`'s own `pg_url` seeds one such row.
+
+    The seeded `timestamp` is `_now_ms()`, not `_row`'s own `ts=1` default —
+    `observed_at` rides that real column into `rescore`'s `last_seen_at`
+    (`nora.infra.sql.language`'s own module docstring), and
+    `nora.domain.language_scoring.state_for` renders nothing older than
+    `STALE_AFTER_DAYS`. Seeding near the 1970 epoch would make
+    `test_scope_is_honoured` fail for a reason that has nothing to do with
+    scope isolation — every lexeme would legitimately be `stale` and
+    `room_language` would correctly render it as absent.
+    """
+    if not isinstance(_backing, SqlLanguageStore):
+        return [_row(1, "yyds:so good it doesn't need improving")]
+    pg_url = request.getfixturevalue("pg_url")
+    record = SqlRecordStore(create_sql_engine(pg_url))
+    try:
+        message_id = await record.append(message=NormalizedMessage(
+            platform="signal", conversation_id="g1", conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=_now_ms(),
+            body="yyds:so good it doesn't need improving", raw={},
+        ))
+    finally:
+        await record.aclose()
+    return [_row(message_id, "yyds:so good it doesn't need improving")]
 
 
 def test_both_implementations_satisfy_the_ports():
     """`RoomConsolidator`/`RoomLanguageReader` are `@runtime_checkable`, so
     this `isinstance` check verifies method NAMES only — not signatures, not
     keyword-only-ness. Static conformance is mypy's job; this is the only
-    mechanical check that the fake has every port method at all."""
+    mechanical check that the fake — and the real `LanguageConsolidator` —
+    have every port method at all."""
     fake = _FakeRoomConsolidator()
     assert isinstance(fake, RoomConsolidator)
     assert isinstance(fake, RoomLanguageReader)
-    assert isinstance(SqlLanguageStore(create_sql_engine("postgresql+asyncpg://x/x")),
-                      RoomLanguageReader)
+    store = SqlLanguageStore(create_sql_engine("postgresql+asyncpg://x/x"))
+    assert isinstance(store, RoomLanguageReader)
+    assert isinstance(
+        LanguageConsolidator(observer=LexemeObserver(_FakeModelClient()), store=store),
+        RoomConsolidator,
+    )
 
 
 async def test_an_empty_batch_appends_nothing(consolidator):
