@@ -8,6 +8,22 @@ lexicon unreproducible from its own evidence.
 Speaker SPREAD is weighted above raw frequency deliberately. One person saying a
 word forty times is a personal tic; four people saying it eight times each is the
 room's vocabulary, and the second is the thing worth telling her about.
+
+**Lives in `nora.domain`, not `nora.language` where Task 5 first wrote it.**
+Task 7's `nora.infra.sql.language.SqlLanguageStore.rescore` is the thing that
+actually APPLIES this arithmetic — it is the one place the aggregated
+`occurrence_count`/`distinct_speakers`/`last_seen_at` a rescore computes meets
+the decision of what to store — and `nora.infra` sits BELOW `nora.language` in
+the layers contract (`pyproject.toml`'s `layered architecture` contract; verified
+empirically with `uv run lint-imports` while wiring this module in, which
+reports `nora.infra is not allowed to import nora.language`). A lower layer may
+never import a higher one, which is the exact reason `LexemeCandidate` and
+`RoomLexeme`/`RoomLanguage`/`LexemeExample` already live here rather than in
+`nora.language` or `nora.infra` (see `nora.domain.models`'s own docstring on
+`LexemeCandidate`) — this module is the same relocation for the same reason,
+one task later. `nora/language/scoring.py` now re-exports these two names for
+any caller that still reaches them through their original import path; the
+module docstring there explains the split.
 """
 
 from __future__ import annotations
@@ -32,7 +48,7 @@ def score(*, occurrences: int, distinct_speakers: int,
     spread = math.log1p(max(distinct_speakers, 0))
     age_days = max(now_ms - last_seen_ms, 0) / DAY_MS
     recency = 0.5 ** (age_days / HALF_LIFE_DAYS)
-    return W_FREQUENCY * frequency + W_SPREAD * spread + W_RECENCY * recency
+    return float(W_FREQUENCY * frequency + W_SPREAD * spread + W_RECENCY * recency)
 
 
 def state_for(*, score: float, last_seen_ms: int, now_ms: int) -> str:

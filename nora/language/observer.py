@@ -1,9 +1,9 @@
 """The one LLM call in the Dreamer (Task 6). Everything downstream —
-`nora.language.scoring`'s arithmetic, `nora.infra.sql.language`'s rescore —
-never touches a model; this is the single place where one decides what a
-candidate word MEANS. The split is `nora.language.scoring`'s own argument
-run the other direction: an LLM glosses, arithmetic decides adoption, and
-folding them into one call would hand a policy decision to a stochastic
+`nora.domain.language_scoring`'s arithmetic, `nora.infra.sql.language`'s
+rescore — never touches a model; this is the single place where one decides
+what a candidate word MEANS. The split is `nora.domain.language_scoring`'s own
+argument run the other direction: an LLM glosses, arithmetic decides adoption,
+and folding them into one call would hand a policy decision to a stochastic
 process and make the lexicon unreproducible from its own evidence.
 
 **Boundaries this module is held to, and why the obvious approach is

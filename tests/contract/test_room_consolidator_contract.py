@@ -6,9 +6,10 @@ thing standing between that and a fabricated «12x, 3 people» is the
 natural-key constraint. A fake that simply appended would make this suite
 decorative.
 
-Only `"fake"` runs today. `RoomConsolidatorSQL` — the real implementation over
-`b974afe`'s `language_observation`/`room_lexeme` tables — is Task 8's job; no
-concrete class satisfies `RoomConsolidator` anywhere in this repo yet. The
+Only `"fake"` runs the FULL `consolidate`+`room_language` contract today.
+`RoomConsolidatorSQL` — the real implementation over `b974afe`'s
+`language_observation`/`room_lexeme` tables — is Task 8's job; no concrete
+class satisfying `RoomConsolidator` exists anywhere in this repo yet. The
 `consolidator` fixture is parametrized already so Task 8 adds an `"sql"`
 branch to it rather than writing a second suite, the same precedent
 `tests/contract/test_artifact_ingest_contract.py` set for `ArtifactIngest`
@@ -19,6 +20,18 @@ CLAUDE.md's contract-suite rule binds a fake to a suite, not to a module, and
 `nora/testing/fakes.py`'s own docstring enumerates every fake there as bound
 to a *production* implementation by name; moving this one there before Task 8
 exists would document a pairing that isn't real yet.
+
+Task 7 (`nora.infra.sql.language.SqlLanguageStore`) DOES exist now, and it
+satisfies the `RoomLanguageReader` HALF of this contract on its own —
+`SqlLanguageStore` carries no `consolidate`, so it cannot join the
+`consolidator`/`store` fixtures above, which is exactly why
+`RoomConsolidator`/`RoomLanguageReader` are two Protocols rather than one (see
+`nora.domain.ports`' own docstring). What it CAN join today is
+`test_an_unavailable_backend_degrades_to_an_empty_room_language` below, which
+is parametrized over `["fake", "sql"]` for exactly that reason: a contract
+only a fake satisfies is not a contract, and `RoomLanguageReader.room_language`
+NEVER raising is the guarantee `TranscriptInjection`'s `asyncio.gather` (a
+later task) depends on for every implementation, not just the fake one.
 """
 
 from __future__ import annotations
@@ -33,6 +46,8 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.ports import RoomConsolidator, RoomLanguageReader
+from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.language import SqlLanguageStore
 
 
 class _FakeRoomConsolidator:
@@ -173,6 +188,8 @@ def test_both_implementations_satisfy_the_ports():
     fake = _FakeRoomConsolidator()
     assert isinstance(fake, RoomConsolidator)
     assert isinstance(fake, RoomLanguageReader)
+    assert isinstance(SqlLanguageStore(create_sql_engine("postgresql+asyncpg://x/x")),
+                      RoomLanguageReader)
 
 
 async def test_an_empty_batch_appends_nothing(consolidator):
@@ -196,19 +213,52 @@ async def test_scope_is_honoured(consolidator, store, batch_with_one_lexeme):
     assert g1_language.lexemes[0].canonical_form == "yyds"
 
 
-async def test_an_unavailable_backend_degrades_to_an_empty_room_language():
+@pytest.fixture(params=["fake", "sql"])
+async def unavailable_reader(request):
+    """A `RoomLanguageReader` guaranteed to fail on `room_language`, one per
+    implementation.
+
+    The fake fails by construction (`fail=True` — see
+    `_FakeRoomConsolidator._read_lexemes`), the same lever
+    `FakeArtifactIngest.fail` pulls. `SqlLanguageStore` gets a REAL engine
+    pointed at a host that cannot resolve — `.invalid` is reserved by RFC 2606
+    to never resolve, so this fails fast and deterministically rather than
+    racing a connect timeout against a live database that might actually be
+    reachable. A closed/disposed engine was considered and rejected:
+    `SqlRecordStore.aclose`'s own contract (`tests/infra/test_audit_store.py::
+    test_aclose_releases_the_connection_pool`) is that `dispose()` does NOT
+    poison the engine — a query afterward just opens a fresh connection and
+    would succeed against a real database, which would make this degradation
+    path untestable that way.
+    """
+    if request.param == "fake":
+        yield _FakeRoomConsolidator(fail=True)
+        return
+    engine = create_sql_engine(
+        "postgresql+asyncpg://nobody:nobody@dreamer-language-unreachable.invalid:5432/nope"
+    )
+    try:
+        yield SqlLanguageStore(engine)
+    finally:
+        await engine.dispose()
+
+
+async def test_an_unavailable_backend_degrades_to_an_empty_room_language(unavailable_reader):
     """`RoomLanguageReader.room_language`'s own docstring: "Never raises: an
     unavailable store yields an EMPTY `RoomLanguage`." This is why the read
     side is split from the write side at all — `room_language` runs inside a
     turn's `asyncio.gather` alongside other reads, where one uncaught
     exception cancels every sibling and silences Nora for the whole turn.
 
-    Meaningful only because `_FakeRoomConsolidator._read_lexemes` actually
-    raises when `fail=True` (mirroring `FakeArtifactIngest.fail`) — if
-    `room_language`'s own try/except were deleted and the exception allowed
-    to escape, this test goes red with a `ConnectionError` instead of green.
+    Parametrized over BOTH implementations (`unavailable_reader` above) — a
+    contract only the fake satisfies is not a contract. Meaningful for the
+    fake only because `_FakeRoomConsolidator._read_lexemes` actually raises
+    when `fail=True`; meaningful for `SqlLanguageStore` only because its own
+    `except Exception` is genuinely broad rather than narrowed to
+    `ConnectionError` — either one deleted turns this red instead of green,
+    the fake with a `ConnectionError` escaping, the SQL store with whatever
+    driver-level exception an unresolvable host actually raises.
     """
-    failing = _FakeRoomConsolidator(fail=True)
-    result = await failing.room_language(scope_id="g1", limit=10)
+    result = await unavailable_reader.room_language(scope_id="g1", limit=10)
     assert result == RoomLanguage(scope_id="g1")
     assert not result, "__bool__ is what a caller actually branches on"

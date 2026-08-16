@@ -1,8 +1,16 @@
-"""Tests for deterministic lexeme scoring."""
+"""Tests for deterministic lexeme scoring.
+
+`nora.language.scoring` (Task 5) moved to `nora.domain.language_scoring` in
+Task 7 — `nora.infra.sql.language.SqlLanguageStore.rescore` is the one place
+that actually applies this arithmetic, and `nora.infra` cannot import
+`nora.language` (the layers contract). This import must point at the module
+`score()`'s code actually reads its globals from, not a re-export: this test
+patches module-level constants with `mock.patch.object(scoring, ...)`, which
+only affects computation for the DEFINING module."""
 
 from unittest import mock
 
-from nora.language import scoring
+from nora.domain import language_scoring as scoring
 
 NOW = 0
 DAY_MS = 86_400_000
