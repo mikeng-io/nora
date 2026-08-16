@@ -562,6 +562,18 @@ LANGUAGE_OBSERVATION = sa.Table(
     sa.UniqueConstraint("message_id", "canonical_form", "sense"),
 )
 
+# `rescore` (`nora.infra.sql.language.SqlLanguageStore`) reads this table with
+# `WHERE scope_id = :s` on every dream-cycle tick, and the table is append-only
+# and outside `store.prune_enabled`'s reach — it only ever grows. Without this
+# index that predicate is a sequential scan of every scope's evidence, every
+# tick, forever; a PLAIN index (not `CONCURRENTLY`) is correct here because the
+# table is new and empty in every deployment this migration reaches, unlike
+# `idx_messages_dream_lag` above, which was added against an already-live,
+# already-growing `messages` table.
+IDX_LANGUAGE_OBSERVATION_SCOPE = sa.Index(
+    "idx_language_observation_scope", LANGUAGE_OBSERVATION.c.scope_id,
+)
+
 # The consolidated lexicon. `sense` is IN the primary key: a word acquiring a
 # second meaning in one room is ordinary, and keying on `(scope_id,
 # canonical_form)` alone would either overwrite the first sense or merge counts

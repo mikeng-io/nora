@@ -21,9 +21,9 @@ never import a higher one, which is the exact reason `LexemeCandidate` and
 `RoomLexeme`/`RoomLanguage`/`LexemeExample` already live here rather than in
 `nora.language` or `nora.infra` (see `nora.domain.models`'s own docstring on
 `LexemeCandidate`) — this module is the same relocation for the same reason,
-one task later. `nora/language/scoring.py` now re-exports these two names for
-any caller that still reaches them through their original import path; the
-module docstring there explains the split.
+one task later. `nora/language/scoring.py`, where Task 5 first wrote this, is
+deleted outright rather than kept as a re-export shim: nothing in the repo
+ever imported it.
 """
 
 from __future__ import annotations
