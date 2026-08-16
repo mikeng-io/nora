@@ -15,12 +15,16 @@ it is the fixed sequence a `RoomConsolidator` caller can rely on, and adding
 any decision of its own (re-ranking, filtering, retrying) would duplicate a
 policy one of its two collaborators already owns.
 
-`rescore` running even when nothing was appended is `SqlLanguageStore.rescore`'s
-own documented shape (decay is time-driven — a scope with no new evidence must
-still be able to let an old word fade), not a decision made here; this class
-just calls it unconditionally after a non-empty batch, exactly as an empty
-batch's early return means neither collaborator is touched for zero messages
-(no model call, no store round trip is worth making over nothing).
+`rescore` runs UNCONDITIONALLY — even for a genuinely empty batch. Decay is
+time-driven: `dream_loop`'s 24h firing condition exists specifically to fade a
+DORMANT room's lexicon, and it reaches `consolidate` with `lag == 0`, i.e. an
+empty batch. Skipping `rescore` there (an early `return 0` before either
+collaborator ran) would make that whole path a no-op and leave a stale lexicon
+rendering as `live` forever, describing a slang era that ended months ago —
+exactly the failure `SqlLanguageStore.rescore`'s own module docstring argues
+against. Only the OBSERVER call and the APPEND are skipped for an empty batch
+(no model call, no store round trip is worth making over zero messages) — the
+rescore is not.
 """
 
 from __future__ import annotations
@@ -54,14 +58,15 @@ class LanguageConsolidator:
     async def consolidate(
         self, *, scope_id: str, batch: Sequence[TranscriptRow]
     ) -> int:
-        if not batch:
-            return 0
-        candidates = await self._observer.observe(batch=batch)
-        appended = await self._store.append_observations(
-            scope_id=scope_id, observations=candidates
-        )
-        # Rescore even when nothing was appended: decay is time-driven, so a
-        # quiet scope must still be able to let a word fade. `dream_loop`'s
-        # 24h firing depends on this being unconditional.
+        appended = 0
+        if batch:
+            candidates = await self._observer.observe(batch=batch)
+            appended = await self._store.append_observations(
+                scope_id=scope_id, observations=candidates
+            )
+        # Rescore UNCONDITIONALLY. Decay is time-driven, and dream_loop's 24h
+        # firing exists to fade a dormant room's lexicon — it arrives here
+        # with an EMPTY batch, so an early return would make that whole path
+        # a no-op and leave a stale lexicon rendering as `live` forever.
         await self._store.rescore(scope_id=scope_id, now_ms=_now_ms())
         return appended

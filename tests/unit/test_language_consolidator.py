@@ -76,20 +76,24 @@ def _observation_response(message_id: int, canonical_form: str = "kam") -> str:
     ]})
 
 
-async def test_an_empty_batch_appends_nothing_and_makes_no_model_call():
-    """`_FakeModel` with an empty `responses` list makes the "no model call"
-    half mechanically enforced — any call to `complete` raises `IndexError`
-    (`list.pop` on empty), mirroring
+async def test_an_empty_batch_appends_nothing_makes_no_model_call_but_still_rescores():
+    """Pins the coordinator's ruling on this exact class: an empty batch must
+    skip the observer (`_FakeModel` with an empty `responses` list makes "no
+    model call" mechanically enforced — any call to `complete` raises
+    `IndexError` from `list.pop` on empty, mirroring
     `test_an_empty_batch_makes_no_model_call` in
-    `tests/unit/test_language_observer.py`. `rescore` must not run either:
-    an empty batch is not the "nothing appended" case `rescore`'s
-    unconditional call exists for — it is zero messages, not worth a store
-    round trip at all."""
+    `tests/unit/test_language_observer.py`) AND still call `rescore`
+    unconditionally. `dream_loop`'s 24h firing condition arrives here with an
+    EMPTY batch specifically to fade a dormant room's lexicon — an early
+    `return 0` that skipped `rescore` too would make that whole path a no-op
+    and strand a stale lexicon rendering as `live` forever. Reverting the
+    unconditional `rescore` call (restoring an `if not batch: return 0`
+    early-out) must turn this red."""
     store = _FakeStore()
     consolidator = LanguageConsolidator(
         observer=LexemeObserver(_FakeModel(responses=[])), store=store)
     assert await consolidator.consolidate(scope_id="g1", batch=[]) == 0
-    assert store.rescore_calls == []
+    assert store.rescore_calls == ["g1"]
 
 
 async def test_a_batch_yielding_a_candidate_appends_it_and_then_rescores():
