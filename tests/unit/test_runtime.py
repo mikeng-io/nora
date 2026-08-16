@@ -296,6 +296,14 @@ class _FakeLanguage:
         self._order = order
         self.watermarks: dict[str, int] = {}
         self.advance_calls: list[tuple[str, int]] = []
+        # `_dream_once` calls `watermark_for` FIRST, unconditionally, on
+        # EVERY tick a scope is considered — whether or not it goes on to
+        # fire. A count on this is an independent WITNESS that N ticks
+        # actually elapsed during a test's `asyncio.sleep` window, distinct
+        # from (and not derivable from) whatever the fire conditions
+        # themselves produced — see `test_the_daily_firing_...` for why a
+        # test needs this to avoid passing vacuously on a single tick.
+        self.watermark_for_calls = 0
         # Which scopes have had `advance_watermark` called at least once —
         # the real store's `updated_at` column, reduced to a boolean. Needed
         # for `watermark_age_seconds` below: the real bug this fake exists to
@@ -306,6 +314,7 @@ class _FakeLanguage:
         self._age_reset_scopes: set[str] = set()
 
     async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int:
+        self.watermark_for_calls += 1
         return self.watermarks.get(scope_id, 0)
 
     async def watermark_is_behind_the_record(self, *, scope_id: str, watermark: int) -> bool:
@@ -532,6 +541,19 @@ async def test_the_daily_firing_rescores_even_with_an_empty_batch():
         "the empty-batch fire must still refresh the watermark row, at the "
         "SAME last_message_id (0 here — nothing was ever consolidated) — "
         "this resets the age clock without moving the cursor forward"
+    )
+    # An INDEPENDENT witness that several ticks actually elapsed during the
+    # sleep above, not just one. `len(batches) == 1` alone passes VACUOUSLY
+    # on a heavily stalled machine where only a single tick fires in the
+    # window — green for the wrong reason, and the latch this test exists to
+    # catch could be back with nobody noticing. `watermark_for` is called
+    # FIRST and UNCONDITIONALLY by `_dream_once` on every tick a scope is
+    # considered, whether or not it goes on to fire — so its count is a real
+    # measure of ticks elapsed, independent of `batches`.
+    assert language.watermark_for_calls > 1, (
+        "fewer than two ticks were observed — lengthen the sleep above; "
+        "`len(batches) == 1` alone cannot tell a genuine single firing from "
+        "a stalled test that only ran once"
     )
 
 

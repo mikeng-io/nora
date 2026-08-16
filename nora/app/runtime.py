@@ -42,7 +42,6 @@ from typing import Any, Protocol
 from .. import tag as tag_module
 from ..domain.models import TranscriptRow
 from ..domain.ports import RoomConsolidator
-from ..infra.sql.language import SqlLanguageStore
 from ..obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.runtime")
@@ -227,6 +226,42 @@ class _SinceReadable(Protocol):
     ) -> list[TranscriptRow]: ...
 
 
+class _ConsolidationCursor(Protocol):
+    """The six `SqlLanguageStore` methods `dream_loop`/`_dream_once` actually
+    call — the cursor/measurement surface, never the append/rescore/read one.
+
+    `_SinceReadable`'s own docstring makes this argument for `RecordStore`;
+    it applies MORE strongly here, not less. The concrete `SqlLanguageStore`
+    also hands out `append_observations`, `rescore` and `room_language` — the
+    surface `LanguageConsolidator` owns, not this loop — and an accidental
+    call to any of them from here would bypass this whole module's central
+    invariant (watermark-last, in the same "cycle" as the consolidator's own
+    append) with nothing to catch it. There is no existing named port for
+    this surface: `RoomLanguageReader` covers only `room_language`, the ONE
+    method this Protocol deliberately excludes. Narrowing to exactly what is
+    called is what makes that exclusion a fact a type checker enforces,
+    rather than a habit a future edit could quietly break.
+    """
+
+    async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int: ...
+
+    async def watermark_is_behind_the_record(
+        self, *, scope_id: str, watermark: int
+    ) -> bool: ...
+
+    async def lag(self, *, scope_id: str, after_id: int) -> int: ...
+
+    async def seconds_since_last_message(self, *, scope_id: str) -> float: ...
+
+    async def watermark_age_seconds(
+        self, *, consolidator_name: str, scope_id: str
+    ) -> float: ...
+
+    async def advance_watermark(
+        self, *, consolidator_name: str, scope_id: str, last_message_id: int
+    ) -> None: ...
+
+
 # The capped-exponential SHAPE `supervise_adapter` uses above, reused rather
 # than re-derived — but not its literal numbers. `supervise_adapter` backs off
 # a single adapter reconnecting to a LOCAL websocket, where a fast retry is
@@ -266,7 +301,7 @@ def _backoff_elapsed(
 
 
 async def dream_loop(
-    record: _SinceReadable, language: SqlLanguageStore,
+    record: _SinceReadable, language: _ConsolidationCursor,
     consolidators: Sequence[RoomConsolidator], metrics: Metrics, *,
     scopes: Callable[[], Sequence[str]], tick_seconds: float,
     safety_lag: int, quiet_seconds: float, max_age_seconds: float,
@@ -382,7 +417,7 @@ async def dream_loop(
 
 
 async def _dream_once(
-    *, record: _SinceReadable, language: SqlLanguageStore,
+    *, record: _SinceReadable, language: _ConsolidationCursor,
     consolidators: Sequence[RoomConsolidator], metrics: Metrics, scope_id: str,
     safety_lag: int, quiet_seconds: float, max_age_seconds: float, batch_limit: int,
 ) -> None:
