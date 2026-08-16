@@ -294,6 +294,23 @@ async def test_unattributed_spans_conversations(store):
     assert {r.body for r in await store.unattributed(limit=10)} == {"a", "b"}
 
 
+async def test_recent_carries_the_resolved_person_id(store):
+    """`person_id` is written in the same INSERT as the row (identity resolves
+    before the audit write), so a transcript row must be able to report it.
+    Unmapped senders keep `None` — that is a real state, not a gap."""
+    await store.append(
+        message=NormalizedMessage(
+            "signal", "g1", "group", "+852111", "Miles", 1, "congee", {}),
+        person_id="miles",
+    )
+    await store.append(
+        message=NormalizedMessage(
+            "signal", "g1", "group", "+852999", None, 2, "who dis", {}),
+    )
+    rows = await store.recent(conversation_id="g1", limit=10)
+    assert [r.person_id for r in rows] == ["miles", None]
+
+
 def test_both_implementations_satisfy_the_port():
     """`RecordStore` is `@runtime_checkable`, so this `isinstance` check verifies
     method **names only** — not signatures, not keyword-only-ness, not return

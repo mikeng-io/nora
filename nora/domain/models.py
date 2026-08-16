@@ -177,6 +177,11 @@ class TranscriptRow:
     # `tag_message from=`, `group_members`, `lookup_person`) already used. Keeping
     # both is what makes the projection auditable instead of a silent rewrite.
     person_name: str | None = None
+    # The RESOLVED person, or None when the sender mapped to nobody at ingest.
+    # `sender_id` above is the raw platform id; this is the roster's canonical
+    # id, and it is what anything joining across stores keys on (design/20).
+    # Defaulted so existing positional construction stays valid.
+    person_id: str | None = None
 
 
 @dataclass(frozen=True)

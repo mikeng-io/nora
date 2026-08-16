@@ -121,7 +121,7 @@ class SqlRecordStore:
                 MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
                 MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
                 MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
-                MESSAGES.c.quoted_ts, MESSAGES.c.media_json,
+                MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
             )
             .where(MESSAGES.c.conversation_id == conversation_id)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
@@ -141,6 +141,7 @@ class SqlRecordStore:
                 raw_json=r.raw_json,
                 quoted_ts=r.quoted_ts,
                 media_json=r.media_json,
+                person_id=r.person_id,
             )
             for r in reversed(rows)
         ]

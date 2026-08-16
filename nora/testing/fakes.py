@@ -126,6 +126,7 @@ class FakeRecordStore:
                 ts=r["ts"], body=r["body"], is_nora=r["is_nora"],
                 delivery_status=r["delivery_status"], raw_json=r["raw_json"],
                 quoted_ts=r["quoted_ts"], media_json=r["media_json"],
+                person_id=r["person_id"],
             )
             for r in window
         ]
