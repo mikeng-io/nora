@@ -96,6 +96,20 @@ avoid:
   threaded today (`nora/infra/sql/audit.py:35`, `SqlRecordStore.__init__`'s
   `max_per_conversation` parameter).
 
+- `RoomConsolidator`/`RoomLanguageReader` are the Dreamer's write/read split
+  (`nora.domain.models.RoomLexeme`/`RoomLanguage` are their shared vocabulary).
+  Two Protocols, not one, because the two halves are consumed from different
+  places under different obligations: `consolidate` runs from the background
+  cycle's own loop and may take its time, while `room_language` is read from
+  `TranscriptInjection` on the turn's critical path and — like every read a
+  live turn depends on — must never raise (an unavailable store degrades to an
+  EMPTY `RoomLanguage`, never an exception the turn has to catch). Folding both
+  onto one Protocol would force every future write-side implementation
+  (a fact table, not just a lexicon) to also be a valid read-side one, which is
+  not true in general. `scope_id` is a parameter on `consolidate`, not
+  instance state, because one consolidator instance serves every scope the
+  deployment has (see the Protocol's own docstring).
+
 - `MemoryStore.ensure_*` is declared **idempotent under concurrency**.
   `HonchoClient.ensure_peer`/`ensure_session` are check-then-act over
   per-peer state, and person-centric identity means the same peer id can be
@@ -185,7 +199,7 @@ change at every call site; keyword-only buys free extensibility forever.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
@@ -199,6 +213,7 @@ from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
     NormalizedMessage,
+    RoomLanguage,
     TagContext,
     TranscriptRow,
     UnattributedRow,
@@ -663,6 +678,43 @@ class RecordStore(Protocol):
     async def stats(self) -> dict[str, Any]: ...
 
     async def aclose(self) -> None: ...
+
+
+@runtime_checkable
+class RoomConsolidator(Protocol):
+    """One derivation pass over a batch of human messages for ONE scope.
+
+    `scope_id` is a parameter and not an attribute because one consolidator
+    instance serves every scope the deployment has — the loop ticks each in
+    turn, and an instance-per-scope would make the object graph depend on
+    policy.toml.
+    """
+
+    name: str
+
+    async def consolidate(
+        self, *, scope_id: str, batch: Sequence[TranscriptRow]
+    ) -> int:
+        """Returns OBSERVATIONS APPENDED — fixed here so a second
+        implementation cannot mean something else by it. The contract suite
+        asserts it: a batch yielding nothing returns 0, and a re-run over the
+        same batch also returns 0 because the natural key makes it idempotent.
+        """
+        ...
+
+
+@runtime_checkable
+class RoomLanguageReader(Protocol):
+    """The READ half, separated so `TranscriptInjection` keeps taking only
+    Protocol-typed collaborators. The write side stays unabstracted — a lexicon
+    and a future fact table differ in shape and lifetime — but this one call
+    site is on the turn's critical path and must be fakeable."""
+
+    async def room_language(self, *, scope_id: str, limit: int) -> RoomLanguage:
+        """Top `limit` rendered-state lexemes by score. Never raises: an
+        unavailable store yields an EMPTY `RoomLanguage`, because this block is
+        background she may draw on and never the ground for a claim."""
+        ...
 
 
 @runtime_checkable

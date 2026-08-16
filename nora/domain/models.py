@@ -286,6 +286,46 @@ class TagContext:
 
 
 @dataclass(frozen=True)
+class LexemeExample:
+    """One verbatim usage, kept WITH its attribution. The gloss above it is
+    model-authored; this is not. Rendering one of these under every entry is
+    what makes a wrong `sense` visible at the point of use instead of
+    authoritative."""
+
+    message_id: int
+    person_id: str | None
+    text: str
+
+
+@dataclass(frozen=True)
+class RoomLexeme:
+    canonical_form: str
+    sense: str
+    occurrence_count: int
+    distinct_speakers: int
+    first_seen_ms: int
+    last_seen_ms: int
+    state: str          # 'live' | 'fading' | 'stale'
+    examples: tuple[LexemeExample, ...] = ()
+
+
+@dataclass(frozen=True)
+class RoomLanguage:
+    """What the Dreamer knows about one scope, as of `generated_ms`.
+
+    Empty is a REAL state and the correct one for a room with no evidence yet —
+    the renderer emits no block at all rather than an empty one.
+    """
+
+    scope_id: str
+    lexemes: tuple[RoomLexeme, ...] = ()
+    generated_ms: int = 0
+
+    def __bool__(self) -> bool:
+        return bool(self.lexemes)
+
+
+@dataclass(frozen=True)
 class DailyForecast:
     """One day of a multi-day forecast — a row of `WeatherObservation.forecast_days`."""
 
