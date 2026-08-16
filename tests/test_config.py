@@ -305,6 +305,39 @@ def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_p
     assert cfg.reminders.min_lead_seconds > cfg.heartbeat.tick_seconds
 
 
+def test_the_language_section_is_optional_and_ships_inert(toml_path):
+    """Task 11's `[language]` — a config.toml written before the Dreamer
+    existed must keep loading, and `enabled` must default to False: a new
+    subsystem does not switch itself on. The values asserted are the class
+    defaults, so this fails if one silently changes — including the
+    store > render relation the render cap depends on
+    (`nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT`, 15, is not
+    itself configurable, so it is checked here as a fixed constant rather
+    than a second config field)."""
+    from nora.engagement.context import DEFAULT_ROOM_LANGUAGE_STORE_LIMIT
+
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[language]\n")
+    assert tail, "config.example.toml no longer declares [language]"
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
+
+    cfg = load(toml_path)
+
+    assert cfg.language.enabled is False
+    assert cfg.language.tick_seconds == 300.0
+    assert cfg.language.safety_lag == 300
+    assert cfg.language.quiet_seconds == 1800.0
+    assert cfg.language.max_age_seconds == 86_400.0
+    assert cfg.language.batch_limit == 400
+    assert cfg.language.max_rendered_lexemes == 12
+    assert cfg.language.model == "ollamacloud/deepseek-v4-flash"
+    assert cfg.language.max_rendered_lexemes < DEFAULT_ROOM_LANGUAGE_STORE_LIMIT, (
+        "the render cap must stay below the store limit or the block "
+        "silently under-fills"
+    )
+
+
 def test_a_minimum_lead_inside_the_tick_is_refused(toml_path):
     """The relation was a COMMENT in three files and a rule in none.
 

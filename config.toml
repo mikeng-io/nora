@@ -548,6 +548,23 @@ min_lead_seconds = 120     # MUST be > heartbeat.tick_seconds, so a
 # sits, and a row costs the same whether it is due tomorrow or in March.
 max_horizon_days = 365
 
+[language]
+# The Dreamer — distils the slang a room has made its own out of its own
+# message record, and renders a small block of it into every tag's prefill.
+# Ships INERT, like [presence]/[search]/[compute] before it: a new subsystem
+# does not switch itself on, and this is the FIRST deployment of it, so it
+# stays off here until the live extraction quality has been watched for a
+# while. Every other field below is nora/config.py's own default — see
+# `LanguageConfig`'s docstring there for the reasoning behind each one.
+enabled = false
+# tick_seconds = 300
+# safety_lag = 300
+# quiet_seconds = 1800
+# max_age_seconds = 86400
+# batch_limit = 400
+# max_rendered_lexemes = 12
+# model = "ollamacloud/deepseek-v4-flash"
+
 [tools.mcp.pulse]
 enabled = true
 base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"

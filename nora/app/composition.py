@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,6 +45,7 @@ from nora.domain.ports import (
     PlatformAdapter,
     RecordStore,
     ReverseGeocoder,
+    RoomConsolidator,
     RosterSource,
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
@@ -59,6 +60,7 @@ from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
@@ -74,6 +76,8 @@ from nora.ingest.policy import (
     TriggerTextPolicy,
 )
 from nora.ingest.stickers import StickerReader
+from nora.language.consolidator import LanguageConsolidator
+from nora.language.observer import LexemeObserver
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -103,6 +107,31 @@ class StartupError(Exception):
     messages are unchanged from `nora.__main__.build_app`'s pre-phase-3 shape,
     only relocated here (`migration error` was added deliberately in Phase 2
     — see `design/09-decision-index.md`)."""
+
+
+class _LanguageModelClient:
+    """Satisfies `nora.language.observer.LexemeObserver`'s structural
+    `_ModelClient` shape (`async def complete(self, *, prompt: str) -> str`)
+    — a raw one-shot text completion over the process-wide OmniRoute
+    `client`, the `VisionClient._create` shape without the image half.
+
+    Lives HERE rather than in `nora.language` because that package may not
+    import `strands`, `nora.agent.factory`, or `nora.config` at all (see
+    `LexemeObserver`'s own module docstring) — the model client is INJECTED,
+    and this is the one place already holding both the process-wide client
+    and `[language].model`.
+    """
+
+    def __init__(self, *, client: AsyncOpenAI, model: str) -> None:
+        self._client = client
+        self._model = model
+
+    async def complete(self, *, prompt: str) -> str:
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return (response.choices[0].message.content or "").strip()
 
 
 # The one subdirectory name a compute job's workspace lives under, appended to
@@ -243,6 +272,15 @@ class Dependencies:
     background: BackgroundTasks
     llm_state: LLMState
     client: AsyncOpenAI
+    # The Dreamer's own pieces (Task 11), all `None`/empty when `[language]
+    # enabled = false` — `nora.__main__.App.run` reads these to spawn (or log
+    # skipping) `runtime.dream_loop`. `language_store` doubles as the
+    # `RoomLanguageReader` `assembler` above already holds; exposed again
+    # here because `dream_loop` needs the CONCRETE `SqlLanguageStore` (its
+    # cursor/measurement surface, not just the read-only port).
+    language_store: SqlLanguageStore | None
+    language_consolidators: tuple[RoomConsolidator, ...]
+    language_scopes: Callable[[], Sequence[str]]
 
 
 async def build_dependencies(cfg: Config) -> Dependencies:
@@ -328,6 +366,18 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # deliver.build); the THIRD — ToolRegistry(...) below, for
     # recall_lookups — is Task 7's own wiring.
     tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
+    # The Dreamer's store (Task 11), REUSING `engine` for the same reason
+    # `reminders`/`compute_jobs`/`tool_call_log_store` do above. UNLIKE those,
+    # this one IS gated on the feature flag — `[route]`/`[search]`-shaped,
+    # not `[compute]`-shaped: `TranscriptInjection`'s `language` reader has
+    # exactly one consumer (the tag/fire prefill), and `[language].enabled`
+    # is that consumer's own off switch (`LanguageConfig`'s docstring), so
+    # there is no second caller left stranded the way `remind`/`make_artifact`
+    # would be by gating `reminders`/`compute_jobs`. Off, `TranscriptInjection`
+    # gets `language=None` — the exact "not yet wired" state Task 9 shipped.
+    language_store: SqlLanguageStore | None = (
+        SqlLanguageStore(engine, metrics=metrics) if cfg.language.enabled else None
+    )
 
     # Resolved here, not inside AdapterRegistry — the same convention every
     # other `*_env` secret (the LLM key, the route key) follows: composition.py
@@ -454,6 +504,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         ai_peer=cfg.memory.ai_peer,
         self_card_conclusions=cfg.memory.self_card_conclusions,
         tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
+        # `None` while `[language] enabled = false` — Task 9's "not yet
+        # wired" default, unchanged. The STORE limit stays this class's own
+        # default (`DEFAULT_ROOM_LANGUAGE_STORE_LIMIT`); `[language]` has no
+        # knob for it — see `LanguageConfig`'s docstring for why only the
+        # RENDER cap (`max_rendered_lexemes`, threaded below into
+        # `EngagementPipeline`/`FirePath`) is configurable, and why store
+        # staying wider than render is what the store limit not moving here
+        # depends on.
+        language=language_store,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -468,6 +527,33 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     tier = cfg.llm
     api_key = os.environ.get(cfg.llm.api_key_env, "")  # presence already checked by config.load
     client = factory.create_client(base_url=cfg.llm.base_url, api_key=api_key)
+    # The Dreamer's own consolidator (Task 11) — built ONLY when
+    # `[language] enabled`, mirroring `language_store` above (there is no
+    # second consumer to leave stranded by gating it, unlike `reminders`/
+    # `compute_jobs`). `LexemeObserver` gets its OWN `_LanguageModelClient`
+    # over the SAME process-wide `client` — one connection, `[language]
+    # .model` rather than `[llm].model`, because the Dreamer is a background
+    # job nobody is waiting on and may reasonably run a different tier.
+    language_consolidators: tuple[RoomConsolidator, ...] = ()
+    if cfg.language.enabled and language_store is not None:
+        language_consolidators = (
+            LanguageConsolidator(
+                observer=LexemeObserver(
+                    _LanguageModelClient(client=client, model=cfg.language.model),
+                    metrics=metrics,
+                ),
+                store=language_store,
+            ),
+        )
+    # `dream_loop`'s `scopes` callable — the SAME policy.toml conversations
+    # `VersionAnnouncer`'s `targets` reads below, re-evaluated fresh each
+    # tick (cheap: `allowlist` is loaded once at startup and immutable) so a
+    # future policy-reload does not need this closure to change. No
+    # platform filter, unlike the announcer's `targets`: this loop only
+    # READS `RecordStore.since`, which needs no adapter for the platform.
+    language_scopes: Callable[[], Sequence[str]] = lambda: tuple(  # noqa: E731
+        conv.primary_id for conv in allowlist.conversations if conv.primary_id
+    )
     # One CLIENT (audit T2, DEC-13), MANY MODELS — one per tag, built by this
     # source. The model carries `tool_choice`, which `ReplyGuard` flips
     # mid-turn from `required` to `auto` (design/16 §2), so it is per-turn
@@ -973,6 +1059,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         preview_source=preview_source,
         slots=slots,
         tool_call_log_store=tool_call_log_store,
+        # `[language].max_rendered_lexemes` — harmless to pass even when
+        # `[language] enabled = false`: `language_store` is `None` there, so
+        # `TranscriptInjection` never produces a non-empty `RoomLanguage` for
+        # this cap to bound in the first place.
+        room_language_max_entries=cfg.language.max_rendered_lexemes,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 
@@ -1057,6 +1148,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             preview_source=preview_source,
             llm_state=llm_state,
             tool_call_log_store=tool_call_log_store,
+            room_language_max_entries=cfg.language.max_rendered_lexemes,
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and
@@ -1163,6 +1255,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client,
+        language_store=language_store, language_consolidators=language_consolidators,
+        language_scopes=language_scopes,
     )
 
 

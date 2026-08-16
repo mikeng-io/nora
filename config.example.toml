@@ -374,6 +374,47 @@ timezone = "Asia/Hong_Kong"   # the wall clock a recurrence KEEPS. An IANA zone
                            # 08:00 local across a DST boundary, and +08:00
                            # cannot say that.
 
+[language]
+# The Dreamer — a background clock (`dream_loop`) that distils the slang a
+# room has made its own out of its own message record, and renders a small
+# block of it into every tag's/fire turn's prefill.
+#
+# Ships INERT, like [presence]/[search]/[compute]: a new subsystem does not
+# switch itself on, and a config.toml written before this section existed
+# keeps loading with the Dreamer off.
+enabled = false
+# The loop's WAKE interval — the same "best case for lateness, not a bound"
+# shape [heartbeat].tick_seconds documents.
+tick_seconds = 300
+# First fire condition: `lag > safety_lag` fires once this many unconsolidated
+# human messages have piled up, independent of how quiet the room has gone —
+# the anti-runaway bound for a room that never falls quiet.
+safety_lag = 300
+# Second fire condition (paired with lag > 0): the room has gone quiet for
+# this long, the natural moment to consolidate a finished conversation.
+quiet_seconds = 1800
+# Third fire condition, and the only one that does NOT require lag > 0 — it
+# fires at lag == 0 ON PURPOSE, because rescoring is what lets a lexeme's
+# recognition_score DECAY; without this a dormant room's lexicon would never
+# fade and would render `live` forever, describing a slang era that ended.
+max_age_seconds = 86400
+# The ceiling `RecordStore.since` reads per cycle — bounds both the one model
+# call's prompt size and the store's single INSERT statement. A scope whose
+# lag exceeds this drains over several ticks rather than one.
+batch_limit = 400
+# The RENDER cap threaded to `build_prefill`'s room-language block.
+# Deliberately smaller than the STORE limit (15, not configurable here) that
+# `TranscriptInjection` reads with — the store fetches wider than what is
+# rendered so the renderer has room to drop a few exampleless entries and
+# still fill the block; equal numbers make it silently under-fill.
+max_rendered_lexemes = 12
+# The ONE completion LexemeObserver makes per cycle. Defaults to [llm].model's
+# own value — the Dreamer is a background job nobody is waiting on, so reusing
+# the deployment's already-working tier is reasonable, but this is a SEPARATE
+# knob for an operator who wants a cheaper or differently-tuned model for a
+# bulk classification task than for a live conversational turn.
+model = "ollamacloud/deepseek-v4-flash"
+
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version
 # baked into this image has not been announced in a room yet, Nora relays the

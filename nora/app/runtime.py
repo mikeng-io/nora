@@ -11,7 +11,7 @@ composition root passes a store, metrics, adapters and intervals, never
 see `nora/app/composition.py` — and `runtime.py` deliberately isn't one of
 them).
 
-Four responsibilities, four independent units below, none of which know about
+Five responsibilities, five independent units below, none of which know about
 each other:
 
 - `BackgroundTasks` — the strong-reference set `Handler._spawn` used to hold,
@@ -21,6 +21,12 @@ each other:
   `sweep`).
 - `supervise_adapter` / `start_adapters` — per-adapter restart-with-backoff,
   replacing what would otherwise be a bare `asyncio.gather`.
+- `dream_loop` — the Dreamer's clock (Task 11 of
+  `docs/superpowers/specs/2026-08-15-room-language-dreamer-design.md`): ticks
+  every configured scope, consolidating the room-language slang a
+  `RoomConsolidator` distills out of its own message record. A SIBLING of
+  `prune_loop`, not a copy of its shape — see `dream_loop`'s own docstring for
+  the two differences that are load-bearing rather than stylistic.
 """
 
 from __future__ import annotations
@@ -28,11 +34,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .. import tag as tag_module
+from ..domain.models import TranscriptRow
+from ..domain.ports import RoomConsolidator
+from ..infra.sql.language import SqlLanguageStore
 from ..obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.runtime")
@@ -196,3 +206,216 @@ def start_adapters(
     every other fire-and-forget coroutine — the strong-reference requirement
     applies here too."""
     return [background.spawn(supervise_adapter(a, metrics)) for a in adapters]
+
+
+# ---------------------------------------------------------------------------
+# dream_loop — the Dreamer's clock
+# ---------------------------------------------------------------------------
+
+
+class _SinceReadable(Protocol):
+    """The one method `dream_loop` needs from a `RecordStore` — a narrow
+    local shape mirroring `_PrunableStore` above, for the same reason:
+    threading the whole `RecordStore` port through would let this loop reach
+    for methods it has no business calling. `RecordStore.since` itself
+    already excludes `is_nora` rows and returns ascending order (see that
+    port method's own docstring) — this loop relies on both without
+    re-deriving either."""
+
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]: ...
+
+
+# The capped-exponential SHAPE `supervise_adapter` uses above, reused rather
+# than re-derived — but not its literal numbers. `supervise_adapter` backs off
+# a single adapter reconnecting to a LOCAL websocket, where a fast retry is
+# cheap; `dream_loop` backs off a call to an EXTERNAL model provider, where a
+# 429 answered at full cadence forever makes the outage worse and burns the
+# quota (non-negotiable 4). A base near one tick and a much longer cap reflect
+# that difference: `supervise_adapter`'s default 60s CAP is this loop's base.
+_DREAM_BACKOFF_BASE_SECONDS = 60.0
+_DREAM_BACKOFF_MAX_SECONDS = 3_600.0
+
+
+def _backoff_elapsed(
+    scope_id: str,
+    failure_count: int,
+    last_failure_at: dict[str, float],
+    *,
+    base_delay_seconds: float = _DREAM_BACKOFF_BASE_SECONDS,
+    max_delay_seconds: float = _DREAM_BACKOFF_MAX_SECONDS,
+) -> bool:
+    """Has enough wall-clock time passed since `scope_id` last failed to try
+    it again, at `supervise_adapter`'s own capped-exponential rate?
+
+    `supervise_adapter` expresses this by literally sleeping inside its own
+    one-adapter loop — it owns nothing else, so blocking is free. `dream_loop`
+    ticks EVERY scope in one loop; sleeping here would stall every scope that
+    is not backing off. So this answers the same question `supervise_adapter`
+    answers by sleeping — "has the capped-exponential delay for this many
+    consecutive failures elapsed" — as a non-blocking check against a
+    per-scope last-failure timestamp instead, consulted once per tick rather
+    than awaited once per retry. `failure_count` is `dream_loop`'s own
+    `failures[scope_id]` (consecutive failures since the last success);
+    `last_failure_at` is `dream_loop`'s own local dict, function-scoped to one
+    `dream_loop` call and mutated only there, never a module-level singleton.
+    """
+    delay = min(base_delay_seconds * (2.0 ** (failure_count - 1)), max_delay_seconds)
+    return bool((time.monotonic() - last_failure_at.get(scope_id, 0.0)) >= delay)
+
+
+async def dream_loop(
+    record: _SinceReadable, language: SqlLanguageStore,
+    consolidators: Sequence[RoomConsolidator], metrics: Metrics, *,
+    scopes: Callable[[], Sequence[str]], tick_seconds: float,
+    safety_lag: int, quiet_seconds: float, max_age_seconds: float,
+    batch_limit: int,
+) -> None:
+    """The Dreamer's clock. A sibling of `prune_loop`, with two differences
+    that are not stylistic.
+
+    FIRST, the try/except is PER SCOPE. `prune_loop`'s single wrapper is
+    correct there because its unit of work is one statement; a dream tick's
+    unit is a LIST of scopes, so copying that shape verbatim lets one failing
+    scope starve every other scope on that tick.
+
+    SECOND, the backoff comes from `supervise_adapter` rather than from
+    `prune_loop`. `prune_all` talks to the local database, where a failure is
+    rare and transient; this talks to an external model provider, where a 429
+    answered at full cadence forever makes the outage worse and burns the
+    quota.
+
+    THIRD — a PLAN DEFECT found while implementing this, in the same spirit
+    Task 7's implementer found and fixed one (an impossible cross-layer
+    import) rather than silently working around it: the brief's own sketch
+    of this loop `await`s `_dream_once` INLINE, one scope after another. A
+    single `while True: for scope in scopes(): await _dream_once(...)` is
+    ONE coroutine with no concurrency inside it, so `finally: running.discard
+    (scope_id)` always runs — and the for-loop's NEXT scope, or the outer
+    while-loop's NEXT tick — before a second consideration of that SAME scope
+    is even possible. Under that shape `if scope_id in running` can never be
+    true: the per-scope lock non-negotiable 1 exists to enforce would be
+    unreachable dead code, and a test asserting it (`nora_dream_skipped_total
+    {reason="in_flight"}` firing) would stay green whether or not the check
+    is even present — CLAUDE.md's own "if reverting the code under test
+    doesn't turn the test red, the test is decorative" naming this exact
+    failure. It is also the wrong production shape regardless: serializing
+    every scope's one model call behind a single await means one slow room
+    delays every OTHER room's tick, not just its own.
+    So each scope's cycle is dispatched as its own tracked task instead —
+    `_run_one` below carries the per-scope try/except/finally UNCHANGED, and
+    `running`/`failures`/`last_failure_at` are read and written from
+    WHICHEVER scope's task is executing, same as before, just no longer
+    forced to interleave through one sequential await chain. This is what
+    makes tick N+1 able to find scope "g1" still `running` from tick N — the
+    scenario the lock, the backoff and their own tests are named for.
+    `_dream_once` itself is untouched: watermark-last, the three fire
+    conditions and the partial-batch guard are exactly as given.
+    """
+    failures: dict[str, int] = {}
+    running: set[str] = set()
+    # `_backoff_elapsed`'s own per-scope companion state (see its docstring
+    # for why it needs a timestamp `failures` alone cannot supply) —
+    # function-local to this one `dream_loop` call, exactly like `failures`
+    # and `running` beside it.
+    last_failure_at: dict[str, float] = {}
+    tasks: set[asyncio.Task[None]] = set()
+
+    async def _run_one(scope_id: str) -> None:
+        try:
+            await _dream_once(
+                record=record, language=language, consolidators=consolidators,
+                metrics=metrics, scope_id=scope_id, safety_lag=safety_lag,
+                quiet_seconds=quiet_seconds, max_age_seconds=max_age_seconds,
+                batch_limit=batch_limit,
+            )
+            failures.pop(scope_id, None)
+            last_failure_at.pop(scope_id, None)
+        except Exception:
+            log.exception("dream cycle failed for %s", scope_id)
+            metrics.inc("nora_errors_total", stage="dream")
+            failures[scope_id] = failures.get(scope_id, 0) + 1
+            last_failure_at[scope_id] = time.monotonic()
+        finally:
+            running.discard(scope_id)
+
+    try:
+        while True:
+            await asyncio.sleep(tick_seconds)
+            for scope_id in scopes():
+                if scope_id in running:
+                    # A slow extraction is still going. Skipping is the whole
+                    # guarantee: re-entering would read the same un-advanced
+                    # watermark and append the same evidence twice, and the
+                    # rendered «12x, 3 people» would be a fabricated number.
+                    metrics.inc("nora_dream_skipped_total", reason="in_flight")
+                    continue
+                if failures.get(scope_id) and not _backoff_elapsed(
+                    scope_id, failures[scope_id], last_failure_at,
+                ):
+                    continue
+                running.add(scope_id)
+                task = asyncio.create_task(_run_one(scope_id))
+                tasks.add(task)
+                task.add_done_callback(tasks.discard)
+    finally:
+        # Best-effort cleanup on cancellation (the same shape
+        # `BackgroundTasks.cancel_all` uses): a dream tick's own per-scope
+        # tasks must not keep running, untracked, after this loop itself has
+        # been asked to stop.
+        for task in tasks:
+            task.cancel()
+
+
+async def _dream_once(
+    *, record: _SinceReadable, language: SqlLanguageStore,
+    consolidators: Sequence[RoomConsolidator], metrics: Metrics, scope_id: str,
+    safety_lag: int, quiet_seconds: float, max_age_seconds: float, batch_limit: int,
+) -> None:
+    watermark = await language.watermark_for(
+        consolidator_name="language", scope_id=scope_id)
+
+    # The fail-closed tell. A watermark below the oldest surviving row means
+    # messages were deleted before they were ever read — R-27's `unavailable`
+    # («I could not see those»), never `nothing_found` («nothing happened»).
+    # Structurally zero while `store.prune_enabled` is false; this is what
+    # notices if anyone turns the sweep back on.
+    if await language.watermark_is_behind_the_record(
+            scope_id=scope_id, watermark=watermark):
+        metrics.inc("nora_dream_evidence_lost_total", scope=scope_id)
+
+    lag = await language.lag(scope_id=scope_id, after_id=watermark)
+    quiet = await language.seconds_since_last_message(scope_id=scope_id)
+    age = await language.watermark_age_seconds(
+        consolidator_name="language", scope_id=scope_id)
+
+    fires = (
+        lag > safety_lag
+        or (lag > 0 and quiet >= quiet_seconds)
+        or age >= max_age_seconds      # fires at lag == 0 ON PURPOSE
+    )
+    if not fires:
+        return
+
+    batch = await record.since(
+        conversation_id=scope_id, after_id=watermark, limit=batch_limit)
+
+    for consolidator in consolidators:
+        # An empty batch still reaches the consolidator, which still rescores.
+        # Decay is TIME-driven: two of the three fire conditions need lag > 0,
+        # so without this a dormant room never fades a word and its lexicon
+        # stays `live` describing a slang era that ended months ago.
+        await consolidator.consolidate(scope_id=scope_id, batch=batch)
+
+    if batch:
+        # LAST, and after the appends have committed. The unsafe direction is
+        # watermark-first: a crash between the two loses that range forever,
+        # with nothing able to notice — `nora_dream_evidence_lost_total` above
+        # measures the PRUNING case and is structurally blind to this one.
+        # Append-first plus the natural-key constraint makes a retry a no-op
+        # instead, so over-reading is the safe failure and under-reading is not.
+        await language.advance_watermark(
+            consolidator_name="language", scope_id=scope_id,
+            last_message_id=batch[-1].id,
+        )

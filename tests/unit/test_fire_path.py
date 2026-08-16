@@ -280,7 +280,11 @@ def _fire_path(
     records: FakeRecordStore | None = None,
     registry: ToolRegistry | None = None,
     timeout_seconds: float = 5.0,
+    room_language_max_entries: int | None = None,
 ) -> FirePath:
+    extra = {}
+    if room_language_max_entries is not None:
+        extra["room_language_max_entries"] = room_language_max_entries
     return FirePath(
         persons=persons,
         records=records if records is not None else FakeRecordStore(),
@@ -293,6 +297,7 @@ def _fire_path(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
+        **extra,
     )
 
 
@@ -823,3 +828,29 @@ async def test_a_fire_turn_for_an_unwired_platform_fails_rather_than_speaking(
     assert metrics.get(
         "nora_silent_failures_total", reason="handler_error", audience="heartbeat",
     ) >= 1.0
+
+
+async def test_the_configured_room_language_render_cap_reaches_build_prefill(
+    persons: Persons, doctrine_store, metrics: Metrics, monkeypatch,
+) -> None:
+    """Task 11: `[language].max_rendered_lexemes` is inert unless it actually
+    reaches `build_prefill`'s `room_language_max_entries` on the FIRE path
+    too, not just the tag path — this proves the wiring, not merely that the
+    constructor accepts the parameter."""
+    captured: list[int] = []
+    real_build_prefill = fire_module.build_prefill
+
+    def _spy(*args, **kwargs):
+        captured.append(kwargs["room_language_max_entries"])
+        return real_build_prefill(*args, **kwargs)
+
+    monkeypatch.setattr(fire_module, "build_prefill", _spy)
+    path = _fire_path(
+        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
+        runner=FakeAgentRunner(_send_turns("收到")),
+        room_language_max_entries=1,
+    )
+
+    await path.run([_reminder()])
+
+    assert captured == [1]

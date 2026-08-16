@@ -17,10 +17,12 @@ from nora.app.runtime import (
     BackgroundTasks,
     SupervisedAdapter,
     debounce_sweep_loop,
+    dream_loop,
     prune_loop,
     start_adapters,
     supervise_adapter,
 )
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.obs.metrics import Metrics
 from nora.tag import Debounce
 
@@ -243,3 +245,247 @@ async def test_a_second_adapter_keeps_running_while_the_first_fails():
         t.cancel()
     await asyncio.wait(tasks)
     assert len(bg) == 0
+
+
+# ---------------------------------------------------------------------------
+# dream_loop
+# ---------------------------------------------------------------------------
+
+
+def _row(id: int) -> TranscriptRow:
+    return TranscriptRow(
+        id=id, sender_id="+852111", sender_name="Miles", ts=1_000 + id, body=f"m{id}",
+        is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+
+
+class _FakeRecord:
+    """Stands in for the `_SinceReadable` slice of `RecordStore` — one
+    scope's fixed batch, returned whole regardless of `after_id`/`limit`
+    (nothing here exercises pagination; that is `RecordStore.since`'s own
+    contract, proven in `tests/infra/test_audit_store.py`)."""
+
+    def __init__(self, batches: dict[str, list[TranscriptRow]]) -> None:
+        self._batches = batches
+
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        return list(self._batches.get(conversation_id, []))[:limit]
+
+
+class _FakeLanguage:
+    """Stands in for `SqlLanguageStore`'s cursor/measurement surface.
+    `lag`/`quiet`/`age`/`behind` are fixed per test (not derived from any
+    real message table) — each test sets exactly the ones its own fire
+    condition needs. `advance_calls` records EVERY `advance_watermark` call
+    in order, and `order` (when given) lets a test interleave that against a
+    consolidator's own call order — the watermark-last proof this fake
+    exists for."""
+
+    def __init__(
+        self, *, lag: int = 0, quiet: float = 0.0, age: float = 0.0,
+        behind: bool = False, order: list[str] | None = None,
+    ) -> None:
+        self._lag = lag
+        self._quiet = quiet
+        self._age = age
+        self._behind = behind
+        self._order = order
+        self.watermarks: dict[str, int] = {}
+        self.advance_calls: list[tuple[str, int]] = []
+
+    async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int:
+        return self.watermarks.get(scope_id, 0)
+
+    async def watermark_is_behind_the_record(self, *, scope_id: str, watermark: int) -> bool:
+        return self._behind
+
+    async def lag(self, *, scope_id: str, after_id: int) -> int:
+        # Once THIS scope's watermark has advanced, treat its configured lag
+        # as consumed — otherwise a test whose fake batch never grows would
+        # keep firing forever at the tick cadence, muddying an assertion
+        # that means to observe exactly one cycle.
+        if self.watermarks.get(scope_id, 0) > 0:
+            return 0
+        return self._lag
+
+    async def seconds_since_last_message(self, *, scope_id: str) -> float:
+        return self._quiet
+
+    async def watermark_age_seconds(self, *, consolidator_name: str, scope_id: str) -> float:
+        return self._age
+
+    async def advance_watermark(
+        self, *, consolidator_name: str, scope_id: str, last_message_id: int
+    ) -> None:
+        if self._order is not None:
+            self._order.append("advance")
+        self.advance_calls.append((scope_id, last_message_id))
+        self.watermarks[scope_id] = last_message_id
+
+
+async def test_a_second_tick_does_not_re_enter_a_running_scope():
+    """Without the lock, a slow extraction lets the next tick re-fire against
+    the same un-advanced watermark, and two cycles append the same evidence."""
+    calls = 0
+    started = asyncio.Event()
+
+    class SlowConsolidator:
+        name = "language"
+
+        async def consolidate(self, *, scope_id: str, batch: list[TranscriptRow]) -> int:
+            nonlocal calls
+            calls += 1
+            started.set()
+            await asyncio.sleep(0.3)
+            return 0
+
+    record = _FakeRecord({"g1": [_row(1)]})
+    language = _FakeLanguage(lag=1000)  # > safety_lag: fires every tick
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [SlowConsolidator()], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+    ))
+    await started.wait()
+    # Several more ticks fire in this window without the lock — the count
+    # below is what proves it did not re-enter.
+    await asyncio.sleep(0.15)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert calls == 1, "the second tick must not re-enter the still-running scope"
+    assert metrics.get("nora_dream_skipped_total", reason="in_flight") >= 1
+
+
+async def test_the_watermark_advances_only_after_observations_are_committed():
+    """The unsafe direction is watermark-first: a crash between them loses that
+    range forever, and nora_dream_evidence_lost_total is defined for the
+    PRUNING case and is structurally blind to it."""
+    order: list[str] = []
+
+    class RecordingConsolidator:
+        name = "language"
+
+        async def consolidate(self, *, scope_id: str, batch: list[TranscriptRow]) -> int:
+            order.append("consolidate")
+            return len(batch)
+
+    record = _FakeRecord({"g1": [_row(1), _row(2)]})
+    language = _FakeLanguage(lag=1000, order=order)
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [RecordingConsolidator()], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert order == ["consolidate", "advance"], (
+        "the watermark must advance AFTER the consolidator, never before"
+    )
+    assert language.advance_calls == [("g1", 2)], "advances to the batch's last id"
+
+    # The crash-shaped half of the same proof: a consolidator that raises
+    # must leave the watermark exactly where it was — reverting the `if
+    # batch:`-guarded advance to run unconditionally, or moving it before the
+    # consolidate loop, must turn this red.
+    order.clear()
+
+    class FailingConsolidator:
+        name = "language"
+
+        async def consolidate(self, *, scope_id: str, batch: list[TranscriptRow]) -> int:
+            order.append("consolidate")
+            raise RuntimeError("model provider down")
+
+    failing_language = _FakeLanguage(lag=1000, order=order)
+    task2 = asyncio.create_task(dream_loop(
+        record, failing_language, [FailingConsolidator()], metrics,
+        scopes=lambda: ["g2"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+    ))
+    await asyncio.sleep(0.05)
+    task2.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task2
+
+    assert order == ["consolidate"], "a failed cycle must never reach advance_watermark"
+    assert failing_language.advance_calls == []
+    assert metrics.get("nora_errors_total", stage="dream") >= 1
+
+
+async def test_a_failing_extraction_does_not_starve_the_other_scopes():
+    """`prune_loop`'s single try/except wraps ONE unit of work. A dream tick's
+    unit is a LIST of scopes, so copying that shape verbatim lets one bad scope
+    take out every other scope that tick."""
+    good_calls = 0
+
+    class BadConsolidator:
+        name = "language"
+
+        async def consolidate(self, *, scope_id: str, batch: list[TranscriptRow]) -> int:
+            if scope_id == "bad":
+                raise RuntimeError("boom")
+            nonlocal good_calls
+            good_calls += 1
+            return len(batch)
+
+    record = _FakeRecord({"bad": [_row(1)], "good": [_row(1)]})
+    language = _FakeLanguage(lag=1000)
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [BadConsolidator()], metrics,
+        scopes=lambda: ["bad", "good"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+    ))
+    await asyncio.sleep(0.07)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert good_calls >= 1, "the healthy scope must keep being consolidated"
+    assert ("good", 1) in language.advance_calls
+    assert metrics.get("nora_errors_total", stage="dream") >= 1
+
+
+async def test_the_daily_firing_rescores_even_with_an_empty_batch():
+    """Two of three fire conditions need lag > 0, so a dormant room would never
+    decay — its lexicon would stay `live` describing a slang era that ended."""
+    batches: list[list[TranscriptRow]] = []
+
+    class RecordingConsolidator:
+        name = "language"
+
+        async def consolidate(self, *, scope_id: str, batch: list[TranscriptRow]) -> int:
+            batches.append(list(batch))
+            return 0
+
+    record = _FakeRecord({"g1": []})
+    # lag == 0 and quiet is irrelevant to that branch; only age crosses the
+    # threshold — the ONE fire condition that does not require lag > 0.
+    language = _FakeLanguage(lag=0, quiet=0.0, age=999_999)
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [RecordingConsolidator()], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=100, batch_limit=10,
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert batches, "the 24h/age firing must still reach consolidate with an empty batch"
+    assert all(b == [] for b in batches)
+    assert language.advance_calls == [], "an empty batch must never advance the watermark"

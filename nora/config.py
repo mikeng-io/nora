@@ -824,6 +824,101 @@ class RemindersConfig(BaseModel):
     # `UnknownRecurrenceZoneError` rather than being guessed at.
     timezone: str = "Asia/Hong_Kong"
 
+
+class LanguageConfig(BaseModel):
+    """The Dreamer — `nora.app.runtime.dream_loop`, distilling the slang a
+    room has made its own out of its own message record (the
+    2026-08-15 room-language-dreamer design doc under
+    docs/superpowers/specs).
+
+    **The whole section is optional and every field defaults**, the
+    `[route]`/`[presence]` shape: a `config.toml` written before this
+    section existed must keep loading, which `extra="forbid"` makes a real
+    constraint rather than a courtesy.
+
+    `enabled` defaults to **False** — a new subsystem does not switch itself
+    on. Off, `nora.__main__.App.run` never spawns `dream_loop` (logging the
+    same shape `store.prune_enabled` uses) and composition wires
+    `language=None` into `TranscriptInjection`, exactly the "not yet wired"
+    state Task 9 shipped it in — no model call is ever scheduled and the
+    prefill's room-language block never renders.
+
+    `tick_seconds = 300` (5 min): the loop's WAKE interval, the same
+    "best case for lateness, not a bound" shape `[heartbeat].tick_seconds`
+    documents — one tick runs every due scope in turn, so a busy deployment
+    with many rooms can take longer than one interval to get back to a
+    given scope. Five minutes is frequent enough that a burst of slang gets
+    noticed within a session, without polling a per-scope `lag` count on
+    every idle room every few seconds.
+
+    `safety_lag = 300`: the first fire condition — `lag > safety_lag` fires
+    once 300 unconsolidated human messages have piled up, independent of how
+    quiet the room has gone since. This is the anti-runaway bound: a room
+    that never falls quiet (so the second condition below never fires)
+    still gets consolidated before its backlog grows large enough to bump
+    into `batch_limit` and force a multi-tick catch-up.
+
+    `quiet_seconds = 1800` (30 min): the second fire condition, paired with
+    `lag > 0` — a room that has gone quiet for half an hour is a
+    conversation that has PAUSED, the natural moment to consolidate what it
+    just said without cutting off a burst still in progress. Deliberately
+    shorter than `[heartbeat].tick_seconds` is long (60s) is a different
+    question entirely: that bounds a reminder's lateness to a human waiting
+    on it, this bounds how long a finished conversation sits unconsolidated
+    with nobody waiting on anything.
+
+    `max_age_seconds = 86400` (24h): the third fire condition, and the ONLY
+    one that does not require `lag > 0` — it fires at `lag == 0` ON PURPOSE.
+    `LanguageConsolidator.consolidate` rescores unconditionally, and rescore
+    is what lets a word's `recognition_score` DECAY over time; a dormant
+    room whose lag never grows would otherwise never rescore and its
+    lexicon would render `live` forever, describing a slang era that ended
+    months ago. 24h is the cadence that keeps decay visible without
+    rescoring a silent room needlessly often.
+
+    `batch_limit = 400`: the ceiling `RecordStore.since` reads per cycle.
+    Bounds both the one model call's prompt size and
+    `SqlLanguageStore.append_observations`'s single `INSERT ... SELECT`
+    (each candidate costs ~7 bind params in one `UNION ALL`, so a batch
+    above ~4,600 candidates would approach Postgres's 32,767-parameter
+    ceiling — 400 messages, each yielding at most a handful of candidates,
+    sits far under that). A scope whose `lag` exceeds this drains over
+    several ticks rather than one, which is correct: this is a background
+    distillation, not a turn anyone is waiting on.
+
+    `max_rendered_lexemes = 12`: the RENDER cap, threaded to
+    `nora.agent.prefill.build_prefill`'s `room_language_max_entries` (default
+    `DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES = 6` there) via `EngagementPipeline`/
+    `FirePath`. Deliberately smaller than
+    `nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT` (15), which
+    this section does NOT override — `SqlLanguageStore.room_language`
+    applies its `LIMIT` with no filter on whether an entry has a quotable
+    example, and the renderer then drops exampleless entries and cannot
+    reach further down the ranked list to backfill. Equal numbers make the
+    block silently under-fill on any tick where even one top-ranked lexeme
+    has no example yet; keeping the store fetch wider than what is rendered
+    is what gives the renderer room to drop a few and still fill the block.
+
+    `model`: the ONE completion `LexemeObserver` makes per cycle. Defaults to
+    `[llm].model`'s own value (`"ollamacloud/deepseek-v4-flash"`) — the
+    Dreamer is a background job nobody is waiting on, so reusing the
+    deployment's already-working tier is a reasonable default, but this is a
+    SEPARATE knob because an operator may want a cheaper or differently-tuned
+    model for a bulk classification task than for a live conversational turn.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    tick_seconds: float = Field(default=300.0, gt=0)
+    safety_lag: int = Field(default=300, ge=1)
+    quiet_seconds: float = Field(default=1800.0, ge=0)
+    max_age_seconds: float = Field(default=86_400.0, gt=0)
+    batch_limit: int = Field(default=400, ge=1)
+    max_rendered_lexemes: int = Field(default=12, ge=1)
+    model: str = "ollamacloud/deepseek-v4-flash"
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1033,6 +1128,11 @@ class Config(BaseModel):
     # be created, whether or not anything is firing them.
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     reminders: RemindersConfig = RemindersConfig()
+    # Optional and defaulted — see `LanguageConfig`. Ships INERT
+    # (`enabled = false`); off, `dream_loop` is never spawned and
+    # composition wires `language=None` into `TranscriptInjection`, the
+    # "not yet wired" state Task 9 shipped it in.
+    language: LanguageConfig = LanguageConfig()
     # Optional and defaulted — see `ComputeConfig`. Ships INERT
     # (`enabled = false`); the `ComputeJobStore` is built unconditionally
     # regardless (the `reminders` shape), only the poller's tick loop is gated.

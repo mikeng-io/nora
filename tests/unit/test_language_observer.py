@@ -110,6 +110,32 @@ async def test_an_empty_batch_makes_no_model_call():
     assert await observer.observe(batch=[]) == []
 
 
+async def test_a_parse_failure_is_counted_distinctly_from_an_empty_extraction():
+    """Task 6 carry-forward (folded into Task 11): a model that degrades into
+    returning prose forever is INDISTINGUISHABLE from one correctly finding
+    nothing unless something counts the parse failure itself.
+    `nora_language_parse_failures_total` must increment on the prose response
+    (the exact input `test_malformed_json_yields_nothing_rather_than_raising`
+    above uses) and must NOT increment on a well-formed, genuinely empty
+    `{"observations": []}` response — reverting the counter call must turn
+    the first assertion red, and counting the empty case too would turn the
+    second red."""
+    metrics = Metrics()
+    prose_observer = LexemeObserver(
+        FakeModel(responses=["sorry, I can't help with that"]), metrics=metrics,
+    )
+    await prose_observer.observe(batch=rows("好撚kam"))
+    assert metrics.get("nora_language_parse_failures_total") == 1
+
+    empty_observer = LexemeObserver(
+        FakeModel(responses=['{"observations": []}']), metrics=metrics,
+    )
+    await empty_observer.observe(batch=rows("好撚kam"))
+    assert metrics.get("nora_language_parse_failures_total") == 1, (
+        "a well-formed empty response must not be counted as a parse failure"
+    )
+
+
 async def test_a_dropped_candidate_is_counted_on_the_no_evidence_reason():
     """The drop in `test_a_candidate_naming_a_message_not_in_the_batch_is_dropped`
     must be OBSERVABLE, not just silent — `nora_language_candidates_dropped_total

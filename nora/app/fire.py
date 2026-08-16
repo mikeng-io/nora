@@ -70,7 +70,12 @@ from typing import Any
 
 from nora.agent.guards import ReplyGuard
 from nora.agent.outbound import OutboundComposer
-from nora.agent.prefill import build_prefill, build_tag_message, escape
+from nora.agent.prefill import (
+    DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
+    build_prefill,
+    build_tag_message,
+    escape,
+)
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
@@ -358,6 +363,7 @@ class FirePath:
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
         tool_call_log_store: ToolCallLogStore | None = None,
+        room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
     ) -> None:
         self._persons = persons
         self._records = records
@@ -410,6 +416,11 @@ class FirePath:
         # this path exactly as inert as it already is for a deployment that
         # has not wired one.
         self._tool_call_log_store = tool_call_log_store
+        # `build_prefill`'s RENDER cap — see `EngagementPipeline`'s identical
+        # field for why this defaults to `build_prefill`'s own default and
+        # what threads a configured value through in production
+        # (`[language].max_rendered_lexemes`).
+        self._room_language_max_entries = room_language_max_entries
 
     async def build_context(self, occasion: Occasion) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -716,6 +727,7 @@ class FirePath:
                 ctx, display_name=self._display_name,
                 context_window=self._context_window,
                 now=now, header=occasion.header(tagger, now),
+                room_language_max_entries=self._room_language_max_entries,
             )
             # `tagger.name`, NOT `Persons.display_name(ctx.message)` — that reads
             # `sender_id`, which is blank here, and would attribute the request to

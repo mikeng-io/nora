@@ -259,6 +259,117 @@ async def test_the_retention_sweep_is_spawned_when_the_flag_is_on(env, monkeypat
     )
 
 
+async def _run_briefly_and_record_dream_wiring(env, monkeypatch) -> list[dict]:
+    """The `dream_loop` sibling of `_run_briefly_and_record_prune_wiring`
+    above — same shape, same reasoning: a spy proves the WIRING (does
+    `App.run` spawn the loop at all), independent of whether `dream_loop`
+    itself works (that is `tests/unit/test_runtime.py`'s job)."""
+    import asyncio
+    import contextlib
+
+    import nora.__main__ as main_module
+
+    calls: list[dict] = []
+
+    async def _never() -> None:
+        await asyncio.sleep(3600)
+
+    def _spy(*args: object, **kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        return _never()
+
+    monkeypatch.setattr(main_module.runtime, "dream_loop", _spy)
+    app = await build_app(env)
+    try:
+        task = asyncio.create_task(app.run())
+        for _ in range(50):
+            await asyncio.sleep(0.02)
+            if calls:
+                break
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    finally:
+        await app.shutdown()
+    return calls
+
+
+async def test_the_dream_loop_is_not_spawned_when_the_flag_is_off(env, monkeypatch):
+    """`config.example.toml` ships `[language] enabled = false` (documented,
+    not merely absent — Task 11 is the Dreamer's first deployment, so it
+    stays off until its extraction quality has been watched for a while).
+    Either way, the fixture's own `enabled` must be false, and that must be
+    what stops `App.run` from spawning the Dreamer's clock — a new subsystem
+    does not switch itself on."""
+    import tomllib
+
+    cfg = tomllib.loads(env.read_text())
+    assert cfg["language"]["enabled"] is False, (
+        "this test's point is the DEFAULT; the fixture must not enable it"
+    )
+
+    assert await _run_briefly_and_record_dream_wiring(env, monkeypatch) == [], (
+        "language.enabled = false must not spawn dream_loop"
+    )
+
+
+async def test_the_dream_loop_is_spawned_when_the_flag_is_on(env, monkeypatch):
+    """The control for the test above — without it, deleting the spawn
+    entirely would leave that one green and this file would assert nothing
+    about the Dreamer ever running."""
+    import tomllib
+
+    import tomli_w
+
+    cfg = tomllib.loads(env.read_text())
+    cfg["language"] = {"enabled": True}
+    env.write_text(tomli_w.dumps(cfg))
+
+    calls = await _run_briefly_and_record_dream_wiring(env, monkeypatch)
+    assert calls, "language.enabled = true must spawn dream_loop"
+    # The config values actually reached the spawn, not just the flag.
+    assert calls[0]["tick_seconds"] == 300.0
+    assert calls[0]["safety_lag"] == 300
+    assert calls[0]["batch_limit"] == 400
+
+
+async def test_build_app_wires_the_language_consolidator_when_enabled(env):
+    """The composition half of Task 11: with `[language] enabled = true`,
+    `build_dependencies` must build a real store and a real consolidator,
+    not just leave the flag readable on `cfg`."""
+    import tomllib
+
+    import tomli_w
+
+    from nora.infra.sql.language import SqlLanguageStore
+    from nora.language.consolidator import LanguageConsolidator
+
+    cfg = tomllib.loads(env.read_text())
+    cfg["language"] = {"enabled": True}
+    env.write_text(tomli_w.dumps(cfg))
+
+    app = await build_app(env)
+    try:
+        assert isinstance(app.deps.language_store, SqlLanguageStore)
+        assert len(app.deps.language_consolidators) == 1
+        assert isinstance(app.deps.language_consolidators[0], LanguageConsolidator)
+    finally:
+        await app.shutdown()
+
+
+async def test_build_app_leaves_the_language_consolidator_unwired_when_disabled(env):
+    """The control for the test above — `[language] enabled = false` (the
+    shipped default) must leave the store `None` and the consolidator tuple
+    empty, the exact "not yet wired" state Task 9 shipped `TranscriptInjection`
+    in."""
+    app = await build_app(env)
+    try:
+        assert app.deps.language_store is None
+        assert app.deps.language_consolidators == ()
+    finally:
+        await app.shutdown()
+
+
 async def test_app_run_spawns_the_lazy_adoption_backfill(env, monkeypatch):
     """The wiring, not the coroutine: build the real app, audit a message from a
     sender identity.toml *does* know, then drive `App.run()` long enough for the

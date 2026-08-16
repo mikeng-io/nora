@@ -17,9 +17,9 @@ def test_config_example_exists_and_parses():
     assert set(data) == {
         "agent",
         "platforms", "llm", "memory", "store", "media", "route", "presence",
-        "search", "weather", "preview", "heartbeat", "reminders", "version",
-        "engagement", "doctrine", "identity_file", "policy_file", "obs", "evals",
-        "tools",
+        "search", "weather", "preview", "heartbeat", "reminders", "language",
+        "version", "engagement", "doctrine", "identity_file", "policy_file",
+        "obs", "evals", "tools",
     }
 
 

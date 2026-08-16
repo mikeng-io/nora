@@ -752,14 +752,65 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # check, since nothing else names a row that was never asked about. Such
     # a candidate is dropped rather than kept, because a quote rendered under
     # a gloss is what makes a wrong gloss visible, and fabricated provenance
-    # is worse than a missing entry. `reason="no_evidence"` is the only value
-    # today; the label exists so a second drop reason never needs a rename.
+    # is worse than a missing entry. `reason="no_evidence"` was the only
+    # value at Task 6; Task 11 added a second, `reason="not_found"`, at the
+    # OTHER hop the same evidence-grounding rule applies to —
+    # `SqlLanguageStore.append_observations`'s own join, when a candidate's
+    # `message_id` WAS in the batch (so it passed the observer's check) but
+    # no longer resolves against a real `messages` row by the time the
+    # INSERT runs (pruned in the window between `RecordStore.since` reading
+    # it and the append landing). Without this second value the two states
+    # were indistinguishable from a bare `appended` count: "the batch had
+    # nothing new" and "the evidence vanished between read and append" both
+    # read as zero.
     _CounterSpec(
         "nora_language_candidates_dropped_total",
         "Lexeme candidates the extractor dropped before they reached the "
         "store, by reason. reason=\"no_evidence\": the model named a "
-        "message_id that is not in the batch it was given.",
+        "message_id that is not in the batch it was given. "
+        "reason=\"not_found\": the message_id WAS in the batch but no "
+        "longer resolved against a real messages row by append time.",
         ("reason",),
+    ),
+    # `dream_loop`'s own instrument for the OTHER Task-6-carry-forward
+    # defect (Task 11): a model that degrades into returning prose forever
+    # is INDISTINGUISHABLE from one correctly finding nothing — neither a
+    # counter nor a log line separated them, and the visible symptom of
+    # both is a lexicon that stops growing. This counts ONLY the first
+    # case (the raw response could not be parsed as the expected
+    # `{"observations": [...]}` shape at all); a well-formed, genuinely
+    # empty response increments nothing here, which is what makes the two
+    # states distinguishable at last.
+    _CounterSpec(
+        "nora_language_parse_failures_total",
+        "Lexeme-extraction model responses that could not be parsed as "
+        "the expected JSON shape at all, distinct from a well-formed "
+        "response that correctly reported no candidates.",
+    ),
+    # dream_loop's per-scope lock (Task 11's first non-negotiable): a slow
+    # extraction still running when the next tick comes round is SKIPPED,
+    # never re-entered — re-entering would read the same un-advanced
+    # watermark and append the same evidence twice, and the rendered
+    # "12x, 3 people" would be a fabricated number. reason="in_flight" is
+    # the only value today.
+    _CounterSpec(
+        "nora_dream_skipped_total",
+        "Dream-loop scope ticks skipped, by reason. reason=\"in_flight\": "
+        "the previous cycle for this scope had not finished yet.",
+        ("reason",),
+    ),
+    # `SqlLanguageStore.watermark_is_behind_the_record`'s tell, read by
+    # `dream_loop`: a watermark sitting below the oldest SURVIVING message
+    # means rows were pruned before this consolidator ever read them —
+    # R-27's `unavailable` ("I could not see those"), never `nothing_found`
+    # ("nothing happened"). Labelled by scope so a specific room's loss is
+    # findable rather than merged into one process-wide number; structurally
+    # zero while `store.prune_enabled` is false.
+    _CounterSpec(
+        "nora_dream_evidence_lost_total",
+        "Dream-loop scopes where messages were pruned before this "
+        "consolidator ever read them, by scope.",
+        ("scope",),
     ),
 )
 

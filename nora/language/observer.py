@@ -171,6 +171,19 @@ class LexemeObserver:
     ) -> list[LexemeCandidate]:
         observations = _parse_observations(raw)
         if observations is None:
+            # A model that degrades into returning prose forever is
+            # INDISTINGUISHABLE from one correctly finding nothing unless
+            # something counts THIS branch specifically — a well-formed
+            # `{"observations": []}` never reaches here at all (it parses
+            # fine and falls through to an empty `candidates` list below).
+            # Both states look identical from the outside (a lexicon that
+            # stops growing); this is the one trace that tells them apart.
+            if self._metrics is not None:
+                self._metrics.inc("nora_language_parse_failures_total")
+            log.warning(
+                "lexeme extraction: model response did not parse as the "
+                "expected JSON shape (%d chars)", len(raw),
+            )
             return []
         by_id = {row.id: row for row in batch}
         candidates: list[LexemeCandidate] = []

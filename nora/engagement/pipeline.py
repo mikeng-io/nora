@@ -48,7 +48,11 @@ from typing import Any
 
 from nora.agent.intent_router import route_intent
 from nora.agent.outbound import OutboundComposer
-from nora.agent.prefill import build_prefill, build_tag_message
+from nora.agent.prefill import (
+    DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
+    build_prefill,
+    build_tag_message,
+)
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.ports import (
@@ -111,6 +115,7 @@ class EngagementPipeline:
         rosters: Mapping[str, RosterSource] | None = None,
         preview_source: LinkPreviewSource | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
+        room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
         # SAME platform the tag arrived on. Nora reached a second platform
@@ -182,6 +187,17 @@ class EngagementPipeline:
         # `None` store as fully inert, same shape as `roster_source`/
         # `preview_source` above.
         self._tool_call_log_store = tool_call_log_store
+        # `build_prefill`'s RENDER cap for the room-language block (Task 11).
+        # Defaults to `DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES` — the same value
+        # `build_prefill` itself defaults to — so a caller that does not pass
+        # this (every test today) keeps behaving exactly as before.
+        # `[language].max_rendered_lexemes` is what threads a configured
+        # value through in production; deliberately smaller than
+        # `TranscriptInjection`'s own STORE limit
+        # (`nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT`), which
+        # this parameter does not touch — see `LanguageConfig`'s own
+        # docstring for why store > render must hold.
+        self._room_language_max_entries = room_language_max_entries
         # R-10's single-in-flight lock and R-30's per-conversation FIFO queue,
         # both keyed by (platform, conversation_id), as one INJECTED
         # collaborator. The queue feeds the lock's one slot in order as each
@@ -452,6 +468,7 @@ class EngagementPipeline:
             # construction.
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name, context_window=self._context_window,
+                room_language_max_entries=self._room_language_max_entries,
             )
             tag_message = build_tag_message(
                 ctx, tagger_name=tagger_name, display_name=self._display_name,

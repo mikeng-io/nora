@@ -122,6 +122,26 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
+        # The Dreamer's clock (Task 11), the SAME conditional shape as the
+        # retention sweep above: `[language] enabled = false` (the shipped
+        # default — a new subsystem does not switch itself on) means
+        # `composition.build_dependencies` built no consolidator at all
+        # (`deps.language_consolidators == ()`), so there is nothing this
+        # loop could tick even if spawned; the flag is what decides whether
+        # it starts, not a widened interval.
+        if self.cfg.language.enabled and deps.language_store is not None:
+            deps.background.spawn(runtime.dream_loop(
+                deps.audit, deps.language_store, deps.language_consolidators,
+                deps.metrics,
+                scopes=deps.language_scopes,
+                tick_seconds=self.cfg.language.tick_seconds,
+                safety_lag=self.cfg.language.safety_lag,
+                quiet_seconds=self.cfg.language.quiet_seconds,
+                max_age_seconds=self.cfg.language.max_age_seconds,
+                batch_limit=self.cfg.language.batch_limit,
+            ))
+        else:
+            log.info("dream loop disabled (language.enabled = false)")
         deps.background.spawn(runtime.debounce_sweep_loop(
             deps.debounce, deps.metrics,
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,

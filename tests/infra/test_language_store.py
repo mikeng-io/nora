@@ -153,9 +153,46 @@ async def test_a_candidate_naming_a_nonexistent_message_id_is_dropped(store):
     """The evidence-grounding rule `LexemeObserver._extract` applies to a
     hallucinated `message_id` extends one hop further here: a candidate whose
     `message_id` does not resolve against a real `messages` row (the SELECT
-    half of the INSERT joins on it) contributes NOTHING, silently."""
+    half of the INSERT joins on it) contributes NOTHING — see the metered
+    test below for the fact that this is now OBSERVABLE, not silent."""
     obs = [observation(message_id=999_999, canonical_form="kam", sense="尷")]
     assert await store.append_observations(scope_id="g1", observations=obs) == 0
+
+
+async def test_a_nonexistent_message_id_is_counted_distinctly_from_a_replay(
+    pg_url, record,
+):
+    """Task 7 carry-forward (folded into Task 11): a candidate whose
+    `message_id` no longer resolves must be METERED distinctly from a benign
+    idempotent REPLAY (a retried cycle re-appending observations whose
+    message_ids resolve fine but conflict on the natural key) — before this,
+    both looked identical from `append_observations`'s bare return value: a
+    lower count than the number of observations submitted. Only the
+    non-resolving case is `reason="not_found"`; replaying a genuinely
+    resolvable candidate must NOT be counted as if evidence had vanished."""
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.obs.metrics import Metrics
+
+    metrics = Metrics()
+    engine = create_sql_engine(pg_url)
+    metered_store = SqlLanguageStore(engine, metrics=metrics)
+    try:
+        [mid] = await _seed(record, 1)
+        real_obs = [observation(message_id=mid, canonical_form="kam", sense="尷")]
+        ghost_obs = [observation(message_id=999_999, canonical_form="lor", sense="語氣")]
+
+        # A REPLAY of a resolvable candidate: appended once, then zero the
+        # second time purely from the natural-key conflict — not_found must
+        # stay at zero throughout.
+        assert await metered_store.append_observations(scope_id="g1", observations=real_obs) == 1
+        assert await metered_store.append_observations(scope_id="g1", observations=real_obs) == 0
+        assert metrics.get("nora_language_candidates_dropped_total", reason="not_found") == 0
+
+        # A candidate whose message_id never resolves — the DISTINCT case.
+        assert await metered_store.append_observations(scope_id="g1", observations=ghost_obs) == 0
+        assert metrics.get("nora_language_candidates_dropped_total", reason="not_found") == 1
+    finally:
+        await engine.dispose()
 
 
 async def test_observed_at_and_conversation_id_come_from_the_real_message_row(

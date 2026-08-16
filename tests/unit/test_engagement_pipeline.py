@@ -251,6 +251,7 @@ def _build_pipeline(
     tool_registry=None,
     queue_max: int = 16,
     policy=None,
+    room_language_max_entries=None,
 ):
     audit = audit if audit is not None else FakeRecordStore()
     memory = memory if memory is not None else _FakeMemory()
@@ -262,6 +263,9 @@ def _build_pipeline(
     if adapters is None:
         the_adapter = adapter or _FakeAdapter()
         adapters = {the_adapter.platform: the_adapter}
+    extra = {}
+    if room_language_max_entries is not None:
+        extra["room_language_max_entries"] = room_language_max_entries
     pipeline = EngagementPipeline(
         adapters=adapters,
         audit=audit,
@@ -285,6 +289,7 @@ def _build_pipeline(
         rosters={"signal": roster_source} if roster_source else {},
         slots=ConversationSlots(maxlen=queue_max, spawn=background.spawn),
         policy=policy if policy is not None else permissive_policy(),
+        **extra,
     )
     return pipeline, metrics, audit, memory, background
 
@@ -1793,3 +1798,24 @@ async def test_an_unwired_platform_refuses_rather_than_picking_an_adapter():
     assert signal_adapter.sent == [], (
         "an unroutable tag must not fall back to another platform's adapter"
     )
+
+
+async def test_the_configured_room_language_render_cap_reaches_build_prefill(monkeypatch):
+    """Task 11: `[language].max_rendered_lexemes` is inert unless it actually
+    reaches `build_prefill`'s `room_language_max_entries` — this is what
+    proves the wiring, not merely that the constructor accepts the
+    parameter."""
+    from nora.engagement import pipeline as pipeline_module
+
+    captured: list[int] = []
+    real_build_prefill = pipeline_module.build_prefill
+
+    def _spy(*args, **kwargs):
+        captured.append(kwargs["room_language_max_entries"])
+        return real_build_prefill(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline_module, "build_prefill", _spy)
+    pipeline, *_ = _build_pipeline(room_language_max_entries=1)
+    await pipeline.run(_request())
+
+    assert captured == [1]

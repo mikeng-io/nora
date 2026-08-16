@@ -79,6 +79,7 @@ import logging
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
@@ -117,8 +118,16 @@ class SqlLanguageStore:
     by `nora.language.consolidator.LanguageConsolidator` and `dream_loop`).
     """
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, metrics: Any = None) -> None:
+        """`metrics` is INJECTED, never imported — the same discipline
+        `SqlRecordStore.__init__` documents: `nora.infra` sits BELOW
+        `nora.obs` in import-linter's layers contract, so importing
+        `nora.obs.metrics` here (even lazily, inside a method) breaks that
+        contract. `Any` rather than `Metrics` for the same reason; `None`
+        (the default) means this store simply does not count, which is
+        correct for every unit test that does not care."""
         self._engine = engine
+        self._metrics = metrics
 
     async def append_observations(
         self, *, scope_id: str, observations: Sequence[LexemeCandidate]
@@ -139,9 +148,21 @@ class SqlLanguageStore:
         candidate whose `message_id` no longer resolves contributes no row at
         all, the same fail-closed drop `LexemeObserver._extract` already
         applies to a hallucinated `message_id`.
+
+        `not_found` is counted for exactly that case (Task 7 carry-forward,
+        folded into Task 11): a cheap indexed pre-check (`messages.id`'s own
+        PK) against the SAME candidate id set, BEFORE the insert, tells a
+        candidate whose evidence vanished between `RecordStore.since` reading
+        it and this append landing — the message was pruned in that window —
+        apart from a candidate that resolved fine and was merely a REPLAY
+        (skipped by `ON CONFLICT DO NOTHING` on the natural key, which this
+        pre-check does not touch). Without it, "the batch had nothing new"
+        and "the evidence vanished between read and append" were the same
+        unmetered zero.
         """
         if not observations:
             return 0
+        candidate_ids = {obs.message_id for obs in observations}
         branches = [
             sa.select(
                 sa.literal(scope_id, type_=sa.Text).label("scope_id"),
@@ -178,7 +199,21 @@ class SqlLanguageStore:
             )
         )
         async with self._engine.begin() as conn:
+            resolvable = set(
+                (
+                    await conn.execute(
+                        sa.select(MESSAGES.c.id).where(MESSAGES.c.id.in_(candidate_ids))
+                    )
+                ).scalars().all()
+            )
             result = await conn.execute(stmt)
+        unresolved = candidate_ids - resolvable
+        if unresolved and self._metrics is not None:
+            self._metrics.inc(
+                "nora_language_candidates_dropped_total",
+                float(len(unresolved)),
+                reason="not_found",
+            )
         return int(result.rowcount or 0)
 
     async def rescore(self, *, scope_id: str, now_ms: int) -> None:
