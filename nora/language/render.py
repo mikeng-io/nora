@@ -21,6 +21,18 @@ Three rulings, already made, implemented here rather than re-litigated:
 This block renders into the prefill's UNCACHED volatile tier (see
 `nora/agent/prefill.py`'s cache-hit notes) — every token here is paid on
 every turn, so `max_entries` is a cost control, not tidiness.
+
+**Store/renderer limit coupling.** `SqlLanguageStore.room_language` applies a
+plain `ORDER BY recognition_score DESC LIMIT :limit` with no awareness of
+whether an entry carries a quotable example — that filter is rule 2, and it
+lives here, not in the store. So if a caller asks the store for exactly
+`max_entries` rows and some of those rows turn out to lack an example, this
+renderer drops them (correctly — rule 2 wins) and CANNOT reach further down
+to replace them, because it was only ever given `max_entries` rows to begin
+with. The result is a block with fewer than `max_entries` lines even though
+the room has enough evidence to fill it. To reliably fill the cap, callers
+must request MORE rows from the store than `max_entries` actually rendered
+here — the two limits are related but must not be set equal.
 """
 
 from __future__ import annotations
@@ -44,11 +56,11 @@ def render_room_language(language: RoomLanguage, *, max_entries: int) -> str:
 
     lines: list[str] = []
     for lex in language.lexemes:
+        if len(lines) >= max_entries:
+            break
         if not lex.examples:
             continue
         lines.append(_render_entry(lex))
-        if len(lines) >= max_entries:
-            break
 
     if not lines:
         return ""

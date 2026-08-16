@@ -80,3 +80,41 @@ def test_the_closing_frame_is_present_and_fixed():
     block = render_room_language(language_with(lexeme("kam")), max_entries=10)
     assert "not a set of words to reach for" in block
     assert "not a description of anybody" in block
+
+
+def test_max_entries_zero_renders_no_block():
+    """The boundary the cap-check-after-append bug missed: `max_entries=0`
+    means zero entries, and a zero-entry block is no block at all — same as
+    an empty `RoomLanguage`. Catches the regression where the loop appended
+    the entry BEFORE checking the cap, so `max_entries=0` still rendered one
+    entry (the cap could only ever be exceeded by one, never actually be
+    zero)."""
+    block = render_room_language(
+        language_with(lexeme("a"), lexeme("b")), max_entries=0)
+    assert block == ""
+
+
+def test_max_entries_one_renders_exactly_one_entry():
+    block = render_room_language(
+        language_with(lexeme("a"), lexeme("b"), lexeme("c")), max_entries=1)
+    assert block.count("\n  ") == 1
+    assert "  a  " in block
+    assert "  b  " not in block
+    assert "  c  " not in block
+
+
+def test_entries_render_in_the_given_order_not_resorted():
+    """Ruling 1 is load-bearing: `RoomLexeme` carries no score field so
+    nothing downstream can re-rank, and what the model sees must be ranked by
+    the store's evidence, not by anything this renderer decides. The three
+    lexemes below are given in an order that does NOT match alphabetical
+    order, occurrence_count order, distinct_speakers order, or first_seen_ms
+    order — so a `sorted()` introduced on ANY visible field would move at
+    least one of them and this test would go red. Must fail if a `sorted()`
+    (by any key) is introduced into the render loop."""
+    block = render_room_language(language_with(
+        lexeme("zeta", occurrence_count=1, distinct_speakers=5, first_seen_ms=300_000),
+        lexeme("alpha", occurrence_count=9, distinct_speakers=1, first_seen_ms=100_000),
+        lexeme("mid", occurrence_count=5, distinct_speakers=3, first_seen_ms=200_000),
+    ), max_entries=10)
+    assert block.index("zeta") < block.index("alpha") < block.index("mid")
