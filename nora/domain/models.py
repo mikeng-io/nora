@@ -286,6 +286,42 @@ class TagContext:
 
 
 @dataclass(frozen=True)
+class LexemeCandidate:
+    """One observation `LexemeObserver` (`nora.language.observer`, Task 6)
+    extracted from a batch, joined back to its evidence.
+
+    Lives here rather than in `nora.language` for the same FORCED reason
+    `LexemeExample`/`RoomLexeme`/`RoomLanguage` do (see Task 4's own note):
+    `nora.infra.sql.language.SqlLanguageStore.append_observations` consumes
+    this type, `nora.infra` sits BELOW `nora.language` in the layers
+    contract, and a lower layer may never import a higher one — so a type
+    both packages need to name has to live at `nora.domain`, the layers'
+    floor, exactly where `TagContext` already does.
+
+    `message_id`/`person_id` are the EVIDENCE this candidate is grounded
+    in — `LexemeObserver` joins them back against the batch itself by
+    `message_id`, never trusting the model's own claim (a model can
+    hallucinate a `message_id`; a candidate whose evidence is not in the
+    batch is dropped before construction, never carried as one of these).
+    `person_id` in particular is never model-supplied: it is the JOINED
+    row's own `person_id`, the roster's canonical id.
+
+    `surface_form` is what the model actually saw on the wire, kept apart
+    from `canonical_form` (what it normalised to) because "kam"/"劲"/"勁"
+    can all be one word, and collapsing them at extraction time would make a
+    wrong normalisation unreviewable later.
+    """
+
+    surface_form: str
+    canonical_form: str
+    sense: str
+    part_of_speech: str
+    message_id: int
+    person_id: str | None
+    confidence: float
+
+
+@dataclass(frozen=True)
 class LexemeExample:
     """One verbatim usage, kept WITH its attribution. The gloss above it is
     model-authored; this is not. Rendering one of these under every entry is

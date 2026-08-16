@@ -745,6 +745,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "answered — level=identity/content/none.",
         ("platform", "status", "level"),
     ),
+    # The Dreamer's one LLM call (nora.language.observer.LexemeObserver,
+    # design/2026-08-15-room-language-dreamer §Task 6). A model can name a
+    # `message_id` that is not in the batch it was given — the model's own
+    # words are the only thing that makes a claim like that possible to
+    # check, since nothing else names a row that was never asked about. Such
+    # a candidate is dropped rather than kept, because a quote rendered under
+    # a gloss is what makes a wrong gloss visible, and fabricated provenance
+    # is worse than a missing entry. `reason="no_evidence"` is the only value
+    # today; the label exists so a second drop reason never needs a rename.
+    _CounterSpec(
+        "nora_language_candidates_dropped_total",
+        "Lexeme candidates the extractor dropped before they reached the "
+        "store, by reason. reason=\"no_evidence\": the model named a "
+        "message_id that is not in the batch it was given.",
+        ("reason",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
