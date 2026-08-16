@@ -454,8 +454,13 @@ async def test_watermark_is_behind_the_record_is_false_when_caught_up(store, rec
 
 
 async def test_watermark_is_behind_the_record_is_false_for_a_fresh_watermark(store, record):
-    """`watermark=0` with the FIRST surviving row at `id == 1` is the ordinary
-    "never consolidated yet" state, not evidence loss."""
+    """`watermark=0` is a scope that has never consolidated anything yet, and
+    the `watermark <= 0` guard returns `False` for it unconditionally —
+    regardless of where this conversation's own rows happen to sit in the
+    shared global id sequence (see `watermark_is_behind_the_record`'s own
+    docstring, and `test_watermark_is_behind_the_record_is_false_on_the_
+    first_tick_of_an_ordinary_room` below for the case that guard exists to
+    prevent)."""
     await record.append(message=_msg())
     assert await store.watermark_is_behind_the_record(
         scope_id="g1", watermark=0) is False
@@ -478,20 +483,29 @@ async def test_watermark_is_behind_the_record_is_true_when_rows_were_pruned_unre
 
 
 async def test_watermark_is_behind_the_record_is_scoped_to_the_conversation(store, record):
+    """`watermark=1`, not `0` — a nonzero watermark is what makes this test
+    actually reach the per-conversation query rather than short-circuiting on
+    the `watermark <= 0` guard, so it genuinely exercises whether `g2`'s row
+    leaks into `g1`'s (empty) result."""
     await record.append(message=_msg(conv="g2", body="other room"))
     assert await store.watermark_is_behind_the_record(
-        scope_id="g1", watermark=0) is False
+        scope_id="g1", watermark=1) is False
 
 
 async def test_watermark_is_behind_the_record_is_not_masked_by_a_surviving_nora_row(
     store, record,
 ):
-    """A NORA row surviving at the very front of a conversation must not mask
-    genuine human-evidence loss behind it. Before the `is_nora == 0` predicate,
-    `MIN(id)` over EVERY surviving row (Nora's included) could stay pinned at
-    Nora's own untouched row while real human evidence just after it (rows
-    2-4) was pruned unread — and the check would never fire, because Nora's
-    row alone made the table look undisturbed from `id == 1`."""
+    """A NORA row surviving at the front of a conversation's UNREAD range
+    must not mask genuine human-evidence loss behind it. Before the
+    `is_nora == 0` predicate, `MIN(id)` over EVERY surviving row (Nora's
+    included) could stay pinned at Nora's own untouched row while real human
+    evidence just after it (rows 2-4) was pruned unread — and the check would
+    never fire, because Nora's row alone made the table look undisturbed.
+    `watermark=1`, not `0`: this scope HAS consumed something before (the
+    `watermark <= 0` guard below is deliberately not what is under test
+    here — that guard's own case is
+    `test_watermark_is_behind_the_record_is_false_on_the_first_tick_of_an_
+    ordinary_room`)."""
     await record.append(message=_msg(body="hers"), is_nora=True)  # id 1, survives
     for i in range(2, 5):
         await record.append(message=_msg(body=f"lost{i}", ts=i))  # ids 2-4
@@ -499,4 +513,26 @@ async def test_watermark_is_behind_the_record_is_not_masked_by_a_surviving_nora_
         await conn.execute(sa.delete(MESSAGES).where(MESSAGES.c.id.in_([2, 3, 4])))
     await record.append(message=_msg(body="theirs", ts=5))  # id 5, survives
     assert await store.watermark_is_behind_the_record(
-        scope_id="g1", watermark=0) is True
+        scope_id="g1", watermark=1) is True
+
+
+async def test_watermark_is_behind_the_record_is_false_on_the_first_tick_of_an_ordinary_room(
+    store, record,
+):
+    """`messages.id` is ONE GLOBAL sequence shared by every conversation and
+    sender. For any room other than the very first ever recorded in the whole
+    deployment, its oldest human row already has `id >> 1` — so WITHOUT the
+    `watermark <= 0` guard, `min_id > 0 + 1` is `True` on the first tick of
+    essentially every room, with nothing pruned and nothing lost: not a
+    corner case, the guaranteed path for every room in a multi-group
+    deployment. `nora_dream_evidence_lost_total` is a MONOTONIC counter, so
+    firing it once per room on an ordinary first tick makes it permanently
+    non-zero — the one signal meaning "evidence was pruned unread" could
+    never again be read as evidence of anything. Ten messages in an unrelated
+    conversation push the shared sequence forward before `g1`'s own first
+    (and only, nothing pruned) message ever lands, simulating exactly that."""
+    for _ in range(10):
+        await record.append(message=_msg(conv="other-room"))
+    await record.append(message=_msg(conv="g1"))  # g1's own oldest row, id 11
+    assert await store.watermark_is_behind_the_record(
+        scope_id="g1", watermark=0) is False

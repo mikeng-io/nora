@@ -451,20 +451,40 @@ class SqlLanguageStore:
         """True when the oldest SURVIVING message's id is more than one past
         `watermark` — i.e. something between what was already read and what
         still exists was deleted before this consolidator ever read it. A
-        fresh scope with `watermark == 0` and a first surviving row at `id ==
-        1` is NOT behind (`1 > 0 + 1` is false); a scope pruned to `id == 7`
-        while the watermark sits at `3` IS (`7 > 3 + 1`) — rows 4-6 are gone
-        and were never consolidated. No surviving rows at all is not "behind"
-        either — there is nothing to have lost evidence from.
+        scope pruned to `id == 7` while the watermark sits at `3` IS behind
+        (`7 > 3 + 1`) — rows 4-6 are gone and were never consolidated. No
+        surviving rows at all is not "behind" either — there is nothing to
+        have lost evidence from.
 
-        `is_nora == 0` is part of the predicate for the same reason `lag`
-        carries it: the watermark only ever advances over HUMAN rows
-        (`RecordStore.since` excludes `is_nora`), so a surviving Nora row is
-        not evidence this consolidator could have lost — and the predicate is
-        what lets this query use the partial `idx_messages_dream_lag`
-        (`(conversation_id, id) WHERE is_nora = 0`) instead of scanning the
-        conversation's whole history every tick.
+        `watermark <= 0` returns `False` UNCONDITIONALLY, before the query
+        runs at all — this is not an optimisation, it is required for
+        correctness. `watermark_for` returns `0` for any scope this
+        consolidator has never watermarked, but `messages.id` is ONE GLOBAL
+        sequence shared by every conversation and every sender: for any
+        conversation other than the very first row ever recorded in the whole
+        deployment, its oldest human row already has `id >> 1`. Without this
+        early return, `min_id > 0 + 1` is `True` on the first tick of
+        essentially every room, with nothing pruned and nothing lost — not a
+        corner case, the guaranteed path for every room in a multi-group
+        deployment. `nora_dream_evidence_lost_total` is a monotonic counter;
+        firing it once per room on an ordinary first tick makes it
+        permanently non-zero, and a tell that always fires is not
+        fail-closed, it is noise — the one signal that should mean "evidence
+        was pruned unread" could never again be read as evidence of anything.
+        A scope only has evidence worth losing once IT has actually
+        consumed some (`watermark > 0`); before that, "not behind" is simply
+        true.
+
+        `is_nora == 0` is part of the (post-guard) predicate for the same
+        reason `lag` carries it: the watermark only ever advances over HUMAN
+        rows (`RecordStore.since` excludes `is_nora`), so a surviving Nora
+        row is not evidence this consolidator could have lost — and the
+        predicate is what lets this query use the partial
+        `idx_messages_dream_lag` (`(conversation_id, id) WHERE is_nora = 0`)
+        instead of scanning the conversation's whole history every tick.
         """
+        if watermark <= 0:
+            return False
         stmt = sa.select(sa.func.min(MESSAGES.c.id)).where(
             MESSAGES.c.conversation_id == scope_id,
             MESSAGES.c.is_nora == 0,
