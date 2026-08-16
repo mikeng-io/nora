@@ -430,12 +430,19 @@ This rewrites `tests/infra/pg_schema_baseline.sql`. Never hand-edit it. Read the
 Run: `uv run pytest tests/infra/test_schema_parity.py -q`
 Expected: PASS. This is the real gate — it compares `schema.py`'s `MetaData` against the migrated database and diffs the normalised dump, and it sees CHECK constraints and index ordering that `alembic check` cannot.
 
-If `autocommit_block()` misbehaves, this is where it surfaces. Confirm the index actually exists and is partial:
+If `autocommit_block()` misbehaves, this is where it surfaces.
 
-```bash
-docker exec nora-db-1 psql -U nora -d nora -c "\d+ messages" | grep dream_lag
+**Verify the index against the throwaway test database the suite spins up — NEVER against `nora-db-1`.** `nora-db-1` is the live deployment: running a migration there puts the database ahead of the running image, and `nora/app/composition.py:292` turns a migration error into a `StartupError`, so Nora refuses to start on her next restart. An earlier draft of this step named `nora-db-1` and that is exactly what happened (2026-08-16).
+
+The parity test already migrates a testcontainers database; add a temporary assertion inside `tests/infra/test_schema_parity.py` if you need to see the index definition, or inspect it through the same fixture:
+
+```python
+rows = conn.exec_driver_sql(
+    "select indexdef from pg_indexes where indexname = 'idx_messages_dream_lag'"
+).all()
+assert "WHERE (is_nora = 0)" in rows[0][0]
 ```
-Expected: a line containing `WHERE (is_nora = 0)`.
+Expected: the definition contains `WHERE (is_nora = 0)`, and `pg_index.indisvalid` is true.
 
 - [ ] **Step 6: Run all four gates, then commit**
 
