@@ -376,11 +376,18 @@ vision_max_bytes = 8388608
 vision_timeout_seconds = 20.0
 # Reading a sticker automatically at INGEST (sticker spec §6) — separate from
 # media_fetch above because the two calls have different budgets and risk.
-# sticker_descriptions ships false regardless: the spec §7 probe (2026-08-15,
-# live gateway) cleared the animated-WebP risk this flag was gated on, but
-# turning description-on-by-default on is a latency trade-off left to the
-# operator, not this branch.
-# sticker_descriptions = false
+#
+# ON since 2026-08-16, operator's call. The spec §7 probe (2026-08-15, live
+# gateway) cleared the animated-WebP risk this flag was originally gated on;
+# what remained was a latency trade-off the branch deliberately would not make
+# on its own. The cost being accepted, measured rather than estimated: a NEW
+# sticker blocks the ingest path 3.9-12.2s while the vision call runs, and when
+# it rides on the tagging message that lands on Nora's reply latency. A repeat
+# is free — 41% of sightings already, rising as the group's sticker set
+# saturates. Watch nora_sticker_describe_seconds and the level= label on
+# nora_sticker_descriptions_total; if the p99 hurts, this line is the off
+# switch and nothing else has to change.
+sticker_descriptions = true
 # The probe also found the shipped 128-token default cannot work: MiMo is a
 # reasoning model and reasoning tokens share this budget with the answer, so
 # 128 returned empty content on 4/4 calls. 512 was the lowest value that
