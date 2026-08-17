@@ -3,6 +3,7 @@
 import subprocess
 from pathlib import Path
 
+from nora.agent.tools import NATIVE_TOOLS
 from nora.domain.media import MediaRef
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.audit import SqlRecordStore
@@ -327,3 +328,43 @@ async def test_her_own_words_are_never_evidence_for_the_room_lexicon(pg_url):
         )
     finally:
         await store.aclose()
+
+
+def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
+    """DEC-112. Measured 2026-08-17: `recall_lookups` was reached for 0 times
+    across 30 consecutive live turns while the log it reads held 21 rows, and
+    she retracted four sourced, correct answers as 老作 rather than read them
+    back. The cause was its `when` clause, which sold the tool as a COST saving
+    — «call this before re-running…» — and being called a liar does not feel
+    like being about to re-search.
+
+    Two halves, and BOTH must stay: the generated capability block is the only
+    place the verb is named (`registry.py::capability` — the registry is
+    capability's source of truth, so `conduct.md` must NOT name it), and
+    `conduct.md` is the only place the position lives. Revert either and this
+    goes red.
+    """
+    when = NATIVE_TOOLS["recall_lookups"].when
+
+    # The half DEC-92's prose could not reach: this is her EVIDENCE, not a cache.
+    assert "actually" in when.lower(), when
+    assert "doubted" in when.lower() or "guessed" in when.lower(), when
+    # The original cost framing is kept, not replaced — re-running is still waste.
+    assert "re-running" in when, when
+
+    conduct = (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+    section = conduct.split("# Being contradicted", 1)[1].split("\n# ", 1)[0]
+    # The prose is hard-wrapped, so every phrase below spans a newline in the
+    # file; match on the sentence, not on the line breaks it happens to have.
+    contradicted = " ".join(section.split())
+
+    # Not remembering the checking is not evidence the checking did not happen.
+    assert "not evidence that you did not check" in contradicted, contradicted
+    # She has a record and is told to read it before concluding she guessed.
+    assert "record of what you actually looked up" in contradicted, contradicted
+    # Conceding a fault she does not have is a lie, not modesty.
+    assert "blame turned" in contradicted, contradicted
+
+    # The position must NOT name the tool: capability's source of truth is the
+    # registry, and an authored copy is a cache with no invalidation.
+    assert "recall_lookups" not in conduct

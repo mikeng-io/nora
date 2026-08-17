@@ -381,11 +381,34 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # "ask about later" version of "what did I already check"). Not
     # terminal. `source_tier=None`: this isn't a fact SOURCE of its own —
     # it reads what another cacheable tool already sourced.
-    "recall_lookups": NativeTool(2, "something you or an earlier turn already "
-                                    "looked up in this conversation, within the "
-                                    "last 7 days — call this before re-running "
-                                    "place_info/route/web_search/weather/transit "
-                                    "for something that might already be known"),
+    # The `when` clause below was WIDENED 2026-08-17, and the reason is measured,
+    # not stylistic. It used to say only «call this before re-running
+    # place_info/route/web_search/weather/transit for something that might
+    # already be known» — a COST framing, about not paying for a duplicate call.
+    # Across 30 consecutive live turns (Langfuse, 2026-08-15..17) it was reached
+    # for 0 times, while the log it reads had 21 rows waiting in it.
+    #
+    # What that cost me is the whole reason the tool exists. A turn's tool
+    # results die with its loop; her replies survive into `group_transcript` as
+    # bare text with no provenance. So when an earlier answer was doubted, she
+    # had no way to see that she HAD checked — and `conduct.md`'s «check what you
+    # found» had nothing to reach for. She concluded she must have been guessing
+    # and retracted four sourced, correct answers as 老作, then reported having
+    # only pretended to search. The confession was the fabrication.
+    #
+    # A tool reached for only when she is about to re-search is never reached for
+    # when she is being called a liar — those do not feel like the same moment.
+    # Hence the second half: this is where her own evidence lives, not merely a
+    # cache. Same lesson as the `about`/`load_transcript` note above — the clause
+    # the router matches on is the feature, not documentation of it.
+    "recall_lookups": NativeTool(2, "what you or an earlier turn already looked "
+                                    "up in this conversation, within the last 7 "
+                                    "days — your record of what you ACTUALLY "
+                                    "checked: reach for it before re-running "
+                                    "place_info/route/web_search/weather/transit, "
+                                    "and whenever an earlier answer of yours is "
+                                    "doubted or you cannot tell whether you "
+                                    "checked something or guessed it"),
     # 2, sized like the other look-it-up tools: one message can name two images
     # (a photo AND a screenshot), and two describe calls plus a reply still leave
     # the turn. The number is not what keeps two calls inside the loop budget —
