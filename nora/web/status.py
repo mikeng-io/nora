@@ -24,6 +24,11 @@ from nora.domain.reminders import ReminderStore
 # docstring) — every conversation's pending rows, not just overdue ones.
 _REMINDERS_LIMIT = 50
 
+# How many upcoming rows the payload names individually. The array is a
+# friend-facing "what's coming up" glance, not an operator export — capped
+# so a busy heartbeat can't turn this into an unbounded response.
+_UPCOMING_SHOWN = 10
+
 
 async def build_status_payload(
     *, store: RecordStore, honcho: MemoryStore, reminders: ReminderStore,
@@ -41,9 +46,8 @@ async def build_status_payload(
         honcho_reachable = False
 
     rows = await reminders.all_pending(limit=_REMINDERS_LIMIT)
-    # Timestamps only, never `.text` — a reminder's sentence is the
-    # requester's own words and stays off this friend-facing surface.
-    next_due_at = min((r.due_at for r in rows), default=None)
+    ordered = sorted(rows, key=lambda r: r.due_at)
+    next_due_at = ordered[0].due_at if ordered else None
 
     return {
         "uptime_seconds": time.time() - started_at,
@@ -52,5 +56,19 @@ async def build_status_payload(
         "reminders": {
             "count": len(rows),
             "next_due_at": next_due_at.isoformat() if next_due_at else None,
+            # due_at/platform/conversation_id only — NEVER `.text` (a
+            # reminder's sentence is the requester's own words) and NEVER
+            # `requester_person_id` (attributing "whose reminder" needs a
+            # Persons collaborator this module doesn't take; a real future
+            # addition, not assumed into existence here — same standard the
+            # module docstring already holds the cross-room activity field to).
+            "upcoming": [
+                {
+                    "due_at": r.due_at.isoformat(),
+                    "platform": r.platform,
+                    "conversation_id": r.conversation_id,
+                }
+                for r in ordered[:_UPCOMING_SHOWN]
+            ],
         },
     }

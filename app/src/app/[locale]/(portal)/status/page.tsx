@@ -83,13 +83,32 @@ export default function StatusPage() {
               <CardTitle>{t("remindersLabel")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="font-mono text-[12.5px] text-text-secondary">
-                {status.reminders.count === 0
-                  ? t("remindersNone")
-                  : t("remindersSome", { count: status.reminders.count })}
-                {status.reminders.next_due_at &&
-                  ` · ${t("remindersNextDue", { date: status.reminders.next_due_at })}`}
-              </p>
+              {status.reminders.count === 0 ? (
+                <p className="font-mono text-[12.5px] text-text-secondary">{t("remindersNone")}</p>
+              ) : (
+                <ul className="space-y-2">
+                  {status.reminders.upcoming.map((r, i) => (
+                    <li
+                      key={i}
+                      className="flex items-center justify-between border-b border-border pb-2 text-[13px] last:border-0 last:pb-0"
+                    >
+                      <span className="text-text-secondary">
+                        {new Date(r.due_at).toLocaleString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                      <span className="font-mono text-[10px] uppercase tracking-wide text-text-muted">
+                        {r.platform === "discord"
+                          ? t("remindersPlatformDiscord")
+                          : t("remindersPlatformSignal")}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </>

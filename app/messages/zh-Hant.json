@@ -29,8 +29,8 @@
     "memoryDown": "而家連唔到記憶 — 佢今日可能唔記得。",
     "remindersLabel": "未完成嘅提醒",
     "remindersNone": "冇未完成嘅提醒。",
-    "remindersSome": "重有 {count} 個未完成",
-    "remindersNextDue": "下一個 {date}"
+    "remindersPlatformSignal": "Signal",
+    "remindersPlatformDiscord": "Discord"
   },
   "memory": {
     "eyebrow": "Nora · 記憶展示",

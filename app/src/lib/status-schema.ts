@@ -9,6 +9,13 @@ export const StatusSchema = z.object({
   reminders: z.object({
     count: z.number(),
     next_due_at: z.string().nullable(),
+    upcoming: z.array(
+      z.object({
+        due_at: z.string(),
+        platform: z.string(),
+        conversation_id: z.string(),
+      }),
+    ),
   }),
 });
 
