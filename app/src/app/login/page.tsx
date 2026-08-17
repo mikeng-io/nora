@@ -17,7 +17,7 @@ export default async function LoginPage({
       <form
         action={async () => {
           "use server";
-          await signIn("discord");
+          await signIn("discord", { redirectTo: "/status" });
         }}
       >
         <button
