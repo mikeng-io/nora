@@ -265,8 +265,10 @@ def _voice() -> str:
 
 
 def test_voice_states_the_hong_kong_language_policy():
+    # Re-pointed 2026-08-17 for the operator's v13 rewrite: the file is now
+    # written in Cantonese itself, so the policy names 廣東話, not "Cantonese".
     text = _voice()
-    assert "Cantonese" in text
+    assert "廣東話" in text
     assert "繁體" in text
     assert "口語" in text
     assert "Mandarin" not in text
@@ -294,7 +296,15 @@ def test_voice_teaches_swearing_as_grammar_rather_than_as_a_word_list():
     What v12 kept, and what this now pins, is the other half of the same
     position: the words are named as FUNCTION (重音/反應/節奏, chosen from the
     moment) rather than as vocabulary, plus the anti-template rule that killed
-    the 屌-explain-punchline shape."""
+    the 屌-explain-punchline shape.
+
+    RE-POINTED 2026-08-17 a second time for the operator's v13 rewrite, which
+    put the whole file into Cantonese and cut the swearing section to three
+    short paragraphs. The substance pinned below is unchanged: function over
+    vocabulary, chosen from the live line, and the template shape still named
+    as the false note. The anchors moved to the Cantonese phrases that now
+    carry them (「性格賣點」 for "personality feature", 「模板」 for
+    "punctuation template")."""
     text = _voice()
     assert "撚" in text and "鳩" in text
     # Function, not vocabulary — what the words DO in a sentence.
@@ -302,9 +312,9 @@ def test_voice_teaches_swearing_as_grammar_rather_than_as_a_word_list():
     # Chosen from the live line and the room, which generates; a list closes.
     assert "跟眼前嗰句" in text
     # The negative that stops it becoming a trait she performs.
-    assert "personality feature" in text
+    assert "性格賣點" in text
     # DEC-94's measured failure shape, still banned in terms.
-    assert "punctuation template" in text
+    assert "模板" in text
 
 
 def test_voice_hits_without_negotiating_or_reassuring():
@@ -322,15 +332,21 @@ def test_voice_hits_without_negotiating_or_reassuring():
     not. v12 states it as the portrait's own negative — the customer-service
     residue is named as a tell that the assistant voice has taken over, and the
     hit is described as landing on one exact thing rather than rebutting a list.
+
+    RE-POINTED 2026-08-17 again for the operator's v13 rewrite: the file is now
+    written in Cantonese, so the anchors move to the phrases carrying the same
+    stance — 「客服腔」 for the residue, 「仲有冇嘢幫到你」 for the offer-to-help
+    ending, 「捉中一樣嘢就收手」 for the one-exact-thing hit, and
+    「解釋自己嘅拒絕」 for narrating instead of making it.
     """
     text = _voice()
     # The de-escalation shape, banned as a tell rather than as an imperative.
-    assert "customer-service residue" in text
-    assert "ending with an offer to help" in text
+    assert "客服腔" in text
+    assert "仲有冇嘢幫到你" in text
     # Hit once, on the live thing — the replacement for 「唔係逐點反駁」.
-    assert "notices one exact thing and stops" in text
+    assert "捉中一樣嘢就收手" in text
     # And do not narrate the refusal or the tone instead of making it.
-    assert "explaining a joke, a refusal, or your own tone" in text
+    assert "解釋自己嘅拒絕" in text
 
 
 def test_voice_does_not_enumerate_closed_sets_where_it_needs_a_generative_rule():
@@ -370,19 +386,20 @@ def test_voice_describes_and_does_not_legislate():
     like a puppy», and two rules were found in direct contradiction.
 
     A ratio is a blunt instrument, so this is deliberately a loose ceiling: it
-    catches a slide back into rule-stacking without dictating any sentence."""
+    catches a slide back into rule-stacking without dictating any sentence.
+
+    RE-POINTED 2026-08-17 for the operator's v13 rewrite: the file is now
+    written in Cantonese, so an English-only regex would count ~0 and go
+    vacuous — exactly how rule-stacking would sneak back. The markers now
+    include the Cantonese negations a rule is written in (唔好/唔使/唔准/禁止/
+    避免). v13 measures 12; the ceiling drops from 65 to 40 so it still bites
+    before the balance slides, without pinning the author's fingers."""
     text = _voice()
-    prohibitions = len(re.findall(r'\b(never|not|no|avoid|banned|forbidden)\b', text, re.I))
-    # 65, and the number is the whole test. The first version said 90, which the
-    # v8 file it was written to REJECT scores 75 against — a ceiling that
-    # green-lights the thing it exists to catch is decoration, and the
-    # pre-deploy review caught it by running the assertion against the old file
-    # (the repo's own standard: revert the change, does it go red?).
-    #
-    # 65 sits between v8's 75 and v9's 55: a real gate with real headroom, and
-    # the next author who stacks ten more prohibitions trips it before the
-    # balance is back where DEC-94 measured the puppy.
-    assert prohibitions < 65, (
+    prohibitions = len(re.findall(
+        r'\b(never|not|no|avoid|banned|forbidden)\b|唔好|唔使|唔准|禁止|避免',
+        text, re.I,
+    ))
+    assert prohibitions < 40, (
         f"voice.md carries {prohibitions} prohibitions — it is legislating "
         "again. It describes who she is; constraints.md holds the hard lines."
     )
