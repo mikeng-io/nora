@@ -1,22 +1,10 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import fs from "node:fs";
 import * as Separator from "@radix-ui/react-separator";
-import { cva } from "class-variance-authority";
-import { Activity, Sparkles } from "lucide-react";
 import { auth } from "@/auth";
 import { resolveDiscordPerson } from "@/lib/allowlist";
-import { MODULES } from "@/lib/modules";
-import { cn } from "@/lib/utils";
-
-const ICONS: Record<string, typeof Activity> = {
-  status: Activity,
-  memory: Sparkles,
-};
-
-const navItem = cva(
-  "flex items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]",
-);
+import { NavLinks } from "@/components/nav-links";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 // identity.toml is bind-mounted read-only into this container at deploy
 // time (docker-compose.yml's `app` service) — the SAME file Nora's own
@@ -45,29 +33,33 @@ export default async function PortalLayout({ children }: { children: React.React
     redirect("/login?denied=1");
   }
 
+  const initials = person.displayName
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
   return (
-    <div className="grid min-h-screen grid-cols-[240px_1fr]">
-      <aside className="flex flex-col gap-7 border-r border-[var(--border)] bg-[var(--bg-surface)] p-3.5">
-        <div className="flex items-center gap-2 border-b border-[var(--border)] px-2 pb-3">
-          <div className="grid h-[22px] w-[22px] place-items-center border border-[var(--text-primary)] font-mono text-[11px] font-semibold">
+    <div className="grid min-h-screen grid-cols-[240px_1fr] bg-bg-base">
+      <aside className="flex flex-col gap-7 border-r border-border bg-bg-surface p-3.5">
+        <div className="flex items-center gap-2 border-b border-border px-2 pb-3">
+          <div className="grid h-[22px] w-[22px] place-items-center border border-text-primary font-mono text-[11px] font-semibold">
             N
           </div>
           <span className="text-[15px] font-semibold tracking-tight">Nora</span>
         </div>
 
-        <nav className="flex flex-col gap-0.5">
-          {MODULES.map((m) => {
-            const Icon = ICONS[m.id];
-            return (
-              <Link key={m.id} href={m.href} className={cn(navItem())}>
-                <Icon className="h-3.5 w-3.5" />
-                {m.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <NavLinks />
 
-        <Separator.Root className="h-px bg-[var(--border)]" />
+        <Separator.Root className="mt-auto h-px bg-border" />
+
+        <div className="flex items-center gap-2 px-1">
+          <Avatar>
+            <AvatarFallback>{initials}</AvatarFallback>
+          </Avatar>
+          <span className="truncate text-[13px] text-text-secondary">{person.displayName}</span>
+        </div>
       </aside>
 
       <main className="max-w-[880px] p-10">{children}</main>

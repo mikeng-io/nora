@@ -10,6 +10,7 @@
   --text-secondary: #475569;
   --text-muted: #94a3b8;
   --accent: #3d5a80;
+  --accent-dim: #5b7ca3;
   --success: #0f9d70;
   --danger: #d63a3a;
   color-scheme: light;
@@ -26,6 +27,7 @@
     --text-secondary: #a3a3a3;
     --text-muted: #737373;
     --accent: #99aacc;
+    --accent-dim: #6e8098;
     --success: #10b981;
     --danger: #ff4d4d;
     color-scheme: dark;
@@ -42,9 +44,31 @@
   --text-secondary: #a3a3a3;
   --text-muted: #737373;
   --accent: #99aacc;
+  --accent-dim: #6e8098;
   --success: #10b981;
   --danger: #ff4d4d;
   color-scheme: dark;
+}
+
+/* Tailwind v4 CSS-first theme: maps the tokens above onto real utility
+ * classes (bg-surface, text-muted, border-strong, ...) instead of the
+ * bg-[var(--x)] arbitrary-value pattern the first pass used everywhere.
+ * Mirrors trustless/packages/ui/src/styles/tokens.css's @theme block —
+ * same mechanism, Nora's own token values. */
+@theme {
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 body {
