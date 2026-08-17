@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { fetchMemory, type MemoryEntry } from "@/lib/memory-schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -40,40 +39,33 @@ export default function MemoryPage() {
       {!error && !entries && <p className="text-text-muted">{t("loading")}</p>}
 
       {entries && (
-        <ScrollArea.Root className="max-h-[70vh] overflow-hidden">
-          <ScrollArea.Viewport className="h-full w-full pr-4">
-            <div className="space-y-3">
-              {entries.map((entry) => (
-                <Card key={entry.person_id}>
-                  <CardHeader className="flex-row items-center gap-2.5 space-y-0 pb-2">
-                    <Avatar className="h-7 w-7">
-                      <AvatarFallback>{initialsOf(entry.display_name)}</AvatarFallback>
-                    </Avatar>
-                    <CardTitle>{entry.display_name}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    {!entry.reachable && (
-                      <p className="font-mono text-[12.5px] text-text-muted">{t("unavailable")}</p>
-                    )}
-                    {entry.reachable && entry.conclusions.length === 0 && (
-                      <p className="font-mono text-[12.5px] text-text-muted">{t("nothingYet")}</p>
-                    )}
-                    {entry.reachable && entry.conclusions.length > 0 && (
-                      <ul className="list-disc space-y-1 pl-4 text-[13.5px] text-text-secondary">
-                        {entry.conclusions.map((c, i) => (
-                          <li key={i}>{c}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </ScrollArea.Viewport>
-          <ScrollArea.Scrollbar orientation="vertical" className="w-1.5">
-            <ScrollArea.Thumb className="rounded-full bg-border-strong" />
-          </ScrollArea.Scrollbar>
-        </ScrollArea.Root>
+        <div className="space-y-3 pb-10">
+          {entries.map((entry) => (
+            <Card key={entry.person_id}>
+              <CardHeader className="flex-row items-center gap-2.5 space-y-0 pb-2">
+                <Avatar className="h-7 w-7">
+                  <AvatarFallback>{initialsOf(entry.display_name)}</AvatarFallback>
+                </Avatar>
+                <CardTitle>{entry.display_name}</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {!entry.reachable && (
+                  <p className="font-mono text-[12.5px] text-text-muted">{t("unavailable")}</p>
+                )}
+                {entry.reachable && entry.conclusions.length === 0 && (
+                  <p className="font-mono text-[12.5px] text-text-muted">{t("nothingYet")}</p>
+                )}
+                {entry.reachable && entry.conclusions.length > 0 && (
+                  <ul className="list-disc space-y-1 pl-4 text-[13.5px] text-text-secondary">
+                    {entry.conclusions.map((c, i) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );

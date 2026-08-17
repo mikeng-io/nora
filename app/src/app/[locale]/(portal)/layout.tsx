@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import * as Separator from "@radix-ui/react-separator";
 import { checkSession } from "@/lib/require-session";
 import { NavLinks } from "@/components/nav-links";
+import { BottomNav } from "@/components/bottom-nav";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
@@ -43,8 +44,11 @@ export default async function PortalLayout({
     .toUpperCase();
 
   return (
-    <div className="grid min-h-screen grid-cols-[240px_1fr] bg-bg-base">
-      <aside className="flex flex-col gap-7 border-r border-border bg-bg-surface p-3.5">
+    <div className="min-h-screen bg-bg-base md:grid md:grid-cols-[240px_1fr]">
+      {/* Desktop sidebar — trustless/apps/web's AppShell pattern: sidebar
+          owns nav at md+, a fixed bottom tab bar (below) owns it under
+          that. Never both at once. */}
+      <aside className="hidden md:flex md:h-screen md:flex-col md:gap-7 md:border-r md:border-border md:bg-bg-surface md:p-3.5">
         <div className="flex items-center justify-between gap-2 border-b border-border px-2 pb-3">
           <div className="flex items-center gap-2">
             <div className="grid h-[22px] w-[22px] place-items-center border border-text-primary font-mono text-[11px] font-semibold">
@@ -67,7 +71,23 @@ export default async function PortalLayout({
         </div>
       </aside>
 
-      <main className="max-w-[880px] p-10">{children}</main>
+      {/* Mobile top bar — brand + language switcher only; NavLinks moves
+          into BottomNav below md. */}
+      <div className="flex items-center justify-between border-b border-border bg-bg-surface p-3.5 md:hidden">
+        <div className="flex items-center gap-2">
+          <div className="grid h-[22px] w-[22px] place-items-center border border-text-primary font-mono text-[11px] font-semibold">
+            N
+          </div>
+          <span className="text-[15px] font-semibold tracking-tight">Nora</span>
+        </div>
+        <LanguageSwitcher />
+      </div>
+
+      <main className="max-w-[880px] p-4 pb-24 sm:p-6 md:overflow-y-auto md:p-10 md:pb-10">
+        {children}
+      </main>
+
+      <BottomNav />
     </div>
   );
 }
