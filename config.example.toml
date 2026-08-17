@@ -189,7 +189,12 @@ timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never th
 # ~133 MiB base64 body). vision_timeout_seconds is a CEILING: the tool derives the
 # real per-call budget as the smaller of it and half of llm.timeout_seconds, so a
 # slow model becomes the tool's `unavailable`, never the loop's silent timeout.
-vision_model = "opencode-go/mimo-v2.5"
+# DEPRECATED NAME, kept so a config written before DEC-114 keeps
+# loading: this is the IMAGE describer's model, and
+# `[media.describe.image] model` overrides it when both are set.
+# The sticker reader resolves through the same describer, so the two
+# image paths cannot disagree about what wrote a shared cache row.
+vision_model = "ollamacloud/minimax-m3"
 vision_max_tokens = 1024
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body

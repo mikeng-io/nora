@@ -1,5 +1,6 @@
 """Frozen config tree (spec D.1), pydantic loader over config.toml."""
 
+import re
 import shutil
 import tomllib
 from pathlib import Path
@@ -7,7 +8,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from nora.config import Config, ConfigError, LimitsConfig, LLMConfig, load
+from nora.config import (
+    Config,
+    ConfigError,
+    LimitsConfig,
+    LLMConfig,
+    MediaConfig,
+    load,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -498,14 +506,24 @@ def test_a_valid_budget_override_is_accepted():
     assert _llm_config(budgets={"send_reply": 9}).budgets == {"send_reply": 9}
 
 
-def test_audio_and_video_describers_ship_inert(toml_path):
+def test_audio_and_video_describers_ship_inert():
     """The split's whole premise: image describes, audio and video are wired but
     OFF, so enabling either later is a flag plus a model name and not a code
-    change (2026-08-17 spec). Ships inert like [presence]/[search]/[language]."""
-    describe = load(toml_path).media.describe
+    change (DEC-114). Ships inert like [presence]/[search]/[language].
+
+    Asserted against the CODE DEFAULTS, not against a loaded config.example.toml
+    — that file literally writes `enabled = true/false/false`, so reading it
+    back proved only that TOML parses. Inverting the defaults in
+    `DescribersConfig` left the original version of this test green.
+    """
+    describe = MediaConfig().describe
     assert describe.image.enabled is True
     assert describe.audio.enabled is False
     assert describe.video.enabled is False
+    # The model, not just the flag, is what `_describe_models` gates on: an
+    # enabled modality with no model named is still no describer.
+    assert describe.audio.model == ""
+    assert describe.video.model == ""
 
 
 def test_a_config_written_before_the_split_still_describes_images(toml_path):
@@ -519,10 +537,15 @@ def test_a_config_written_before_the_split_still_describes_images(toml_path):
     """
     # A genuinely pre-split file: the `[media.describe.*]` tables do not exist at
     # all, and `vision_model` is the only place a model is named.
-    head, sep, _ = toml_path.read_text().partition("[media.describe.image]")
+    # Anchored on the TABLE HEADER at the start of a line, not on the bare
+    # string: the `[media]` comment block now names `[media.describe.image]`
+    # prose to point the operator forward, and partitioning on that mention
+    # truncated the file above `[doctrine]`.
+    head, sep, _ = toml_path.read_text().partition("\n[media.describe.image]\n")
     assert sep, "config.example.toml no longer declares [media.describe.image]"
-    toml_path.write_text(head.replace(
-        'vision_model = "opencode-go/mimo-v2.5"', 'vision_model = "legacy/only-model"'))
+    toml_path.write_text(re.sub(
+        r'^vision_model = ".*"$', 'vision_model = "legacy/only-model"',
+        head, count=1, flags=re.MULTILINE))
     media = load(toml_path).media
     assert media.describer_for("image").model == "legacy/only-model"
     assert media.describer_for("image").enabled is True
@@ -530,7 +553,8 @@ def test_a_config_written_before_the_split_still_describes_images(toml_path):
 
 def test_an_explicit_image_model_wins_over_the_legacy_alias(toml_path):
     """Otherwise the alias would pin the new key open and the split be a no-op."""
-    toml_path.write_text(toml_path.read_text().replace(
-        'vision_model = "opencode-go/mimo-v2.5"', 'vision_model = "legacy/only-model"',
+    toml_path.write_text(re.sub(
+        r'^vision_model = ".*"$', 'vision_model = "legacy/only-model"',
+        toml_path.read_text(), count=1, flags=re.MULTILINE,
     ).replace('model = "ollamacloud/minimax-m3"', 'model = "new/image-model"'))
     assert load(toml_path).media.describer_for("image").model == "new/image-model"

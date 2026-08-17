@@ -501,6 +501,14 @@ class MediaConfig(BaseModel):
         explicit key wins when both are set, or the alias would pin the new key
         open and the split would be a no-op.
         """
+        # Against the FIELD SET, not `getattr` alone: `self.describe` is a
+        # pydantic model, so `getattr(self.describe, "model_dump")` returns a
+        # bound method — truthy, not a `DescriberConfig`, and typed as one by an
+        # annotation mypy cannot see through. The caller would then
+        # `AttributeError` on `.enabled` at startup. Unreachable while every
+        # caller passes a literal; a lie in the signature regardless.
+        if modality not in DescribersConfig.model_fields:
+            return None
         describer: DescriberConfig | None = getattr(self.describe, modality, None)
         if describer is None:
             return None

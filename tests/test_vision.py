@@ -31,6 +31,7 @@ from aiohttp.test_utils import TestServer
 from openai import AsyncOpenAI
 
 from nora.infra.vision import (
+    DESCRIBE_PROMPTS,
     VISION_LOOP_SHARE,
     VisionClient,
     derive_vision_timeout,
@@ -55,18 +56,38 @@ class FakeMimo:
     async def completions(self, request: web.Request) -> web.Response:
         body = await request.json()
         self.requests.append(body)
-        # Behave like the real server: a body with no image is a bad request,
-        # not a described one. This is the negative control — a client that
-        # stopped sending the image gets a 400, never a green pass.
+        # Behave like the real server, INCLUDING its wrong-call shapes
+        # (CLAUDE.md). A body with no media is a bad request, and so is media
+        # carried in the wrong content block: a real OpenAI-compatible gateway
+        # rejects `data:audio/aac;…` inside `image_url`, it does not describe it.
+        #
+        # That second half is why this fake was rewritten. It used to accept ANY
+        # `image_url` whose url began `data:`, so an audio payload smuggled into
+        # an image block passed its negative control — and the per-modality
+        # split shipped with a transport bug no test could see.
         content = body.get("messages", [{}])[-1].get("content", [])
-        has_image = any(
-            isinstance(part, dict)
-            and part.get("type") == "image_url"
-            and str(part.get("image_url", {}).get("url", "")).startswith("data:")
-            for part in (content if isinstance(content, list) else [])
-        )
-        if not has_image:
-            return web.json_response({"error": {"message": "no image"}}, status=400)
+        parts = [p for p in (content if isinstance(content, list) else []) if isinstance(p, dict)]
+        for part in parts:
+            if part.get("type") == "image_url":
+                url = str(part.get("image_url", {}).get("url", ""))
+                if not url.startswith("data:"):
+                    return web.json_response(
+                        {"error": {"message": "no image"}}, status=400)
+                if not url.startswith("data:image/"):
+                    return web.json_response(
+                        {"error": {"message": f"not an image: {url[:24]}"}}, status=400)
+            elif part.get("type") == "input_audio":
+                audio = part.get("input_audio", {})
+                if not audio.get("data") or not audio.get("format"):
+                    return web.json_response(
+                        {"error": {"message": "input_audio needs data and format"}},
+                        status=400)
+            elif part.get("type") == "video_url":
+                if not str(part.get("video_url", {}).get("url", "")).startswith("data:video/"):
+                    return web.json_response(
+                        {"error": {"message": "not a video"}}, status=400)
+        if not any(p.get("type") in {"image_url", "input_audio", "video_url"} for p in parts):
+            return web.json_response({"error": {"message": "no media"}}, status=400)
         if self.stall_seconds:
             await asyncio.sleep(self.stall_seconds)
         if len(self.requests) <= self.fail_times:
@@ -282,3 +303,64 @@ async def test_the_configured_model_is_used_when_no_override_is_given(mimo):
     this split passed no model, and must still reach the configured one."""
     await _client(mimo).describe(data=RED_PNG, media_type="image/png")
     assert mimo.requests[-1]["model"] == "opencode-go/mimo-v2.5"
+
+
+# ---- the payload shape per modality (2026-08-17 spec, review round 1) --------
+
+def _block_types(body: dict) -> list[str]:
+    return [p.get("type") for p in body["messages"][-1]["content"] if isinstance(p, dict)]
+
+
+async def test_audio_is_sent_as_an_input_audio_block(mimo):
+    """The finding that made the first cut of this split a false promise: the
+    model override chose WHICH model, but every modality was still shipped in an
+    `image_url` block, so enabling audio sent `data:audio/aac;…` as an image and
+    the gateway 400'd. «A flag and a model name» was untrue at the transport.
+
+    Asserted against what the fake gateway RECEIVED, and the fake now rejects
+    media in the wrong block, so this cannot pass by agreeing with itself.
+    """
+    result = await _client(mimo).describe(data=RED_PNG, media_type="audio/mpeg")
+    assert result.available, result.reason
+    assert "input_audio" in _block_types(mimo.requests[-1])
+    assert "image_url" not in _block_types(mimo.requests[-1])
+    audio = mimo.requests[-1]["messages"][-1]["content"][-1]["input_audio"]
+    assert audio["format"] == "mp3"          # the API's token, not the MIME subtype
+
+
+async def test_video_is_sent_as_a_video_block(mimo):
+    result = await _client(mimo).describe(data=RED_PNG, media_type="video/mp4")
+    assert result.available, result.reason
+    assert "video_url" in _block_types(mimo.requests[-1])
+    assert "image_url" not in _block_types(mimo.requests[-1])
+
+
+async def test_an_image_is_still_sent_exactly_as_before(mimo):
+    """The shipped path must not move. Same block, same data URI."""
+    await _client(mimo).describe(data=RED_PNG, media_type="image/png")
+    assert _block_types(mimo.requests[-1]) == ["text", "image_url"]
+    url = mimo.requests[-1]["messages"][-1]["content"][-1]["image_url"]["url"]
+    assert url.startswith("data:image/png;base64,")
+
+
+async def test_an_audio_format_the_api_cannot_name_fails_closed(mimo):
+    """`input_audio.format` is a short token the API defines, not a MIME
+    subtype, so a subtype we cannot map is a payload we cannot build. That is
+    `unavailable` BEFORE any request — never a guessed token, and never a
+    doomed round trip whose 400 arrives as an indistinguishable `error`."""
+    result = await _client(mimo).describe(data=RED_PNG, media_type="audio/basic")
+    assert not result.available
+    assert result.reason == "unsupported_payload"
+    assert mimo.requests == []
+
+
+async def test_each_modalitys_prompt_reaches_the_gateway(mimo):
+    """`DESCRIBE_PROMPTS` had no test at all: `media_fetch` never passes a
+    prompt, so selection happens inside this client — and every test that saw a
+    non-image replaced this client with a stub, making the assertion vacuous."""
+    await _client(mimo).describe(data=RED_PNG, media_type="image/png")
+    assert mimo.requests[-1]["messages"][-1]["content"][0]["text"] == DESCRIBE_PROMPTS["image"]
+    await _client(mimo).describe(data=RED_PNG, media_type="audio/mpeg")
+    assert mimo.requests[-1]["messages"][-1]["content"][0]["text"] == DESCRIBE_PROMPTS["audio"]
+    await _client(mimo).describe(data=RED_PNG, media_type="video/mp4")
+    assert mimo.requests[-1]["messages"][-1]["content"][0]["text"] == DESCRIBE_PROMPTS["video"]
