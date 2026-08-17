@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiSession } from "@/lib/require-api-session";
 
 // Server-only: NORA_API_BASE is never sent to the browser. The browser
 // calls same-origin /api/status; this route is the only thing that ever
@@ -7,6 +8,9 @@ import { NextResponse } from "next/server";
 const NORA_API_BASE = process.env.NORA_API_BASE ?? "http://nora:9100";
 
 export async function GET() {
+  const denied = await requireApiSession();
+  if (denied) return denied;
+
   const res = await fetch(`${NORA_API_BASE}/app/v1/status`, { cache: "no-store" });
   const body = await res.json();
   return NextResponse.json(body, { status: res.status });

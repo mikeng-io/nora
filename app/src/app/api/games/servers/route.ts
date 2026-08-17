@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireApiSession } from "@/lib/require-api-session";
 
 // Server-only: GAMES_API_BASE is never sent to the browser. The browser
 // calls same-origin /api/games/servers; this route is the only thing that
@@ -9,6 +10,9 @@ const GAMES_API_BASE =
   process.env.GAMES_API_BASE ?? "http://orion.tail0a1b2c3d.ts.net:8787";
 
 export async function GET() {
+  const denied = await requireApiSession();
+  if (denied) return denied;
+
   const res = await fetch(`${GAMES_API_BASE}/v1/servers`, { cache: "no-store" });
   const body = await res.json();
   return NextResponse.json(body, { status: res.status });

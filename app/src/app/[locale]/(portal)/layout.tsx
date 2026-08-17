@@ -1,17 +1,9 @@
 import { redirect } from "next/navigation";
-import fs from "node:fs";
 import * as Separator from "@radix-ui/react-separator";
-import { auth } from "@/auth";
-import { resolveDiscordPerson } from "@/lib/allowlist";
+import { checkSession } from "@/lib/require-session";
 import { NavLinks } from "@/components/nav-links";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-
-// identity.toml is bind-mounted read-only into this container at deploy
-// time (docker-compose.yml's `app` service) — the SAME file Nora's own
-// process reads, so the web portal's whitelist can never drift from Nora's
-// roster.
-const IDENTITY_TOML_PATH = process.env.IDENTITY_TOML_PATH ?? "/app/identity.toml";
 
 // The auth+allowlist gate lives HERE, not in middleware.ts, because a real
 // build showed Next.js 15.5.23 has no working Node.js middleware runtime —
@@ -23,6 +15,10 @@ const IDENTITY_TOML_PATH = process.env.IDENTITY_TOML_PATH ?? "/app/identity.toml
 // touches fs — that's a different, unrelated concern from this gate.
 // `/login` sits outside the `(portal)` route group (both now one level
 // deeper under `[locale]`), so it's the one route this never touches.
+//
+// checkSession() (lib/require-session.ts) is the SAME check every
+// app/api/* proxy route calls — this page gate alone never protected them;
+// see require-api-session.ts's comment for what was missing without it.
 export default async function PortalLayout({
   children,
   params,
@@ -31,19 +27,15 @@ export default async function PortalLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const session = await auth();
-  const discordId = session?.user?.discordId;
-  if (!discordId) {
+  const check = await checkSession();
+  if (check.status === "no-session") {
     redirect(`/${locale}/login`);
   }
-
-  const identityToml = fs.readFileSync(IDENTITY_TOML_PATH, "utf-8");
-  const person = resolveDiscordPerson(identityToml, discordId);
-  if (!person) {
+  if (check.status === "denied") {
     redirect(`/${locale}/login?denied=1`);
   }
 
-  const initials = person.displayName
+  const initials = check.displayName
     .split(/\s+/)
     .map((w) => w[0])
     .slice(0, 2)
@@ -71,7 +63,7 @@ export default async function PortalLayout({
           <Avatar>
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
-          <span className="truncate text-[13px] text-text-secondary">{person.displayName}</span>
+          <span className="truncate text-[13px] text-text-secondary">{check.displayName}</span>
         </div>
       </aside>
 

@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireApiSession } from "@/lib/require-api-session";
 
 const GAMES_API_BASE =
   process.env.GAMES_API_BASE ?? "http://orion.tail0a1b2c3d.ts.net:8787";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await requireApiSession();
+  if (denied) return denied;
+
   const { id } = await params;
   const res = await fetch(`${GAMES_API_BASE}/v1/servers/${encodeURIComponent(id)}/status`, {
     cache: "no-store",
