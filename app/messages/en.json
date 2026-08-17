@@ -7,8 +7,13 @@
     "status": "Status",
     "memory": "Memory",
     "games": "Games",
+    "map": "Map",
     "language": "Language",
     "chat": "Chat"
+  },
+  "footer": {
+    "madeBy": "Made by",
+    "workspace": "Ridgeline workspace"
   },
   "chat": {
     "heading": "Chat with Nora",
@@ -43,6 +48,7 @@
     "remindersPlatformDiscord": "Discord",
     "capabilitiesHeading": "What else she can do",
     "capabilitiesDek": "Real capabilities, not all wired up to the portal yet.",
+    "badgeLive": "Works in chat",
     "badgePlanned": "Planned",
     "badgeIdea": "Idea",
     "capability": {
@@ -81,6 +87,8 @@
     "unavailable": "unavailable right now",
     "nothingYet": "nothing yet",
     "you": "you",
+    "showMore": "Show {count} more",
+    "showLess": "Show less",
     "badgePlanned": "Planned",
     "roomVocabularyTitle": "Room's own words",
     "roomVocabularyDek": "A live word cloud of the group's own slang and in-jokes — coming once this has its own endpoint."
@@ -99,6 +107,7 @@
     "cpu": "CPU",
     "memory": "Memory",
     "uptime": "Uptime",
+    "lastSample": "Last checked",
     "back": "All games",
     "activePlayersLabel": "Active now",
     "noActivePlayers": "Nobody online right now.",
@@ -106,5 +115,31 @@
     "graphUnavailable": "No history yet.",
     "notFound": "Can't find that server.",
     "detailError": "Couldn't reach that server."
+  },
+  "map": {
+    "eyebrow": "Nora · live map",
+    "heading": "Where everyone is",
+    "dek": "Tap someone to see their last 24 hours as a route. Positions round to the nearest 10m so a stationary phone doesn't drift on the map.",
+    "loading": "Loading…",
+    "error": "Couldn't reach Nora.",
+    "noFix": "No location recorded",
+    "liveSection": "Live now",
+    "otherSection": "No recent location",
+    "placesSection": "Saved places",
+    "lookback": "Route:",
+    "hours": {
+      "1": "1h",
+      "6": "6h",
+      "24": "24h",
+      "168": "7d"
+    },
+    "state": {
+      "live": "Live",
+      "stale": "Last seen a while ago",
+      "sharing_off": "Sharing turned off",
+      "disconnected": "Phone unreachable",
+      "no_fix": "Never located",
+      "unavailable": "Can't check right now"
+    }
   }
 }

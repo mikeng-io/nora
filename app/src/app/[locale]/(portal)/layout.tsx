@@ -47,15 +47,15 @@ export default async function PortalLayout({
     <div className="min-h-screen bg-bg-base md:grid md:grid-cols-[240px_1fr]">
       {/* Desktop sidebar — trustless/apps/web's AppShell pattern: sidebar
           owns nav at md+, a fixed bottom tab bar (below) owns it under
-          that. Never both at once. */}
+          that. Never both at once. `md:h-screen` here is paired with
+          `<main>`'s own `md:h-screen` + `md:overflow-y-auto` below — an
+          unbounded `<main>` with `overflow-y-auto` does nothing (no height
+          to overflow against), so the whole DOCUMENT scrolled as one and
+          this sidebar visually scrolled away with the page content instead
+          of staying put — the real bug behind "the sidebar looks broken". */}
       <aside className="hidden md:flex md:h-screen md:flex-col md:gap-7 md:border-r md:border-border md:bg-bg-surface md:p-3.5">
         <div className="flex items-center justify-between gap-2 border-b border-border px-2 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="grid h-[22px] w-[22px] place-items-center border border-text-primary font-mono text-[11px] font-semibold">
-              N
-            </div>
-            <span className="text-[15px] font-semibold tracking-tight">Nora</span>
-          </div>
+          <span className="text-[15px] font-semibold tracking-tight">Nora</span>
           <LanguageSwitcher />
         </div>
 
@@ -74,16 +74,11 @@ export default async function PortalLayout({
       {/* Mobile top bar — brand + language switcher only; NavLinks moves
           into BottomNav below md. */}
       <div className="flex items-center justify-between border-b border-border bg-bg-surface p-3.5 md:hidden">
-        <div className="flex items-center gap-2">
-          <div className="grid h-[22px] w-[22px] place-items-center border border-text-primary font-mono text-[11px] font-semibold">
-            N
-          </div>
-          <span className="text-[15px] font-semibold tracking-tight">Nora</span>
-        </div>
+        <span className="text-[15px] font-semibold tracking-tight">Nora</span>
         <LanguageSwitcher />
       </div>
 
-      <main className="max-w-[880px] p-4 pb-24 sm:p-6 md:overflow-y-auto md:p-10 md:pb-10">
+      <main className="max-w-[880px] p-4 pb-24 sm:p-6 md:h-screen md:overflow-y-auto md:p-10 md:pb-10">
         {children}
       </main>
 

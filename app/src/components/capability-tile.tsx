@@ -19,7 +19,7 @@ export function CapabilityTile({
   title: string;
   description: string;
   badgeLabel: string;
-  variant?: "designed" | "future";
+  variant?: "live" | "designed" | "future";
 }) {
   return (
     <Card>

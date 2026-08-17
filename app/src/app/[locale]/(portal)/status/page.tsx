@@ -11,19 +11,24 @@ import { CapabilityTile } from "@/components/capability-tile";
 
 const POLL_INTERVAL_MS = 20_000;
 
-// Coming-soon capability tiles (design spec: ship the placeholder now, the
-// backend later — every idea here traces to a real, already-built domain
-// concept; see nora/domain/{language_scoring,models}.py. "designed" = real
-// data already exists somewhere, just not surfaced over web yet. "future" =
-// would need genuinely new backend work.
+// Coming-soon capability tiles — three real states, not two:
+// "live"     = a real, working Nora capability TODAY (weather/transit are
+//              live NATIVE_TOOLS she already answers in chat) — just not
+//              surfaced on the web portal yet, a wiring gap, not a build.
+// "designed" = the underlying data structure is real and already built
+//              (room vocabulary's RoomLexeme scoring, skills' SkillStore)
+//              but nothing user-facing exists yet — a new endpoint away.
+// "future"   = genuinely new capability, nothing built yet either side.
 const CAPABILITIES = [
+  { id: "weather", icon: Cloud, variant: "live" as const },
+  { id: "transit", icon: Bus, variant: "live" as const },
   { id: "roomVocabulary", icon: Hash, variant: "designed" as const },
-  { id: "weather", icon: Cloud, variant: "designed" as const },
-  { id: "transit", icon: Bus, variant: "designed" as const },
-  { id: "doctrine", icon: BookOpen, variant: "future" as const },
   { id: "skills", icon: Puzzle, variant: "designed" as const },
+  { id: "doctrine", icon: BookOpen, variant: "future" as const },
   { id: "mediaGallery", icon: ImageIcon, variant: "future" as const },
 ];
+
+const BADGE_KEY = { live: "badgeLive", designed: "badgePlanned", future: "badgeIdea" } as const;
 
 export default function StatusPage() {
   const t = useTranslations("status");
@@ -157,7 +162,7 @@ export default function StatusPage() {
                 title={t(`capability.${c.id}.title`)}
                 description={t(`capability.${c.id}.description`)}
                 variant={c.variant}
-                badgeLabel={t(c.variant === "designed" ? "badgePlanned" : "badgeIdea")}
+                badgeLabel={t(BADGE_KEY[c.variant])}
               />
             ))}
           </div>

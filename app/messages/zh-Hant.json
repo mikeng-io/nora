@@ -7,8 +7,13 @@
     "status": "狀態",
     "memory": "記憶",
     "games": "遊戲",
+    "map": "地圖",
     "language": "語言",
     "chat": "傾偈"
+  },
+  "footer": {
+    "madeBy": "製作：",
+    "workspace": "Ridgeline 工作間"
   },
   "chat": {
     "heading": "同 Nora 傾偈",
@@ -43,6 +48,7 @@
     "remindersPlatformDiscord": "Discord",
     "capabilitiesHeading": "佢仲識做咩",
     "capabilitiesDek": "真係做到嘅嘢，不過重未全部接上呢個頁面。",
+    "badgeLive": "傾偈已經用到",
     "badgePlanned": "已計劃",
     "badgeIdea": "諗緊",
     "capability": {
@@ -81,6 +87,8 @@
     "unavailable": "而家攞唔到",
     "nothingYet": "重未有嘢",
     "you": "你",
+    "showMore": "睇多 {count} 個",
+    "showLess": "收返",
     "badgePlanned": "已計劃",
     "roomVocabularyTitle": "班友自己嘅用語",
     "roomVocabularyDek": "成班人嘅潮語同 in-joke 文字雲 — 呢個要接埋後端先有得睇。"
@@ -99,6 +107,7 @@
     "cpu": "CPU",
     "memory": "記憶體",
     "uptime": "上線時間",
+    "lastSample": "最後檢查",
     "back": "返去所有遊戲",
     "activePlayersLabel": "而家喺線",
     "noActivePlayers": "而家冇人喺線。",
@@ -106,5 +115,31 @@
     "graphUnavailable": "重未有歷史紀錄。",
     "notFound": "搵唔到嗰個伺服器。",
     "detailError": "連唔到嗰個伺服器。"
+  },
+  "map": {
+    "eyebrow": "Nora · 即時地圖",
+    "heading": "而家大家喺邊",
+    "dek": "㩒個人名睇佢過去 24 小時嘅路線。位置會四捨五入到最近 10 米，唔會因為部電話冇郁過就喺個圖度周圍飄。",
+    "loading": "載入緊…",
+    "error": "連唔到 Nora。",
+    "noFix": "未有位置紀錄",
+    "liveSection": "而家即時",
+    "otherSection": "冇最近位置",
+    "placesSection": "已儲低嘅地點",
+    "lookback": "路線：",
+    "hours": {
+      "1": "1小時",
+      "6": "6小時",
+      "24": "24小時",
+      "168": "7日"
+    },
+    "state": {
+      "live": "即時",
+      "stale": "好耐之前見過",
+      "sharing_off": "分享咗位置關咗",
+      "disconnected": "部電話連唔到",
+      "no_fix": "從未定位過",
+      "unavailable": "而家check唔到"
+    }
   }
 }

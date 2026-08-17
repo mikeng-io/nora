@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { Activity, Gamepad2, Sparkles, MessageCircle } from "lucide-react";
+import { Activity, Gamepad2, MapPin, Sparkles, MessageCircle } from "lucide-react";
 import { Link, usePathname } from "@/i18n/routing";
 import { MODULES } from "@/lib/modules";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ const ICONS: Record<string, typeof Activity> = {
   status: Activity,
   memory: Sparkles,
   games: Gamepad2,
+  map: MapPin,
 };
 
 // Mobile-only (md:hidden — the sidebar in (portal)/layout.tsx owns nav on
@@ -26,8 +27,8 @@ export function BottomNav() {
   const t = useTranslations("nav");
   const [chatOpen, setChatOpen] = useState(false);
 
-  const left = MODULES.slice(0, 1);
-  const right = MODULES.slice(1);
+  const left = MODULES.slice(0, 2);
+  const right = MODULES.slice(2);
 
   const renderLink = (m: (typeof MODULES)[number]) => {
     const Icon = ICONS[m.id];

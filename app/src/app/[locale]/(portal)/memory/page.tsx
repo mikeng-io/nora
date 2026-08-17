@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { WifiOff, Sparkles, Hash } from "lucide-react";
 import { fetchMemory, type MemoryEntry } from "@/lib/memory-schema";
+import { hueOf } from "@/lib/person-color";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -18,14 +19,18 @@ function initialsOf(name: string) {
     .toUpperCase();
 }
 
-// Stable per-person accent so the same person reads as the same color
-// everywhere in the portal (memory card, and later the presence map).
-// Pure display hash — not an identifier, never persisted or sent anywhere.
-function hueOf(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return h % 360;
+// Honcho's peer_card facts are observed live as "CATEGORY: Key: Value"
+// (e.g. "IDENTITY: Name: Miles Novak (Miles)", "ATTRIBUTE: Workplace: Acme
+// Tower") — the leading CATEGORY becomes the small muted label, the "Key:
+// Value" remainder stays together as the prominent text (splitting IT
+// further would separate "Name" from "Miles Novak" for no benefit).
+function splitFact(fact: string): { category: string | null; text: string } {
+  const i = fact.indexOf(":");
+  if (i < 0) return { category: null, text: fact };
+  return { category: fact.slice(0, i).trim(), text: fact.slice(i + 1).trim() };
 }
+
+const EPISODES_COLLAPSED_LIMIT = 5;
 
 export default function MemoryPage() {
   const t = useTranslations("memory");
@@ -54,55 +59,104 @@ export default function MemoryPage() {
           <RoomVocabularyTeaser />
 
           <div className="space-y-3">
-            {entries.map((entry) => {
-              const hue = hueOf(entry.person_id);
-              return (
-                <Card key={entry.person_id}>
-                  <CardHeader className="flex-row items-center gap-2.5 space-y-0 pb-2">
-                    <Avatar
-                      className="h-7 w-7 ring-2"
-                      style={{
-                        backgroundColor: `hsl(${hue} 70% 92%)`,
-                        // @ts-expect-error -- CSS custom value, not a token
-                        "--tw-ring-color": `hsl(${hue} 60% 55% / 0.35)`,
-                      }}
-                    >
-                      <AvatarFallback
-                        style={{ color: `hsl(${hue} 55% 32%)`, backgroundColor: "transparent" }}
-                      >
-                        {initialsOf(entry.display_name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <CardTitle>{entry.display_name}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    {!entry.reachable && (
-                      <p className="flex items-center gap-1.5 font-mono text-[12.5px] text-danger">
-                        <WifiOff className="h-3.5 w-3.5" />
-                        {t("unavailable")}
-                      </p>
-                    )}
-                    {entry.reachable && entry.conclusions.length === 0 && (
-                      <p className="flex items-center gap-1.5 font-mono text-[12.5px] text-text-muted">
-                        <Sparkles className="h-3.5 w-3.5" />
-                        {t("nothingYet")}
-                      </p>
-                    )}
-                    {entry.reachable && entry.conclusions.length > 0 && (
-                      <ul className="list-disc space-y-1 pl-4 text-[13.5px] text-text-secondary">
-                        {entry.conclusions.map((c, i) => (
-                          <li key={i}>{c}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
+            {entries.map((entry) => (
+              <MemoryPersonCard key={entry.person_id} entry={entry} />
+            ))}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function MemoryPersonCard({ entry }: { entry: MemoryEntry }) {
+  const t = useTranslations("memory");
+  const [expanded, setExpanded] = useState(false);
+  const hue = hueOf(entry.person_id);
+  const ringColor = `hsl(${hue} 60% 55% / 0.35)`;
+  const dotColor = `hsl(${hue} 65% 55%)`;
+  const shown = expanded ? entry.episodes : entry.episodes.slice(0, EPISODES_COLLAPSED_LIMIT);
+  const hiddenCount = entry.episodes.length - shown.length;
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center gap-2.5 space-y-0 pb-2">
+        <Avatar
+          className="h-8 w-8 ring-2"
+          style={{
+            backgroundColor: `hsl(${hue} 70% 92%)`,
+            // @ts-expect-error -- CSS custom value, not a token
+            "--tw-ring-color": ringColor,
+          }}
+        >
+          <AvatarFallback style={{ color: `hsl(${hue} 55% 32%)`, backgroundColor: "transparent" }}>
+            {initialsOf(entry.display_name)}
+          </AvatarFallback>
+        </Avatar>
+        <CardTitle>{entry.display_name}</CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {!entry.reachable && (
+          <p className="flex items-center gap-1.5 font-mono text-[12.5px] text-danger">
+            <WifiOff className="h-3.5 w-3.5" />
+            {t("unavailable")}
+          </p>
+        )}
+
+        {entry.reachable && entry.identity.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {entry.identity.map((fact, i) => {
+              const { category, text } = splitFact(fact);
+              return (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px]"
+                  style={{ borderColor: `hsl(${hue} 50% 60% / 0.4)` }}
+                >
+                  {category && (
+                    <span className="font-mono text-[9px] uppercase tracking-wide text-text-muted">
+                      {category}
+                    </span>
+                  )}
+                  <span className="text-text-secondary">{text}</span>
+                </span>
+              );
+            })}
+          </div>
+        )}
+
+        {entry.reachable && entry.episodes.length === 0 && (
+          <p className="flex items-center gap-1.5 font-mono text-[12.5px] text-text-muted">
+            <Sparkles className="h-3.5 w-3.5" />
+            {t("nothingYet")}
+          </p>
+        )}
+
+        {entry.reachable && entry.episodes.length > 0 && (
+          <>
+            <ul className="space-y-2 border-l-2 pl-4" style={{ borderColor: `hsl(${hue} 50% 60% / 0.3)` }}>
+              {shown.map((ep, i) => (
+                <li key={i} className="relative text-[13.5px] text-text-secondary">
+                  <span
+                    className="absolute top-[7px] h-1.5 w-1.5 -translate-x-[calc(1rem+3px)] rounded-full"
+                    style={{ backgroundColor: dotColor }}
+                  />
+                  {ep}
+                </li>
+              ))}
+            </ul>
+            {(hiddenCount > 0 || expanded) && entry.episodes.length > EPISODES_COLLAPSED_LIMIT && (
+              <button
+                onClick={() => setExpanded((v) => !v)}
+                className="mt-2 pl-4 font-mono text-[11px] uppercase tracking-wide text-accent hover:underline"
+              >
+                {expanded ? t("showLess") : t("showMore", { count: hiddenCount })}
+              </button>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

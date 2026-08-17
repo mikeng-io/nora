@@ -69,10 +69,57 @@
   --color-success: var(--success);
   --color-danger: var(--danger);
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: var(--font-sans-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* Login page hero: a slow zoom-out on the portrait plus a staggered
+   * fade-up on the card beside it — both `both`-filled so the animation's
+   * start/end state holds outside its run, not just a flash of unstyled
+   * content before it kicks in. */
+  --animate-ken-burns: ken-burns 14s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fade-in-up: fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes ken-burns {
+  from {
+    transform: scale(1.1);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes marker-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--pulse-color, rgba(61, 90, 128, 0.55));
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(0, 0, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  }
+}
+
+/* Applied inline on the map's Leaflet divIcon markers (raw HTML string, not
+ * JSX, so this can't be a Tailwind utility) — a live position gets a
+ * pulsing ring in the person's own hue, a stale/off one stays static. */
+.marker-pulse {
+  animation: marker-pulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 body {
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }

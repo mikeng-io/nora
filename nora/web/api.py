@@ -1,6 +1,6 @@
-"""Registers GET /app/v1/status, GET /app/v1/memory and the
-GET /app/v1/games/servers* trio onto an existing aiohttp Application — same
-process/container as Nora (design spec §3, §5.3).
+"""Registers GET /app/v1/status, GET /app/v1/memory, the
+GET /app/v1/games/servers* trio, and GET /app/v1/presence* onto an existing
+aiohttp Application — same process/container as Nora (design spec §3, §5.3).
 
 Deliberately a `register_*` function taking an existing `web.Application`,
 not a `build_*_app` returning a new one: these routes join the health app
@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from aiohttp import web
 
 from nora.agent.mcp import McpToolGroup
+from nora.agent.whereis import Circle, PresenceReader
 from nora.domain.ports import MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
 from nora.persons import Persons
@@ -26,6 +27,11 @@ from nora.web.games import (
     build_games_servers_payload,
 )
 from nora.web.memory import build_memory_payload
+from nora.web.presence import (
+    build_presence_history_payload,
+    build_presence_payload,
+    build_presence_places_payload,
+)
 from nora.web.status import build_status_payload
 
 # Default matches the previous REST proxy's `?hours=24` default
@@ -35,11 +41,17 @@ from nora.web.status import build_status_payload
 # docstring).
 _DEFAULT_GRAPH_HOURS = 24
 
+# The map's default history window when `?hours=` is absent — a full day's
+# route, matching the games graph's own default in spirit (both answer "the
+# last day" unless told otherwise).
+_DEFAULT_HISTORY_HOURS = 24
+
 
 def register_web_routes(
     app: web.Application, *, store: RecordStore, honcho: MemoryStore,
     reminders: ReminderStore, persons: Persons, ai_peer: str, started_at: float,
     mcp_tools: Mapping[str, McpToolGroup],
+    presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
 ) -> None:
     app["web_store"] = store
     app["web_honcho"] = honcho
@@ -48,6 +60,8 @@ def register_web_routes(
     app["web_ai_peer"] = ai_peer
     app["web_started_at"] = started_at
     app["web_mcp_tools"] = mcp_tools
+    app["web_presence"] = presence
+    app["web_presence_circles"] = presence_circles
 
     async def status(request: web.Request) -> web.Response:
         a = request.app
@@ -96,8 +110,42 @@ def register_web_routes(
             return web.json_response({"error": str(exc)}, status=503)
         return web.json_response(body)
 
+    async def presence_positions(request: web.Request) -> web.Response:
+        a = request.app
+        body = await build_presence_payload(
+            presence=a["web_presence"], circles=a["web_presence_circles"],
+        )
+        return web.json_response(body)
+
+    async def presence_places(request: web.Request) -> web.Response:
+        a = request.app
+        body = await build_presence_places_payload(
+            presence=a["web_presence"], circles=a["web_presence_circles"],
+        )
+        return web.json_response(body)
+
+    async def presence_history(request: web.Request) -> web.Response:
+        raw_hours = request.query.get("hours")
+        try:
+            hours = int(raw_hours) if raw_hours is not None else _DEFAULT_HISTORY_HOURS
+        except ValueError:
+            return web.json_response({"error": f"invalid hours={raw_hours!r}"}, status=400)
+        if hours <= 0:
+            return web.json_response({"error": f"invalid hours={raw_hours!r}"}, status=400)
+        a = request.app
+        body = await build_presence_history_payload(
+            presence=a["web_presence"], circles=a["web_presence_circles"],
+            person_id=request.match_info["person_id"], hours=hours,
+        )
+        if body is None:
+            return web.json_response({"error": "no such circle member"}, status=404)
+        return web.json_response(body)
+
     app.router.add_get("/app/v1/status", status)
     app.router.add_get("/app/v1/memory", memory)
     app.router.add_get("/app/v1/games/servers", games_servers)
     app.router.add_get("/app/v1/games/servers/{id}/status", games_server_status)
     app.router.add_get("/app/v1/games/servers/{id}/graph", games_server_graph)
+    app.router.add_get("/app/v1/presence", presence_positions)
+    app.router.add_get("/app/v1/presence/places", presence_places)
+    app.router.add_get("/app/v1/presence/{person_id}/history", presence_history)

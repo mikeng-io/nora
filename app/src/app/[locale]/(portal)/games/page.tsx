@@ -60,7 +60,11 @@ export default function GamesPage() {
       )}
 
       {servers && servers.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
+        // A rigid multi-column grid with exactly one server (Pulse's real,
+        // current state — one game adapter configured) leaves a lone
+        // narrow card floating beside a lot of dead space. Only grid up
+        // once there's more than one to actually arrange.
+        <div className={servers.length > 1 ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
           {servers.map((server) => (
             <ServerCard key={server.id} server={server} locale={locale} />
           ))}
@@ -120,7 +124,21 @@ function ServerCard({ server, locale }: { server: Server; locale: string }) {
             value={current ? formatUptime(current.uptimeHours * 3600, locale) : "—"}
           />
         </CardContent>
+        {current && (
+          <p className="border-t border-border px-4 py-2.5 font-mono text-[10px] text-text-muted">
+            {t("lastSample")} {formatRelative(current.lastSampleAt, locale)}
+          </p>
+        )}
       </Card>
     </Link>
   );
+}
+
+function formatRelative(iso: string, locale: string): string {
+  const diffMs = new Date(iso).getTime() - Date.now();
+  const diffMin = Math.round(diffMs / 60_000);
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (Math.abs(diffMin) < 60) return rtf.format(diffMin, "minute");
+  const diffHour = Math.round(diffMin / 60);
+  return rtf.format(diffHour, "hour");
 }

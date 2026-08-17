@@ -45,14 +45,13 @@ holds the route client. The R-28 coordinate barrier in `nora.agent.tools`
 from __future__ import annotations
 
 import logging
-import math
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from ..domain.models import PersonRef
 from ..domain.ports import ReverseGeocoder
-from ..domain.presence import PresenceFix, SavedPlace
+from ..domain.presence import PresenceFix, SavedPlace, haversine_distance_m
 from .room import Room, find_by_name
 
 log = logging.getLogger("nora.agent.whereis")
@@ -118,8 +117,6 @@ def _dedupe(refs: tuple[PersonRef, ...]) -> tuple[PersonRef, ...]:
     return tuple(out)
 
 
-_EARTH_RADIUS_M = 6_371_000.0
-
 # The movement read (design/19 §6, first slice — operator ask 2026-08-07):
 # MEASURED facts off the stored fix history, never a prediction. A member is
 # `moving` when their last two fixes inside this window are further apart than
@@ -135,14 +132,6 @@ _MOVEMENT_FLOOR_M = 150.0
 _SPEED_FLOOR_KMH = 3.0
 
 
-def _distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lng2 - lng1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * _EARTH_RADIUS_M * math.asin(math.sqrt(a))
-
-
 def movement_view(
     fixes: list[PresenceFix], places: list[SavedPlace],
 ) -> dict[str, Any]:
@@ -152,15 +141,15 @@ def movement_view(
     if len(fixes) < 2:
         return {}
     prev, last = fixes[-2], fixes[-1]
-    moved = _distance_m(prev.lat, prev.lng, last.lat, last.lng)
+    moved = haversine_distance_m(prev.lat, prev.lng, last.lat, last.lng)
     out: dict[str, Any] = {"moving": moved > _MOVEMENT_FLOOR_M}
     if not out["moving"]:
         return out
     best_name, best_closed = None, _MOVEMENT_FLOOR_M
     for place in places:
         closed = (
-            _distance_m(prev.lat, prev.lng, place.lat, place.lng)
-            - _distance_m(last.lat, last.lng, place.lat, place.lng)
+            haversine_distance_m(prev.lat, prev.lng, place.lat, place.lng)
+            - haversine_distance_m(last.lat, last.lng, place.lat, place.lng)
         )
         if closed > best_closed:
             best_name, best_closed = place.name, closed
@@ -175,12 +164,7 @@ def _within_place(lat: float, lng: float, place: SavedPlace) -> bool:
     cannot contain."""
     if place.radius_m is None or place.radius_m <= 0:
         return False
-    p1, p2 = math.radians(lat), math.radians(place.lat)
-    dp = math.radians(place.lat - lat)
-    dl = math.radians(place.lng - lng)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    d = 2 * _EARTH_RADIUS_M * math.asin(math.sqrt(a))
-    return d <= place.radius_m
+    return haversine_distance_m(lat, lng, place.lat, place.lng) <= place.radius_m
 
 
 async def resolvable_places(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Activity, Gamepad2, Sparkles } from "lucide-react";
+import { Activity, Gamepad2, MapPin, Sparkles } from "lucide-react";
 import { Link, usePathname } from "@/i18n/routing";
 import { MODULES } from "@/lib/modules";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ const ICONS: Record<string, typeof Activity> = {
   status: Activity,
   memory: Sparkles,
   games: Gamepad2,
+  map: MapPin,
 };
 
 export function NavLinks() {

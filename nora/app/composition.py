@@ -347,6 +347,20 @@ class Dependencies:
     # same way the agent path already does: the tools are not there, never a
     # guess at what they would have said.
     mcp_tools: Mapping[str, McpToolGroup]
+    # The SAME `presence_store`/`presence_circles` `Whereis` already reads
+    # (below) — exposed here so `nora.web.presence` can serve a map without a
+    # second `PresenceStore` over a second engine. `presence` is `None` when
+    # `[presence] enabled = false` or identity.toml yields no circle (the
+    # collector never wrote anything), matching `Whereis`'s own optionality.
+    # UNLIKE `Whereis.locate`, `nora.web.presence` does NOT apply
+    # `DisclosureGuard`/R-21 — that guard is a PER-ROOM, per-conversation
+    # check with no web equivalent (no "conversation" exists on a portal
+    # page); the web map's own access control is `checkSession()`'s
+    # identity.toml allowlist, the same gate every other portal page uses
+    # (design decision: web presence visibility = portal-wide, matching
+    # status/memory, not per-room disclosure).
+    presence: PresenceStore | None
+    presence_circles: tuple[Circle, ...]
     # The Dreamer's own pieces (Task 11), all `None`/empty when `[language]
     # enabled = false` — `nora.__main__.App.run` reads these to spawn (or log
     # skipping) `runtime.dream_loop`. `language_store` doubles as the
@@ -1334,6 +1348,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client, reminders=reminders,
         mcp_tools=mcp_tool_groups,
+        presence=presence_store, presence_circles=presence_circles,
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
     )

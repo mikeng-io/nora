@@ -8,7 +8,7 @@
  */
 export interface Module {
   id: string;
-  labelKey: "status" | "memory" | "games";
+  labelKey: "status" | "memory" | "games" | "map";
   href: string;
   status: "live" | "designed" | "future";
 }
@@ -17,4 +17,5 @@ export const MODULES: Module[] = [
   { id: "status", labelKey: "status", href: "/status", status: "live" },
   { id: "memory", labelKey: "memory", href: "/memory", status: "live" },
   { id: "games", labelKey: "games", href: "/games", status: "live" },
+  { id: "map", labelKey: "map", href: "/map", status: "live" },
 ];

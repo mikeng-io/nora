@@ -23,8 +23,23 @@ Two types, and the split matters:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import StrEnum
+
+_EARTH_RADIUS_M = 6_371_000.0
+
+
+def haversine_distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance between two points, in metres. The one distance
+    calculation every presence-reading caller needs (`whereis`'s movement/
+    place-containment reads, the web map's stay-point snapping) — kept here,
+    not duplicated per caller, so a change to the formula is one edit."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * _EARTH_RADIUS_M * math.asin(math.sqrt(a))
 
 
 class WireState(StrEnum):
