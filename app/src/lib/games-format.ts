@@ -11,21 +11,9 @@ function unitsFor(locale?: string): DurationUnits {
     : { d: "d", h: "h", m: "m", sep: " " };
 }
 
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex++;
-  }
-  return `${value.toFixed(1)} ${units[unitIndex]}`;
-}
-
-export function formatRate(bytesPerSecond: number): string {
-  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond < 0) return "0 B/s";
-  return `${formatBytes(bytesPerSecond)}/s`;
+export function formatGb(gb: number): string {
+  if (!Number.isFinite(gb) || gb < 0) return "0 GB";
+  return `${gb.toFixed(1)} GB`;
 }
 
 export function formatCpuPercent(percent: number): string {
@@ -42,12 +30,4 @@ export function formatUptime(seconds: number, locale?: string): string {
   if (d > 0) return `${d}${u.d}${u.sep}${h}${u.h}`;
   if (h > 0) return `${h}${u.h}${u.sep}${m}${u.m}`;
   return `${m}${u.m}`;
-}
-
-/** Uptime derived from the sample's own clock, so SSR and hydration agree. */
-export function uptimeSecondsFrom(current: { timestamp: number; startedAt?: string }): number {
-  if (!current.startedAt) return 0;
-  const started = new Date(current.startedAt).getTime();
-  if (Number.isNaN(started)) return 0;
-  return Math.max(0, Math.floor((current.timestamp - started) / 1000));
 }

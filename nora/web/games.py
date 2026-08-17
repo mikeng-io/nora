@@ -6,62 +6,45 @@ previous direct-REST proxy the Next.js `app` service used
 is host-loopback-only by design and unreachable from a separate compose
 project.
 
-BLOCKED on the response shape — read before changing this file
-=================================================================
-Pulse's live MCP tool inventory was discovered for real (not guessed) by
-connecting `nora.agent.mcp.build_mcp_tools` to the deployed
-`[tools.mcp.pulse]` mount and calling `list_tools_sync()`. It advertises
-seven tools: `pulse_server_status`, `pulse_player_profile`,
+Pulse's live MCP tool inventory (discovered by connecting to the deployed
+`[tools.mcp.pulse]` mount and calling `list_tools_sync()`) is seven
+read-only tools: `pulse_server_status`, `pulse_player_profile`,
 `pulse_squad_activity`, `pulse_leaderboards`, `pulse_world_state`,
-`pulse_recent_events`, `pulse_weekly`. Their `inputSchema`s were captured
-live. That surface does not line up with what
-`app/src/lib/games-schema.ts` needs, on its own description alone:
+`pulse_recent_events`, `pulse_weekly`. Every one of them speaks for ONE
+server — the tool descriptions say "defaults to the only configured
+server" — so there is no fleet to list, matching Pulse's own README ("one
+game adapter: `abiotic_factor`" at the time of writing).
 
-  - No tool lists MULTIPLE servers — every one of the seven takes an
-    optional `server` argument documented as "Defaults to the only
-    configured server; omit it unless asked about another." This MCP mount
-    speaks for ONE server, not a fleet the way `ServerSchema[]` implies.
-  - No tool returns an hourly time series. The closest is `pulse_weekly`
-    (one aggregate per week) and `pulse_recent_events` (a discrete feed) —
-    neither is `GraphSchema`'s per-hour cpuAvg/cpuMax/memoryAvg/memoryMax/
-    networkRxBpsAvg/networkTxBpsAvg/playerAvg/playerMax buckets.
-  - `pulse_server_status`'s own description promises "online or not,
-    uptime, CPU and memory, and who is playing right now" — not the
-    low-level Docker cgroup counters `ContainerMetricsSchema` requires as
-    non-optional fields (memoryLimitBytes, networkRxBytes/TxBytes,
-    blockReadBytes/WriteBytes, pids, restartCount, image).
+`pulse_server_status`'s real, observed response (captured live 2026-08-17,
+after Pulse's own Caddy-sidecar routing fix — see the module's git history
+for the discovery process) is a JSON string inside `content[0].text`, not
+`structuredContent`:
 
-What is genuinely UNKNOWN is the tool's OUTPUT shape: after that one
-successful `list_tools_sync()` call,
-`https://orion.tail0a1b2c3d.ts.net/pulse/mcp` returned `502 Bad Gateway` on
-every one of 15 retry attempts spread over roughly five minutes, so no real
-`pulse_server_status` response was ever observed in this environment.
-Guessing its field names to satisfy `ServerSchema`/`ServerStatusSchema`
-would be exactly the fabrication CLAUDE.md's fake-that-answers-everything
-rule forbids ("never assert what you cannot ground").
+    {"server":"Abiotic Factor","online":true,"status":"running",
+     "uptimeHours":394.3,"cpuPercent":47,"memoryGb":5.4,
+     "playersOnline":[],"playerCount":0,"maxPlayers":12,
+     "lastSampleAt":"2026-08-17T18:53:52.293Z"}
 
-So: this module wires the REAL call — the same `McpToolGroup`/`MCPClient`
-path `nora.agent.registry.ToolRegistry` already uses for the LLM
-tool-calling loop, reached through `Dependencies.mcp_tools` — and fails
-closed. Every endpoint raises `GamesUnavailableError` (the route layer turns
-that into a 503, R-27's "unavailable", never a fabricated 200) until:
+This is a coarse, human/LLM-facing read — no Docker cgroup counters
+(memory limit, network/block I/O, pids, restart count). That's a real,
+structural difference from Pulse's REST API (`/pulse/api/v1/servers`,
+documented in game-server-monitor's README), which does expose those.
+Reaching the REST API directly would need a second Pulse-issued token
+(`pulse-api-token`) Nora was never given — its README frames MCP as
+Nora's specifically intended, least-privileged path — so this module
+works within what the MCP surface actually offers rather than requesting
+broader access. `app/src/lib/games-schema.ts`'s `ServerMetricsSchema` was
+narrowed to match (see that file's own comment).
 
-  1. `pulse_server_status`'s real output has been observed (fill in
-     `_server_from_status_result` below with its ACTUAL field names, not
-     invented ones), for `build_games_servers_payload` and
-     `build_game_server_status_payload`; and
-  2. Pulse's MCP surface grows a tool that can answer an hourly graph
-     (there is currently no such tool at all — `build_game_server_graph_payload`
-     is unavailable by construction, not by connectivity).
-
-None of the frontend's zod schemas needed to change: a 503 makes
-`fetchServers()`/`fetchServerStatus()`/`fetchServerGraph()`
-(`app/src/lib/games-schema.ts`) throw on `!res.ok`, before `.parse()` ever
-runs — the existing "throw on non-2xx" contract IS the honest state here.
+There is still no MCP tool for an hourly time series (`pulse_weekly` is
+one aggregate per week; `pulse_recent_events` is a discrete feed) — the
+graph endpoint stays unavailable by construction, a Pulse-side gap, not a
+client-side one.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -70,11 +53,21 @@ from nora.agent.mcp import McpToolGroup
 _MOUNT = "pulse"
 _STATUS_TOOL = "pulse_server_status"
 
+# Pulse currently monitors exactly one game adapter. Its MCP tools take no
+# server-selecting argument beyond an optional override ("defaults to the
+# only configured server"), and return no stable slug — only a display
+# name ("Abiotic Factor"). `abiotic_factor` is the adapter id Pulse's own
+# README documents, used here as the one routable id; `_SERVER_COLOR` is a
+# presentational choice made on Nora's side, since Pulse's MCP surface has
+# no color field at all (unlike its REST API's `ServerSchema`).
+_SERVER_ID = "abiotic_factor"
+_SERVER_COLOR = "#f59e0b"
+
 
 class GamesUnavailableError(Exception):
     """Pulse's MCP tools are absent, unreachable, returned an error, or
-    their output shape is not yet mapped (see module docstring). The web
-    route (`nora.web.api`) turns this into a 503 — never a guessed 200."""
+    their result could not be parsed as the observed response shape. The
+    web route (`nora.web.api`) turns this into a 503 — never a guessed 200."""
 
 
 def _find_tool(mcp_tools: Mapping[str, McpToolGroup], tool_name: str) -> Any | None:
@@ -118,30 +111,68 @@ async def _call_status_tool(
     return result
 
 
-def _server_from_status_result(result: dict) -> dict:
-    """TODO(games-hub, blocked): map `result["structuredContent"]` onto
-    `ServerSchema`'s shape (id/displayName/color/maxPlayers/current) once a
-    REAL `pulse_server_status` response has been observed — see the module
-    docstring for why nothing is guessed here yet. Deliberately raises
-    rather than returning a partially-invented dict."""
-    raise GamesUnavailableError(
-        f"{_STATUS_TOOL} succeeded but its response shape has never been "
-        "observed live in this deployment — mapping onto ServerSchema is "
-        "deliberately not guessed (see nora/web/games.py's module "
-        "docstring); fill in _server_from_status_result once a real "
-        "response is available"
-    )
+def _parse_status_payload(result: dict) -> dict:
+    """Extract and parse `pulse_server_status`'s real response: a JSON
+    string in `content[0].text` (no `structuredContent` — observed live,
+    not assumed). Raises `GamesUnavailableError` rather than returning a
+    partial dict if the shape ever stops matching what was actually seen."""
+    content = result.get("content") or []
+    if not content or "text" not in content[0]:
+        raise GamesUnavailableError(
+            f"{_STATUS_TOOL} succeeded but its result had no content[0].text "
+            f"— got: {result!r}"
+        )
+    try:
+        payload = json.loads(content[0]["text"])
+    except json.JSONDecodeError as exc:
+        raise GamesUnavailableError(
+            f"{_STATUS_TOOL} succeeded but content[0].text was not valid "
+            f"JSON: {exc}"
+        ) from exc
+    required = {
+        "server", "online", "status", "uptimeHours", "cpuPercent",
+        "memoryGb", "playersOnline", "playerCount", "lastSampleAt",
+    }
+    missing = required - payload.keys()
+    if missing:
+        raise GamesUnavailableError(
+            f"{_STATUS_TOOL}'s response is missing field(s) {sorted(missing)} "
+            "the last-observed shape had — see nora/web/games.py's module "
+            f"docstring; got: {payload!r}"
+        )
+    return payload
+
+
+def _summary(payload: dict) -> dict:
+    return {
+        "id": _SERVER_ID,
+        "displayName": payload["server"],
+        "color": _SERVER_COLOR,
+        "maxPlayers": payload.get("maxPlayers"),
+    }
+
+
+def _metrics(payload: dict) -> dict:
+    return {
+        "online": payload["online"],
+        "status": payload["status"],
+        "uptimeHours": payload["uptimeHours"],
+        "cpuPercent": payload["cpuPercent"],
+        "memoryGb": payload["memoryGb"],
+        "playerCount": payload["playerCount"],
+        "lastSampleAt": payload["lastSampleAt"],
+    }
 
 
 async def build_games_servers_payload(*, mcp_tools: Mapping[str, McpToolGroup]) -> list[dict]:
     """`GET /app/v1/games/servers` — one entry per Pulse-monitored server.
 
-    Calls the real `pulse_server_status` tool (no `server` argument: the
-    tool's own description says it "defaults to the only configured
-    server", so that IS the list this mount can answer for). Always raises
-    `GamesUnavailableError` today — see module docstring."""
+    Calls the real `pulse_server_status` tool with no `server` argument:
+    the tool's own description says it defaults to the only configured
+    server, so that IS the full list this mount can answer for."""
     result = await _call_status_tool(mcp_tools=mcp_tools, server=None)
-    return [_server_from_status_result(result)]
+    payload = _parse_status_payload(result)
+    return [{**_summary(payload), "current": _metrics(payload)}]
 
 
 async def build_game_server_status_payload(
@@ -149,7 +180,12 @@ async def build_game_server_status_payload(
 ) -> dict:
     """`GET /app/v1/games/servers/{id}/status` — one server's live detail."""
     result = await _call_status_tool(mcp_tools=mcp_tools, server=server_id)
-    return _server_from_status_result(result)
+    payload = _parse_status_payload(result)
+    return {
+        "server": _summary(payload),
+        "current": _metrics(payload),
+        "activePlayers": payload["playersOnline"],
+    }
 
 
 async def build_game_server_graph_payload(

@@ -98,7 +98,6 @@
     "players": "Players",
     "cpu": "CPU",
     "memory": "Memory",
-    "network": "Network",
     "uptime": "Uptime",
     "back": "All games",
     "activePlayersLabel": "Active now",

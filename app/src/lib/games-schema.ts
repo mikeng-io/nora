@@ -1,40 +1,29 @@
 import { z } from "zod";
 
-// Wire-format schemas for Pulse's documented HTTP API (game-server-monitor's
-// README §"HTTP API": GET /v1/servers, GET /v1/servers/{id}/status,
-// GET /v1/servers/{id}/graph?hours=24). Adapted from that repo's own
-// web/src/lib/pulse-schemas.ts, narrowed to what the README actually
-// documents — Pulse's real app additionally serves players/activity/
-// sessions/insights/world endpoints, but those aren't part of the surface
-// this module is built against (design spec §5.3, "designed now, built in
-// v2" — build against the documented shapes, not the sibling app's full
-// route table).
+// Wire-format schemas for Pulse's `pulse_server_status` MCP tool — reached
+// through Nora's own web backend (nora/web/games.py), not Pulse's HTTP API
+// directly (see that module's docstring for why: the REST API needs a
+// second Pulse-issued token Nora was never given, and its own README frames
+// MCP as Nora's intended, least-privileged path).
 //
-// The README lists `/graph?hours=24` next to the JSON `/status` and
-// `/servers` routes, so it's treated as JSON here too; the reference app's
-// actual route for equivalent data is named `/history` and returns the same
-// point shape (its `HistorySchema`), which is what `GraphSchema` below
-// mirrors under the README's own name for the endpoint.
+// This shape is real, observed data — captured live from
+// https://orion.tail0a1b2c3d.ts.net/pulse/mcp on 2026-08-17 — not adapted
+// from Pulse's REST API types. It's deliberately coarser than a Docker
+// cgroup read: no memory limit, network/block I/O, pids, or restart count,
+// because `pulse_server_status` doesn't report those (it's an LLM/human
+// -facing summary tool, not a raw container-metrics endpoint). There is
+// also no hourly time-series MCP tool at all — `fetchServerGraph` below
+// stays wired for when one exists, but the backend always answers 503 for
+// it today, which the graph card already renders as "no history yet".
 
-export const ContainerMetricsSchema = z.object({
-  serverId: z.string(),
-  timestamp: z.number(),
+export const ServerMetricsSchema = z.object({
   online: z.boolean(),
   status: z.string(),
+  uptimeHours: z.number(),
   cpuPercent: z.number(),
-  memoryBytes: z.number(),
-  memoryLimitBytes: z.number(),
-  networkRxBytes: z.number(),
-  networkTxBytes: z.number(),
-  networkRxBps: z.number(),
-  networkTxBps: z.number(),
-  blockReadBytes: z.number(),
-  blockWriteBytes: z.number(),
-  pids: z.number(),
-  restartCount: z.number(),
+  memoryGb: z.number(),
   playerCount: z.number(),
-  startedAt: z.string().optional(),
-  image: z.string().optional(),
+  lastSampleAt: z.string(),
 });
 
 /** Server identity only — the shape nested inside `/status`. */
@@ -47,20 +36,13 @@ export const ServerSummarySchema = z.object({
 
 /** `/v1/servers` additionally embeds the latest sample (null before first poll). */
 export const ServerSchema = ServerSummarySchema.extend({
-  current: ContainerMetricsSchema.nullable(),
-});
-
-export const ActivePlayerSchema = z.object({
-  playerKey: z.string(),
-  playerName: z.string(),
+  current: ServerMetricsSchema.nullable(),
 });
 
 export const ServerStatusSchema = z.object({
   server: ServerSummarySchema,
-  current: ContainerMetricsSchema,
+  current: ServerMetricsSchema,
   activePlayers: z.array(z.string()),
-  // Optional so a Pulse predating this field still validates.
-  activeProfiles: z.array(ActivePlayerSchema).optional(),
 });
 
 export const GraphPointSchema = z.object({
@@ -84,10 +66,9 @@ export const GraphSchema = z.object({
   data: z.array(GraphPointSchema),
 });
 
-export type ContainerMetrics = z.infer<typeof ContainerMetricsSchema>;
+export type ServerMetrics = z.infer<typeof ServerMetricsSchema>;
 export type ServerSummary = z.infer<typeof ServerSummarySchema>;
 export type Server = z.infer<typeof ServerSchema>;
-export type ActivePlayer = z.infer<typeof ActivePlayerSchema>;
 export type ServerStatus = z.infer<typeof ServerStatusSchema>;
 export type GraphPoint = z.infer<typeof GraphPointSchema>;
 export type Graph = z.infer<typeof GraphSchema>;

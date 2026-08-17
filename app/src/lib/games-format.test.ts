@@ -1,22 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatCpuPercent, formatRate, formatUptime, uptimeSecondsFrom } from "./games-format";
+import { formatCpuPercent, formatGb, formatUptime } from "./games-format";
 
-describe("formatBytes", () => {
-  it("scales up through the unit ladder", () => {
-    expect(formatBytes(512)).toBe("512.0 B");
-    expect(formatBytes(2048)).toBe("2.0 KB");
-    expect(formatBytes(2_147_483_648)).toBe("2.0 GB");
+describe("formatGb", () => {
+  it("renders one decimal with a unit suffix", () => {
+    expect(formatGb(5.4)).toBe("5.4 GB");
   });
 
-  it("floors a negative or non-finite value at 0 B", () => {
-    expect(formatBytes(-1)).toBe("0 B");
-    expect(formatBytes(NaN)).toBe("0 B");
-  });
-});
-
-describe("formatRate", () => {
-  it("appends /s to the byte scale", () => {
-    expect(formatRate(2048)).toBe("2.0 KB/s");
+  it("floors a negative or non-finite value at 0 GB", () => {
+    expect(formatGb(-1)).toBe("0 GB");
+    expect(formatGb(NaN)).toBe("0 GB");
   });
 });
 
@@ -50,16 +42,5 @@ describe("formatUptime", () => {
   it("floors a negative or non-finite value at 0", () => {
     expect(formatUptime(-5)).toBe("0m");
     expect(formatUptime(NaN)).toBe("0m");
-  });
-});
-
-describe("uptimeSecondsFrom", () => {
-  it("derives elapsed seconds from the sample's own clock", () => {
-    const current = { timestamp: 1_000_000, startedAt: new Date(1_000_000 - 5_000).toISOString() };
-    expect(uptimeSecondsFrom(current)).toBe(5);
-  });
-
-  it("returns 0 when startedAt is absent", () => {
-    expect(uptimeSecondsFrom({ timestamp: 1_000_000 })).toBe(0);
   });
 });

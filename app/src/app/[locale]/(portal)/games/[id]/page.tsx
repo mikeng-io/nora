@@ -11,7 +11,7 @@ import {
   type Graph,
   type ServerStatus,
 } from "@/lib/games-schema";
-import { formatBytes, formatCpuPercent, formatRate, formatUptime, uptimeSecondsFrom } from "@/lib/games-format";
+import { formatCpuPercent, formatGb, formatUptime } from "@/lib/games-format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
@@ -99,35 +99,23 @@ export default function GameServerPage() {
               value={`${status.current.playerCount}${status.server.maxPlayers ? `/${status.server.maxPlayers}` : ""}`}
             />
             <Stat label={t("cpu")} value={formatCpuPercent(status.current.cpuPercent)} />
-            <Stat label={t("memory")} value={formatBytes(status.current.memoryBytes)} />
+            <Stat label={t("memory")} value={formatGb(status.current.memoryGb)} />
             <Stat
               label={t("uptime")}
-              value={formatUptime(uptimeSecondsFrom(status.current), locale)}
+              value={formatUptime(status.current.uptimeHours * 3600, locale)}
             />
           </div>
 
-          <div className="mb-6 grid grid-cols-2 gap-3">
-            <Card>
-              <CardHeader className="p-4 pb-2">
-                <CardTitle className="font-mono text-[10px] font-normal uppercase tracking-wider text-text-muted">
-                  {t("network")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0 text-[13px] text-text-secondary">
-                ↓ {formatRate(status.current.networkRxBps)} · ↑ {formatRate(status.current.networkTxBps)}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="p-4 pb-2">
-                <CardTitle className="font-mono text-[10px] font-normal uppercase tracking-wider text-text-muted">
-                  {t("activePlayersLabel")}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0">
-                <ActivePlayers status={status} noneLabel={t("noActivePlayers")} />
-              </CardContent>
-            </Card>
-          </div>
+          <Card className="mb-6">
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="font-mono text-[10px] font-normal uppercase tracking-wider text-text-muted">
+                {t("activePlayersLabel")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0">
+              <ActivePlayers status={status} noneLabel={t("noActivePlayers")} />
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
@@ -159,7 +147,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function ActivePlayers({ status, noneLabel }: { status: ServerStatus; noneLabel: string }) {
-  const names = status.activeProfiles?.map((p) => p.playerName) ?? status.activePlayers;
+  const names = status.activePlayers;
   if (names.length === 0) {
     return <p className="font-mono text-[12.5px] text-text-muted">{noneLabel}</p>;
   }

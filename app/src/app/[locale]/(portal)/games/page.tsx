@@ -5,7 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Clock, Cpu, HardDrive, Users } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { fetchServers, type Server } from "@/lib/games-schema";
-import { formatBytes, formatCpuPercent, formatUptime, uptimeSecondsFrom } from "@/lib/games-format";
+import { formatCpuPercent, formatGb, formatUptime } from "@/lib/games-format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
@@ -112,12 +112,12 @@ function ServerCard({ server, locale }: { server: Server; locale: string }) {
           <StatTile
             icon={HardDrive}
             label={t("memory")}
-            value={current ? formatBytes(current.memoryBytes) : "—"}
+            value={current ? formatGb(current.memoryGb) : "—"}
           />
           <StatTile
             icon={Clock}
             label={t("uptime")}
-            value={current ? formatUptime(uptimeSecondsFrom(current), locale) : "—"}
+            value={current ? formatUptime(current.uptimeHours * 3600, locale) : "—"}
           />
         </CardContent>
       </Card>
