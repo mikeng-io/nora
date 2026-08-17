@@ -135,9 +135,12 @@ temperature = 0.7
 # room, choose how hard, and compose several messages», which is deliberation,
 # and the measurement says the model needs a little of it to do that.
 #
-# Still `low`, not higher: `high` was measured (2026-08-06) to end the turn
-# without calling send_reply more often, which is her going mute in the group.
-reasoning_effort = "low"
+# `low` → `high` (operator, 2026-08-17), against the 2026-08-06 measurement
+# above, which is NOT retracted: at `high`, 1/5 auto tool-choice and 15
+# no_send_call journeys — the failure mode to watch is her ending a turn without
+# calling `send_reply` at all, i.e. going mute in the group. Revert to `low` if
+# silent turns show up in the traces.
+reasoning_effort = "high"
 # 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container,
 # and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
 # so every real image timed out while the tiny probe PNG passed.
@@ -369,7 +372,13 @@ encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 # (vision:true, 1M context, 128K max output). If opencode-go 401s again, the
 # minimax-m3 measurement above is the fallback already proven to work, not a
 # fresh probe.
-vision_model = "opencode-go/mimo-v2.5"
+#
+# opencode-go/mimo-v2.5 → ollamacloud/minimax-m3 (2026-08-17, operator):
+# opencode-go is being SUNSET, so this is a route retirement, not a fresh probe —
+# it takes the fallback the measurement above already proved. Corroborated live:
+# trace 2026-08-15T16:15:57 has her answering 「個 video 我睇唔到」 to a tagged
+# video, i.e. media_fetch was already failing on the opencode-go route.
+vision_model = "ollamacloud/minimax-m3"
 vision_max_tokens = 1024
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608
@@ -548,6 +557,13 @@ min_lead_seconds = 120     # MUST be > heartbeat.tick_seconds, so a
 # sits, and a row costs the same whether it is due tomorrow or in March.
 max_horizon_days = 365
 
+# 2026-08-17: this block requires an image built from bcc7227 or later. The image
+# running until then (built 2026-08-16 04:10) predated the language-dreamer
+# commits, so its `Config` had no `language` field and pydantic rejected the block
+# with `extra_forbidden` — a startup CRASH-LOOP. It stayed latent because config is
+# read once at startup; `--force-recreate` is what surfaced it, alongside a DB
+# already migrated to `0013_room_language` that the old image could not resolve.
+# Rebuilt 2026-08-17 (scripts/build-image.sh) — image and DB now agree.
 [language]
 # The Dreamer — distils the slang a room has made its own out of its own
 # message record, and renders a small block of it into every tag's prefill.
