@@ -29,7 +29,7 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from nora.agent import factory
-from nora.agent.mcp import McpMount, build_mcp_tools
+from nora.agent.mcp import McpMount, McpToolGroup, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
@@ -337,6 +337,16 @@ class Dependencies:
     # `reminders = SqlReminderStore(engine)` below) — exposed here so
     # `nora/web/status.py` can read pending rows without a second store.
     reminders: ReminderStore
+    # The SAME `mcp_tool_groups` dict `ToolRegistry(mcp_tools=...)` already
+    # takes (below) — exposed again here so `nora.web.games` can call a
+    # discovered MCP tool (e.g. `pulse_server_status`) directly from an
+    # aiohttp handler, outside the LLM tool-calling loop, over the identical
+    # live `MCPClient` connection either path uses. A mount absent from this
+    # dict means "not configured, unreachable, or its token was rejected"
+    # (`build_mcp_tools`'s own docstring) — the web layer must treat that the
+    # same way the agent path already does: the tools are not there, never a
+    # guess at what they would have said.
+    mcp_tools: Mapping[str, McpToolGroup]
     # The Dreamer's own pieces (Task 11), all `None`/empty when `[language]
     # enabled = false` — `nora.__main__.App.run` reads these to spawn (or log
     # skipping) `runtime.dream_loop`. `language_store` doubles as the
@@ -1323,6 +1333,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client, reminders=reminders,
+        mcp_tools=mcp_tool_groups,
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
     )

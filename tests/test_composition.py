@@ -90,6 +90,27 @@ async def test_dependencies_exposes_the_reminders_store(cfg):
     assert isinstance(deps.reminders, SqlReminderStore)
 
 
+async def test_dependencies_exposes_the_same_mcp_tool_groups_the_registry_gets(cfg):
+    """`nora.web.games` calls a discovered MCP tool directly from an aiohttp
+    handler, outside the LLM tool-calling loop — it needs the SAME
+    `McpToolGroup` dict `ToolRegistry(mcp_tools=...)` already receives, not a
+    second discovery pass (a second `build_mcp_tools()` call would be a
+    second live connection to every configured server for no reason, and
+    could disagree with the first about which servers came up).
+
+    `ToolRegistry.__init__` defensively copies its `mcp_tools` argument
+    (`dict(mcp_tools)`), so this can only pin equal CONTENTS, not object
+    identity — this fixture's config has no `[tools.mcp.*]` mount, so both
+    sides are the empty dict `build_mcp_tools()` returns for "nothing
+    configured", which is still enough to show `deps.mcp_tools` is wired
+    from the one discovery call `build_dependencies` makes, not a stand-in.
+    """
+    deps = await build_dependencies(cfg)
+    assert deps.mcp_tools == {}
+    registry = deps.engagement._tool_registry
+    assert registry._mcp_tools == deps.mcp_tools
+
+
 async def test_the_doctrine_the_root_builds_carries_the_generated_capability(cfg):
     """DEC-29: the composition root is where the registry meets the doctrine.
 

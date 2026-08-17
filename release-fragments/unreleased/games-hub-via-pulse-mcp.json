@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "The web portal's Game Server Hub now reaches Pulse through Nora's own working MCP connection instead of a separate, fragile direct-REST path that could never actually reach Pulse's host-loopback-only HTTP port from the app container.",
+  "details": [
+    "New nora/web/games.py + GET /app/v1/games/servers, .../{id}/status, .../{id}/graph on Nora's existing :9100 API, calling the same pulse MCP tools ([tools.mcp.pulse]) her conversational agent already uses.",
+    "The Next.js proxy routes (app/src/app/api/games/servers/**) now fetch from NORA_API_BASE like the status/memory routes do, instead of the removed GAMES_API_BASE.",
+    "Dependencies gained an mcp_tools field so the web layer can call a discovered MCP tool outside the LLM tool-calling loop."
+  ],
+  "limitations": [
+    "The Games Hub is not yet functional: Pulse's real MCP tool inventory was discovered live (pulse_server_status/player_profile/squad_activity/leaderboards/world_state/recent_events/weekly, with real input schemas), but its output shape was never observed — the endpoint returned 502 on every retry after the one successful listing — and the tool set has no multi-server list or hourly graph at all. Every games route answers 503 until a maintainer with real Pulse reachability fills in nora/web/games.py's marked TODO with the tool's actual field names."
+  ]
+}

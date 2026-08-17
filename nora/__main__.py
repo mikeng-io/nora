@@ -109,6 +109,7 @@ class App:
         register_web_routes(
             health_app, store=deps.audit, honcho=deps.memory, reminders=deps.reminders,
             persons=deps.persons, ai_peer=self.cfg.memory.ai_peer, started_at=started_at,
+            mcp_tools=deps.mcp_tools,
         )
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 

@@ -267,11 +267,12 @@ services:
       nora:
         condition: service_healthy
     environment:
+      # The games-hub routes reach Pulse THROUGH this too now (nora/web/games.py,
+      # over Nora's already-working [tools.mcp.pulse] MCP connection) — the
+      # old separate GAMES_API_BASE direct-to-Pulse tailnet path is gone: that
+      # port is host-loopback-only by design and was never actually reachable
+      # from this container's separate compose project.
       - NORA_API_BASE=http://nora:9100
-      # Pulse's game-hub API, reached over the tailnet (design spec §5.3) —
-      # not through `nora`. Optional: unset falls back to the same default
-      # api/games/servers/route.ts itself uses.
-      - GAMES_API_BASE=${GAMES_API_BASE:-http://orion.tail0a1b2c3d.ts.net:8787}
       - AUTH_DISCORD_ID=${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID in the host environment first}
       - AUTH_DISCORD_SECRET=${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in the host environment first}
       - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET in the host environment first}
