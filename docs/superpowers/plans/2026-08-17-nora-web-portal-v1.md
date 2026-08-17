@@ -367,8 +367,10 @@ git commit -m "feat(web): memory showcase payload builder"
 
 Builds the object `/app/v1/status` returns: uptime, store/Honcho
 reachability (re-projected from the same signals `/health` already computes),
-a timestamp-only recent-activity summary, and a timestamp-only reminders
-summary.
+and a timestamp-only reminders summary. (A cross-room "recent activity"
+field was considered and dropped — `RecordStore.recent()` is scoped to one
+`conversation_id`, `nora/domain/ports.py:656`, and no port method spans
+every room; adding one is a real port change, not this task's job.)
 
 **Files:**
 - Create: `nora/web/status.py`
@@ -510,8 +512,7 @@ async def build_status_payload(
 
     rows = await reminders.all_pending(limit=_REMINDERS_LIMIT)
     # Timestamps only, never `.text` — a reminder's sentence is the
-    # requester's own words and stays off this friend-facing surface, the
-    # same restriction the recent-activity summary carries (spec §5.1).
+    # requester's own words and stays off this friend-facing surface.
     next_due_at = min((r.due_at for r in rows), default=None)
 
     return {

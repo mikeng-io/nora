@@ -55,7 +55,7 @@ app/                          Next.js 15 (App Router, RSC), React 19, Tailwind 4
 
 nora/web/                     new Python package inside this repo
   └─ api.py                   aiohttp routes, same process/container as Nora
-       GET /app/v1/status     health, uptime, recent-activity, upcoming reminders
+       GET /app/v1/status     store/Honcho reachability, uptime, upcoming reminders
        GET /app/v1/memory     every whitelisted person's Honcho representation
 ```
 
@@ -151,14 +151,19 @@ id/secret) and an Auth.js session secret, both env-injected the same way
 ### 5.1 Status ("Nora's public face")
 
 `GET /app/v1/status` — process uptime, `/health`'s existing signals
-(store/Honcho reachability), a short recent-activity summary (e.g. last N
-audit rows' timestamps only, no message content), and upcoming/recent
-reminders via `nora/infra/sql/reminders.py::SqlReminderStore` — due times
-and count only, same "timestamps not content" restriction as the activity
-summary, consistent with the CLI's existing read-only stance on reminders
-(`nora reminders list`; there is deliberately no `nora reminders cancel`).
-Client polls every 15-30s. Nothing here is a new data source — status is a
-thin, filtered re-projection of what `nora/obs/health.py::build_health_app`
+(store/Honcho reachability), and upcoming/recent reminders via
+`nora/infra/sql/reminders.py::SqlReminderStore` — due times and count only,
+never a reminder's own text, consistent with the CLI's existing read-only
+stance on reminders (`nora reminders list`; there is deliberately no
+`nora reminders cancel`). A cross-room "recent activity" summary was
+considered and dropped: `RecordStore.recent()` is scoped to one `conversation_id`
+(`nora/domain/ports.py:656`), and there is no port method spanning every room
+Nora is in — adding one is a real port
+change (both `SqlRecordStore` and `FakeRecordStore`, plus a contract test),
+not something this endpoint should assume into existence. Revisit as its own
+task if it's wanted later. Client polls every 15-30s. Nothing here is a new
+data source — status is a thin, filtered re-projection of what
+`nora/obs/health.py::build_health_app`
 and the reminders store already compute, not a new capability.
 
 ### 5.2 Memory showcase
