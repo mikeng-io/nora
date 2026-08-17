@@ -250,6 +250,34 @@ services:
       start_period: 20s
       retries: 3
 
+  # app — the friend-group web portal (design spec:
+  # docs/superpowers/specs/2026-08-17-nora-web-design.md). Loopback-only,
+  # same pattern as `nora` itself — public reachability is a separate,
+  # operator-side Cloudflare Tunnel step, not this compose file's job.
+  app:
+    build:
+      context: ./app
+      network: host
+    image: nora-app:latest
+    container_name: nora-app
+    restart: unless-stopped
+    networks: [nora]
+    ports: ["127.0.0.1:3400:3000"]
+    depends_on:
+      nora:
+        condition: service_healthy
+    environment:
+      - NORA_API_BASE=http://nora:9100
+      - AUTH_DISCORD_ID=${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID in the host environment first}
+      - AUTH_DISCORD_SECRET=${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in the host environment first}
+      - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET in the host environment first}
+      - AUTH_URL=${AUTH_URL:?set AUTH_URL (the public origin, e.g. https://nora.67.zone) in the host environment first}
+    volumes:
+      # Same file, same read-only mount as `nora`/`presence` below — the web
+      # portal's whitelist can never drift from Nora's own roster because it
+      # reads the identical bytes.
+      - ./identity.toml:/app/identity.toml:ro
+
   # presence — the Life360 presence collector (design/19 §4). Same image as
   # nora, a DIFFERENT command and a SEPARATE process: `python -m nora.presence`
   # polls each circle derived from identity.toml and records fixes into the
