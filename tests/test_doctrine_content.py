@@ -282,12 +282,29 @@ def test_voice_teaches_swearing_as_grammar_rather_than_as_a_word_list():
     before v8 — 「有撚用」 means *useless*, and nothing in a word list can teach
     that a word flips the sentence it lands in.
 
-    Pins the two generative rules and nothing about which insults exist."""
+    Pins the generative framing and nothing about which insults exist.
+
+    RE-POINTED 2026-08-17 for the operator's v12 rewrite (a2cb1ae), and the
+    change is a NARROWING that should be known: v12 dropped 「有撚用」/「反轉」 —
+    the 撚-as-infix inversion, which was DEC-94's single most generative device
+    and the one thing a word list provably cannot teach — along with 「句入面」
+    and 「屌得唔夠力」. Those are no longer pinned by anything, because they are
+    no longer in the file and voice.md is `change_policy: operator-only`.
+
+    What v12 kept, and what this now pins, is the other half of the same
+    position: the words are named as FUNCTION (重音/反應/節奏, chosen from the
+    moment) rather than as vocabulary, plus the anti-template rule that killed
+    the 屌-explain-punchline shape."""
     text = _voice()
-    assert "句入面" in text and "撚" in text and "鳩" in text
-    assert "反轉" in text
-    assert "有撚用" in text                    # the inversion, shown working
-    assert "屌得唔夠力" in text                # the group's own verdict, the licence
+    assert "撚" in text and "鳩" in text
+    # Function, not vocabulary — what the words DO in a sentence.
+    assert "重音" in text and "節奏" in text
+    # Chosen from the live line and the room, which generates; a list closes.
+    assert "跟眼前嗰句" in text
+    # The negative that stops it becoming a trait she performs.
+    assert "personality feature" in text
+    # DEC-94's measured failure shape, still banned in terms.
+    assert "punctuation template" in text
 
 
 def test_voice_hits_without_negotiating_or_reassuring():
@@ -299,11 +316,21 @@ def test_voice_hits_without_negotiating_or_reassuring():
     independent Hong Kong friend the register describes. The voice needs the
     response shape as well as the Cantonese grammar: identify the live failure,
     hit it first, and do not seek permission or offer an exit before the hit.
+
+    RE-POINTED 2026-08-17 for the operator's v12 rewrite (a2cb1ae). The Cantonese
+    imperatives 「開火唔係逐點反駁」/「客服腔」 are gone; the stance they carried is
+    not. v12 states it as the portrait's own negative — the customer-service
+    residue is named as a tell that the assistant voice has taken over, and the
+    hit is described as landing on one exact thing rather than rebutting a list.
     """
     text = _voice()
-    assert "開火唔係逐點反駁" in text
-    assert "唔係逐點反駁" in text
-    assert "客服腔" in text
+    # The de-escalation shape, banned as a tell rather than as an imperative.
+    assert "customer-service residue" in text
+    assert "ending with an offer to help" in text
+    # Hit once, on the live thing — the replacement for 「唔係逐點反駁」.
+    assert "notices one exact thing and stops" in text
+    # And do not narrate the refusal or the tone instead of making it.
+    assert "explaining a joke, a refusal, or your own tone" in text
 
 
 def test_voice_does_not_enumerate_closed_sets_where_it_needs_a_generative_rule():
@@ -376,12 +403,19 @@ def test_voice_keeps_only_the_limit_about_absent_targets():
 
 
 def test_conduct_allows_personal_banter_only_for_an_in_room_instigator():
-    conduct = (DOCTRINE_DIR / "conduct.md").read_text()
+    """RE-POINTED 2026-08-17 for the operator's v11 conduct rewrite (ad75351),
+    which restated this in English. Every clause the Cantonese carried is still
+    here: it takes an in-room instigator, she does not open fire unprovoked, and
+    an absent person is never the target."""
+    conduct = " ".join((DOCTRINE_DIR / "conduct.md").read_text().split())
     constraints = (DOCTRINE_DIR / "constraints.md").read_text()
 
-    assert "人身攻擊" in conduct
-    assert "公開或者當刻睇得到" in conduct
-    assert "主動開火" in conduct
+    # Reciprocal: there has to BE an instigator, and they have to be in the room.
+    assert "taking a shot at you, you can give it back" in conduct
+    # 主動開火, negated: oddness alone is not a licence.
+    assert "convert an odd request into a roast just because it is odd" in conduct
+    # 人身攻擊 against somebody who cannot answer back.
+    assert "Do not pull in somebody who is not in the room." in conduct
     assert "target of a fight" in constraints
 
 
@@ -397,11 +431,19 @@ def test_voice_binds_the_one_hard_rule_of_the_open_register():
     politeness.
 
     The permissive half is pinned by two tests above; this is the restrictive
-    half, which had none until v8."""
+    half, which had none until v8.
+
+    RE-POINTED 2026-08-17 (ad75351): «Do not invent a quote» became «Do not
+    invent quotes, contradictions, motives, habits, or history to make a hit
+    land» — the same rule over a WIDER surface, so this pins the widened form.
+    """
     text = _voice()
     assert "唔好作 quote" not in text
     conduct = (DOCTRINE_DIR / "conduct.md").read_text()
-    assert "Do not invent a quote" in conduct
+    assert "Do not invent quotes" in conduct
+    # The restriction has to reach past quotes, or «invent nothing» is only
+    # about words somebody said and the hit can still be built on a fiction.
+    assert "to make a hit land" in conduct
 
 
 def test_conduct_separates_a_burst_from_one_answer_in_instalments():
@@ -414,11 +456,18 @@ def test_conduct_separates_a_burst_from_one_answer_in_instalments():
     is the failure being fixed.
 
     The bound still exists and still has to: it is about ONE ANSWER paced out,
-    not about how many messages a turn may send."""
-    text = (DOCTRINE_DIR / "conduct.md").read_text()
+    not about how many messages a turn may send.
 
-    assert "burst" in text                        # the permission
-    assert "second act" in text.lower()           # the other permission
+    RE-POINTED 2026-08-17 (ad75351): the permission is no longer named «burst»
+    or «a second act», but both halves survive verbatim in the new wording — a
+    second message may be a genuinely separate act, several short messages may
+    be one reply — and the BOUND is untouched, still «instalments».
+    """
+    raw = (DOCTRINE_DIR / "conduct.md").read_text()
+    text = " ".join(raw.split())
+
+    assert "a genuinely separate act" in text     # the permission
+    assert "one reply when the rhythm is genuinely the interaction" in text
     assert "instalments" in text                  # the bound
     assert "never a second helping of the first" not in text
     assert "you never split one answer across several" not in text
@@ -456,11 +505,18 @@ def test_conduct_puts_the_day_boundary_at_sleep_rather_than_at_midnight():
     failure is not a wrong date — it is PEDANTRY: correcting them about which
     day it is, or answering «I know nothing about tomorrow» while holding the
     exact thing they asked for.
+
+    RE-POINTED 2026-08-17 (ad75351): the sentence gained a qualifier — «…which
+    day it is WHEN YOU ALREADY KNOW WHAT THEY MEAN» — so the full stop this used
+    to pin no longer follows «is». The rule is unchanged and the qualifier is
+    pinned too, since it is what stops the ban swallowing the genuine mismatch
+    the next line still allows her to name.
     """
-    text = _conduct()
+    text = " ".join(_conduct().split())
     assert "sleeps, not at midnight" in text
     assert "聽日" in text
-    assert "Do not correct somebody about which day it is." in text
+    assert "Do not correct somebody about which day it is" in text
+    assert "when you already know what they mean" in text
 
 
 def test_the_day_boundary_is_a_position_and_not_an_hour():

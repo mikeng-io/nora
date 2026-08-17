@@ -31,7 +31,11 @@ AUTHORED = ("identity", "voice", "conduct", "constraints")
 # `kind: conduct` describes rather than legislates. What this file is actually
 # checking is that the multi-message rule reaches BOTH audiences, so it needs a
 # needle that is unique to that rule and indifferent to its wording.
-MULTI_MESSAGE = "a second act"
+# Re-pointed 2026-08-17 for the operator's v12 voice / v11 conduct rewrite
+# (a2cb1ae, ad75351), which re-worded the permission from «a second act» to «a
+# genuinely separate act». The RULE is unchanged and so is what this pins; only
+# the wording it binds to moved. Still a fragment that spans no line break.
+MULTI_MESSAGE = "a genuinely separate act"
 SILENCE = "That's the only reason you ever speak"
 
 
