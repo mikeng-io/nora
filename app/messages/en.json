@@ -6,6 +6,7 @@
   "nav": {
     "status": "Status",
     "memory": "Memory",
+    "games": "Games",
     "language": "Language"
   },
   "login": {
@@ -41,5 +42,28 @@
     "unavailable": "unavailable right now",
     "nothingYet": "nothing yet",
     "you": "you"
+  },
+  "games": {
+    "eyebrow": "Nora · game servers",
+    "heading": "Games",
+    "dek": "What's running on the squad's game boxes right now.",
+    "loading": "Loading…",
+    "error": "Couldn't reach the game servers.",
+    "empty": "No servers configured.",
+    "online": "Online",
+    "offline": "Offline",
+    "restarting": "Restarting",
+    "players": "Players",
+    "cpu": "CPU",
+    "memory": "Memory",
+    "network": "Network",
+    "uptime": "Uptime",
+    "back": "All games",
+    "activePlayersLabel": "Active now",
+    "noActivePlayers": "Nobody online right now.",
+    "graphLabel": "Players online, last 24h",
+    "graphUnavailable": "No history yet.",
+    "notFound": "Can't find that server.",
+    "detailError": "Couldn't reach that server."
   }
 }

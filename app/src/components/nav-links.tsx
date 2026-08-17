@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Activity, Sparkles } from "lucide-react";
+import { Activity, Gamepad2, Sparkles } from "lucide-react";
 import { Link, usePathname } from "@/i18n/routing";
 import { MODULES } from "@/lib/modules";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const ICONS: Record<string, typeof Activity> = {
   status: Activity,
   memory: Sparkles,
+  games: Gamepad2,
 };
 
 export function NavLinks() {
@@ -19,7 +20,7 @@ export function NavLinks() {
     <nav className="flex flex-col gap-0.5">
       {MODULES.map((m) => {
         const Icon = ICONS[m.id];
-        const active = pathname === m.href;
+        const active = pathname === m.href || pathname.startsWith(`${m.href}/`);
         return (
           <Link
             key={m.id}

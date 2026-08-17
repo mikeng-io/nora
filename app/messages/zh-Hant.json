@@ -6,6 +6,7 @@
   "nav": {
     "status": "狀態",
     "memory": "記憶",
+    "games": "遊戲",
     "language": "語言"
   },
   "login": {
@@ -41,5 +42,28 @@
     "unavailable": "而家攞唔到",
     "nothingYet": "重未有嘢",
     "you": "你"
+  },
+  "games": {
+    "eyebrow": "Nora · 遊戲伺服器",
+    "heading": "遊戲伺服器",
+    "dek": "而家班友嘅遊戲主機運行緊咩。",
+    "loading": "載入緊…",
+    "error": "連唔到遊戲伺服器。",
+    "empty": "重未設置伺服器。",
+    "online": "在線",
+    "offline": "離線",
+    "restarting": "重啟緊",
+    "players": "玩家",
+    "cpu": "CPU",
+    "memory": "記憶體",
+    "network": "網絡",
+    "uptime": "上線時間",
+    "back": "返去所有遊戲",
+    "activePlayersLabel": "而家喺線",
+    "noActivePlayers": "而家冇人喺線。",
+    "graphLabel": "過去 24 小時嘅在線玩家數",
+    "graphUnavailable": "重未有歷史紀錄。",
+    "notFound": "搵唔到嗰個伺服器。",
+    "detailError": "連唔到嗰個伺服器。"
   }
 }
