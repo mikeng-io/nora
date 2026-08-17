@@ -39,6 +39,7 @@ from dataclasses import dataclass
 
 from openai import AsyncOpenAI
 
+from nora.domain.media import parse_media_type
 from nora.domain.ports import MediaDescription
 
 log = logging.getLogger("nora.vision")
@@ -55,6 +56,102 @@ VISION_LOOP_SHARE = 0.6
 # Authored, fixed, and small — never model-supplied. The description it asks for
 # is untrusted egress (design/14 §2.1), screened by the tool on every serve.
 _PROMPT = "Describe this image. If it contains text in it, transcribe that text."
+
+# One authored prompt per modality (2026-08-17 spec). AUTHORED and never
+# model-supplied, for the same reason `_PROMPT` above is: what comes back is
+# untrusted egress (design/14 §2.1), screened by the tool on every serve.
+# Selecting one of these by modality derives from a system-controlled fact — the
+# blob's own MIME type — and keeps that property. Conditioning a prompt on what
+# the TAGGER asked would not: that is group-authored text steering a model whose
+# output returns to the room, i.e. an injection channel, and it is out of scope.
+#
+# `image` is `_PROMPT` unchanged, byte for byte, so the shipped path keeps its
+# exact behaviour through this split.
+DESCRIBE_PROMPTS = {
+    "image": _PROMPT,
+    # DELIBERATELY NOT a transcription prompt, and this is the load-bearing
+    # line of the table. The first cut asked «Transcribe what is said in this
+    # audio» — which IS speech-to-text, the capability this change excludes on
+    # the grounds that a verbatim transcript is a materially larger R-18/R-28
+    # egress surface than a caption. The only screen is `scan_identifiers`, and
+    # `_serve_media`'s own docstring records that it does NOT catch a bare local
+    # number; people say addresses and phone numbers aloud. Shipping the
+    # transcription prompt while deferring the transcription safety pass would
+    # have defeated the deferral in the same commit that made it.
+    #
+    # So: the GIST, explicitly not the words. When STT lands as
+    # `[media.transcribe]` with its own egress analysis, that is where a
+    # verbatim transcript belongs.
+    "audio": (
+        "Say briefly what this audio is about — the gist, the tone, and who is "
+        "speaking if that is clear. Do NOT write out a word-for-word transcript, "
+        "and do not repeat any phone number, address or account number you hear. "
+        "If nothing is audible, say so."
+    ),
+    # What HAPPENS, plus on-screen text — the video analogue of `_PROMPT`'s
+    # second clause, which already ships for images. Speech is deliberately
+    # summarised rather than transcribed, for the audio reason above.
+    "video": (
+        "Describe what happens in this video, and transcribe any text on screen. "
+        "If people speak, say briefly what it is about rather than writing out "
+        "what was said."
+    ),
+}
+
+
+# MIME subtype → the token `input_audio.format` takes. NOT the same vocabulary:
+# the API names a container in its own short form, so `audio/mpeg` is `mp3`, and
+# a subtype absent from this table is a payload we CANNOT BUILD rather than one
+# to guess a token for (`unsupported_payload`, before any request).
+#
+# UNVERIFIED against a live route, and that is stated rather than glossed: no
+# model in the OmniRoute catalogue advertises an `audio` capability at all (215
+# of 406 advertise `vision`, none advertise audio or video), so there is nothing
+# to probe this against today. `wav`/`mp3` are the two the OpenAI audio-input
+# API documents; the rest are the containers gateways commonly accept and are
+# the FIRST thing to check if enabling audio 400s.
+_AUDIO_FORMATS = {
+    "wav": "wav", "x-wav": "wav", "wave": "wav", "vnd.wave": "wav",
+    "mpeg": "mp3", "mp3": "mp3", "mpeg3": "mp3", "x-mpeg-3": "mp3",
+    "mp4": "m4a", "x-m4a": "m4a", "aac": "aac", "aacp": "aac",
+    "ogg": "ogg", "opus": "opus", "webm": "webm", "flac": "flac", "x-flac": "flac",
+}
+
+
+class UnsupportedPayloadError(Exception):
+    """This modality's bytes cannot be put in a content block we can name.
+
+    Raised BEFORE the request, so an unbuildable payload is `unavailable` with
+    its own reason rather than a 400 arriving as an indistinguishable `error`
+    after a doomed round trip — the same fail-closed argument the byte ceiling
+    makes one level up.
+    """
+
+
+def _content_block(
+    top: str, subtype: str, data: bytes, data_uri: str
+) -> dict[str, object]:
+    """The one content block this modality's bytes belong in.
+
+    The original split changed WHICH MODEL was asked and left every modality in
+    an `image_url` block, so enabling audio shipped `data:audio/aac;…` as an
+    image. The shape is the other half of routing, and it lives here.
+    """
+    if top == "image":
+        return {"type": "image_url", "image_url": {"url": data_uri}}
+    if top == "audio":
+        fmt = _AUDIO_FORMATS.get(subtype)
+        if fmt is None:
+            raise UnsupportedPayloadError(f"no input_audio format for audio/{subtype}")
+        return {
+            "type": "input_audio",
+            # Raw base64, NOT a data URI — `input_audio` carries the bytes and
+            # the container separately, which is why the format table exists.
+            "input_audio": {"data": base64.b64encode(data).decode("ascii"), "format": fmt},
+        }
+    if top == "video":
+        return {"type": "video_url", "video_url": {"url": data_uri}}
+    raise UnsupportedPayloadError(f"no content block for {top}/{subtype}")
 
 
 def derive_vision_timeout(
@@ -121,7 +218,7 @@ class VisionClient:
         self._timeout = timeout_seconds
 
     async def describe(
-        self, *, data: bytes, media_type: str, prompt: str = _PROMPT
+        self, *, data: bytes, media_type: str, prompt: str = "", model: str = ""
     ) -> VisionResult:
         """MiMo's sentence about `data`, or an unavailable result. Never raises.
 
@@ -130,7 +227,26 @@ class VisionClient:
         behaviour. `StickerInterpreter` is the other caller, passing
         `_STICKER_PROMPT` instead: same connection, same budget, a different
         question.
+
+        `model` is the same shape one level up (2026-08-17 spec): empty keeps
+        the configured model, so every existing call site is unchanged, and a
+        per-modality caller passes the model ITS modality is configured with.
+        One client, one connection, one budget — the modality picks the model
+        and the prompt, not a second client. That matters for the aggregate
+        timeout proof `derive_vision_timeout` makes: three clients would be
+        three budgets, and three hung calls could outlast the loop.
         """
+        # An unset prompt resolves from the blob's OWN MIME type, so the
+        # modality picks its question without any caller having to know the
+        # table. `media_fetch` omitted this argument before the split and still
+        # does; for an image it resolves to the identical string, so that path
+        # is unchanged. `StickerInterpreter` passes its own and is untouched.
+        # ONE parse, shared by the prompt and the payload — `parse_media_type`
+        # is the module that owns this (RFC 6838: parameters stripped, case
+        # normalised, unregistered top-level types rejected). Two local
+        # `partition("/")` copies is how they drift.
+        top, subtype = parse_media_type(media_type)
+        prompt = prompt or DESCRIBE_PROMPTS.get(top, _PROMPT)
         if len(data) > self._max_bytes:
             log.warning(
                 "vision blob %d bytes over the %d ceiling — not sent",
@@ -138,10 +254,16 @@ class VisionClient:
             )
             return VisionResult(available=False, reason="too_large")
         try:
+            data_uri = f"data:{top}/{subtype};base64,{base64.b64encode(data).decode('ascii')}"
+            block = _content_block(top, subtype, data, data_uri)
+        except UnsupportedPayloadError as exc:
+            log.warning("vision payload not buildable: %s", exc)
+            return VisionResult(available=False, reason="unsupported_payload")
+        try:
             # The whole retry loop is inside ONE wait_for, so even two attempts
             # cannot push the total past the derived budget (< the loop's own).
             text = await asyncio.wait_for(
-                self._describe_with_retry(data=data, media_type=media_type, prompt=prompt),
+                self._describe_with_retry(block=block, prompt=prompt, model=model),
                 timeout=self._timeout,
             )
         except TimeoutError:
@@ -158,28 +280,34 @@ class VisionClient:
         return VisionResult(available=True, description=text)
 
     async def _describe_with_retry(
-        self, *, data: bytes, media_type: str, prompt: str
+        self, *, block: dict[str, object], prompt: str, model: str = ""
     ) -> str:
-        data_uri = f"data:{media_type};base64,{base64.b64encode(data).decode('ascii')}"
         last_exc: Exception = RuntimeError("vision retry loop did not run")
         for attempt in range(2):
             try:
-                return await self._create(data_uri, prompt)
+                return await self._create(block, prompt, model)
             except Exception as exc:  # noqa: BLE001 — retried once, then re-raised
                 last_exc = exc
                 log.warning("vision attempt %d failed: %s", attempt + 1, exc)
         raise last_exc
 
-    async def _create(self, data_uri: str, prompt: str) -> str:
+    async def _create(
+        self, block: dict[str, object], prompt: str, model: str = ""
+    ) -> str:
         response = await self._client.chat.completions.create(
-            model=self._model,
+            model=model or self._model,
             max_tokens=self._max_tokens,
+            # `type: ignore[list-item]` — the content block is built per
+            # modality by `_content_block`, so its shape is a union the SDK's
+            # TypedDicts cannot narrow from a plain dict. The gateway reads
+            # the JSON; the stub is not the contract (same argument as
+            # `extra_body` below).
             messages=[
-                {
+                {  # type: ignore[list-item,misc]
                     "role": "user",
                     "content": [
                         {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": data_uri}},
+                        block,
                     ],
                 }
             ],

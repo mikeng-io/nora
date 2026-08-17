@@ -59,7 +59,8 @@ class CountingVision:
         self.description = description
         self.available = True
 
-    async def describe(self, *, data: bytes, media_type: str) -> VisionResult:
+    async def describe(self, *, data: bytes, media_type: str,
+                       prompt: str = "", model: str = "") -> VisionResult:
         self.calls += 1
         if not self.available:
             return VisionResult(available=False, reason="timeout")
@@ -104,13 +105,22 @@ async def wiring(tmp_path, pg_url):
     vision = CountingVision()
     cache = VisionCache()
 
-    def build(*, vision_source=vision, blob_store=blobs, vision_cache=cache, vision_model=""):
+    def build(*, vision_source=vision, blob_store=blobs, vision_cache=cache,
+              describe_models=None):
+        # Image-only by default, which is the shipped configuration: audio and
+        # video are wired but inert until a model is named for them. A NAMED
+        # model, not "": since the split an empty model means «not configured»
+        # and is answered `unavailable`, so "" here would turn every image test
+        # into a describer-off test.
+        describe_models = (
+            {"image": "test/image-model"} if describe_models is None else describe_models
+        )
         tools = build_tools(
             store=store, conversation_id="g1", conversation_type="group",
             persons=persons, honcho=FakeHoncho(), deliverer=deliverer, metrics=metrics,
             room=room, transit_source=None,
             vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
-            vision_model=vision_model,
+            describe_models=describe_models,
             question="what is in the photo", context_window=40,
         )
         return {t.tool_name: t for t in tools}["media_fetch"]
@@ -264,7 +274,8 @@ async def test_media_fetch_threads_the_real_model_name_not_a_hardcoded_one(wirin
     descriptions = _RecordingDescriptionStore()
     cache = VisionCache(store=descriptions)
 
-    tool = wiring["build"](vision_cache=cache, vision_model="opencode-go/mimo-v2.5")
+    tool = wiring["build"](vision_cache=cache,
+                           describe_models={"image": "opencode-go/mimo-v2.5"})
     out = await _call(tool, code=PNG_SHA[:6])
 
     assert out["status"] == "ok"
@@ -357,12 +368,12 @@ async def test_the_same_blob_in_two_rows_is_not_an_ambiguity(wiring):
 
 # ---- non-image blobs, before any MiMo call (§4, criterion 4) -----------------
 
-async def test_a_voice_note_is_not_an_image_before_any_mimo_call(wiring):
-    await _append_image(wiring["store"], conversation_id="g1",
-                        sha256="a" * 64, media_type="audio/aac")
-    out = await _call(wiring["build"](), code="a" * 6)
-    assert out["status"] == "not_an_image"
-    assert wiring["vision"].calls == 0
+# `test_a_voice_note_is_not_an_image_before_any_mimo_call` MOVED and SPLIT
+# (2026-08-17 spec). It asserted one status for two different situations, which
+# the per-modality split separates: a voice note with audio switched off is now
+# `unavailable` (a wiring gap — «I couldn't check»), while a blob no describer
+# reads stays `not_an_image`. Both assertions, including the «before any model
+# call» half this one existed for, live in `tests/test_media_describers.py`.
 
 
 # ---- unavailable: absent, corrupt, and the wiring gate (§4/§5, criterion 3) --
@@ -402,7 +413,7 @@ async def test_a_describe_that_raises_is_wrapped_not_propagated(wiring):
     """Belt-and-braces for `test_a_tool_never_raises_into_the_agent_loop`: even
     if the vision collaborator raises, the tool lands on `unavailable`."""
     class _Exploding:
-        async def describe(self, *, data, media_type):
+        async def describe(self, *, data, media_type, prompt="", model=""):
             raise RuntimeError("vision on fire")
 
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
@@ -511,7 +522,8 @@ class _RecordingVisionClient:
         self.result = result or VisionResult(available=True, description="a cartoon cat")
         self.calls: list[tuple[bytes, str, str]] = []
 
-    async def describe(self, *, data: bytes, media_type: str, prompt: str = "") -> VisionResult:
+    async def describe(self, *, data: bytes, media_type: str,
+                       prompt: str = "", model: str = "") -> VisionResult:
         self.calls.append((data, media_type, prompt))
         return self.result
 

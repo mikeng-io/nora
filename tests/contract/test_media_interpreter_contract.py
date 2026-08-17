@@ -34,8 +34,13 @@ class _StubVisionClient:
         self.result = result
 
     async def describe(
-        self, *, data: bytes, media_type: str, prompt: str = ""
+        self, *, data: bytes, media_type: str, prompt: str = "", model: str = ""
     ) -> VisionResult:
+        # `model` is part of the real `VisionClient.describe` since DEC-114.
+        # A double in tests/contract/ that does not accept what the real thing
+        # accepts is exactly the "fake that answers every request the same way"
+        # this directory exists to prevent — it passed only because
+        # `StickerInterpreter` happens never to pass a model.
         return self.result
 
 

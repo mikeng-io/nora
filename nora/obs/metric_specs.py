@@ -523,9 +523,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #   ok            — described (see `cached` for hit/miss).
     #   nothing_found — no such image in view here.
     #   ambiguous     — two in-scope blobs share the handle prefix.
-    #   not_an_image  — the handle resolved to a voice note / video / file.
-    #   unavailable   — custody off, the blob was absent/corrupt, or MiMo did
-    #                   not answer within the derived vision timeout.
+    #   not_an_image  — the handle resolved to a blob NO describer reads (a
+    #                   file). Since DEC-114 this no longer covers voice notes
+    #                   and videos: those are describable modalities, so an
+    #                   unconfigured one is `unavailable`, not this.
+    #   unavailable   — custody off, the blob was absent/corrupt, the modality
+    #                   has no describer configured (`no_<modality>_describer`,
+    #                   the ordinary state while audio/video ship inert), the
+    #                   payload could not be built for that modality, or the
+    #                   model did not answer within the derived vision timeout.
     _CounterSpec(
         "nora_media_fetch_total",
         "media_fetch calls, by outcome (ok / nothing_found / ambiguous / "

@@ -341,6 +341,36 @@ class StoreConfig(BaseModel):
         return self
 
 
+class DescriberConfig(BaseModel):
+    """One modality's describer: may it run, and through which model.
+
+    Two fields and not one, because «no model named» and «switched off» are
+    different states an operator reaches for differently, and both have to be
+    expressible without deleting the other.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    model: str = ""
+
+
+class DescribersConfig(BaseModel):
+    """The three modalities, keyed by the thing they read.
+
+    Audio and video default to `enabled = False` with no model: the seam ships
+    INERT, the way `[presence]`/`[search]`/`[compute]`/`[language]` did before
+    it. Image defaults ON because describing a picture is existing, shipped
+    behaviour and this split must not switch it off.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    image: DescriberConfig = DescriberConfig(enabled=True)
+    audio: DescriberConfig = DescriberConfig()
+    video: DescriberConfig = DescriberConfig()
+
+
 class MediaConfig(BaseModel):
     """Byte custody for attachments (DEC-43).
 
@@ -415,6 +445,13 @@ class MediaConfig(BaseModel):
     # `invocation_timeout` (DEC-56, the way `factory.build_retry_policy` derives
     # its backoff from the same timeout).
     vision_timeout_seconds: float = 20.0
+    # The per-modality describers. `vision_model` above stays as the IMAGE
+    # model's deprecated alias so a config written before this split keeps
+    # loading — see `describer_for`. The other `vision_*` knobs keep their names
+    # and stay shared across modalities: each is cited by name in DEC-56's
+    # reasoning and in `derive_vision_timeout`'s docstring, and only the MODEL
+    # has to differ per modality.
+    describe: DescribersConfig = DescribersConfig()
 
     # ---- reading a sticker at INGEST (sticker spec §6) -----------------------
     #
@@ -448,6 +485,36 @@ class MediaConfig(BaseModel):
     # Bounded here; newline, bracket and identifier screening live in
     # `nora.domain.media.sanitize_description` and the custody stage.
     sticker_description_max_chars: int = 200
+
+    def describer_for(self, modality: str) -> DescriberConfig | None:
+        """The describer for one modality, with the legacy alias resolved.
+
+        `None` for a modality nothing here describes — the caller's cue to
+        answer `unavailable` («I couldn't check»), NEVER `nothing_found`
+        («there's nothing there»). A wiring gap reported as an empty result is
+        the R-27 failure this repo names as an ERROR served as a PASS.
+
+        `vision_model` is folded in HERE and nowhere else, so exactly one place
+        knows the alias exists: a config written before the split names only
+        `vision_model`, and it has to keep describing images (see
+        `test_a_config_written_before_the_split_still_describes_images`). The
+        explicit key wins when both are set, or the alias would pin the new key
+        open and the split would be a no-op.
+        """
+        # Against the FIELD SET, not `getattr` alone: `self.describe` is a
+        # pydantic model, so `getattr(self.describe, "model_dump")` returns a
+        # bound method — truthy, not a `DescriberConfig`, and typed as one by an
+        # annotation mypy cannot see through. The caller would then
+        # `AttributeError` on `.enabled` at startup. Unreachable while every
+        # caller passes a literal; a lie in the signature regardless.
+        if modality not in DescribersConfig.model_fields:
+            return None
+        describer: DescriberConfig | None = getattr(self.describe, modality, None)
+        if describer is None:
+            return None
+        if modality == "image" and not describer.model:
+            return describer.model_copy(update={"model": self.vision_model})
+        return describer
 
 
 class RouteConfig(BaseModel):
