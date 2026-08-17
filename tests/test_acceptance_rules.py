@@ -111,7 +111,10 @@ RULE_TESTS = {
     # llm.timeout_seconds, provably < the loop budget) and byte ceiling. The
     # MiMo description is untrusted egress — identifier-screened like `about`,
     # with the honest caveat that a bare local number is a residual risk equal
-    # to R-18's. Image only; `not_an_image` for the rest; inert-by-config behind
+    # to R-18's. AMENDED by DEC-114 (2026-08-17): no longer "image only,
+    # `not_an_image` for the rest" — a describable modality with no describer
+    # configured is `unavailable` (a wiring gap, R-27), and only a blob no
+    # describer reads is still `not_an_image`. Inert-by-config behind
     # [media] enabled. Next free number after the presence pair R-31/R-32
     # (R-26 is still reserved by design/proposed/18). See DEC-56.
     "R-33": "test_a_stored_image_is_read_only_within_scope_and_screened_on_serve",
