@@ -15,6 +15,12 @@ CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"miles", "ada"}), people=(
 
 
 class FakePresenceReader:
+    """`fixes`/`windows` key by PLAIN person_id by default (most tests only
+    ever use one circle, "c1", so this is equivalent) — pass a `(circle_id,
+    person_id)` tuple key instead to test cross-circle behaviour, where a
+    person's data lives under a DIFFERENT circle than the one checked
+    first."""
+
     def __init__(
         self, *, fixes: dict | None = None, windows: dict | None = None,
         places: dict[str, list[SavedPlace]] | None = None,
@@ -24,6 +30,8 @@ class FakePresenceReader:
         self._places = places or {}
 
     async def latest_fix(self, *, circle_id: str, person_id: str) -> PresenceFix | None:
+        if (circle_id, person_id) in self._fixes:
+            return self._fixes[(circle_id, person_id)]
         return self._fixes.get(person_id)
 
     async def places_for(self, *, circle_id: str) -> list[SavedPlace]:
@@ -32,6 +40,8 @@ class FakePresenceReader:
     async def window(
         self, *, circle_id: str, person_id: str, since_ts: int, until_ts: int
     ) -> list[PresenceFix]:
+        if (circle_id, person_id) in self._windows:
+            return self._windows[(circle_id, person_id)]
         return self._windows.get(person_id, [])
 
 
@@ -54,6 +64,31 @@ async def test_presence_dedupes_a_person_in_more_than_one_circle():
     reader = FakePresenceReader(fixes={"miles": _fix("miles", ts=1000, lat=1.0, lng=2.0)})
     entries = await build_presence_payload(presence=reader, circles=(CIRCLE, other_circle))
     assert [e["personId"] for e in entries].count("miles") == 1
+
+
+async def test_presence_finds_a_fix_recorded_under_the_second_circle_not_just_the_first():
+    """Real bug, real fix: a person in two circles may have their most
+    recent fix recorded under whichever circle_id the collector wrote it
+    to — not necessarily the first circle in `circles`' order. Checking
+    only the first circle silently rendered `current: null` for someone
+    with a real, recent fix."""
+    other_circle = Circle(circle_id="c2", person_ids=frozenset({"miles"}), people=(MILES,))
+    fix = _fix("miles", ts=1000, lat=9.0, lng=9.0)
+    reader = FakePresenceReader(fixes={("c2", "miles"): fix})
+    entries = await build_presence_payload(presence=reader, circles=(CIRCLE, other_circle))
+    miles = next(e for e in entries if e["personId"] == "miles")
+    assert miles["current"] is not None
+    assert miles["current"]["lat"] == 9.0
+
+
+async def test_presence_uses_the_most_recent_fix_across_circles():
+    older = _fix("miles", ts=1000, lat=1.0, lng=1.0)
+    newer = _fix("miles", ts=2000, lat=2.0, lng=2.0)
+    other_circle = Circle(circle_id="c2", person_ids=frozenset({"miles"}), people=(MILES,))
+    reader = FakePresenceReader(fixes={("c1", "miles"): older, ("c2", "miles"): newer})
+    entries = await build_presence_payload(presence=reader, circles=(CIRCLE, other_circle))
+    miles = next(e for e in entries if e["personId"] == "miles")
+    assert miles["current"]["lat"] == 2.0
 
 
 async def test_presence_lists_every_resolved_circle_member():
@@ -152,6 +187,31 @@ async def test_history_emits_a_new_point_past_the_10m_radius():
     )
     assert len(result["points"]) == 2
     assert [p["ts"] for p in result["points"]] == [1000, 2000]
+
+
+async def test_history_merges_fixes_from_every_circle_a_person_belongs_to():
+    """Real bug, real fix: history windowed only against the first circle
+    silently returned an empty route for someone whose fixes were recorded
+    under a DIFFERENT circle_id."""
+    other_circle = Circle(circle_id="c2", person_ids=frozenset({"miles"}), people=(MILES,))
+    c1_fix = _fix("miles", ts=1000, lat=1.0, lng=1.0)
+    c2_fixes = [
+        _fix("miles", ts=500, lat=5.0, lng=5.0),
+        _fix("miles", ts=2000, lat=6.0, lng=6.0),
+    ]
+    reader = FakePresenceReader(windows={("c1", "miles"): [c1_fix], ("c2", "miles"): c2_fixes})
+    result = await build_presence_history_payload(
+        presence=reader, circles=(CIRCLE, other_circle), person_id="miles", hours=24,
+    )
+    # Merged from both circles AND re-sorted oldest-first (ts=500 before ts=1000).
+    assert [p["ts"] for p in result["points"]] == [500, 1000, 2000]
+
+
+async def test_history_clamps_hours_to_the_max_regardless_of_the_request():
+    result = await build_presence_history_payload(
+        presence=None, circles=(CIRCLE,), person_id="miles", hours=999_999,
+    )
+    assert result["hours"] == 24 * 30
 
 
 async def test_history_resets_the_anchor_only_on_a_real_move():

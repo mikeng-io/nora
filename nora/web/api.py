@@ -11,6 +11,7 @@ spec's deployment section (§6) explicitly rules out.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 
 from aiohttp import web
@@ -33,6 +34,15 @@ from nora.web.presence import (
     build_presence_places_payload,
 )
 from nora.web.status import build_status_payload
+
+log = logging.getLogger("nora.web.api")
+
+# A fixed, generic body for every GamesUnavailableError — the real exception
+# (which legitimately carries diagnostic detail: tailnet hostnames, raw MCP
+# payloads, Pulse's own error text — see games.py's docstring) is logged
+# server-side instead. An authenticated portal user learns "games backend
+# unavailable"; an operator reading nora.log gets the real `str(exc)`.
+_GAMES_UNAVAILABLE_BODY = {"error": "games backend unavailable"}
 
 # Default matches the previous REST proxy's `?hours=24` default
 # (app/src/app/api/games/servers/[id]/graph/route.ts) — kept here so an
@@ -82,7 +92,8 @@ def register_web_routes(
         try:
             body = await build_games_servers_payload(mcp_tools=request.app["web_mcp_tools"])
         except GamesUnavailableError as exc:
-            return web.json_response({"error": str(exc)}, status=503)
+            log.warning("games servers unavailable: %s", exc)
+            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
         return web.json_response(body)
 
     async def games_server_status(request: web.Request) -> web.Response:
@@ -92,7 +103,8 @@ def register_web_routes(
                 server_id=request.match_info["id"],
             )
         except GamesUnavailableError as exc:
-            return web.json_response({"error": str(exc)}, status=503)
+            log.warning("game server status unavailable: %s", exc)
+            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
         return web.json_response(body)
 
     async def games_server_graph(request: web.Request) -> web.Response:
@@ -100,14 +112,15 @@ def register_web_routes(
         try:
             hours = int(raw_hours) if raw_hours is not None else _DEFAULT_GRAPH_HOURS
         except ValueError:
-            return web.json_response({"error": f"invalid hours={raw_hours!r}"}, status=400)
+            return web.json_response({"error": "invalid hours"}, status=400)
         try:
             body = await build_game_server_graph_payload(
                 mcp_tools=request.app["web_mcp_tools"],
                 server_id=request.match_info["id"], hours=hours,
             )
         except GamesUnavailableError as exc:
-            return web.json_response({"error": str(exc)}, status=503)
+            log.warning("game server graph unavailable: %s", exc)
+            return web.json_response(_GAMES_UNAVAILABLE_BODY, status=503)
         return web.json_response(body)
 
     async def presence_positions(request: web.Request) -> web.Response:
@@ -129,9 +142,9 @@ def register_web_routes(
         try:
             hours = int(raw_hours) if raw_hours is not None else _DEFAULT_HISTORY_HOURS
         except ValueError:
-            return web.json_response({"error": f"invalid hours={raw_hours!r}"}, status=400)
+            return web.json_response({"error": "invalid hours"}, status=400)
         if hours <= 0:
-            return web.json_response({"error": f"invalid hours={raw_hours!r}"}, status=400)
+            return web.json_response({"error": "invalid hours"}, status=400)
         a = request.app
         body = await build_presence_history_payload(
             presence=a["web_presence"], circles=a["web_presence_circles"],

@@ -1,5 +1,5 @@
 node_modules
 .next
 .git
-*.test.ts
-.env.local
+**/*.test.ts
+.env*

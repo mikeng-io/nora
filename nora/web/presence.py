@@ -34,6 +34,15 @@ from nora.domain.presence import PresenceFix, haversine_distance_m
 # sentence, this one gates whether the map draws a new vertex.
 _STAY_POINT_RADIUS_M = 10.0
 
+# Upper bound on a history request's window and row count — defends the
+# shared engine `PresenceStore` sits on (composition.py: "the reader shares
+# the audit engine — one pool, one lifecycle") against an authenticated
+# request scanning a person's ENTIRE retained history in one call. 30 days
+# is generous for a map's "recent route" use case; the frontend's own
+# HOUR_OPTIONS tops out at 168h (7d).
+_MAX_HISTORY_HOURS = 24 * 30
+_MAX_HISTORY_POINTS = 5000
+
 
 def _fix_to_dict(fix: PresenceFix, *, now_ms: int) -> dict:
     return {
@@ -56,11 +65,14 @@ async def build_presence_payload(
     unmapped Life360 account has no name to show and is skipped, same as
     `Circle.people`'s own construction), with their latest fix if any.
 
-    Deduped by `person_id` across circles, first occurrence wins — the same
-    situation and the same fix `nora.agent.whereis._dedupe` exists for:
-    identity.toml can (and does — Miles's own account is in both "Ridgeline"
-    and "TEAM_42") place one real person in more than one circle, and
-    without this a portal-wide list would render them twice."""
+    Deduped by `person_id` across circles, one ENTRY per person — but the
+    fix itself is the most recent across EVERY circle they belong to, not
+    just the first (`_latest_fix_across`). identity.toml can (and does —
+    Miles's own account is in both "Ridgeline" and "TEAM_42") place one real
+    person in more than one circle, and the collector may have written
+    their most recent fix under either `circle_id` — checking only the
+    first circle silently rendered `current: null` for someone with a real,
+    recent fix recorded under the other one."""
     if presence is None:
         return []
     now_ms = int(time.time() * 1000)
@@ -71,9 +83,7 @@ async def build_presence_payload(
             if ref.person_id in seen:
                 continue
             seen.add(ref.person_id)
-            fix = await presence.latest_fix(
-                circle_id=circle.circle_id, person_id=ref.person_id,
-            )
+            fix = await _latest_fix_across(presence, circles, ref.person_id)
             out.append(
                 {
                     "personId": ref.person_id,
@@ -84,11 +94,23 @@ async def build_presence_payload(
     return out
 
 
-def _circle_for(circles: tuple[Circle, ...], person_id: str) -> Circle | None:
-    for circle in circles:
-        if person_id in circle.person_ids:
-            return circle
-    return None
+def _circles_for(circles: tuple[Circle, ...], person_id: str) -> list[Circle]:
+    return [c for c in circles if person_id in c.person_ids]
+
+
+async def _latest_fix_across(
+    presence: PresenceReader, circles: tuple[Circle, ...], person_id: str,
+) -> PresenceFix | None:
+    """The most recent fix for `person_id` across EVERY circle they belong
+    to — a fix lives under whichever `circle_id` the collector wrote it
+    under, which need not be the first circle in `circles`' order."""
+    candidates = [
+        fix
+        for circle in _circles_for(circles, person_id)
+        if (fix := await presence.latest_fix(circle_id=circle.circle_id, person_id=person_id))
+        is not None
+    ]
+    return max(candidates, key=lambda f: f.ts) if candidates else None
 
 
 def _snap_stay_points(fixes: list[PresenceFix]) -> list[dict]:
@@ -140,21 +162,36 @@ async def build_presence_history_payload(
 ) -> dict | None:
     """`person_id`'s fix history over the last `hours`, stay-point-snapped.
     `None` means "no such circle member" (a 404) — distinct from a real,
-    empty history (`points: []`, a 200) for someone with no fixes yet."""
-    circle = _circle_for(circles, person_id)
-    if circle is None:
+    empty history (`points: []`, a 200) for someone with no fixes yet.
+
+    `hours` is clamped to `_MAX_HISTORY_HOURS` regardless of what the
+    caller asked for — the route layer's own validation only rejects
+    non-positive values, so this is the actual upper bound.
+
+    Windowed across EVERY circle `person_id` belongs to, merged and
+    re-sorted oldest-first before snapping — same reasoning as
+    `_latest_fix_across`: their fixes may live under more than one
+    `circle_id`, and reading only the first circle silently returned an
+    empty route for someone with real history recorded elsewhere."""
+    matching_circles = _circles_for(circles, person_id)
+    if not matching_circles:
         return None
+    hours = min(hours, _MAX_HISTORY_HOURS)
     now_ms = int(time.time() * 1000)
     since_ms = now_ms - hours * 3_600_000
     fixes: list[PresenceFix] = []
     if presence is not None:
-        fixes = await presence.window(
-            circle_id=circle.circle_id, person_id=person_id,
-            since_ts=since_ms, until_ts=now_ms,
-        )
+        for circle in matching_circles:
+            fixes.extend(
+                await presence.window(
+                    circle_id=circle.circle_id, person_id=person_id,
+                    since_ts=since_ms, until_ts=now_ms,
+                )
+            )
+        fixes.sort(key=lambda f: f.ts)
     return {
         "hours": hours,
         "from": since_ms,
         "to": now_ms,
-        "points": _snap_stay_points(fixes),
+        "points": _snap_stay_points(fixes[-_MAX_HISTORY_POINTS:]),
     }

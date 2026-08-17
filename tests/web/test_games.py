@@ -145,6 +145,19 @@ async def test_status_passes_the_server_id_as_the_server_argument_and_maps_it():
     assert status["activePlayers"] == []
 
 
+async def test_status_rejects_an_unknown_server_id_before_calling_pulse():
+    """The `{id}` path param is forwarded verbatim as an MCP tool argument
+    to an external service — reject anything other than the one real
+    server before it ever reaches Pulse, rather than trusting Pulse-side
+    handling of an arbitrary string."""
+    client = FakeMcpClient(responses={"pulse_server_status": SUCCESS_RESULT})
+    with pytest.raises(GamesUnavailableError, match="no such server"):
+        await build_game_server_status_payload(
+            mcp_tools={"pulse": _group(client=client)}, server_id="not-a-real-server",
+        )
+    assert client.calls == []
+
+
 async def test_a_tool_level_error_result_becomes_unavailable_with_content():
     client = FakeMcpClient(responses={"pulse_server_status": ERROR_RESULT})
     with pytest.raises(GamesUnavailableError, match="server is unreachable"):

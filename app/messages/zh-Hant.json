@@ -11,10 +11,6 @@
     "language": "語言",
     "chat": "傾偈"
   },
-  "footer": {
-    "madeBy": "製作：",
-    "workspace": "Ridgeline 工作間"
-  },
   "chat": {
     "heading": "同 Nora 傾偈",
     "dek": "喺呢度直接同佢傾，唔使切去 Signal 或者 Discord。",
@@ -26,9 +22,7 @@
   "login": {
     "heading": "Nora",
     "discord": "用 Discord 登入",
-    "denied": "呢個 Discord 帳號未喺名單度，搵 Miles 加返你入去。",
-    "stubLabel": "開發用假登入 — 唔會真係經 OAuth",
-    "stubButton": "當自己係 Miles（假登入）"
+    "denied": "呢個 Discord 帳號未喺名單度，搵 Miles 加返你入去。"
   },
   "status": {
     "eyebrow": "Nora · 公開頁面",

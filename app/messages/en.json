@@ -11,10 +11,6 @@
     "language": "Language",
     "chat": "Chat"
   },
-  "footer": {
-    "madeBy": "Made by",
-    "workspace": "Ridgeline workspace"
-  },
   "chat": {
     "heading": "Chat with Nora",
     "dek": "Talk to her right here, without switching to Signal or Discord.",
@@ -26,9 +22,7 @@
   "login": {
     "heading": "Nora",
     "discord": "Sign in with Discord",
-    "denied": "That Discord account isn't on the list. Ask Miles to add it.",
-    "stubLabel": "dev stub — no real OAuth",
-    "stubButton": "Continue as Miles (stub)"
+    "denied": "That Discord account isn't on the list. Ask Miles to add it."
   },
   "status": {
     "eyebrow": "Nora · public face",

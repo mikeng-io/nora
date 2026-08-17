@@ -178,7 +178,15 @@ async def build_games_servers_payload(*, mcp_tools: Mapping[str, McpToolGroup]) 
 async def build_game_server_status_payload(
     *, mcp_tools: Mapping[str, McpToolGroup], server_id: str,
 ) -> dict:
-    """`GET /app/v1/games/servers/{id}/status` — one server's live detail."""
+    """`GET /app/v1/games/servers/{id}/status` — one server's live detail.
+
+    Rejects any `server_id` other than `_SERVER_ID` before it ever reaches
+    Pulse: `_call_status_tool`'s `server` argument is forwarded verbatim as
+    an MCP tool argument to an external service, and Pulse currently
+    monitors exactly one adapter — there is no legitimate id this route
+    should ever forward besides the one it already knows about."""
+    if server_id != _SERVER_ID:
+        raise GamesUnavailableError(f"no such server: {server_id!r}")
     result = await _call_status_tool(mcp_tools=mcp_tools, server=server_id)
     payload = _parse_status_payload(result)
     return {

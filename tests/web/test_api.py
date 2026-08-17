@@ -83,6 +83,18 @@ async def test_games_servers_route_is_503_when_pulse_is_not_wired(client):
     assert "error" in body
 
 
+async def test_games_route_503_body_never_leaks_the_real_exception_text(client):
+    """The real GamesUnavailableError message (which legitimately names the
+    pulse mount, per games.py's docstring) must never reach the browser —
+    only a fixed, generic body. The real message goes to the server log,
+    not the response."""
+    resp = await client.get("/app/v1/games/servers")
+    body = await resp.json()
+    assert body == {"error": "games backend unavailable"}
+    assert "mount" not in body["error"]
+    assert "pulse" not in body["error"]
+
+
 async def test_games_server_status_route_is_503_when_pulse_is_not_wired(client):
     resp = await client.get("/app/v1/games/servers/abiotic1/status")
     assert resp.status == 503
