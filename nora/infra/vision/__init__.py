@@ -4,6 +4,7 @@ content-hash description cache the tool checks before it."""
 
 from .cache import VisionCache
 from .client import (
+    DESCRIBE_PROMPTS,
     VISION_LOOP_SHARE,
     StickerInterpreter,
     VisionClient,
@@ -12,6 +13,7 @@ from .client import (
 )
 
 __all__ = [
+    "DESCRIBE_PROMPTS",
     "VISION_LOOP_SHARE",
     "StickerInterpreter",
     "VisionCache",

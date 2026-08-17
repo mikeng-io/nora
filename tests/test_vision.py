@@ -257,3 +257,28 @@ def test_the_vision_timeout_divides_by_the_resolved_budget_not_the_table():
             f"{budget * per_call}s, which exceeds the {loop}s loop — R-33"
         )
         assert per_call > 0
+
+
+# ---- the per-modality model override (2026-08-17 spec) ----------------------
+
+async def test_a_per_call_model_overrides_the_configured_one(mimo):
+    """The seam the split promises: naming a model for a modality must actually
+    ROUTE there. Gating access alone would leave one client with one model, so
+    an audio model could be configured and never reached.
+
+    Asserted against the request the fake server actually received, not against
+    the client's own attribute — the point is which model the GATEWAY was asked
+    for.
+    """
+    result = await _client(mimo).describe(
+        data=RED_PNG, media_type="image/png", model="other/audio-model"
+    )
+    assert result.available
+    assert mimo.requests[-1]["model"] == "other/audio-model"
+
+
+async def test_the_configured_model_is_used_when_no_override_is_given(mimo):
+    """The existing call shape keeps its exact behaviour: `media_fetch` before
+    this split passed no model, and must still reach the configured one."""
+    await _client(mimo).describe(data=RED_PNG, media_type="image/png")
+    assert mimo.requests[-1]["model"] == "opencode-go/mimo-v2.5"

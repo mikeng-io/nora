@@ -624,3 +624,24 @@ enabled = true
 # mem_limit = "8g"            # docker-py's own containers.run mem_limit shape
 # nano_cpus = 2000000000      # billionths of a CPU core (2 vCPUs)
 # data_host_root_env = "NORA_DATA_HOST_ROOT"
+
+# The per-modality describers (2026-08-17). `vision_model` above stays the
+# IMAGE model's alias, so a config written before this split keeps working.
+#
+# Audio and video ship INERT — wired, but off, with no model named. That is not
+# timidity: the OmniRoute catalogue advertises `vision` on 215 of its 406 models
+# and carries NO `audio` or `video` key at all, so it cannot tell us whether any
+# reachable route can hear or watch. Enabling either is a flag and a model name,
+# with no code change; until a probe answers that question, a voice note is
+# answered `unavailable` («I couldn't check»), never `nothing_found`.
+[media.describe.image]
+enabled = true
+model = "ollamacloud/minimax-m3"
+
+[media.describe.audio]
+enabled = false
+model = ""
+
+[media.describe.video]
+enabled = false
+model = ""

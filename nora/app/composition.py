@@ -181,6 +181,26 @@ class _LanguageModelClient:
 COMPUTE_WORKSPACE_DIRNAME = "compute-workspaces"
 
 
+def _describe_models(cfg: Config) -> dict[str, str]:
+    """Modality → the model that describes it, for every modality that CAN.
+
+    The two config states an operator can reach — «switched off» and «no model
+    named» — are collapsed to one thing the tool can read: absence. A modality
+    appears here only when it is enabled AND names a model, so `media_fetch`
+    needs no second flag and cannot accidentally call a describer that was only
+    half-configured.
+
+    This is also where the resolution of `vision_model`'s legacy alias lands,
+    via `describer_for`, so `nora.agent` never learns the alias existed.
+    """
+    resolved = {}
+    for modality in ("image", "audio", "video"):
+        describer = cfg.media.describer_for(modality)
+        if describer is not None and describer.enabled and describer.model:
+            resolved[modality] = describer.model
+    return resolved
+
+
 def _compute_workspace_host_root(cfg: Config) -> Path:
     """The host-side path of whatever is bind-mounted at `store.data_dir`.
 
@@ -990,7 +1010,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         occasion_for=relay_occasion, metrics=metrics,
     )
     tool_registry = ToolRegistry(
-        route=route_client, vision=vision_client, vision_model=cfg.media.vision_model,
+        route=route_client, vision=vision_client, describe_models=_describe_models(cfg),
         blobs=blobs, descriptions=media_descriptions, search=search_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,

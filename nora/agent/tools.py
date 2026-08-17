@@ -647,6 +647,23 @@ _SYNC_POLL_INTERVAL = 1.0
 # `recall_lookups`'s own clamp (tool-recall-log spec §4) — smaller than
 # `LOAD_TRANSCRIPT_MAX` (60) because a logged tool result is denser than
 # one transcript message.
+_MODALITIES = ("image", "audio", "video")
+
+
+def _modality_of(media_type: str) -> str | None:
+    """Which describer a blob belongs to, or `None` if nothing here reads it.
+
+    Keyed on the IANA top-level type and nothing finer, because that is the
+    grain the describers are configured at: every `audio/*` goes to the audio
+    describer whether it is aac, ogg or opus. A subtype the chosen model cannot
+    decode is the MODEL's `unavailable` to report, not a routing decision to
+    guess at here — guessing would turn an honest «I couldn't read it» into a
+    silent «that's not media», which is the R-27 collapse this split undoes.
+    """
+    top, _, _ = media_type.partition("/")
+    return top if top in _MODALITIES else None
+
+
 RECALL_LOOKUPS_DEFAULT = 10
 RECALL_LOOKUPS_MAX = 30
 RECALL_LOOKUPS_WINDOW_DAYS = 7
@@ -1214,7 +1231,7 @@ def build_tool_specs(
     vision_source=None,
     blob_store=None,
     vision_cache=None,
-    vision_model: str = "",
+    describe_models: Mapping[str, str] | None = None,
     search_source=None,
     weather_source=None,
     presence_source=None,
@@ -2575,16 +2592,33 @@ def build_tool_specs(
             }
 
         sha256, media_type = next(iter(matches.items()))
-        # Non-image blobs are turned away HERE, before any MiMo call — sending
-        # audio bytes as an `image_url` would be an OmniRoute error surfaced as a
-        # silent `unavailable`, and honest is «that's a voice note, not a
-        # picture».
-        if not media_type.startswith("image/"):
+        # Blobs are turned away HERE, before any model call, and the two reasons
+        # are kept APART because they are different answers (2026-08-17 spec).
+        #
+        # A blob belonging to no describable modality — a PDF, an archive — is
+        # `not_an_image`: nothing here will ever read it, and sending its bytes
+        # as an `image_url` would be an OmniRoute error surfaced as a silent
+        # `unavailable`.
+        modality = _modality_of(media_type)
+        if modality is None:
             _record_media(metrics, "not_an_image")
             return {
                 "status": "not_an_image", "code": sha256[:HANDLE_CHARS],
-                "note": "That's not a picture — it's a voice note, a video or a "
-                        "file. Say you can't look at it.",
+                "note": "That's not something you can open — it's a file. Say "
+                        "you can't look at it.",
+            }
+        # A modality that IS describable but has no describer configured is a
+        # WIRING GAP, so it is `unavailable` — «I couldn't check» — and never
+        # `nothing_found`. R-27: an ERROR is never a PASS, and audio and video
+        # ship inert, so this is the ordinary path for both until one is enabled.
+        describe_model = (describe_models or {}).get(modality, "")
+        if not describe_model:
+            _record_media(metrics, "unavailable", reason=f"no_{modality}_describer")
+            return {
+                "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                "note": f"I can't take in {modality} — say you couldn't check "
+                        f"it. Do not say it was empty and do not guess what was "
+                        f"in it.",
             }
 
         # Cache by content hash BEFORE the blob is even decrypted: the sha256 is
@@ -2617,7 +2651,9 @@ def build_tool_specs(
             }
 
         try:
-            result = await vision_source.describe(data=data, media_type=media_type)
+            result = await vision_source.describe(
+                data=data, media_type=media_type, model=describe_model
+            )
         except Exception:
             # `VisionClient.describe` is documented never to raise (it turns
             # every failure into an unavailable `VisionResult` itself). This is
@@ -2635,10 +2671,12 @@ def build_tool_specs(
         description = result.description
         if vision_cache is not None:
             # Store the RAW description, at both tiers; the screen runs on
-            # every serve, not here. `model` is the registry's own configured
-            # vision model, threaded in — never hardcoded — so the durable
-            # `media_descriptions` row records what actually produced it.
-            await vision_cache.aput(sha256, description, model=vision_model)
+            # every serve, not here. `model` is the describer THIS modality
+            # actually used, threaded in — never hardcoded — so the durable
+            # `media_descriptions` row records what produced it. Per-modality
+            # since the split: an audio description and an image description
+            # come from different models and must not be recorded as one.
+            await vision_cache.aput(sha256, description, model=describe_model)
         return _serve_media(sha256, description, cached=False)
 
     def _serve_media(sha256: str, description: str, *, cached: bool) -> dict:
@@ -3589,7 +3627,7 @@ def build_tools(
     vision_source=None,
     blob_store=None,
     vision_cache=None,
-    vision_model: str = "",
+    describe_models: Mapping[str, str] | None = None,
     search_source=None,
     weather_source=None,
     presence_source=None,
@@ -3613,7 +3651,7 @@ def build_tools(
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
         room=room, transit_source=transit_source, route_source=route_source,
         vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
-        vision_model=vision_model,
+        describe_models=describe_models,
         search_source=search_source, weather_source=weather_source,
         presence_source=presence_source, presence_circles=presence_circles,
         location_trusted=location_trusted,

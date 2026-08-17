@@ -81,7 +81,7 @@ class ToolRegistry:
         transit: TransitClient | None = None,
         route: RouteClient | None = None,
         vision: VisionClient | None = None,
-        vision_model: str = "",
+        describe_models: Mapping[str, str] | None = None,
         blobs: BlobStore | None = None,
         descriptions: MediaDescriptionStore | None = None,
         search: SearchProvider | None = None,
@@ -125,12 +125,16 @@ class ToolRegistry:
         # shape as keyless `route` — so it ships present-but-inert while
         # `[media] enabled=false`.
         self._vision = vision
-        # `vision_model` rides alongside `vision`, the same VALUE-not-object
+        # `describe_models` rides alongside `vision`, the same VALUE-not-object
         # split `ai_peer` already makes on this class: `nora.agent` may not
         # import `nora.config` (CLAUDE.md), so the composition root resolves
-        # `cfg.media.vision_model` and hands the plain string in here, exactly
+        # `cfg.media.describer_for(...)` and hands plain strings in here, exactly
         # as it resolves the `VisionClient` itself.
-        self._vision_model = vision_model
+        #
+        # A modality is PRESENT here only when it is enabled AND names a model,
+        # so absence is the single meaning of «no describer» and the tool needs
+        # no second flag to read. Audio and video ship absent (2026-08-17 spec).
+        self._describe_models = dict(describe_models or {})
         self._blobs = blobs
         # The description cache lives HERE, once per process, for the reason the
         # transit catalogue does: keyed by content hash, a per-tag cache would
@@ -515,7 +519,7 @@ class ToolRegistry:
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=self._transit, route_source=self._route,
             vision_source=self._vision, blob_store=self._blobs,
-            vision_cache=self._vision_cache, vision_model=self._vision_model,
+            vision_cache=self._vision_cache, describe_models=self._describe_models,
             search_source=self._search, weather_source=self._weather,
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,

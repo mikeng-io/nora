@@ -56,6 +56,33 @@ VISION_LOOP_SHARE = 0.6
 # is untrusted egress (design/14 §2.1), screened by the tool on every serve.
 _PROMPT = "Describe this image. If it contains text in it, transcribe that text."
 
+# One authored prompt per modality (2026-08-17 spec). AUTHORED and never
+# model-supplied, for the same reason `_PROMPT` above is: what comes back is
+# untrusted egress (design/14 §2.1), screened by the tool on every serve.
+# Selecting one of these by modality derives from a system-controlled fact — the
+# blob's own MIME type — and keeps that property. Conditioning a prompt on what
+# the TAGGER asked would not: that is group-authored text steering a model whose
+# output returns to the room, i.e. an injection channel, and it is out of scope.
+#
+# `image` is `_PROMPT` unchanged, byte for byte, so the shipped path keeps its
+# exact behaviour through this split.
+DESCRIBE_PROMPTS = {
+    "image": _PROMPT,
+    # Transcription first and description second: a voice note in this group is
+    # somebody talking, and the words are the point. «If nothing is audible»
+    # gives the model a way to report an empty result that is not an invention.
+    "audio": (
+        "Transcribe what is said in this audio. If there is no speech, describe "
+        "what can be heard instead. If nothing is audible, say so."
+    ),
+    # No frame-by-frame narration: the useful answer is what HAPPENS, plus any
+    # text on screen, which is the video analogue of `_PROMPT`'s second clause.
+    "video": (
+        "Describe what happens in this video. If there is speech or text on "
+        "screen, transcribe it."
+    ),
+}
+
 
 def derive_vision_timeout(
     *, loop_timeout_seconds: float, configured: float, budget: int
@@ -121,7 +148,7 @@ class VisionClient:
         self._timeout = timeout_seconds
 
     async def describe(
-        self, *, data: bytes, media_type: str, prompt: str = _PROMPT
+        self, *, data: bytes, media_type: str, prompt: str = "", model: str = ""
     ) -> VisionResult:
         """MiMo's sentence about `data`, or an unavailable result. Never raises.
 
@@ -130,7 +157,21 @@ class VisionClient:
         behaviour. `StickerInterpreter` is the other caller, passing
         `_STICKER_PROMPT` instead: same connection, same budget, a different
         question.
+
+        `model` is the same shape one level up (2026-08-17 spec): empty keeps
+        the configured model, so every existing call site is unchanged, and a
+        per-modality caller passes the model ITS modality is configured with.
+        One client, one connection, one budget — the modality picks the model
+        and the prompt, not a second client. That matters for the aggregate
+        timeout proof `derive_vision_timeout` makes: three clients would be
+        three budgets, and three hung calls could outlast the loop.
         """
+        # An unset prompt resolves from the blob's OWN MIME type, so the
+        # modality picks its question without any caller having to know the
+        # table. `media_fetch` omitted this argument before the split and still
+        # does; for an image it resolves to the identical string, so that path
+        # is unchanged. `StickerInterpreter` passes its own and is untouched.
+        prompt = prompt or DESCRIBE_PROMPTS.get(media_type.partition("/")[0], _PROMPT)
         if len(data) > self._max_bytes:
             log.warning(
                 "vision blob %d bytes over the %d ceiling — not sent",
@@ -141,7 +182,8 @@ class VisionClient:
             # The whole retry loop is inside ONE wait_for, so even two attempts
             # cannot push the total past the derived budget (< the loop's own).
             text = await asyncio.wait_for(
-                self._describe_with_retry(data=data, media_type=media_type, prompt=prompt),
+                self._describe_with_retry(
+                    data=data, media_type=media_type, prompt=prompt, model=model),
                 timeout=self._timeout,
             )
         except TimeoutError:
@@ -158,21 +200,21 @@ class VisionClient:
         return VisionResult(available=True, description=text)
 
     async def _describe_with_retry(
-        self, *, data: bytes, media_type: str, prompt: str
+        self, *, data: bytes, media_type: str, prompt: str, model: str = ""
     ) -> str:
         data_uri = f"data:{media_type};base64,{base64.b64encode(data).decode('ascii')}"
         last_exc: Exception = RuntimeError("vision retry loop did not run")
         for attempt in range(2):
             try:
-                return await self._create(data_uri, prompt)
+                return await self._create(data_uri, prompt, model)
             except Exception as exc:  # noqa: BLE001 — retried once, then re-raised
                 last_exc = exc
                 log.warning("vision attempt %d failed: %s", attempt + 1, exc)
         raise last_exc
 
-    async def _create(self, data_uri: str, prompt: str) -> str:
+    async def _create(self, data_uri: str, prompt: str, model: str = "") -> str:
         response = await self._client.chat.completions.create(
-            model=self._model,
+            model=model or self._model,
             max_tokens=self._max_tokens,
             messages=[
                 {
