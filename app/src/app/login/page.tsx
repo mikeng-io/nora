@@ -27,6 +27,28 @@ export default async function LoginPage({
           Sign in with Discord
         </button>
       </form>
+
+      {process.env.AUTH_STUB === "true" && (
+        <form
+          action={async (formData) => {
+            "use server";
+            await signIn("stub", {
+              discordId: formData.get("discordId"),
+              redirectTo: "/status",
+            });
+          }}
+          className="mt-4 flex flex-col items-center gap-2 border-t border-dashed border-neutral-300 pt-4"
+        >
+          <p className="text-xs text-neutral-500">dev stub — no real OAuth</p>
+          <input type="hidden" name="discordId" value="100000000000000003" />
+          <button
+            type="submit"
+            className="rounded-md border border-neutral-400 px-4 py-2 text-sm hover:bg-neutral-100"
+          >
+            Continue as Miles (stub)
+          </button>
+        </form>
+      )}
     </main>
   );
 }
