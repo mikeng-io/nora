@@ -79,7 +79,8 @@ Tailwind 4, Auth.js v5 (`next-auth@beta`), `zod`, `smol-toml`, Vitest.
   callbacks carrying the Discord snowflake).
 - `app/src/app/api/auth/[...nextauth]/route.ts` — Auth.js route handlers.
 - `app/src/types/next-auth.d.ts` — session type augmentation.
-- `app/src/middleware.ts` — session check + allowlist gate.
+- The session + allowlist check lives in `app/src/app/(portal)/layout.tsx`
+  (Task 11), not `middleware.ts` — see Task 9's note on why.
 - `app/src/app/login/page.tsx` — the one public route.
 - `app/src/lib/modules.ts` — the module registry (spec §3.1).
 - `app/src/lib/status-schema.ts` + `.test.ts` — zod schema + fetch.
@@ -1209,75 +1210,53 @@ git commit -m "feat(app): Auth.js Discord provider with snowflake on session"
 
 ---
 
-### Task 9: `app/src/middleware.ts` — the auth + allowlist gate
+### Task 9: `app/src/app/(portal)/layout.tsx` — the auth + allowlist gate
 
 The enforcement point: every portal route requires a valid session AND an
 `identity.toml` match; `/login` and the Auth.js routes are the only
 exceptions.
 
+**CORRECTED DURING BUILD (2026-08-17):** this plan originally put the gate
+in `app/src/middleware.ts`, opting into `runtime: "nodejs"` because
+`resolveDiscordPerson` needs `node:fs`. That does not work: a real build on
+Next.js 15.5.23 produced an empty `.next/server/middleware-manifest.json`
+(`{"middleware": {}, "sortedMiddleware": []}`) with **no build warning at
+all** — every request would have silently bypassed the gate. Next's own
+config validator also rejects `experimental.nodeMiddleware` as an
+unrecognized key on this version ("Unrecognized key(s) in object:
+'nodeMiddleware' at experimental"), confirming Node.js middleware isn't
+actually available here, despite documentation suggesting otherwise. The fix
+is simpler than the workaround it replaces: the gate lives in the `(portal)`
+route group's layout instead. A layout is an async Server Component and
+runs in Node.js by default — no experimental flag, no runtime confusion —
+and `/login` sits outside `(portal)`, so it's the one route this never
+touches, same as before.
+
 **Files:**
-- Create: `app/src/middleware.ts`
+- Modify: `app/src/app/(portal)/layout.tsx` (created in Task 11 — this task
+  adds the auth check to it; if executed before Task 11 exists, create it
+  with just the gate and let Task 11 add the nav)
 - Create: `app/src/app/login/page.tsx`
 
 **Interfaces:**
 - Consumes: `auth` (Task 8), `resolveDiscordPerson` (Task 7, already unit
-  tested — middleware itself is thin glue over it, matching Task 8's "thin
-  config, no new test" reasoning).
+  tested — the layout itself is thin glue over it, same "thin config, no
+  new test" reasoning as Task 8).
 - Produces: every downstream page (Tasks 11, 12) can assume it only ever
-  runs for an allowlisted, authenticated request.
+  renders for an allowlisted, authenticated request, because it's nested
+  inside `(portal)`.
 
-- [ ] **Step 1: Write `app/src/middleware.ts`**
+- [ ] **Step 1: Add the gate to `app/src/app/(portal)/layout.tsx`**
 
-```ts
-import { NextResponse } from "next/server";
-import fs from "node:fs";
-import { auth } from "@/auth";
-import { resolveDiscordPerson } from "@/lib/allowlist";
-
-// identity.toml is bind-mounted read-only into this container at deploy
-// time (docker-compose.yml's `app` service, Task 14) — the SAME file Nora's
-// own process reads, so the web portal's whitelist can never drift from
-// Nora's roster.
-const IDENTITY_TOML_PATH = process.env.IDENTITY_TOML_PATH ?? "/app/identity.toml";
-
-const PUBLIC_PATHS = ["/login", "/api/auth"];
-
-export default auth((req) => {
-  const { pathname } = req.nextUrl;
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
-  }
-
-  const discordId = req.auth?.user?.discordId;
-  if (!discordId) {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
-
-  const identityToml = fs.readFileSync(IDENTITY_TOML_PATH, "utf-8");
-  const person = resolveDiscordPerson(identityToml, discordId);
-  if (!person) {
-    return NextResponse.redirect(new URL("/login?denied=1", req.url));
-  }
-
-  const res = NextResponse.next();
-  res.headers.set("x-nora-person-id", person.personId);
-  res.headers.set("x-nora-display-name", person.displayName);
-  return res;
-});
-
-export const config = {
-  // Excludes Next's internal assets, the PWA manifest/service worker (must
-  // stay reachable unauthenticated for the browser to install the app), and
-  // static files.
-  matcher: ["/((?!_next|favicon.ico|manifest.json|sw.js|.*\\..*).*)"],
-  // LOAD-BEARING: middleware runs on the Edge runtime by default, where
-  // Node's `fs` module doesn't exist. `resolveDiscordPerson` needs to read
-  // identity.toml off disk, so this opts into the Node.js middleware
-  // runtime (stable since Next.js 15.2) — dropping this line makes every
-  // request 500 with "Module not found: Can't resolve 'node:fs'".
-  runtime: "nodejs",
-};
-```
+The exact code (combined with the nav shell, so there's one canonical
+version rather than two that can drift) is in Task 11's "Write the portal
+layout" step — build that task's `layout.tsx` now if executing tasks out of
+order. The two lines that matter: `const session = await auth();` then
+`if (!session?.user?.discordId) redirect("/login")`, followed by
+`fs.readFileSync(IDENTITY_TOML_PATH, ...)` + `resolveDiscordPerson(...)` →
+`redirect("/login?denied=1")` on no match. `redirect()` throws internally
+(Next.js's documented mechanism), so execution never reaches past a failed
+check — no `else` needed.
 
 - [ ] **Step 2: Write `app/src/app/login/page.tsx`**
 
@@ -1316,15 +1295,29 @@ export default async function LoginPage({
 }
 ```
 
-- [ ] **Step 3: Verify the build succeeds**
+- [ ] **Step 3: Verify the build succeeds, and that the gate actually redirects**
 
 Run: `cd app && AUTH_DISCORD_ID=x AUTH_DISCORD_SECRET=x AUTH_SECRET=x npm run build`
-Expected: build succeeds
+Expected: build succeeds, `/status` and `/memory` listed as `ƒ` (dynamic,
+server-rendered per request) — NOT `○` (static). If they're static, the
+auth check isn't actually running per-request and something regressed.
+
+Run (with a real `identity.toml` fixture and a throwaway `AUTH_SECRET`):
+```bash
+cd app
+IDENTITY_TOML_PATH=/tmp/id.toml AUTH_DISCORD_ID=x AUTH_DISCORD_SECRET=x \
+  AUTH_SECRET=$(openssl rand -hex 32) npm start -- -p 4802 &
+sleep 2
+curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" http://127.0.0.1:4802/status
+```
+Expected: `307 -> http://127.0.0.1:4802/login` (no session cookie, so the
+gate redirects) — this is the check that would have caught the original
+middleware bug, since a silently-bypassed gate returns `200`, not `307`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add app/src/middleware.ts app/src/app/login
+git add "app/src/app/(portal)/layout.tsx" app/src/app/login
 git commit -m "feat(app): auth + identity.toml allowlist gate"
 ```
 
@@ -1342,7 +1335,7 @@ in the shell.
 
 **Interfaces:**
 - Produces: `MODULES: Module[]`, `type Module = { id: string; label: string;
-  href: string; status: "live" | "designed" | "future" }`. Task 12's portal
+  href: string; status: "live" | "designed" | "future" }`. Task 11's portal
   layout consumes this to render the nav.
 
 - [ ] **Step 1: Write the failing test**
@@ -1520,15 +1513,38 @@ export async function GET() {
 }
 ```
 
-- [ ] **Step 6: Write the portal layout and status page**
+- [ ] **Step 6: Write the portal layout (nav + Task 9's auth gate, combined)**
 
-Create `app/src/app/(portal)/layout.tsx`:
+Create `app/src/app/(portal)/layout.tsx`. This is the FINAL version — nav
+shell and Task 9's auth gate live in the same file, not split across two
+edits, because the gate has to run before any nav renders and there's no
+reason to pretend otherwise:
 
 ```tsx
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import fs from "node:fs";
+import { auth } from "@/auth";
+import { resolveDiscordPerson } from "@/lib/allowlist";
 import { MODULES } from "@/lib/modules";
 
-export default function PortalLayout({ children }: { children: React.ReactNode }) {
+const IDENTITY_TOML_PATH = process.env.IDENTITY_TOML_PATH ?? "/app/identity.toml";
+
+export default async function PortalLayout({ children }: { children: React.ReactNode }) {
+  // Task 9's gate: async Server Component, runs in Node.js by default — no
+  // middleware, no experimental flag. /login sits outside (portal), so
+  // it's the one route this never touches.
+  const session = await auth();
+  const discordId = session?.user?.discordId;
+  if (!discordId) {
+    redirect("/login");
+  }
+  const identityToml = fs.readFileSync(IDENTITY_TOML_PATH, "utf-8");
+  const person = resolveDiscordPerson(identityToml, discordId);
+  if (!person) {
+    redirect("/login?denied=1");
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       <nav className="flex gap-4 border-b border-neutral-200 px-6 py-4">
