@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "title": "Nora",
+    "description": "Nora's public face"
+  },
+  "nav": {
+    "status": "Status",
+    "memory": "Memory",
+    "language": "Language"
+  },
+  "login": {
+    "heading": "Nora",
+    "discord": "Sign in with Discord",
+    "denied": "That Discord account isn't on the list. Ask Miles to add it.",
+    "stubLabel": "dev stub — no real OAuth",
+    "stubButton": "Continue as Miles (stub)"
+  },
+  "status": {
+    "eyebrow": "Nora · public face",
+    "heading": "Status",
+    "dek": "What's running, what's reachable, what she's still holding.",
+    "loading": "Loading…",
+    "error": "Couldn't reach Nora.",
+    "storeLabel": "Message record",
+    "storeOk": "Working normally — she's writing everything down.",
+    "storeDown": "Having trouble with her message record — she might miss things today.",
+    "memoryLabel": "Memory",
+    "memoryOk": "Working normally — she'll remember today.",
+    "memoryDown": "Can't reach her memory right now — she might not remember today.",
+    "remindersLabel": "Reminders pending",
+    "remindersNone": "Nothing pending.",
+    "remindersSome": "{count, plural, one {# still open} other {# still open}}",
+    "remindersNextDue": "next due {date}"
+  },
+  "memory": {
+    "eyebrow": "Nora · memory showcase",
+    "heading": "What Nora remembers",
+    "dek": "Her read on the group — shared across everyone on the list.",
+    "loading": "Loading…",
+    "error": "Couldn't reach Nora.",
+    "unavailable": "unavailable right now",
+    "nothingYet": "nothing yet",
+    "you": "you"
+  }
+}

@@ -1,20 +1,5 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import { RegisterServiceWorker } from "./register-sw";
+import type { ReactNode } from "react";
 
-export const metadata: Metadata = {
-  title: "Nora",
-  description: "Nora's public face",
-  manifest: "/manifest.json",
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body>
-        {children}
-        <RegisterServiceWorker />
-      </body>
-    </html>
-  );
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return children;
 }

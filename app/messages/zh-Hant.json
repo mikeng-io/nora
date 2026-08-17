@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "title": "Nora",
+    "description": "Nora 嘅公開頁面"
+  },
+  "nav": {
+    "status": "狀態",
+    "memory": "記憶",
+    "language": "語言"
+  },
+  "login": {
+    "heading": "Nora",
+    "discord": "用 Discord 登入",
+    "denied": "呢個 Discord 帳號未喺名單度，搵 Miles 加返你入去。",
+    "stubLabel": "開發用假登入 — 唔會真係經 OAuth",
+    "stubButton": "當自己係 Miles（假登入）"
+  },
+  "status": {
+    "eyebrow": "Nora · 公開頁面",
+    "heading": "狀態",
+    "dek": "而家運行緊咩、邊啲聯繫到、佢仲記住啲咩。",
+    "loading": "載入緊…",
+    "error": "連唔到 Nora。",
+    "storeLabel": "訊息紀錄",
+    "storeOk": "運作正常 — 佢有記低晒啲嘢。",
+    "storeDown": "訊息紀錄出咗啲問題 — 佢今日可能會漏低啲嘢。",
+    "memoryLabel": "記憶",
+    "memoryOk": "運作正常 — 佢今日會記得。",
+    "memoryDown": "而家連唔到記憶 — 佢今日可能唔記得。",
+    "remindersLabel": "未完成嘅提醒",
+    "remindersNone": "冇未完成嘅提醒。",
+    "remindersSome": "重有 {count} 個未完成",
+    "remindersNextDue": "下一個 {date}"
+  },
+  "memory": {
+    "eyebrow": "Nora · 記憶展示",
+    "heading": "Nora 記得嘅嘢",
+    "dek": "佢對成班人嘅印象 — 名單入面嘅人都睇到。",
+    "loading": "載入緊…",
+    "error": "連唔到 Nora。",
+    "unavailable": "而家攞唔到",
+    "nothingYet": "重未有嘢",
+    "you": "你"
+  }
+}

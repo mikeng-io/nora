@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Activity, Sparkles } from "lucide-react";
+import { Link, usePathname } from "@/i18n/routing";
 import { MODULES } from "@/lib/modules";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ const ICONS: Record<string, typeof Activity> = {
 
 export function NavLinks() {
   const pathname = usePathname();
+  const t = useTranslations("nav");
 
   return (
     <nav className="flex flex-col gap-0.5">
@@ -31,7 +32,7 @@ export function NavLinks() {
             )}
           >
             <Icon className="h-3.5 w-3.5" />
-            {m.label}
+            {t(m.labelKey)}
           </Link>
         );
       })}

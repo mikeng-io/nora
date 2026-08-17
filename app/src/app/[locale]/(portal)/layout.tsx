@@ -4,6 +4,7 @@ import * as Separator from "@radix-ui/react-separator";
 import { auth } from "@/auth";
 import { resolveDiscordPerson } from "@/lib/allowlist";
 import { NavLinks } from "@/components/nav-links";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 // identity.toml is bind-mounted read-only into this container at deploy
@@ -13,24 +14,33 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 const IDENTITY_TOML_PATH = process.env.IDENTITY_TOML_PATH ?? "/app/identity.toml";
 
 // The auth+allowlist gate lives HERE, not in middleware.ts, because a real
-// build (not just the plan) showed Next.js 15.5.23 has no working Node.js
-// middleware runtime — `experimental.nodeMiddleware` isn't a recognized key
-// in this version's own config validator, and middleware defaults to the
-// Edge runtime, where `node:fs` doesn't exist. A layout is an async Server
-// Component and runs in Node.js by default, no experimental flag needed —
-// simpler AND correct, not a workaround. `/login` sits outside the
-// `(portal)` route group, so it's the one route this never touches.
-export default async function PortalLayout({ children }: { children: React.ReactNode }) {
+// build showed Next.js 15.5.23 has no working Node.js middleware runtime —
+// `experimental.nodeMiddleware` isn't a recognized key in this version's own
+// config validator, and middleware defaults to the Edge runtime, where
+// `node:fs` doesn't exist. A layout is an async Server Component and runs in
+// Node.js by default, no experimental flag needed. `middleware.ts` still
+// exists in this app now (for next-intl locale routing), but it never
+// touches fs — that's a different, unrelated concern from this gate.
+// `/login` sits outside the `(portal)` route group (both now one level
+// deeper under `[locale]`), so it's the one route this never touches.
+export default async function PortalLayout({
+  children,
+  params,
+}: {
+  children: React.ReactNode;
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
   const session = await auth();
   const discordId = session?.user?.discordId;
   if (!discordId) {
-    redirect("/login");
+    redirect(`/${locale}/login`);
   }
 
   const identityToml = fs.readFileSync(IDENTITY_TOML_PATH, "utf-8");
   const person = resolveDiscordPerson(identityToml, discordId);
   if (!person) {
-    redirect("/login?denied=1");
+    redirect(`/${locale}/login?denied=1`);
   }
 
   const initials = person.displayName
@@ -43,11 +53,14 @@ export default async function PortalLayout({ children }: { children: React.React
   return (
     <div className="grid min-h-screen grid-cols-[240px_1fr] bg-bg-base">
       <aside className="flex flex-col gap-7 border-r border-border bg-bg-surface p-3.5">
-        <div className="flex items-center gap-2 border-b border-border px-2 pb-3">
-          <div className="grid h-[22px] w-[22px] place-items-center border border-text-primary font-mono text-[11px] font-semibold">
-            N
+        <div className="flex items-center justify-between gap-2 border-b border-border px-2 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="grid h-[22px] w-[22px] place-items-center border border-text-primary font-mono text-[11px] font-semibold">
+              N
+            </div>
+            <span className="text-[15px] font-semibold tracking-tight">Nora</span>
           </div>
-          <span className="text-[15px] font-semibold tracking-tight">Nora</span>
+          <LanguageSwitcher />
         </div>
 
         <NavLinks />
