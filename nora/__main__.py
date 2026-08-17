@@ -25,6 +25,7 @@ from .config import ConfigError
 from .obs.health import build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
 from .obs.tracing import setup_tracing
+from .web.api import register_web_routes
 
 PRUNE_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_INTERVAL_SECONDS = 300.0
@@ -94,12 +95,20 @@ class App:
 
     async def run(self) -> None:
         deps = self.deps
+        # Shared with register_web_routes below so /health's uptime and
+        # /app/v1/status's uptime never disagree about when this process
+        # started.
+        started_at = time.time()
         health_app = build_health_app(
             adapter=deps.adapter, adapters=deps.registry.adapters,
             store=deps.audit, honcho=deps.memory,
             doctrine_store=deps.doctrine_store, metrics=deps.metrics,
-            started_at=time.time(), llm_state=deps.llm_state,
+            started_at=started_at, llm_state=deps.llm_state,
             identity_file=self.cfg.identity_file, policy_file=self.cfg.policy_file,
+        )
+        register_web_routes(
+            health_app, store=deps.audit, honcho=deps.memory, reminders=deps.reminders,
+            persons=deps.persons, ai_peer=self.cfg.memory.ai_peer, started_at=started_at,
         )
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 

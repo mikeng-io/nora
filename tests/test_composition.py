@@ -79,6 +79,17 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.dispatcher is not None
 
 
+async def test_dependencies_exposes_the_reminders_store(cfg):
+    """The web API's status route (nora/web/status.py) needs to read pending
+    reminders, and the only reminders store this process builds lives inside
+    build_dependencies() as a local — this pins it onto Dependencies so
+    anything outside composition.py can reach it."""
+    from nora.infra.sql.reminders import SqlReminderStore
+
+    deps = await build_dependencies(cfg)
+    assert isinstance(deps.reminders, SqlReminderStore)
+
+
 async def test_the_doctrine_the_root_builds_carries_the_generated_capability(cfg):
     """DEC-29: the composition root is where the registry meets the doctrine.
 

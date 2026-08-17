@@ -333,6 +333,10 @@ class Dependencies:
     background: BackgroundTasks
     llm_state: LLMState
     client: AsyncOpenAI
+    # The reminders store `build_dependencies` already constructs (see
+    # `reminders = SqlReminderStore(engine)` below) — exposed here so
+    # `nora/web/status.py` can read pending rows without a second store.
+    reminders: ReminderStore
     # The Dreamer's own pieces (Task 11), all `None`/empty when `[language]
     # enabled = false` — `nora.__main__.App.run` reads these to spawn (or log
     # skipping) `runtime.dream_loop`. `language_store` doubles as the
@@ -1318,7 +1322,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
-        llm_state=llm_state, client=client,
+        llm_state=llm_state, client=client, reminders=reminders,
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
     )
