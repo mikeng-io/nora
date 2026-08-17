@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Operational visibility only. The Dreamer was the one background loop that announced nothing when it started, while every sibling does — so with it switched on the logs were silent and 'is it actually running?' could only be answered from a line that was absent. It now says so on start, with its tick interval and how many rooms it can see. No change to anything Nora says or does."
+}

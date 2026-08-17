@@ -744,3 +744,38 @@ async def test_a_failed_scope_is_not_retried_before_its_backoff_elapses():
         "not a retry"
     )
     assert metrics.get("nora_errors_total", stage="dream") == 1
+
+
+async def test_the_dream_loop_says_it_started(caplog):
+    """The Dreamer was the ONE background loop with no positive liveness signal.
+
+    Every sibling announces itself (`heartbeat started: tick every 60.0s`,
+    `nora/app/heartbeat.py`), and `__main__` logs only the DISABLED branch — so
+    with `language.enabled = true` the logs said nothing at all, and «is it
+    running?» could only be answered from a MISSING line. That is an absence
+    argument about a subsystem that renders into every tag's prefill.
+
+    It logs from inside the loop, not from the spawn site, so it reports that
+    the loop is TICKING rather than that a branch was taken. The scope count is
+    in it because zero scopes is the quiet failure this cannot otherwise show:
+    a loop that runs forever over nothing looks identical to a healthy one.
+    """
+    record = _FakeRecord([])
+    language = _FakeLanguage(lag=1000)
+
+    with caplog.at_level(logging.INFO, logger="nora.app.runtime"):
+        task = asyncio.create_task(dream_loop(
+            record, language, [], Metrics(),
+            scopes=lambda: ["g1", "g2"], tick_seconds=0.02, safety_lag=10,
+            quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+        ))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    started = [r.getMessage() for r in caplog.records if "dream loop started" in r.getMessage()]
+    assert started, "the dream loop must announce itself the way heartbeat does"
+    assert "0.02" in started[0]      # the tick it will actually keep
+    assert "2" in started[0]         # the scopes it can see
+    assert len(started) == 1, "announced once at start, not on every tick"

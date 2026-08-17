@@ -348,6 +348,19 @@ async def dream_loop(
     `_dream_once` itself is untouched: watermark-last, the three fire
     conditions and the partial-batch guard are exactly as given.
     """
+    # Announce, the way `heartbeat` does — this loop had NO positive liveness
+    # signal, and `__main__` logs only the disabled branch, so with the flag on
+    # the logs said nothing and «is the Dreamer running?» could be answered only
+    # from a MISSING line. The scope count is here because a loop ticking over
+    # ZERO scopes is otherwise indistinguishable from a healthy one.
+    log.info(
+        # `%g` and not heartbeat's `%.1f`: this tick is configurable down to
+        # sub-second in tests and up to minutes in production, and `%.1f`
+        # renders a 0.02s tick as "0.0s" — a liveness line that misreports the
+        # interval it is announcing is worse than none.
+        "dream loop started: tick every %gs over %d scope(s)",
+        tick_seconds, len(scopes()),
+    )
     failures: dict[str, int] = {}
     running: set[str] = set()
     # `_backoff_elapsed`'s own per-scope companion state (see its docstring
