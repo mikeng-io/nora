@@ -7,7 +7,16 @@
     "status": "Status",
     "memory": "Memory",
     "games": "Games",
-    "language": "Language"
+    "language": "Language",
+    "chat": "Chat"
+  },
+  "chat": {
+    "heading": "Chat with Nora",
+    "dek": "Talk to her right here, without switching to Signal or Discord.",
+    "comingSoon": "Not wired up yet — she only replies over Signal and Discord for now.",
+    "inputPlaceholder": "Message Nora…",
+    "send": "Send",
+    "close": "Close"
   },
   "login": {
     "heading": "Nora",
@@ -31,7 +40,37 @@
     "remindersLabel": "Reminders pending",
     "remindersNone": "Nothing pending.",
     "remindersPlatformSignal": "Signal",
-    "remindersPlatformDiscord": "Discord"
+    "remindersPlatformDiscord": "Discord",
+    "capabilitiesHeading": "What else she can do",
+    "capabilitiesDek": "Real capabilities, not all wired up to the portal yet.",
+    "badgePlanned": "Planned",
+    "badgeIdea": "Idea",
+    "capability": {
+      "roomVocabulary": {
+        "title": "Room's own words",
+        "description": "The slang and in-jokes she's picked up from the group, weighted by how often and how many people use them."
+      },
+      "weather": {
+        "title": "Weather",
+        "description": "Live HKO conditions, the same read she gives when you ask her directly."
+      },
+      "transit": {
+        "title": "Transit",
+        "description": "Next bus or train from a saved place, on demand."
+      },
+      "doctrine": {
+        "title": "Her doctrine",
+        "description": "A plain-language read of how she's currently tuned to behave — and how that's changed over time."
+      },
+      "skills": {
+        "title": "Skills",
+        "description": "The optional capabilities she can load on demand, and which ones are currently on."
+      },
+      "mediaGallery": {
+        "title": "Media gallery",
+        "description": "Stickers, images and clips shared in the room, with her own read on what's in them."
+      }
+    }
   },
   "memory": {
     "eyebrow": "Nora · memory showcase",
@@ -41,7 +80,10 @@
     "error": "Couldn't reach Nora.",
     "unavailable": "unavailable right now",
     "nothingYet": "nothing yet",
-    "you": "you"
+    "you": "you",
+    "badgePlanned": "Planned",
+    "roomVocabularyTitle": "Room's own words",
+    "roomVocabularyDek": "A live word cloud of the group's own slang and in-jokes — coming once this has its own endpoint."
   },
   "games": {
     "eyebrow": "Nora · game servers",

@@ -9,6 +9,7 @@ import { formatBytes, formatCpuPercent, formatUptime, uptimeSecondsFrom } from "
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
+import { StatTile } from "@/components/ui/stat-tile";
 
 const POLL_INTERVAL_MS = 20_000;
 
@@ -94,7 +95,7 @@ function ServerCard({ server, locale }: { server: Server; locale: string }) {
           </Badge>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-2 p-4 pt-0">
-          <Metric
+          <StatTile
             icon={Users}
             label={t("players")}
             value={
@@ -103,17 +104,17 @@ function ServerCard({ server, locale }: { server: Server; locale: string }) {
                 : "—"
             }
           />
-          <Metric
+          <StatTile
             icon={Cpu}
             label={t("cpu")}
             value={current ? formatCpuPercent(current.cpuPercent) : "—"}
           />
-          <Metric
+          <StatTile
             icon={HardDrive}
             label={t("memory")}
             value={current ? formatBytes(current.memoryBytes) : "—"}
           />
-          <Metric
+          <StatTile
             icon={Clock}
             label={t("uptime")}
             value={current ? formatUptime(uptimeSecondsFrom(current), locale) : "—"}
@@ -121,25 +122,5 @@ function ServerCard({ server, locale }: { server: Server; locale: string }) {
         </CardContent>
       </Card>
     </Link>
-  );
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-md bg-bg-elevated p-2.5">
-      <div className="mb-1 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-text-muted">
-        <Icon className="h-3 w-3" />
-        {label}
-      </div>
-      <div className="text-[13px] font-medium text-text-primary">{value}</div>
-    </div>
   );
 }

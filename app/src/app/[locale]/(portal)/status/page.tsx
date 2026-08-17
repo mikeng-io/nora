@@ -1,15 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { Bus, Cloud, BookOpen, Puzzle, Image as ImageIcon, Hash } from "lucide-react";
 import { fetchStatus, type Status } from "@/lib/status-schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { StatusDot } from "@/components/ui/status-dot";
+import { CapabilityTile } from "@/components/capability-tile";
 
 const POLL_INTERVAL_MS = 20_000;
 
+// Coming-soon capability tiles (design spec: ship the placeholder now, the
+// backend later — every idea here traces to a real, already-built domain
+// concept; see nora/domain/{language_scoring,models}.py. "designed" = real
+// data already exists somewhere, just not surfaced over web yet. "future" =
+// would need genuinely new backend work.
+const CAPABILITIES = [
+  { id: "roomVocabulary", icon: Hash, variant: "designed" as const },
+  { id: "weather", icon: Cloud, variant: "designed" as const },
+  { id: "transit", icon: Bus, variant: "designed" as const },
+  { id: "doctrine", icon: BookOpen, variant: "future" as const },
+  { id: "skills", icon: Puzzle, variant: "designed" as const },
+  { id: "mediaGallery", icon: ImageIcon, variant: "future" as const },
+];
+
 export default function StatusPage() {
   const t = useTranslations("status");
+  const locale = useLocale();
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState(false);
 
@@ -43,7 +61,11 @@ export default function StatusPage() {
       <h1 className="mb-1.5 text-[26px] font-medium tracking-tight">{t("heading")}</h1>
       <p className="mb-8 max-w-[56ch] text-text-secondary">{t("dek")}</p>
 
-      {error && <Alert variant="destructive" className="mb-6">{t("error")}</Alert>}
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          {t("error")}
+        </Alert>
+      )}
       {!error && !status && <p className="text-text-muted">{t("loading")}</p>}
 
       {status && (
@@ -56,7 +78,12 @@ export default function StatusPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4 pt-0">
-                <Dot reachable={status.store.reachable} />
+                <div className="flex items-center gap-2">
+                  <StatusDot
+                    reachable={status.store.reachable}
+                    title={status.store.reachable ? t("storeOk") : t("storeDown")}
+                  />
+                </div>
                 <p className="mt-1.5 text-[13px] text-text-secondary">
                   {status.store.reachable ? t("storeOk") : t("storeDown")}
                 </p>
@@ -70,7 +97,12 @@ export default function StatusPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4 pt-0">
-                <Dot reachable={status.honcho.reachable} />
+                <div className="flex items-center gap-2">
+                  <StatusDot
+                    reachable={status.honcho.reachable}
+                    title={status.honcho.reachable ? t("memoryOk") : t("memoryDown")}
+                  />
+                </div>
                 <p className="mt-1.5 text-[13px] text-text-secondary">
                   {status.honcho.reachable ? t("memoryOk") : t("memoryDown")}
                 </p>
@@ -78,7 +110,7 @@ export default function StatusPage() {
             </Card>
           </div>
 
-          <Card>
+          <Card className="mb-8">
             <CardHeader>
               <CardTitle>{t("remindersLabel")}</CardTitle>
             </CardHeader>
@@ -92,13 +124,14 @@ export default function StatusPage() {
                       key={i}
                       className="flex items-center justify-between border-b border-border pb-2 text-[13px] last:border-0 last:pb-0"
                     >
-                      <span className="text-text-secondary">
-                        {new Date(r.due_at).toLocaleString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
+                      <span
+                        className="text-text-secondary"
+                        title={new Date(r.due_at).toLocaleString(locale, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
                         })}
+                      >
+                        {formatRelative(r.due_at, locale)}
                       </span>
                       <span className="font-mono text-[10px] uppercase tracking-wide text-text-muted">
                         {r.platform === "discord"
@@ -111,16 +144,36 @@ export default function StatusPage() {
               )}
             </CardContent>
           </Card>
+
+          <p className="mb-2.5 font-mono text-[10px] uppercase tracking-wider text-text-muted">
+            {t("capabilitiesHeading")}
+          </p>
+          <p className="mb-4 max-w-[56ch] text-[13px] text-text-secondary">{t("capabilitiesDek")}</p>
+          <div className="grid grid-cols-2 gap-3">
+            {CAPABILITIES.map((c) => (
+              <CapabilityTile
+                key={c.id}
+                icon={c.icon}
+                title={t(`capability.${c.id}.title`)}
+                description={t(`capability.${c.id}.description`)}
+                variant={c.variant}
+                badgeLabel={t(c.variant === "designed" ? "badgePlanned" : "badgeIdea")}
+              />
+            ))}
+          </div>
         </>
       )}
     </div>
   );
 }
 
-function Dot({ reachable }: { reachable: boolean }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-sm">
-      <span className={`h-1.5 w-1.5 rounded-full ${reachable ? "bg-success" : "bg-danger"}`} />
-    </span>
-  );
+function formatRelative(iso: string, locale: string): string {
+  const diffMs = new Date(iso).getTime() - Date.now();
+  const diffMin = Math.round(diffMs / 60_000);
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (Math.abs(diffMin) < 60) return rtf.format(diffMin, "minute");
+  const diffHour = Math.round(diffMin / 60);
+  if (Math.abs(diffHour) < 24) return rtf.format(diffHour, "hour");
+  const diffDay = Math.round(diffHour / 24);
+  return rtf.format(diffDay, "day");
 }

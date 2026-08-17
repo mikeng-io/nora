@@ -7,7 +7,16 @@
     "status": "狀態",
     "memory": "記憶",
     "games": "遊戲",
-    "language": "語言"
+    "language": "語言",
+    "chat": "傾偈"
+  },
+  "chat": {
+    "heading": "同 Nora 傾偈",
+    "dek": "喺呢度直接同佢傾，唔使切去 Signal 或者 Discord。",
+    "comingSoon": "重未接通 — 而家佢淨係喺 Signal 同 Discord 度覆你。",
+    "inputPlaceholder": "打畀 Nora…",
+    "send": "傳送",
+    "close": "關閉"
   },
   "login": {
     "heading": "Nora",
@@ -31,7 +40,37 @@
     "remindersLabel": "未完成嘅提醒",
     "remindersNone": "冇未完成嘅提醒。",
     "remindersPlatformSignal": "Signal",
-    "remindersPlatformDiscord": "Discord"
+    "remindersPlatformDiscord": "Discord",
+    "capabilitiesHeading": "佢仲識做咩",
+    "capabilitiesDek": "真係做到嘅嘢，不過重未全部接上呢個頁面。",
+    "badgePlanned": "已計劃",
+    "badgeIdea": "諗緊",
+    "capability": {
+      "roomVocabulary": {
+        "title": "班友自己嘅用語",
+        "description": "佢喺班度學識嘅潮語同 in-joke，按幾多人講、講幾密嚟排。"
+      },
+      "weather": {
+        "title": "天氣",
+        "description": "即時天文台資料，同你直接問佢攞到嘅一樣。"
+      },
+      "transit": {
+        "title": "交通",
+        "description": "由已儲低嘅地點出發，下一班巴士或者火車幾時到。"
+      },
+      "doctrine": {
+        "title": "佢嘅行為準則",
+        "description": "用白話講返佢而家點樣被調教 — 同埋呢啲設定點樣隨時間變過。"
+      },
+      "skills": {
+        "title": "技能",
+        "description": "佢可以隨時開嘅額外能力，同埋而家邊啲係開緊。"
+      },
+      "mediaGallery": {
+        "title": "媒體庫",
+        "description": "班度分享過嘅貼圖、相同片，連埋佢對入面內容嘅睇法。"
+      }
+    }
   },
   "memory": {
     "eyebrow": "Nora · 記憶展示",
@@ -41,7 +80,10 @@
     "error": "連唔到 Nora。",
     "unavailable": "而家攞唔到",
     "nothingYet": "重未有嘢",
-    "you": "你"
+    "you": "你",
+    "badgePlanned": "已計劃",
+    "roomVocabularyTitle": "班友自己嘅用語",
+    "roomVocabularyDek": "成班人嘅潮語同 in-joke 文字雲 — 呢個要接埋後端先有得睇。"
   },
   "games": {
     "eyebrow": "Nora · 遊戲伺服器",
