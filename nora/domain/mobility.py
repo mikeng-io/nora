@@ -15,16 +15,21 @@ so no consumer can get the 5.6x count-weighting bias wrong independently.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Literal
+from zoneinfo import ZoneInfo
 
 from nora.domain.presence import haversine_distance_m
 
 __all__ = [
     "DWELL_CAP_MS",
+    "LabelResult",
     "RawFix",
     "SegmentationResult",
     "Stay",
     "cluster_places",
     "dwell_ms",
+    "label_place",
     "segment_stays",
 ]
 
@@ -285,3 +290,161 @@ def cluster_places(
         if label is not None and label >= 0:
             clusters.setdefault(label, []).append(stays[i])
     return list(clusters.values())
+
+
+_NIGHT_START_HOUR = 1
+_NIGHT_END_HOUR = 5
+_WORK_START_HOUR = 9
+_WORK_END_HOUR = 18
+_DAY_MS = 86_400_000
+
+
+@dataclass(frozen=True)
+class LabelResult:
+    """`kind` is `'home'` / `'work'` / `'unlabeled'` — never a guess (spec
+    §3.5, Acceptance Criterion 9). `most_recent_support_ts` is the latest
+    local night-or-weekday timestamp that contributed to a non-unlabeled
+    kind; `None` for `unlabeled`. It exists so the ROLLUP (Task 7) can
+    re-check freshness cheaply against EXISTING stored places without
+    recomputing shares from scratch every cycle — this function itself
+    always recomputes from the full stay list it is given."""
+
+    kind: Literal["home", "work", "unlabeled"]
+    confidence: float
+    most_recent_support_ts: int | None
+
+
+def _local_day_bounds_ms(ts: int, tz: ZoneInfo) -> tuple[int, datetime]:
+    """The local midnight (as epoch ms) containing `ts`, and that midnight's
+    own `datetime` (for weekday()). Asia/Hong_Kong has no DST, so a flat
+    86_400_000ms day-increment is safe here; a tz with DST would need real
+    calendar arithmetic instead — not built, since this project pins HKT."""
+    dt = datetime.fromtimestamp(ts / 1000, tz=tz)
+    midnight = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(midnight.timestamp() * 1000), midnight
+
+
+def _overlap_ms(a_start: int, a_end: int, b_start: int, b_end: int) -> int:
+    return max(0, min(a_end, b_end) - max(a_start, b_start))
+
+
+def _windowed_dwell(
+    stays: list[Stay], tz: ZoneInfo, start_hour: int, end_hour: int,
+    *, weekdays_only: bool,
+) -> tuple[int, set[int], int | None]:
+    """Sum of dwell overlapping a fixed local time-of-day window across
+    every stay, the set of distinct local-midnight-ms days it touched, and
+    the latest local-midnight-ms day it touched (or None). Iterates one
+    local day at a time per stay — a stay is typically hours, never weeks,
+    so this never loops more than a handful of times."""
+    total = 0
+    days: set[int] = set()
+    latest_day: int | None = None
+    for stay in stays:
+        day_ms, midnight = _local_day_bounds_ms(stay.started_ts, tz)
+        while day_ms <= stay.ended_ts:
+            if not weekdays_only or midnight.weekday() < 5:
+                window_start = day_ms + start_hour * 3_600_000
+                window_end = day_ms + end_hour * 3_600_000
+                overlap = _overlap_ms(
+                    stay.started_ts, stay.ended_ts, window_start, window_end
+                )
+                if overlap > 0:
+                    total += overlap
+                    days.add(day_ms)
+                    if latest_day is None or day_ms > latest_day:
+                        latest_day = day_ms
+            day_ms += _DAY_MS
+            midnight += timedelta(days=1)
+    return total, days, latest_day
+
+
+def label_place(
+    stays: list[Stay], *, now_ms: int, tz_name: str, min_nights: int,
+    min_weekdays: int, label_freshness_days: int,
+) -> LabelResult:
+    """Fail-closed, recency-gated labelling (spec §3.5). Both shares are
+    TIME-WEIGHTED overlap with a fixed local-clock window, never a count of
+    stays — a cluster's `home`/`work` status is about how long someone
+    dwelled there at which hours, not how many separate visits it took.
+
+    A label additionally requires its most recent supporting night/weekday
+    to fall within `label_freshness_days` of `now_ms` — without this, the
+    rule is a pure function of all-time totals and `max_age_seconds`
+    (rollup, Task 7) would have nothing to recompute at zero lag (spec §4.2,
+    the bug an internal audit caught before implementation).
+
+    Independently verified by hand-trace before transcription (Task 4
+    brief): the day-walk in `_windowed_dwell` correctly attributes an
+    overnight stay's night-window overlap to the LATER calendar day (a
+    23:00->07:00 stay's 01:00-05:00 overlap lands on the second day, not
+    the first); the weekday gate in `_windowed_dwell` SKIPS a weekend day's
+    window computation entirely rather than computing and discarding it.
+    One structural note (not a functional bug — every test below still
+    passes, and no input can reach the branch it guards): the explicit
+    `is_home and is_work` check below can never actually be True, because
+    `is_home` requires `night_share >= 0.5` while `is_work` requires
+    `night_share < 0.1` — contradictory bounds on the same variable make
+    the two conditions mutually exclusive by construction, independent of
+    branch order. The "both windows" ambiguous case (aaron_larsen's real
+    fixture) still correctly resolves to `unlabeled`, but via `is_work`'s
+    own `night_share < 0.1` term rejecting it, not via this check. Left as
+    written (matching the brief) since it is harmless defensive code, not
+    incorrect."""
+    if not stays:
+        return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
+
+    tz = ZoneInfo(tz_name)
+    total_dwell = sum(s.ended_ts - s.started_ts for s in stays)
+    if total_dwell <= 0:
+        return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
+
+    night_dwell, night_days, latest_night = _windowed_dwell(
+        stays, tz, _NIGHT_START_HOUR, _NIGHT_END_HOUR, weekdays_only=False
+    )
+    work_dwell, work_days, latest_work = _windowed_dwell(
+        stays, tz, _WORK_START_HOUR, _WORK_END_HOUR, weekdays_only=True
+    )
+    night_share = night_dwell / total_dwell
+    work_share = work_dwell / total_dwell
+    distinct_days_observed = len({
+        _local_day_bounds_ms(s.started_ts, tz)[0] for s in stays
+    })
+    confidence = min(1.0, (total_dwell / _DAY_MS) * distinct_days_observed / 100.0)
+
+    is_home = night_share >= 0.5 and len(night_days) >= min_nights
+    is_work = (
+        work_share >= 0.5 and night_share < 0.1 and len(work_days) >= min_weekdays
+    )
+    if is_home and is_work:
+        # A cluster cannot be both — carrying substantial dwell in BOTH
+        # windows (aaron_larsen's real case) is exactly the ambiguous signal
+        # fail-closed labelling exists to catch. Never pick one arbitrarily.
+        return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
+    if is_home:
+        support = latest_night
+    elif is_work:
+        support = latest_work
+    else:
+        return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
+
+    if support is None:
+        # is_home/is_work each require >=1 supporting day (len(...) >=
+        # min_nights/min_weekdays with night_dwell/work_dwell > 0 to reach
+        # the share thresholds above), so `_windowed_dwell` must have set a
+        # `latest_day` — this is an invariant violation, not a bare
+        # `assert` (ruff S101 forbids `assert` outside `tests/**` and
+        # `evals/**`; production code raises instead, per
+        # `nora/agent/factory.py`'s `RuntimeError` convention).
+        raise RuntimeError("label_place: is_home/is_work true but no supporting day found")
+    freshness_ms = label_freshness_days * _DAY_MS
+    if now_ms - support > freshness_ms:
+        # The stale-label failure §4 exists to close: evidence exists but is
+        # too old relative to a `now_ms` that keeps moving with no new fixes.
+        return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
+
+    return LabelResult(
+        kind="home" if is_home else "work",
+        confidence=confidence,
+        most_recent_support_ts=support,
+    )
