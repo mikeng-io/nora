@@ -782,11 +782,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         media_sources=media_sources, blobs=blobs,
         stickers=sticker_reader, max_description_chars=cfg.media.sticker_description_max_chars,
     )
-    # `web_search` (Tavily, DEC-73) is wired ONLY when `[search] enabled` AND a
-    # key is present — the `route`-keyless gate. Off (or keyless) leaves the
-    # registry without a provider and `web_search` answers `unavailable` (R-5),
-    # never a silent empty. The key is resolved from the environment here (DEC-8),
-    # never read inside the adapter. No SearXNG/Firecrawl and no `web_fetch`.
+    # `web_search`/`web_fetch` (Tavily, DEC-73/DEC-116) are wired ONLY when
+    # `[search] enabled` AND a key is present — the `route`-keyless gate. Off (or
+    # keyless) leaves the registry without a provider and both tools answer
+    # `unavailable` (R-5), never a silent empty. The key is resolved from the
+    # environment here (DEC-8), never read inside the adapter. One provider, one
+    # key, both verbs — no SearXNG/Firecrawl and no model-chosen-URL fetch over
+    # Nora's own network.
     search_client = None
     if cfg.search.enabled:
         search_key = os.environ.get(cfg.search.api_key_env, "")
@@ -799,6 +801,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 search_depth=cfg.search.search_depth,
                 content_max_chars=cfg.search.content_max_chars,
                 timeout_seconds=cfg.search.timeout_seconds,
+                extract_url=cfg.search.extract_url,
+                extract_depth=cfg.search.extract_depth,
+                extract_max_chars=cfg.search.extract_max_chars,
             )
         else:
             log.warning(

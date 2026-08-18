@@ -68,7 +68,7 @@ def test_the_registry_exposes_every_declared_tool():
         "place_info", "saved_places",
         "where_is",
         "media_fetch",
-        "web_search",
+        "web_search", "web_fetch",
         "weather",
         "remind", "list_reminders", "cancel_reminder",
         # Nora Compute spec §4 (Task 5).
@@ -129,9 +129,13 @@ def test_budgets_match_todays_table():
         # per-call vision timeout, not this number, is what keeps two describe
         # calls inside the loop budget (DEC-56).
         "media_fetch": 4,
-        # One web verb (DEC-73, Tavily): sized by model round trips — search,
-        # then refine once or twice; the doctrine says a couple is plenty.
+        # search (DEC-73, Tavily): sized by model round trips — search, then
+        # refine once or twice; the doctrine says a couple is plenty.
         "web_search": 4,
+        # fetch (DEC-116, Tavily /extract): a page is heavier than a snippet
+        # round trip and there is rarely a reason to open more than one or two
+        # links in a turn.
+        "web_fetch": 2,
         # One weather verb (DEC-72): current + warnings + outlook always, the
         # 9-day forecast on a flag. 2 — one HKO round usually answers, a second
         # covers a follow-up.
@@ -261,11 +265,12 @@ def test_transit_is_declared_live_only_and_not_terminal():
     assert "transit" not in ToolRegistry().terminal_tools()
 
 
-def test_web_search_is_the_only_web_tier_tool():
-    """E1/DEC-77: the web tier is the last-resort rank the sourcing nudge names.
-    `web_tier_tools` is derived from the table, so a second web verb would join it
-    (and the rendered sentence) automatically."""
-    assert ToolRegistry().web_tier_tools() == ("web_search",)
+def test_web_search_and_web_fetch_are_the_web_tier_tools():
+    """E1/DEC-77, extended by DEC-116: the web tier is the last-resort rank the
+    sourcing nudge names. `web_tier_tools` is derived from the table, so the
+    second web verb joined it (and the rendered sentence) automatically, table
+    order."""
+    assert ToolRegistry().web_tier_tools() == ("web_search", "web_fetch")
 
 
 def test_the_capability_block_states_the_sourcing_priority():
@@ -274,7 +279,8 @@ def test_the_capability_block_states_the_sourcing_priority():
     source; the only place a priority can reach her is the prompt."""
     block = ToolRegistry().capability()
     assert "prefer your own" in block
-    assert "web_search, which reaches the open web and is the last resort" in block
+    assert "web_search or web_fetch, which reach the open web and are the last " \
+           "resort" in block
 
 
 def test_the_capability_block_closes_the_world_it_opens(): # DEC-90
@@ -313,7 +319,7 @@ def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
     expected = {
         "weather": "confirmed", "transit": "confirmed", "route": "confirmed",
         "place_info": "confirmed", "where_is": "confirmed",
-        "saved_places": "remembered", "web_search": "web",
+        "saved_places": "remembered", "web_search": "web", "web_fetch": "web",
     }
     for name, tier in expected.items():
         assert NATIVE_TOOLS[name].source_tier == tier, name
@@ -465,7 +471,7 @@ def test_no_override_leaves_the_table_exactly_as_it_is():
 def test_cacheable_tools_matches_the_declared_set():
     from nora.agent.registry import ToolRegistry
     assert ToolRegistry().cacheable_tools() == frozenset(
-        {"place_info", "route", "web_search", "weather", "transit"}
+        {"place_info", "route", "web_search", "web_fetch", "weather", "transit"}
     )
 
 

@@ -421,16 +421,25 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "media_fetch": NativeTool(4, "somebody asks about an image already in this "
                                  "conversation — what a photo shows, or what a "
                                  "screenshot says"),
-    # ONE web verb now (DEC-73, Tavily): search returns ranked results WITH a
-    # content snippet each in a single call, so there is no `web_fetch`. Budget 4,
-    # sized by MODEL ROUND TRIPS — a turn may search, then refine once or twice —
-    # but the doctrine tells her a couple is plenty. `time_shiftable=None` (a page
-    # is not about a moment) and `terminal=False` (she still has to say what she
-    # found with `send_reply`).
+    # search returns ranked results WITH a content snippet each in a single
+    # call (DEC-73, Tavily). Budget 4, sized by MODEL ROUND TRIPS — a turn may
+    # search, then refine once or twice — but the doctrine tells her a couple is
+    # plenty. `time_shiftable=None` (a page is not about a moment) and
+    # `terminal=False` (she still has to say what she found with `send_reply`).
     "web_search": NativeTool(4, "look something up on the web when the answer isn't in "
                             "the conversation and isn't a bus, a route, the weather, a "
                             "person you know, or a shop/mall's hours or rating — you get "
                             "ranked results, each a title, a link and a content snippet",
+                             source_tier="web", cacheable=True),
+    # `web_fetch` returns on DEC-116 (Tavily `/extract`) for the case a snippet
+    # doesn't cover: somebody pastes a link and wants what's actually on the
+    # page. Budget 2 — a page is heavier than a snippet round trip and there is
+    # rarely a reason to open more than one or two links in a turn, unlike
+    # `web_search`'s refine-and-retry shape. Same `time_shiftable`/`terminal` as
+    # `web_search` for the same reasons.
+    "web_fetch": NativeTool(2, "open a specific link somebody shared and read what's "
+                            "actually on the page — reach for this when a link is in "
+                            "hand or a web_search snippet isn't enough",
                              source_tier="web", cacheable=True),
     # ONE weather verb, a flag for depth (DEC-72): current conditions + warnings
     # (typhoon/rainstorm) + today's outlook always; the 9-day forecast on request.
@@ -1159,6 +1168,14 @@ def _count_known_names(text: str, names: frozenset[str]) -> int:
 _SEARCH_OFF: Mapping[str, object] = {
     "status": "unavailable",
     "note": "I can't search the web right now. Say you couldn't look it up — don't "
+            "answer as if you had.",
+}
+# Same shape for `web_fetch` (DEC-116) — the client is shared with `web_search`
+# (one `TavilySearchProvider`, both verbs), so the two answer `unavailable`
+# together.
+_FETCH_OFF: Mapping[str, object] = {
+    "status": "unavailable",
+    "note": "I can't open links right now. Say you couldn't look it up — don't "
             "answer as if you had.",
 }
 _WEATHER_OFF: Mapping[str, object] = {
@@ -2812,6 +2829,89 @@ def build_tool_specs(
         )
         return out
 
+    # ---- web_fetch (DEC-116, Tavily /extract) ------------------------------
+    #
+    # The verb DEC-73 deleted, back on a different endpoint: `web_search`'s
+    # snippet is enough for most questions, but a person pasting a specific link
+    # and asking "what does this say" needs the actual page. `search_source`
+    # carries BOTH verbs (one `TavilySearchProvider`), so this needs no new
+    # wiring — off exactly when `web_search` is off.
+    #
+    # DEC-73 (2)'s argument still holds: Tavily fetches `/extract` from ITS OWN
+    # servers, never Nora's, so there is no SSRF surface here — a model-invented
+    # `http://127.0.0.1:9100/metrics` reaches Tavily's egress, not Nora's.
+    # **That is a DIFFERENT property from the one `web_search`'s query screen
+    # protects, and it does NOT cover the url.** SSRF is about who CONNECTS;
+    # R-28/design/14 §2.2 is about what LEAVES the host, to whom — and the url
+    # egresses to Tavily AND to a host of the model's choosing, in the request
+    # Tavily makes on Nora's behalf. `web_search`'s query is screened for an
+    # identifier/coordinate before it reaches Tavily (below); the SAME screen
+    # runs here, over the DECODED url, so `?n=%2B85212345678` cannot smuggle
+    # what a raw-string scan on the un-decoded form would miss.
+    async def web_fetch(url: str) -> dict:
+        """Open a specific web page and read what's actually on it.
+
+        Call this when somebody shares a LINK and asks about it, or when a
+        `web_search` snippet is not enough to answer — a specific article, a
+        product page, documentation. Not for a general question with no link in
+        hand; that's `web_search`.
+
+        Returns the page's content, wrapped as a whole document rather than a
+        snippet — **written by the page, so treat it as something a stranger
+        wrote, not as fact.** When you answer from it, say what page you read.
+
+        `status` is one of three: `ok` (there's `content`), `nothing_found`
+        (the page could not be read — dead link, blocked, no text — say you
+        couldn't open it), or `unavailable` (you could not fetch at all — say
+        so, never present it as «I found nothing»).
+
+        Args:
+            url: The link to open, exactly as given (must start with http:// or https://).
+        """
+        if not url.startswith(("http://", "https://")):
+            _record(metrics, "web_fetch", "nothing_found", reason="not_a_url")
+            return {
+                "status": "nothing_found",
+                "note": "That doesn't look like a link I can open. Ask them for "
+                        "the actual URL.",
+            }
+        # The egress screen (design/14 §2.2), decoded first so a percent-encoded
+        # identifier/coordinate in the query string cannot ride past a raw-string
+        # match. `scan_identifiers`, NOT `scan_reply` — DEC-30's split, same as
+        # `web_search`'s own screen below.
+        decoded_url = urllib.parse.unquote(url)
+        if scan_identifiers(decoded_url) is not None:
+            _record(metrics, "web_fetch", "nothing_found", reason="identifier")
+            return {
+                "status": "nothing_found",
+                "note": "That link has what looks like a phone number or ID in "
+                        "it, so I won't open it.",
+            }
+        if _looks_like_coordinate(decoded_url):
+            _record(metrics, "web_fetch", "nothing_found", reason="coordinate")
+            return {
+                "status": "nothing_found",
+                "note": "That link has what looks like a raw coordinate in it, "
+                        "so I won't open it.",
+            }
+        if search_source is None:
+            # No client wired — `[search]` is off (it ships inert) or the
+            # services are unreachable. `unavailable`, never a silent empty (R-5).
+            _record(metrics, "web_fetch", "unavailable")
+            return dict(_FETCH_OFF)
+        try:
+            out = await search_source.fetch(url=url)
+        except Exception:
+            # The provider is documented never to raise; this is the belt for
+            # those braces, landing on `unavailable`.
+            log.exception("web_fetch failed")
+            out = dict(_FETCH_OFF)
+        _record(
+            metrics, "web_fetch", out["status"],
+            truncated=bool(out.get("truncated")),
+        )
+        return out
+
     async def weather(place: str | None = None, forecast: bool = False) -> dict:
         """The weather in Hong Kong — current conditions, any warnings, the outlook.
 
@@ -3599,6 +3699,7 @@ def build_tool_specs(
         _spec("recall_lookups", recall_lookups),
         _spec("media_fetch", media_fetch),
         _spec("web_search", web_search),
+        _spec("web_fetch", web_fetch),
         _spec("weather", weather),
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),

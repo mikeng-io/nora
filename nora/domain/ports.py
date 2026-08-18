@@ -1064,17 +1064,24 @@ class WeatherProvider(Protocol):
 
 @runtime_checkable
 class SearchProvider(Protocol):
-    """`query -> {status, results}` web search behind the one `web_search` tool
-    (DEC-73). NEVER raises — a transport/auth failure is `{"status": "unavailable"}`,
-    never an exception into the loop (R-5). `TavilySearchProvider` today; a PORT
-    (operator: "same as web_search — adaptor") so another search backend plugs in
-    with no tool change. Returns ranked results, each `{url, content}` with the
-    content `untrusted`-wrapped and clamped; a second implementation means a shared
-    contract suite both pass (tests/contract/). There is no `fetch` verb and no
-    SSRF surface — the provider searches from ITS servers and is never handed a
-    model-chosen URL, so the old `is_global`/`allowed_urls` apparatus is gone."""
+    """`query -> {status, results}` web search, and `url -> {status, content}`
+    page extraction, behind the `web_search`/`web_fetch` tools (DEC-73, DEC-116).
+    NEVER raises — a transport/auth failure is `{"status": "unavailable"}`, never
+    an exception into the loop (R-5). `TavilySearchProvider` today; a PORT
+    (operator: "same as web_search — adaptor") so another backend plugs in with
+    no tool change. `search` returns ranked results, `fetch` returns one page's
+    content; both `untrusted`-wrapped and clamped, and a second implementation
+    means a shared contract suite both pass (tests/contract/). **Still no SSRF
+    surface** (DEC-73 (2)'s argument, unchanged by `fetch`'s return): the
+    provider is handed a URL over its own authenticated API and fetches it from
+    ITS servers, never Nora's — Nora's own network never makes a connection
+    chosen by model output, so the old `is_global`/`allowed_urls` apparatus
+    stays gone. Contrast `LinkPreviewSource` (DEC-87), which IS handed a URL and
+    fetches it over Nora's own network, and so re-grew that guard."""
 
     async def search(self, *, query: str) -> dict[str, Any]: ...
+
+    async def fetch(self, *, url: str) -> dict[str, Any]: ...
 
 
 @runtime_checkable
@@ -1099,11 +1106,12 @@ class LinkPreviewSource(Protocol):
     and a preview must never be the reason the group hears nothing.
 
     Whoever implements this inherits an **SSRF obligation**, because unlike
-    `SearchProvider` (DEC-73 (2): Tavily searches from ITS servers and is never
-    handed a URL) this port IS handed a URL that originated in model output, and
-    fetches it from Nora's own network — the exact exposure the retired
-    `web_fetch` had. `OpenGraphPreviewSource` documents the guard it applies;
-    a second implementation that does not apply one reopens DEC-73's hole.
+    `SearchProvider.fetch` (DEC-116: also handed a URL that originated in model
+    output, but fetches it from ITS OWN servers) this port fetches the URL over
+    NORA'S OWN network — the exact exposure the retired `web_fetch` had, and
+    which `SearchProvider.fetch` deliberately does not reopen.
+    `OpenGraphPreviewSource` documents the guard it applies; a second
+    implementation that does not apply one reopens DEC-73's hole.
     """
 
     async def preview_for(self, *, url: str) -> LinkPreview | None: ...

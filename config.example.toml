@@ -294,9 +294,10 @@ metrics_port = 9101
 # identically today; v1 matches design/14's measurement). The three caps bound
 # the input-token cost of retrieved text, re-sent on every subsequent model call.
 [search]
-# web_search via Tavily (DEC-73) — one call returns ranked results with content,
-# no SSRF surface. Off here for the "explicitly on" house rule; a real deployment
-# sets enabled=true AND exports the key named by api_key_env.
+# web_search + web_fetch via Tavily (DEC-73, DEC-116) — one call returns ranked
+# results with content, a second opens a specific link; both fetch from Tavily's
+# own servers, no SSRF surface. Off here for the "explicitly on" house rule; a
+# real deployment sets enabled=true AND exports the key named by api_key_env.
 enabled = false
 api_key_env = "TAVILY_API_KEY"   # NAMES the env var; the key never lives here (DEC-8)
 # url = "https://api.tavily.com/search"
@@ -304,6 +305,9 @@ api_key_env = "TAVILY_API_KEY"   # NAMES the env var; the key never lives here (
 # max_results = 5                 # ≤ 20
 # content_max_chars = 1500        # per-result snippet clamp (bounds re-sent tokens)
 # timeout_seconds = 12.0
+# extract_url = "https://api.tavily.com/extract"
+# extract_depth = "basic"        # "basic" (1 credit) | "advanced" (2, richer)
+# extract_max_chars = 3000        # fetched-page clamp (bounds re-sent tokens)
 
 [preview]
 # Sender-generated link previews on Nora's OUTBOUND messages: when a reply
