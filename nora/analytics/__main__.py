@@ -36,6 +36,14 @@ __all__ = ["build_parser", "main"]
 # tick, which is always correct because the fire conditions are themselves
 # watermark-derived, not based on this dict).
 _LastRunAt = dict[str, float]
+# When a subject's `run_once` last completed WITHOUT raising, and when a
+# subject was first seen (i.e. this process's first tick that reached it).
+# Both hold wall-clock seconds and back `nora_analytics_rollup_age_seconds`
+# — the same shape `nora.presence.collector`'s `_last_success_ms` /
+# `_first_seen_ms` pair uses (`_publish_liveness`'s docstring): a subject
+# that has never yet succeeded still emits a CLIMBING age from when it was
+# first attempted, rather than no series at all.
+_LastSuccessAt = dict[str, float]
 
 
 def _metrics_app(deps: AnalyticsDependencies) -> web.Application:
@@ -59,31 +67,61 @@ def _metrics_app(deps: AnalyticsDependencies) -> web.Application:
     return app
 
 
-async def _tick(deps: AnalyticsDependencies, last_run: _LastRunAt) -> None:
+async def _tick(
+    deps: AnalyticsDependencies, last_run: _LastRunAt,
+    last_success: _LastSuccessAt, first_seen: _LastSuccessAt,
+) -> None:
     """One tick: for every subject, evaluate the three fire conditions and
     call `MobilityRollup.run_once` if any holds. `run_once` itself is cheap
     to call speculatively (it reads a watermark and does nothing further if
     there is truly nothing to do), so the safety_lag/settled_seconds checks
     here are an optimization — never processing when there is nothing new —
-    not a correctness requirement `run_once` depends on."""
+    not a correctness requirement `run_once` depends on.
+
+    Spec §5's isolation requirement: one subject's failure neither aborts
+    the sweep nor advances THAT subject's watermark (the store only
+    advances a watermark on a write `run_once` itself performs before
+    returning normally), so it retries next tick — every other subject
+    still gets processed this tick, and the daemon (and its `/metrics`
+    endpoint) stays up."""
     rollup = deps.rollup
     if rollup is None:
         return  # `_run` only loops here once it has confirmed rollup is set
     now_ms = int(time.time() * 1000)
+    now_s = now_ms / 1000
     for subject_id, person_ids, circle_id in deps.subjects:
+        first_seen.setdefault(subject_id, now_s)
         _, _ = await rollup.watermark(subject_id=subject_id)
-        age_s = now_ms / 1000 - last_run.get(subject_id, 0)
+        age_s = now_s - last_run.get(subject_id, 0)
         # max_age_seconds ALWAYS eventually fires, at lag == 0 or otherwise
         # (spec §4) — it is the condition that guarantees no subject is
         # skipped forever even if the other two never trigger.
-        if age_s < deps.tick_seconds:
-            continue  # this subject was just processed; do not double-run within one tick
-        await rollup.run_once(
-            subject_id=subject_id, person_ids=person_ids, circle_id=circle_id,
-            now_ms=now_ms,
+        if age_s >= deps.tick_seconds:
+            last_run[subject_id] = now_s
+            try:
+                await rollup.run_once(
+                    subject_id=subject_id, person_ids=person_ids, circle_id=circle_id,
+                    now_ms=now_ms,
+                )
+            except Exception:
+                log.exception(
+                    "analytics rollup failed for subject %s — isolated, "
+                    "other subjects still processed this tick, this one "
+                    "retries next tick",
+                    subject_id,
+                )
+            else:
+                last_success[subject_id] = now_s
+        # Computed fresh every tick, success or failure or skip — never
+        # hardcoded to 0.0, or the gauge could never climb to reveal «up but
+        # not deriving» (the one thing it exists to catch). Baseline is the
+        # last SUCCESS, falling back to first-seen for a subject that has
+        # never yet succeeded.
+        baseline = last_success.get(subject_id, first_seen[subject_id])
+        deps.metrics.gauge(
+            "nora_analytics_rollup_age_seconds", max(0.0, now_s - baseline),
+            subject=subject_id,
         )
-        deps.metrics.gauge("nora_analytics_rollup_age_seconds", 0.0, subject=subject_id)
-        last_run[subject_id] = now_ms / 1000
 
 
 async def _run(config_path: Path) -> None:
@@ -99,8 +137,10 @@ async def _run(config_path: Path) -> None:
             log.info("analytics disabled — nothing to derive; exiting")
             return
         last_run: _LastRunAt = {}
+        last_success: _LastSuccessAt = {}
+        first_seen: _LastSuccessAt = {}
         while True:
-            await _tick(deps, last_run)
+            await _tick(deps, last_run, last_success, first_seen)
             await asyncio.sleep(deps.tick_seconds)
     finally:
         await runner.cleanup()
