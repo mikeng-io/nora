@@ -99,8 +99,19 @@ class SegmentationResult:
 def _dwell_weighted_centroid(
     fixes: list[RawFix], dwells: list[int]
 ) -> tuple[float, float]:
-    total = sum(dwells) or 1  # a single-fix group has total dwell 0; avoid /0
-    weights = dwells or [1] * len(fixes)
+    # `any(dwells)` (not `dwells or ...`) is required here: a group's dwell
+    # list always has real ELEMENTS even when none of them are dwell TIME —
+    # a lone fix's weights are `[0]` (its own no-lookahead entry), which is
+    # a non-empty (thus truthy) list containing no real weight. Falling back
+    # on truthiness alone would never fire for that case, weighting the
+    # fix to 0 and centroiding to (0.0, 0.0) — Null Island, not the fix's
+    # real coordinates. `total` is computed from the (possibly
+    # fallen-back-to) `weights`, not the original `dwells`, so an
+    # all-zero-but-nonempty multi-fix group (e.g. duplicate timestamps)
+    # divides by its fallback equal weights and not by the un-fallen-back
+    # (and therefore zero) original total.
+    weights = dwells if any(dwells) else [1] * len(fixes)
+    total = sum(weights) or 1
     lat = sum(f.lat * w for f, w in zip(fixes, weights, strict=True)) / total
     lng = sum(f.lng * w for f, w in zip(fixes, weights, strict=True)) / total
     return lat, lng
@@ -121,20 +132,27 @@ def _close(
     stored as a low-confidence stay (the same fail-closed posture as
     labelling, one layer down).
 
-    `dwells` is the group's full per-fix dwell list, including the final
-    entry for the transition INTO the breaking candidate — the threshold is
-    measured against that (the group was held from its first fix until the
-    fix that proved the subject left, spec §3.2), not merely the span between
-    its own first and last fix. The centroid, in contrast, weights the
-    group's own last fix as zero (no dwell known within the group's own
-    boundary — same posture as `open_stay`'s trailing zero) rather than
-    crediting it with time spent outside the group."""
+    The threshold is measured as `group[-1].ts - group[0].ts` — the span
+    between the group's OWN first and last fix, matching `Stay`'s own
+    invariant that `ended_ts - started_ts` IS the stay's total dwell. It is
+    deliberately NOT measured against any time after the group's last fix
+    (e.g. the transition into the candidate that broke the group): doing so
+    would let a stay's recorded duration include time that happens after its
+    own `ended_ts`, and — pathologically — let a single isolated fix alone
+    clear the threshold via a long capped dwell into the NEXT fix, producing
+    a zero-duration "confirmed" stay with `started_ts == ended_ts`.
+
+    `dwells` is the group's own internal per-fix dwell list (`len(group) -
+    1` entries: the transitions BETWEEN its own fixes, not into whatever
+    broke it) — `_dwell_weighted_centroid` pads it with a trailing 0 for the
+    group's last fix, which — like `open_stay` — has no known continuation
+    within this group's own boundary."""
     if not group:
         return None
-    total_dwell = sum(dwells)
+    total_dwell = group[-1].ts - group[0].ts
     if total_dwell < min_dwell_ms:
         return None
-    lat, lng = _dwell_weighted_centroid(group, [*dwells[:-1], 0])
+    lat, lng = _dwell_weighted_centroid(group, [*dwells, 0])
     return Stay(
         subject_id=subject_id, person_id=person_id, circle_id=circle_id,
         started_ts=group[0].ts, ended_ts=group[-1].ts,
@@ -175,12 +193,11 @@ def segment_stays(
             continue
         # `candidate` breaks the radius test — close what came before it
         # (if it reached min_dwell_ms) and start a new group at `candidate`.
-        # Pass the full `dwells`, including its last entry (the transition
-        # INTO `candidate`) — `_close` measures the threshold against that
-        # (the group was held until the fix that proved the subject left)
-        # and pads the centroid weights itself.
+        # `dwells[:-1]` is the group's own internal transitions only — the
+        # last entry (just appended above) is the transition INTO
+        # `candidate`, which does not belong to `group`.
         stay = _close(
-            group, dwells, subject_id=subject_id, person_id=person_id,
+            group, dwells[:-1], subject_id=subject_id, person_id=person_id,
             circle_id=circle_id, min_dwell_ms=min_dwell_ms,
         )
         if stay is not None:
