@@ -1,0 +1,202 @@
+"""Pure mobility derivation — stay segmentation, place clustering, labelling
+(docs/superpowers/specs/2026-08-18-presence-analytics-substrate-design.md).
+
+Standard library only, like `nora.domain.presence` — this module adds no
+numpy/scipy even though `pyproject.toml`'s "domain is framework-free"
+contract does not currently forbid them (nothing here needs them; DBSCAN at
+this scale, ~3,600 centroids/subject at 720-day retention, is a few dozen
+lines of haversine).
+
+`dwell_ms` is the ONE place `next_ts - ts` is computed and capped (spec
+§3.3) — every derived figure in this module and its callers goes through it,
+so no consumer can get the 5.6x count-weighting bias wrong independently.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from nora.domain.presence import haversine_distance_m
+
+__all__ = [
+    "DWELL_CAP_MS",
+    "RawFix",
+    "SegmentationResult",
+    "Stay",
+    "dwell_ms",
+    "segment_stays",
+]
+
+# The observed 1800s still-ceiling (config.toml's cadence_still_seconds)
+# plus slack (spec §3.3, design/27 §1.1).
+DWELL_CAP_MS = 1_900_000
+
+
+def dwell_ms(ts: int, next_ts: int | None, cap_ms: int = DWELL_CAP_MS) -> int:
+    """How long a fix's position held, capped so a multi-day gap between
+    visits does not smear across it. `None` (no lookahead fix — this is the
+    trailing fix in whatever window the caller supplied) yields 0, never the
+    cap: a guess forward would inflate whoever's fixes happen to end a
+    batch, and the caller (segmentation) already treats a still-open stay
+    specially rather than needing this to guess its length."""
+    if next_ts is None:
+        return 0
+    return min(next_ts - ts, cap_ms)
+
+
+@dataclass(frozen=True)
+class RawFix:
+    """One accuracy/wire_state-filtered fix, ts-ascending as segmentation
+    requires — filtering and ordering are `MobilityStore`'s job (Task 6);
+    this type is deliberately minimal so domain tests do not need a full
+    `PresenceFix`/`WireState` roundtrip."""
+
+    id: int
+    ts: int
+    lat: float
+    lng: float
+
+
+@dataclass(frozen=True)
+class Stay:
+    """One CLOSED stay-point: consecutive fixes that stayed within
+    `radius_m` of a running centroid for at least `min_dwell_ms`.
+
+    `lat`/`lng` are the dwell-weighted centroid, not a simple mean — a fix
+    that held for 20 minutes counts 20x a fix that held for 1 (spec §3.3).
+    `ended_ts - started_ts` IS the stay's total dwell to within the last
+    fix's own (zero, no-lookahead) contribution — the two are equal because
+    dwell only ever gets CAPPED across a gap that would itself have broken
+    the stay's radius test, so no capping occurs within one stay's fixes.
+    """
+
+    subject_id: str
+    person_id: str
+    circle_id: str
+    started_ts: int
+    ended_ts: int
+    lat: float
+    lng: float
+    radius_m: float
+    fix_count: int
+
+
+@dataclass(frozen=True)
+class SegmentationResult:
+    """`closed` are stays segmentation is certain about — a later fix in the
+    input broke their radius test, so nothing can extend them further.
+    `open_stay` is the trailing group, if any: it is NOT yet known whether
+    the subject is still there, so it is never itself returned as a `Stay`
+    committed to storage. The ROLLUP (Task 7) decides whether an open group
+    is closeable this cycle — only once `settled_seconds` has elapsed since
+    its last fix — which is a wall-clock decision this pure function does
+    not make."""
+
+    closed: tuple[Stay, ...]
+    open_stay: Stay | None
+
+
+def _dwell_weighted_centroid(
+    fixes: list[RawFix], dwells: list[int]
+) -> tuple[float, float]:
+    total = sum(dwells) or 1  # a single-fix group has total dwell 0; avoid /0
+    weights = dwells or [1] * len(fixes)
+    lat = sum(f.lat * w for f, w in zip(fixes, weights, strict=True)) / total
+    lng = sum(f.lng * w for f, w in zip(fixes, weights, strict=True)) / total
+    return lat, lng
+
+
+def _max_radius_m(fixes: list[RawFix], lat: float, lng: float) -> float:
+    if not fixes:
+        return 0.0
+    return max(haversine_distance_m(f.lat, f.lng, lat, lng) for f in fixes)
+
+
+def _close(
+    group: list[RawFix], dwells: list[int], *,
+    subject_id: str, person_id: str, circle_id: str, min_dwell_ms: int,
+) -> Stay | None:
+    """Turn a candidate group into a `Stay`, or None if it never reached
+    `min_dwell_ms` — a span under the threshold is dropped entirely, not
+    stored as a low-confidence stay (the same fail-closed posture as
+    labelling, one layer down).
+
+    `dwells` is the group's full per-fix dwell list, including the final
+    entry for the transition INTO the breaking candidate — the threshold is
+    measured against that (the group was held from its first fix until the
+    fix that proved the subject left, spec §3.2), not merely the span between
+    its own first and last fix. The centroid, in contrast, weights the
+    group's own last fix as zero (no dwell known within the group's own
+    boundary — same posture as `open_stay`'s trailing zero) rather than
+    crediting it with time spent outside the group."""
+    if not group:
+        return None
+    total_dwell = sum(dwells)
+    if total_dwell < min_dwell_ms:
+        return None
+    lat, lng = _dwell_weighted_centroid(group, [*dwells[:-1], 0])
+    return Stay(
+        subject_id=subject_id, person_id=person_id, circle_id=circle_id,
+        started_ts=group[0].ts, ended_ts=group[-1].ts,
+        lat=lat, lng=lng, radius_m=_max_radius_m(group, lat, lng),
+        fix_count=len(group),
+    )
+
+
+def segment_stays(
+    fixes: list[RawFix], *, subject_id: str, person_id: str, circle_id: str,
+    radius_m: float, min_dwell_ms: int,
+) -> SegmentationResult:
+    """Stay-point detection (spec §3.2): roll consecutive fixes into a
+    running group while every fix seen so far stays within `radius_m` of the
+    group's dwell-weighted centroid; the fix that would break that bound
+    starts a new group instead. A group closes into a `Stay` only once its
+    span reaches `min_dwell_ms` (spec §3.2's inherited 120m/600s defaults —
+    see spec §7.1: neither is measured, both are config knobs).
+
+    `fixes` must already be ts-ascending and pre-filtered (accuracy_m <=
+    100, wire_state == 'live' — the store's job, Task 6); this function does
+    not re-filter, per "interpret once."
+    """
+    if not fixes:
+        return SegmentationResult(closed=(), open_stay=None)
+
+    closed: list[Stay] = []
+    group: list[RawFix] = [fixes[0]]
+    dwells: list[int] = []
+
+    for i in range(1, len(fixes)):
+        candidate = fixes[i]
+        dwells.append(dwell_ms(group[-1].ts, candidate.ts))
+        trial = [*group, candidate]
+        lat, lng = _dwell_weighted_centroid(trial, [*dwells, 0])
+        if _max_radius_m(trial, lat, lng) <= radius_m:
+            group.append(candidate)
+            continue
+        # `candidate` breaks the radius test — close what came before it
+        # (if it reached min_dwell_ms) and start a new group at `candidate`.
+        # Pass the full `dwells`, including its last entry (the transition
+        # INTO `candidate`) — `_close` measures the threshold against that
+        # (the group was held until the fix that proved the subject left)
+        # and pads the centroid weights itself.
+        stay = _close(
+            group, dwells, subject_id=subject_id, person_id=person_id,
+            circle_id=circle_id, min_dwell_ms=min_dwell_ms,
+        )
+        if stay is not None:
+            closed.append(stay)
+        group = [candidate]
+        dwells = []
+
+    # Whatever remains in `group` never saw a breaking fix within this
+    # window — it is the open stay, not a closed one (rollup, Task 7,
+    # decides closeability against wall-clock `settled_seconds`).
+    open_lat, open_lng = _dwell_weighted_centroid(group, [*dwells, 0])
+    open_stay = Stay(
+        subject_id=subject_id, person_id=person_id, circle_id=circle_id,
+        started_ts=group[0].ts, ended_ts=group[-1].ts,
+        lat=open_lat, lng=open_lng,
+        radius_m=_max_radius_m(group, open_lat, open_lng),
+        fix_count=len(group),
+    )
+    return SegmentationResult(closed=tuple(closed), open_stay=open_stay)
