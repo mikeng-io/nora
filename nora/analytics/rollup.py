@@ -80,6 +80,13 @@ class MobilityRollup:
         self._cfg = config
         self._metrics = metrics
 
+    async def watermark(self, *, subject_id: str) -> tuple[int, int]:
+        """Exposes the store's watermark read without leaking the store
+        itself — `nora.analytics.__main__`'s tick loop uses this to decide
+        whether a subject is worth calling `run_once` for, without reaching
+        into a private attribute."""
+        return await self._store.watermark(subject_id=subject_id)
+
     async def run_once(
         self, *, subject_id: str, person_ids: list[str], circle_id: str, now_ms: int,
     ) -> None:
