@@ -422,6 +422,7 @@ const BigWalkPlayerLookSchema = z.object({
   torso: z.number().optional(),
   legs: z.number().optional(),
   walkingProven: z.boolean().optional(),
+  linkedPerson: z.object({ personId: z.string(), displayName: z.string() }).optional(),
 });
 export type BigWalkPlayerLook = z.infer<typeof BigWalkPlayerLookSchema>;
 

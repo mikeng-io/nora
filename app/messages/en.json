@@ -206,6 +206,12 @@
     "worldSeed": "World seed",
     "bigWalkInventory": "Inventory items",
     "bigWalkNotes": "Notes",
+    "bigWalkChecklistLabel": "Checklist",
+    "bigWalkCrewLabel": "Crew",
+    "bigWalkWalkingProven": "Walking proven",
+    "bigWalkSlotName": "Save slot {name}",
+    "bigWalkAssistOff": "Assist off",
+    "bigWalkShowAllGourds": "Show all {count}",
     "linkedPerson": "This is {name}"
   },
   "map": {

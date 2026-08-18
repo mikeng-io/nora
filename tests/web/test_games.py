@@ -252,8 +252,47 @@ async def test_weekly_calls_the_server_scoped_route(pulse):
 
 async def test_world_calls_the_server_scoped_route(pulse):
     _fake, client = pulse
-    body = await build_game_server_world_payload(client=client, server_id="abiotic_factor")
+    body = await build_game_server_world_payload(
+        client=client, server_id="abiotic_factor", persons=NO_PERSONS,
+    )
     assert body["path"] == "/v1/servers/abiotic_factor/world"
+
+
+async def test_world_players_are_enriched_with_a_linked_person_when_steam_id_resolves(pulse):
+    fake, client = pulse
+    fake.echo_extra_fields = {"players": [{"steamId": "76561190000000001", "walkingProven": True}]}
+    persons = Persons(
+        by_person={
+            "aaron_larsen": PersonRef(person_id="aaron_larsen", name="Aaron", honcho_peer_id="aaron_larsen"),
+        },
+        index={("pulse", "76561190000000001"): "aaron_larsen"},
+    )
+
+    body = await build_game_server_world_payload(
+        client=client, server_id="big_walk", persons=persons,
+    )
+
+    assert body["players"][0]["linkedPerson"] == {"personId": "aaron_larsen", "displayName": "Aaron"}
+    assert body["players"][0]["walkingProven"] is True
+
+
+async def test_world_players_have_no_linked_person_when_steam_id_does_not_resolve(pulse):
+    fake, client = pulse
+    fake.echo_extra_fields = {"players": [{"steamId": "76561190000000001"}]}
+
+    body = await build_game_server_world_payload(
+        client=client, server_id="big_walk", persons=NO_PERSONS,
+    )
+
+    assert "linkedPerson" not in body["players"][0]
+
+
+async def test_world_with_no_players_key_passes_through_unchanged(pulse):
+    _fake, client = pulse
+    body = await build_game_server_world_payload(
+        client=client, server_id="abiotic_factor", persons=NO_PERSONS,
+    )
+    assert "players" not in body
 
 
 async def test_insights_forwards_the_days_param(pulse):
@@ -362,7 +401,9 @@ async def test_weekly_is_unavailable_when_no_client_is_configured():
 
 async def test_world_is_unavailable_when_no_client_is_configured():
     with pytest.raises(GamesUnavailableError, match="not configured"):
-        await build_game_server_world_payload(client=None, server_id="abiotic_factor")
+        await build_game_server_world_payload(
+            client=None, server_id="abiotic_factor", persons=NO_PERSONS,
+        )
 
 
 async def test_insights_is_unavailable_when_no_client_is_configured():

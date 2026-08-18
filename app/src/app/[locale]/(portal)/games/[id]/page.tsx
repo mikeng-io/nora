@@ -124,22 +124,35 @@ export default function GameServerPage() {
 
   useEffect(() => {
     let cancelled = false;
-    // Fail-soft per section, matching Pulse's own server-detail page — one
-    // flaky secondary panel must never blank the whole page.
+    fetchServerWorld(id)
+      .catch(() => null)
+      .then((wo) => {
+        if (!cancelled) setWorld(wo);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // Weekly summary and insights (leaderboard, death causes, coplay) are built
+  // from container-log-derived sessions and kill events — a local-save game
+  // like Big Walk has neither, so these panels have nothing to show and are
+  // skipped entirely rather than rendered empty.
+  useEffect(() => {
+    if (!status || isLocalSave) return;
+    let cancelled = false;
     Promise.all([
       fetchServerWeekly(id).catch(() => null),
-      fetchServerWorld(id).catch(() => null),
       fetchServerInsights(id, 30).catch(() => null),
-    ]).then(([w, wo, i]) => {
+    ]).then(([w, i]) => {
       if (cancelled) return;
       setWeekly(w);
-      setWorld(wo);
       setInsights(i);
     });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, status, isLocalSave]);
 
   return (
     <div>
@@ -787,78 +800,133 @@ function AbioticWorldPanels({ world, locale }: { world: WorldState; locale: stri
   );
 }
 
-function completionBarItems(entries: Record<string, number>): BarListItem[] {
-  return Object.entries(entries)
-    .filter(([, v]) => v > 0)
-    .sort(([, a], [, b]) => b - a)
-    .map(([key, value]): BarListItem => ({
-      key, label: key, value, valueLabel: String(value),
-    }));
+/**
+ * Big Walk's completion values are opaque internal save-flag ids, not counts
+ * or scores (e.g. `gourdBlindfoldFishtrap: 1542` vs `gourdEasySimPress: 153`)
+ * — only presence/nonzero-ness is meaningful. Nobody has curated real names
+ * for these ids the way Abiotic's `itemLabels.ts` does, so this de-slugs the
+ * internal id into an honest, generic label instead of inventing lore.
+ */
+function deslugBigWalkId(id: string, prefixes: string[]): string {
+  let rest = id;
+  for (const prefix of prefixes) {
+    if (rest.toLowerCase().startsWith(prefix.toLowerCase())) {
+      rest = rest.slice(prefix.length);
+      break;
+    }
+  }
+  const spaced = rest.replace(/([a-z0-9])([A-Z])/g, "$1 $2").trim();
+  return spaced.length > 0 ? spaced : id;
 }
+
+function ChecklistChip({ label, done }: { label: string; done: boolean }) {
+  return (
+    <span
+      className={cn(
+        "rounded-full border px-2 py-0.5 text-[11px]",
+        done ? "border-transparent bg-success/15 text-success" : "border-border-strong text-text-muted",
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+const CHECKLIST_CATEGORIES = [
+  { key: "bigKeys", labelKey: "progressBigKeys", prefixes: ["bigKey"] },
+  { key: "namedDoors", labelKey: "progressNamedDoors", prefixes: [] },
+  { key: "lookoutLights", labelKey: "progressLookoutLights", prefixes: ["LookoutLight"] },
+  { key: "fmStations", labelKey: "progressFmStations", prefixes: ["FmStation"] },
+] as const;
 
 function BigWalkWorldPanels({ world, locale }: { world: BigWalkWorld; locale: string }) {
   const t = useTranslations("games");
   void locale;
 
   const noteEntries = Object.entries(world.notes);
+  const gourdEntries = Object.entries(world.completions.gourds).sort(([a], [b]) => a.localeCompare(b));
+  const gourdsDone = gourdEntries.filter(([, v]) => v > 0).length;
+  const checklistGroups = CHECKLIST_CATEGORIES.map((category) => ({
+    ...category,
+    entries: Object.entries(world.completions[category.key]).sort(([a], [b]) => a.localeCompare(b)),
+  })).filter((group) => group.entries.length > 0);
 
   return (
     <>
-      <Card className="mb-6">
-        <CardHeader className="p-4 pb-2">
-          <CardTitle className="font-mono text-[10px] font-normal uppercase tracking-wider text-text-muted">
-            {t("worldLabel")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 p-4 pt-0">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Stat label={t("worldSeed")} value={String(world.worldSeed)} />
-            <Stat label={t("progressGourds")} value={String(Object.keys(world.completions.gourds).length)} />
-            <Stat label={t("bigWalkInventory")} value={String(world.inventory.length)} />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-text-muted">
-                {t("progressGourds")}
-              </p>
-              <BarList
-                items={completionBarItems(world.completions.gourds)}
-                emptyLabel={t("noStockpileYet")}
-                showMoreLabel={(n) => t("showMore", { count: n })}
-                showLessLabel={t("showLess")}
-              />
-            </div>
-            <div>
-              <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-text-muted">
-                {t("progressBigKeys")}
-              </p>
-              <BarList
-                items={completionBarItems(world.completions.bigKeys)}
-                emptyLabel={t("noStockpileYet")}
-                showMoreLabel={(n) => t("showMore", { count: n })}
-                showLessLabel={t("showLess")}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {checklistGroups.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="font-mono text-[10px] font-normal uppercase tracking-wider text-text-muted">
+              {t("bigWalkChecklistLabel")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 p-4 pt-0">
+            {checklistGroups.map((group) => (
+              <div key={group.key}>
+                <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-text-muted">
+                  {t(group.labelKey)}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.entries.map(([id, value]) => (
+                    <ChecklistChip key={id} label={deslugBigWalkId(id, [...group.prefixes])} done={value > 0} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {gourdEntries.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="font-mono text-[10px] font-normal uppercase tracking-wider text-text-muted">
+              {t("progressGourds")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0">
+            <p className="mb-3 text-[15px] font-medium text-text-primary">{gourdsDone}</p>
+            <details>
+              <summary className="cursor-pointer select-none font-mono text-[10px] uppercase tracking-wide text-text-muted">
+                {t("bigWalkShowAllGourds", { count: gourdEntries.length })}
+              </summary>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {gourdEntries.map(([id, value]) => (
+                  <ChecklistChip key={id} label={deslugBigWalkId(id, ["gourd"])} done={value > 0} />
+                ))}
+              </div>
+            </details>
+          </CardContent>
+        </Card>
+      )}
 
       {world.players.length > 0 && (
         <Card className="mb-6">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="font-mono text-[10px] font-normal uppercase tracking-wider text-text-muted">
-              {t("playersHeading")}
+              {t("bigWalkCrewLabel")}
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <ul className="space-y-1.5">
-              {world.players.map((p) => (
-                <li key={p.steamId} className="flex items-center gap-1.5 text-[13px] text-text-secondary">
-                  <User className="h-3 w-3 text-text-muted" />
-                  <span className="font-mono">{p.steamId}</span>
-                </li>
-              ))}
-            </ul>
+          <CardContent className="flex flex-col gap-2.5 p-4 pt-0">
+            {world.players.map((p) => (
+              <div key={p.steamId} className="flex items-center gap-2.5">
+                <PersonAvatar
+                  seed={p.linkedPerson?.personId ?? p.steamId}
+                  size={28}
+                  className="rounded-full overflow-hidden"
+                />
+                {p.linkedPerson ? (
+                  <span className="text-[13px] text-text-secondary">{p.linkedPerson.displayName}</span>
+                ) : (
+                  <span className="font-mono text-[12px] text-text-muted">{p.steamId}</span>
+                )}
+                {p.walkingProven && (
+                  <Badge variant="designed" className="ml-auto">
+                    {t("bigWalkWalkingProven")}
+                  </Badge>
+                )}
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
@@ -873,13 +941,30 @@ function BigWalkWorldPanels({ world, locale }: { world: BigWalkWorld; locale: st
           <CardContent className="flex flex-col gap-2 p-4 pt-0">
             {noteEntries.map(([key, value]) => (
               <p key={key} className="text-[12.5px] text-text-secondary">
-                <span className="font-mono text-[10px] uppercase text-text-muted">{key}</span>{" "}
                 {value}
               </p>
             ))}
           </CardContent>
         </Card>
       )}
+
+      <Card className="mb-6">
+        <CardHeader className="p-4 pb-2">
+          <CardTitle className="font-mono text-[10px] font-normal uppercase tracking-wider text-text-muted">
+            {t("worldLabel")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 p-4 pt-0">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Stat label={t("worldSeed")} value={String(world.worldSeed)} />
+            <Stat label={t("bigWalkInventory")} value={String(world.inventory.length)} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-text-muted">
+            <span>{t("bigWalkSlotName", { name: world.slotName })}</span>
+            {world.skipAidsActive && <Badge variant="designed">{t("bigWalkAssistOff")}</Badge>}
+          </div>
+        </CardContent>
+      </Card>
     </>
   );
 }

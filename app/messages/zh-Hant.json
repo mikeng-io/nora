@@ -206,6 +206,12 @@
     "worldSeed": "世界種子",
     "bigWalkInventory": "背包物品",
     "bigWalkNotes": "筆記",
+    "bigWalkChecklistLabel": "進度清單",
+    "bigWalkCrewLabel": "隊員",
+    "bigWalkWalkingProven": "識行路",
+    "bigWalkSlotName": "存檔位 {name}",
+    "bigWalkAssistOff": "已關輔助",
+    "bigWalkShowAllGourds": "顯示全部 {count} 個",
     "linkedPerson": "呢個係 {name}"
   },
   "map": {

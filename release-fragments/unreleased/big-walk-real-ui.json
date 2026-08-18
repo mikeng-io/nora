@@ -1,0 +1,16 @@
+{
+  "type": "feature",
+  "summary": "Big Walk's detail page is a real, designed presentation of its save data instead of an Abiotic Factor layout reused with different labels — a checklist of named progress (big keys, doors, lookout lights, FM stations), an honestly de-slugged gourd list, a crew list resolved to real identities where possible, and world info, replacing raw internal ids shown as bar-chart magnitudes.",
+  "details": [
+    "Completion categories are no longer rendered as a bar chart sized by their raw internal save-flag id (a meaningless number, not a count or score) — bigKeys/namedDoors/lookoutLights/fmStations render as a done/not-done checklist of de-slugged names (e.g. `bigKeyYellowZone` -> \"Yellow Zone\"), and gourds (a much larger, open-ended set) get a headline count plus a collapsed full list, also de-slugged, never as bars.",
+    "Crew members resolve to a real linkedPerson (name + avatar) via the same identity.toml steamId cross-reference already used on Abiotic's player pages, falling back to the raw Steam ID only when unresolved — previously every Big Walk player showed only a bare Steam ID.",
+    "Notes drop their meaningless UUID key from the display, showing only the player-written text.",
+    "World info (seed, inventory count, save slot, an 'Assist off' badge when skipAidsActive) replaces raw internal ids like filenameUid that were never player-facing information.",
+    "The Insights/leaderboard/death-causes/coplay and Weekly summary sections — built entirely from container-log session/kill tracking Big Walk has no equivalent of — no longer render at all for local-save games; they used to render empty placeholders that looked like missing data rather than inapplicable sections.",
+    "Backend: build_game_server_world_payload now enriches a local-save server's players with linkedPerson, mirroring the existing player-detail enrichment.",
+    "Also includes a fix upstream in game-server-monitor (mikeng-io/game-server-monitor@c40367c): the Abiotic Factor world-save poller was unconditionally stamping its own snapshot onto every configured server's cached world state, including local-save servers with no world save of their own — this is what caused Big Walk's pages to intermittently show Abiotic Factor's actual data. Deployed and stress-tested live; not a code change in this repo."
+  ],
+  "limitations": [
+    "Gourd, door, lookout light, and FM station names are honest de-slugging of internal save ids (e.g. \"Easy Sim Press\", \"AFJ\"), not curated in-game names the way Abiotic Factor's item dictionary is — nobody has confirmed real names for Big Walk's internal ids, so this trades a small amount of polish for not inventing lore."
+  ]
+}

@@ -193,6 +193,7 @@ def register_web_routes(
         try:
             body = await build_game_server_world_payload(
                 client=request.app["web_games_client"], server_id=request.match_info["id"],
+                persons=request.app["web_persons"],
             )
         except GamesUnavailableError as exc:
             log.warning("game server world unavailable: %s", exc)

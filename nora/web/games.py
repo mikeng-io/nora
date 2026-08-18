@@ -226,10 +226,30 @@ async def build_game_server_weekly_payload(
 
 
 async def build_game_server_world_payload(
-    *, client: PulseGamesClient | None, server_id: str,
+    *, client: PulseGamesClient | None, server_id: str, persons: Persons,
 ) -> dict:
-    """`GET /app/v1/games/servers/{id}/world`."""
-    return await _require_client(client).world(server_id)
+    """`GET /app/v1/games/servers/{id}/world`.
+
+    A local-save game's `players` entries are enriched with `linkedPerson`
+    the same way `build_game_server_player_payload` enriches Abiotic's —
+    each entry there is only a bare `steamId` with no name from the save
+    itself. The container-backed shape has no `players` key at all, so this
+    is a no-op for it rather than a second code path."""
+    payload = await _require_client(client).world(server_id)
+    players = payload.get("players")
+    if isinstance(players, list):
+        enriched = []
+        for player in players:
+            steam_id = player.get("steamId") if isinstance(player, dict) else None
+            ref = persons.resolve("pulse", steam_id) if isinstance(steam_id, str) else None
+            if ref is not None:
+                player = {
+                    **player,
+                    "linkedPerson": {"personId": ref.person_id, "displayName": ref.name},
+                }
+            enriched.append(player)
+        payload = {**payload, "players": enriched}
+    return payload
 
 
 async def build_game_server_progress_payload(
