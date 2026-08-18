@@ -71,20 +71,74 @@
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-sans: var(--font-sans-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* Login page hero: a slow zoom-out on the portrait plus a staggered
-   * fade-up on the card beside it — both `both`-filled so the animation's
-   * start/end state holds outside its run, not just a flash of unstyled
-   * content before it kicks in. */
-  --animate-ken-burns: ken-burns 14s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Login card entrance — `both`-filled so the animation's start/end state
+   * holds outside its run, not just a flash of unstyled content before it
+   * kicks in. */
   --animate-fade-in-up: fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Login page background — two large blurred color blobs drifting slowly
+   * behind the card, an "aurora" effect in plain CSS (no canvas/WebGL
+   * library) matching the rest of this app's animations: cheap, GPU-only
+   * transform/opacity, `prefers-reduced-motion` already respected via the
+   * media query below. */
+  --animate-aurora-drift-1: aurora-drift-1 22s ease-in-out infinite;
+  --animate-aurora-drift-2: aurora-drift-2 26s ease-in-out infinite;
 }
 
-@keyframes ken-burns {
-  from {
-    transform: scale(1.1);
+@keyframes aurora-drift-1 {
+  0%, 100% {
+    transform: translate(-8%, -6%) scale(1);
   }
+  50% {
+    transform: translate(10%, 8%) scale(1.15);
+  }
+}
+
+@keyframes aurora-drift-2 {
+  0%, 100% {
+    transform: translate(6%, 4%) scale(1.1);
+  }
+  50% {
+    transform: translate(-10%, -8%) scale(0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob {
+    animation: none !important;
+  }
+}
+
+/* Rotating gradient border-glow (reactbits.dev-style "BorderGlow"), in
+ * plain CSS: `@property` registers the angle as an animatable <angle>, so
+ * a plain @keyframes can spin a conic-gradient smoothly — no canvas, no
+ * extra dependency. `.border-glow` is a 1px-padded wrapper; its own
+ * background IS the spinning gradient, and the child fills everything but
+ * that 1px ring with a solid surface color, so only the ring shows it. */
+@property --border-glow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes border-glow-spin {
   to {
-    transform: scale(1);
+    --border-glow-angle: 360deg;
+  }
+}
+
+.border-glow {
+  animation: border-glow-spin 6s linear infinite;
+  background: conic-gradient(
+    from var(--border-glow-angle),
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 85%, transparent) 15%,
+    transparent 30%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .border-glow {
+    animation: none !important;
   }
 }
 

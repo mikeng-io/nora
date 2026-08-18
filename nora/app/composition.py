@@ -361,6 +361,14 @@ class Dependencies:
     # status/memory, not per-room disclosure).
     presence: PresenceStore | None
     presence_circles: tuple[Circle, ...]
+    # The SAME directory `factory.build_agent`'s `skills_dir` argument
+    # already resolves (`cfg.doctrine.dir.parent / "skills"`) — exposed here
+    # so `nora.web.skills` can read the same on-disk metadata (name,
+    # description) for the portal, using its OWN `SkillStore` instance
+    # rather than the live agent's Strands `AgentSkills` plugin (that one
+    # is built per-tag inside `factory.create_agent` and holds no
+    # web-reachable listing method).
+    skills_dir: Path
     # The Dreamer's own pieces (Task 11), all `None`/empty when `[language]
     # enabled = false` — `nora.__main__.App.run` reads these to spawn (or log
     # skipping) `runtime.dream_loop`. `language_store` doubles as the
@@ -1349,6 +1357,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         llm_state=llm_state, client=client, reminders=reminders,
         mcp_tools=mcp_tool_groups,
         presence=presence_store, presence_circles=presence_circles,
+        skills_dir=cfg.doctrine.dir.parent / "skills",
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
     )

@@ -55,7 +55,7 @@ export default async function PortalLayout({
           of staying put — the real bug behind "the sidebar looks broken". */}
       <aside className="hidden md:flex md:h-screen md:flex-col md:gap-7 md:border-r md:border-border md:bg-bg-surface md:p-3.5">
         <div className="flex items-center justify-between gap-2 border-b border-border px-2 pb-3">
-          <span className="text-[15px] font-semibold tracking-tight">Nora</span>
+          <span className="text-[15px] font-semibold uppercase tracking-wide">Nora</span>
           <LanguageSwitcher />
         </div>
 
@@ -78,8 +78,15 @@ export default async function PortalLayout({
         <LanguageSwitcher />
       </div>
 
-      <main className="max-w-[880px] p-4 pb-24 sm:p-6 md:h-screen md:overflow-y-auto md:p-10 md:pb-10">
-        {children}
+      {/* The SCROLL CONTAINER spans the full grid cell width (no max-w
+          here) so its scrollbar sits at the real right edge of the
+          viewport. The width cap for readability lives on the INNER div
+          instead — putting max-w on the scrolling element itself made it a
+          narrow, left-aligned box inside a much wider column, so its
+          scrollbar rendered ~1120px from the left instead of at the
+          window edge — on a wide screen, dead center. */}
+      <main className="p-4 pb-24 sm:p-6 md:h-screen md:overflow-y-auto md:p-10 md:pb-10">
+        <div className="max-w-[880px] mx-auto">{children}</div>
       </main>
 
       <BottomNav />

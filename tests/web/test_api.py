@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from aiohttp import web
 
@@ -13,6 +15,10 @@ from tests.fakes import FakeHoncho
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+# Deliberately absent — build_skills_payload's own "no skills configured"
+# state, not a fixture that needs real files on disk for tests unrelated
+# to /app/v1/skills.
+NO_SKILLS_DIR = Path("/nonexistent-skills-dir-for-tests")
 
 
 class FakePresenceReader:
@@ -48,7 +54,7 @@ async def client(aiohttp_client):
         # returns for a deployment with no `pulse` mount, or one whose token
         # was rejected. Games routes must degrade to 503, never fabricate 200s.
         mcp_tools={},
-        presence=None, presence_circles=(),
+        presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
     )
     return await aiohttp_client(app)
 
@@ -126,7 +132,7 @@ async def client_with_pulse(aiohttp_client):
         persons=Persons(by_person={"miles": MILES}, index={}),
         ai_peer="nora", started_at=0.0,
         mcp_tools={"pulse": McpToolGroup(budget=5, tools=())},
-        presence=None, presence_circles=(),
+        presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
     )
     return await aiohttp_client(app)
 
@@ -174,7 +180,7 @@ async def client_with_presence(aiohttp_client):
         persons=Persons(by_person={"miles": MILES, "ada": ADA}, index={}),
         ai_peer="nora", started_at=0.0,
         mcp_tools={},
-        presence=reader, presence_circles=(circle,),
+        presence=reader, presence_circles=(circle,), skills_dir=NO_SKILLS_DIR,
     )
     return await aiohttp_client(app)
 

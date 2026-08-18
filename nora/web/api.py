@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from pathlib import Path
 
 from aiohttp import web
 
@@ -33,6 +34,7 @@ from nora.web.presence import (
     build_presence_payload,
     build_presence_places_payload,
 )
+from nora.web.skills import build_skills_payload
 from nora.web.status import build_status_payload
 
 log = logging.getLogger("nora.web.api")
@@ -62,6 +64,7 @@ def register_web_routes(
     reminders: ReminderStore, persons: Persons, ai_peer: str, started_at: float,
     mcp_tools: Mapping[str, McpToolGroup],
     presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
+    skills_dir: Path,
 ) -> None:
     app["web_store"] = store
     app["web_honcho"] = honcho
@@ -72,6 +75,7 @@ def register_web_routes(
     app["web_mcp_tools"] = mcp_tools
     app["web_presence"] = presence
     app["web_presence_circles"] = presence_circles
+    app["web_skills_dir"] = skills_dir
 
     async def status(request: web.Request) -> web.Response:
         a = request.app
@@ -154,7 +158,12 @@ def register_web_routes(
             return web.json_response({"error": "no such circle member"}, status=404)
         return web.json_response(body)
 
+    async def skills(request: web.Request) -> web.Response:
+        body = await build_skills_payload(skills_dir=request.app["web_skills_dir"])
+        return web.json_response(body)
+
     app.router.add_get("/app/v1/status", status)
+    app.router.add_get("/app/v1/skills", skills)
     app.router.add_get("/app/v1/memory", memory)
     app.router.add_get("/app/v1/games/servers", games_servers)
     app.router.add_get("/app/v1/games/servers/{id}/status", games_server_status)

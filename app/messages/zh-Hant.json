@@ -20,7 +20,9 @@
     "close": "關閉"
   },
   "login": {
-    "heading": "Nora",
+    "eyebrow": "Nora · 入口",
+    "heading": "登入",
+    "dek": "佢嘅狀態、記憶、遊戲伺服器，同埋大家而家喺邊 — 淨係俾班到，第啲人睇唔到。",
     "discord": "用 Discord 登入",
     "denied": "呢個 Discord 帳號未喺名單度，搵 Miles 加返你入去。"
   },
@@ -45,6 +47,8 @@
     "badgeLive": "傾偈已經用到",
     "badgePlanned": "已計劃",
     "badgeIdea": "諗緊",
+    "skillsLabel": "技能",
+    "skillsNone": "重未設置技能。",
     "capability": {
       "roomVocabulary": {
         "title": "班友自己嘅用語",
@@ -61,10 +65,6 @@
       "doctrine": {
         "title": "佢嘅行為準則",
         "description": "用白話講返佢而家點樣被調教 — 同埋呢啲設定點樣隨時間變過。"
-      },
-      "skills": {
-        "title": "技能",
-        "description": "佢可以隨時開嘅額外能力，同埋而家邊啲係開緊。"
       },
       "mediaGallery": {
         "title": "媒體庫",

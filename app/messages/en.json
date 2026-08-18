@@ -20,7 +20,9 @@
     "close": "Close"
   },
   "login": {
-    "heading": "Nora",
+    "eyebrow": "Nora · portal",
+    "heading": "Sign in",
+    "dek": "Her status, memory, game servers, and where everyone is — for the group, nobody else.",
     "discord": "Sign in with Discord",
     "denied": "That Discord account isn't on the list. Ask Miles to add it."
   },
@@ -45,6 +47,8 @@
     "badgeLive": "Works in chat",
     "badgePlanned": "Planned",
     "badgeIdea": "Idea",
+    "skillsLabel": "Skills",
+    "skillsNone": "No skills configured.",
     "capability": {
       "roomVocabulary": {
         "title": "Room's own words",
@@ -61,10 +65,6 @@
       "doctrine": {
         "title": "Her doctrine",
         "description": "A plain-language read of how she's currently tuned to behave — and how that's changed over time."
-      },
-      "skills": {
-        "title": "Skills",
-        "description": "The optional capabilities she can load on demand, and which ones are currently on."
       },
       "mediaGallery": {
         "title": "Media gallery",

@@ -111,6 +111,7 @@ class App:
             persons=deps.persons, ai_peer=self.cfg.memory.ai_peer, started_at=started_at,
             mcp_tools=deps.mcp_tools,
             presence=deps.presence, presence_circles=deps.presence_circles,
+            skills_dir=deps.skills_dir,
         )
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 
