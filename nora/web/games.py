@@ -1,214 +1,248 @@
-"""GET /app/v1/games/servers, .../{id}/status, .../{id}/graph — Pulse
-game-server data through Nora's ALREADY-WORKING MCP connection
-(`[tools.mcp.pulse]`, `nora.agent.mcp.build_mcp_tools`), replacing the
-previous direct-REST proxy the Next.js `app` service used
-(`GAMES_API_BASE` -> Pulse's HTTP port), which was fragile because that port
-is host-loopback-only by design and unreachable from a separate compose
-project.
+"""GET /app/v1/games/servers, .../{id}/status, .../{id}/graph, plus the
+full Pulse REST surface (players, sessions, activity, insights, world,
+weekly) — Pulse game-server data straight from Pulse's own REST API,
+Bearer-authed with `PULSE_API_TOKEN`.
 
-Pulse's live MCP tool inventory (discovered by connecting to the deployed
-`[tools.mcp.pulse]` mount and calling `list_tools_sync()`) is seven
-read-only tools: `pulse_server_status`, `pulse_player_profile`,
-`pulse_squad_activity`, `pulse_leaderboards`, `pulse_world_state`,
-`pulse_recent_events`, `pulse_weekly`. Every one of them speaks for ONE
-server — the tool descriptions say "defaults to the only configured
-server" — so there is no fleet to list, matching Pulse's own README ("one
-game adapter: `abiotic_factor`" at the time of writing).
+This is a plain web app reading a REST API, not an agent calling a tool —
+Pulse's MCP mount (`[tools.mcp.pulse]`, `PULSE_MCP_TOKEN`) is a SEPARATE
+credential for the LLM tool-calling path (`nora.agent.mcp`) and is not used
+here. An earlier version of this module went through that MCP mount
+instead, because `PULSE_API_TOKEN` was believed not to exist for Nora; it
+was in `.env` the whole time. Confirmed live (2026-08-18) via
+`curl -H "Authorization: Bearer $PULSE_API_TOKEN" .../pulse/api/v1/servers`
+that the REST API returns the full container-metrics shape
+(`app/src/lib/games-schema.ts`'s `ContainerMetricsSchema`) — cgroup memory
+limit, network/block I/O, pids, restart count — that the MCP surface's
+`pulse_server_status` tool never exposed.
 
-`pulse_server_status`'s real, observed response (captured live 2026-08-17,
-after Pulse's own Caddy-sidecar routing fix — see the module's git history
-for the discovery process) is a JSON string inside `content[0].text`, not
-`structuredContent`:
+`/servers/{id}/graph` — the route game-server-monitor's README documents
+next to the JSON `/status`/`/servers` routes — turned out live to answer
+`image/png` (a rendered chart), NOT JSON; `/servers/{id}/history` is
+Pulse's real JSON time-series route (confirmed live: `content-type:
+application/json`, same point shape `GraphPointSchema` already expects) —
+`PulseGamesClient.server_graph` calls `/history`, keeping the `graph`
+name only for this module's own method/payload-builder, matching the
+`/app/v1/.../graph` route name `nora/web/api.py` already exposes.
 
-    {"server":"Abiotic Factor","online":true,"status":"running",
-     "uptimeHours":394.3,"cpuPercent":47,"memoryGb":5.4,
-     "playersOnline":[],"playerCount":0,"maxPlayers":12,
-     "lastSampleAt":"2026-08-17T18:53:52.293Z"}
-
-This is a coarse, human/LLM-facing read — no Docker cgroup counters
-(memory limit, network/block I/O, pids, restart count). That's a real,
-structural difference from Pulse's REST API (`/pulse/api/v1/servers`,
-documented in game-server-monitor's README), which does expose those.
-Reaching the REST API directly would need a second Pulse-issued token
-(`pulse-api-token`) Nora was never given — its README frames MCP as
-Nora's specifically intended, least-privileged path — so this module
-works within what the MCP surface actually offers rather than requesting
-broader access. `app/src/lib/games-schema.ts`'s `ServerMetricsSchema` was
-narrowed to match (see that file's own comment).
-
-There is still no MCP tool for an hourly time series (`pulse_weekly` is
-one aggregate per week; `pulse_recent_events` is a discrete feed) — the
-graph endpoint stays unavailable by construction, a Pulse-side gap, not a
-client-side one.
-"""
+Every response is passed through as Pulse returns it — Pulse is Nora's own
+sibling service, its shapes are the documented, versioned wire contract
+`games-schema.ts`'s zod schemas already validate client-side, and this
+module is a thin projection (same posture as `nora/web/status.py`,
+`nora/web/memory.py`), not a second parser of a third-party format the way
+`nora/infra/weather/hko.py` has to be."""
 
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping
+import logging
 from typing import Any
+from urllib.parse import quote
 
-from nora.agent.mcp import McpToolGroup
+import aiohttp
 
-_MOUNT = "pulse"
-_STATUS_TOOL = "pulse_server_status"
+log = logging.getLogger("nora.web.games")
 
-# Pulse currently monitors exactly one game adapter. Its MCP tools take no
-# server-selecting argument beyond an optional override ("defaults to the
-# only configured server"), and return no stable slug — only a display
-# name ("Abiotic Factor"). `abiotic_factor` is the adapter id Pulse's own
-# README documents, used here as the one routable id; `_SERVER_COLOR` is a
-# presentational choice made on Nora's side, since Pulse's MCP surface has
-# no color field at all (unlike its REST API's `ServerSchema`).
-_SERVER_ID = "abiotic_factor"
-_SERVER_COLOR = "#f59e0b"
+PULSE_API_BASE = "https://orion.tail0a1b2c3d.ts.net/pulse/api/v1"
+_TIMEOUT_SECONDS = 8.0
+
+
+def _seg(value: str) -> str:
+    """A single URL path segment, percent-encoded — `server_id`/`player_key`
+    both land in a path built by plain f-string interpolation, and
+    `player_key`'s real shape (`id:eos:00021fe1d55b4d73ab57c2f70a1726a8`)
+    is untrusted, route-supplied input, not a literal this module controls."""
+    return quote(value, safe="")
 
 
 class GamesUnavailableError(Exception):
-    """Pulse's MCP tools are absent, unreachable, returned an error, or
-    their result could not be parsed as the observed response shape. The
-    web route (`nora.web.api`) turns this into a 503 — never a guessed 200."""
+    """Pulse's REST API is not configured, unreachable, unauthenticated, or
+    returned a body that isn't the expected JSON shape. The web route
+    (`nora.web.api`) turns this into a 503 — never a guessed 200."""
 
 
-def _find_tool(mcp_tools: Mapping[str, McpToolGroup], tool_name: str) -> Any | None:
-    group = mcp_tools.get(_MOUNT)
-    if group is None:
-        return None
-    for tool in group.tools:
-        if tool.tool_name == tool_name:
-            return tool
-    return None
+class PulseGamesClient:
+    """Bearer-authed reader for Pulse's `/v1/servers*` routes. Constructed
+    once per process and held by `Dependencies`, same lifetime as
+    `HkoWeatherProvider`. NEVER returns a partial or invented body — every
+    failure mode (transport error, non-200, non-JSON, wrong-shaped JSON)
+    raises `GamesUnavailableError`."""
 
+    def __init__(
+        self, *, token: str, base_url: str = PULSE_API_BASE,
+        timeout_seconds: float = _TIMEOUT_SECONDS,
+    ) -> None:
+        self._token = token
+        self._base_url = base_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds
 
-async def _call_status_tool(
-    *, mcp_tools: Mapping[str, McpToolGroup], server: str | None,
-) -> dict:
-    """Call the real `pulse_server_status` MCP tool and return its raw
-    `MCPToolResult` (a `TypedDict` with `status`/`content`/`toolUseId` and,
-    when the server declares one, `structuredContent`) — the exact shape
-    `strands.tools.mcp.mcp_client.MCPClient.call_tool_async` returns,
-    verified against that library's source (`_handle_tool_result`).
-    Raises `GamesUnavailableError` for every failure mode; never returns a
-    partial or invented result."""
-    tool = _find_tool(mcp_tools, _STATUS_TOOL)
-    if tool is None:
-        raise GamesUnavailableError(
-            "the pulse MCP mount is not configured, unreachable, or its "
-            f"{_STATUS_TOOL!r} tool did not resolve — see build_mcp_tools()"
+    async def servers(self) -> list[dict]:
+        body = await self._get("/servers")
+        if not isinstance(body, list):
+            raise GamesUnavailableError(f"GET /servers returned a non-list body: {body!r}")
+        return body
+
+    async def server_status(self, server_id: str) -> dict:
+        return await self._get_dict(f"/servers/{_seg(server_id)}/status")
+
+    async def server_graph(self, server_id: str, hours: int) -> dict:
+        return await self._get_dict(
+            f"/servers/{_seg(server_id)}/history", params={"hours": str(hours)},
         )
-    arguments: dict[str, Any] = {"server": server} if server else {}
-    try:
-        result = await tool.mcp_client.call_tool_async(
-            tool_use_id="nora-web-games", name=_STATUS_TOOL, arguments=arguments,
+
+    async def weekly(self, server_id: str) -> dict:
+        return await self._get_dict(f"/servers/{_seg(server_id)}/weekly")
+
+    async def world(self, server_id: str) -> dict:
+        return await self._get_dict(f"/servers/{_seg(server_id)}/world")
+
+    async def insights(self, server_id: str, *, days: int) -> dict:
+        return await self._get_dict(
+            f"/servers/{_seg(server_id)}/insights", params={"days": str(days)},
         )
-    except Exception as exc:
-        # Never raise a raw transport/library exception from a web read — the
-        # same posture status.py/memory.py already hold, folded into our own
-        # typed failure so the route layer has exactly one thing to catch.
-        raise GamesUnavailableError(f"{_STATUS_TOOL} call raised: {exc}") from exc
-    if result.get("status") == "error":
-        raise GamesUnavailableError(f"{_STATUS_TOOL} returned an error: {result.get('content')}")
-    return result
 
+    async def players(
+        self, server_id: str, *, page: int, page_size: int, online: bool | None,
+    ) -> dict:
+        params = {"page": str(page), "pageSize": str(page_size)}
+        if online is not None:
+            params["online"] = "true" if online else "false"
+        return await self._get_dict(f"/servers/{_seg(server_id)}/players", params=params)
 
-def _parse_status_payload(result: dict) -> dict:
-    """Extract and parse `pulse_server_status`'s real response: a JSON
-    string in `content[0].text` (no `structuredContent` — observed live,
-    not assumed). Raises `GamesUnavailableError` rather than returning a
-    partial dict if the shape ever stops matching what was actually seen."""
-    content = result.get("content") or []
-    if not content or "text" not in content[0]:
-        raise GamesUnavailableError(
-            f"{_STATUS_TOOL} succeeded but its result had no content[0].text "
-            f"— got: {result!r}"
+    async def player(self, server_id: str, player_key: str) -> dict:
+        return await self._get_dict(
+            f"/servers/{_seg(server_id)}/players/{_seg(player_key)}"
         )
-    try:
-        payload = json.loads(content[0]["text"])
-    except json.JSONDecodeError as exc:
-        raise GamesUnavailableError(
-            f"{_STATUS_TOOL} succeeded but content[0].text was not valid "
-            f"JSON: {exc}"
-        ) from exc
-    required = {
-        "server", "online", "status", "uptimeHours", "cpuPercent",
-        "memoryGb", "playersOnline", "playerCount", "lastSampleAt",
-    }
-    missing = required - payload.keys()
-    if missing:
-        raise GamesUnavailableError(
-            f"{_STATUS_TOOL}'s response is missing field(s) {sorted(missing)} "
-            "the last-observed shape had — see nora/web/games.py's module "
-            f"docstring; got: {payload!r}"
-        )
-    return payload
+
+    async def activity(
+        self, server_id: str, *, page: int, page_size: int,
+        since_ms: int | None, until_ms: int | None,
+    ) -> dict:
+        params = {"page": str(page), "pageSize": str(page_size)}
+        if since_ms is not None:
+            params["from"] = str(since_ms)
+        if until_ms is not None:
+            params["to"] = str(until_ms)
+        return await self._get_dict(f"/servers/{_seg(server_id)}/activity", params=params)
+
+    async def sessions(
+        self, server_id: str, *, page: int, page_size: int,
+        player_key: str | None, since_ms: int | None, until_ms: int | None,
+    ) -> dict:
+        params = {"page": str(page), "pageSize": str(page_size)}
+        if player_key is not None:
+            params["playerKey"] = player_key
+        if since_ms is not None:
+            params["from"] = str(since_ms)
+        if until_ms is not None:
+            params["to"] = str(until_ms)
+        return await self._get_dict(f"/servers/{_seg(server_id)}/sessions", params=params)
+
+    async def _get_dict(self, path: str, *, params: dict[str, str] | None = None) -> dict:
+        body = await self._get(path, params=params)
+        if not isinstance(body, dict):
+            raise GamesUnavailableError(f"GET {path} returned a non-dict body: {body!r}")
+        return body
+
+    async def _get(self, path: str, *, params: dict[str, str] | None = None) -> Any:
+        url = f"{self._base_url}{path}"
+        timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
+        headers = {"Authorization": f"Bearer {self._token}"}
+        try:
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.get(url, headers=headers, params=params) as response,
+            ):
+                if response.status != 200:
+                    raise GamesUnavailableError(f"GET {path} answered {response.status}")
+                try:
+                    return await response.json(content_type=None)
+                except (ValueError, aiohttp.ContentTypeError) as exc:
+                    raise GamesUnavailableError(
+                        f"GET {path} did not return JSON: {exc}"
+                    ) from exc
+        except aiohttp.ClientError as exc:
+            raise GamesUnavailableError(f"GET {path} request failed: {exc}") from exc
 
 
-def _summary(payload: dict) -> dict:
-    return {
-        "id": _SERVER_ID,
-        "displayName": payload["server"],
-        "color": _SERVER_COLOR,
-        "maxPlayers": payload.get("maxPlayers"),
-    }
+def _require_client(client: PulseGamesClient | None) -> PulseGamesClient:
+    if client is None:
+        raise GamesUnavailableError("PULSE_API_TOKEN is not configured")
+    return client
 
 
-def _metrics(payload: dict) -> dict:
-    return {
-        "online": payload["online"],
-        "status": payload["status"],
-        "uptimeHours": payload["uptimeHours"],
-        "cpuPercent": payload["cpuPercent"],
-        "memoryGb": payload["memoryGb"],
-        "playerCount": payload["playerCount"],
-        "lastSampleAt": payload["lastSampleAt"],
-    }
-
-
-async def build_games_servers_payload(*, mcp_tools: Mapping[str, McpToolGroup]) -> list[dict]:
-    """`GET /app/v1/games/servers` — one entry per Pulse-monitored server.
-
-    Calls the real `pulse_server_status` tool with no `server` argument:
-    the tool's own description says it defaults to the only configured
-    server, so that IS the full list this mount can answer for."""
-    result = await _call_status_tool(mcp_tools=mcp_tools, server=None)
-    payload = _parse_status_payload(result)
-    return [{**_summary(payload), "current": _metrics(payload)}]
+async def build_games_servers_payload(*, client: PulseGamesClient | None) -> list[dict]:
+    """`GET /app/v1/games/servers`."""
+    return await _require_client(client).servers()
 
 
 async def build_game_server_status_payload(
-    *, mcp_tools: Mapping[str, McpToolGroup], server_id: str,
+    *, client: PulseGamesClient | None, server_id: str,
 ) -> dict:
-    """`GET /app/v1/games/servers/{id}/status` — one server's live detail.
-
-    Rejects any `server_id` other than `_SERVER_ID` before it ever reaches
-    Pulse: `_call_status_tool`'s `server` argument is forwarded verbatim as
-    an MCP tool argument to an external service, and Pulse currently
-    monitors exactly one adapter — there is no legitimate id this route
-    should ever forward besides the one it already knows about."""
-    if server_id != _SERVER_ID:
-        raise GamesUnavailableError(f"no such server: {server_id!r}")
-    result = await _call_status_tool(mcp_tools=mcp_tools, server=server_id)
-    payload = _parse_status_payload(result)
-    return {
-        "server": _summary(payload),
-        "current": _metrics(payload),
-        "activePlayers": payload["playersOnline"],
-    }
+    """`GET /app/v1/games/servers/{id}/status`."""
+    return await _require_client(client).server_status(server_id)
 
 
 async def build_game_server_graph_payload(
-    *, mcp_tools: Mapping[str, McpToolGroup], server_id: str, hours: int,
+    *, client: PulseGamesClient | None, server_id: str, hours: int,
 ) -> dict:
-    """`GET /app/v1/games/servers/{id}/graph` — always unavailable, and not
-    because of connectivity: Pulse's live MCP tool inventory (confirmed by
-    listing it) has no tool that returns an hourly time series at all —
-    `pulse_weekly` is one aggregate per week, `pulse_recent_events` is a
-    discrete feed. There is nothing to call here yet; a real fix is a new
-    Pulse-side MCP tool, not a client-side guess at data that doesn't
-    exist."""
-    raise GamesUnavailableError(
-        "Pulse's MCP tool surface has no hourly time-series tool (confirmed "
-        "live: pulse_server_status/player_profile/squad_activity/"
-        "leaderboards/world_state/recent_events/weekly — none returns "
-        "hourly buckets) — this is a structural gap, not a connectivity one"
+    """`GET /app/v1/games/servers/{id}/graph?hours=`."""
+    return await _require_client(client).server_graph(server_id, hours)
+
+
+async def build_game_server_weekly_payload(
+    *, client: PulseGamesClient | None, server_id: str,
+) -> dict:
+    """`GET /app/v1/games/servers/{id}/weekly`."""
+    return await _require_client(client).weekly(server_id)
+
+
+async def build_game_server_world_payload(
+    *, client: PulseGamesClient | None, server_id: str,
+) -> dict:
+    """`GET /app/v1/games/servers/{id}/world`."""
+    return await _require_client(client).world(server_id)
+
+
+async def build_game_server_insights_payload(
+    *, client: PulseGamesClient | None, server_id: str, days: int,
+) -> dict:
+    """`GET /app/v1/games/servers/{id}/insights?days=`."""
+    return await _require_client(client).insights(server_id, days=days)
+
+
+async def build_game_server_players_payload(
+    *, client: PulseGamesClient | None, server_id: str,
+    page: int, page_size: int, online: bool | None,
+) -> dict:
+    """`GET /app/v1/games/servers/{id}/players?page=&pageSize=&online=`."""
+    return await _require_client(client).players(
+        server_id, page=page, page_size=page_size, online=online,
+    )
+
+
+async def build_game_server_player_payload(
+    *, client: PulseGamesClient | None, server_id: str, player_key: str,
+) -> dict:
+    """`GET /app/v1/games/servers/{id}/players/{playerKey}`."""
+    return await _require_client(client).player(server_id, player_key)
+
+
+async def build_game_server_activity_payload(
+    *, client: PulseGamesClient | None, server_id: str,
+    page: int, page_size: int, since_ms: int | None, until_ms: int | None,
+) -> dict:
+    """`GET /app/v1/games/servers/{id}/activity?page=&pageSize=&from=&to=`."""
+    return await _require_client(client).activity(
+        server_id, page=page, page_size=page_size, since_ms=since_ms, until_ms=until_ms,
+    )
+
+
+async def build_game_server_sessions_payload(
+    *, client: PulseGamesClient | None, server_id: str,
+    page: int, page_size: int, player_key: str | None,
+    since_ms: int | None, until_ms: int | None,
+) -> dict:
+    """`GET /app/v1/games/servers/{id}/sessions?page=&pageSize=&playerKey=&from=&to=`."""
+    return await _require_client(client).sessions(
+        server_id, page=page, page_size=page_size, player_key=player_key,
+        since_ms=since_ms, until_ms=until_ms,
     )

@@ -29,7 +29,7 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from nora.agent import factory
-from nora.agent.mcp import McpMount, McpToolGroup, build_mcp_tools
+from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
@@ -89,6 +89,7 @@ from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
 from nora.policy import Policy, PolicyError, load_policy
 from nora.tag import Debounce
+from nora.web.games import PulseGamesClient
 
 from .agent_runner import LiveAgentRunner
 from .announce import AnnouncementTarget, VersionAnnouncer
@@ -337,16 +338,14 @@ class Dependencies:
     # `reminders = SqlReminderStore(engine)` below) — exposed here so
     # `nora/web/status.py` can read pending rows without a second store.
     reminders: ReminderStore
-    # The SAME `mcp_tool_groups` dict `ToolRegistry(mcp_tools=...)` already
-    # takes (below) — exposed again here so `nora.web.games` can call a
-    # discovered MCP tool (e.g. `pulse_server_status`) directly from an
-    # aiohttp handler, outside the LLM tool-calling loop, over the identical
-    # live `MCPClient` connection either path uses. A mount absent from this
-    # dict means "not configured, unreachable, or its token was rejected"
-    # (`build_mcp_tools`'s own docstring) — the web layer must treat that the
-    # same way the agent path already does: the tools are not there, never a
-    # guess at what they would have said.
-    mcp_tools: Mapping[str, McpToolGroup]
+    # `nora.web.games` reads Pulse's own REST API directly (Bearer-authed
+    # with `PULSE_API_TOKEN`) — a separate credential and connection from
+    # the LLM tool-calling path's `[tools.mcp.pulse]` MCP mount
+    # (`PULSE_MCP_TOKEN`, folded into `ToolRegistry(mcp_tools=...)` below).
+    # `None` when `PULSE_API_TOKEN` is unset, matching `giphy_client`'s own
+    # optional-integration pattern just below — the web route degrades to
+    # 503, never a guessed 200.
+    games_client: PulseGamesClient | None
     # The SAME `presence_store`/`presence_circles` `Whereis` already reads
     # (below) — exposed here so `nora.web.presence` can serve a map without a
     # second `PresenceStore` over a second engine. `presence` is `None` when
@@ -1014,6 +1013,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     if giphy_key := os.environ.get("GIPHY_API_KEY"):
         from nora.infra.giphy import GiphyClient
         giphy_client = GiphyClient(api_key=giphy_key)
+    games_client = None
+    if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
+        games_client = PulseGamesClient(token=pulse_api_token)
     # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
     # Every path that may speak into a conversation holds this same instance —
     # two would be two locks and no serialisation at all. Built HERE, above the
@@ -1355,7 +1357,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client, reminders=reminders,
-        mcp_tools=mcp_tool_groups,
+        games_client=games_client,
         presence=presence_store, presence_circles=presence_circles,
         skills_dir=cfg.doctrine.dir.parent / "skills",
         language_store=language_store, language_consolidators=language_consolidators,

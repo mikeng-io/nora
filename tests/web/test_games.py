@@ -1,207 +1,343 @@
-"""nora/web/games.py against a fake that behaves like the REAL
-`strands.tools.mcp.mcp_client.MCPClient.call_tool_async` — status
-"success"/"error", a `content` list carrying a JSON-string `text` (the
-real, observed `pulse_server_status` shape — no `structuredContent`) — not
-a fake that answers every call the same way (CLAUDE.md). It also
-reproduces the real wrong-call shape: an unknown tool name comes back
-`status="error"` from the session, it does not raise.
+"""`nora.web.games` against a fake that behaves like Pulse's REAL REST API —
+real aiohttp routes, real status codes, real JSON bodies, not a mocked
+transport (CLAUDE.md: never a fake that answers every request the same
+way). Reverting the never-raises-a-raw-exception rule or the non-200/
+non-JSON handling turns a test here red — the fake answers wrong the way
+the real host would.
 
-`SUCCESS_RESULT` below is the ACTUAL response captured live from Pulse's
-`pulse_server_status` tool on 2026-08-17, after Pulse's own Caddy-sidecar
-routing fix — not an invented shape. `_parse_status_payload`'s required-field
-check is what would catch a future Pulse response that silently dropped a
-field this deployment currently depends on.
+`SERVERS_BODY` below matches the real shape captured live from
+`https://orion.tail0a1b2c3d.ts.net/pulse/api/v1/servers` on 2026-08-18 (the
+full `ContainerMetricsSchema` cgroup fields `app/src/lib/games-schema.ts`
+validates client-side), after `PULSE_API_TOKEN` — bearer-authed, and
+distinct from the LLM tool-calling path's `PULSE_MCP_TOKEN` — was found to
+already be present in `.env`.
 """
 
 from __future__ import annotations
 
-import json
-from typing import Any
-
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
-from nora.agent.mcp import McpToolGroup
 from nora.web.games import (
     GamesUnavailableError,
+    PulseGamesClient,
+    build_game_server_activity_payload,
     build_game_server_graph_payload,
+    build_game_server_insights_payload,
+    build_game_server_player_payload,
+    build_game_server_players_payload,
+    build_game_server_sessions_payload,
     build_game_server_status_payload,
+    build_game_server_weekly_payload,
+    build_game_server_world_payload,
     build_games_servers_payload,
 )
 
-
-class FakeMcpClient:
-    """Mirrors `MCPClient.call_tool_async`'s real return shape (an
-    `MCPToolResult`-like dict) and its real failure shapes: an unconfigured
-    response name comes back `status="error"` (the live session's own
-    behaviour for an unrecognised call), and `raise_for` simulates the
-    transport itself failing (a dropped connection, a 502) — a DIFFERENT
-    failure mode from a tool-level error, and `nora.web.games` must handle
-    both without raising past its own `GamesUnavailableError`."""
-
-    def __init__(
-        self, *, responses: dict[str, dict] | None = None,
-        raise_for: frozenset[str] = frozenset(),
-    ) -> None:
-        self._responses = responses or {}
-        self._raise_for = raise_for
-        self.calls: list[tuple[str, str, dict[str, Any]]] = []
-
-    async def call_tool_async(
-        self, tool_use_id: str, name: str, arguments: dict[str, Any] | None = None,
-    ) -> dict:
-        self.calls.append((tool_use_id, name, dict(arguments or {})))
-        if name in self._raise_for:
-            raise RuntimeError(f"transport failed calling {name!r}")
-        if name not in self._responses:
-            return {
-                "status": "error", "toolUseId": tool_use_id,
-                "content": [{"text": f"Unknown tool: {name}"}],
-            }
-        return self._responses[name]
-
-
-class FakeMcpTool:
-    def __init__(self, tool_name: str, client: FakeMcpClient) -> None:
-        self.tool_name = tool_name
-        self.mcp_client = client
-
-
-def _group(*, tool_name: str = "pulse_server_status", client: FakeMcpClient) -> McpToolGroup:
-    return McpToolGroup(budget=5, tools=(FakeMcpTool(tool_name, client),))
-
-
-# Captured live from https://orion.tail0a1b2c3d.ts.net/pulse/mcp, 2026-08-17.
-REAL_STATUS_PAYLOAD = {
-    "server": "Abiotic Factor",
+CURRENT = {
+    "serverId": "abiotic_factor",
+    "timestamp": 1_755_000_000,
     "online": True,
     "status": "running",
-    "uptimeHours": 394.3,
-    "cpuPercent": 47,
-    "memoryGb": 5.4,
-    "playersOnline": [],
+    "cpuPercent": 47.0,
+    "memoryBytes": 5_800_000_000,
+    "memoryLimitBytes": 8_000_000_000,
+    "networkRxBytes": 12_345,
+    "networkTxBytes": 6_789,
+    "networkRxBps": 100.0,
+    "networkTxBps": 50.0,
+    "blockReadBytes": 0,
+    "blockWriteBytes": 0,
+    "pids": 12,
+    "restartCount": 0,
     "playerCount": 0,
-    "maxPlayers": 12,
-    "lastSampleAt": "2026-08-17T18:53:52.293Z",
+    "startedAt": "2026-08-01T00:00:00.000Z",
 }
 
-SUCCESS_RESULT = {
-    "status": "success",
-    "toolUseId": "nora-web-games",
-    "content": [{"text": json.dumps(REAL_STATUS_PAYLOAD)}],
-    "isError": False,
+SERVERS_BODY = [
+    {
+        "id": "abiotic_factor",
+        "displayName": "Abiotic Factor",
+        "color": "#f59e0b",
+        "maxPlayers": 12,
+        "current": CURRENT,
+    }
+]
+
+STATUS_BODY = {
+    "server": {
+        "id": "abiotic_factor", "displayName": "Abiotic Factor",
+        "color": "#f59e0b", "maxPlayers": 12,
+    },
+    "current": CURRENT,
+    "activePlayers": [],
 }
 
-ERROR_RESULT = {
-    "status": "error",
-    "toolUseId": "nora-web-games",
-    "content": [{"text": "server is unreachable"}],
-}
-
-
-async def test_servers_unavailable_when_pulse_mount_absent():
-    with pytest.raises(GamesUnavailableError, match="not configured"):
-        await build_games_servers_payload(mcp_tools={})
-
-
-async def test_servers_unavailable_when_status_tool_missing_from_group():
-    empty_group = McpToolGroup(budget=5, tools=())
-    with pytest.raises(GamesUnavailableError, match="not configured"):
-        await build_games_servers_payload(mcp_tools={"pulse": empty_group})
-
-
-async def test_servers_calls_the_real_tool_with_no_server_argument_and_maps_it():
-    client = FakeMcpClient(responses={"pulse_server_status": SUCCESS_RESULT})
-    servers = await build_games_servers_payload(mcp_tools={"pulse": _group(client=client)})
-    assert client.calls == [("nora-web-games", "pulse_server_status", {})]
-    assert servers == [
+GRAPH_BODY = {
+    "hours": 24, "from": 1_754_913_600, "to": 1_755_000_000,
+    "data": [
         {
-            "id": "abiotic_factor",
-            "displayName": "Abiotic Factor",
-            "color": "#f59e0b",
-            "maxPlayers": 12,
-            "current": {
-                "online": True,
-                "status": "running",
-                "uptimeHours": 394.3,
-                "cpuPercent": 47,
-                "memoryGb": 5.4,
-                "playerCount": 0,
-                "lastSampleAt": "2026-08-17T18:53:52.293Z",
-            },
-        }
-    ]
+            "timestamp": 1_754_913_600, "online": 1, "cpuAvg": 40.0, "cpuMax": 55.0,
+            "memoryAvg": 5_000_000_000.0, "memoryMax": 6_000_000_000.0,
+            "memoryLimit": 8_000_000_000, "networkRxBpsAvg": 90.0, "networkTxBpsAvg": 40.0,
+            "playerAvg": 0.0, "playerMax": 1.0,
+        },
+    ],
+}
 
 
-async def test_status_passes_the_server_id_as_the_server_argument_and_maps_it():
-    client = FakeMcpClient(responses={"pulse_server_status": SUCCESS_RESULT})
-    status = await build_game_server_status_payload(
-        mcp_tools={"pulse": _group(client=client)}, server_id="abiotic_factor",
+class _FakePulse:
+    """Real aiohttp routes standing in for Pulse's REST API, keyed with a
+    request log so a test can prove `server_id`/`hours` actually reach
+    Pulse, plus per-route failure modes (a non-200, a non-JSON body) so the
+    never-raises-past-GamesUnavailableError rule can be proven."""
+
+    def __init__(self) -> None:
+        self.servers_status = 200
+        self.servers_body: object = SERVERS_BODY
+        self.status_status = 200
+        self.status_body: object = STATUS_BODY
+        self.graph_status = 200
+        self.graph_body: object = GRAPH_BODY
+        self.seen: list[tuple[str, str]] = []
+
+    async def servers(self, request: web.Request) -> web.Response:
+        self.seen.append((request.path, request.query_string))
+        if self.servers_status != 200:
+            return web.Response(status=self.servers_status)
+        if self.servers_body == "notjson":
+            return web.Response(text="<html>not json</html>", content_type="text/html")
+        return web.json_response(self.servers_body)
+
+    async def status(self, request: web.Request) -> web.Response:
+        self.seen.append((request.path, request.query_string))
+        if self.status_status != 200:
+            return web.Response(status=self.status_status)
+        return web.json_response(self.status_body)
+
+    async def graph(self, request: web.Request) -> web.Response:
+        self.seen.append((request.path, request.query_string))
+        if self.graph_status != 200:
+            return web.Response(status=self.graph_status)
+        return web.json_response(self.graph_body)
+
+    async def echo(self, request: web.Request) -> web.Response:
+        """A generic pass-through handler for the routes that are pure
+        proxies with no client-side reshaping (weekly, world, insights,
+        players, player, activity, sessions) — echoes back the path and
+        every query param it received, so a test can prove the client
+        forwards `page`/`pageSize`/`online`/`from`/`to`/`playerKey`
+        correctly without one bespoke handler per route."""
+        self.seen.append((request.path, request.query_string))
+        return web.json_response({"path": request.path, "query": dict(request.query)})
+
+
+@pytest.fixture
+async def pulse():
+    fake = _FakePulse()
+    app = web.Application()
+    app.router.add_get("/v1/servers", fake.servers)
+    app.router.add_get("/v1/servers/{id}/status", fake.status)
+    app.router.add_get("/v1/servers/{id}/history", fake.graph)
+    app.router.add_get("/v1/servers/{id}/weekly", fake.echo)
+    app.router.add_get("/v1/servers/{id}/world", fake.echo)
+    app.router.add_get("/v1/servers/{id}/insights", fake.echo)
+    app.router.add_get("/v1/servers/{id}/players", fake.echo)
+    app.router.add_get("/v1/servers/{id}/players/{playerKey}", fake.echo)
+    app.router.add_get("/v1/servers/{id}/activity", fake.echo)
+    app.router.add_get("/v1/servers/{id}/sessions", fake.echo)
+    server = TestServer(app)
+    await server.start_server()
+    base_url = str(server.make_url("/v1")).rstrip("/")
+    client = PulseGamesClient(
+        token="test-token", base_url=base_url, timeout_seconds=5.0,  # noqa: S106
     )
-    assert client.calls == [
-        ("nora-web-games", "pulse_server_status", {"server": "abiotic_factor"}),
-    ]
-    assert status["server"]["displayName"] == "Abiotic Factor"
-    assert status["current"]["cpuPercent"] == 47
-    assert status["activePlayers"] == []
+    yield fake, client
+    await server.close()
 
 
-async def test_status_rejects_an_unknown_server_id_before_calling_pulse():
-    """The `{id}` path param is forwarded verbatim as an MCP tool argument
-    to an external service — reject anything other than the one real
-    server before it ever reaches Pulse, rather than trusting Pulse-side
-    handling of an arbitrary string."""
-    client = FakeMcpClient(responses={"pulse_server_status": SUCCESS_RESULT})
-    with pytest.raises(GamesUnavailableError, match="no such server"):
-        await build_game_server_status_payload(
-            mcp_tools={"pulse": _group(client=client)}, server_id="not-a-real-server",
-        )
-    assert client.calls == []
+async def test_servers_are_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_games_servers_payload(client=None)
 
 
-async def test_a_tool_level_error_result_becomes_unavailable_with_content():
-    client = FakeMcpClient(responses={"pulse_server_status": ERROR_RESULT})
-    with pytest.raises(GamesUnavailableError, match="server is unreachable"):
-        await build_games_servers_payload(mcp_tools={"pulse": _group(client=client)})
+async def test_status_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_status_payload(client=None, server_id="abiotic_factor")
 
 
-async def test_a_transport_failure_becomes_unavailable_not_a_raw_exception():
-    client = FakeMcpClient(raise_for=frozenset({"pulse_server_status"}))
-    with pytest.raises(GamesUnavailableError, match="transport failed"):
-        await build_games_servers_payload(mcp_tools={"pulse": _group(client=client)})
+async def test_graph_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_graph_payload(client=None, server_id="abiotic_factor", hours=24)
 
 
-async def test_a_response_missing_a_depended_on_field_is_unavailable_not_partial():
-    """The load-bearing test: if Pulse's response ever drops a field this
-    module maps, that must surface as GamesUnavailableError, never a dict
-    silently missing a key or filled with an invented default."""
-    incomplete = dict(REAL_STATUS_PAYLOAD)
-    del incomplete["cpuPercent"]
-    result = {
-        "status": "success", "toolUseId": "x",
-        "content": [{"text": json.dumps(incomplete)}],
+async def test_servers_calls_the_real_route_and_passes_the_body_through(pulse):
+    fake, client = pulse
+    servers = await build_games_servers_payload(client=client)
+    assert fake.seen == [("/v1/servers", "")]
+    assert servers == SERVERS_BODY
+
+
+async def test_status_calls_the_server_scoped_route_and_passes_the_body_through(pulse):
+    fake, client = pulse
+    status = await build_game_server_status_payload(client=client, server_id="abiotic_factor")
+    assert fake.seen == [("/v1/servers/abiotic_factor/status", "")]
+    assert status == STATUS_BODY
+
+
+async def test_graph_forwards_the_hours_param_and_passes_the_body_through(pulse):
+    fake, client = pulse
+    graph = await build_game_server_graph_payload(
+        client=client, server_id="abiotic_factor", hours=48,
+    )
+    assert fake.seen == [("/v1/servers/abiotic_factor/history", "hours=48")]
+    assert graph == GRAPH_BODY
+
+
+async def test_a_non_200_from_pulse_becomes_unavailable_not_a_raw_exception(pulse):
+    fake, client = pulse
+    fake.servers_status = 500
+    with pytest.raises(GamesUnavailableError, match="answered 500"):
+        await build_games_servers_payload(client=client)
+
+
+async def test_a_non_json_body_becomes_unavailable_not_a_raw_exception(pulse):
+    fake, client = pulse
+    fake.servers_body = "notjson"
+    with pytest.raises(GamesUnavailableError, match="did not return JSON"):
+        await build_games_servers_payload(client=client)
+
+
+async def test_servers_route_returning_a_non_list_body_is_unavailable(pulse):
+    fake, client = pulse
+    fake.servers_body = {"not": "a list"}
+    with pytest.raises(GamesUnavailableError, match="non-list"):
+        await build_games_servers_payload(client=client)
+
+
+async def test_status_route_returning_a_non_dict_body_is_unavailable(pulse):
+    fake, client = pulse
+    fake.status_body = ["not", "a", "dict"]
+    with pytest.raises(GamesUnavailableError, match="non-dict"):
+        await build_game_server_status_payload(client=client, server_id="abiotic_factor")
+
+
+async def test_a_connection_failure_becomes_unavailable_not_a_raw_exception():
+    client = PulseGamesClient(
+        token="test-token", base_url="http://127.0.0.1:1", timeout_seconds=1.0,  # noqa: S106
+    )
+    with pytest.raises(GamesUnavailableError, match="request failed"):
+        await build_games_servers_payload(client=client)
+
+
+async def test_weekly_calls_the_server_scoped_route(pulse):
+    fake, client = pulse
+    body = await build_game_server_weekly_payload(client=client, server_id="abiotic_factor")
+    assert body["path"] == "/v1/servers/abiotic_factor/weekly"
+    assert fake.seen == [("/v1/servers/abiotic_factor/weekly", "")]
+
+
+async def test_world_calls_the_server_scoped_route(pulse):
+    _fake, client = pulse
+    body = await build_game_server_world_payload(client=client, server_id="abiotic_factor")
+    assert body["path"] == "/v1/servers/abiotic_factor/world"
+
+
+async def test_insights_forwards_the_days_param(pulse):
+    _fake, client = pulse
+    body = await build_game_server_insights_payload(
+        client=client, server_id="abiotic_factor", days=7,
+    )
+    assert body["query"] == {"days": "7"}
+
+
+async def test_players_forwards_page_page_size_and_online(pulse):
+    _fake, client = pulse
+    body = await build_game_server_players_payload(
+        client=client, server_id="abiotic_factor", page=2, page_size=10, online=True,
+    )
+    assert body["query"] == {"page": "2", "pageSize": "10", "online": "true"}
+
+
+async def test_players_omits_online_when_not_given(pulse):
+    _fake, client = pulse
+    body = await build_game_server_players_payload(
+        client=client, server_id="abiotic_factor", page=1, page_size=20, online=None,
+    )
+    assert "online" not in body["query"]
+
+
+async def test_player_url_encodes_a_player_key_containing_colons(pulse):
+    _fake, client = pulse
+    body = await build_game_server_player_payload(
+        client=client, server_id="abiotic_factor",
+        player_key="id:eos:00021fe1d55b4d73ab57c2f70a1726a8",
+    )
+    assert body["path"] == (
+        "/v1/servers/abiotic_factor/players/id:eos:00021fe1d55b4d73ab57c2f70a1726a8"
+    )
+
+
+async def test_activity_forwards_pagination_and_time_range(pulse):
+    _fake, client = pulse
+    body = await build_game_server_activity_payload(
+        client=client, server_id="abiotic_factor",
+        page=3, page_size=50, since_ms=1_000, until_ms=2_000,
+    )
+    assert body["query"] == {"page": "3", "pageSize": "50", "from": "1000", "to": "2000"}
+
+
+async def test_sessions_forwards_player_key_and_time_range(pulse):
+    _fake, client = pulse
+    body = await build_game_server_sessions_payload(
+        client=client, server_id="abiotic_factor", page=1, page_size=50,
+        player_key="id:eos:0002aa7e6a4e454395f5427c1c61daa3", since_ms=None, until_ms=None,
+    )
+    assert body["query"] == {
+        "page": "1", "pageSize": "50", "playerKey": "id:eos:0002aa7e6a4e454395f5427c1c61daa3",
     }
-    client = FakeMcpClient(responses={"pulse_server_status": result})
-    with pytest.raises(GamesUnavailableError, match="missing field"):
-        await build_games_servers_payload(mcp_tools={"pulse": _group(client=client)})
 
 
-async def test_a_non_json_text_body_is_unavailable_not_a_raw_exception():
-    result = {
-        "status": "success", "toolUseId": "x",
-        "content": [{"text": "not json"}],
-    }
-    client = FakeMcpClient(responses={"pulse_server_status": result})
-    with pytest.raises(GamesUnavailableError, match="not valid JSON"):
-        await build_games_servers_payload(mcp_tools={"pulse": _group(client=client)})
+async def test_weekly_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_weekly_payload(client=None, server_id="abiotic_factor")
 
 
-async def test_graph_is_unavailable_by_construction_no_matter_what_pulse_says():
-    """There is no Pulse MCP tool for an hourly time series at all — this
-    must stay unavailable even when the pulse mount is otherwise healthy,
-    and it must never call a tool trying to find one."""
-    client = FakeMcpClient(responses={"pulse_server_status": SUCCESS_RESULT})
-    with pytest.raises(GamesUnavailableError, match="no hourly time-series tool"):
-        await build_game_server_graph_payload(
-            mcp_tools={"pulse": _group(client=client)}, server_id="abiotic_factor", hours=24,
+async def test_world_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_world_payload(client=None, server_id="abiotic_factor")
+
+
+async def test_insights_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_insights_payload(client=None, server_id="abiotic_factor", days=30)
+
+
+async def test_players_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_players_payload(
+            client=None, server_id="abiotic_factor", page=1, page_size=20, online=None,
         )
-    assert client.calls == []
+
+
+async def test_player_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_player_payload(
+            client=None, server_id="abiotic_factor", player_key="x",
+        )
+
+
+async def test_activity_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_activity_payload(
+            client=None, server_id="abiotic_factor",
+            page=1, page_size=20, since_ms=None, until_ms=None,
+        )
+
+
+async def test_sessions_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_sessions_payload(
+            client=None, server_id="abiotic_factor", page=1, page_size=20,
+            player_key=None, since_ms=None, until_ms=None,
+        )

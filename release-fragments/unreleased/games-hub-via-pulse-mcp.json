@@ -1,12 +1,15 @@
 {
-  "type": "change",
-  "summary": "The web portal's Game Server Hub now reaches Pulse through Nora's own working MCP connection instead of a separate, fragile direct-REST path that could never actually reach Pulse's host-loopback-only HTTP port from the app container.",
+  "type": "feature",
+  "summary": "The web portal's Game Server Hub reaches Pulse's real REST API directly (a separate, Bearer-authed PULSE_API_TOKEN credential from the LLM tool-calling path's MCP mount) and now covers Pulse's full feature set: server list/status/history, weekly summaries, world/stockpile state, server-wide insights (leaderboard, death causes, coplay, kill/learner boards, activity heatmap), a paginated player directory, full player profiles (character sheet, vitals, combat record, playtime/session charts), a paginated activity feed, and a paginated session log.",
   "details": [
-    "New nora/web/games.py + GET /app/v1/games/servers, .../{id}/status, .../{id}/graph on Nora's existing :9100 API, calling the same pulse MCP tools ([tools.mcp.pulse]) her conversational agent already uses.",
-    "The Next.js proxy routes (app/src/app/api/games/servers/**) now fetch from NORA_API_BASE like the status/memory routes do, instead of the removed GAMES_API_BASE.",
-    "Dependencies gained an mcp_tools field so the web layer can call a discovered MCP tool outside the LLM tool-calling loop."
+    "nora/web/games.py's PulseGamesClient replaced the earlier MCP-based read path entirely — a plain web app reading a REST API is not an agent calling a tool, and PULSE_API_TOKEN (already present in .env, just unused until now) exposes the full container-metrics and game-state shape the MCP surface never did.",
+    "GET /app/v1/games/servers/{id}/graph calls Pulse's /history route, not /graph — /graph turned out to answer image/png (a rendered chart), discovered live.",
+    "Ten Next.js proxy routes (app/src/app/api/games/servers/**) and a matching set of nora/web/api.py routes cover players (list + detail), sessions, activity, insights, world, and weekly, alongside the original servers/status/graph trio.",
+    "Four new pages: /games/[id]/players, /games/[id]/players/[playerKey] (character sheet, vitals meters, combat record, playtime/session charts, recent sessions), /games/[id]/activity, /games/[id]/sessions.",
+    "The server detail page gained a Weekly summary card, World/Stockpile/Exploration panels, the full Insights suite, and interactive multi-range (24h/72h/7d) CPU/memory/network/player history charts — hover crosshair + tooltip, labeled axes, multi-series legends — replacing the original bare sparkline.",
+    "New shared UI: BarList (ranked list + proportional bar + expand/collapse), Meter (severity-colored gauge), Pagination, and a dependency-free interactive LineChart/BarSeries/HeatmapGrid chart primitive set."
   ],
   "limitations": [
-    "The Games Hub is not yet functional: Pulse's real MCP tool inventory was discovered live (pulse_server_status/player_profile/squad_activity/leaderboards/world_state/recent_events/weekly, with real input schemas), but its output shape was never observed — the endpoint returned 502 on every retry after the one successful listing — and the tool set has no multi-server list or hourly graph at all. Every games route answers 503 until a maintainer with real Pulse reachability fills in nora/web/games.py's marked TODO with the tool's actual field names."
+    "The character sheet/vitals/combat panels are shaped for Abiotic Factor's specific save format (job/traits/limbHealth/survival/skills/killCounts) — Pulse currently monitors only that one game adapter, so this has not been generalized behind a per-game convention yet."
   ]
 }

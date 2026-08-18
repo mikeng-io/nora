@@ -5,7 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Clock, Cpu, HardDrive, Users } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { fetchServers, type Server } from "@/lib/games-schema";
-import { formatCpuPercent, formatGb, formatUptime } from "@/lib/games-format";
+import { formatBytes, formatCpuPercent, formatUptime, uptimeSecondsFrom } from "@/lib/games-format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
@@ -116,17 +116,17 @@ function ServerCard({ server, locale }: { server: Server; locale: string }) {
           <StatTile
             icon={HardDrive}
             label={t("memory")}
-            value={current ? formatGb(current.memoryGb) : "—"}
+            value={current ? formatBytes(current.memoryBytes) : "—"}
           />
           <StatTile
             icon={Clock}
             label={t("uptime")}
-            value={current ? formatUptime(current.uptimeHours * 3600, locale) : "—"}
+            value={current ? formatUptime(uptimeSecondsFrom(current), locale) : "—"}
           />
         </CardContent>
         {current && (
           <p className="border-t border-border px-4 py-2.5 font-mono text-[10px] text-text-muted">
-            {t("lastSample")} {formatRelative(current.lastSampleAt, locale)}
+            {t("lastSample")} {formatRelative(current.timestamp, locale)}
           </p>
         )}
       </Card>
@@ -134,8 +134,8 @@ function ServerCard({ server, locale }: { server: Server; locale: string }) {
   );
 }
 
-function formatRelative(iso: string, locale: string): string {
-  const diffMs = new Date(iso).getTime() - Date.now();
+function formatRelative(timestampMs: number, locale: string): string {
+  const diffMs = timestampMs - Date.now();
   const diffMin = Math.round(diffMs / 60_000);
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   if (Math.abs(diffMin) < 60) return rtf.format(diffMin, "minute");

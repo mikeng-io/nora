@@ -109,7 +109,7 @@ class App:
         register_web_routes(
             health_app, store=deps.audit, honcho=deps.memory, reminders=deps.reminders,
             persons=deps.persons, ai_peer=self.cfg.memory.ai_peer, started_at=started_at,
-            mcp_tools=deps.mcp_tools,
+            games_client=deps.games_client,
             presence=deps.presence, presence_circles=deps.presence_circles,
             skills_dir=deps.skills_dir,
         )

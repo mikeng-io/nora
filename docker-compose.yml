@@ -199,6 +199,13 @@ services:
       #   fails to resolve and the mount is silently skipped (R-5-shaped: absent,
       #   never a crash) — never load-bearing for anything else Nora does.
       - PULSE_MCP_TOKEN=${PULSE_MCP_TOKEN:-}
+      #   PULSE_API_TOKEN       — bearer token for Pulse's REST API
+      #   (nora/web/games.py's PulseGamesClient), the Games Hub web
+      #   feature's OWN credential — separate from PULSE_MCP_TOKEN above,
+      #   which is only for the LLM tool-calling path. Unset means
+      #   composition.py builds no games_client and the games routes answer
+      #   503 (R-5-shaped: absent, never a crash or a guessed 200).
+      - PULSE_API_TOKEN=${PULSE_API_TOKEN:-}
       # The group is in Hong Kong. Without this the container runs UTC, and
       # `nora.agent.prefill._now_line` — which calls `datetime.now().astimezone()`
       # — tells her it is 07:05 when the group's clock says 15:05.

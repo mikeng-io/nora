@@ -90,25 +90,21 @@ async def test_dependencies_exposes_the_reminders_store(cfg):
     assert isinstance(deps.reminders, SqlReminderStore)
 
 
-async def test_dependencies_exposes_the_same_mcp_tool_groups_the_registry_gets(cfg):
-    """`nora.web.games` calls a discovered MCP tool directly from an aiohttp
-    handler, outside the LLM tool-calling loop — it needs the SAME
-    `McpToolGroup` dict `ToolRegistry(mcp_tools=...)` already receives, not a
-    second discovery pass (a second `build_mcp_tools()` call would be a
-    second live connection to every configured server for no reason, and
-    could disagree with the first about which servers came up).
-
-    `ToolRegistry.__init__` defensively copies its `mcp_tools` argument
-    (`dict(mcp_tools)`), so this can only pin equal CONTENTS, not object
-    identity — this fixture's config has no `[tools.mcp.*]` mount, so both
-    sides are the empty dict `build_mcp_tools()` returns for "nothing
-    configured", which is still enough to show `deps.mcp_tools` is wired
-    from the one discovery call `build_dependencies` makes, not a stand-in.
-    """
+async def test_dependencies_games_client_is_none_without_pulse_api_token(cfg, monkeypatch):
+    """`nora.web.games`'s `PulseGamesClient` is a separate, REST credential
+    (`PULSE_API_TOKEN`) from the LLM tool-calling path's `[tools.mcp.pulse]`
+    MCP mount (`PULSE_MCP_TOKEN`) — this fixture's environment sets neither,
+    so the web layer must degrade to `None` (a 503), never a guessed client
+    pointed at nothing."""
+    monkeypatch.delenv("PULSE_API_TOKEN", raising=False)
     deps = await build_dependencies(cfg)
-    assert deps.mcp_tools == {}
-    registry = deps.engagement._tool_registry
-    assert registry._mcp_tools == deps.mcp_tools
+    assert deps.games_client is None
+
+
+async def test_dependencies_builds_a_games_client_when_pulse_api_token_is_set(cfg, monkeypatch):
+    monkeypatch.setenv("PULSE_API_TOKEN", "test-pulse-token")
+    deps = await build_dependencies(cfg)
+    assert deps.games_client is not None
 
 
 async def test_the_doctrine_the_root_builds_carries_the_generated_capability(cfg):
