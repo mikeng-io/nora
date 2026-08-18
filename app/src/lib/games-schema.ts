@@ -221,7 +221,12 @@ const LimbHealthSchema = z.object({
 });
 export type LimbHealth = z.infer<typeof LimbHealthSchema>;
 
-const PlayerSaveSchema = z.object({
+// Named for the ONE game whose save shape this actually is — Pulse
+// currently monitors only Abiotic Factor, and this schema is that game's
+// job/traits/limbHealth/survival/skills fields, not a general "player
+// save" contract. A second game adapter would need its own schema here,
+// not a widened version of this one.
+const AbioticFactorSaveSchema = z.object({
   savedAt: z.number(),
   job: z.object({ en: z.string(), zhHant: z.string() }),
   traits: z.array(
@@ -237,7 +242,7 @@ const PlayerSaveSchema = z.object({
   location: NamedRefSchema,
   collections: z.object({ crafted: z.number(), pickedUp: z.number(), fish: z.number() }),
 });
-export type PlayerSave = z.infer<typeof PlayerSaveSchema>;
+export type AbioticFactorSave = z.infer<typeof AbioticFactorSaveSchema>;
 
 // `limbHealth` itself is occasionally absent from a point too (observed
 // live: 2/156) — same "not every meter sampled every save" reasoning as
@@ -270,9 +275,16 @@ export type SkillProgress = z.infer<typeof SkillProgressSchema>;
 // live: a player with one short session and no in-game save poll landing
 // during it) — the character sheet/vitals/combat panels must all treat
 // this as "no save data yet", not assume every player has one.
+//
+// `save`'s `.catch(undefined)` is the OTHER reason it can be missing: a
+// second, non-Abiotic-Factor game adapter's save blob won't match
+// `AbioticFactorSaveSchema` at all. Rather than letting one field's shape
+// mismatch fail `PlayerDetailSchema.parse()` and blank the whole profile
+// page, an unrecognized save degrades to "no save data" — the same
+// state a genuinely absent save already renders as everywhere below.
 export const PlayerDetailSchema = PlayerSummarySchema.extend({
   deathCauses: z.array(DeathCauseSchema),
-  save: PlayerSaveSchema.optional(),
+  save: AbioticFactorSaveSchema.optional().catch(undefined),
   vitalsHistory: z.array(VitalsHistoryPointSchema).optional(),
   statEvents: z.array(StatEventSchema).optional(),
   skillProgress: SkillProgressSchema.optional(),

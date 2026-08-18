@@ -256,6 +256,14 @@ describe("PlayerDetailSchema", () => {
     // wholesale for a player with too short/rare a session to be polled.
     expect(() => PlayerDetailSchema.parse(BASE_PLAYER)).not.toThrow();
   });
+
+  it("degrades an unrecognized save shape to undefined instead of failing the whole parse", () => {
+    // A future non-Abiotic-Factor game adapter's save blob won't match
+    // AbioticFactorSaveSchema — this must not blank the whole profile page.
+    const body = { ...BASE_PLAYER, save: { totallyDifferentGameShape: true } };
+    const parsed = PlayerDetailSchema.parse(body);
+    expect(parsed.save).toBeUndefined();
+  });
 });
 
 describe("ActivityEventSchema", () => {
