@@ -298,6 +298,19 @@ _WORK_START_HOUR = 9
 _WORK_END_HOUR = 18
 _DAY_MS = 86_400_000
 
+# `is_home`'s floor on `night_dwell / total_dwell`. NOT 0.5 — see the long
+# comment on `is_home` in `label_place` below for why 0.5 is mathematically
+# unreachable for any realistic overnight-plus-some-daytime home pattern and
+# how 0.3 was chosen (safety margin above the real/synthetic aaron_larsen
+# ambiguous cases, both ~0.22-0.24, ~0.235 at the high end).
+_HOME_NIGHT_SHARE_MIN = 0.3
+
+# `is_work`'s floor on absolute work-window dwell (spec gap: a share alone
+# has no notion of scale). One workday's worth of dwell — comfortably above
+# the ~2-3h a handful of incidental weekday-daytime visits accumulate, and
+# comfortably below any real workplace's multi-week total.
+_MIN_WORK_DWELL_MS = 8 * 3_600_000
+
 
 @dataclass(frozen=True)
 class LabelResult:
@@ -380,17 +393,70 @@ def label_place(
     23:00->07:00 stay's 01:00-05:00 overlap lands on the second day, not
     the first); the weekday gate in `_windowed_dwell` SKIPS a weekend day's
     window computation entirely rather than computing and discarding it.
+
+    **Why `is_home`'s floor is `_HOME_NIGHT_SHARE_MIN` (0.3), not 0.5
+    (task 13b fix)**: `night_share`'s numerator is capped at 4h (the night
+    window's own width) no matter how long someone actually stays, while
+    its denominator (`total_dwell`) grows with every hour of ANY dwell at
+    the cluster — so `night_share` for someone truly home overnight falls
+    as their honest daytime/evening presence there grows, not as their
+    "home-ness" falls. A 0.5 floor requires an overnight stay to be 8h
+    (4 / 0.5) or SHORTER — unreachable for the common case of someone home
+    22:00-08:00 (10h, `night_share = 0.4`) or longer, which is most people,
+    most nights. `_HOME_NIGHT_SHARE_MIN = 0.3` makes clean overnight
+    patterns up to `4 / 0.3 ≈ 13.3h` reachable while staying comfortably
+    above the two "genuinely ambiguous" reference points this module is
+    measured against: `aaron_larsen`'s real cell (`night_share ≈ 0.215`,
+    `design/27` §2/§3) and the equivalent synthetic fixture immediately
+    below (`night_share ≈ 0.235`) — both carry substantial dwell in the
+    working-window too, which is exactly the case fail-closed labelling
+    exists to catch, and both stay excluded with room to spare
+    (0.3 - 0.235 = 0.065 margin, not a razor's edge).
+
+    A denominator change (scoping `total_dwell` to an extended
+    "plausible home span", e.g. 20:00-10:00, rather than all 24h) was
+    investigated and rejected: across every window width tried (4h through
+    24h), `aaron_larsen`'s share stayed HIGHER than a genuine full-time
+    WFH subject's `delia_lindberg`-shaped share at every width — `delia_lindberg`'s
+    huge daytime dwell (WFH: home during the 09-18 working window too, not
+    just overnight) dilutes her `night_share` under ANY window that is
+    wide enough to also catch her daytime presence, while a narrower
+    window that would exclude that daytime dilution makes `aaron_larsen`'s
+    share worse (closer to 1.0), not better, because his stay is largely
+    confined to that narrower span too. No window width separates the two;
+    keeping `aaron_larsen` reliably excluded is the harder, non-negotiable
+    constraint (fail-closed labelling being wrong the other way — a real
+    home mislabelled `unlabeled` — is a far smaller cost than a genuinely
+    ambiguous cell mislabelled `home`), so the denominator is left as
+    `total_dwell` (all hours) and only the threshold moved. This is why
+    `delia_lindberg`'s real-corpus assertion in
+    `tests/unit/test_mobility_real_corpus.py` stays `xfail` — see that
+    file's `reason=` and task 13b's report for the full numeric trace.
+
+    **Why `is_work` gained `_MIN_WORK_DWELL_MS` (task 13b fix)**: a share
+    (`work_share >= 0.5`) alone has no notion of scale — a location visited
+    for 7 brief stays totalling ~3h across 5 weekday afternoons can clear
+    `work_share >= 0.5` and `len(work_days) >= min_weekdays` exactly the
+    same way a real 55h/week office does. `_MIN_WORK_DWELL_MS` (8h, one
+    workday) is an absolute floor under `work_dwell` that rejects the
+    former (real corpus: `avery_walsh`'s spurious cluster tops out at
+    2.5h; `clara_lawson`'s spurious second cluster at 2.0h) while leaving
+    every genuine workplace (`grant_carver` 56.9h, `clara_lawson`'s real
+    cluster 53.6h) untouched.
+
     One structural note (not a functional bug — every test below still
     passes, and no input can reach the branch it guards): the explicit
-    `is_home and is_work` check below can never actually be True, because
-    `is_home` requires `night_share >= 0.5` while `is_work` requires
-    `night_share < 0.1` — contradictory bounds on the same variable make
-    the two conditions mutually exclusive by construction, independent of
-    branch order. The "both windows" ambiguous case (aaron_larsen's real
-    fixture) still correctly resolves to `unlabeled`, but via `is_work`'s
-    own `night_share < 0.1` term rejecting it, not via this check. Left as
-    written (matching the brief) since it is harmless defensive code, not
-    incorrect."""
+    `is_home and is_work` check can never actually be True, because
+    `is_home` requires `night_share >= _HOME_NIGHT_SHARE_MIN` (0.3) while
+    `is_work` requires `night_share < 0.1` — contradictory bounds on the
+    same variable make the two conditions mutually exclusive by
+    construction, independent of branch order, exactly as before this fix
+    (only the specific floor value changed, not this property). The "both
+    windows" ambiguous case (`aaron_larsen`'s real fixture) still correctly
+    resolves to `unlabeled`, but via `is_home`'s own share floor rejecting
+    it (and, independently, `is_work`'s `night_share < 0.1` term also
+    rejecting it), not via this check. Left as written (matching the
+    brief) since it is harmless defensive code, not incorrect."""
     if not stays:
         return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
 
@@ -412,9 +478,14 @@ def label_place(
     })
     confidence = min(1.0, (total_dwell / _DAY_MS) * distinct_days_observed / 100.0)
 
-    is_home = night_share >= 0.5 and len(night_days) >= min_nights
+    is_home = (
+        night_share >= _HOME_NIGHT_SHARE_MIN and len(night_days) >= min_nights
+    )
     is_work = (
-        work_share >= 0.5 and night_share < 0.1 and len(work_days) >= min_weekdays
+        work_share >= 0.5
+        and night_share < 0.1
+        and work_dwell >= _MIN_WORK_DWELL_MS
+        and len(work_days) >= min_weekdays
     )
     if is_home and is_work:
         # A cluster cannot be both — carrying substantial dwell in BOTH
