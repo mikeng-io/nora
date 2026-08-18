@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design documents only (design/27, the P0 spec, DEC-115). No code, schema or behaviour changes — nothing is built, nothing ships inert, and no user-observable surface moves. The substrate this specifies will carry its own fragment when it is implemented.",
+  "details": [],
+  "limitations": []
+}
