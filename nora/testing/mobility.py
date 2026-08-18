@@ -64,12 +64,15 @@ class FakeMobilityStore:
         return self._places.get((subject_id, kind))
 
     async def upsert_place(
-        self, *, subject_id: str, circle_id: str, lat: float, lng: float,
-        radius_m: float, result: LabelResult, now_ms: int,
+        self, *, subject_id: str, circle_id: str, kind: str, lat: float,
+        lng: float, radius_m: float, result: LabelResult, now_ms: int,
     ) -> None:
+        # `kind` is the ONE slot this write updates, independent of
+        # `result.kind` — see SqlMobilityStore.upsert_place's docstring
+        # (behavioral twin, per this project's contract-suite convention).
+        # The delete is scoped to exactly `kind`, never both `home`/`work`.
+        self._places.pop((subject_id, kind), None)
         if result.kind == "unlabeled":
-            self._places.pop((subject_id, "home"), None)
-            self._places.pop((subject_id, "work"), None)
             return
         existing = self._places.get((subject_id, result.kind))
         place_id = existing[0] if existing is not None else self._next_place_id

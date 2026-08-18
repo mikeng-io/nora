@@ -125,26 +125,35 @@ class SqlMobilityStore:
         )
 
     async def upsert_place(
-        self, *, subject_id: str, circle_id: str, lat: float, lng: float,
-        radius_m: float, result: LabelResult, now_ms: int,
+        self, *, subject_id: str, circle_id: str, kind: str, lat: float,
+        lng: float, radius_m: float, result: LabelResult, now_ms: int,
     ) -> None:
-        """Delete-then-insert for THIS subject's `kind`, in one transaction
-        — the same shape `PresenceStore.replace_places` uses, and for the
-        same reason: a handful of rarely-changing rows per subject, so the
-        simplest write that cannot leave a stale row behind wins. A
-        downgrade to `unlabeled` deletes the row entirely rather than
+        """Delete-then-insert for THIS subject's `kind` slot, in one
+        transaction — the same shape `PresenceStore.replace_places` uses,
+        and for the same reason: a handful of rarely-changing rows per
+        subject, so the simplest write that cannot leave a stale row behind
+        wins.
+
+        `kind` is the ONE slot this write updates — independent of
+        `result.kind` — and the delete is scoped to exactly that one kind,
+        NEVER `IN ('home', 'work')`. A subject can hold a valid `home` row
+        and a valid `work` row at once (the common case per the design
+        spec); a caller re-evaluating `home` and downgrading it to
+        `unlabeled` must not also delete an unrelated, still-valid `work`
+        row. In the normal case `kind == result.kind` (a caller re-checks
+        the same kind it is writing); they are kept as two separate
+        parameters so the delete-scope is always explicit and correct even
+        if a future caller passes them differently.
+
+        A downgrade to `unlabeled` deletes the row entirely rather than
         storing a row with kind='unlabeled' — `existing_place` for a kind
         that no longer holds correctly returns None (Step 1's
         `test_a_stale_place_can_be_downgraded_to_unlabeled_in_place`)."""
         async with self._engine.begin() as conn:
-            # kind is only ever 'home' or 'work' as a STORED row — an
-            # 'unlabeled' result deletes whichever of the two it was.
             await conn.execute(
                 sa.delete(PRESENCE_DERIVED_PLACES).where(
                     PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
-                    PRESENCE_DERIVED_PLACES.c.kind.in_(["home", "work"])
-                    if result.kind == "unlabeled"
-                    else PRESENCE_DERIVED_PLACES.c.kind == result.kind,
+                    PRESENCE_DERIVED_PLACES.c.kind == kind,
                 )
             )
             if result.kind != "unlabeled":

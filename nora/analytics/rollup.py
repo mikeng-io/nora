@@ -45,8 +45,8 @@ class MobilityStore(Protocol):
         self, *, subject_id: str, kind: str
     ) -> tuple[int, float, float, float, LabelResult] | None: ...
     async def upsert_place(
-        self, *, subject_id: str, circle_id: str, lat: float, lng: float,
-        radius_m: float, result: LabelResult, now_ms: int,
+        self, *, subject_id: str, circle_id: str, kind: str, lat: float,
+        lng: float, radius_m: float, result: LabelResult, now_ms: int,
     ) -> None: ...
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
     async def advance_cluster_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
@@ -187,8 +187,14 @@ class MobilityRollup:
                     label_freshness_days=self._cfg.label_freshness_days,
                 )
                 if recheck.kind != existing_kind:
+                    # `kind=existing_kind`, not `recheck.kind` — this write
+                    # is scoped to the ONE slot being rechecked (e.g. a
+                    # `home` recheck must never delete an unrelated,
+                    # still-valid `work` row just because it downgrades to
+                    # `unlabeled`).
                     await self._store.upsert_place(
                         subject_id=subject_id, circle_id=circle_id,
+                        kind=existing_kind,
                         lat=all_stays[0].lat, lng=all_stays[0].lng,
                         radius_m=self._cfg.cluster_eps_m, result=recheck,
                         now_ms=now_ms,
@@ -222,8 +228,12 @@ class MobilityRollup:
                         label_freshness_days=self._cfg.label_freshness_days,
                     )
                     if result.kind != "unlabeled":
+                        # kind=result.kind: a freshly-clustered place writes
+                        # into its OWN kind's slot, scoped the same way the
+                        # recheck above is.
                         await self._store.upsert_place(
                             subject_id=subject_id, circle_id=circle_id,
+                            kind=result.kind,
                             lat=lat, lng=lng, radius_m=self._cfg.cluster_eps_m,
                             result=result, now_ms=now_ms,
                         )
