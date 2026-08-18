@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { StatTile } from "@/components/ui/stat-tile";
 import { Pagination } from "@/components/ui/pagination";
+import { PersonAvatar } from "@/components/ui/person-avatar";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
@@ -103,9 +104,12 @@ export default function PlayersPage() {
               <Card className="transition-colors hover:bg-bg-elevated">
                 <CardContent className="flex flex-col gap-3 p-4">
                   <div className="flex items-center justify-between">
-                    <span className="truncate text-[14px] font-medium text-text-primary">
-                      {player.playerName}
-                    </span>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <PersonAvatar seed={player.playerKey} size={28} className="rounded-full overflow-hidden" />
+                      <span className="truncate text-[14px] font-medium text-text-primary">
+                        {player.playerName}
+                      </span>
+                    </div>
                     <Badge variant={player.online ? "live" : "designed"}>
                       {player.online ? t("online") : t("offline")}
                     </Badge>

@@ -24,6 +24,7 @@ import { StatTile } from "@/components/ui/stat-tile";
 import { BarList, type BarListItem } from "@/components/ui/bar-list";
 import { Meter } from "@/components/ui/meter";
 import { BarSeries } from "@/components/ui/mini-chart";
+import { PersonAvatar } from "@/components/ui/person-avatar";
 
 const SESSIONS_SAMPLE = 200;
 const RECENT_SESSIONS = 12;
@@ -78,11 +79,21 @@ export default function PlayerProfilePage() {
 
       {player && (
         <>
-          <div className="mb-6 flex items-center gap-2.5">
-            <h1 className="text-[24px] font-medium tracking-tight">{player.playerName}</h1>
-            <Badge variant={player.online ? "live" : "designed"}>
-              {player.online ? t("online") : t("offline")}
-            </Badge>
+          <div className="mb-6 flex items-center gap-3">
+            <PersonAvatar seed={player.playerKey} size={40} className="rounded-full overflow-hidden" />
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-[24px] font-medium tracking-tight">{player.playerName}</h1>
+                <Badge variant={player.online ? "live" : "designed"}>
+                  {player.online ? t("online") : t("offline")}
+                </Badge>
+              </div>
+              {player.linkedPerson && (
+                <p className="font-mono text-[11px] text-text-muted">
+                  {t("linkedPerson", { name: player.linkedPerson.displayName })}
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

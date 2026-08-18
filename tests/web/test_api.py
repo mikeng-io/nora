@@ -67,8 +67,8 @@ async def test_status_route_returns_200_with_the_expected_shape(client):
     assert set(body) == {"uptime_seconds", "store", "honcho", "reminders"}
 
 
-async def test_memory_route_returns_200_with_every_person(client):
-    resp = await client.get("/app/v1/memory")
+async def test_memory_route_returns_only_the_requested_person(client):
+    resp = await client.get("/app/v1/memory?personId=miles")
     assert resp.status == 200
     body = await resp.json()
     assert body == [
@@ -77,6 +77,20 @@ async def test_memory_route_returns_200_with_every_person(client):
             "identity": [], "episodes": ["x"],
         },
     ]
+
+
+async def test_memory_route_with_no_person_id_returns_empty_not_everyone(client):
+    """User-scoped (operator, 2026-08-19): an unscoped request must never
+    fall back to showing every whitelisted person's data."""
+    resp = await client.get("/app/v1/memory")
+    assert resp.status == 200
+    assert await resp.json() == []
+
+
+async def test_memory_route_with_an_unrecognized_person_id_returns_empty(client):
+    resp = await client.get("/app/v1/memory?personId=stranger")
+    assert resp.status == 200
+    assert await resp.json() == []
 
 
 async def test_games_servers_route_is_503_when_pulse_is_not_wired(client):
@@ -126,6 +140,8 @@ async def test_games_server_graph_route_rejects_a_non_numeric_hours(client):
     [
         "/app/v1/games/servers/abiotic1/weekly",
         "/app/v1/games/servers/abiotic1/world",
+        "/app/v1/games/servers/abiotic1/progress",
+        "/app/v1/games/servers/abiotic1/save-history",
         "/app/v1/games/servers/abiotic1/insights",
         "/app/v1/games/servers/abiotic1/players",
         "/app/v1/games/servers/abiotic1/players/id:eos:1",
@@ -150,6 +166,7 @@ async def test_games_extended_routes_are_503_when_pulse_is_not_wired(client, pat
         "/app/v1/games/servers/abiotic1/activity?from=nope",
         "/app/v1/games/servers/abiotic1/activity?to=nope",
         "/app/v1/games/servers/abiotic1/sessions?page=nope",
+        "/app/v1/games/servers/abiotic1/save-history?hours=nope",
     ],
 )
 async def test_games_extended_routes_reject_bad_query_params(client, path):
@@ -207,6 +224,8 @@ async def pulse_server():
     app.router.add_get("/v1/servers/{id}/graph", fake.graph)
     app.router.add_get("/v1/servers/{id}/weekly", fake.echo)
     app.router.add_get("/v1/servers/{id}/world", fake.echo)
+    app.router.add_get("/v1/servers/{id}/progress", fake.echo)
+    app.router.add_get("/v1/servers/{id}/save-history", fake.echo)
     app.router.add_get("/v1/servers/{id}/insights", fake.echo)
     app.router.add_get("/v1/servers/{id}/players", fake.echo)
     app.router.add_get("/v1/servers/{id}/players/{playerKey}", fake.echo)
@@ -272,6 +291,32 @@ async def test_games_world_route_proxies_pulses_real_response(client_with_games)
     assert resp.status == 200
     body = await resp.json()
     assert body["path"] == "/v1/servers/abiotic_factor/world"
+
+
+async def test_games_progress_route_proxies_pulses_real_response(client_with_games):
+    """`/progress` exists only for local-save games (e.g. Big Walk) — a
+    container-backed server's proxy still routes there fine, Pulse itself
+    is what would 404/503 it."""
+    resp = await client_with_games.get("/app/v1/games/servers/big_walk/progress")
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["path"] == "/v1/servers/big_walk/progress"
+
+
+async def test_games_save_history_route_forwards_hours(client_with_games):
+    resp = await client_with_games.get(
+        "/app/v1/games/servers/big_walk/save-history?hours=72"
+    )
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["query"] == {"hours": "72"}
+
+
+async def test_games_save_history_route_defaults_hours_to_24(client_with_games):
+    resp = await client_with_games.get("/app/v1/games/servers/big_walk/save-history")
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["query"] == {"hours": "24"}
 
 
 async def test_games_insights_route_forwards_days(client_with_games):

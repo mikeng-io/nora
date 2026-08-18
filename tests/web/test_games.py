@@ -19,6 +19,8 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
+from nora.domain.models import PersonRef
+from nora.persons import Persons
 from nora.web.games import (
     GamesUnavailableError,
     PulseGamesClient,
@@ -27,12 +29,16 @@ from nora.web.games import (
     build_game_server_insights_payload,
     build_game_server_player_payload,
     build_game_server_players_payload,
+    build_game_server_progress_payload,
+    build_game_server_save_history_payload,
     build_game_server_sessions_payload,
     build_game_server_status_payload,
     build_game_server_weekly_payload,
     build_game_server_world_payload,
     build_games_servers_payload,
 )
+
+NO_PERSONS = Persons(by_person={}, index={})
 
 CURRENT = {
     "serverId": "abiotic_factor",
@@ -100,6 +106,9 @@ class _FakePulse:
         self.graph_status = 200
         self.graph_body: object = GRAPH_BODY
         self.seen: list[tuple[str, str]] = []
+        # Merged into every `echo` response — lets a test simulate Pulse
+        # sending a field (e.g. `steamId`) without a bespoke handler.
+        self.echo_extra_fields: dict[str, object] = {}
 
     async def servers(self, request: web.Request) -> web.Response:
         self.seen.append((request.path, request.query_string))
@@ -129,7 +138,9 @@ class _FakePulse:
         forwards `page`/`pageSize`/`online`/`from`/`to`/`playerKey`
         correctly without one bespoke handler per route."""
         self.seen.append((request.path, request.query_string))
-        return web.json_response({"path": request.path, "query": dict(request.query)})
+        return web.json_response({
+            "path": request.path, "query": dict(request.query), **self.echo_extra_fields,
+        })
 
 
 @pytest.fixture
@@ -141,6 +152,8 @@ async def pulse():
     app.router.add_get("/v1/servers/{id}/history", fake.graph)
     app.router.add_get("/v1/servers/{id}/weekly", fake.echo)
     app.router.add_get("/v1/servers/{id}/world", fake.echo)
+    app.router.add_get("/v1/servers/{id}/progress", fake.echo)
+    app.router.add_get("/v1/servers/{id}/save-history", fake.echo)
     app.router.add_get("/v1/servers/{id}/insights", fake.echo)
     app.router.add_get("/v1/servers/{id}/players", fake.echo)
     app.router.add_get("/v1/servers/{id}/players/{playerKey}", fake.echo)
@@ -271,11 +284,55 @@ async def test_player_url_encodes_a_player_key_containing_colons(pulse):
     _fake, client = pulse
     body = await build_game_server_player_payload(
         client=client, server_id="abiotic_factor",
-        player_key="id:eos:00021fe1d55b4d73ab57c2f70a1726a8",
+        player_key="id:eos:00021fe1d55b4d73ab57c2f70a1726a8", persons=NO_PERSONS,
     )
     assert body["path"] == (
         "/v1/servers/abiotic_factor/players/id:eos:00021fe1d55b4d73ab57c2f70a1726a8"
     )
+
+
+async def test_player_is_enriched_with_a_linked_person_when_steam_id_resolves(pulse):
+    fake, client = pulse
+    fake.echo_extra_fields = {"steamId": "76561190000000001"}
+    persons = Persons(
+        by_person={
+            "aaron_larsen": PersonRef(person_id="aaron_larsen", name="Aaron", honcho_peer_id="aaron_larsen"),
+        },
+        index={("pulse", "76561190000000001"): "aaron_larsen"},
+    )
+
+    body = await build_game_server_player_payload(
+        client=client, server_id="abiotic_factor", player_key="id:eos:x", persons=persons,
+    )
+
+    assert body["linkedPerson"] == {"personId": "aaron_larsen", "displayName": "Aaron"}
+
+
+async def test_player_has_no_linked_person_when_steam_id_does_not_resolve(pulse):
+    fake, client = pulse
+    fake.echo_extra_fields = {"steamId": "76561190000000001"}
+
+    body = await build_game_server_player_payload(
+        client=client, server_id="abiotic_factor", player_key="id:eos:x", persons=NO_PERSONS,
+    )
+
+    assert "linkedPerson" not in body
+
+
+async def test_player_has_no_linked_person_when_pulse_sends_no_steam_id(pulse):
+    _fake, client = pulse
+    persons = Persons(
+        by_person={
+            "aaron_larsen": PersonRef(person_id="aaron_larsen", name="Aaron", honcho_peer_id="aaron_larsen"),
+        },
+        index={("pulse", "76561190000000001"): "aaron_larsen"},
+    )
+
+    body = await build_game_server_player_payload(
+        client=client, server_id="abiotic_factor", player_key="id:eos:x", persons=persons,
+    )
+
+    assert "linkedPerson" not in body
 
 
 async def test_activity_forwards_pagination_and_time_range(pulse):
@@ -323,7 +380,7 @@ async def test_players_is_unavailable_when_no_client_is_configured():
 async def test_player_is_unavailable_when_no_client_is_configured():
     with pytest.raises(GamesUnavailableError, match="not configured"):
         await build_game_server_player_payload(
-            client=None, server_id="abiotic_factor", player_key="x",
+            client=None, server_id="abiotic_factor", player_key="x", persons=NO_PERSONS,
         )
 
 
@@ -341,3 +398,29 @@ async def test_sessions_is_unavailable_when_no_client_is_configured():
             client=None, server_id="abiotic_factor", page=1, page_size=20,
             player_key=None, since_ms=None, until_ms=None,
         )
+
+
+async def test_progress_calls_the_server_scoped_route(pulse):
+    fake, client = pulse
+    body = await build_game_server_progress_payload(client=client, server_id="big_walk")
+    assert body["path"] == "/v1/servers/big_walk/progress"
+    assert fake.seen == [("/v1/servers/big_walk/progress", "")]
+
+
+async def test_progress_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_progress_payload(client=None, server_id="big_walk")
+
+
+async def test_save_history_forwards_the_hours_param(pulse):
+    fake, client = pulse
+    body = await build_game_server_save_history_payload(
+        client=client, server_id="big_walk", hours=72,
+    )
+    assert body["query"] == {"hours": "72"}
+    assert fake.seen == [("/v1/servers/big_walk/save-history", "hours=72")]
+
+
+async def test_save_history_is_unavailable_when_no_client_is_configured():
+    with pytest.raises(GamesUnavailableError, match="not configured"):
+        await build_game_server_save_history_payload(client=None, server_id="big_walk", hours=168)

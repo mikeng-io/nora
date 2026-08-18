@@ -6,18 +6,9 @@ import { WifiOff, Sparkles, Hash } from "lucide-react";
 import { fetchMemory, type MemoryEntry } from "@/lib/memory-schema";
 import { hueOf } from "@/lib/person-color";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { PersonAvatar } from "@/components/ui/person-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
-
-function initialsOf(name: string) {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
 
 // Honcho's peer_card facts are observed live as "CATEGORY: Key: Value"
 // (e.g. "IDENTITY: Name: Miles Novak (Miles)", "ATTRIBUTE: Workplace: Acme
@@ -73,7 +64,6 @@ function MemoryPersonCard({ entry }: { entry: MemoryEntry }) {
   const t = useTranslations("memory");
   const [expanded, setExpanded] = useState(false);
   const hue = hueOf(entry.person_id);
-  const ringColor = `hsl(${hue} 60% 55% / 0.35)`;
   const dotColor = `hsl(${hue} 65% 55%)`;
   const shown = expanded ? entry.episodes : entry.episodes.slice(0, EPISODES_COLLAPSED_LIMIT);
   const hiddenCount = entry.episodes.length - shown.length;
@@ -81,18 +71,7 @@ function MemoryPersonCard({ entry }: { entry: MemoryEntry }) {
   return (
     <Card>
       <CardHeader className="flex-row items-center gap-2.5 space-y-0 pb-2">
-        <Avatar
-          className="h-8 w-8 ring-2"
-          style={{
-            backgroundColor: `hsl(${hue} 70% 92%)`,
-            // @ts-expect-error -- CSS custom value, not a token
-            "--tw-ring-color": ringColor,
-          }}
-        >
-          <AvatarFallback style={{ color: `hsl(${hue} 55% 32%)`, backgroundColor: "transparent" }}>
-            {initialsOf(entry.display_name)}
-          </AvatarFallback>
-        </Avatar>
+        <PersonAvatar seed={entry.person_id} size={32} className="rounded-full overflow-hidden" />
         <CardTitle>{entry.display_name}</CardTitle>
       </CardHeader>
       <CardContent className="pt-0">

@@ -11,29 +11,58 @@ def _persons(*refs: PersonRef) -> Persons:
     return Persons(by_person={r.person_id: r for r in refs}, index={})
 
 
-async def test_returns_one_entry_per_whitelisted_person():
+async def test_returns_only_the_callers_own_entry_not_everyone_elses():
+    """User-scoped (operator, 2026-08-19): a caller resolved to `miles` must
+    never see `ada`'s memory, reversing the original v1 "showcase everyone
+    to everyone" design (2026-08-17-nora-web-design.md §2)."""
     honcho = FakeHoncho(
         conclusions={"miles": ["likes climbing", "works in fintech"], "ada": ["plays guitar"]},
         cards={"miles": ["Name: Miles Novak"], "ada": ["Name: Ada"]},
     )
     persons = _persons(MILES, ADA)
 
-    payload = await build_memory_payload(honcho=honcho, persons=persons, ai_peer="nora")
+    payload = await build_memory_payload(
+        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
+    )
 
-    by_id = {entry["person_id"]: entry for entry in payload}
-    assert set(by_id) == {"miles", "ada"}
-    assert by_id["miles"]["display_name"] == "Miles"
-    assert by_id["miles"]["reachable"] is True
-    assert by_id["miles"]["episodes"] == ["likes climbing", "works in fintech"]
-    assert by_id["miles"]["identity"] == ["Name: Miles Novak"]
-    assert by_id["ada"]["episodes"] == ["plays guitar"]
+    assert [entry["person_id"] for entry in payload] == ["miles"]
+    assert payload[0]["display_name"] == "Miles"
+    assert payload[0]["reachable"] is True
+    assert payload[0]["episodes"] == ["likes climbing", "works in fintech"]
+    assert payload[0]["identity"] == ["Name: Miles Novak"]
+
+
+async def test_a_missing_person_id_returns_empty_not_everyone():
+    """Fail-closed (R-5's shape): no resolved identity must never fall back
+    to showing every whitelisted person's data."""
+    honcho = FakeHoncho(conclusions={"miles": ["x"]})
+    persons = _persons(MILES)
+
+    payload = await build_memory_payload(
+        honcho=honcho, persons=persons, ai_peer="nora", person_id=None,
+    )
+
+    assert payload == []
+
+
+async def test_an_unrecognized_person_id_returns_empty_not_an_error():
+    honcho = FakeHoncho(conclusions={"miles": ["x"]})
+    persons = _persons(MILES)
+
+    payload = await build_memory_payload(
+        honcho=honcho, persons=persons, ai_peer="nora", person_id="stranger",
+    )
+
+    assert payload == []
 
 
 async def test_a_person_with_no_conclusions_or_card_is_reachable_but_empty():
     honcho = FakeHoncho(conclusions={}, cards={})
     persons = _persons(MILES)
 
-    payload = await build_memory_payload(honcho=honcho, persons=persons, ai_peer="nora")
+    payload = await build_memory_payload(
+        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
+    )
 
     assert payload == [
         {
@@ -54,7 +83,9 @@ async def test_an_unreachable_honcho_is_reported_unavailable_not_empty():
     honcho = FakeHoncho(fail=True)
     persons = _persons(MILES)
 
-    payload = await build_memory_payload(honcho=honcho, persons=persons, ai_peer="nora")
+    payload = await build_memory_payload(
+        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
+    )
 
     assert payload == [
         {
@@ -64,14 +95,14 @@ async def test_an_unreachable_honcho_is_reported_unavailable_not_empty():
     ]
 
 
-async def test_queries_honcho_as_the_ai_peer_observing_each_person():
+async def test_queries_honcho_as_the_ai_peer_observing_the_caller():
     """Nora's MODEL OF the person, not the person's self-model — the same
     (observer=ai_peer, observed=target) shape nora/engagement/context.py's
     _recall_self/_recall_tagger_card already use."""
     honcho = FakeHoncho(conclusions={"miles": ["x"]})
     persons = _persons(MILES)
 
-    await build_memory_payload(honcho=honcho, persons=persons, ai_peer="nora")
+    await build_memory_payload(honcho=honcho, persons=persons, ai_peer="nora", person_id="miles")
 
     assert honcho.queries == [("nora", "miles", "")]
 
@@ -83,6 +114,8 @@ async def test_identity_is_the_persons_own_self_scoped_peer_card_not_an_observer
     honcho = FakeHoncho(cards={"miles": ["Name: Miles Novak", "Aliases: Miles"]})
     persons = _persons(MILES)
 
-    payload = await build_memory_payload(honcho=honcho, persons=persons, ai_peer="nora")
+    payload = await build_memory_payload(
+        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
+    )
 
     assert payload[0]["identity"] == ["Name: Miles Novak", "Aliases: Miles"]

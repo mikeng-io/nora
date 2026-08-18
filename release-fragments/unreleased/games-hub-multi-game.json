@@ -1,0 +1,13 @@
+{
+  "type": "feature",
+  "summary": "The Games Hub now supports Pulse's game-neutral server model (game-server-monitor@67ce88a): local-save games (e.g. Big Walk, which has no dedicated server and derives progress from a PC-uploaded save) render alongside container-backed games (Abiotic Factor) with their own status/world/progress/history views, instead of assuming every server has a container.",
+  "details": [
+    "New GET /app/v1/games/servers/{id}/progress and .../save-history routes — local-save games only, the save-upload equivalent of a container's live status and CPU/memory/network history.",
+    "games-schema.ts's fetchServerStatus/fetchServerWorld now return a discriminated union (container vs. local-save / abiotic-factor vs. big-walk) instead of assuming one fixed shape.",
+    "The server detail page branches on the discriminator: a local-save server shows last-uploaded/last-played/playtime and a completion-progress panel instead of CPU/memory/network stats it doesn't have.",
+    "Operator-facing resource telemetry (CPU/memory/network, and the multi-range performance history charts behind them) moved into a collapsed section at the bottom of the container-backed server page, matching game-server-monitor's own web app convention — a non-technical player never needs to see cgroup numbers to know who's online."
+  ],
+  "limitations": [
+    "Pulse's own worldState() has a confirmed live bug: a local-save server with no upload yet returns the WRONG server's cached snapshot instead of undefined (evidenced by /progress 500ing on an object missing its expected fields, while /save-history — a real SQL table, not the same key-value store — correctly returns empty). This is upstream in game-server-monitor, not fixable from this app; the Big Walk page will keep showing Abiotic Factor's world data until that lands."
+  ]
+}
