@@ -82,6 +82,7 @@ async def _tick(deps: AnalyticsDependencies, last_run: _LastRunAt) -> None:
             subject_id=subject_id, person_ids=person_ids, circle_id=circle_id,
             now_ms=now_ms,
         )
+        deps.metrics.gauge("nora_analytics_rollup_age_seconds", 0.0, subject=subject_id)
         last_run[subject_id] = now_ms / 1000
 
 

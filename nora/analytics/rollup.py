@@ -168,7 +168,9 @@ class MobilityRollup:
                 subject_id=subject_id, fix_id=fixes[-1].id
             )
             if self._metrics is not None:
-                self._metrics.inc("nora_analytics_stays_total", value=len(new_stays))
+                self._metrics.inc(
+                    "nora_analytics_stays_total", value=len(new_stays), subject=subject_id,
+                )
 
         # Speed 2 (cheap): the label recheck. Runs on EVERY call this
         # function is given, independent of whether clustering ran this
@@ -207,7 +209,9 @@ class MobilityRollup:
                         now_ms=now_ms,
                     )
                     if self._metrics is not None and recheck.kind == "unlabeled":
-                        self._metrics.inc("nora_analytics_unlabeled_total")
+                        self._metrics.inc(
+                            "nora_analytics_unlabeled_total", subject=subject_id,
+                        )
 
         # Speed 3 (expensive, dirty-set gated): full re-clustering. Only
         # when segmentation closed a stay since last_cluster_id — clustering
@@ -244,6 +248,11 @@ class MobilityRollup:
                             lat=lat, lng=lng, radius_m=self._cfg.cluster_eps_m,
                             result=result, now_ms=now_ms,
                         )
+                        if self._metrics is not None:
+                            self._metrics.inc(
+                                "nora_analytics_places_total",
+                                subject=subject_id, kind=result.kind,
+                            )
                 await self._store.advance_cluster_watermark(
                     subject_id=subject_id, fix_id=new_last_cluster
                 )
