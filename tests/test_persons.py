@@ -11,6 +11,8 @@ phone = "+85212345678"
 uuid = "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
 [[persons.miles.life360]]
 member_id = "life360-miles-uuid"
+[[persons.miles.pulse]]
+steam_id = "76561190000000001"
 
 [persons.ada]
 name = "Ada"
@@ -94,6 +96,29 @@ def test_a_bad_life360_id_kind_is_a_startup_failure(tmp_path):
         '[[persons.miles.life360]]\nmemberid = "x"\n'   # typo: no underscore
     )
     with pytest.raises(PersonsError, match="member_id"):
+        load_persons(p)
+
+
+def test_a_pulse_steam_id_resolves_to_the_same_person(persons):
+    """A Pulse (game-server-monitor) SteamID64 binds to the SAME person_id as
+    their Signal number — the web portal's Games Hub can name a player as one
+    of Nora's people the same way presence names a live circle member."""
+    ref = persons.resolve("pulse", "76561190000000001")
+    assert ref is not None
+    assert ref.person_id == "miles"
+    assert persons.resolve("signal", "+85212345678").person_id == ref.person_id
+
+
+def test_a_bad_pulse_id_kind_is_a_startup_failure(tmp_path):
+    """pulse's only matchable kind is `steam_id` — never `player_key`, which is
+    per-game and does not carry over to a different title (R-5: a typo or the
+    wrong id kind must be a startup error, not a silent non-match)."""
+    p = tmp_path / "identity.toml"
+    p.write_text(
+        '[persons.miles]\nname = "Miles"\n'
+        '[[persons.miles.pulse]]\nplayer_key = "id:eos:x"\n'
+    )
+    with pytest.raises(PersonsError, match="steam_id"):
         load_persons(p)
 
 
