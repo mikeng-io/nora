@@ -24,7 +24,7 @@ class FakeMobilityStore:
     def __init__(self) -> None:
         self._fixes: list[_SeededFix] = []
         self._stays: list[Stay] = []
-        self._places: dict[tuple[str, str], tuple[int, LabelResult]] = {}
+        self._places: dict[tuple[str, str], tuple[int, float, float, float, LabelResult]] = {}
         self._watermarks: dict[str, tuple[int, int]] = {}
         self._next_place_id = 1
 
@@ -60,7 +60,7 @@ class FakeMobilityStore:
 
     async def existing_place(
         self, *, subject_id: str, kind: str
-    ) -> tuple[int, LabelResult] | None:
+    ) -> tuple[int, float, float, float, LabelResult] | None:
         return self._places.get((subject_id, kind))
 
     async def upsert_place(
@@ -71,12 +71,11 @@ class FakeMobilityStore:
             self._places.pop((subject_id, "home"), None)
             self._places.pop((subject_id, "work"), None)
             return
-        place_id, _ = self._places.get(
-            (subject_id, result.kind), (self._next_place_id, None)
-        )
-        if place_id == self._next_place_id:
+        existing = self._places.get((subject_id, result.kind))
+        place_id = existing[0] if existing is not None else self._next_place_id
+        if existing is None:
             self._next_place_id += 1
-        self._places[(subject_id, result.kind)] = (place_id, result)
+        self._places[(subject_id, result.kind)] = (place_id, lat, lng, radius_m, result)
 
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None:
         _, cluster = self._watermarks.get(subject_id, (0, 0))

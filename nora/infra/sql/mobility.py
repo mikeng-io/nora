@@ -107,7 +107,7 @@ class SqlMobilityStore:
 
     async def existing_place(
         self, *, subject_id: str, kind: str
-    ) -> tuple[int, LabelResult] | None:
+    ) -> tuple[int, float, float, float, LabelResult] | None:
         stmt = sa.select(PRESENCE_DERIVED_PLACES).where(
             PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
             PRESENCE_DERIVED_PLACES.c.kind == kind,
@@ -116,9 +116,12 @@ class SqlMobilityStore:
             row = (await conn.execute(stmt)).first()
         if row is None:
             return None
-        return row.id, LabelResult(
-            kind=row.kind, confidence=row.confidence,
-            most_recent_support_ts=None,  # not persisted; recomputed each cycle
+        return (
+            row.id, row.lat, row.lng, row.radius_m,
+            LabelResult(
+                kind=row.kind, confidence=row.confidence,
+                most_recent_support_ts=None,  # not persisted; recomputed each cycle
+            ),
         )
 
     async def upsert_place(
