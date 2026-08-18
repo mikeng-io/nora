@@ -299,7 +299,7 @@ def test_the_analytics_section_is_optional_and_ships_inert(toml_path):
     assert cfg.analytics.batch_limit == 400
     assert cfg.analytics.backfill_batch_limit == 20_000
     assert cfg.analytics.backfill_threshold == 4_000
-    assert cfg.analytics.metrics_port == 9102
+    assert cfg.analytics.metrics_port == 9103
 
 
 def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_path):

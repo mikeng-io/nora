@@ -734,9 +734,9 @@ class AnalyticsConfig(BaseModel):
     tz_name: str = "Asia/Hong_Kong"
     # The substrate's own metrics/health endpoint. 9100 is Nora's own
     # (`[obs.metrics]`), 9101 is the presence collector's
-    # (`PresenceConfig.metrics_port`) — the next free port in the same
-    # numbering.
-    metrics_port: int = 9102
+    # (`PresenceConfig.metrics_port`), 9102 is the drop service's public
+    # listener — the next free port in the same numbering.
+    metrics_port: int = 9103
 
 
 class SearchConfig(BaseModel):

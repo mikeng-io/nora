@@ -303,7 +303,7 @@ enabled = false
 # min_weekdays = 3
 # label_freshness_days = 45
 # tz_name = "Asia/Hong_Kong"
-# metrics_port = 9102
+# metrics_port = 9103
 
 # Web search (SearXNG) + page fetch (Firecrawl) for the `search`/`fetch` tools
 # (DEC-57, design/22). The WHOLE SECTION IS OPTIONAL and every key defaults — a

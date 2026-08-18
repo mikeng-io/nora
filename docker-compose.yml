@@ -355,8 +355,8 @@ services:
     entrypoint: ["uv", "run", "--no-sync", "python", "-m", "nora.analytics"]
     command: ["--config", "config.toml"]
     networks: [nora]
-    # :9102, next free port after nora's own :9100 and presence's :9101.
-    ports: ["127.0.0.1:9102:9102"]
+    # :9103, next free port after nora's own :9100, presence's :9101, and drop's :9102.
+    ports: ["127.0.0.1:9103:9103"]
     depends_on:
       db:
         # Like presence, this process runs `alembic upgrade head` itself on
