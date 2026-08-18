@@ -56,3 +56,35 @@ def test_a_former_id_that_collides_with_a_live_person_id_refuses_to_load(tmp_pat
     )
     with pytest.raises(PersonsError, match="miles_novak"):
         load_persons(p)
+
+
+def test_former_ids_for_returns_every_retired_id_for_the_current_owner(tmp_path):
+    # The reverse of subject_id_for — nora.analytics.composition
+    # ._subjects_from_identity needs this because life360 memberships can
+    # only ever carry LIVE person_ids (load_persons refuses a
+    # former_person_ids entry that collides with a live block), so
+    # subject_id_for alone can never surface a former id.
+    p = tmp_path / "identity.toml"
+    p.write_text(
+        '[persons.clara_lawson]\n'
+        'name = "Clara"\n'
+        'former_person_ids = ["clara_yates", "clara_walsh"]\n'
+    )
+    persons = load_persons(p)
+    assert set(persons.former_ids_for("clara_lawson")) == {
+        "clara_yates", "clara_walsh",
+    }
+
+
+def test_former_ids_for_a_never_renamed_person_is_empty(tmp_path):
+    p = tmp_path / "identity.toml"
+    p.write_text('[persons.miles_novak]\nname = "Miles"\n')
+    persons = load_persons(p)
+    assert persons.former_ids_for("miles_novak") == ()
+
+
+def test_former_ids_for_an_unknown_person_is_empty_rather_than_raising(tmp_path):
+    p = tmp_path / "identity.toml"
+    p.write_text('[persons.miles_novak]\nname = "Miles"\n')
+    persons = load_persons(p)
+    assert persons.former_ids_for("someone_gone") == ()

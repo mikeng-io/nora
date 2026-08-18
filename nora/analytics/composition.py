@@ -43,18 +43,49 @@ class AnalyticsDependencies:
 def _subjects_from_identity(persons: Persons) -> tuple[tuple[str, list[str], str], ...]:
     """Every (subject_id, [observed person_ids], circle_id) this deployment
     should derive for — built from identity.toml's life360 memberships
-    (`CircleSpec`'s own source), resolved through `subject_id_for` (Task 5)
-    so a renamed person's fixes under BOTH their former and current
-    person_id are read as one subject."""
+    (`CircleSpec`'s own source).
+
+    `former_ids_for` (Task 5's reverse lookup) folds in every RETIRED
+    person_id that once resolved to this subject, so a renamed person's
+    fixes stored under BOTH their former and current person_id are read as
+    one subject. `subject_id_for` alone cannot do this: by `load_persons`'
+    own fail-closed construction (a `former_person_ids` entry colliding
+    with a live `[persons.<id>]` block raises `PersonsError`), a
+    `Life360Membership.person_id` can only ever be a LIVE id — so calling
+    `subject_id_for` on every membership here is always a no-op (it never
+    sees a former id to resolve), and `former_ids_for` is the only way to
+    recover the retired ids at all.
+
+    Fail-closed (R-5), matching `nora.presence.composition
+    ._circles_from_identity`'s own precedent over the identical source
+    data: a life360 membership with no `circle_id` cannot be placed, and
+    silently writing `""` into a NOT NULL `circle_id` column (`presence_stays`/
+    `presence_derived_places` carry no CHECK constraint to catch it) would
+    corrupt every row derived for that subject — refuse to start instead of
+    guessing."""
     by_current: dict[str, list[str]] = {}
     circle_for: dict[str, str] = {}
+    unplaced: list[str] = []
     for membership in persons.life360:
         subject = persons.subject_id_for(membership.person_id)
         by_current.setdefault(subject, []).append(membership.person_id)
-        if membership.circle_id is not None:
-            circle_for[subject] = membership.circle_id
+        if membership.circle_id is None:
+            unplaced.append(f"{membership.member_id} (person_id={membership.person_id!r})")
+            continue
+        circle_for[subject] = membership.circle_id
+    if unplaced:
+        raise AnalyticsStartupError(
+            f"Life360 member id(s) {unplaced} have a [[persons.<id>.life360]] "
+            "block with no circle_id in identity.toml — analytics cannot "
+            "derive a circle_id to write stays/places under for their "
+            "subject; add circle_id or remove the block (design/19 §3)"
+        )
     return tuple(
-        (subject, person_ids, circle_for.get(subject, ""))
+        (
+            subject,
+            list(dict.fromkeys([*person_ids, *persons.former_ids_for(subject)])),
+            circle_for[subject],
+        )
         for subject, person_ids in by_current.items()
     )
 

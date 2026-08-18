@@ -76,6 +76,35 @@ class Persons:
         identity.toml has never heard of at all) resolves to itself."""
         return self._subject_aliases.get(person_id, person_id)
 
+    def former_ids_for(self, person_id: str) -> tuple[str, ...]:
+        """The reverse of `subject_id_for`: every RETIRED id whose
+        `former_person_ids` entry currently resolves to `person_id`.
+
+        `_subject_aliases` only maps former → current (built once by
+        `load_persons` from each block's `former_person_ids`), and
+        `life360` memberships — by `load_persons`' own fail-closed
+        construction (a `former_person_ids` entry colliding with a live
+        `[persons.<id>]` block raises `PersonsError`) — can therefore only
+        ever carry LIVE ids. Any caller that needs every id a subject has
+        ever been observed under (`nora.analytics.composition
+        ._subjects_from_identity`, folding a renamed person's historical
+        fixes under their former id into the SAME subject) needs this
+        reverse lookup; forward-only `subject_id_for` is a no-op over
+        `life360`'s own ids and can never surface a former id on its own.
+
+        Built by scanning `_subject_aliases` on each call rather than a
+        second cached index: the dict is small (one entry per rename in the
+        whole deployment) and this avoids a second copy of the same fact
+        that could drift from `_subject_aliases` after a future edit —
+        exactly `platform_ids`' own reasoning for computing fresh each call.
+        Order is insertion order over `_subject_aliases` (stable, but not
+        meaningful — callers should not rely on a particular ordering
+        beyond stability)."""
+        return tuple(
+            former for former, current in self._subject_aliases.items()
+            if current == person_id
+        )
+
     def resolve(self, platform: str, sender_id: str) -> PersonRef | None:
         person_id = self.index.get((platform, sender_id))
         return self.by_person[person_id] if person_id else None
