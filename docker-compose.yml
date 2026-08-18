@@ -345,6 +345,30 @@ services:
       start_period: 20s
       retries: 3
 
+  analytics:
+    image: nora:latest
+    container_name: analytics
+    restart: unless-stopped
+    # Same entrypoint-override shape as `presence` — the image's ENTRYPOINT
+    # is `uv run --no-sync python -m nora`, so this process must override
+    # it rather than append a command.
+    entrypoint: ["uv", "run", "--no-sync", "python", "-m", "nora.analytics"]
+    command: ["--config", "config.toml"]
+    networks: [nora]
+    # :9102, next free port after nora's own :9100 and presence's :9101.
+    ports: ["127.0.0.1:9102:9102"]
+    depends_on:
+      db:
+        # Like presence, this process runs `alembic upgrade head` itself on
+        # startup, so it needs a SERVING Postgres, not merely a spawned one.
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora
+      - TZ=Asia/Hong_Kong
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./identity.toml:/app/identity.toml:ro
+
   # valkey — dedicated slug -> URL store for the `drop` service (Nora Drop
   # spec, docs/superpowers/specs/2026-08-12-nora-drop-design.md §3/§4). NOT
   # the same Redis Honcho already runs for its own cache (`redis:8.2`,
