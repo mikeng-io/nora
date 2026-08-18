@@ -193,6 +193,85 @@ PRESENCE_PLACES = sa.Table(
 )
 
 
+# `presence_stays` / `presence_derived_places` / `analytics_watermark` — the
+# DERIVED layer (docs/superpowers/specs/2026-08-18-presence-analytics-substrate-design.md
+# §2, DEC-115). `subject_id` is the STABLE key (design/27 §1.2: `person_id` is
+# mutable — a rename split one person into two identities in the live corpus);
+# `person_id` is retained on `presence_stays` only, as the value actually
+# observed, for provenance. `last_fix_id`/`last_cluster_id` are `sa.Integer`,
+# matching `presence_fixes.id` exactly (an earlier draft claimed bigint width
+# was needed; it was not — see the spec's §2 for the correction).
+PRESENCE_STAYS = sa.Table(
+    "presence_stays",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column("subject_id", sa.Text, nullable=False),
+    sa.Column("person_id", sa.Text, nullable=False),
+    sa.Column("circle_id", sa.Text, nullable=False),
+    sa.Column("started_ts", sa.BigInteger, nullable=False),
+    sa.Column("ended_ts", sa.BigInteger, nullable=False),
+    sa.Column("lat", sa.Float, nullable=False),
+    sa.Column("lng", sa.Float, nullable=False),
+    sa.Column("radius_m", sa.Float, nullable=False),
+    sa.Column("fix_count", sa.Integer, nullable=False),
+    sa.Column("place_id", sa.Integer, nullable=True),
+)
+
+# `(subject_id, started_ts DESC)` — the same alembic-check-blind DESC shape as
+# `idx_presence_member_ts`; excluded from autogenerate in `migrations/env.py`,
+# authored by hand in 0015, asserted by `tests/infra/test_schema_parity.py`.
+IDX_PRESENCE_STAYS_SUBJECT_TS = sa.Index(
+    "idx_presence_stays_subject_ts",
+    PRESENCE_STAYS.c.subject_id,
+    sa.text("started_ts DESC"),
+)
+
+PRESENCE_DERIVED_PLACES = sa.Table(
+    "presence_derived_places",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column("subject_id", sa.Text, nullable=False),
+    sa.Column("circle_id", sa.Text, nullable=False),
+    sa.Column("lat", sa.Float, nullable=False),
+    sa.Column("lng", sa.Float, nullable=False),
+    sa.Column("radius_m", sa.Float, nullable=False),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("confidence", sa.Float, nullable=False),
+    sa.Column("label", sa.Text, nullable=True),
+    sa.Column("saved_place_id", sa.Text, nullable=True),
+    sa.Column("first_seen_ts", sa.BigInteger, nullable=False),
+    sa.Column("last_seen_ts", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        "kind IN ('home','work','unlabeled')", name="ck_derived_places_kind"
+    ),
+)
+
+IDX_PRESENCE_DERIVED_PLACES_SUBJECT_KIND = sa.Index(
+    "idx_presence_derived_places_subject_kind",
+    PRESENCE_DERIVED_PLACES.c.subject_id,
+    PRESENCE_DERIVED_PLACES.c.kind,
+)
+
+# Packs TWO watermarks per row deliberately — `last_fix_id` (segmentation) and
+# `last_cluster_id` (the dirty-set marker, spec §4.2) are read together every
+# cycle to decide whether clustering is dirty, so one row avoids two indexed
+# reads for no benefit. `deriver_name` is the constant `"mobility"`, kept only
+# so a second deriver could join this table later without a migration — the
+# same shape `consolidation_watermark` uses for `consolidator_name`.
+ANALYTICS_WATERMARK = sa.Table(
+    "analytics_watermark",
+    METADATA,
+    sa.Column("deriver_name", sa.Text, primary_key=True),
+    sa.Column("subject_id", sa.Text, primary_key=True),
+    sa.Column("last_fix_id", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("last_cluster_id", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column(
+        "updated_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+)
+
+
 # `reminders` — one-shot deferred requests, the heartbeat's fire queue.
 #
 # Keyed by a UUID rather than an identity column, unlike every other table here:

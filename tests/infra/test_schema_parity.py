@@ -55,6 +55,10 @@ EXPECTED_DESC_INDEXES = {
     # tool_call_log (tool-recall-log spec §2, §7): the identically
     # alembic-check-blind `(conversation_id, created_at DESC)` index.
     "idx_tool_call_log_conv_ts": {"conversation_id": False, "created_at": True},
+    # presence_stays (presence analytics substrate design §2, DEC-115): the
+    # identically alembic-check-blind `(subject_id, started_ts DESC)` index.
+    "idx_presence_stays_subject_ts": {"subject_id": False, "started_ts": True},
+    "idx_presence_derived_places_subject_kind": {"subject_id": False, "kind": False},
 }
 
 

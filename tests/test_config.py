@@ -275,7 +275,7 @@ def test_the_presence_section_is_optional_and_ships_inert(toml_path):
     cfg = load(toml_path)
     assert cfg.presence.enabled is False
     assert cfg.presence.cadence_seconds == 90.0
-    assert cfg.presence.retention_days == 180
+    assert cfg.presence.retention_days == 720
 
 
 def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_path):

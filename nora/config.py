@@ -620,7 +620,8 @@ class PresenceConfig(BaseModel):
 
     `cadence_seconds` is the per-circle poll interval - ~60-120 s, roughly what
     the Life360 app itself does (§1). `retention_days` is the prune window
-    (§9, operator decision: 180).
+    (§9, operator decision: 720 — see the field's own comment for the sizing
+    math and why it moved off 180, design/27 §5).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -645,7 +646,10 @@ class PresenceConfig(BaseModel):
     # cadence_seconds.
     cadence_moving_seconds: float = Field(default=20.0, ge=1.0)
     cadence_still_seconds: float = Field(default=300.0, ge=1.0)
-    retention_days: int = Field(default=180, ge=1)
+    # 180 -> 720 (operator, 2026-08-19): 378 B/row x ~1,800 fixes/day x 720d ~=
+    # 490MB — cheap, and it is what keeps Tier-4 forecasting training data from
+    # being pruned before it is usable.
+    retention_days: int = Field(default=720, ge=1)
     # The collector's own metrics/health endpoint (§4: liveness lives in the
     # daemon). A separate process, so a separate port from `obs.metrics.port`.
     metrics_port: int = 9101
