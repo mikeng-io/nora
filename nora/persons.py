@@ -62,6 +62,19 @@ class Persons:
     # Every person's Life360 membership(s), the source the presence collector
     # derives its circles from (design/19 §3) — so config.toml carries no ids.
     life360: tuple[Life360Membership, ...] = ()
+    # former_person_id -> current person_id, built from every
+    # `former_person_ids` entry across identity.toml (design/27 §1.2). A
+    # person_id absent from this dict resolves to itself. Defaulted (not a
+    # bare required field) so every existing direct `Persons(...)` fixture in
+    # the test suite that predates this task keeps constructing without it.
+    _subject_aliases: dict[str, str] = field(default_factory=dict)
+
+    def subject_id_for(self, person_id: str) -> str:
+        """The stable id to derive analytics under. Resolves a RETIRED
+        person_id to whoever currently claims it; an id this dict does not
+        mention (including a live, never-renamed person_id, or an id this
+        identity.toml has never heard of at all) resolves to itself."""
+        return self._subject_aliases.get(person_id, person_id)
 
     def resolve(self, platform: str, sender_id: str) -> PersonRef | None:
         person_id = self.index.get((platform, sender_id))
@@ -231,4 +244,27 @@ def load_persons(path: Path) -> Persons:
                             "would silently misattribute Honcho memory"
                         )
                     index[key] = person_id
-    return Persons(by_person=by_person, index=index, life360=tuple(life360))
+
+    subject_aliases: dict[str, str] = {}
+    for person_id, entry in parsed.persons.items():
+        for former in entry.former_person_ids:
+            if former in parsed.persons:
+                raise PersonsError(
+                    f"former_person_ids entry {former!r} on "
+                    f"[persons.{person_id}] collides with a LIVE "
+                    f"[persons.{former}] block — a former id must not also "
+                    "be a live person_id; remove one or the other"
+                )
+            if former in subject_aliases:
+                raise PersonsError(
+                    f"former_person_ids entry {former!r} is claimed by both "
+                    f"[persons.{subject_aliases[former]}] and "
+                    f"[persons.{person_id}] — an ambiguous merge is refused "
+                    "rather than silently resolved to one of them"
+                )
+            subject_aliases[former] = person_id
+
+    return Persons(
+        by_person=by_person, index=index, life360=tuple(life360),
+        _subject_aliases=subject_aliases,
+    )
