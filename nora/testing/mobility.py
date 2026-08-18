@@ -67,17 +67,24 @@ class FakeMobilityStore:
         self, *, subject_id: str, circle_id: str, kind: str, lat: float,
         lng: float, radius_m: float, result: LabelResult, now_ms: int,
     ) -> None:
-        # `kind` is the ONE slot this write updates, independent of
+        # `kind` is the slot being re-evaluated, independent of
         # `result.kind` — see SqlMobilityStore.upsert_place's docstring
         # (behavioral twin, per this project's contract-suite convention).
-        # The delete is scoped to exactly `kind`, never both `home`/`work`.
-        self._places.pop((subject_id, kind), None)
+        # The delete clears EITHER `kind` OR `result.kind` (when it is a
+        # real kind and differs from `kind`) — never just one, never both
+        # `home`/`work` unconditionally. Without also clearing `result.kind`,
+        # a recheck of `home` that resolves straight to `work` would leave
+        # a stale row behind under an already-existing, unrelated `work`
+        # place from a different cluster.
+        delete_kinds = {kind}
+        if result.kind != "unlabeled":
+            delete_kinds.add(result.kind)
+        for delete_kind in delete_kinds:
+            self._places.pop((subject_id, delete_kind), None)
         if result.kind == "unlabeled":
             return
-        existing = self._places.get((subject_id, result.kind))
-        place_id = existing[0] if existing is not None else self._next_place_id
-        if existing is None:
-            self._next_place_id += 1
+        place_id = self._next_place_id
+        self._next_place_id += 1
         self._places[(subject_id, result.kind)] = (place_id, lat, lng, radius_m, result)
 
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None:

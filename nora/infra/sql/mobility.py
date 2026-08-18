@@ -134,26 +134,39 @@ class SqlMobilityStore:
         subject, so the simplest write that cannot leave a stale row behind
         wins.
 
-        `kind` is the ONE slot this write updates — independent of
-        `result.kind` — and the delete is scoped to exactly that one kind,
-        NEVER `IN ('home', 'work')`. A subject can hold a valid `home` row
-        and a valid `work` row at once (the common case per the design
-        spec); a caller re-evaluating `home` and downgrading it to
-        `unlabeled` must not also delete an unrelated, still-valid `work`
-        row. In the normal case `kind == result.kind` (a caller re-checks
-        the same kind it is writing); they are kept as two separate
-        parameters so the delete-scope is always explicit and correct even
-        if a future caller passes them differently.
+        `kind` is the slot being RE-EVALUATED — independent of
+        `result.kind`, the classification the recheck actually produced.
+        The delete clears rows matching EITHER `kind` (the slot being
+        re-evaluated) OR `result.kind` (the kind about to be written, when
+        it is a real kind and differs from `kind`) — never just one or the
+        other, and never `IN ('home', 'work')` unconditionally. Two
+        distinct bugs live on either side of that: deleting only `kind`
+        would leave a stale row behind under `result.kind` if a subject
+        already held one there from a DIFFERENT cluster (a `home` recheck
+        that resolves straight to `work`, with an existing unrelated `work`
+        place already on file, would otherwise leave two `kind='work'`
+        rows — `presence_derived_places` has no unique constraint on
+        `(subject_id, kind)`, only an index, so `existing_place`'s
+        `.first()` read would become non-deterministic from that point);
+        deleting unconditionally over BOTH `home` and `work` regresses to
+        the original bug this store was built to avoid (a `home` recheck
+        must never delete an unrelated, still-valid `work` row it never
+        touched). In the normal case `kind == result.kind` (a caller
+        re-checks the same kind it is writing) and this is a no-op
+        widening.
 
         A downgrade to `unlabeled` deletes the row entirely rather than
         storing a row with kind='unlabeled' — `existing_place` for a kind
         that no longer holds correctly returns None (Step 1's
         `test_a_stale_place_can_be_downgraded_to_unlabeled_in_place`)."""
+        delete_kinds = {kind}
+        if result.kind != "unlabeled":
+            delete_kinds.add(result.kind)
         async with self._engine.begin() as conn:
             await conn.execute(
                 sa.delete(PRESENCE_DERIVED_PLACES).where(
                     PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
-                    PRESENCE_DERIVED_PLACES.c.kind == kind,
+                    PRESENCE_DERIVED_PLACES.c.kind.in_(delete_kinds),
                 )
             )
             if result.kind != "unlabeled":
