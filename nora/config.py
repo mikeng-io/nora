@@ -684,26 +684,32 @@ class PresenceConfig(BaseModel):
 
 
 class SearchConfig(BaseModel):
-    """Web search for the `web_search` tool — Tavily (DEC-73).
+    """Web search AND page extraction for the `web_search`/`web_fetch` tools —
+    Tavily (DEC-73, DEC-116).
 
     **Optional and every field defaults**, the `RouteConfig` shape. `enabled`
-    defaults **False** and ships that way: `web_search` reaches a third party and
-    spends credits, so it is off until an operator turns it on AND a key is
+    defaults **False** and ships that way: both tools reach a third party and
+    spend credits, so both are off until an operator turns this on AND a key is
     present. Off (or keyless) leaves the registry without a provider and
-    `web_search` answers `unavailable` (R-5), never a silent empty.
+    `web_search`/`web_fetch` answer `unavailable` (R-5), never a silent empty.
 
-    SearXNG + Firecrawl and the `web_fetch` verb are RETIRED (DEC-73): Tavily
-    returns ranked results WITH a content snippet each in one call, from ITS
-    servers, so there is no self-hosted fetcher, no model-chosen-URL fetch, and no
-    SSRF surface — the `is_global`/`allowed_urls`/`deploy/egress.sh` apparatus is
-    gone with them.
+    SearXNG + Firecrawl and the OLD `web_fetch` are RETIRED (DEC-73): the
+    self-hosted fetcher, the model-chosen-URL fetch over Nora's OWN network, and
+    the SSRF surface with it — the `is_global`/`allowed_urls`/`deploy/egress.sh`
+    apparatus — are gone. `web_fetch` returns on DEC-116 via Tavily's separate
+    `/extract` endpoint, which fetches from Tavily's servers exactly as `/search`
+    does, so the SSRF argument is unchanged by its return.
 
     `api_key_env` NAMES the env var holding the Tavily key (DEC-8), never the key
-    itself. `search_depth` is `"basic"` (1 credit) or `"advanced"` (2, richer
-    extraction); `max_results` bounds the count (Tavily allows ≤20);
-    `content_max_chars` clamps each result's snippet — a tool result is re-sent on
-    every subsequent model call, so what accumulates must be bounded (the
-    fetch-token lesson, 2026-08-08).
+    itself — shared by both verbs, one key. `search_depth` is `"basic"` (1
+    credit) or `"advanced"` (2, richer extraction); `max_results` bounds the
+    search count (Tavily allows ≤20); `content_max_chars` clamps each search
+    result's snippet. `extract_depth` is the same two-tier choice for `/extract`;
+    `extract_max_chars` clamps a fetched page's content — set higher than
+    `content_max_chars` because a page is one whole document rather than a
+    snippet, but still bounded: a tool result is re-sent on every subsequent
+    model call, so what accumulates must be bounded (the fetch-token lesson,
+    2026-08-08).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -715,6 +721,9 @@ class SearchConfig(BaseModel):
     max_results: int = Field(default=5, ge=1, le=20)
     content_max_chars: int = Field(default=1500, ge=1)
     timeout_seconds: float = 12.0
+    extract_url: str = "https://api.tavily.com/extract"
+    extract_depth: Literal["basic", "advanced"] = "basic"
+    extract_max_chars: int = Field(default=3000, ge=1)
 
 
 class WeatherConfig(BaseModel):

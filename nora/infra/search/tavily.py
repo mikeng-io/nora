@@ -1,19 +1,27 @@
-"""`TavilySearchProvider` — web search via Tavily, behind the one `web_search` tool.
+"""`TavilySearchProvider` — web search AND page extraction via Tavily, behind the
+`web_search`/`web_fetch` tools.
 
 The grounding rebuild of 2026-08-08 (DEC-73, operator): SearXNG + Firecrawl are
-retired and `web_fetch` with them. Tavily is an agent-first search API that
+retired and the old `web_fetch` with them. Tavily is an agent-first search API that
 returns ranked results WITH a relevant content snippet per result in a SINGLE
-call, so «search then fetch» collapses into one verb — which is what dissolves
-the runaway-rounds failure the two-verb shape produced (a weather tag spent its
-whole token budget fetching pages and never answered, Langfuse 2026-08-08).
+call, so «search then fetch» collapses into one verb for the search case — which
+is what dissolves the runaway-rounds failure the two-verb shape produced (a
+weather tag spent its whole token budget fetching pages and never answered,
+Langfuse 2026-08-08).
+
+`web_fetch` comes back on DEC-116 for the case a snippet doesn't cover: somebody
+pastes a link and wants what's actually on the page. It reuses Tavily rather than
+reopening the retired machinery — `POST /extract` is a SEPARATE Tavily endpoint
+that, like `/search`, fetches from TAVILY'S servers, never Nora's, so the SSRF
+argument below is unchanged by its return.
 
 **No SSRF surface, so none of the old machinery.** The old `fetch` was an SSRF
 risk because a self-hosted Firecrawl fetched a MODEL-CHOSEN URL against Nora's own
 network; the `is_global`/`getaddrinfo` precheck, the post-redirect re-validation,
 and the per-tag `allowed_urls` fence all existed for that. Tavily fetches from ITS
-servers, never Nora's, and Nora never hands it a URL — only a query — so a
-model-invented `http://127.0.0.1:18080` cannot reach anything of Nora's. The whole
-apparatus (and `deploy/egress.sh`) is gone.
+servers, never Nora's — for BOTH `/search` and `/extract` — so a model-invented
+`http://127.0.0.1:18080` cannot reach anything of Nora's, whichever verb hands it
+over. The whole apparatus (and `deploy/egress.sh`) stays gone.
 
 What survives is the discipline every grounding client holds:
 * NEVER raises — a non-200, non-JSON body, or transport error is a tool STATUS
@@ -28,6 +36,16 @@ What survives is the discipline every grounding client holds:
 deliberately NOT sent — Hong Kong is not in Tavily's country list and sending it
 422s the whole call (verified live 2026-08-08); the keyless default already
 returns HK results.
+
+`fetch` is `POST https://api.tavily.com/extract`, the same auth, a SEPARATE
+endpoint from `/search` — `urls: [url]`, `extract_depth`, `format: "markdown"`.
+Response envelope is `{results: [{url, raw_content}], failed_results: [...]}`,
+distinct from `/search`'s `{results: [{url, title, content}]}`; a URL Tavily
+could not reach lands in `failed_results`, not `results`, and reads as
+`nothing_found` — it is not a transport failure of the CALL, which is what
+`unavailable` means here. `raw_content` is CLAMPED the same way a search
+snippet is (`extract_max_chars`, the fetch-token lesson, 2026-08-08) — a full
+page is far bigger than a snippet, and this is the field most likely to blow it.
 """
 
 from __future__ import annotations
@@ -43,13 +61,15 @@ from ..transit.arrivals import _wrap
 log = logging.getLogger("nora.search")
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
+TAVILY_EXTRACT_URL = "https://api.tavily.com/extract"
 
 
 class TavilySearchProvider:
-    """Tavily web search behind the `web_search` tool. Constructed once per
-    process with the resolved key (DEC-8, from the environment at the composition
-    root, never read here). Built only when `[search] enabled` AND a key is
-    present; unwired, `web_search` answers `unavailable`."""
+    """Tavily web search AND page extraction, behind the `web_search`/`web_fetch`
+    tools. Constructed once per process with the resolved key (DEC-8, from the
+    environment at the composition root, never read here). Built only when
+    `[search] enabled` AND a key is present; unwired, both tools answer
+    `unavailable`."""
 
     def __init__(
         self,
@@ -60,6 +80,9 @@ class TavilySearchProvider:
         search_depth: str = "basic",
         content_max_chars: int = 1500,
         timeout_seconds: float = 12.0,
+        extract_url: str = TAVILY_EXTRACT_URL,
+        extract_depth: str = "basic",
+        extract_max_chars: int = 3000,
     ) -> None:
         self._api_key = api_key
         self._url = url
@@ -67,6 +90,9 @@ class TavilySearchProvider:
         self._search_depth = search_depth
         self._content_max_chars = content_max_chars
         self._timeout_seconds = timeout_seconds
+        self._extract_url = extract_url
+        self._extract_depth = extract_depth
+        self._extract_max_chars = extract_max_chars
 
     async def search(self, *, query: str) -> dict[str, Any]:
         """Ranked results with a content snippet each, capped and wrapped. NEVER
@@ -128,6 +154,77 @@ class TavilySearchProvider:
             return {"status": "nothing_found", "results": []}
         return {"status": "ok", "results": wrapped}
 
+    async def fetch(self, *, url: str) -> dict[str, Any]:
+        """One page's content, capped and wrapped. NEVER raises. Three states
+        (R-27): `ok` with `content`, `nothing_found` when Tavily could not read
+        the page (it landed in `failed_results`, not a transport failure of the
+        CALL), `unavailable` for any transport/auth failure of the call itself —
+        «I could not check», never «nothing found»."""
+        try:
+            return await self._fetch(url)
+        except Exception:
+            # The never-raises backstop: a contract violation degrades to
+            # unavailable, never propagates into the loop (R-5).
+            log.exception("tavily extract failed")
+            return dict(_UNAVAILABLE_FETCH)
+
+    async def _fetch(self, url: str) -> dict[str, Any]:
+        body = {
+            "urls": [url],
+            "extract_depth": self._extract_depth,
+            "format": "markdown",
+        }
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.post(self._extract_url, json=body, headers=headers) as response,
+        ):
+            text = await response.text()
+            if response.status != 200:
+                # 401 (bad key), 422 (bad param), 429 (rate limit) all land here —
+                # the key never rides in a log line.
+                log.warning("tavily extract answered %s", response.status)
+                return dict(_UNAVAILABLE_FETCH)
+        try:
+            payload: Any = json.loads(text)
+        except ValueError:
+            log.warning("tavily extract did not return JSON")
+            return dict(_UNAVAILABLE_FETCH)
+        # A real `/extract` 200 always carries BOTH `results` and
+        # `failed_results` as lists — the submitted url lands in exactly one.
+        # Either key missing or wrong-typed is the envelope not matching the
+        # documented shape, an `unavailable` wiring gap (R-27), NOT "nothing on
+        # the page": a change to Tavily's response shape must not silently read
+        # as a dead link.
+        if not isinstance(payload, dict):
+            log.warning("tavily extract returned a non-object envelope")
+            return dict(_UNAVAILABLE_FETCH)
+        results = payload.get("results")
+        failed = payload.get("failed_results")
+        if not isinstance(results, list) or not isinstance(failed, list):
+            log.warning("tavily extract envelope missing results/failed_results")
+            return dict(_UNAVAILABLE_FETCH)
+        if not results:
+            # The url landed in `failed_results` (a dead/blocked page) or in
+            # neither list — both are Tavily's own miss, not a call failure.
+            return {"status": "nothing_found"}
+        item = results[0]
+        if not isinstance(item, dict):
+            return {"status": "nothing_found"}
+        raw_content = str(item.get("raw_content") or "")
+        if not raw_content:
+            return {"status": "nothing_found"}
+        clamped, truncated = _clamp_chars(raw_content, self._extract_max_chars)
+        # Page-controlled → wrapped `untrusted` with the source URL as
+        # provenance, the same discipline as a search snippet (R-13).
+        return {
+            "status": "ok",
+            "url": url,
+            "content": _wrap(url, clamped),
+            "truncated": truncated,
+        }
+
 
 def _clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
     """Clamp `text` to `max_chars`, stating whether it was truncated."""
@@ -140,4 +237,10 @@ _UNAVAILABLE_SEARCH: dict[str, Any] = {
     "status": "unavailable",
     "note": "I couldn't run that search just now. Say so — don't answer as if "
             "you'd looked it up.",
+}
+
+_UNAVAILABLE_FETCH: dict[str, Any] = {
+    "status": "unavailable",
+    "note": "I couldn't open that link just now. Say so — don't answer as if "
+            "you'd read it.",
 }

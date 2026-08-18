@@ -35,7 +35,10 @@ from nora.domain.presence import PresenceFix, SavedPlace, WireState
 #: journey's (required + siblings) against before promoting its leakage/budget
 #: checks to hard. Kept in sync with what `build_eval_tool_registry` wires.
 BACKED_TOOLS = frozenset(
-    {"weather", "web_search", "place_info", "route", "transit", "where_is", "saved_places"}
+    {
+        "weather", "web_search", "web_fetch", "place_info", "route", "transit",
+        "where_is", "saved_places",
+    }
 )
 
 #: The circle id the eval's presence stack uses; `build_eval_tool_registry` wires
@@ -69,7 +72,8 @@ class CannedWeatherProvider:
 
 
 class CannedSearchProvider:
-    """`nora.domain.ports.SearchProvider` — one fixed ranked result, always `ok`.
+    """`nora.domain.ports.SearchProvider` — one fixed ranked result, and one
+    fixed fetched page, always `ok`.
 
     The `content` is deliberately written as a COMPLETE, authoritative-sounding
     answer covering the common ask shapes (hours, rating, address, a direct
@@ -99,6 +103,18 @@ class CannedSearchProvider:
                     ),
                 }
             ],
+        }
+
+    async def fetch(self, *, url: str) -> dict[str, Any]:
+        # Same self-terminating shape as `search`: one complete-looking page so
+        # `web_fetch` backs `ConvergesInBudget` for a journey that opens a link.
+        return {
+            "status": "ok",
+            "url": url,
+            "content": (
+                f"COMPLETE, CURRENT PAGE CONTENT for {url}: this is the whole of "
+                "what the page says — do not fetch it again."
+            ),
         }
 
 
