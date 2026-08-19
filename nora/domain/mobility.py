@@ -14,6 +14,7 @@ so no consumer can get the 5.6x count-weighting bias wrong independently.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
@@ -27,6 +28,7 @@ __all__ = [
     "RawFix",
     "SegmentationResult",
     "Stay",
+    "circular_mean_minute",
     "cluster_places",
     "dwell_ms",
     "hour_of_week_bins",
@@ -37,6 +39,28 @@ __all__ = [
 # The observed 1800s still-ceiling (config.toml's cadence_still_seconds)
 # plus slack (spec §3.3, design/27 §1.1).
 DWELL_CAP_MS = 1_900_000
+
+_MINUTES_PER_DAY = 1440.0
+
+
+def circular_mean_minute(minutes: list[float]) -> float:
+    """The circular mean of local time-of-day values (each 0..1439.999),
+    as minutes-since-midnight — Tier 3's typical-arrival/departure stat
+    (design/27 §4, issue #6). An ARITHMETIC mean of 23:50 and 00:10 gives
+    12:00, which is nonsense for a clock value; treating each minute as an
+    angle on a 24h circle and averaging the unit vectors gives ~00:00,
+    correctly.
+
+    Callers must pass a non-empty list — every call site accumulates from
+    at least one closed stay by construction (Task 10), so this is not a
+    boundary this pure function needs to guard."""
+    angles = [m / _MINUTES_PER_DAY * 2 * math.pi for m in minutes]
+    sin_sum = sum(math.sin(a) for a in angles)
+    cos_sum = sum(math.cos(a) for a in angles)
+    mean_angle = math.atan2(sin_sum, cos_sum)
+    if mean_angle < 0:
+        mean_angle += 2 * math.pi
+    return mean_angle / (2 * math.pi) * _MINUTES_PER_DAY
 
 
 def dwell_ms(ts: int, next_ts: int | None, cap_ms: int = DWELL_CAP_MS) -> int:
