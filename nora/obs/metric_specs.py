@@ -845,6 +845,31 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "the expected JSON shape at all, distinct from a well-formed "
         "response that correctly reported no candidates.",
     ),
+    # Dreamer Plan 2's own pair, mirroring the two above exactly —
+    # `nora.language.exchange_observer`'s "no_evidence"/"single_participant"
+    # drop reasons and its own parse-failure counter. `reason=
+    # "single_participant"` is the second structural withhold-rule guarantee
+    # made observable: a candidate whose evidence resolves to only ONE
+    # distinct person (two message ids from the same speaker) is dropped,
+    # not merely disallowed by policy.
+    _CounterSpec(
+        "nora_exchange_candidates_dropped_total",
+        "Exchange-pattern candidates the extractor dropped before they "
+        "reached the store, by reason. reason=\"no_evidence\": the model "
+        "named message_ids not (all) in the batch it was given. "
+        "reason=\"single_participant\": the resolved evidence names only "
+        "one distinct person — no exchange, and the withhold rule forbids "
+        "a one-person row. reason=\"not_found\": the message_ids WERE in "
+        "the batch but no longer resolved against real messages rows by "
+        "append time.",
+        ("reason",),
+    ),
+    _CounterSpec(
+        "nora_exchange_parse_failures_total",
+        "Exchange-pattern-extraction model responses that could not be "
+        "parsed as the expected JSON shape at all, distinct from a "
+        "well-formed response that correctly reported no patterns.",
+    ),
     # dream_loop's per-scope lock (Task 11's first non-negotiable): a slow
     # extraction still running when the next tick comes round is SKIPPED,
     # never re-entered — re-entering would read the same un-advanced

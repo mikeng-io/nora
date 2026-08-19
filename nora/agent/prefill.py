@@ -13,6 +13,7 @@ from datetime import datetime
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
+from ..language.exchange_render import render_room_exchange
 from ..language.render import render_room_language
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
@@ -23,6 +24,10 @@ _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 # an inline literal so Task 11 has somewhere to wire a config value without
 # another signature change.
 DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES = 6
+
+# Dreamer Plan 2's own version of the same coupling — see
+# `nora.engagement.context.DEFAULT_ROOM_EXCHANGE_STORE_LIMIT`.
+DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES = 4
 
 # `escape`/`_escape_attr` moved to `nora.domain.prompt` when the doctrine loader
 # started rendering frontmatter into section attributes and needed the identical
@@ -433,10 +438,20 @@ def _room_language_block(ctx: TagContext, *, max_entries: int) -> str:
     return f"{block}\n" if block else ""
 
 
+def _room_exchange_block(ctx: TagContext, *, max_entries: int) -> str:
+    """Dreamer Plan 2's own sibling of `_room_language_block` — same
+    reasoning: volatile tier, same trailing-newline convention, `""` when
+    empty. See `render_room_exchange`'s own docstring for the four rulings
+    that decide what renders."""
+    block = render_room_exchange(ctx.room_exchange, max_entries=max_entries)
+    return f"{block}\n" if block else ""
+
+
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
     room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
+    room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
 ) -> list[dict]:
     """The three prefill messages. **There is deliberately no roster block.**
 
@@ -484,6 +499,7 @@ def build_prefill(
             + _self_card_block(ctx) + _peer_card_block(ctx)
             + _peer_history_block(ctx)
             + _room_language_block(ctx, max_entries=room_language_max_entries)
+            + _room_exchange_block(ctx, max_entries=room_exchange_max_entries)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),

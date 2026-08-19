@@ -3,14 +3,20 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+import sqlalchemy as sa
+from sqlalchemy.exc import DBAPIError, IntegrityError
+
 from nora.agent.tools import NATIVE_TOOLS
 from nora.domain.media import MediaRef
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.schema import ROOM_EXCHANGE
 from nora.ingest.stages import media as media_stage
 from nora.ingest.stickers import StickerReader
+from nora.language.exchange_observer import _parse_item
 from nora.obs.metrics import Metrics
 from nora.platform.registry import MediaSourceRegistry
 from nora.testing import (
@@ -239,6 +245,11 @@ RULE_TESTS = {
     # prevents is real: she emits a word, it strengthens, the block
     # normalises it, she emits it more.
     "DEC-111": "test_her_own_words_are_never_evidence_for_the_room_lexicon",
+    # DEC-120 (Dreamer Plan 2, exchange patterns): the withhold rule DEC-111
+    # deferred is a structural guarantee, not a convention — no model-authored
+    # gloss field exists (a closed-set `act` only), and the database refuses
+    # any row naming fewer than two people.
+    "DEC-120": "test_exchange_pattern_cannot_attribute_a_disposition_to_a_person",
 }
 
 
@@ -335,6 +346,50 @@ async def test_her_own_words_are_never_evidence_for_the_room_lexicon(pg_url):
         )
     finally:
         await store.aclose()
+
+
+async def test_exchange_pattern_cannot_attribute_a_disposition_to_a_person(pg_url):
+    """DEC-120. Two structural guarantees, proved at the layer that cannot be
+    bypassed — mirrors `test_her_own_words_are_never_evidence_for_the_room_lexicon`'s
+    own "assert it where it cannot be forgotten" shape.
+
+    (1) `_parse_item` rejects any `act` outside the closed set, at PARSE
+    time — no model-authored gloss field exists anywhere on this feature for
+    a rejected claim to fall back into.
+    (2) The DATABASE, not application code, refuses a row naming fewer than
+    two participants — proved with a direct INSERT against `room_exchange`,
+    bypassing every Python-side guard, exactly the "prove it at the layer
+    that cannot be bypassed" argument DEC-111's own test makes for `is_nora`.
+    """
+    # (1) closed-set enforcement at parse time.
+    assert _parse_item({
+        "act": "made_up_act_not_in_the_set", "message_ids": [1, 2], "confidence": 0.9,
+    }) is None, "an act outside EXCHANGE_ACTS must be rejected, not stored"
+    assert _parse_item({
+        "act": "insult_trade", "message_ids": [1, 2], "confidence": 0.9,
+    }) is not None, "a genuine closed-set act must still parse"
+
+    # (2) the database refuses a single-participant row.
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+
+    async def _insert_one_participant() -> None:
+        # `pytest.raises` wraps this WHOLE call, not a statement inside the
+        # `async with` — the exception must still be in flight when
+        # `engine.begin()`'s own `__aexit__` runs, so it rolls back rather
+        # than trying (and failing a SECOND time) to commit an already
+        # -aborted Postgres transaction.
+        async with engine.begin() as conn:
+            await conn.execute(sa.insert(ROOM_EXCHANGE).values(
+                scope_id="g1", act="insult_trade", participants=["miles"],
+                first_seen_at=1, last_seen_at=1,
+            ))
+
+    try:
+        with pytest.raises((IntegrityError, DBAPIError)):
+            await _insert_one_participant()
+    finally:
+        await engine.dispose()
 
 
 def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():

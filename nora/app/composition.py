@@ -62,6 +62,7 @@ from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.events import SqlEventStore
+from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.presence import PresenceStore
@@ -79,6 +80,8 @@ from nora.ingest.policy import (
 )
 from nora.ingest.stickers import StickerReader
 from nora.language.consolidator import LanguageConsolidator
+from nora.language.exchange_consolidator import ExchangeConsolidator
+from nora.language.exchange_observer import ExchangePatternObserver
 from nora.language.observer import LexemeObserver
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
@@ -483,6 +486,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     language_store: SqlLanguageStore | None = (
         SqlLanguageStore(engine, metrics=metrics) if cfg.language.enabled else None
     )
+    # Dreamer Plan 2's store (2026-08-20 exchange-patterns design) — same
+    # gate, same reasoning as `language_store` immediately above: exactly one
+    # consumer (this same tag/fire prefill), and `[language].enabled` is its
+    # off switch too (`LanguageConfig`'s own docstring on why Plan 2 has no
+    # independent flag).
+    exchange_store: SqlExchangeStore | None = (
+        SqlExchangeStore(engine, metrics=metrics) if cfg.language.enabled else None
+    )
 
     # Resolved here, not inside AdapterRegistry — the same convention every
     # other `*_env` secret (the LLM key, the route key) follows: composition.py
@@ -618,6 +629,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # staying wider than render is what the store limit not moving here
         # depends on.
         language=language_store,
+        exchange=exchange_store,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -859,6 +871,31 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 store=language_store,
             ),
         )
+        # Dreamer Plan 2 (DEC-120) — `nora.app.runtime._dream_once` hands
+        # every `RoomConsolidator` in this tuple the SAME batch over the ONE
+        # shared watermark, so this needs no cursor of its own (see
+        # `nora.infra.sql.exchange`'s module docstring). Gated on
+        # `exchange_store is not None` too, since that store is itself built
+        # only under `cfg.language.enabled` (see its own construction
+        # above) — the check is redundant today but documents the real
+        # dependency rather than assuming the two flags can never diverge.
+        # `exchange_model` defaults to `[language].model` one level down,
+        # the same way that field itself defaults to `[llm].model`.
+        if exchange_store is not None:
+            language_consolidators = (
+                *language_consolidators,
+                ExchangeConsolidator(
+                    observer=ExchangePatternObserver(
+                        _LanguageModelClient(
+                            client=client,
+                            model=cfg.language.exchange_model or cfg.language.model,
+                            timeout_seconds=cfg.language.timeout_seconds,
+                        ),
+                        metrics=metrics,
+                    ),
+                    store=exchange_store,
+                ),
+            )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
     # off leaves the registry without a provider and `weather` answers
@@ -1237,6 +1274,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # `TranscriptInjection` never produces a non-empty `RoomLanguage` for
         # this cap to bound in the first place.
         room_language_max_entries=cfg.language.max_rendered_lexemes,
+        room_exchange_max_entries=cfg.language.max_rendered_exchanges,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 
@@ -1322,6 +1360,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             llm_state=llm_state,
             tool_call_log_store=tool_call_log_store,
             room_language_max_entries=cfg.language.max_rendered_lexemes,
+            room_exchange_max_entries=cfg.language.max_rendered_exchanges,
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and
