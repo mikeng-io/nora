@@ -48,12 +48,14 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
+
+from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
+from nora.agent.security import scan_identifiers
 
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from ..domain.media import HANDLE_CHARS, GifCandidate
@@ -74,7 +76,7 @@ from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
 from .arithmetic import evaluate as evaluate_expression
-from .egress import scan_identifiers, scan_reply
+from .egress import scan_reply
 from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .relay import Relay
@@ -1127,27 +1129,6 @@ def _names_a_person(text: str, names: frozenset[str]) -> bool:
     address is phrased AROUND a name (「陳生屋企」), not as one."""
     key = _key(text)
     return any(name in key for name in names)
-
-
-# A decimal lat,lng pair — «22.31,114.16» / «22.4106, 114.1245». BOTH numbers
-# carry a decimal point, which is what tells a coordinate apart from a street
-# address («12 Larkspur Rd» is integers): no legitimate place NAME is written this
-# way, so a coordinate in a route argument is a leaked machine position, not
-# somewhere a person typed. See `_looks_like_coordinate`.
-_COORD_RE = re.compile(r"-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+")
-
-
-def _looks_like_coordinate(text: str) -> bool:
-    """Whether a route argument is a raw coordinate (design/19 §5, R-28).
-
-    This is the outbound barrier for presence: a stored position (from Life360,
-    once `whereis` is wired) must never leave in a tool ARGUMENT to Google. A
-    person names a place — «沙田廣場», «Yoho Mall» — they do not type a decimal
-    lat/lng pair, so blocking the pair costs no real query and closes the one
-    exfil shape `scan_identifiers`/`_names_a_person` do not see (council #4,
-    2026-08-07). Range is NOT checked: an out-of-range pair is still a leaked
-    coordinate, and blocking it too is the safe direction."""
-    return _COORD_RE.search(text) is not None
 
 
 def _count_known_names(text: str, names: frozenset[str]) -> int:
