@@ -532,7 +532,16 @@ services:
       # responses hand back (server.py's own comment on why). Path prefix
       # (`/i/` vs `/drop/`) is added by server.py itself, not part of this
       # value.
-      - DROP_PUBLIC_BASE_URL=https://nora.example.net
+      #
+      # Moved off nora.example.net onto nora.67.zone (operator, 2026-08-19) —
+      # the web portal's own domain, path-routed alongside it (see
+      # ~/workspace/cloudflared/terraform/tunnel.tf's ingress_rule comment).
+      # nora.example.net's own Tunnel ingress rule + DNS record stay live,
+      # pointed at this same service, so an already-shared old link still
+      # resolves — server.py's own DROP_LEGACY_PUBLIC_HOSTNAME check below
+      # is what 301s it onto this new value instead of serving it directly.
+      - DROP_PUBLIC_BASE_URL=https://nora.67.zone
+      - DROP_LEGACY_PUBLIC_HOSTNAME=nora.example.net
       # Same `DATABASE_URL` shape/value `nora`'s own environment above uses
       # (DEC-8: one name for one secret) — `drop`'s own Postgres client
       # (deploy/drop/artifacts.py, raw asyncpg) reads the `artifacts` table
