@@ -101,10 +101,8 @@ TODO**, not something already handled: before this branch merges,
 `0015_events.py` must be renumbered to `0016_events.py` with
 `revision = "0016"` and `down_revision = "0015_presence_analytics"`'s
 actual revision id, and `tests/infra/pg_schema_baseline.sql` regenerated
-against the combined chain. See
-`.superpowers/sdd/2026-08-19-event-module/KNOWN-ISSUES.md` for the full
-writeup and why it isn't fixed in this branch right now. See also the
-implementation plan, `docs/superpowers/plans/2026-08-19-event-module.md`,
+against the combined chain. See also the implementation plan,
+`docs/superpowers/plans/2026-08-19-event-module.md`,
 for the migration as originally written.)
 
     Event

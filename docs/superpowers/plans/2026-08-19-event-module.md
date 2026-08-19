@@ -337,8 +337,7 @@ git commit -m "feat(nora): add Event/RSVP domain types and EventStore port"
 > `0015_events` migration this task produces collides with it and must be
 > renumbered to `0016_events` (with `down_revision` pointed at
 > `0015_presence_analytics`'s actual revision id) before this branch
-> merges — not fixed here; see
-> `.superpowers/sdd/2026-08-19-event-module/KNOWN-ISSUES.md`.
+> merges.
 
 **Files:**
 - Modify: `nora/infra/sql/schema.py`
