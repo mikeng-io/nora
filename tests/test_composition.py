@@ -635,7 +635,9 @@ def test_only_app_and_main_import_config():
         # three packages allowed to read Config (import-linter contract 3
         # lists none as forbidden), same standing as `__main__.py`/`config.py`
         # themselves.
-        if rel.parts[0] in ("app", "presence", "analytics") or str(rel) in ("__main__.py", "config.py"):
+        if rel.parts[0] in ("app", "presence", "analytics") or str(rel) in (
+            "__main__.py", "config.py",
+        ):
             continue
         module_name = _resolved_module_name(rel)
         tree = ast.parse(p.read_text())
