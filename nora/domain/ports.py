@@ -213,6 +213,7 @@ from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
     NormalizedMessage,
+    RoomExchange,
     RoomLanguage,
     TagContext,
     TranscriptRow,
@@ -714,6 +715,21 @@ class RoomLanguageReader(Protocol):
         """Top `limit` rendered-state lexemes by score. Never raises: an
         unavailable store yields an EMPTY `RoomLanguage`, because this block is
         background she may draw on and never the ground for a claim."""
+        ...
+
+
+@runtime_checkable
+class RoomExchangeReader(Protocol):
+    """The READ half of Dreamer Plan 2 (2026-08-20 exchange-patterns design) —
+    the exchange sibling of `RoomLanguageReader`, same reasoning: separated so
+    `TranscriptInjection` keeps taking only Protocol-typed collaborators, and
+    read from the turn's critical path so it must never raise."""
+
+    async def room_exchange(self, *, scope_id: str, limit: int) -> RoomExchange:
+        """Top `limit` rendered-state exchange patterns by score. Never
+        raises: an unavailable store yields an EMPTY `RoomExchange` — this
+        block is background she may draw on, never the ground for a claim
+        about any one person."""
         ...
 
 

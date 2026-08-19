@@ -49,6 +49,7 @@ from typing import Any
 from nora.agent.intent_router import route_intent
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
+    DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
     DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
     build_prefill,
     build_tag_message,
@@ -116,6 +117,7 @@ class EngagementPipeline:
         preview_source: LinkPreviewSource | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
         room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
+        room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
         # SAME platform the tag arrived on. Nora reached a second platform
@@ -198,6 +200,8 @@ class EngagementPipeline:
         # this parameter does not touch — see `LanguageConfig`'s own
         # docstring for why store > render must hold.
         self._room_language_max_entries = room_language_max_entries
+        # Dreamer Plan 2's own sibling of the above — same reasoning.
+        self._room_exchange_max_entries = room_exchange_max_entries
         # R-10's single-in-flight lock and R-30's per-conversation FIFO queue,
         # both keyed by (platform, conversation_id), as one INJECTED
         # collaborator. The queue feeds the lock's one slot in order as each
@@ -469,6 +473,7 @@ class EngagementPipeline:
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name, context_window=self._context_window,
                 room_language_max_entries=self._room_language_max_entries,
+                room_exchange_max_entries=self._room_exchange_max_entries,
             )
             tag_message = build_tag_message(
                 ctx, tagger_name=tagger_name, display_name=self._display_name,

@@ -23,8 +23,21 @@ import logging
 import time
 from typing import Any
 
-from nora.domain.models import NormalizedMessage, PersonRef, RoomLanguage, TagContext, TranscriptRow
-from nora.domain.ports import EngagementRequest, MemoryStore, RecordStore, RoomLanguageReader
+from nora.domain.models import (
+    NormalizedMessage,
+    PersonRef,
+    RoomExchange,
+    RoomLanguage,
+    TagContext,
+    TranscriptRow,
+)
+from nora.domain.ports import (
+    EngagementRequest,
+    MemoryStore,
+    RecordStore,
+    RoomExchangeReader,
+    RoomLanguageReader,
+)
 from nora.persons import Persons
 
 log = logging.getLogger("nora.engagement.context")
@@ -40,6 +53,10 @@ log = logging.getLogger("nora.engagement.context")
 # default rather than an inline literal so Task 11 has somewhere to wire a
 # config value without another signature change.
 DEFAULT_ROOM_LANGUAGE_STORE_LIMIT = 15
+
+# Dreamer Plan 2's own version of the same relation, for the same reason —
+# see `nora.config.Config._exchange_render_cap_stays_below_the_store_limit`.
+DEFAULT_ROOM_EXCHANGE_STORE_LIMIT = 10
 
 
 class TranscriptInjection:
@@ -58,6 +75,8 @@ class TranscriptInjection:
         tagger_card_conclusions: int = 0,
         language: RoomLanguageReader | None = None,
         room_language_store_limit: int = DEFAULT_ROOM_LANGUAGE_STORE_LIMIT,
+        exchange: RoomExchangeReader | None = None,
+        room_exchange_store_limit: int = DEFAULT_ROOM_EXCHANGE_STORE_LIMIT,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -74,6 +93,8 @@ class TranscriptInjection:
         # existing call sites keep working unchanged.
         self._language = language
         self._room_language_store_limit = room_language_store_limit
+        self._exchange = exchange
+        self._room_exchange_store_limit = room_exchange_store_limit
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -95,12 +116,15 @@ class TranscriptInjection:
         # "never load-bearing" rule already claims — this just stops relying on
         # the adapter to honour it. `_room_language` is the fifth sibling
         # (Task 10) and holds the same property.
-        transcript, card, self_card, tagger_card, room_language = await asyncio.gather(
+        (
+            transcript, card, self_card, tagger_card, room_language, room_exchange,
+        ) = await asyncio.gather(
             self._recent(msg),
             self._peer_card(ref, msg),
             self._recall_self(msg),
             self._recall_tagger(ref, msg),
             self._room_language(msg),
+            self._room_exchange(msg),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
@@ -116,6 +140,7 @@ class TranscriptInjection:
             self_card=self_card,
             tagger_card=tagger_card,
             room_language=room_language,
+            room_exchange=room_exchange,
         )
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
@@ -282,3 +307,22 @@ class TranscriptInjection:
             self._metrics.inc(
                 "nora_errors_total", stage="room_language", platform=msg.platform)
             return RoomLanguage(scope_id=msg.conversation_id)
+
+    async def _room_exchange(self, msg: NormalizedMessage) -> RoomExchange:
+        """Dreamer Plan 2's own sibling of `_room_language` — same reasoning,
+        same guard: `exchange=None` (not yet wired) and the store's own
+        `RoomExchangeReader.room_exchange` never-raises guarantee both mean
+        this catch should be unreachable, but it is now one of SIX siblings
+        in the `gather`, where an uncaught exception cancels every other
+        read."""
+        if self._exchange is None:
+            return RoomExchange(scope_id=msg.conversation_id)
+        try:
+            return await self._exchange.room_exchange(
+                scope_id=msg.conversation_id, limit=self._room_exchange_store_limit,
+            )
+        except Exception:
+            log.exception("room-exchange read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="room_exchange", platform=msg.platform)
+            return RoomExchange(scope_id=msg.conversation_id)
