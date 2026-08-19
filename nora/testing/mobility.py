@@ -6,7 +6,7 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.mobility import LabelResult, RawFix, Stay
+from nora.domain.mobility import LabelResult, RawFix, Stay, Trip
 
 
 @dataclass
@@ -26,6 +26,7 @@ class FakeMobilityStore:
     def __init__(self) -> None:
         self._fixes: list[_SeededFix] = []
         self._stays: list[Stay] = []
+        self._trips: list[Trip] = []
         self._places: dict[
             tuple[str, str], tuple[int, float, float, float, LabelResult, str | None]
         ] = {}
@@ -76,6 +77,33 @@ class FakeMobilityStore:
                 and s.place_id is None
             ):
                 self._stays[i] = dataclasses.replace(s, place_id=place_id)
+
+    async def write_trips(self, trips: list[Trip]) -> None:
+        self._trips.extend(trips)
+
+    async def trips_for_subject(self, *, subject_id: str) -> list[Trip]:
+        # Unlike SqlMobilityStore, this naturally preserves `corridor` — it
+        # never throws anything away. That is fine and expected: the two
+        # implementations are behavioral twins on every METHOD's contract,
+        # not on every unobserved field, the same relationship
+        # `existing_place`'s `most_recent_support_ts` already has between
+        # the two stores.
+        return sorted(
+            (t for t in self._trips if t.subject_id == subject_id),
+            key=lambda t: t.started_ts,
+        )
+
+    async def set_trip_corridor_ids(
+        self, *, subject_id: str, started_ts_in: list[int], corridor_id: int
+    ) -> None:
+        targets = set(started_ts_in)
+        for i, t in enumerate(self._trips):
+            if (
+                t.subject_id == subject_id
+                and t.started_ts in targets
+                and t.corridor_id is None
+            ):
+                self._trips[i] = dataclasses.replace(t, corridor_id=corridor_id)
 
     async def existing_place(
         self, *, subject_id: str, kind: str

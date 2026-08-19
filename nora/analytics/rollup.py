@@ -29,6 +29,7 @@ from nora.domain.mobility import (
     LabelResult,
     RawFix,
     Stay,
+    Trip,
     circular_mean_minute,
     cluster_places,
     hour_of_week_bins,
@@ -52,6 +53,11 @@ class MobilityStore(Protocol):
     async def stays_for_subject(self, *, subject_id: str) -> list[Stay]: ...
     async def set_place_ids(
         self, *, subject_id: str, started_ts_in: list[int], place_id: int
+    ) -> None: ...
+    async def write_trips(self, trips: list[Trip]) -> None: ...
+    async def trips_for_subject(self, *, subject_id: str) -> list[Trip]: ...
+    async def set_trip_corridor_ids(
+        self, *, subject_id: str, started_ts_in: list[int], corridor_id: int
     ) -> None: ...
     async def existing_place(
         self, *, subject_id: str, kind: str

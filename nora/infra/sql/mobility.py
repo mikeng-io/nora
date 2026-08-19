@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.mobility import LabelResult, RawFix, Stay
+from nora.domain.mobility import LabelResult, RawFix, Stay, Trip
 from nora.infra.sql.schema import (
     ANALYTICS_WATERMARK,
     PRESENCE_DERIVED_PLACES,
@@ -25,6 +25,7 @@ from nora.infra.sql.schema import (
     PRESENCE_OCCUPANCY,
     PRESENCE_PLACE_RHYTHM,
     PRESENCE_STAYS,
+    PRESENCE_TRIPS,
 )
 
 DERIVER_NAME = "mobility"
@@ -131,6 +132,76 @@ class SqlMobilityStore:
                     PRESENCE_STAYS.c.place_id.is_(None),
                 )
                 .values(place_id=place_id)
+            )
+
+    async def write_trips(self, trips: list[Trip]) -> None:
+        if not trips:
+            return
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                sa.insert(PRESENCE_TRIPS),
+                [
+                    {
+                        "subject_id": t.subject_id, "person_id": t.person_id,
+                        "circle_id": t.circle_id, "started_ts": t.started_ts,
+                        "ended_ts": t.ended_ts, "distance_m": t.distance_m,
+                        "avg_speed_kmh": t.avg_speed_kmh, "fix_count": t.fix_count,
+                        "corridor_id": t.corridor_id,
+                    }
+                    for t in trips
+                ],
+            )
+
+    async def trips_for_subject(self, *, subject_id: str) -> list[Trip]:
+        stmt = (
+            sa.select(PRESENCE_TRIPS)
+            .where(PRESENCE_TRIPS.c.subject_id == subject_id)
+            .order_by(PRESENCE_TRIPS.c.started_ts.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [
+            Trip(
+                subject_id=r.subject_id, person_id=r.person_id, circle_id=r.circle_id,
+                started_ts=r.started_ts, ended_ts=r.ended_ts,
+                distance_m=r.distance_m, avg_speed_kmh=r.avg_speed_kmh,
+                fix_count=r.fix_count,
+                # `presence_trips` has NO `corridor` column of its own
+                # (design/27 §4, issue #6 follow-up) — a trip's address
+                # sequence is deliberately NOT persisted per-row. The ONLY
+                # consumer (Task 11's rollup wiring) calls `cluster_trips`
+                # against `extract_trips`'s in-memory `Trip` objects, never
+                # against a re-read from this store, and this plan's Global
+                # Constraint ("recompute from the full sample set, every
+                # time") means there is no later caller that re-clusters
+                # from storage either — so there is nothing here that ever
+                # needs `corridor` back. Do not "fix" this into a schema
+                # change; it would add a JSONB column with no reader.
+                corridor=(),
+                corridor_id=r.corridor_id,
+            )
+            for r in rows
+        ]
+
+    async def set_trip_corridor_ids(
+        self, *, subject_id: str, started_ts_in: list[int], corridor_id: int
+    ) -> None:
+        """Fills `corridor_id` ONLY where it is currently NULL — the exact
+        same fill-once-never-overwrite shape `set_place_ids` established
+        for `presence_stays.place_id` (Tier 3): a trip's link to a
+        corridor, once set, is never silently reassigned by a later,
+        different cluster touching the same address sequence."""
+        if not started_ts_in:
+            return
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                sa.update(PRESENCE_TRIPS)
+                .where(
+                    PRESENCE_TRIPS.c.subject_id == subject_id,
+                    PRESENCE_TRIPS.c.started_ts.in_(started_ts_in),
+                    PRESENCE_TRIPS.c.corridor_id.is_(None),
+                )
+                .values(corridor_id=corridor_id)
             )
 
     async def existing_place(
