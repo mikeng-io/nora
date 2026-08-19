@@ -8,6 +8,7 @@
     "memory": "記憶",
     "games": "遊戲",
     "map": "地圖",
+    "events": "活動",
     "language": "語言",
     "chat": "傾偈"
   },
@@ -240,5 +241,28 @@
       "no_fix": "從未定位過",
       "unavailable": "而家check唔到"
     }
+  },
+  "events": {
+    "eyebrow": "聚會",
+    "heading": "活動",
+    "dek": "同班友嘅飯聚、出街，同埋 Nora 幫手記住嘅所有安排。",
+    "loading": "載入緊活動…",
+    "error": "連唔到活動資料。",
+    "empty": "重未有活動 — 去傾偈度叫 Nora 幫手計劃一個。",
+    "pickConversation": "要喺特定傾偈入面打開先睇到嗰度嘅活動。",
+    "noVenue": "重未有場地",
+    "back": "返去所有活動",
+    "detailError": "連唔到嗰個活動。",
+    "venueLabel": "場地",
+    "rsvpsLabel": "邊個嚟緊",
+    "noRsvps": "重未有人回覆",
+    "rating": "{rating} / 5",
+    "openInMaps": "喺地圖開",
+    "proposed": "建議中",
+    "confirmed": "已確定",
+    "cancelled": "已取消",
+    "yes": "去",
+    "no": "唔去",
+    "maybe": "未定"
   }
 }

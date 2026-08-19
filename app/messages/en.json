@@ -8,6 +8,7 @@
     "memory": "Memory",
     "games": "Games",
     "map": "Map",
+    "events": "Events",
     "language": "Language",
     "chat": "Chat"
   },
@@ -240,5 +241,28 @@
       "no_fix": "Never located",
       "unavailable": "Can't check right now"
     }
+  },
+  "events": {
+    "eyebrow": "Gatherings",
+    "heading": "Events",
+    "dek": "Dinners, outings, and everything Nora is holding for this group.",
+    "loading": "Loading events…",
+    "error": "Couldn't load events.",
+    "empty": "No events yet — ask Nora to plan one in chat.",
+    "pickConversation": "Open this from a specific conversation to see its events.",
+    "noVenue": "No venue yet",
+    "back": "All events",
+    "detailError": "Couldn't reach that event.",
+    "venueLabel": "Venue",
+    "rsvpsLabel": "Who's coming",
+    "noRsvps": "No one's RSVP'd yet",
+    "rating": "{rating} / 5",
+    "openInMaps": "Open in Maps",
+    "proposed": "Proposed",
+    "confirmed": "Confirmed",
+    "cancelled": "Cancelled",
+    "yes": "Yes",
+    "no": "No",
+    "maybe": "Maybe"
   }
 }
