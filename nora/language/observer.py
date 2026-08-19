@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from nora.domain.models import LexemeCandidate, TranscriptRow
+from nora.domain.ports import SearchProvider
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
@@ -123,6 +124,61 @@ def _build_prompt(batch: Sequence[TranscriptRow]) -> str:
     return "\n".join(lines)
 
 
+# The Dreamer's known-entity check (2026-08-20 design doc,
+# docs/superpowers/specs/2026-08-20-dreamer-known-entity-check-design.md):
+# a SECOND, narrow question over `web_search` results, kept separate from
+# `_PROMPT_PREAMBLE`'s extraction question rather than folded into one call —
+# the module docstring's own "an LLM glosses, arithmetic decides" split,
+# applied a second time to keep this one call's job to exactly one question.
+_VERIFICATION_PROMPT_TEMPLATE = (
+    "A room-language extractor flagged the phrase below as slang a Signal "
+    "group chat has made its own. Your ONLY job is to check whether it is "
+    "actually already a KNOWN PUBLIC thing — a real game, place, brand, "
+    "meme, or other name with an established meaning OUTSIDE this specific "
+    "group — rather than something this group coined.\n\n"
+    "Phrase: {surface_form}\n"
+    "Claimed local sense: {sense}\n\n"
+    "Web search results for the phrase:\n{results}\n\n"
+    "Respond with ONLY a JSON object of this exact shape, nothing else — no "
+    "prose, no markdown fence:\n"
+    '{{"known_entity": <true if the results show this is an established '
+    "public thing whose own meaning the room's use matches or refers to; "
+    'false if the results are irrelevant, sparse, or establish no public '
+    'meaning>}}\n'
+)
+
+
+def _build_verification_prompt(
+    candidate: LexemeCandidate, results: Sequence[Any],
+) -> str:
+    lines = [
+        str(item["content"]) for item in results
+        if isinstance(item, dict) and item.get("content")
+    ]
+    return _VERIFICATION_PROMPT_TEMPLATE.format(
+        surface_form=candidate.surface_form,
+        sense=candidate.sense,
+        results="\n".join(lines) if lines else "(no results)",
+    )
+
+
+def _parse_verification(raw: str) -> bool | None:
+    """The verification call's raw text -> its known-entity verdict, or
+    `None` on any shape that is not exactly `{"known_entity": <bool>}`.
+    Never raises — `observe`'s caller treats `None` exactly like `False`
+    (keep the candidate): a verification response this codebase cannot even
+    parse carries no basis to drop real evidence on (R-5's `_extract` sibling
+    argument, applied to this second call)."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    verdict = data.get("known_entity")
+    return verdict if isinstance(verdict, bool) else None
+
+
 def _parse_observations(raw: str) -> list[Any] | None:
     """The model's raw text -> a list of candidate dicts, or None on any
     shape that is not exactly `{"observations": [...]}`. Never raises —
@@ -197,11 +253,29 @@ class LexemeObserver:
     `nora.agent.whereis.WhereisTool`): a caller with no metrics wired
     (today's unit tests) still gets correct behaviour, and the composition
     root threads the real `Metrics` instance through.
+
+    `search` is likewise optional and defaulted — `None` (every existing
+    caller, and any deployment with `[language].verify_known_entities =
+    false`) reproduces EXACTLY today's behaviour: no known-entity check ever
+    runs. Unlike `model`, `search` IS typed against
+    `nora.domain.ports.SearchProvider` directly rather than a local
+    structural type — that port already has a second consumer
+    (`nora.agent.tools`'s `web_search`/`web_fetch`) and a passing contract
+    suite (`tests/contract/test_port_conformance.py`), so there is no "single
+    caller" argument here the way there is for `_ModelClient` (see module
+    docstring); reusing the shared port is strictly cheaper than inventing a
+    duplicate shape for the same collaborator. See
+    `docs/superpowers/specs/2026-08-20-dreamer-known-entity-check-design.md`.
     """
 
-    def __init__(self, model: _ModelClient, *, metrics: Metrics | None = None) -> None:
+    def __init__(
+        self, model: _ModelClient, *, metrics: Metrics | None = None,
+        search: SearchProvider | None = None, verify_max_candidates: int = 10,
+    ) -> None:
         self._model = model
         self._metrics = metrics
+        self._search = search
+        self._verify_max_candidates = verify_max_candidates
 
     async def observe(self, *, batch: Sequence[TranscriptRow]) -> ObservationResult:
         """One model call over `batch`, or nothing for an empty batch (no
@@ -210,12 +284,76 @@ class LexemeObserver:
         a malformed response — see `_parse_observations`/`_parse_item` — that
         case is reported through `ObservationResult.parsed`, not an
         exception; every returned candidate is guaranteed to point at a row
-        that is actually in `batch` (see `_extract`)."""
+        that is actually in `batch` (see `_extract`).
+
+        When `search` is wired AND extraction produced at least one
+        well-formed candidate, each is additionally checked against
+        `_verify_known_entities` before being returned — see that method's
+        docstring for the fail-open contract. A `parsed=False` result (the
+        model degraded to prose) or an empty candidate list short-circuits
+        before ever touching `search`: there is nothing worth a search call
+        either way."""
         if not batch:
             return ObservationResult(candidates=(), parsed=True)
         prompt = _build_prompt(batch)
         raw = await self._model.complete(prompt=prompt)
-        return self._extract(raw, batch)
+        result = self._extract(raw, batch)
+        if self._search is None or not result.parsed or not result.candidates:
+            return result
+        verified = await self._verify_known_entities(self._search, result.candidates)
+        return ObservationResult(candidates=verified, parsed=True)
+
+    async def _verify_known_entities(
+        self, search: SearchProvider, candidates: tuple[LexemeCandidate, ...],
+    ) -> tuple[LexemeCandidate, ...]:
+        """Check up to `verify_max_candidates` of `candidates` against
+        `search` before they can reach the store (2026-08-20 design doc) —
+        FAILS OPEN on every branch: a search `unavailable`, a `nothing_found`,
+        and an unparseable classification response all KEEP the candidate,
+        the same direction `_extract`'s own "fabricated provenance is worse
+        than a missing entry" argument takes — a wrongly-dropped candidate is
+        gone forever (the watermark advances past this batch regardless of
+        what `observe` returns), while a wrongly-kept one only reproduces
+        today's already-shipped behaviour. Candidates past the cap are kept
+        unverified for the identical reason: "did not get to check" is never
+        treated as "assume the worst and drop it"."""
+        kept: list[LexemeCandidate] = []
+        for index, candidate in enumerate(candidates):
+            if index >= self._verify_max_candidates:
+                kept.append(candidate)
+                continue
+            outcome = await search.search(query=candidate.canonical_form)
+            if not isinstance(outcome, dict):
+                kept.append(candidate)
+                continue
+            status = outcome.get("status")
+            if self._metrics is not None and isinstance(status, str):
+                self._metrics.inc("nora_language_verification_total", status=status)
+            if status != "ok":
+                # "unavailable" (fail-open) and "nothing_found" (no evidence
+                # of a public meaning) both keep the candidate unchanged.
+                kept.append(candidate)
+                continue
+            results = outcome.get("results")
+            verdict_raw = await self._model.complete(
+                prompt=_build_verification_prompt(
+                    candidate, results if isinstance(results, list) else [],
+                ),
+            )
+            if _parse_verification(verdict_raw) is True:
+                if self._metrics is not None:
+                    self._metrics.inc(
+                        "nora_language_candidates_dropped_total",
+                        reason="known_entity",
+                    )
+                log.info(
+                    "lexeme %r dropped: verified as a known public entity",
+                    candidate.canonical_form,
+                )
+                continue
+            # False, or None (unparseable — fail open): keep.
+            kept.append(candidate)
+        return tuple(kept)
 
     def _extract(
         self, raw: str, batch: Sequence[TranscriptRow]

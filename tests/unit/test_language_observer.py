@@ -1,11 +1,14 @@
-"""Tests for `nora.language.observer.LexemeObserver` — the Dreamer's one LLM
-call. Every fixture here builds a `FakeModel` that stands in for the real
-model client — the SAME collaborator shape `LexemeObserver.__init__` takes
+"""Tests for `nora.language.observer.LexemeObserver` — the Dreamer's
+extraction, and (2026-08-20) its optional known-entity verification step.
+Every fixture here builds a `FakeModel` that stands in for the real model
+client — the SAME collaborator shape `LexemeObserver.__init__` takes
 (`async def complete(self, *, prompt: str) -> str`) — and it must reproduce
 the real client's WRONG-CALL SHAPES (an empty body, prose instead of JSON, a
 hallucinated `message_id`), not just its clean one. A fake that only ever
 returned one well-formed candidate would keep every test below green through
 a regression in the prompt or the parser (CLAUDE.md's fake-test policy).
+`FakeSearch` is the equivalent double for the optional `search` collaborator
+(`nora.domain.ports.SearchProvider` shape) — see its own docstring below.
 """
 
 from __future__ import annotations
@@ -45,6 +48,26 @@ def rows(*bodies: str) -> list[TranscriptRow]:
         )
         for i, body in enumerate(bodies, start=1)
     ]
+
+
+class FakeSearch:
+    """A same-process double for the `search` collaborator
+    (`nora.domain.ports.SearchProvider` shape). `by_query` maps an exact query
+    string to the dict `search()` answers with — mirrors how the real
+    `TavilySearchProvider` answers one real query, not a canned always-`ok`
+    reply; a query not in the map is a test bug (raises `KeyError`, not a
+    silently-wrong default)."""
+
+    def __init__(self, by_query: dict[str, dict]) -> None:
+        self._by_query = by_query
+        self.queries: list[str] = []
+
+    async def search(self, *, query: str) -> dict:
+        self.queries.append(query)
+        return self._by_query[query]
+
+    async def fetch(self, *, url: str) -> dict:
+        raise AssertionError("LexemeObserver's known-entity check never calls fetch()")
 
 
 def rows_with_id(
@@ -182,3 +205,137 @@ async def test_a_dropped_candidate_is_counted_on_the_no_evidence_reason():
     )
     await observer.observe(batch=rows_with_id(7, "好撚kam"))
     assert metrics.get("nora_language_candidates_dropped_total", reason="no_evidence") == 1
+
+
+def _one_candidate_response(surface_form: str = "big walk") -> str:
+    return json.dumps({"observations": [
+        {"surface_form": surface_form, "canonical_form": surface_form,
+         "sense": "a group walking activity", "part_of_speech": "noun",
+         "message_id": 7, "confidence": 0.9},
+    ]})
+
+
+_SEARCH_HIT = {
+    "status": "ok",
+    "results": [{"url": "https://example.com/big-walk", "content": "Big Walk is a survival game."}],
+}
+
+
+async def test_a_known_entity_is_dropped_after_verification():
+    """The confirmed live false positive this change exists for: "Big Walk" is
+    an actual game, not room-coined slang. When search finds it AND the
+    verification call agrees, the candidate must not survive."""
+    observer = LexemeObserver(
+        FakeModel(responses=[
+            _one_candidate_response(), json.dumps({"known_entity": True}),
+        ]),
+        search=FakeSearch(by_query={"big walk": _SEARCH_HIT}),
+    )
+    result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    assert result.candidates == ()
+    assert result.parsed is True, "verified away, not dropped as malformed"
+
+
+async def test_a_room_coined_candidate_survives_a_negative_verification():
+    """Search finding SOMETHING is not enough on its own — the classification
+    call must independently agree it's a known public entity. A coincidental,
+    irrelevant hit must not cost a genuine local coinage its place."""
+    observer = LexemeObserver(
+        FakeModel(responses=[
+            _one_candidate_response("kam"), json.dumps({"known_entity": False}),
+        ]),
+        search=FakeSearch(by_query={"kam": _SEARCH_HIT}),
+    )
+    result = await observer.observe(batch=rows_with_id(7, "好撚kam"))
+    [c] = result.candidates
+    assert c.canonical_form == "kam"
+
+
+async def test_search_unavailable_keeps_the_candidate_and_never_classifies():
+    """R-5's fail-open direction: a Tavily outage must not silently suppress
+    real evidence. `FakeModel` is given only ONE response — if the code
+    wrongly still tried a second (classification) call, `list.pop` on the
+    now-empty list would raise `IndexError`, catching the regression
+    mechanically rather than by assertion alone."""
+    observer = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response()]),
+        search=FakeSearch(by_query={"big walk": {"status": "unavailable"}}),
+    )
+    result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    [c] = result.candidates
+    assert c.canonical_form == "big walk"
+
+
+async def test_search_nothing_found_keeps_the_candidate_and_never_classifies():
+    """No results is not evidence of a known public entity — the candidate is
+    kept, and (same mechanical guard as the `unavailable` sibling test) no
+    second model call is ever made."""
+    observer = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response()]),
+        search=FakeSearch(by_query={"big walk": {"status": "nothing_found"}}),
+    )
+    result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    [c] = result.candidates
+    assert c.canonical_form == "big walk"
+
+
+async def test_an_unparseable_verification_response_keeps_the_candidate():
+    """Fail-open applies to the verification call's OWN malformed response
+    too, exactly like a search failure — a model degrading to prose here must
+    not cost a real candidate its place."""
+    observer = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response(), "sorry, I can't help with that"]),
+        search=FakeSearch(by_query={"big walk": _SEARCH_HIT}),
+    )
+    result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    [c] = result.candidates
+    assert c.canonical_form == "big walk"
+
+
+async def test_verification_is_off_when_no_search_collaborator_is_wired():
+    """The default (`search=None`, every existing caller before this change)
+    must reproduce EXACTLY today's behaviour — no known-entity check ever
+    runs, matching `[language].verify_known_entities = false`'s shipped-inert
+    default. A single-item `FakeModel` response list proves no second call
+    happens."""
+    observer = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
+    result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    [c] = result.candidates
+    assert c.canonical_form == "big walk"
+
+
+async def test_verification_respects_the_candidate_cap():
+    """`verify_max_candidates` bounds the tail, not the common case: with the
+    cap at 1 and two well-formed candidates, only the FIRST is searched —
+    `FakeSearch.queries` proves it, and the second candidate is kept
+    unverified rather than dropped or erroring."""
+    two_candidates = json.dumps({"observations": [
+        {"surface_form": "big walk", "canonical_form": "big walk", "sense": "a game",
+         "part_of_speech": "noun", "message_id": 7, "confidence": 0.9},
+        {"surface_form": "kam", "canonical_form": "kam", "sense": "尷",
+         "part_of_speech": "adjective", "message_id": 8, "confidence": 0.9},
+    ]})
+    search = FakeSearch(by_query={"big walk": _SEARCH_HIT})
+    observer = LexemeObserver(
+        FakeModel(responses=[two_candidates, json.dumps({"known_entity": False})]),
+        search=search, verify_max_candidates=1,
+    )
+    batch = rows_with_id(7, "?? Big walk ??") + rows_with_id(8, "好撚kam")
+    result = await observer.observe(batch=batch)
+    assert search.queries == ["big walk"], "only the first (capped) candidate was searched"
+    assert {c.canonical_form for c in result.candidates} == {"big walk", "kam"}
+
+
+async def test_the_search_outcome_is_counted_by_status():
+    """`nora_language_verification_total` is the search step's OWN liveness
+    signal, independent of whether a drop happened — without it an operator
+    cannot tell "verification runs and finds nothing to drop" from
+    "verification never runs at all."""
+    metrics = Metrics()
+    observer = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response(), json.dumps({"known_entity": True})]),
+        metrics=metrics, search=FakeSearch(by_query={"big walk": _SEARCH_HIT}),
+    )
+    await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    assert metrics.get("nora_language_verification_total", status="ok") == 1
+    assert metrics.get("nora_language_candidates_dropped_total", reason="known_entity") == 1

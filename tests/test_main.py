@@ -370,6 +370,48 @@ async def test_build_app_leaves_the_language_consolidator_unwired_when_disabled(
         await app.shutdown()
 
 
+async def test_build_app_wires_search_into_the_observer_when_verification_is_on(
+    env, monkeypatch,
+):
+    """The third gate (2026-08-20 design doc,
+    docs/superpowers/specs/2026-08-20-dreamer-known-entity-check-design.md):
+    `[language].verify_known_entities = true` must actually reach
+    `LexemeObserver` as a real `search` collaborator when `[search]` is ALSO
+    enabled and keyed — not just sit readable on `cfg`, the same composition
+    gap the sibling test above closes for `language_consolidators` itself."""
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    cfg = tomllib.loads(env.read_text())
+    cfg["language"] = {"enabled": True, "verify_known_entities": True}
+    cfg["search"] = {"enabled": True}
+    env.write_text(tomli_w.dumps(cfg))
+
+    app = await build_app(env)
+    try:
+        [consolidator] = app.deps.language_consolidators
+        assert consolidator._observer._search is not None
+    finally:
+        await app.shutdown()
+
+
+async def test_build_app_leaves_search_unwired_when_verification_is_off(env, monkeypatch):
+    """The control for the test above: `[search]` enabled and keyed alone
+    must NOT be enough — `verify_known_entities` defaults `false`, so turning
+    search on for the chat agent must not silently also spend it on the
+    Dreamer."""
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    cfg = tomllib.loads(env.read_text())
+    cfg["language"] = {"enabled": True}
+    cfg["search"] = {"enabled": True}
+    env.write_text(tomli_w.dumps(cfg))
+
+    app = await build_app(env)
+    try:
+        [consolidator] = app.deps.language_consolidators
+        assert consolidator._observer._search is None
+    finally:
+        await app.shutdown()
+
+
 async def test_app_run_spawns_the_lazy_adoption_backfill(env, monkeypatch):
     """The wiring, not the coroutine: build the real app, audit a message from a
     sender identity.toml *does* know, then drive `App.run()` long enough for the

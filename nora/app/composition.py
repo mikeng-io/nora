@@ -632,27 +632,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     tier = cfg.llm
     api_key = os.environ.get(cfg.llm.api_key_env, "")  # presence already checked by config.load
     client = factory.create_client(base_url=cfg.llm.base_url, api_key=api_key)
-    # The Dreamer's own consolidator (Task 11) — built ONLY when
-    # `[language] enabled`, mirroring `language_store` above (there is no
-    # second consumer to leave stranded by gating it, unlike `reminders`/
-    # `compute_jobs`). `LexemeObserver` gets its OWN `_LanguageModelClient`
-    # over the SAME process-wide `client` — one connection, `[language]
-    # .model` rather than `[llm].model`, because the Dreamer is a background
-    # job nobody is waiting on and may reasonably run a different tier.
-    language_consolidators: tuple[RoomConsolidator, ...] = ()
-    if cfg.language.enabled and language_store is not None:
-        language_consolidators = (
-            LanguageConsolidator(
-                observer=LexemeObserver(
-                    _LanguageModelClient(
-                        client=client, model=cfg.language.model,
-                        timeout_seconds=cfg.language.timeout_seconds,
-                    ),
-                    metrics=metrics,
-                ),
-                store=language_store,
-            ),
-        )
     # `dream_loop`'s `scopes` callable — the SAME policy.toml conversations
     # `VersionAnnouncer`'s `targets` reads below, re-evaluated fresh each
     # tick (cheap: `allowlist` is loaded once at startup and immutable) so a
@@ -844,6 +823,42 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "search enabled but %s is unset — web_search stays unavailable",
                 cfg.search.api_key_env,
             )
+    # The Dreamer's own consolidator (Task 11) — built ONLY when
+    # `[language] enabled`, mirroring `language_store` above (there is no
+    # second consumer to leave stranded by gating it, unlike `reminders`/
+    # `compute_jobs`). `LexemeObserver` gets its OWN `_LanguageModelClient`
+    # over the SAME process-wide `client` — one connection, `[language]
+    # .model` rather than `[llm].model`, because the Dreamer is a background
+    # job nobody is waiting on and may reasonably run a different tier.
+    #
+    # `search=search_client` is wired ONLY behind a THIRD gate,
+    # `[language].verify_known_entities` (2026-08-20 design doc) — moved to
+    # live AFTER `search_client` is built (it used to sit right after `client`
+    # above) because it now depends on it. `search_client` staying `None`
+    # (search off, or on but keyless) leaves `LexemeObserver`'s known-entity
+    # check unwired exactly like every other optional collaborator here —
+    # `verify_known_entities=true` with no working search client is silently
+    # a no-op, not a startup error, matching `[search]`'s own "unavailable,
+    # never a hard failure" shape.
+    language_consolidators: tuple[RoomConsolidator, ...] = ()
+    if cfg.language.enabled and language_store is not None:
+        language_consolidators = (
+            LanguageConsolidator(
+                observer=LexemeObserver(
+                    _LanguageModelClient(
+                        client=client, model=cfg.language.model,
+                        timeout_seconds=cfg.language.timeout_seconds,
+                    ),
+                    metrics=metrics,
+                    search=(
+                        search_client
+                        if cfg.language.verify_known_entities else None
+                    ),
+                    verify_max_candidates=cfg.language.verify_max_candidates,
+                ),
+                store=language_store,
+            ),
+        )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
     # off leaves the registry without a provider and `weather` answers
