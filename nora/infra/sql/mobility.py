@@ -59,6 +59,7 @@ class SqlMobilityStore:
             sa.select(
                 PRESENCE_FIXES.c.id, PRESENCE_FIXES.c.ts,
                 PRESENCE_FIXES.c.lat, PRESENCE_FIXES.c.lng,
+                PRESENCE_FIXES.c.address,
             )
             .where(
                 PRESENCE_FIXES.c.person_id.in_(person_ids),
@@ -72,7 +73,10 @@ class SqlMobilityStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [RawFix(id=r.id, ts=r.ts, lat=r.lat, lng=r.lng) for r in rows]
+        return [
+            RawFix(id=r.id, ts=r.ts, lat=r.lat, lng=r.lng, address=r.address)
+            for r in rows
+        ]
 
     async def write_stays(self, stays: list[Stay]) -> None:
         if not stays:

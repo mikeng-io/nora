@@ -123,6 +123,12 @@ class RawFix:
     ts: int
     lat: float
     lng: float
+    # Tier 5 (design/27 §4, issue #6): Life360's own address label,
+    # 100% filled (design/27 §1) — the corridor-identity input. `None`
+    # only when the store's own filter admits a row Life360 sent with no
+    # address (rare; `extract_trips`, Task 4, drops it from the corridor
+    # sequence rather than guessing).
+    address: str | None = None
 
 
 @dataclass(frozen=True)

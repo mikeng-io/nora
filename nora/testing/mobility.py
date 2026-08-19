@@ -19,6 +19,7 @@ class _SeededFix:
     accuracy_m: float
     wire_state: str
     recorded_at: int
+    address: str | None = None
 
 
 class FakeMobilityStore:
@@ -51,7 +52,8 @@ class FakeMobilityStore:
         ]
         matches.sort(key=lambda f: f.id)
         return [
-            RawFix(id=f.id, ts=f.ts, lat=f.lat, lng=f.lng) for f in matches[:limit]
+            RawFix(id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address)
+            for f in matches[:limit]
         ]
 
     async def write_stays(self, stays: list[Stay]) -> None:
