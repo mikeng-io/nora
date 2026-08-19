@@ -147,6 +147,14 @@ class Stay:
     lng: float
     radius_m: float
     fix_count: int
+    # Tier 3 (design/27 §4, issue #6): set once this stay's centroid is
+    # found inside an existing home/work `presence_derived_places` row —
+    # `MobilityRollup._record_rhythm` (Task 10) is the only writer. `None`
+    # means either "not yet checked" or "outside every labelled place" —
+    # the two are indistinguishable here on purpose, since a stay that is
+    # outside every place today may fall inside one created LATER (Task 10's
+    # backfill step handles that case going forward, not this field).
+    place_id: int | None = None
 
 
 @dataclass(frozen=True)
