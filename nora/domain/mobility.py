@@ -395,12 +395,6 @@ def hour_of_week_bins(started_ts: int, ended_ts: int, tz_name: str) -> dict[int,
         how = local.weekday() * 24 + local.hour
         bins[how] = bins.get(how, 0) + (bin_end - cursor)
         cursor = hour_end_ms
-    # If ended_ts is exactly at an hour boundary, include that boundary hour with 0 dwell
-    if cursor == ended_ts and ended_ts > started_ts:
-        local = datetime.fromtimestamp(ended_ts / 1000, tz=tz)
-        how = local.weekday() * 24 + local.hour
-        if how not in bins:
-            bins[how] = 0
     return bins
 
 
