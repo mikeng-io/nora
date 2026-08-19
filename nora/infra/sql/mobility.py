@@ -17,9 +17,11 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.mobility import LabelResult, RawFix, Stay, Trip
+from nora.domain.mobility import LabelResult, RawFix, Stay, Trip, edit_distance
 from nora.infra.sql.schema import (
     ANALYTICS_WATERMARK,
+    PRESENCE_CORRIDOR_SPEED,
+    PRESENCE_CORRIDORS,
     PRESENCE_DERIVED_PLACES,
     PRESENCE_FIXES,
     PRESENCE_OCCUPANCY,
@@ -203,6 +205,97 @@ class SqlMobilityStore:
                 )
                 .values(corridor_id=corridor_id)
             )
+
+    async def existing_corridor(
+        self, *, subject_id: str, sequence: tuple[str, ...], max_edit_distance: int,
+    ) -> tuple[int, tuple[str, ...]] | None:
+        """Identity by SIMILARITY, not exact match — a cluster's own
+        representative sequence can legitimately vary trip to trip. Edit
+        distance is not a Postgres-native operation over a JSONB array
+        without an extension this project does not have, so this reads
+        every corridor row for the subject (bounded: a person has a
+        handful of real corridors, not thousands) and computes
+        `edit_distance` in Python — the same "SQL narrows, Python decides"
+        shape `nora/infra/sql/geocode_cache.py`'s `nearest_within` already
+        established for a different metric (haversine)."""
+        stmt = sa.select(PRESENCE_CORRIDORS.c.id, PRESENCE_CORRIDORS.c.sequence).where(
+            PRESENCE_CORRIDORS.c.subject_id == subject_id,
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        best: tuple[int, int, tuple[str, ...]] | None = None  # (dist, id, seq)
+        for row in rows:
+            seq = tuple(row.sequence)
+            dist = edit_distance(sequence, seq)
+            if dist <= max_edit_distance and (best is None or dist < best[0]):
+                best = (dist, row.id, seq)
+        return None if best is None else (best[1], best[2])
+
+    async def upsert_corridor(
+        self, *, subject_id: str, sequence: tuple[str, ...], sample_count: int,
+        now_ms: int, existing_id: int | None,
+    ) -> int:
+        """UPDATEs in place when `existing_id` is given, preserving the
+        row's `id` — Tier 3 Critical #1's own lesson (`upsert_place`,
+        commit 9616af3): delete-then-insert on every re-cluster cycle
+        churns the id and orphans downstream data keyed off it
+        (`presence_trips.corridor_id` here). INSERTs fresh otherwise."""
+        async with self._engine.begin() as conn:
+            if existing_id is not None:
+                await conn.execute(
+                    sa.update(PRESENCE_CORRIDORS).where(
+                        PRESENCE_CORRIDORS.c.id == existing_id,
+                    ).values(sample_count=sample_count, last_seen_ts=now_ms)
+                )
+                return existing_id
+            result = await conn.execute(
+                sa.insert(PRESENCE_CORRIDORS).values(
+                    subject_id=subject_id, sequence=list(sequence),
+                    sample_count=sample_count, first_seen_ts=now_ms,
+                    last_seen_ts=now_ms,
+                ).returning(PRESENCE_CORRIDORS.c.id)
+            )
+            return int(result.scalar_one())
+
+    async def trip_speeds_for_corridor(
+        self, *, subject_id: str, corridor_id: int,
+    ) -> list[tuple[int, float]]:
+        """Every (started_ts, avg_speed_kmh) pair for this corridor — the
+        caller (rollup, Task 11) groups by hour-of-week itself, the same
+        division of responsibility `stay_durations_for_place` (Tier 3)
+        already has: this store reads rows, `nora.domain.mobility` decides
+        what a timestamp means in local time."""
+        stmt = sa.select(PRESENCE_TRIPS.c.started_ts, PRESENCE_TRIPS.c.avg_speed_kmh).where(
+            PRESENCE_TRIPS.c.subject_id == subject_id,
+            PRESENCE_TRIPS.c.corridor_id == corridor_id,
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [(r.started_ts, r.avg_speed_kmh) for r in rows]
+
+    async def upsert_corridor_speed(
+        self, *, subject_id: str, corridor_id: int, hour_of_week: int,
+        p50_kmh: float, p90_kmh: float, sample_count: int, now_ms: int,
+    ) -> None:
+        stmt = pg_insert(PRESENCE_CORRIDOR_SPEED).values(
+            subject_id=subject_id, corridor_id=corridor_id,
+            hour_of_week=hour_of_week, p50_kmh=p50_kmh, p90_kmh=p90_kmh,
+            sample_count=sample_count, updated_ts=now_ms,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[
+                PRESENCE_CORRIDOR_SPEED.c.subject_id,
+                PRESENCE_CORRIDOR_SPEED.c.corridor_id,
+                PRESENCE_CORRIDOR_SPEED.c.hour_of_week,
+            ],
+            set_={
+                "p50_kmh": stmt.excluded.p50_kmh, "p90_kmh": stmt.excluded.p90_kmh,
+                "sample_count": stmt.excluded.sample_count,
+                "updated_ts": stmt.excluded.updated_ts,
+            },
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
 
     async def existing_place(
         self, *, subject_id: str, kind: str

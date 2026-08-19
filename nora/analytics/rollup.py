@@ -59,6 +59,20 @@ class MobilityStore(Protocol):
     async def set_trip_corridor_ids(
         self, *, subject_id: str, started_ts_in: list[int], corridor_id: int
     ) -> None: ...
+    async def existing_corridor(
+        self, *, subject_id: str, sequence: tuple[str, ...], max_edit_distance: int,
+    ) -> tuple[int, tuple[str, ...]] | None: ...
+    async def upsert_corridor(
+        self, *, subject_id: str, sequence: tuple[str, ...], sample_count: int,
+        now_ms: int, existing_id: int | None,
+    ) -> int: ...
+    async def trip_speeds_for_corridor(
+        self, *, subject_id: str, corridor_id: int,
+    ) -> list[tuple[int, float]]: ...
+    async def upsert_corridor_speed(
+        self, *, subject_id: str, corridor_id: int, hour_of_week: int,
+        p50_kmh: float, p90_kmh: float, sample_count: int, now_ms: int,
+    ) -> None: ...
     async def existing_place(
         self, *, subject_id: str, kind: str
     ) -> tuple[int, float, float, float, LabelResult, str | None] | None: ...

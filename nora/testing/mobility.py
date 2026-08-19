@@ -6,7 +6,7 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.mobility import LabelResult, RawFix, Stay, Trip
+from nora.domain.mobility import LabelResult, RawFix, Stay, Trip, edit_distance
 
 
 @dataclass
@@ -34,6 +34,9 @@ class FakeMobilityStore:
         self._next_place_id = 1
         self._occupancy: dict[tuple[str, int, int], int] = {}  # (subject, place, how) -> dwell_ms
         self._rhythm: dict[tuple[str, int], dict[str, float | int]] = {}
+        self._corridors: dict[int, dict[str, Any]] = {}
+        self._next_corridor_id = 1
+        self._corridor_speed: dict[tuple[str, int, int], dict[str, float | int]] = {}
 
     async def watermark(self, *, subject_id: str) -> tuple[int, int]:
         return self._watermarks.get(subject_id, (0, 0))
@@ -104,6 +107,51 @@ class FakeMobilityStore:
                 and t.corridor_id is None
             ):
                 self._trips[i] = dataclasses.replace(t, corridor_id=corridor_id)
+
+    async def existing_corridor(
+        self, *, subject_id: str, sequence: tuple[str, ...], max_edit_distance: int,
+    ) -> tuple[int, tuple[str, ...]] | None:
+        best: tuple[int, int, tuple[str, ...]] | None = None
+        for cid, row in self._corridors.items():
+            if row["subject_id"] != subject_id:
+                continue
+            dist = edit_distance(sequence, row["sequence"])
+            if dist <= max_edit_distance and (best is None or dist < best[0]):
+                best = (dist, cid, row["sequence"])
+        return None if best is None else (best[1], best[2])
+
+    async def upsert_corridor(
+        self, *, subject_id: str, sequence: tuple[str, ...], sample_count: int,
+        now_ms: int, existing_id: int | None,
+    ) -> int:
+        if existing_id is not None:
+            self._corridors[existing_id]["sample_count"] = sample_count
+            self._corridors[existing_id]["last_seen_ts"] = now_ms
+            return existing_id
+        cid = self._next_corridor_id
+        self._next_corridor_id += 1
+        self._corridors[cid] = {
+            "subject_id": subject_id, "sequence": sequence,
+            "sample_count": sample_count, "first_seen_ts": now_ms,
+            "last_seen_ts": now_ms,
+        }
+        return cid
+
+    async def trip_speeds_for_corridor(
+        self, *, subject_id: str, corridor_id: int,
+    ) -> list[tuple[int, float]]:
+        return [
+            (t.started_ts, t.avg_speed_kmh) for t in self._trips
+            if t.subject_id == subject_id and t.corridor_id == corridor_id
+        ]
+
+    async def upsert_corridor_speed(
+        self, *, subject_id: str, corridor_id: int, hour_of_week: int,
+        p50_kmh: float, p90_kmh: float, sample_count: int, now_ms: int,
+    ) -> None:
+        self._corridor_speed[(subject_id, corridor_id, hour_of_week)] = {
+            "p50_kmh": p50_kmh, "p90_kmh": p90_kmh, "sample_count": sample_count,
+        }
 
     async def existing_place(
         self, *, subject_id: str, kind: str
