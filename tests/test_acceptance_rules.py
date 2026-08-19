@@ -228,6 +228,10 @@ RULE_TESTS = {
     # `[sticker a3f2c1]` placeholder, never a blank `[sticker a3f2c1: ]` and
     # never a guessed sentence. Next free number after R-50.
     "R-51": "test_r51_a_sticker_description_is_never_invented",
+    # R-52 (DEC-117): `create_event` fail-closes on ambiguity — spec §3.1's
+    # "more than one open event" case — refusing rather than guessing which
+    # of two-or-more already-open events is meant.
+    "R-52": "test_r52_two_open_events_refuses_a_third_rather_than_guessing",
     # DEC-111 (the Dreamer, room-language consolidator): her own words are
     # never evidence for the room lexicon. `RecordStore.since` — the
     # consolidation cursor `LanguageConsolidator` reads — excludes `is_nora`
