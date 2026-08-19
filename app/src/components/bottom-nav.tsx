@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { Activity, Gamepad2, MapPin, Sparkles, MessageCircle } from "lucide-react";
+import { Activity, Gamepad2, MapPin, Sparkles, Users, MessageCircle } from "lucide-react";
 import { Link, usePathname } from "@/i18n/routing";
 import { MODULES } from "@/lib/modules";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ const ICONS: Record<string, typeof Activity> = {
   memory: Sparkles,
   games: Gamepad2,
   map: MapPin,
+  people: Users,
 };
 
 // Mobile-only (md:hidden — the sidebar in (portal)/layout.tsx owns nav on

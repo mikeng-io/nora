@@ -37,6 +37,7 @@ from nora.web.games import (
     build_games_servers_payload,
 )
 from nora.web.memory import build_memory_payload
+from nora.web.persons import build_person_profile_payload, build_persons_roster_payload
 from nora.web.presence import (
     build_presence_history_payload,
     build_presence_payload,
@@ -142,6 +143,20 @@ def register_web_routes(
             honcho=a["web_honcho"], persons=a["web_persons"], ai_peer=a["web_ai_peer"],
             person_id=request.query.get("personId"),
         )
+        return web.json_response(body)
+
+    async def persons_roster(request: web.Request) -> web.Response:
+        body = build_persons_roster_payload(persons=request.app["web_persons"])
+        return web.json_response(body)
+
+    async def person_profile(request: web.Request) -> web.Response:
+        a = request.app
+        body = await build_person_profile_payload(
+            persons=a["web_persons"], games_client=a["web_games_client"],
+            person_id=request.match_info["personId"],
+        )
+        if body is None:
+            return web.json_response({"error": "not_found"}, status=404)
         return web.json_response(body)
 
     async def games_servers(request: web.Request) -> web.Response:
@@ -344,6 +359,8 @@ def register_web_routes(
     app.router.add_get("/app/v1/status", status)
     app.router.add_get("/app/v1/skills", skills)
     app.router.add_get("/app/v1/memory", memory)
+    app.router.add_get("/app/v1/persons", persons_roster)
+    app.router.add_get("/app/v1/persons/{personId}", person_profile)
     app.router.add_get("/app/v1/games/servers", games_servers)
     app.router.add_get("/app/v1/games/servers/{id}/status", games_server_status)
     app.router.add_get("/app/v1/games/servers/{id}/graph", games_server_graph)
