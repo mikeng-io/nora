@@ -89,6 +89,8 @@ class RollupConfig:
     min_weekdays: int
     label_freshness_days: int
     tz_name: str = "Asia/Hong_Kong"
+    anomaly_min_samples: int = 5
+    anomaly_z_threshold: float = 3.0
 
 
 class MobilityRollup:
