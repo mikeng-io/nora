@@ -30,6 +30,8 @@ class FakeMobilityStore:
         ] = {}
         self._watermarks: dict[str, tuple[int, int]] = {}
         self._next_place_id = 1
+        self._occupancy: dict[tuple[str, int, int], int] = {}  # (subject, place, how) -> dwell_ms
+        self._rhythm: dict[tuple[str, int], dict[str, float | int]] = {}
 
     async def watermark(self, *, subject_id: str) -> tuple[int, int]:
         return self._watermarks.get(subject_id, (0, 0))
@@ -104,6 +106,34 @@ class FakeMobilityStore:
         self._places[(subject_id, result.kind)] = (
             place_id, lat, lng, radius_m, result, label,
         )
+
+    async def record_occupancy(
+        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int
+    ) -> None:
+        for how, dwell_ms in bins.items():
+            key = (subject_id, place_id, how)
+            self._occupancy[key] = self._occupancy.get(key, 0) + dwell_ms
+
+    async def stay_durations_for_place(
+        self, *, subject_id: str, place_id: int
+    ) -> list[int]:
+        return [
+            s.ended_ts - s.started_ts for s in self._stays
+            if s.subject_id == subject_id and s.place_id == place_id
+        ]
+
+    async def upsert_rhythm(
+        self, *, subject_id: str, place_id: int, mean_arrival_minute: float,
+        mean_departure_minute: float, duration_median_ms: int,
+        duration_mad_ms: int, sample_count: int, now_ms: int,
+    ) -> None:
+        self._rhythm[(subject_id, place_id)] = {
+            "mean_arrival_minute": mean_arrival_minute,
+            "mean_departure_minute": mean_departure_minute,
+            "duration_median_ms": duration_median_ms,
+            "duration_mad_ms": duration_mad_ms,
+            "sample_count": sample_count,
+        }
 
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None:
         _, cluster = self._watermarks.get(subject_id, (0, 0))

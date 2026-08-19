@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.mobility import LabelResult, RawFix, Stay
@@ -21,6 +22,8 @@ from nora.infra.sql.schema import (
     ANALYTICS_WATERMARK,
     PRESENCE_DERIVED_PLACES,
     PRESENCE_FIXES,
+    PRESENCE_OCCUPANCY,
+    PRESENCE_PLACE_RHYTHM,
     PRESENCE_STAYS,
 )
 
@@ -203,6 +206,66 @@ class SqlMobilityStore:
                         "first_seen_ts": now_ms, "last_seen_ts": now_ms,
                     },
                 )
+
+    async def record_occupancy(
+        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int
+    ) -> None:
+        if not bins:
+            return
+        async with self._engine.begin() as conn:
+            for hour_of_week, dwell_ms in bins.items():
+                stmt = pg_insert(PRESENCE_OCCUPANCY).values(
+                    subject_id=subject_id, place_id=place_id,
+                    hour_of_week=hour_of_week, dwell_ms=dwell_ms, updated_ts=now_ms,
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=[
+                        PRESENCE_OCCUPANCY.c.subject_id, PRESENCE_OCCUPANCY.c.place_id,
+                        PRESENCE_OCCUPANCY.c.hour_of_week,
+                    ],
+                    set_={
+                        "dwell_ms": PRESENCE_OCCUPANCY.c.dwell_ms + stmt.excluded.dwell_ms,
+                        "updated_ts": stmt.excluded.updated_ts,
+                    },
+                )
+                await conn.execute(stmt)
+
+    async def stay_durations_for_place(
+        self, *, subject_id: str, place_id: int
+    ) -> list[int]:
+        stmt = sa.select(PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts).where(
+            PRESENCE_STAYS.c.subject_id == subject_id,
+            PRESENCE_STAYS.c.place_id == place_id,
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [r.ended_ts - r.started_ts for r in rows]
+
+    async def upsert_rhythm(
+        self, *, subject_id: str, place_id: int, mean_arrival_minute: float,
+        mean_departure_minute: float, duration_median_ms: int,
+        duration_mad_ms: int, sample_count: int, now_ms: int,
+    ) -> None:
+        stmt = pg_insert(PRESENCE_PLACE_RHYTHM).values(
+            subject_id=subject_id, place_id=place_id,
+            mean_arrival_minute=mean_arrival_minute,
+            mean_departure_minute=mean_departure_minute,
+            duration_median_ms=duration_median_ms, duration_mad_ms=duration_mad_ms,
+            sample_count=sample_count, updated_ts=now_ms,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[PRESENCE_PLACE_RHYTHM.c.subject_id, PRESENCE_PLACE_RHYTHM.c.place_id],
+            set_={
+                "mean_arrival_minute": stmt.excluded.mean_arrival_minute,
+                "mean_departure_minute": stmt.excluded.mean_departure_minute,
+                "duration_median_ms": stmt.excluded.duration_median_ms,
+                "duration_mad_ms": stmt.excluded.duration_mad_ms,
+                "sample_count": stmt.excluded.sample_count,
+                "updated_ts": stmt.excluded.updated_ts,
+            },
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
 
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None:
         await self._upsert_watermark(subject_id=subject_id, last_fix_id=fix_id)
