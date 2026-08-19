@@ -7,7 +7,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from nora.app.events import AmbiguousOpenEventsError, EventService
-from nora.domain.events import Event, EventStatus, RSVPResponse
+from nora.domain.events import (
+    Event,
+    EventCancelledError,
+    EventNotFoundError,
+    EventStatus,
+    RSVPResponse,
+)
 from nora.domain.reminders import ReminderCaps
 from nora.testing.events import FakeEventStore
 from nora.testing.reminders import FakeReminderStore
@@ -95,7 +101,9 @@ async def test_update_event_resolves_venue_once_via_route_source():
         conversation_id="signal:group-1", requester_person_id="miles",
         title="Dinner",
     )
-    updated = await svc.update_event(event_id=ev.id, venue_text="Soi 29")
+    updated = await svc.update_event(
+        event_id=ev.id, conversation_id="signal:group-1", venue_text="Soi 29",
+    )
 
     assert updated.venue_name == "Soi 29 Thai Kitchen"
     assert updated.venue_place_id == "ChIJfake123"
@@ -121,7 +129,8 @@ async def test_venue_resolution_refuses_a_raw_coordinate():
         title="Dinner",
     )
     updated = await svc.update_event(
-        event_id=ev.id, venue_text="22.2793,114.1628",
+        event_id=ev.id, conversation_id="signal:group-1",
+        venue_text="22.2793,114.1628",
     )
     # Refused at the R-28 screen — venue_text is kept as what was said,
     # nothing gets resolved.
@@ -135,7 +144,10 @@ async def test_rsvp_records_a_response():
         conversation_id="signal:group-1", requester_person_id="miles",
         title="Dinner",
     )
-    r = await svc.rsvp(event_id=ev.id, person_id="daisy", response=RSVPResponse.YES)
+    r = await svc.rsvp(
+        event_id=ev.id, conversation_id="signal:group-1",
+        person_id="daisy", response=RSVPResponse.YES,
+    )
     assert r.response is RSVPResponse.YES
 
 
@@ -147,7 +159,9 @@ async def test_cancel_event_cancels_its_linked_reminder():
         conversation_id="signal:group-1", requester_person_id="miles",
         title="Dinner", when=when,
     )
-    cancelled = await svc.cancel_event(event_id=ev.id)
+    cancelled = await svc.cancel_event(
+        event_id=ev.id, conversation_id="signal:group-1",
+    )
     assert cancelled.status is EventStatus.CANCELLED
 
     row = await reminders.get(ev.reminder_id)
@@ -164,7 +178,7 @@ async def test_list_events_filters_by_status():
     await svc.create_event(
         conversation_id="signal:group-1", requester_person_id="miles", title="B",
     )
-    await svc.cancel_event(event_id=a.id)
+    await svc.cancel_event(event_id=a.id, conversation_id="signal:group-1")
 
     proposed = await svc.list_events(
         conversation_id="signal:group-1", status=EventStatus.PROPOSED,
@@ -180,7 +194,8 @@ async def test_suggest_venue_ranks_by_mention_and_fails_closed_when_empty():
         title="Dinner",
     )
     out = await svc.suggest_venue(
-        event_id=ev.id, roster_person_ids=["miles", "daisy", "sam"],
+        event_id=ev.id, conversation_id="signal:group-1",
+        roster_person_ids=["miles", "daisy", "sam"],
     )
     assert out.status == "ok"
     assert out.candidates[0].venue_text == "Soi 29"
@@ -196,7 +211,8 @@ async def test_suggest_venue_nothing_found_when_every_person_is_empty():
         title="Dinner",
     )
     out = await svc.suggest_venue(
-        event_id=ev.id, roster_person_ids=["miles", "daisy"],
+        event_id=ev.id, conversation_id="signal:group-1",
+        roster_person_ids=["miles", "daisy"],
     )
     assert out.status == "nothing_found"
     assert out.candidates == ()
@@ -273,7 +289,9 @@ async def test_update_event_reschedule_cancels_old_reminder_and_links_new_one():
     assert old_reminder_id is not None
 
     when2 = NOW + timedelta(days=5)
-    updated = await svc.update_event(event_id=ev.id, when=when2)
+    updated = await svc.update_event(
+        event_id=ev.id, conversation_id="signal:group-1", when=when2,
+    )
 
     # A NEW reminder, pointing at the new due_at — never a silently orphaned
     # old one (Fix 1's regression case).
@@ -288,3 +306,183 @@ async def test_update_event_reschedule_cancels_old_reminder_and_links_new_one():
     assert new_row is not None
     assert new_row.state is ReminderState.PENDING
     assert new_row.due_at == when2
+
+
+# ── Fix I1: past PROPOSED events must not lock out create_event forever ────
+
+def _proposed_event(*, title: str, when: datetime | None) -> Event:
+    return Event(
+        id=uuid.uuid4(), conversation_id="signal:group-1", title=title,
+        created_by="miles", when=when, venue_text=None, venue_place_id=None,
+        venue_name=None, venue_address=None, venue_rating=None,
+        venue_price_level="", venue_maps_url=None, venue_resolved_at=None,
+        status=EventStatus.PROPOSED, reminder_id=None, created_at=NOW,
+    )
+
+
+async def test_create_event_ignores_past_proposed_events_in_the_open_count():
+    """Two dinners that already happened and were never explicitly
+    cancelled must NOT refuse a third create_event forever — only a
+    PROPOSED event that is still ahead (or has no `when` at all) counts
+    toward the ambiguity backstop."""
+    store = FakeEventStore()
+    svc = _service(store=store)
+    await store.create(_proposed_event(title="Past A", when=NOW - timedelta(days=10)))
+    await store.create(_proposed_event(title="Past B", when=NOW - timedelta(days=5)))
+
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="A New Dinner",
+    )
+    assert ev.title == "A New Dinner"
+
+
+async def test_create_event_still_refuses_on_two_future_open_events():
+    """The doctrine still holds for events that are genuinely still open —
+    one with a future `when`, one with none at all."""
+    store = FakeEventStore()
+    svc = _service(store=store)
+    await store.create(_proposed_event(title="Future A", when=NOW + timedelta(days=1)))
+    await store.create(_proposed_event(title="Future B (no time yet)", when=None))
+
+    with pytest.raises(AmbiguousOpenEventsError):
+        await svc.create_event(
+            conversation_id="signal:group-1", requester_person_id="miles",
+            title="C",
+        )
+
+
+# ── Fix I2: updating/RSVPing a CANCELLED event must refuse, not re-arm ─────
+
+async def test_update_event_refuses_on_a_cancelled_event():
+    reminders = FakeReminderStore()
+    svc = _service(reminders=reminders)
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    await svc.cancel_event(event_id=ev.id, conversation_id="signal:group-1")
+
+    with pytest.raises(EventCancelledError):
+        await svc.update_event(
+            event_id=ev.id, conversation_id="signal:group-1",
+            when=NOW + timedelta(days=3),
+        )
+    # No reminder was minted for the cancelled event, and its other fields
+    # are untouched.
+    assert list(await reminders.pending_for("signal:group-1")) == []
+    back = await svc.get_event(event_id=ev.id)
+    assert back.status is EventStatus.CANCELLED
+    assert back.when is None
+
+
+async def test_rsvp_refuses_on_a_cancelled_event():
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    await svc.cancel_event(event_id=ev.id, conversation_id="signal:group-1")
+
+    with pytest.raises(EventCancelledError):
+        await svc.rsvp(
+            event_id=ev.id, conversation_id="signal:group-1",
+            person_id="daisy", response=RSVPResponse.YES,
+        )
+
+
+# ── Fix I5: event ids are conversation-scoped on every write verb ──────────
+
+async def test_update_event_refuses_a_mismatched_conversation_id():
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    with pytest.raises(EventNotFoundError):
+        await svc.update_event(
+            event_id=ev.id, conversation_id="signal:some-other-group",
+            venue_text="Soi 29",
+        )
+
+
+async def test_cancel_event_refuses_a_mismatched_conversation_id():
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    with pytest.raises(EventNotFoundError):
+        await svc.cancel_event(
+            event_id=ev.id, conversation_id="signal:some-other-group",
+        )
+
+
+async def test_rsvp_refuses_a_mismatched_conversation_id():
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    with pytest.raises(EventNotFoundError):
+        await svc.rsvp(
+            event_id=ev.id, conversation_id="signal:some-other-group",
+            person_id="daisy", response=RSVPResponse.YES,
+        )
+
+
+async def test_suggest_venue_refuses_a_mismatched_conversation_id():
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    with pytest.raises(EventNotFoundError):
+        await svc.suggest_venue(
+            event_id=ev.id, conversation_id="signal:some-other-group",
+            roster_person_ids=["miles"],
+        )
+
+
+# ── Fix I4: the FULL R-28 screen-call-screen sandwich, not just the half ───
+
+async def test_venue_resolution_refuses_a_query_naming_a_known_person():
+    """«Tyler's place» must not reach Google as a venue query — the same
+    person-name half of R-28 `place_info` already enforces, now shared via
+    `nora.agent.security.screen_and_resolve_place` (Fix I4)."""
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    updated = await svc.update_event(
+        event_id=ev.id, conversation_id="signal:group-1",
+        venue_text="Tyler's place", person_names=frozenset({"tyler"}),
+    )
+    assert updated.venue_text == "Tyler's place"
+    assert updated.venue_place_id is None
+    assert updated.venue_name is None
+
+
+async def test_venue_resolution_strips_a_google_returned_name_that_trips_the_screen():
+    """Fix I4's return-path screen: a Google-returned `name`/`address` that
+    itself trips `scan_identifiers`/`looks_like_coordinate` must be
+    stripped before it is persisted — `_resolve_venue` used to write
+    Google's raw fields straight into `venue_name`/`venue_address` with no
+    screen at all."""
+    route_source = _FakeRouteSource({
+        "status": "ok", "name": "Call +85212345678 to book",
+        "address": "22.2793,114.1628", "rating": 4.0,
+        "price_level": "", "place_id": "ChIJfake456",
+    })
+    svc = _service(route_source=route_source)
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    updated = await svc.update_event(
+        event_id=ev.id, conversation_id="signal:group-1", venue_text="Soi 29",
+    )
+    assert updated.venue_name is None        # stripped: an identifier
+    assert updated.venue_address is None      # stripped: a coordinate
+    assert updated.venue_place_id == "ChIJfake456"  # untouched fields kept

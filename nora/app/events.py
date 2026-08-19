@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID
 
-from nora.agent.security import looks_like_coordinate, scan_identifiers
+from nora.agent.security import screen_and_resolve_place
 from nora.domain.events import (
     RSVP,
     Event,
@@ -33,6 +33,9 @@ from nora.domain.events import (
 )
 from nora.domain.events import (
     AmbiguousOpenEventsError as AmbiguousOpenEventsError,
+)
+from nora.domain.events import (
+    EventCancelledError as EventCancelledError,
 )
 from nora.domain.events import (
     EventNotFoundError as EventNotFoundError,
@@ -91,20 +94,32 @@ class EventService:
     async def create_event(
         self, *, conversation_id: str, requester_person_id: str, title: str,
         when: datetime | None = None, venue_text: str | None = None,
+        person_names: frozenset[str] | None = None,
     ) -> Event:
         """Spec §3.1: the CALLER (the `create_event` tool) is expected to
         have already checked `list_events(status=PROPOSED)` and decided a
         new event is genuinely wanted — this method does not silently
         merge or refuse on its behalf. It DOES still raise
         `AmbiguousOpenEventsError` if two-or-more open events already
-        exist, as a last-resort backstop, not the primary mechanism."""
+        exist, as a last-resort backstop, not the primary mechanism.
+
+        Fix I1: only a PROPOSED event that is STILL OPEN — `when is None`
+        (no time settled yet) or `when >= now` (still ahead) — counts
+        toward that backstop. Without this, two dinners that already
+        happened and were never explicitly cancelled would refuse every
+        future `create_event` call for this conversation FOREVER — the
+        "which one do you mean?" refusal makes no sense for an event that
+        is long past, and there is no `confirm_event` transition to move
+        a past event out of PROPOSED (a deliberate scope decision, not a
+        gap this fix reopens)."""
         open_events = await self.list_events(
             conversation_id=conversation_id, status=EventStatus.PROPOSED,
         )
-        if len(open_events) >= 2:
-            raise AmbiguousOpenEventsError(conversation_id, open_events)
-
         now = self._now()
+        still_open = [e for e in open_events if e.when is None or e.when >= now]
+        if len(still_open) >= 2:
+            raise AmbiguousOpenEventsError(conversation_id, still_open)
+
         event = Event(
             id=uuid.uuid4(),
             conversation_id=conversation_id,
@@ -129,15 +144,23 @@ class EventService:
                 conversation_id=conversation_id,
             )
         if venue_text is not None:
-            event = await self._resolve_venue(event, venue_text, now=now)
+            event = await self._resolve_venue(
+                event, venue_text, now=now, person_names=person_names,
+            )
         await self._store.create(event)
         return event
 
     async def update_event(
-        self, *, event_id: UUID, when: datetime | None = None,
-        venue_text: str | None = None,
+        self, *, event_id: UUID, conversation_id: str,
+        when: datetime | None = None, venue_text: str | None = None,
+        person_names: frozenset[str] | None = None,
     ) -> Event:
-        current = await self._require(event_id)
+        current = await self._require_in_conversation(event_id, conversation_id)
+        if current.status is EventStatus.CANCELLED:
+            # Fix I2: a new `when` here would run `_link_reminder` and mint a
+            # fresh PENDING reminder for a gathering that was called off —
+            # refuse rather than silently reactivating it.
+            raise EventCancelledError(event_id)
         updated = current
         if when is not None:
             updated = replace(updated, when=ensure_utc(when, field="when"))
@@ -146,14 +169,22 @@ class EventService:
                 conversation_id=updated.conversation_id,
             )
         if venue_text is not None:
-            updated = await self._resolve_venue(updated, venue_text, now=self._now())
+            updated = await self._resolve_venue(
+                updated, venue_text, now=self._now(), person_names=person_names,
+            )
         await self._store.update(updated)
         return updated
 
     async def rsvp(
-        self, *, event_id: UUID, person_id: str, response: RSVPResponse,
+        self, *, event_id: UUID, conversation_id: str, person_id: str,
+        response: RSVPResponse,
     ) -> RSVP:
-        await self._require(event_id)  # 404s before writing an orphan RSVP
+        current = await self._require_in_conversation(event_id, conversation_id)
+        if current.status is EventStatus.CANCELLED:
+            # Fix I2: the same refusal `update_event` gives — recording an
+            # RSVP against a called-off gathering is not useful and reads as
+            # though it is still on.
+            raise EventCancelledError(event_id)
         row = RSVP(
             event_id=event_id, person_id=person_id, response=response,
             responded_at=self._now(),
@@ -161,8 +192,8 @@ class EventService:
         await self._store.add_rsvp(row)
         return row
 
-    async def cancel_event(self, *, event_id: UUID) -> Event:
-        current = await self._require(event_id)
+    async def cancel_event(self, *, event_id: UUID, conversation_id: str) -> Event:
+        current = await self._require_in_conversation(event_id, conversation_id)
         if current.reminder_id is not None:
             await self._reminders.cancel(
                 current.reminder_id, conversation_id=current.conversation_id,
@@ -188,9 +219,11 @@ class EventService:
         return await self._store.rsvps_for(event_id)
 
     async def suggest_venue(
-        self, *, event_id: UUID, roster_person_ids: Sequence[str],
+        self, *, event_id: UUID, conversation_id: str,
+        roster_person_ids: Sequence[str],
+        person_names: frozenset[str] | None = None,
     ) -> VenueSuggestions:
-        await self._require(event_id)
+        await self._require_in_conversation(event_id, conversation_id)
         if self._honcho is None:
             return VenueSuggestions(status="unavailable")
 
@@ -214,7 +247,7 @@ class EventService:
         ranked = sorted(mentions.items(), key=lambda kv: kv[1], reverse=True)
         candidates: list[VenueCandidate] = []
         for venue_text, count in ranked[:3]:
-            resolved = await self._resolve_place(venue_text)
+            resolved = await self._resolve_place(venue_text, person_names=person_names)
             candidates.append(
                 VenueCandidate(
                     venue_text=venue_text,
@@ -236,6 +269,22 @@ class EventService:
     async def _require(self, event_id: UUID) -> Event:
         event = await self._store.get(event_id)
         if event is None:
+            raise EventNotFoundError(event_id)
+        return event
+
+    async def _require_in_conversation(
+        self, event_id: UUID, conversation_id: str,
+    ) -> Event:
+        """`_require`, plus the scope check `ReminderStore.cancel`
+        (`nora.domain.reminders`) already documents the reasoning for: "a
+        uuid carries no scope of its own — the STORE enforces the scope."
+        Fix I5: `update_event`/`cancel_event`/`rsvp`/`suggest_venue` all
+        accept a bare event id from the model with no prior proof it belongs
+        to the room asking — an id from ANOTHER conversation refuses exactly
+        like an unknown one (`EventNotFoundError`), never a distinct "wrong
+        room" message that would confirm a stranger's event id is real."""
+        event = await self._require(event_id)
+        if event.conversation_id != conversation_id:
             raise EventNotFoundError(event_id)
         return event
 
@@ -290,8 +339,9 @@ class EventService:
 
     async def _resolve_venue(
         self, event: Event, venue_text: str, *, now: datetime,
+        person_names: frozenset[str] | None = None,
     ) -> Event:
-        resolved = await self._resolve_place(venue_text)
+        resolved = await self._resolve_place(venue_text, person_names=person_names)
         if resolved is None:
             # A failed (or refused) re-resolution must not leave a PREVIOUS
             # successful resolution's name/address/rating/etc. paired with a
@@ -319,15 +369,32 @@ class EventService:
             venue_resolved_at=now,
         )
 
-    async def _resolve_place(self, text: str) -> dict[str, Any] | None:
-        """The R-28 screen, THEN the same resolver `place_info` calls —
-        applied here because `EventService` reaches Google through a
-        second path and must carry the identical guard (Task 6)."""
-        if scan_identifiers(text) is not None or looks_like_coordinate(text):
+    async def _resolve_place(
+        self, text: str, *, person_names: frozenset[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """The FULL R-28 screen-call-screen sandwich, via the SAME
+        `nora.agent.security.screen_and_resolve_place` `place_info`'s own
+        tool closure calls (Fix I4) — previously this only ran the
+        outbound identifier/coordinate half, with no person-name check, no
+        `try/except` around the call, and no return-path screen on
+        Google's own `name`/`address` before they were persisted.
+
+        `person_names` is optional because `EventService` is built once at
+        process start and has no per-tag address book of its own — callers
+        that have one (the tool closures in `nora.agent.tools`, which build
+        it once per tag from the whole `persons` roster) pass it through;
+        without it, this still gets the identifier/coordinate half."""
+        result = await screen_and_resolve_place(
+            text, route_source=self._route_source, person_names=person_names,
+        )
+        if result.status != "resolved":
             return None
-        if self._route_source is None:
+        out = result.data
+        if out is None:
+            # Unreachable in practice — `status == "resolved"` always
+            # carries `data` by construction — but degrades honestly (R-5)
+            # rather than trusting that invariant with an `assert`.
             return None
-        out = await self._route_source.place_info(text)
         if out.get("status") != "ok":
             return None
         # The real `RouteClient.place_info` never returns `maps_url` — it is

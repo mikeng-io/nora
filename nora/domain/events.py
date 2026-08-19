@@ -126,6 +126,19 @@ class EventNotFoundError(Exception):
         self.event_id = event_id
 
 
+class EventCancelledError(Exception):
+    """Raised by `EventService` (`nora.app.events`) when `update_event`/`rsvp`
+    is asked to act on an event whose `status` is already `CANCELLED` — a new
+    `when` would otherwise re-arm the event's reminder for a gathering that
+    was called off (Fix I2). Lives here for the same layering reason as
+    `EventNotFoundError`: the exception TYPE must be reachable from
+    `nora.agent`, which sits below `nora.app` and may not import it."""
+
+    def __init__(self, event_id: UUID) -> None:
+        super().__init__(f"event {event_id} is cancelled")
+        self.event_id = event_id
+
+
 class AmbiguousOpenEventsError(Exception):
     """More than one proposed event exists for a conversation — spec
     §3.1's fail-closed-on-ambiguity case. The caller (the `create_event`

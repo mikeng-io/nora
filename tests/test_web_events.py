@@ -49,7 +49,10 @@ async def test_build_event_payload_includes_rsvps():
         conversation_id="signal:group-1", requester_person_id="miles",
         title="Dinner",
     )
-    await svc.rsvp(event_id=ev.id, person_id="daisy", response=RSVPResponse.YES)
+    await svc.rsvp(
+        event_id=ev.id, conversation_id="signal:group-1",
+        person_id="daisy", response=RSVPResponse.YES,
+    )
 
     out = await build_event_payload(events=svc, event_id=ev.id)
     assert out["rsvps"] == [{"person_id": "daisy", "response": "yes"}]
