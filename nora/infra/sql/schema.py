@@ -252,6 +252,53 @@ IDX_PRESENCE_DERIVED_PLACES_SUBJECT_KIND = sa.Index(
     PRESENCE_DERIVED_PLACES.c.kind,
 )
 
+# `presence_occupancy` / `presence_place_rhythm` — Tier 3 (design/27 §4,
+# issue #6, DEC-117). Both are keyed off `presence_derived_places.id`
+# (`place_id`), NEVER off a raw cluster — a place must have crossed Tier
+# 2's fail-closed home/work threshold before rhythm can describe it.
+#
+# `hour_of_week` is 0..167, Monday 00:00 local time = 0, walked in
+# `nora.domain.mobility.hour_of_week_bins` — the same local-clock
+# discipline `label_place`'s night/work windows already use (Asia/
+# Hong_Kong, no DST, a flat day increment is safe).
+PRESENCE_OCCUPANCY = sa.Table(
+    "presence_occupancy",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column("subject_id", sa.Text, nullable=False),
+    sa.Column("place_id", sa.Integer, nullable=False),
+    sa.Column("hour_of_week", sa.Integer, nullable=False),
+    sa.Column("dwell_ms", sa.BigInteger, nullable=False, server_default=sa.text("0")),
+    sa.Column("updated_ts", sa.BigInteger, nullable=False),
+    sa.UniqueConstraint(
+        "subject_id", "place_id", "hour_of_week", name="uq_occupancy_bin"
+    ),
+    sa.CheckConstraint(
+        "hour_of_week >= 0 AND hour_of_week < 168", name="ck_occupancy_how"
+    ),
+)
+
+# One row per (subject, place) — always OVERWRITTEN wholesale on every
+# recompute (`upsert_rhythm`), never incremented, for the same reason
+# `label_place` recomputes from the full stay list every time rather than
+# keeping a running average (a bad sample must be correctable, not baked
+# in forever).
+PRESENCE_PLACE_RHYTHM = sa.Table(
+    "presence_place_rhythm",
+    METADATA,
+    sa.Column("subject_id", sa.Text, primary_key=True),
+    sa.Column("place_id", sa.Integer, primary_key=True),
+    # Circular mean, LOCAL time-of-day in minutes (0..1439.999) — an
+    # arithmetic mean of 23:50 and 00:10 is nonsense (12:00); the circular
+    # mean of those two is correctly ~00:00.
+    sa.Column("mean_arrival_minute", sa.Float, nullable=True),
+    sa.Column("mean_departure_minute", sa.Float, nullable=True),
+    sa.Column("duration_median_ms", sa.BigInteger, nullable=True),
+    sa.Column("duration_mad_ms", sa.BigInteger, nullable=True),
+    sa.Column("sample_count", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("updated_ts", sa.BigInteger, nullable=False),
+)
+
 # Packs TWO watermarks per row deliberately — `last_fix_id` (segmentation) and
 # `last_cluster_id` (the dirty-set marker, spec §4.2) are read together every
 # cycle to decide whether clustering is dirty, so one row avoids two indexed
