@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from nora.config import (
+    AnalyticsConfig,
     Config,
     ConfigError,
     LimitsConfig,
@@ -275,7 +276,30 @@ def test_the_presence_section_is_optional_and_ships_inert(toml_path):
     cfg = load(toml_path)
     assert cfg.presence.enabled is False
     assert cfg.presence.cadence_seconds == 90.0
-    assert cfg.presence.retention_days == 180
+    assert cfg.presence.retention_days == 720
+
+
+def test_the_analytics_section_is_optional_and_ships_inert(toml_path):
+    """DEC-115. `[analytics]` deleted from the example must keep loading, and
+    the default is INERT (enabled = false): the presence analytics substrate
+    must never be on by a missing section. The values asserted are the class
+    defaults, so this fails if a default silently changes."""
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[analytics]\n")
+    assert tail, "config.example.toml no longer declares [analytics]"
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
+
+    cfg = load(toml_path)
+    assert cfg.analytics.enabled is False
+    assert cfg.analytics.tick_seconds == 120.0
+    assert cfg.analytics.safety_lag == 600
+    assert cfg.analytics.settled_seconds == 900.0
+    assert cfg.analytics.max_age_seconds == 86_400.0
+    assert cfg.analytics.batch_limit == 400
+    assert cfg.analytics.backfill_batch_limit == 20_000
+    assert cfg.analytics.backfill_threshold == 4_000
+    assert cfg.analytics.metrics_port == 9103
 
 
 def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_path):
@@ -430,6 +454,21 @@ def test_an_unknown_presence_key_is_still_a_startup_failure(toml_path):
     toml_path.write_text(toml_path.read_text() + '\n[presence]\nenabledd = true\n')
     with pytest.raises(ConfigError):
         load(toml_path)
+
+
+def test_an_unknown_analytics_key_is_still_a_startup_failure(toml_path):
+    """`extra="forbid"` — a typo'd key is a startup crash-loop, not silently
+    ignored (the same posture every other INERT-by-default section takes)."""
+    toml_path.write_text(toml_path.read_text() + '\n[analytics]\nenabledd = true\n')
+    with pytest.raises(ConfigError):
+        load(toml_path)
+
+
+def test_analytics_config_rejects_unknown_keys_directly():
+    """Constructing the model directly (not via `load()`) still refuses an
+    unknown key — belt-and-braces with the startup-failure test above."""
+    with pytest.raises(ValidationError):
+        AnalyticsConfig(enabled=True, nonexistent_key=1)
 
 
 def test_tools_mcp_is_optional_and_defaults_to_empty(toml_path):

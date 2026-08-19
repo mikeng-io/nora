@@ -515,6 +515,26 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "label, so cardinality stays fixed.",
         ("reason",),
     ),
+    # ── the analytics rollup (DEC-115) ────────────────────────────────────
+    # A separate process (`python -m nora.analytics`); spec §5.
+    _CounterSpec(
+        "nora_analytics_stays_total",
+        "Stays written to presence_stays, by subject.",
+        ("subject",),
+    ),
+    _CounterSpec(
+        "nora_analytics_places_total",
+        "Derived places upserted, by subject and kind (home/work).",
+        ("subject", "kind"),
+    ),
+    # A rise is the tell that Life360's behaviour or the cadence changed
+    # (spec §5) — nothing here should trend upward under a stable population.
+    _CounterSpec(
+        "nora_analytics_unlabeled_total",
+        "Times a cluster resolved to unlabeled instead of home/work, or an "
+        "existing place expired to unlabeled on a freshness recheck.",
+        ("subject",),
+    ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
     # never actually called" impossible to read from silence: a cache hit and a
     # miss are the SAME status=ok, and only this label tells them apart. Its own
@@ -869,6 +889,15 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Seconds since this circle's last SUCCESSFUL collection. Climbing means "
         "the daemon is up but not collecting.",
         ("circle",),
+    ),
+    # The climbing-age liveness shape design/19 §4 uses, applied to the
+    # rollup: set after every successful run_once, so a stalled daemon
+    # shows a climbing age rather than a frozen derivation count.
+    _GaugeSpec(
+        "nora_analytics_rollup_age_seconds",
+        "Seconds since this subject's last successful analytics rollup run. "
+        "Climbing means the daemon is up but not deriving.",
+        ("subject",),
     ),
     # The R-21 startup invariant (design/19 §5): 1 when the Signal group is a
     # SUBSET of the Life360 circle (disclosure holds by construction), 0 the day
