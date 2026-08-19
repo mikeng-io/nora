@@ -394,7 +394,12 @@ async def test_build_app_wires_search_into_the_observer_when_verification_is_on(
 
     app = await build_app(env)
     try:
-        [consolidator] = app.deps.language_consolidators
+        # Index [0], not a single-element unpack: Dreamer Plan 2's
+        # `ExchangeConsolidator` rides the same `[language].enabled` gate
+        # (see `test_build_app_wires_the_language_consolidator_when_enabled`
+        # above), so this tuple has two entries whenever `[language].enabled`
+        # is true.
+        consolidator = app.deps.language_consolidators[0]
         assert consolidator._observer._search is not None
     finally:
         await app.shutdown()
@@ -413,7 +418,10 @@ async def test_build_app_leaves_search_unwired_when_verification_is_off(env, mon
 
     app = await build_app(env)
     try:
-        [consolidator] = app.deps.language_consolidators
+        # Index [0] — see the sibling test above for why this tuple has two
+        # entries (Dreamer Plan 2's `ExchangeConsolidator` rides the same
+        # `[language].enabled` gate).
+        consolidator = app.deps.language_consolidators[0]
         assert consolidator._observer._search is None
     finally:
         await app.shutdown()
