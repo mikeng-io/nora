@@ -547,6 +547,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "subject's own history at that place, by subject.",
         ("subject",),
     ),
+    _CounterSpec(
+        "nora_analytics_trips_total",
+        "Trips written to presence_trips (Tier 5), by subject.",
+        ("subject",),
+    ),
+    _CounterSpec(
+        "nora_analytics_corridors_total",
+        "Corridors upserted (Tier 5, new or reconfirmed), by subject.",
+        ("subject",),
+    ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
     # never actually called" impossible to read from silence: a cache hit and a
     # miss are the SAME status=ok, and only this label tells them apart. Its own
