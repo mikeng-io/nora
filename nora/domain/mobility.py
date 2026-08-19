@@ -32,6 +32,7 @@ __all__ = [
     "Trip",
     "circular_mean_minute",
     "cluster_places",
+    "cluster_trips",
     "derive_speed_kmh",
     "dwell_ms",
     "edit_distance",
@@ -308,6 +309,72 @@ def extract_trips(
             circle_id=circle_id,
         ))
     return trips
+
+
+def _trip_neighbors(i: int, trips: list[Trip], max_edit_distance: int) -> list[int]:
+    return [
+        j for j in range(len(trips))
+        if j != i and edit_distance(trips[i].corridor, trips[j].corridor) <= max_edit_distance
+    ]
+
+
+def cluster_trips(
+    trips: list[Trip], *, max_edit_distance: int, min_samples: int
+) -> list[list[Trip]]:
+    """DBSCAN over trip corridor sequences, edit-distance metric
+    (design/27 §4, issue #6). Same algorithm shape as `cluster_places`
+    (noise points below `min_samples` are DROPPED, never a singleton
+    cluster), deliberately NOT sharing code with it — a separate,
+    parallel implementation (task 6's own brief): `cluster_places` is
+    independently verified against 70,000 randomized point sets, and
+    refactoring it into a generic metric-parameterized version under this
+    plan's time budget risks that verification for the ~20 lines it would
+    save (CLAUDE.md's own "three similar lines is better than a premature
+    abstraction"). A trip with an empty `corridor` (every fix in the
+    group had no `address`) still participates: `edit_distance((), x) ==
+    len(x)`, so it simply clusters only with other near-empty corridors,
+    never spuriously with a real one.
+
+    Checked by hand against the same three usual hand-rolled-DBSCAN
+    failure modes `cluster_places`'s own docstring names (a border point
+    left unlabeled instead of folded into its core point's cluster; the
+    expansion loop failing to re-visit and relabel a point marked noise
+    before its reaching core point was discovered; non-contiguous or
+    merged cluster ids across 3+ clusters) —
+    `test_cluster_trips_three_clusters_with_border_points_and_noise`
+    reproduces all three in one fixture and was hand-verified against a
+    deliberately-reintroduced version of the noise-relabelling bug before
+    being committed."""
+    n = len(trips)
+    labels: list[int | None] = [None] * n  # None = unvisited; -1 = noise
+    cluster_id = 0
+
+    for i in range(n):
+        if labels[i] is not None:
+            continue
+        neighbors = _trip_neighbors(i, trips, max_edit_distance)
+        if len(neighbors) + 1 < min_samples:
+            labels[i] = -1
+            continue
+        labels[i] = cluster_id
+        seeds = list(neighbors)
+        while seeds:
+            j = seeds.pop()
+            if labels[j] == -1:
+                labels[j] = cluster_id  # a noise point reachable from a core point
+            if labels[j] is not None:
+                continue
+            labels[j] = cluster_id
+            j_neighbors = _trip_neighbors(j, trips, max_edit_distance)
+            if len(j_neighbors) + 1 >= min_samples:
+                seeds.extend(j_neighbors)
+        cluster_id += 1
+
+    clusters: dict[int, list[Trip]] = {}
+    for i, label in enumerate(labels):
+        if label is not None and label >= 0:
+            clusters.setdefault(label, []).append(trips[i])
+    return list(clusters.values())
 
 
 @dataclass(frozen=True)
