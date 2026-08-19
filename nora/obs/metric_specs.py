@@ -533,6 +533,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "existing place expired to unlabeled on a freshness recheck.",
         ("subject",),
     ),
+    _CounterSpec(
+        "nora_analytics_occupancy_bins_total",
+        "Hour-of-week occupancy bins updated (Tier 3), by subject.",
+        ("subject",),
+    ),
+    # A rise here is EXPECTED as the corpus grows — unlike
+    # nora_analytics_unlabeled_total, this is not a health signal, it is
+    # the anomaly detector doing its job (design/27 §4, issue #6).
+    _CounterSpec(
+        "nora_analytics_anomalies_total",
+        "Stay durations scoring |z| above anomaly_z_threshold against the "
+        "subject's own history at that place, by subject.",
+        ("subject",),
+    ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
     # never actually called" impossible to read from silence: a cache hit and a
     # miss are the SAME status=ok, and only this label tells them apart. Its own

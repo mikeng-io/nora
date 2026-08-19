@@ -148,6 +148,8 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         min_nights=analytics.min_nights, min_weekdays=analytics.min_weekdays,
         label_freshness_days=analytics.label_freshness_days,
         tz_name=analytics.tz_name,
+        anomaly_min_samples=analytics.anomaly_min_samples,
+        anomaly_z_threshold=analytics.anomaly_z_threshold,
     )
     rollup = MobilityRollup(
         store=store, config=rollup_config, metrics=metrics, geocode_cache=geocode_cache,

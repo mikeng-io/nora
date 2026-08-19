@@ -19,16 +19,21 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from itertools import pairwise
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 from nora.domain.mobility import (
     DWELL_CAP_MS,
     LabelResult,
     RawFix,
     Stay,
+    circular_mean_minute,
     cluster_places,
+    hour_of_week_bins,
     label_place,
+    robust_z_score,
     segment_stays,
 )
 from nora.domain.ports import GeocodeCacheStore
@@ -45,6 +50,9 @@ class MobilityStore(Protocol):
     ) -> list[RawFix]: ...
     async def write_stays(self, stays: list[Stay]) -> None: ...
     async def stays_for_subject(self, *, subject_id: str) -> list[Stay]: ...
+    async def set_place_ids(
+        self, *, subject_id: str, started_ts_in: list[int], place_id: int
+    ) -> None: ...
     async def existing_place(
         self, *, subject_id: str, kind: str
     ) -> tuple[int, float, float, float, LabelResult, str | None] | None: ...
@@ -55,6 +63,17 @@ class MobilityStore(Protocol):
     ) -> None: ...
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
     async def advance_cluster_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
+    async def record_occupancy(
+        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int
+    ) -> None: ...
+    async def stay_durations_for_place(
+        self, *, subject_id: str, place_id: int
+    ) -> list[int]: ...
+    async def upsert_rhythm(
+        self, *, subject_id: str, place_id: int, mean_arrival_minute: float,
+        mean_departure_minute: float, duration_median_ms: int,
+        duration_mad_ms: int, sample_count: int, now_ms: int,
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -75,6 +94,8 @@ class RollupConfig:
     min_weekdays: int
     label_freshness_days: int
     tz_name: str = "Asia/Hong_Kong"
+    anomaly_min_samples: int = 5
+    anomaly_z_threshold: float = 3.0
 
 
 class MobilityRollup:
@@ -188,6 +209,33 @@ class MobilityRollup:
                     new_stays.append(last_open_stay)
             if new_stays:
                 await self._store.write_stays(new_stays)
+                for closed_stay in new_stays:
+                    try:
+                        await self._record_rhythm(
+                            subject_id=subject_id, stay=closed_stay, now_ms=now_ms,
+                        )
+                    except Exception:
+                        # A Tier 3 derivation failure must NEVER block the Tier
+                        # 1/2 watermark contract. `write_stays` has already
+                        # durably committed these stays; if the exception
+                        # escaped, `advance_fix_watermark` below would be
+                        # skipped, the next tick would re-read the identical
+                        # fixes, re-segment the identical stays and call
+                        # `write_stays` again — and `presence_stays` has no
+                        # unique constraint on (subject_id, started_ts), so
+                        # that duplicates rows forever at tick cadence,
+                        # poisoning `label_place`'s time-weighted shares and
+                        # `cluster_places`' centroids. The realistic trigger is
+                        # the analytics image deploying ahead of migration 0017
+                        # (every occupancy/rhythm call raises UndefinedTable).
+                        # Rhythm is derived and recoverable; the stay is not.
+                        # Found by the final whole-branch review (Critical #1).
+                        log.exception(
+                            "rhythm recording failed for a closed stay — the "
+                            "stay is already written and the watermark still "
+                            "advances; rhythm is derived and recoverable, the "
+                            "stay is not"
+                        )
             await self._store.advance_fix_watermark(
                 subject_id=subject_id, fix_id=fixes[-1].id
             )
@@ -269,6 +317,9 @@ class MobilityRollup:
                         # kind=result.kind: a freshly-clustered place writes
                         # into its OWN kind's slot, scoped the same way the
                         # recheck above is.
+                        existing_before = await self._store.existing_place(
+                            subject_id=subject_id, kind=result.kind
+                        )
                         label = await self._label_for(lat=lat, lng=lng)
                         await self._store.upsert_place(
                             subject_id=subject_id, circle_id=circle_id,
@@ -281,9 +332,147 @@ class MobilityRollup:
                                 "nora_analytics_places_total",
                                 subject=subject_id, kind=result.kind,
                             )
+                        if existing_before is None:
+                            # First time THIS kind has ever existed for this
+                            # subject — backfill past stays that predate it
+                            # (Tier 3, design/27 §4): they closed before
+                            # there was a place to attach rhythm/occupancy
+                            # to, so they never went through `_record_rhythm`.
+                            refreshed = await self._store.existing_place(
+                                subject_id=subject_id, kind=result.kind
+                            )
+                            if refreshed is not None:
+                                new_place_id = refreshed[0]
+                                unlinked = [
+                                    s for s in all_stays
+                                    if s.place_id is None
+                                    and _within(s, lat, lng, self._cfg.cluster_eps_m)
+                                ]
+                                for s in unlinked:
+                                    await self._apply_rhythm(
+                                        subject_id=subject_id, place_id=new_place_id,
+                                        stay=s, now_ms=now_ms,
+                                    )
                 await self._store.advance_cluster_watermark(
                     subject_id=subject_id, fix_id=new_last_cluster
                 )
+
+    async def _record_rhythm(self, *, subject_id: str, stay: Stay, now_ms: int) -> None:
+        """Tier 3 (design/27 §4, issue #6): occupancy + rhythm + anomaly
+        for ONE closed stay, only when it falls inside an existing
+        home/work place — an unlabelled cluster is never persisted (Tier
+        2's own rule), so rhythm has nothing to attach to until then."""
+        place_id: int | None = None
+        for kind in ("home", "work"):
+            existing = await self._store.existing_place(subject_id=subject_id, kind=kind)
+            if existing is None:
+                continue
+            pid, place_lat, place_lng, _radius, _result, _label = existing
+            if _within(stay, place_lat, place_lng, self._cfg.cluster_eps_m):
+                place_id = pid
+                break
+        if place_id is None:
+            return
+        await self._apply_rhythm(
+            subject_id=subject_id, place_id=place_id, stay=stay, now_ms=now_ms,
+        )
+
+    async def _apply_rhythm(
+        self, *, subject_id: str, place_id: int, stay: Stay, now_ms: int,
+    ) -> None:
+        all_stays = await self._store.stays_for_subject(subject_id=subject_id)
+        current = next(
+            (s for s in all_stays if s.started_ts == stay.started_ts), None,
+        )
+        if current is not None and current.place_id is not None and current.place_id != place_id:
+            # Already linked to a DIFFERENT place — a same-cycle race between
+            # two first-place backfills reading the same stale snapshot, or a
+            # stay `_record_rhythm` already handled this cycle. set_place_ids
+            # would no-op; attributing this stay's dwell to `place_id` anyway
+            # would double-count it across two places' occupancy/rhythm.
+            # Found by Task 10's review, Critical #2.
+            return
+
+        already_linked = current is not None and current.place_id == place_id
+        if not already_linked:
+            # The ONLY branch that may record occupancy or score an anomaly:
+            # this is the first time the stay is being attributed to
+            # `place_id`. `record_occupancy` ACCUMULATES dwell
+            # (`dwell_ms = dwell_ms + excluded.dwell_ms`) — correct for many
+            # distinct stays, catastrophic if the SAME stay is replayed, and
+            # nothing else guards that. A re-fired first-place backfill, or a
+            # caller retry after the `_record_rhythm` guard in `run_once`
+            # swallowed an exception, both re-enter here for an
+            # already-linked stay; without this gate each replay would re-add
+            # the stay's dwell to `presence_occupancy` and re-score it for
+            # anomaly. Found by the final whole-branch review (Important #2).
+            duration_ms = stay.ended_ts - stay.started_ts
+            # Baseline read BEFORE this stay is linked, so it is never
+            # anomalous relative to itself.
+            history = await self._store.stay_durations_for_place(
+                subject_id=subject_id, place_id=place_id,
+            )
+            z = robust_z_score(
+                float(duration_ms), [float(d) for d in history],
+                min_samples=self._cfg.anomaly_min_samples,
+            )
+            if (
+                z is not None
+                and abs(z) >= self._cfg.anomaly_z_threshold
+                and self._metrics is not None
+            ):
+                self._metrics.inc("nora_analytics_anomalies_total", subject=subject_id)
+
+            await self._store.set_place_ids(
+                subject_id=subject_id, started_ts_in=[stay.started_ts],
+                place_id=place_id,
+            )
+            bins = hour_of_week_bins(stay.started_ts, stay.ended_ts, self._cfg.tz_name)
+            await self._store.record_occupancy(
+                subject_id=subject_id, place_id=place_id, bins=bins, now_ms=now_ms,
+            )
+            if self._metrics is not None:
+                self._metrics.inc(
+                    "nora_analytics_occupancy_bins_total",
+                    value=len(bins), subject=subject_id,
+                )
+
+        # Rhythm recomputes from EVERY stay now linked to this place — re-read
+        # fresh (set_place_ids may have just landed). Unlike occupancy this is
+        # a FULL recompute, not an accumulation, so it is idempotent and runs
+        # unconditionally — including as a harmless redundant call for an
+        # already-linked stay. `linked` is guaranteed non-empty: either
+        # `current` already belonged to `place_id` (the early-return above
+        # would have caught any mismatch), or set_place_ids just linked it, so
+        # the re-read below will show it.
+        all_stays = await self._store.stays_for_subject(subject_id=subject_id)
+        linked = [s for s in all_stays if s.place_id == place_id]
+        tz = ZoneInfo(self._cfg.tz_name)
+        arrivals = [_local_minute_of_day(s.started_ts, tz) for s in linked]
+        departures = [_local_minute_of_day(s.ended_ts, tz) for s in linked]
+        durations = [float(s.ended_ts - s.started_ts) for s in linked]
+        sorted_d = sorted(durations)
+        n = len(sorted_d)
+        median_ms = int(
+            sorted_d[n // 2] if n % 2 else (sorted_d[n // 2 - 1] + sorted_d[n // 2]) / 2
+        )
+        sorted_dev = sorted(abs(d - median_ms) for d in durations)
+        mad_ms = int(
+            sorted_dev[n // 2] if n % 2
+            else (sorted_dev[n // 2 - 1] + sorted_dev[n // 2]) / 2
+        )
+        await self._store.upsert_rhythm(
+            subject_id=subject_id, place_id=place_id,
+            mean_arrival_minute=circular_mean_minute(arrivals),
+            mean_departure_minute=circular_mean_minute(departures),
+            duration_median_ms=median_ms, duration_mad_ms=mad_ms,
+            sample_count=len(linked), now_ms=now_ms,
+        )
+
+
+def _local_minute_of_day(ts_ms: int, tz: ZoneInfo) -> float:
+    local = datetime.fromtimestamp(ts_ms / 1000, tz=tz)
+    return local.hour * 60.0 + local.minute + local.second / 60.0
 
 
 def _within(stay: Stay, place_lat: float, place_lng: float, eps_m: float) -> bool:

@@ -731,6 +731,16 @@ class AnalyticsConfig(BaseModel):
     min_nights: int = Field(default=3, ge=1)
     min_weekdays: int = Field(default=3, ge=1)
     label_freshness_days: int = Field(default=45, ge=1)
+    # Tier 3 (design/27 §4, issue #6, DEC-119): robust_z_score's own
+    # fail-closed floor — fewer than this many prior stays at a place and
+    # no anomaly claim is made, ever (nora.domain.mobility.robust_z_score's
+    # own docstring). 5 is a starting point, not measured — same honesty
+    # design/27 §7.1 already gives stay_radius_m/stay_min_dwell_seconds.
+    anomaly_min_samples: int = Field(default=5, ge=2)
+    # |z| above this increments nora_analytics_anomalies_total — a METRIC
+    # only; this substrate emits typed facts, never a consumer-facing
+    # alert (spec §1.1's neutrality rule still applies to Tier 3).
+    anomaly_z_threshold: float = Field(default=3.0, gt=0)
     tz_name: str = "Asia/Hong_Kong"
     # The substrate's own metrics/health endpoint. 9100 is Nora's own
     # (`[obs.metrics]`), 9101 is the presence collector's

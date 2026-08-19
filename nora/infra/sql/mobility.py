@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.mobility import LabelResult, RawFix, Stay
@@ -21,6 +22,8 @@ from nora.infra.sql.schema import (
     ANALYTICS_WATERMARK,
     PRESENCE_DERIVED_PLACES,
     PRESENCE_FIXES,
+    PRESENCE_OCCUPANCY,
+    PRESENCE_PLACE_RHYTHM,
     PRESENCE_STAYS,
 )
 
@@ -101,9 +104,30 @@ class SqlMobilityStore:
                 subject_id=r.subject_id, person_id=r.person_id, circle_id=r.circle_id,
                 started_ts=r.started_ts, ended_ts=r.ended_ts,
                 lat=r.lat, lng=r.lng, radius_m=r.radius_m, fix_count=r.fix_count,
+                place_id=r.place_id,
             )
             for r in rows
         ]
+
+    async def set_place_ids(
+        self, *, subject_id: str, started_ts_in: list[int], place_id: int
+    ) -> None:
+        """Fills `place_id` ONLY where it is currently NULL — a stay's link
+        to a place, once set, is never silently reassigned by a later,
+        different cluster touching the same coordinate (Task 10's own
+        docstring on why this can only ever be additive)."""
+        if not started_ts_in:
+            return
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                sa.update(PRESENCE_STAYS)
+                .where(
+                    PRESENCE_STAYS.c.subject_id == subject_id,
+                    PRESENCE_STAYS.c.started_ts.in_(started_ts_in),
+                    PRESENCE_STAYS.c.place_id.is_(None),
+                )
+                .values(place_id=place_id)
+            )
 
     async def existing_place(
         self, *, subject_id: str, kind: str
@@ -130,11 +154,16 @@ class SqlMobilityStore:
         lng: float, radius_m: float, result: LabelResult, now_ms: int,
         label: str | None = None,
     ) -> None:
-        """Delete-then-insert for THIS subject's `kind` slot, in one
-        transaction — the same shape `PresenceStore.replace_places` uses,
-        and for the same reason: a handful of rarely-changing rows per
-        subject, so the simplest write that cannot leave a stale row behind
-        wins.
+        """Delete-then-insert ONLY for a genuine kind reassignment or an
+        unlabeled downgrade. The common case — `kind == result.kind`, Speed 3
+        reconfirming the SAME physical place every re-cluster cycle — UPDATEs
+        the existing row in place instead, preserving its `id`. Found by
+        Task 10's review: `presence_stays.place_id` / `presence_occupancy` /
+        `presence_place_rhythm` all key off this id, and churning it every
+        cycle orphaned all of Tier 3's data and left the anomaly baseline
+        permanently empty in production. See this method's git history for
+        the original delete-then-insert-always docstring/rationale, which is
+        still correct for the reassignment/downgrade branches below.
 
         `kind` is the slot being RE-EVALUATED — independent of
         `result.kind`, the classification the recheck actually produced.
@@ -153,14 +182,31 @@ class SqlMobilityStore:
         deleting unconditionally over BOTH `home` and `work` regresses to
         the original bug this store was built to avoid (a `home` recheck
         must never delete an unrelated, still-valid `work` row it never
-        touched). In the normal case `kind == result.kind` (a caller
-        re-checks the same kind it is writing) and this is a no-op
-        widening.
+        touched).
 
         A downgrade to `unlabeled` deletes the row entirely rather than
         storing a row with kind='unlabeled' — `existing_place` for a kind
         that no longer holds correctly returns None (Step 1's
         `test_a_stale_place_can_be_downgraded_to_unlabeled_in_place`)."""
+        if kind == result.kind and result.kind != "unlabeled":
+            async with self._engine.begin() as conn:
+                existing = (await conn.execute(
+                    sa.select(PRESENCE_DERIVED_PLACES.c.id).where(
+                        PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
+                        PRESENCE_DERIVED_PLACES.c.kind == result.kind,
+                    )
+                )).first()
+                if existing is not None:
+                    await conn.execute(
+                        sa.update(PRESENCE_DERIVED_PLACES).where(
+                            PRESENCE_DERIVED_PLACES.c.id == existing.id,
+                        ).values(
+                            lat=lat, lng=lng, radius_m=radius_m,
+                            confidence=result.confidence, label=label,
+                            last_seen_ts=now_ms,
+                        )
+                    )
+                    return
         delete_kinds = {kind}
         if result.kind != "unlabeled":
             delete_kinds.add(result.kind)
@@ -182,6 +228,66 @@ class SqlMobilityStore:
                         "first_seen_ts": now_ms, "last_seen_ts": now_ms,
                     },
                 )
+
+    async def record_occupancy(
+        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int
+    ) -> None:
+        if not bins:
+            return
+        async with self._engine.begin() as conn:
+            for hour_of_week, dwell_ms in bins.items():
+                stmt = pg_insert(PRESENCE_OCCUPANCY).values(
+                    subject_id=subject_id, place_id=place_id,
+                    hour_of_week=hour_of_week, dwell_ms=dwell_ms, updated_ts=now_ms,
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=[
+                        PRESENCE_OCCUPANCY.c.subject_id, PRESENCE_OCCUPANCY.c.place_id,
+                        PRESENCE_OCCUPANCY.c.hour_of_week,
+                    ],
+                    set_={
+                        "dwell_ms": PRESENCE_OCCUPANCY.c.dwell_ms + stmt.excluded.dwell_ms,
+                        "updated_ts": stmt.excluded.updated_ts,
+                    },
+                )
+                await conn.execute(stmt)
+
+    async def stay_durations_for_place(
+        self, *, subject_id: str, place_id: int
+    ) -> list[int]:
+        stmt = sa.select(PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts).where(
+            PRESENCE_STAYS.c.subject_id == subject_id,
+            PRESENCE_STAYS.c.place_id == place_id,
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [r.ended_ts - r.started_ts for r in rows]
+
+    async def upsert_rhythm(
+        self, *, subject_id: str, place_id: int, mean_arrival_minute: float,
+        mean_departure_minute: float, duration_median_ms: int,
+        duration_mad_ms: int, sample_count: int, now_ms: int,
+    ) -> None:
+        stmt = pg_insert(PRESENCE_PLACE_RHYTHM).values(
+            subject_id=subject_id, place_id=place_id,
+            mean_arrival_minute=mean_arrival_minute,
+            mean_departure_minute=mean_departure_minute,
+            duration_median_ms=duration_median_ms, duration_mad_ms=duration_mad_ms,
+            sample_count=sample_count, updated_ts=now_ms,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[PRESENCE_PLACE_RHYTHM.c.subject_id, PRESENCE_PLACE_RHYTHM.c.place_id],
+            set_={
+                "mean_arrival_minute": stmt.excluded.mean_arrival_minute,
+                "mean_departure_minute": stmt.excluded.mean_departure_minute,
+                "duration_median_ms": stmt.excluded.duration_median_ms,
+                "duration_mad_ms": stmt.excluded.duration_mad_ms,
+                "sample_count": stmt.excluded.sample_count,
+                "updated_ts": stmt.excluded.updated_ts,
+            },
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
 
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None:
         await self._upsert_watermark(subject_id=subject_id, last_fix_id=fix_id)

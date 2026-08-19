@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +30,8 @@ class FakeMobilityStore:
         ] = {}
         self._watermarks: dict[str, tuple[int, int]] = {}
         self._next_place_id = 1
+        self._occupancy: dict[tuple[str, int, int], int] = {}  # (subject, place, how) -> dwell_ms
+        self._rhythm: dict[tuple[str, int], dict[str, float | int]] = {}
 
     async def watermark(self, *, subject_id: str) -> tuple[int, int]:
         return self._watermarks.get(subject_id, (0, 0))
@@ -60,6 +63,18 @@ class FakeMobilityStore:
             key=lambda s: s.started_ts,
         )
 
+    async def set_place_ids(
+        self, *, subject_id: str, started_ts_in: list[int], place_id: int
+    ) -> None:
+        targets = set(started_ts_in)
+        for i, s in enumerate(self._stays):
+            if (
+                s.subject_id == subject_id
+                and s.started_ts in targets
+                and s.place_id is None
+            ):
+                self._stays[i] = dataclasses.replace(s, place_id=place_id)
+
     async def existing_place(
         self, *, subject_id: str, kind: str
     ) -> tuple[int, float, float, float, LabelResult, str | None] | None:
@@ -70,9 +85,22 @@ class FakeMobilityStore:
         lng: float, radius_m: float, result: LabelResult, now_ms: int,
         label: str | None = None,
     ) -> None:
+        # `kind == result.kind` (steady-state reconfirm — Speed 3 re-labels
+        # the SAME physical place every cycle) UPDATEs in place, preserving
+        # `place_id` — see SqlMobilityStore.upsert_place's docstring
+        # (behavioral twin, per this project's contract-suite convention;
+        # Task 10 review, Critical #1: churning the id every cycle orphaned
+        # stay/occupancy/rhythm links keyed off it).
+        if kind == result.kind and result.kind != "unlabeled":
+            existing = self._places.get((subject_id, result.kind))
+            if existing is not None:
+                place_id = existing[0]
+                self._places[(subject_id, result.kind)] = (
+                    place_id, lat, lng, radius_m, result, label,
+                )
+                return
         # `kind` is the slot being re-evaluated, independent of
-        # `result.kind` — see SqlMobilityStore.upsert_place's docstring
-        # (behavioral twin, per this project's contract-suite convention).
+        # `result.kind` — see SqlMobilityStore.upsert_place's docstring.
         # The delete clears EITHER `kind` OR `result.kind` (when it is a
         # real kind and differs from `kind`) — never just one, never both
         # `home`/`work` unconditionally. Without also clearing `result.kind`,
@@ -91,6 +119,34 @@ class FakeMobilityStore:
         self._places[(subject_id, result.kind)] = (
             place_id, lat, lng, radius_m, result, label,
         )
+
+    async def record_occupancy(
+        self, *, subject_id: str, place_id: int, bins: dict[int, int], now_ms: int
+    ) -> None:
+        for how, dwell_ms in bins.items():
+            key = (subject_id, place_id, how)
+            self._occupancy[key] = self._occupancy.get(key, 0) + dwell_ms
+
+    async def stay_durations_for_place(
+        self, *, subject_id: str, place_id: int
+    ) -> list[int]:
+        return [
+            s.ended_ts - s.started_ts for s in self._stays
+            if s.subject_id == subject_id and s.place_id == place_id
+        ]
+
+    async def upsert_rhythm(
+        self, *, subject_id: str, place_id: int, mean_arrival_minute: float,
+        mean_departure_minute: float, duration_median_ms: int,
+        duration_mad_ms: int, sample_count: int, now_ms: int,
+    ) -> None:
+        self._rhythm[(subject_id, place_id)] = {
+            "mean_arrival_minute": mean_arrival_minute,
+            "mean_departure_minute": mean_departure_minute,
+            "duration_median_ms": duration_median_ms,
+            "duration_mad_ms": duration_mad_ms,
+            "sample_count": sample_count,
+        }
 
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None:
         _, cluster = self._watermarks.get(subject_id, (0, 0))

@@ -14,6 +14,7 @@ so no consumer can get the 5.6x count-weighting bias wrong independently.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
@@ -27,15 +28,76 @@ __all__ = [
     "RawFix",
     "SegmentationResult",
     "Stay",
+    "circular_mean_minute",
     "cluster_places",
     "dwell_ms",
+    "hour_of_week_bins",
     "label_place",
+    "robust_z_score",
     "segment_stays",
 ]
 
 # The observed 1800s still-ceiling (config.toml's cadence_still_seconds)
 # plus slack (spec §3.3, design/27 §1.1).
 DWELL_CAP_MS = 1_900_000
+
+_MINUTES_PER_DAY = 1440.0
+
+
+def circular_mean_minute(minutes: list[float]) -> float:
+    """The circular mean of local time-of-day values (each 0..1439.999),
+    as minutes-since-midnight — Tier 3's typical-arrival/departure stat
+    (design/27 §4, issue #6). An ARITHMETIC mean of 23:50 and 00:10 gives
+    12:00, which is nonsense for a clock value; treating each minute as an
+    angle on a 24h circle and averaging the unit vectors gives ~00:00,
+    correctly.
+
+    Callers must pass a non-empty list — every call site accumulates from
+    at least one closed stay by construction (Task 10), so this is not a
+    boundary this pure function needs to guard."""
+    angles = [m / _MINUTES_PER_DAY * 2 * math.pi for m in minutes]
+    sin_sum = sum(math.sin(a) for a in angles)
+    cos_sum = sum(math.cos(a) for a in angles)
+    mean_angle = math.atan2(sin_sum, cos_sum)
+    if mean_angle < 0:
+        mean_angle += 2 * math.pi
+    return mean_angle / (2 * math.pi) * _MINUTES_PER_DAY
+
+
+# The MAD-to-std-dev consistency constant for a normal distribution
+# (1 / Phi^-1(3/4)) — the standard correction so a MAD-based z-score is on
+# the same scale as a familiar standard-deviation-based one.
+_MAD_CONSISTENCY_CONSTANT = 1.4826
+
+
+def robust_z_score(
+    value: float, history: list[float], *, min_samples: int
+) -> float | None:
+    """How anomalous `value` is against `history`'s median/MAD — Tier 3's
+    anomaly signal (design/27 §4, issue #6: "still at work at 23:00, p99
+    for her"). Robust (median/MAD, not mean/stddev) because a single prior
+    anomaly must not drag the baseline toward itself the way a mean would.
+
+    `None` — never `0.0` — below `min_samples` or when every historical
+    value is identical (MAD == 0): fail-closed, matching `label_place`'s
+    own posture that missing evidence is a missing claim, not a defaulted
+    one."""
+    if len(history) < min_samples:
+        return None
+    sorted_h = sorted(history)
+    n = len(sorted_h)
+    median = (
+        sorted_h[n // 2] if n % 2
+        else (sorted_h[n // 2 - 1] + sorted_h[n // 2]) / 2
+    )
+    deviations = sorted(abs(x - median) for x in history)
+    mad = (
+        deviations[n // 2] if n % 2
+        else (deviations[n // 2 - 1] + deviations[n // 2]) / 2
+    )
+    if mad == 0:
+        return None
+    return (value - median) / (_MAD_CONSISTENCY_CONSTANT * mad)
 
 
 def dwell_ms(ts: int, next_ts: int | None, cap_ms: int = DWELL_CAP_MS) -> int:
@@ -85,6 +147,14 @@ class Stay:
     lng: float
     radius_m: float
     fix_count: int
+    # Tier 3 (design/27 §4, issue #6): set once this stay's centroid is
+    # found inside an existing home/work `presence_derived_places` row —
+    # `MobilityRollup._record_rhythm` (Task 10) is the only writer. `None`
+    # means either "not yet checked" or "outside every labelled place" —
+    # the two are indistinguishable here on purpose, since a stay that is
+    # outside every place today may fall inside one created LATER (Task 10's
+    # backfill step handles that case going forward, not this field).
+    place_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -370,6 +440,31 @@ def _windowed_dwell(
             day_ms += _DAY_MS
             midnight += timedelta(days=1)
     return total, days, latest_day
+
+
+def hour_of_week_bins(started_ts: int, ended_ts: int, tz_name: str) -> dict[int, int]:
+    """A stay's dwell, split into local hour-of-week buckets (0..167,
+    Monday 00:00 = 0) — Tier 3's occupancy input (design/27 §4, issue #6).
+
+    Walks one LOCAL clock-hour at a time, like `_windowed_dwell`'s day-walk
+    — `ended_ts - started_ts` already equals the stay's own dwell by
+    `Stay`'s own invariant, so no separate `dwell_ms` capping applies here;
+    this is purely a spatial-in-time split of a span already known good."""
+    if ended_ts <= started_ts:
+        return {}
+    tz = ZoneInfo(tz_name)
+    bins: dict[int, int] = {}
+    cursor = started_ts
+    while cursor < ended_ts:
+        local = datetime.fromtimestamp(cursor / 1000, tz=tz)
+        hour_start = local.replace(minute=0, second=0, microsecond=0)
+        hour_start_ms = int(hour_start.timestamp() * 1000)
+        hour_end_ms = hour_start_ms + 3_600_000
+        bin_end = min(hour_end_ms, ended_ts)
+        how = local.weekday() * 24 + local.hour
+        bins[how] = bins.get(how, 0) + (bin_end - cursor)
+        cursor = hour_end_ms
+    return bins
 
 
 def label_place(
