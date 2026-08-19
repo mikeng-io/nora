@@ -474,17 +474,40 @@ async def test_search_memory_says_it_cannot_repeat_what_it_found_when_all_hits_a
                        tool="search_memory", status="withheld") == 1
 
 
-async def test_search_memory_refuses_in_a_room_with_someone_it_cannot_place(persons):
-    """A raw-message search must NOT surface the group's history into a room
-    holding an outsider Nora can't place (R-31, fail-closed) — and it never even
-    reaches Honcho."""
+async def test_search_memory_does_not_refuse_for_an_unmapped_account_in_the_room(persons):
+    """The guard is per MESSAGE, not per room (operator direction 2026-08-19):
+    an unmapped account present in the room does not block the search — it
+    just means THAT account's own words never come back, same as before. A
+    hit from a NAMED person still surfaces even though a stranger is also
+    in the room."""
     honcho = FakeHoncho()
-    honcho.messages = [("miles_novak", "something")]
+    honcho.messages = [
+        ("miles_novak", "book 咗七點枱"),                     # a named roster speaker → kept
+        ("stranger_peer", "a stranger's own words"),      # unmapped sender → dropped
+    ]
     stranger = frozenset({"+85260000000"})              # not in identity.toml
     tools = _build(persons=persons, honcho=honcho, members=(MILES, TYLER, NORA, stranger))
-    result = await _call(tools["search_memory"], query="x")
-    assert result["status"] == "refused"
-    assert honcho.searches == []                         # never queried
+    result = await _call(tools["search_memory"], query="枱")
+    assert honcho.searches == ["枱"]                      # still queried — no room-wide gate
+    assert result["status"] == "ok"
+    assert result["results"] == [{"who": "Miles Novak", "said": "book 咗七點枱"}]
+
+
+async def test_search_memory_still_searches_the_taggers_own_words_when_degraded(persons):
+    """A DEGRADED view (roster unreadable, scope narrowed to the tagger alone,
+    R-31's OTHER branch) used to refuse outright. It no longer does — the same
+    per-hit roster filter that drops an unmapped account's words naturally
+    narrows to just the tagger's here too, since `roster` only holds them."""
+    honcho = FakeHoncho()
+    honcho.messages = [("miles_novak", "book 咗七點枱")]
+    tools = _build(
+        persons=persons, honcho=honcho, roster_fails=True,
+        tagger=persons.by_person["miles_novak"],
+    )
+    result = await _call(tools["search_memory"], query="枱")
+    assert result["status"] == "ok"
+    assert result["results"] == [{"who": "Miles Novak", "said": "book 咗七點枱"}]
+    assert result["partial_view"] is True
 
 
 async def test_nothing_known_is_distinguishable_from_could_not_ask(persons):

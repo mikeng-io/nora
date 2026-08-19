@@ -212,7 +212,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # signal-cli, not the model.
     _CounterSpec(
         "nora_room_lookups_total",
-        "Room-scoped tool calls, by tool and how the tool answered. SIX values, "
+        "Room-scoped tool calls, by tool and how the tool answered. FIVE values, "
         "and two pairs of them are easy to conflate: "
         "`ok`; "
         "`not_found` — a NAME resolved to nobody in this room (lookup_person, "
@@ -225,8 +225,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "hit-rate unreadable on the one series that would show her searching "
         "constantly and finding nothing; "
         "`ambiguous`; "
-        "`refused` — somebody in the room could not be placed, so the group's "
-        "history stays out of it (R-31 fails closed rather than disclosing); "
         "`withheld` — it FOUND things the egress guard will not let her repeat, "
         "which is emphatically not the same as finding nothing; "
         "`unavailable` — it could not be checked at all. "

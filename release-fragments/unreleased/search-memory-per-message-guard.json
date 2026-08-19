@@ -1,0 +1,10 @@
+{
+  "type": "change",
+  "summary": "search_memory no longer refuses to look back through a group's history just because one account in the room is unmapped in identity.toml — it filters per message instead, quoting only NAMED senders.",
+  "details": [
+    "Previously (DEC-68) search_memory refused outright, before ever querying Honcho, if any account in the room could not be placed (view.unnamed > 0) or the roster could not be read at all (view.degraded) — the same room-wide fail-closed shape as where_is's R-31. In practice almost every real group has at least one unmapped account, so the tool refused nearly everywhere.",
+    "The guard is now per message: a hit is only ever surfaced if its sender resolves to a NAMED person in the room (the same roster filter that already dropped Nora's own messages and off-room peers). An unmapped account present in the room no longer blocks anyone else's words from being found; a degraded room (roster unreadable) now searches narrowed to just the tagger's own past words instead of refusing.",
+    "search_memory dropped its `refused` status entirely (four outcomes now: ok / nothing_found / withheld / unavailable); nora_room_lookups_total moved from six documented values to five."
+  ],
+  "limitations": []
+}
