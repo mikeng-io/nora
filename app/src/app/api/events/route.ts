@@ -17,5 +17,5 @@ export async function GET() {
   }
 
   const search = new URLSearchParams({ personId: check.personId });
-  return proxyEventsGet("/app/v1/events", search.toString());
+  return proxyEventsGet("/app/v1/events", `?${search.toString()}`);
 }
