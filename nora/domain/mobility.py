@@ -34,6 +34,7 @@ __all__ = [
     "cluster_places",
     "derive_speed_kmh",
     "dwell_ms",
+    "edit_distance",
     "extract_trips",
     "hour_of_week_bins",
     "label_place",
@@ -131,6 +132,31 @@ def derive_speed_kmh(a: RawFix, b: RawFix) -> float | None:
     distance_m = haversine_distance_m(a.lat, a.lng, b.lat, b.lng)
     dt_hours = dt_ms / 3_600_000.0
     return distance_m / 1000 / dt_hours
+
+
+def edit_distance(a: tuple[str, ...], b: tuple[str, ...]) -> int:
+    """Classic Levenshtein distance over two corridor address sequences —
+    Tier 5's trip-similarity metric (design/27 §4, issue #6: "cluster
+    trips by address-sequence edit distance"). Hand-rolled, O(len(a) *
+    len(b)) — corridor sequences are short (a handful of road names per
+    trip), matching `cluster_places`'s own "trivial at this scale, no
+    scipy" precedent."""
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, x in enumerate(a, start=1):
+        curr = [i] + [0] * len(b)
+        for j, y in enumerate(b, start=1):
+            cost = 0 if x == y else 1
+            curr[j] = min(
+                prev[j] + 1,        # deletion
+                curr[j - 1] + 1,    # insertion
+                prev[j - 1] + cost, # substitution / match
+            )
+        prev = curr
+    return prev[-1]
 
 
 @dataclass(frozen=True)
