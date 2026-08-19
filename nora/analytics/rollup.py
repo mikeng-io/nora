@@ -118,6 +118,7 @@ class RollupConfig:
     anomaly_z_threshold: float = 3.0
     corridor_max_edit_distance: int = 2
     corridor_min_samples: int = 3
+    min_trip_fixes: int = 3
 
 
 class MobilityRollup:

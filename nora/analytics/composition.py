@@ -152,6 +152,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         anomaly_z_threshold=analytics.anomaly_z_threshold,
         corridor_max_edit_distance=analytics.corridor_max_edit_distance,
         corridor_min_samples=analytics.corridor_min_samples,
+        min_trip_fixes=analytics.min_trip_fixes,
     )
     rollup = MobilityRollup(
         store=store, config=rollup_config, metrics=metrics, geocode_cache=geocode_cache,

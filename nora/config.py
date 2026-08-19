@@ -749,6 +749,16 @@ class AnalyticsConfig(BaseModel):
     # already gives stay_radius_m/stay_min_dwell_seconds.
     corridor_max_edit_distance: int = Field(default=2, ge=0)
     corridor_min_samples: int = Field(default=3, ge=1)
+    # Tier 5: `extract_trips`'s noise gate — a run of movement fixes
+    # shorter than this between two stays is DROPPED rather than written
+    # as a trip, the same fail-closed shape `min_dwell_ms` gives stays.
+    # `ge=2`, not `ge=1` (unlike `cluster_min_samples`, whose scale this
+    # otherwise matches): a one-fix "trip" has no PAIR for
+    # `haversine_distance_m`/`derive_speed_kmh` to run over, so its
+    # `distance_m` and `avg_speed_kmh` are structurally 0.0 — admitting
+    # one would feed a fabricated zero-speed sample into
+    # `presence_corridor_speed`'s percentiles.
+    min_trip_fixes: int = Field(default=3, ge=2)
     tz_name: str = "Asia/Hong_Kong"
     # The substrate's own metrics/health endpoint. 9100 is Nora's own
     # (`[obs.metrics]`), 9101 is the presence collector's

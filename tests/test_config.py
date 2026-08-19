@@ -471,6 +471,20 @@ def test_analytics_config_rejects_unknown_keys_directly():
         AnalyticsConfig(enabled=True, nonexistent_key=1)
 
 
+def test_min_trip_fixes_defaults_to_three_and_refuses_a_one_fix_trip():
+    """Tier 5. `extract_trips`'s own noise gate: a run shorter than this is
+    dropped rather than written as a trip. `ge=2`, not `ge=1` — a one-fix
+    "trip" has no pair to run `derive_speed_kmh`/`haversine_distance_m`
+    over, so its `distance_m` and `avg_speed_kmh` are both structurally
+    0.0; admitting one would put a fabricated zero-speed sample into
+    `presence_corridor_speed`'s percentiles, which is precisely the
+    "never assert what you cannot ground" rule."""
+    assert AnalyticsConfig().min_trip_fixes == 3
+    assert AnalyticsConfig(min_trip_fixes=2).min_trip_fixes == 2
+    with pytest.raises(ValidationError):
+        AnalyticsConfig(min_trip_fixes=1)
+
+
 def test_tools_mcp_is_optional_and_defaults_to_empty(toml_path):
     text = toml_path.read_text()
     head, _, tail = text.partition("[tools.mcp.pulse]\n")
