@@ -33,6 +33,7 @@ __all__ = [
     "dwell_ms",
     "hour_of_week_bins",
     "label_place",
+    "robust_z_score",
     "segment_stays",
 ]
 
@@ -61,6 +62,42 @@ def circular_mean_minute(minutes: list[float]) -> float:
     if mean_angle < 0:
         mean_angle += 2 * math.pi
     return mean_angle / (2 * math.pi) * _MINUTES_PER_DAY
+
+
+# The MAD-to-std-dev consistency constant for a normal distribution
+# (1 / Phi^-1(3/4)) — the standard correction so a MAD-based z-score is on
+# the same scale as a familiar standard-deviation-based one.
+_MAD_CONSISTENCY_CONSTANT = 1.4826
+
+
+def robust_z_score(
+    value: float, history: list[float], *, min_samples: int
+) -> float | None:
+    """How anomalous `value` is against `history`'s median/MAD — Tier 3's
+    anomaly signal (design/27 §4, issue #6: "still at work at 23:00, p99
+    for her"). Robust (median/MAD, not mean/stddev) because a single prior
+    anomaly must not drag the baseline toward itself the way a mean would.
+
+    `None` — never `0.0` — below `min_samples` or when every historical
+    value is identical (MAD == 0): fail-closed, matching `label_place`'s
+    own posture that missing evidence is a missing claim, not a defaulted
+    one."""
+    if len(history) < min_samples:
+        return None
+    sorted_h = sorted(history)
+    n = len(sorted_h)
+    median = (
+        sorted_h[n // 2] if n % 2
+        else (sorted_h[n // 2 - 1] + sorted_h[n // 2]) / 2
+    )
+    deviations = sorted(abs(x - median) for x in history)
+    mad = (
+        deviations[n // 2] if n % 2
+        else (deviations[n // 2 - 1] + deviations[n // 2]) / 2
+    )
+    if mad == 0:
+        return None
+    return (value - median) / (_MAD_CONSISTENCY_CONSTANT * mad)
 
 
 def dwell_ms(ts: int, next_ts: int | None, cap_ms: int = DWELL_CAP_MS) -> int:
