@@ -309,16 +309,94 @@ async def test_discord_fetches_a_sticker_by_cdn_url(aiohttp_server):
     assert got.data == STICKER_BYTES
 
 
-async def test_discord_refuses_an_attachment_explicitly():
-    """Not `not_found`, which is what today's cross-wiring produces when a
-    Discord ref is handed to signal-cli. `not_supported` says the truth: this
-    adapter does not fetch attachments, and the operator can see the count."""
+async def test_discord_refuses_a_ref_with_no_fetch_token():
+    """A ref that is neither a sticker nor carries an `attachment:` token —
+    the shape an embed or some future Discord object might produce. Nothing
+    to fetch, so this must not be counted as the CDN failing."""
     source = DiscordMediaSource(cdn_base="http://unused.invalid")
 
     got = await source.fetch(ref=MediaRef(platform_id="123", media_type="image/png"))
 
     assert got.available is False
     assert got.reason == "not_supported"
+
+
+async def test_discord_fetches_an_attachment_by_its_own_url(aiohttp_server):
+    """DEC-118: attachment custody mirrors Signal's `getAttachment` — Discord
+    just hands back the URL directly instead of an RPC handle. The allowlist
+    is pointed at the test server's own loopback host, since a real
+    `cdn.discordapp.com` socket cannot be probed from a test."""
+    async def cdn(request):
+        return web.Response(body=PAYLOAD, content_type="image/jpeg")
+
+    app = web.Application()
+    app.router.add_get("/attachments/1/2/photo.jpg", cdn)
+    server = await aiohttp_server(app)
+    url = server.make_url("/attachments/1/2/photo.jpg")
+    source = DiscordMediaSource(
+        cdn_base="http://unused.invalid", attachment_hosts={url.host},
+    )
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/jpeg",
+        fetch_token=f"attachment:{url}"))
+
+    assert got.available is True
+    assert got.data == PAYLOAD
+
+
+async def test_discord_reports_a_missing_attachment_as_not_found(aiohttp_server):
+    app = web.Application()
+    server = await aiohttp_server(app)
+    url = server.make_url("/attachments/1/2/missing.jpg")
+    source = DiscordMediaSource(
+        cdn_base="http://unused.invalid", attachment_hosts={url.host},
+    )
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/jpeg",
+        fetch_token=f"attachment:{url}"))
+
+    assert got.available is False
+    assert got.reason == "not_found"
+
+
+async def test_discord_refuses_an_oversize_attachment(aiohttp_server):
+    async def cdn(request):
+        return web.Response(body=b"x" * 4096, content_type="image/jpeg")
+
+    app = web.Application()
+    app.router.add_get("/attachments/1/2/big.jpg", cdn)
+    server = await aiohttp_server(app)
+    url = server.make_url("/attachments/1/2/big.jpg")
+    source = DiscordMediaSource(
+        cdn_base="http://unused.invalid", max_bytes=1024, attachment_hosts={url.host},
+    )
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/jpeg",
+        fetch_token=f"attachment:{url}"))
+
+    assert got.available is False
+    assert got.reason == "too_large"
+
+
+async def test_discord_refuses_an_attachment_url_off_its_own_cdn():
+    """The token is `fetch_token`, not `ref.platform_id` — opaque and
+    adapter-written per `MediaRef`'s own contract, but here it is built from
+    something the EVENT supplied (`Attachment.url`), unlike a sticker URL
+    which is derived from an id and a four-word enum. A forged or
+    redirect-poisoned URL pointing off Discord's own CDN must be refused, not
+    followed — the exact worry `DiscordMediaSource`'s own docstring raises
+    about following a payload-supplied URL."""
+    source = DiscordMediaSource(cdn_base="http://unused.invalid")
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/jpeg",
+        fetch_token="attachment:https://evil.example/steal.jpg"))  # noqa: S106
+
+    assert got.available is False
+    assert got.reason == "bad_token"
 
 
 async def test_discord_reports_a_missing_sticker_as_not_found(aiohttp_server):

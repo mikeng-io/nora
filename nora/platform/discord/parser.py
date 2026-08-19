@@ -43,6 +43,7 @@ class _DiscordAttachment(Protocol):
     content_type: str | None
     filename: str
     size: int
+    url: str
 
     def is_voice_message(self) -> bool: ...
 
@@ -71,12 +72,16 @@ class _DiscordMessage(Protocol):
 
 
 def _media_ref(att: _DiscordAttachment) -> MediaRef:
+    # DEC-118: `att.url` is Discord's own CDN URL for this attachment, not
+    # something derivable from the id — `DiscordMediaSource` allowlists the
+    # host before following it (see that module's docstring).
     return MediaRef(
         platform_id=str(att.id),
         media_type=att.content_type or "",
         filename=att.filename or None,
         size=att.size if isinstance(att.size, int) else None,
         voice_note=att.is_voice_message(),
+        fetch_token=f"attachment:{att.url}" if att.url else "",
     )
 
 

@@ -43,6 +43,7 @@ class FakeAttachment:
     filename: str = ""
     size: int = 0
     voice: bool = False
+    url: str = ""
 
     def is_voice_message(self) -> bool:
         return self.voice

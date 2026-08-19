@@ -1616,7 +1616,10 @@ def _build_media_custody(cfg: Config) -> tuple[MediaSourceRegistry | None, BlobS
             timeout_seconds=media.timeout_seconds,
             max_bytes=media.max_bytes,
         ),
-        DiscordMediaSource(timeout_seconds=media.timeout_seconds),
+        DiscordMediaSource(
+            timeout_seconds=media.timeout_seconds,
+            max_bytes=media.max_bytes,
+        ),
     ])
     blobs = FilesystemBlobStore(cfg.store.data_dir / "media", cipher=cipher)
     return sources, blobs
