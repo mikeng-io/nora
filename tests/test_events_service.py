@@ -1,12 +1,13 @@
 # tests/test_events_service.py
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from nora.app.events import EventService
-from nora.domain.events import EventStatus, RSVPResponse
+from nora.app.events import AmbiguousOpenEventsError, EventService
+from nora.domain.events import Event, EventStatus, RSVPResponse
 from nora.domain.reminders import ReminderCaps
 from nora.testing.events import FakeEventStore
 from nora.testing.reminders import FakeReminderStore
@@ -22,7 +23,6 @@ class _FakeRouteSource:
             "status": "ok", "name": "Soi 29 Thai Kitchen",
             "address": "29 Soi Rd, Central", "rating": 4.5,
             "price_level": "PRICE_LEVEL_MODERATE",
-            "maps_url": "https://maps.google.com/?q=soi29",
             "place_id": "ChIJfake123",
         }
 
@@ -60,7 +60,7 @@ async def test_create_event_persists_and_returns_it():
     )
     assert ev.title == "Dinner"
     assert ev.status is EventStatus.PROPOSED
-    back = await svc.get_event(ev.id)
+    back = await svc.get_event(event_id=ev.id)
     assert back.id == ev.id
 
 
@@ -101,10 +101,15 @@ async def test_update_event_resolves_venue_once_via_route_source():
     assert updated.venue_place_id == "ChIJfake123"
     assert updated.venue_rating == 4.5
     assert updated.venue_resolved_at == NOW
+    # `maps_url` is synthesized by EventService itself (Fix 3) — the route
+    # source never returns it — from the RESOLVED name, url-quoted.
+    assert updated.venue_maps_url == (
+        "https://www.google.com/maps/search/?api=1&query=Soi%2029%20Thai%20Kitchen"
+    )
     assert calls == ["Soi 29"]  # resolved exactly once
 
     # Reading it back must NOT re-query the resolver.
-    back = await svc.get_event(ev.id)
+    back = await svc.get_event(event_id=ev.id)
     assert back.venue_name == "Soi 29 Thai Kitchen"
     assert calls == ["Soi 29"]
 
@@ -195,3 +200,91 @@ async def test_suggest_venue_nothing_found_when_every_person_is_empty():
     )
     assert out.status == "nothing_found"
     assert out.candidates == ()
+
+
+async def test_create_event_raises_when_two_open_events_already_exist():
+    store = FakeEventStore()
+    svc = _service(store=store)
+    await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="A",
+    )
+    # Directly insert a second PROPOSED event, bypassing the doctrine check
+    # the `create_event` TOOL is expected to have already run — this
+    # method's own raise is a last-resort backstop, not the primary
+    # mechanism (spec §3.1).
+    second = Event(
+        id=uuid.uuid4(),
+        conversation_id="signal:group-1",
+        title="B",
+        created_by="miles",
+        when=None,
+        venue_text=None,
+        venue_place_id=None,
+        venue_name=None,
+        venue_address=None,
+        venue_rating=None,
+        venue_price_level="",
+        venue_maps_url=None,
+        venue_resolved_at=None,
+        status=EventStatus.PROPOSED,
+        reminder_id=None,
+        created_at=NOW,
+    )
+    await store.create(second)
+
+    with pytest.raises(AmbiguousOpenEventsError):
+        await svc.create_event(
+            conversation_id="signal:group-1", requester_person_id="miles",
+            title="C",
+        )
+
+
+async def test_create_event_beyond_horizon_creates_event_with_no_reminder():
+    reminders = FakeReminderStore()
+    svc = _service(reminders=reminders)
+    # ReminderCaps().max_horizon_days == 365. 365 days + 12 hours is past the
+    # cap under a full-precision `timedelta` comparison even though the old
+    # `.days`-floored check let it through (Fix 4's regression case).
+    when = NOW + timedelta(days=365, hours=12)
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner", when=when,
+    )
+    # The event itself is still created — R-5: never silently pretend a
+    # reminder was set.
+    assert ev.when == when
+    assert ev.reminder_id is None
+    # Never a stray reminder minted either.
+    assert list(await reminders.pending_for("signal:group-1")) == []
+
+
+async def test_update_event_reschedule_cancels_old_reminder_and_links_new_one():
+    from nora.domain.reminders import ReminderState
+
+    reminders = FakeReminderStore()
+    svc = _service(reminders=reminders)
+    when1 = NOW + timedelta(days=3)
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner", when=when1,
+    )
+    old_reminder_id = ev.reminder_id
+    assert old_reminder_id is not None
+
+    when2 = NOW + timedelta(days=5)
+    updated = await svc.update_event(event_id=ev.id, when=when2)
+
+    # A NEW reminder, pointing at the new due_at — never a silently orphaned
+    # old one (Fix 1's regression case).
+    assert updated.reminder_id is not None
+    assert updated.reminder_id != old_reminder_id
+
+    old_row = await reminders.get(old_reminder_id)
+    assert old_row is not None
+    assert old_row.state is ReminderState.CANCELLED
+
+    new_row = await reminders.get(updated.reminder_id)
+    assert new_row is not None
+    assert new_row.state is ReminderState.PENDING
+    assert new_row.due_at == when2

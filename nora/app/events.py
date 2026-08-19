@@ -13,10 +13,11 @@ Reuses three things that already ship rather than rebuilding them:
 
 from __future__ import annotations
 
+import urllib.parse
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -91,7 +92,7 @@ class EventService:
         route_source: _RouteSource | None,
         honcho: _Honcho | None,
         ai_peer: str,
-        now: Callable[[], datetime] = lambda: datetime.now(tz=None),
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._store = store
         self._reminders = reminders
@@ -191,7 +192,7 @@ class EventService:
             conversation_id=conversation_id, status=status,
         )
 
-    async def get_event(self, event_id: UUID) -> Event | None:
+    async def get_event(self, *, event_id: UUID) -> Event | None:
         return await self._store.get(event_id)
 
     async def suggest_venue(
@@ -257,8 +258,21 @@ class EventService:
             raise ValueError("_link_reminder requires event.when to be set")
         now = self._now()
         lead = (event.when - now).total_seconds()
-        horizon = (event.when - now).days
-        if lead < self._caps.min_lead_seconds or horizon > self._caps.max_horizon_days:
+        out_of_bounds = (
+            lead < self._caps.min_lead_seconds
+            or event.when - now > timedelta(days=self._caps.max_horizon_days)
+        )
+        # Whatever reminder this event previously pointed to must not survive
+        # `_link_reminder` running again — otherwise it stays PENDING in the
+        # store forever, fires at the wrong time, and `cancel_event` can never
+        # reach it once the event row no longer references it. This holds on
+        # BOTH the happy path (about to mint a replacement) and the
+        # out-of-bounds path (about to clear reminder_id entirely).
+        if event.reminder_id is not None:
+            await self._reminders.cancel(
+                event.reminder_id, conversation_id=conversation_id,
+            )
+        if out_of_bounds:
             # Out of bounds — the event itself is still created/updated;
             # it simply has no reminder. R-5: never silently pretend one
             # was set.
@@ -287,7 +301,20 @@ class EventService:
     ) -> Event:
         resolved = await self._resolve_place(venue_text)
         if resolved is None:
-            return replace(event, venue_text=venue_text)
+            # A failed (or refused) re-resolution must not leave a PREVIOUS
+            # successful resolution's name/address/rating/etc. paired with a
+            # `venue_text` that did not actually resolve to it.
+            return replace(
+                event,
+                venue_text=venue_text,
+                venue_place_id=None,
+                venue_name=None,
+                venue_address=None,
+                venue_rating=None,
+                venue_price_level="",
+                venue_maps_url=None,
+                venue_resolved_at=None,
+            )
         return replace(
             event,
             venue_text=venue_text,
@@ -311,4 +338,14 @@ class EventService:
         out = await self._route_source.place_info(text)
         if out.get("status") != "ok":
             return None
+        # The real `RouteClient.place_info` never returns `maps_url` — it is
+        # synthesized only inside the `place_info` TOOL wrapper, a layer this
+        # service never touches. Mint the identical link here: the resolved
+        # name when Google gave one, else the original queried text.
+        maps_name = str(out.get("name") or text)
+        out = dict(out)
+        out["maps_url"] = (
+            "https://www.google.com/maps/search/?api=1&query="
+            + urllib.parse.quote(maps_name)
+        )
         return out

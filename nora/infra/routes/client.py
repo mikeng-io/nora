@@ -280,7 +280,9 @@ class RouteClient:
         if res.status != "ok" or res.place is None:
             return {"status": "unavailable"}
         place = res.place
-        out: dict[str, Any] = {"status": "ok", "name": place.name}
+        out: dict[str, Any] = {
+            "status": "ok", "name": place.name, "place_id": place.place_id,
+        }
         if place.address:
             out["address"] = place.address
         # The typed dining fields (rating/price_level/open_now) — numbers, an
