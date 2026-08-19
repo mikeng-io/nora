@@ -30,6 +30,7 @@ __all__ = [
     "Stay",
     "circular_mean_minute",
     "cluster_places",
+    "derive_speed_kmh",
     "dwell_ms",
     "hour_of_week_bins",
     "label_place",
@@ -110,6 +111,23 @@ def dwell_ms(ts: int, next_ts: int | None, cap_ms: int = DWELL_CAP_MS) -> int:
     if next_ts is None:
         return 0
     return min(next_ts - ts, cap_ms)
+
+
+def derive_speed_kmh(a: RawFix, b: RawFix) -> float | None:
+    """Speed between two consecutive fixes, km/h — Tier 5's ground truth
+    (design/27 §4, issue #6). Life360's own `speed_kmh` (on the stored
+    fix, never read here) is only 14.7% filled and must never stand in
+    for this.
+
+    `None` when `b.ts <= a.ts` — a non-positive elapsed time has no
+    speed, and out-of-order/duplicate-timestamp fixes are a measured,
+    rare property of the live corpus (design/27 §1: 1 in 20,156 fixes)."""
+    dt_ms = b.ts - a.ts
+    if dt_ms <= 0:
+        return None
+    distance_m = haversine_distance_m(a.lat, a.lng, b.lat, b.lng)
+    dt_hours = dt_ms / 3_600_000.0
+    return distance_m / 1000 / dt_hours
 
 
 @dataclass(frozen=True)
