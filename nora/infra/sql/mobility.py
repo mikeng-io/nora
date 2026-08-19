@@ -107,7 +107,7 @@ class SqlMobilityStore:
 
     async def existing_place(
         self, *, subject_id: str, kind: str
-    ) -> tuple[int, float, float, float, LabelResult] | None:
+    ) -> tuple[int, float, float, float, LabelResult, str | None] | None:
         stmt = sa.select(PRESENCE_DERIVED_PLACES).where(
             PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
             PRESENCE_DERIVED_PLACES.c.kind == kind,
@@ -122,11 +122,13 @@ class SqlMobilityStore:
                 kind=row.kind, confidence=row.confidence,
                 most_recent_support_ts=None,  # not persisted; recomputed each cycle
             ),
+            row.label,
         )
 
     async def upsert_place(
         self, *, subject_id: str, circle_id: str, kind: str, lat: float,
         lng: float, radius_m: float, result: LabelResult, now_ms: int,
+        label: str | None = None,
     ) -> None:
         """Delete-then-insert for THIS subject's `kind` slot, in one
         transaction — the same shape `PresenceStore.replace_places` uses,
@@ -176,7 +178,7 @@ class SqlMobilityStore:
                         "subject_id": subject_id, "circle_id": circle_id,
                         "lat": lat, "lng": lng, "radius_m": radius_m,
                         "kind": result.kind, "confidence": result.confidence,
-                        "label": None, "saved_place_id": None,
+                        "label": label, "saved_place_id": None,
                         "first_seen_ts": now_ms, "last_seen_ts": now_ms,
                     },
                 )

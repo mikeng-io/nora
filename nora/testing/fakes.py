@@ -41,6 +41,7 @@ from nora.domain.ports import (
     SendResult,
     TextStyle,
 )
+from nora.domain.presence import haversine_distance_m
 from nora.domain.tool_call_log import (
     ToolCallLogEntry,
     normalise_tool_call_log_entry,
@@ -658,6 +659,38 @@ class FakeMediaDescriptionStore:
             return
         self.index[(platform, token)] = blob
         self.descriptions[blob.sha256] = description
+
+
+class FakeGeocodeCacheStore:
+    """In-memory `GeocodeCacheStore`, bound to `SqlGeocodeCacheStore` by
+    `tests/contract/test_geocode_cache_store_contract.py`. `gets`/`puts`
+    record every call so a caller's read-through/write-through behaviour
+    (`CachingBilingualGeocoder`) is provable, not just its end result."""
+
+    def __init__(self) -> None:
+        self._data: dict[tuple[float, float], str] = {}
+        self.gets: list[tuple[float, float]] = []
+        self.puts: list[tuple[float, float, str]] = []
+
+    async def get(self, *, lat_rounded: float, lng_rounded: float) -> str | None:
+        self.gets.append((lat_rounded, lng_rounded))
+        return self._data.get((lat_rounded, lng_rounded))
+
+    async def put(
+        self, *, lat_rounded: float, lng_rounded: float, address: str
+    ) -> None:
+        self.puts.append((lat_rounded, lng_rounded, address))
+        self._data[(lat_rounded, lng_rounded)] = address
+
+    async def nearest_within(
+        self, *, lat: float, lng: float, radius_m: float
+    ) -> str | None:
+        best: tuple[float, str] | None = None
+        for (row_lat, row_lng), address in self._data.items():
+            dist = haversine_distance_m(lat, lng, row_lat, row_lng)
+            if dist <= radius_m and (best is None or dist < best[0]):
+                best = (dist, address)
+        return None if best is None else best[1]
 
 
 class FakeMediaInterpreter:

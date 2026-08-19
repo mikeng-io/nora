@@ -17,6 +17,7 @@ since `last_cluster_id` (the dirty-set marker, the expensive speed).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from itertools import pairwise
 from typing import Any, Protocol
@@ -30,7 +31,10 @@ from nora.domain.mobility import (
     label_place,
     segment_stays,
 )
+from nora.domain.ports import GeocodeCacheStore
 from nora.domain.presence import haversine_distance_m
+
+log = logging.getLogger("nora.analytics.rollup")
 
 
 class MobilityStore(Protocol):
@@ -43,10 +47,11 @@ class MobilityStore(Protocol):
     async def stays_for_subject(self, *, subject_id: str) -> list[Stay]: ...
     async def existing_place(
         self, *, subject_id: str, kind: str
-    ) -> tuple[int, float, float, float, LabelResult] | None: ...
+    ) -> tuple[int, float, float, float, LabelResult, str | None] | None: ...
     async def upsert_place(
         self, *, subject_id: str, circle_id: str, kind: str, lat: float,
         lng: float, radius_m: float, result: LabelResult, now_ms: int,
+        label: str | None = None,
     ) -> None: ...
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
     async def advance_cluster_watermark(self, *, subject_id: str, fix_id: int) -> None: ...
@@ -75,10 +80,29 @@ class RollupConfig:
 class MobilityRollup:
     def __init__(
         self, *, store: MobilityStore, config: RollupConfig, metrics: Any = None,
+        geocode_cache: GeocodeCacheStore | None = None,
     ) -> None:
         self._store = store
         self._cfg = config
         self._metrics = metrics
+        # Google-cache-only labelling (2026-08-19 follow-up, design/27 §3.5):
+        # optional — a place with no nearby cached hit stays unlabelled
+        # rather than triggering a proactive Google call, and a caller that
+        # does not wire this behaves exactly as before it existed.
+        self._geocode_cache = geocode_cache
+
+    async def _label_for(self, *, lat: float, lng: float) -> str | None:
+        if self._geocode_cache is None:
+            return None
+        try:
+            return await self._geocode_cache.nearest_within(
+                lat=lat, lng=lng, radius_m=self._cfg.cluster_eps_m,
+            )
+        except Exception:
+            # The port promises never to raise; belt and braces so a store
+            # outage costs a missing label, never a dropped cycle.
+            log.exception("geocode_cache label lookup failed — leaving unlabelled")
+            return None
 
     async def watermark(self, *, subject_id: str) -> tuple[int, int]:
         """Exposes the store's watermark read without leaking the store
@@ -184,7 +208,7 @@ class MobilityRollup:
                 )
                 if existing is None:
                     continue
-                _, place_lat, place_lng, _place_radius_m, _stored = existing
+                _, place_lat, place_lng, _place_radius_m, _stored, _label = existing
                 cluster_stays = [
                     s for s in all_stays
                     if _within(s, place_lat, place_lng, self._cfg.cluster_eps_m)
@@ -201,12 +225,15 @@ class MobilityRollup:
                     # `home` recheck must never delete an unrelated,
                     # still-valid `work` row just because it downgrades to
                     # `unlabeled`).
+                    label = await self._label_for(
+                        lat=all_stays[0].lat, lng=all_stays[0].lng,
+                    )
                     await self._store.upsert_place(
                         subject_id=subject_id, circle_id=circle_id,
                         kind=existing_kind,
                         lat=all_stays[0].lat, lng=all_stays[0].lng,
                         radius_m=self._cfg.cluster_eps_m, result=recheck,
-                        now_ms=now_ms,
+                        now_ms=now_ms, label=label,
                     )
                     if self._metrics is not None and recheck.kind == "unlabeled":
                         self._metrics.inc(
@@ -242,11 +269,12 @@ class MobilityRollup:
                         # kind=result.kind: a freshly-clustered place writes
                         # into its OWN kind's slot, scoped the same way the
                         # recheck above is.
+                        label = await self._label_for(lat=lat, lng=lng)
                         await self._store.upsert_place(
                             subject_id=subject_id, circle_id=circle_id,
                             kind=result.kind,
                             lat=lat, lng=lng, radius_m=self._cfg.cluster_eps_m,
-                            result=result, now_ms=now_ms,
+                            result=result, now_ms=now_ms, label=label,
                         )
                         if self._metrics is not None:
                             self._metrics.inc(

@@ -27,11 +27,14 @@ shape (a config/tuning question for the operator, not a code one).
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
 from nora.infra.geocode import CachingBilingualGeocoder
+
+if TYPE_CHECKING:
+    from nora.domain.ports import GeocodeCacheStore
 
 log = logging.getLogger("nora.geocode")
 
@@ -51,8 +54,9 @@ class HKGovGeocoder(CachingBilingualGeocoder):
         timeout_seconds: float = 5.0,
         lang_zh: str = "zh",
         lang_en: str = "en",
+        cache_store: GeocodeCacheStore | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(cache_store=cache_store)
         self._service_url = service_url
         self._token = token
         self._timeout_seconds = timeout_seconds

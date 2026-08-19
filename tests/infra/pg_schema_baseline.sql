@@ -20,12 +20,14 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
 ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
+ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT media_descriptions_pkey PRIMARY KEY (sha256);
@@ -45,6 +47,7 @@ ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.consolidation_watermark
+ALTER TABLE ONLY public.geocode_cache
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.media_descriptions
@@ -91,6 +94,7 @@ CREATE TABLE public.analytics_watermark (
 CREATE TABLE public.artifacts (
 CREATE TABLE public.compute_jobs (
 CREATE TABLE public.consolidation_watermark (
+CREATE TABLE public.geocode_cache (
 CREATE TABLE public.language_observation (
 CREATE TABLE public.media_descriptions (
 CREATE TABLE public.messages (
@@ -129,6 +133,7 @@ START WITH 1
 START WITH 1
 START WITH 1
 accuracy_m double precision,
+address text NOT NULL,
 address text,
 announced_at timestamp with time zone NOT NULL,
 artifact_id text,
@@ -202,10 +207,12 @@ lat double precision NOT NULL,
 lat double precision NOT NULL,
 lat double precision NOT NULL,
 lat double precision NOT NULL,
+lat_rounded double precision NOT NULL,
 lng double precision NOT NULL,
 lng double precision NOT NULL,
 lng double precision NOT NULL,
 lng double precision NOT NULL,
+lng_rounded double precision NOT NULL,
 media_json text,
 media_type text DEFAULT ''::text NOT NULL,
 media_type text NOT NULL,
@@ -242,6 +249,7 @@ recurrence_tz text,
 recurrence_until timestamp with time zone,
 requester_person_id text NOT NULL,
 requester_person_id text NOT NULL,
+resolved_at timestamp with time zone DEFAULT now() NOT NULL
 result_summary text,
 result_url text,
 saved_place_id text,

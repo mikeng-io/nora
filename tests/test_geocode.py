@@ -12,6 +12,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.infra import geocode
 from nora.infra.geocode import GoogleGeocoder
+from nora.testing import FakeGeocodeCacheStore
 
 
 class _Google:
@@ -105,3 +106,56 @@ async def test_a_dead_host_is_none_never_raises(monkeypatch):
     monkeypatch.setattr(geocode, "GEOCODE_URL", "http://127.0.0.1:1/dead")
     geo = GoogleGeocoder(api_key="k", timeout_seconds=0.5)
     assert await geo.address_for(lat=1.0, lng=2.0) is None
+
+
+async def test_a_persisted_hit_is_served_without_calling_google(google):
+    """The whole point of the persistent store: a coordinate resolved in an
+    EARLIER process (a restart-recovered hit) must never re-bill Google."""
+    store = FakeGeocodeCacheStore()
+    await store.put(lat_rounded=22.4445, lng_rounded=114.0289, address="cached spot")
+    geo = GoogleGeocoder(api_key="k", cache_store=store)
+    addr = await geo.address_for(lat=22.44451, lng=114.02889)  # rounds to the same key
+    assert addr == "cached spot"
+    assert google.requests == []
+
+
+async def test_a_fresh_resolve_is_persisted_to_the_store(google):
+    store = FakeGeocodeCacheStore()
+    geo = GoogleGeocoder(api_key="k", cache_store=store)
+    addr = await geo.address_for(lat=22.4445, lng=114.0289)
+    assert addr == "元朗形點 / Yoho Mall, Yuen Long"
+    assert store.puts == [(22.4445, 114.0289, "元朗形點 / Yoho Mall, Yuen Long")]
+
+
+async def test_a_geocode_miss_is_not_persisted(google):
+    google.mode = "zero"
+    store = FakeGeocodeCacheStore()
+    geo = GoogleGeocoder(api_key="k", cache_store=store)
+    assert await geo.address_for(lat=22.44, lng=114.02) is None
+    assert store.puts == []
+
+
+async def test_a_store_read_failure_still_resolves_live(google):
+    """`GeocodeCacheStore` never raises by contract, but a caller must not
+    assume that — belt and braces, matching this module's own fail-soft
+    posture for every other collaborator."""
+
+    class _RaisingStore:
+        async def get(self, *, lat_rounded: float, lng_rounded: float) -> str | None:
+            raise RuntimeError("db unavailable")
+
+        async def put(self, **kw: object) -> None:
+            raise RuntimeError("db unavailable")
+
+    geo = GoogleGeocoder(api_key="k", cache_store=_RaisingStore())
+    addr = await geo.address_for(lat=22.4445, lng=114.0289)
+    assert addr == "元朗形點 / Yoho Mall, Yuen Long"
+
+
+async def test_no_store_behaves_exactly_as_before(google):
+    """`cache_store` is optional — a caller that does not wire one gets the
+    old in-memory-only behaviour, unchanged."""
+    geo = GoogleGeocoder(api_key="k")
+    assert await geo.address_for(lat=22.4445, lng=114.0289) == (
+        "元朗形點 / Yoho Mall, Yuen Long"
+    )

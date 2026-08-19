@@ -24,7 +24,9 @@ class FakeMobilityStore:
     def __init__(self) -> None:
         self._fixes: list[_SeededFix] = []
         self._stays: list[Stay] = []
-        self._places: dict[tuple[str, str], tuple[int, float, float, float, LabelResult]] = {}
+        self._places: dict[
+            tuple[str, str], tuple[int, float, float, float, LabelResult, str | None]
+        ] = {}
         self._watermarks: dict[str, tuple[int, int]] = {}
         self._next_place_id = 1
 
@@ -60,12 +62,13 @@ class FakeMobilityStore:
 
     async def existing_place(
         self, *, subject_id: str, kind: str
-    ) -> tuple[int, float, float, float, LabelResult] | None:
+    ) -> tuple[int, float, float, float, LabelResult, str | None] | None:
         return self._places.get((subject_id, kind))
 
     async def upsert_place(
         self, *, subject_id: str, circle_id: str, kind: str, lat: float,
         lng: float, radius_m: float, result: LabelResult, now_ms: int,
+        label: str | None = None,
     ) -> None:
         # `kind` is the slot being re-evaluated, independent of
         # `result.kind` — see SqlMobilityStore.upsert_place's docstring
@@ -85,7 +88,9 @@ class FakeMobilityStore:
             return
         place_id = self._next_place_id
         self._next_place_id += 1
-        self._places[(subject_id, result.kind)] = (place_id, lat, lng, radius_m, result)
+        self._places[(subject_id, result.kind)] = (
+            place_id, lat, lng, radius_m, result, label,
+        )
 
     async def advance_fix_watermark(self, *, subject_id: str, fix_id: int) -> None:
         _, cluster = self._watermarks.get(subject_id, (0, 0))

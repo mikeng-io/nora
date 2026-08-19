@@ -1036,6 +1036,33 @@ class ReverseGeocoder(Protocol):
 
 
 @runtime_checkable
+class GeocodeCacheStore(Protocol):
+    """The durable half of `CachingBilingualGeocoder`'s cache (2026-08-19,
+    the presence-analytics label follow-up). NEVER raises — a store failure
+    costs a re-geocode next time, never the caller's answer.
+
+    `Whereis.locate` is the only writer: a row is created only when a real
+    `where_is` question reaches `ReverseGeocoder.address_for` (no saved place,
+    no Life360 address). `nora.analytics` reads this table READ-ONLY to label
+    a derived place — it never calls `ReverseGeocoder` itself — so a place
+    nobody has ever asked about stays unlabeled rather than triggering a
+    proactive Google call, which is the exact cost pattern (~12k unread calls,
+    Aug 13 2026) this design exists not to repeat.
+
+    Keyed on the SAME rounding `CachingBilingualGeocoder` uses for its
+    in-memory tier, so a persisted hit and an in-process hit agree on
+    identity."""
+
+    async def get(self, *, lat_rounded: float, lng_rounded: float) -> str | None: ...
+    async def put(
+        self, *, lat_rounded: float, lng_rounded: float, address: str
+    ) -> None: ...
+    async def nearest_within(
+        self, *, lat: float, lng: float, radius_m: float
+    ) -> str | None: ...
+
+
+@runtime_checkable
 class WeatherProvider(Protocol):
     """Current weather for a place, as a `WeatherObservation`, or None. NEVER
     raises — a failure is a missing reading, and the `weather` tool says so

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from nora.analytics.rollup import MobilityRollup, RollupConfig
 from nora.config import Config
 from nora.infra.sql import create_sql_engine, run_migrations
+from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -125,7 +126,13 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
     except Exception as exc:
         raise AnalyticsStartupError(f"migration error: {exc}") from exc
 
-    store = SqlMobilityStore(create_sql_engine(database_url), metrics=metrics)
+    engine = create_sql_engine(database_url)
+    store = SqlMobilityStore(engine, metrics=metrics)
+    # Google-cache-only labelling (2026-08-19 follow-up, design/27 §3.5):
+    # this process READS `geocode_cache` only — it never calls a geocoder
+    # itself. REUSES `engine` for the same reason `nora.app.composition`
+    # reuses its own (a second `create_sql_engine` forks the pool).
+    geocode_cache = SqlGeocodeCacheStore(engine)
     rollup_config = RollupConfig(
         tick_seconds=analytics.tick_seconds, safety_lag=analytics.safety_lag,
         settled_seconds=analytics.settled_seconds,
@@ -142,7 +149,9 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         label_freshness_days=analytics.label_freshness_days,
         tz_name=analytics.tz_name,
     )
-    rollup = MobilityRollup(store=store, config=rollup_config, metrics=metrics)
+    rollup = MobilityRollup(
+        store=store, config=rollup_config, metrics=metrics, geocode_cache=geocode_cache,
+    )
     log.info(
         "analytics rollup wired: %d subject(s), tick %.0fs",
         len(subjects), analytics.tick_seconds,

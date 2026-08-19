@@ -271,6 +271,36 @@ ANALYTICS_WATERMARK = sa.Table(
     ),
 )
 
+# `geocode_cache` — coordinate to Google-resolved address, LAZY and PERSISTENT
+# (2026-08-19, the presence-analytics label follow-up). Owned by Nora, never by
+# the presence collector or `nora.analytics`: `Whereis.locate`
+# (`nora/agent/whereis.py`) is the ONLY writer, and only reaches Google at all
+# when a fix has neither a saved-place match nor a Life360 address AND someone
+# actually asked `where_is` about it — same on-demand posture `nora/infra/
+# geocode.py`'s docstring already argues for, now surviving a restart instead
+# of living in a 512-entry in-memory dict that a redeploy threw away.
+#
+# `nora.analytics`'s derived-place `label` (`presence_derived_places.label`)
+# reads this table too, but READ-ONLY — never calls Google itself. A derived
+# place with no matching row here just stays unlabeled until a real question
+# populates one; there is no proactive backfill (the Aug 13 2026 incident this
+# design exists to not repeat: ~12k billed calls for addresses nobody read).
+#
+# Keyed on the SAME ~11 m rounding `CachingBilingualGeocoder._CACHE_PRECISION`
+# already used for its in-memory memo, so a persisted row and a same-process
+# cache hit agree on identity.
+GEOCODE_CACHE = sa.Table(
+    "geocode_cache",
+    METADATA,
+    sa.Column("lat_rounded", sa.Float, primary_key=True),
+    sa.Column("lng_rounded", sa.Float, primary_key=True),
+    sa.Column("address", sa.Text, nullable=False),
+    sa.Column(
+        "resolved_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("now()"),
+    ),
+)
+
 
 # `reminders` — one-shot deferred requests, the heartbeat's fire queue.
 #
