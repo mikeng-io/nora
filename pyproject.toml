@@ -109,11 +109,6 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", 
 #   N803/N818 — test-local argument and exception-class naming, not production surface.
 "tests/**" = ["S101", "S104", "S311", "S607", "RUF001", "N803", "N818"]
 "evals/**" = ["S101"]
-# E501 — real extracted GPS fixes: a handful of rows carry full-precision
-# float reprs (e.g. accuracy_m computed server-side) that push a tuple
-# literal past 100 cols. Truncating them would alter the genuine
-# extracted data this fixture exists to preserve verbatim (Task 13).
-"tests/fixtures/presence_corpus_sample.py" = ["E501"]
 
 [tool.importlinter]
 root_packages = ["nora", "evals"]
