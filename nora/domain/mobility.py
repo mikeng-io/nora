@@ -29,6 +29,7 @@ __all__ = [
     "Stay",
     "cluster_places",
     "dwell_ms",
+    "hour_of_week_bins",
     "label_place",
     "segment_stays",
 ]
@@ -370,6 +371,37 @@ def _windowed_dwell(
             day_ms += _DAY_MS
             midnight += timedelta(days=1)
     return total, days, latest_day
+
+
+def hour_of_week_bins(started_ts: int, ended_ts: int, tz_name: str) -> dict[int, int]:
+    """A stay's dwell, split into local hour-of-week buckets (0..167,
+    Monday 00:00 = 0) — Tier 3's occupancy input (design/27 §4, issue #6).
+
+    Walks one LOCAL clock-hour at a time, like `_windowed_dwell`'s day-walk
+    — `ended_ts - started_ts` already equals the stay's own dwell by
+    `Stay`'s own invariant, so no separate `dwell_ms` capping applies here;
+    this is purely a spatial-in-time split of a span already known good."""
+    if ended_ts <= started_ts:
+        return {}
+    tz = ZoneInfo(tz_name)
+    bins: dict[int, int] = {}
+    cursor = started_ts
+    while cursor < ended_ts:
+        local = datetime.fromtimestamp(cursor / 1000, tz=tz)
+        hour_start = local.replace(minute=0, second=0, microsecond=0)
+        hour_start_ms = int(hour_start.timestamp() * 1000)
+        hour_end_ms = hour_start_ms + 3_600_000
+        bin_end = min(hour_end_ms, ended_ts)
+        how = local.weekday() * 24 + local.hour
+        bins[how] = bins.get(how, 0) + (bin_end - cursor)
+        cursor = hour_end_ms
+    # If ended_ts is exactly at an hour boundary, include that boundary hour with 0 dwell
+    if cursor == ended_ts and ended_ts > started_ts:
+        local = datetime.fromtimestamp(ended_ts / 1000, tz=tz)
+        how = local.weekday() * 24 + local.hour
+        if how not in bins:
+            bins[how] = 0
+    return bins
 
 
 def label_place(
