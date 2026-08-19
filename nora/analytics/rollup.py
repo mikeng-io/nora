@@ -512,8 +512,23 @@ class MobilityRollup:
         similarity match against the PERSISTED sequences, not from
         re-clustering — which is exactly why that method exists.
         """
+        # Trips whose fixes carried no address at all are held out of BOTH
+        # passes, and held out BEFORE clustering rather than filtered after
+        # it. `edit_distance((), x) == len(x)` makes an empty corridor a
+        # similarity-neighbour of every 1-2 element real corridor, so
+        # `cluster_trips` will legitimately put an address-less trip in the
+        # same cluster as three real, named ones — it is not only clusterable
+        # with other address-less trips. Judging that cluster by its FIRST
+        # trip's sequence is then a coin-flip on input order, wrong in both
+        # directions: an empty `cluster[0]` discards the whole cluster and
+        # silently unlinks the real trips in it, and a named `cluster[0]`
+        # attaches the empty one too, contaminating the corridor's
+        # `sample_count` and its speed percentiles with an ungrounded sample.
+        # Partitioning first makes the question unaskable.
+        # (Task 11 review, Important #1.)
+        named_trips = [t for t in new_trips if t.corridor]
         clusters = cluster_trips(
-            new_trips, max_edit_distance=self._cfg.corridor_max_edit_distance,
+            named_trips, max_edit_distance=self._cfg.corridor_max_edit_distance,
             min_samples=self._cfg.corridor_min_samples,
         )
         # id -> the corridor's CANONICAL sequence (the PERSISTED one for a
@@ -529,16 +544,6 @@ class MobilityRollup:
         touched: dict[int, tuple[str, ...]] = {}
         clustered_starts = {t.started_ts for cluster in clusters for t in cluster}
         for cluster in clusters:
-            if not cluster[0].corridor:
-                # Trips whose fixes carried no address at all DO cluster
-                # with each other (`edit_distance((), ()) == 0`, which
-                # `cluster_trips`' own docstring notes), but a corridor
-                # with an empty sequence has no identity to be. Minting one
-                # is actively harmful rather than merely useless: with
-                # `edit_distance((), x) == len(x)`, that row would become
-                # the nearest `existing_corridor` match for every 1-2
-                # element corridor this subject ever drives afterwards.
-                continue
             # The cluster's FIRST trip's own sequence is the
             # representative — `PRESENCE_CORRIDORS`' own "identity
             # survives, does not chase every new trip's own sequence".
@@ -558,12 +563,14 @@ class MobilityRollup:
         # Tier 5 would look built while silently never learning again.
         # Creating from a singleton is still refused — that is
         # `corridor_min_samples`' whole job.
-        for trip in new_trips:
-            if trip.started_ts in clustered_starts or not trip.corridor:
-                # An EMPTY corridor never joins a named one: `edit_distance(
-                # (), x) == len(x)`, so a trip whose fixes carried no address
-                # at all would match any 1-2 element corridor outright. That
-                # is a guess, and R-5's posture is silence over a wrong answer.
+        # `named_trips`, not `new_trips` — an address-less trip must not join
+        # an existing corridor either, for the same edit-distance reason the
+        # partition above exists: it would match any 1-2 element corridor
+        # outright, which is a guess, and R-5 prefers silence to a wrong
+        # answer. It therefore ends this method with `corridor_id` still NULL,
+        # which is the honest record of "no address, so no route".
+        for trip in named_trips:
+            if trip.started_ts in clustered_starts:
                 continue
             attached = await self._attach_corridor(
                 subject_id=subject_id, sequence=trip.corridor,
