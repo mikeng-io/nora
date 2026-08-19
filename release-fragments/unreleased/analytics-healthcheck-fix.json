@@ -1,0 +1,6 @@
+{
+  "type": "fix",
+  "summary": "The analytics container's health status was permanently 'unhealthy' despite running correctly — it inherited the base image's healthcheck targeting the main agent's :9100/health, an endpoint this entrypoint never serves. Overridden to check its own :9103/health, matching the presence container's existing pattern.",
+  "details": [],
+  "limitations": []
+}
