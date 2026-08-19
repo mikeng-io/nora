@@ -23,10 +23,11 @@ on-demand check, never a cached column).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Protocol, Sequence
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from nora.domain.reminders import ensure_utc
@@ -111,6 +112,7 @@ class VenueSuggestions:
     route_hints: None = None
 
 
+@runtime_checkable
 class EventStore(Protocol):
     async def create(self, event: Event) -> None: ...
 
