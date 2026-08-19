@@ -807,8 +807,28 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "store, by reason. reason=\"no_evidence\": the model named a "
         "message_id that is not in the batch it was given. "
         "reason=\"not_found\": the message_id WAS in the batch but no "
-        "longer resolved against a real messages row by append time.",
+        "longer resolved against a real messages row by append time. "
+        "reason=\"known_entity\": [language].verify_known_entities found the "
+        "candidate already has an established public meaning (e.g. a real "
+        "game) via web_search, rather than being coined by this room.",
         ("reason",),
+    ),
+    # The known-entity verification step's OWN outcome (2026-08-20 design
+    # doc), independent of whether it led to a drop — without this an
+    # operator watching only the drop counter above cannot tell "verification
+    # is running and finding nothing to drop" from "verification is silently
+    # never running at all," the same liveness gap `416d68a` fixed for
+    # `dream_loop` itself, one level down at this sub-step. Only emitted when
+    # `[language].verify_known_entities` is on; structurally zero otherwise.
+    _CounterSpec(
+        "nora_language_verification_total",
+        "The Dreamer's known-entity check (web_search over a candidate's "
+        "canonical_form), by outcome. status=\"ok\": Tavily returned "
+        "results and the classification call ran. status=\"nothing_found\": "
+        "no results, so the candidate was kept unverified. "
+        "status=\"unavailable\": the search call itself failed, kept "
+        "unverified (fail-open).",
+        ("status",),
     ),
     # `dream_loop`'s own instrument for the OTHER Task-6-carry-forward
     # defect (Task 11): a model that degrades into returning prose forever

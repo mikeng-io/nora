@@ -1077,6 +1077,28 @@ class LanguageConfig(BaseModel):
     raised, so the exponential backoff non-negotiable 4 exists for — which
     only triggers on an exception — never engages. See
     `_LanguageModelClient`'s own docstring for the full argument.
+
+    `verify_known_entities = False`: a THIRD gate, alongside `enabled` and
+    `[search].enabled`, before `LexemeObserver` gets a `SearchProvider`
+    collaborator at all (the 2026-08-20 dreamer-known-entity-check design
+    doc under `docs/superpowers/specs`). Confirmed false
+    positives from live traffic — "Big Walk" (an actual game Pulse already
+    tracks) recorded as room-coined slang — are what this exists to catch:
+    a well-formed candidate whose `canonical_form` turns up an established
+    public meaning on `web_search` is dropped rather than stored. Off by
+    default even when both other gates are on: verifying spends an extra
+    Tavily credit AND an extra model completion per candidate, and turning
+    search on for the chat agent is not the same decision as spending that
+    budget on the Dreamer too.
+
+    `verify_max_candidates = 10`: bounds how many of one cycle's candidates
+    get the (search + classify) round trip — live traffic sees 0-3 candidates
+    per fired batch, so this caps the WORST-CASE tail latency
+    (`verify_max_candidates * (search_timeout + model_timeout)`) without
+    touching the common case. Candidates beyond the cap are kept unverified,
+    the same fail-open direction the whole step takes on any failure (see the
+    design doc) — "did not get to check" is never treated as "assume the
+    worst."
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1090,6 +1112,8 @@ class LanguageConfig(BaseModel):
     max_rendered_lexemes: int = Field(default=6, ge=1)
     model: str = "ollamacloud/deepseek-v4-flash"
     timeout_seconds: float = Field(default=120.0, gt=0)
+    verify_known_entities: bool = False
+    verify_max_candidates: int = Field(default=10, ge=1)
 
 
 class DoctrineConfig(BaseModel):
