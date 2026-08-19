@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Nora can hold one synthesized portrait of a room's own character, built from what she already knows about its words and its people.",
+  "details": [
+    "Plan 3 of the Dreamer: a single narrative per room, synthesized from Plan 1's vocabulary and Plan 2's exchange patterns — the room's own character as a whole, never a claim about any one person in it.",
+    "No new model call: the synthesis is a deterministic template over the SAME already-vetted material she already sees in the room's own two other blocks, never more.",
+    "The narrative-building step cannot see who said or was involved in anything — participant and speaker identity is stripped before the sentence is built, not merely left unused.",
+    "Triggered by real new material appearing (the room's vocabulary or exchange patterns actually changed), not by a raw-message timer — a quiet room does not get resynthesized for nothing."
+  ],
+  "limitations": [
+    "Ships turned off, gated by the same switch as the room-language glossary and exchange patterns. It is not live in any room yet.",
+    "Stacked on Plan 2 (unmerged) — depends on the exchange-pattern consolidator landing first."
+  ]
+}

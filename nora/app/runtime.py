@@ -41,7 +41,7 @@ from typing import Any, Protocol
 
 from .. import tag as tag_module
 from ..domain.models import TranscriptRow
-from ..domain.ports import RoomConsolidator
+from ..domain.ports import RoomConsolidator, RoomPortraitSynthesizer
 from ..obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.runtime")
@@ -305,7 +305,7 @@ async def dream_loop(
     consolidators: Sequence[RoomConsolidator], metrics: Metrics, *,
     scopes: Callable[[], Sequence[str]], tick_seconds: float,
     safety_lag: int, quiet_seconds: float, max_age_seconds: float,
-    batch_limit: int,
+    batch_limit: int, portrait: RoomPortraitSynthesizer | None = None,
 ) -> None:
     """The Dreamer's clock. A sibling of `prune_loop`, with two differences
     that are not stylistic.
@@ -347,6 +347,11 @@ async def dream_loop(
     scenario the lock, the backoff and their own tests are named for.
     `_dream_once` itself is untouched: watermark-last, the three fire
     conditions and the partial-batch guard are exactly as given.
+
+    FOURTH — `portrait` (Dreamer Plan 3, 2026-08-20 room-portrait design) is
+    deliberately NOT a `RoomConsolidator` and carries no watermark/lag/quiet/
+    age trigger of its own; see `_dream_once` for why (its real input is
+    Plan 1/2's already-consolidated state, not a raw-message proxy for it).
     """
     # Announce, the way `heartbeat` does — this loop had NO positive liveness
     # signal, and `__main__` logs only the disabled branch, so with the flag on
@@ -376,7 +381,7 @@ async def dream_loop(
                 record=record, language=language, consolidators=consolidators,
                 metrics=metrics, scope_id=scope_id, safety_lag=safety_lag,
                 quiet_seconds=quiet_seconds, max_age_seconds=max_age_seconds,
-                batch_limit=batch_limit,
+                batch_limit=batch_limit, portrait=portrait,
             )
             failures.pop(scope_id, None)
             last_failure_at.pop(scope_id, None)
@@ -433,6 +438,7 @@ async def _dream_once(
     *, record: _SinceReadable, language: _ConsolidationCursor,
     consolidators: Sequence[RoomConsolidator], metrics: Metrics, scope_id: str,
     safety_lag: int, quiet_seconds: float, max_age_seconds: float, batch_limit: int,
+    portrait: RoomPortraitSynthesizer | None = None,
 ) -> None:
     watermark = await language.watermark_for(
         consolidator_name="language", scope_id=scope_id)
@@ -462,12 +468,13 @@ async def _dream_once(
     batch = await record.since(
         conversation_id=scope_id, after_id=watermark, limit=batch_limit)
 
+    appended_total = 0
     for consolidator in consolidators:
         # An empty batch still reaches the consolidator, which still rescores.
         # Decay is TIME-driven: two of the three fire conditions need lag > 0,
         # so without this a dormant room never fades a word and its lexicon
         # stays `live` describing a slang era that ended months ago.
-        await consolidator.consolidate(scope_id=scope_id, batch=batch)
+        appended_total += await consolidator.consolidate(scope_id=scope_id, batch=batch)
 
     if batch:
         # LAST, and after the appends have committed. The unsafe direction is
@@ -502,3 +509,20 @@ async def _dream_once(
             consolidator_name="language", scope_id=scope_id,
             last_message_id=watermark,
         )
+
+    # Dreamer Plan 3 (2026-08-20 room-portrait design). Triggered on the REAL
+    # property — did Plan 1/2 actually append new evidence this cycle — not a
+    # raw-message proxy for it (see `dream_loop`'s FOURTH docstring note and
+    # the design doc's "Trigger shape" for why this is not a `RoomConsolidator`
+    # sharing the lag/quiet/age conditions above). Own try/except: a portrait
+    # failure is independent of Plan 1/2's own health and must not trigger
+    # THEIR backoff (`_run_one`'s `except Exception` catches everything this
+    # function raises, so leaving this unguarded would couple an unrelated
+    # concern into Plan 1/2's failure count) — nor must it block the watermark
+    # advance above, which has already happened by the time this runs.
+    if portrait is not None and appended_total > 0:
+        try:
+            await portrait.synthesize(scope_id=scope_id)
+        except Exception:
+            log.exception("portrait synthesis failed for %s", scope_id)
+            metrics.inc("nora_errors_total", stage="portrait")

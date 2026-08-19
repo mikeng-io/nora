@@ -301,6 +301,11 @@ class TagContext:
     # `RoomExchange`'s own docstring for why that is a structural guarantee,
     # not a convention).
     room_exchange: RoomExchange = field(default_factory=lambda: RoomExchange(scope_id=""))
+    # Dreamer Plan 3 (2026-08-20 room-portrait design) — the room's synthesis
+    # of `room_language`/`room_exchange` above, same defaulted-empty shape.
+    # `RoomPortraitReader.room_portrait` is documented never to raise, same
+    # reason as its two siblings.
+    room_portrait: RoomPortrait = field(default_factory=lambda: RoomPortrait(scope_id=""))
 
 
 @dataclass(frozen=True)
@@ -444,6 +449,24 @@ class RoomExchange:
 
     def __bool__(self) -> bool:
         return bool(self.patterns)
+
+
+@dataclass(frozen=True)
+class RoomPortrait:
+    """What the Dreamer's Plan 3 knows about one scope, as of `generated_ms`
+    — a single synthesized narrative, the portrait sibling of `RoomLanguage`/
+    `RoomExchange`. One row per scope by construction (UPSERT, not an
+    append-only evidence log — see `nora.language.portrait_synthesizer`'s
+    module docstring for why this has no evidence layer of its own). Empty is
+    the correct state for a room with no `room_lexeme`/`room_exchange`
+    material yet."""
+
+    scope_id: str
+    narrative: str = ""
+    generated_ms: int = 0
+
+    def __bool__(self) -> bool:
+        return bool(self.narrative)
 
 
 @dataclass(frozen=True)

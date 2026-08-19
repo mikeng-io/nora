@@ -47,6 +47,7 @@ from nora.domain.ports import (
     RecordStore,
     ReverseGeocoder,
     RoomConsolidator,
+    RoomPortraitSynthesizer,
     RosterSource,
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
@@ -67,6 +68,7 @@ from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.room_portrait import SqlRoomPortraitStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
@@ -83,6 +85,7 @@ from nora.language.consolidator import LanguageConsolidator
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
 from nora.language.observer import LexemeObserver
+from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -382,6 +385,12 @@ class Dependencies:
     language_store: SqlLanguageStore | None
     language_consolidators: tuple[RoomConsolidator, ...]
     language_scopes: Callable[[], Sequence[str]]
+    # Dreamer Plan 3 (2026-08-20 room-portrait design) — `None` under the same
+    # `[language].enabled` gate as `language_store`/`language_consolidators`
+    # above. Deliberately NOT a `RoomConsolidator`; `nora.app.runtime
+    # .dream_loop` takes it as its own `portrait=` keyword, not a member of
+    # `language_consolidators` — see that module's docstring for why.
+    portrait_synthesizer: RoomPortraitSynthesizer | None
     # The SAME `EventService` built above alongside `event_store`/
     # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
     # exposed here too so `nora.web.api.register_web_routes`'s read-only
@@ -493,6 +502,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # independent flag).
     exchange_store: SqlExchangeStore | None = (
         SqlExchangeStore(engine, metrics=metrics) if cfg.language.enabled else None
+    )
+    # Dreamer Plan 3's store (2026-08-20 room-portrait design) — same gate,
+    # same reasoning: exactly one consumer (this same tag/fire prefill), and
+    # `[language].enabled` is its off switch too (no independent flag, same
+    # as Plan 2).
+    portrait_store: SqlRoomPortraitStore | None = (
+        SqlRoomPortraitStore(engine, metrics=metrics) if cfg.language.enabled else None
     )
 
     # Resolved here, not inside AdapterRegistry — the same convention every
@@ -630,6 +646,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # depends on.
         language=language_store,
         exchange=exchange_store,
+        portrait=portrait_store,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -896,6 +913,26 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     store=exchange_store,
                 ),
             )
+    # Dreamer Plan 3 (2026-08-20 room-portrait design, DEC-121) — built only
+    # when its THREE inputs are ready (language/exchange READERS, portrait
+    # WRITER), same gate as `language_consolidators` above. Deliberately not
+    # added to `language_consolidators`: `nora.app.runtime.dream_loop` takes
+    # it as its own `portrait=` keyword (see that module's docstring for why
+    # this is not a `RoomConsolidator`). No new model client — no model call
+    # in this module at all (see `nora.language.portrait_synthesizer`'s own
+    # docstring). Reuses `[language].max_rendered_lexemes`/
+    # `max_rendered_exchanges` — the SAME limits the live prefill already
+    # uses for `<room_language>`/`<room_exchange>` — rather than a new knob.
+    portrait_synthesizer: RoomPortraitSynthesizer | None = None
+    if (
+        cfg.language.enabled and language_store is not None
+        and exchange_store is not None and portrait_store is not None
+    ):
+        portrait_synthesizer = PortraitSynthesizer(
+            language=language_store, exchange=exchange_store, store=portrait_store,
+            max_rendered_lexemes=cfg.language.max_rendered_lexemes,
+            max_rendered_exchanges=cfg.language.max_rendered_exchanges,
+        )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
     # off leaves the registry without a provider and `weather` answers
@@ -1472,6 +1509,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         skills_dir=cfg.doctrine.dir.parent / "skills",
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
+        portrait_synthesizer=portrait_synthesizer,
         events=events,
     )
 

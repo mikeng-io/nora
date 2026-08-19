@@ -13,9 +13,12 @@ feature adds:
    enforced by a DB CHECK). Defence in depth, the same shape
    `nora.language.render`'s own per-field caps already are for Plan 1.
 
-The rendered gloss for each `act` is REPO text (`_ACT_GLOSSES` below), never
+The rendered gloss for each `act` is REPO text (`ACT_GLOSSES` below), never
 model text — there is nothing model-authored on this path except the closed
-`act` selection itself and the verbatim quote.
+`act` selection itself and the verbatim quote. `ACT_GLOSSES` is public
+(rather than `_`-prefixed) because Dreamer Plan 3
+(`nora.language.portrait_synthesizer`) imports it too — the SAME repo text,
+not a duplicated copy.
 """
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ _CLOSING_FRAME = (
     "claim about any one of them, and not something to reach for."
 )
 
-_ACT_GLOSSES = {
+ACT_GLOSSES = {
     "insult_trade": "trade insults, back and forth",
     "banter": "banter — light jabs, not meant seriously",
     "tease": "tease each other",
@@ -70,7 +73,7 @@ def render_room_exchange(exchange: RoomExchange, *, max_entries: int) -> str:
 
 
 def _render_entry(pattern: RoomExchangePattern) -> str:
-    gloss = escape(_ACT_GLOSSES.get(pattern.act, pattern.act))
+    gloss = escape(ACT_GLOSSES.get(pattern.act, pattern.act))
     who = escape(f"{len(pattern.participants)} people")
     quote = escape(_truncate(pattern.examples[0].text, _QUOTE_MAX_CHARS))
     since = _date(pattern.first_seen_ms)
