@@ -17,6 +17,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from itertools import pairwise
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -28,10 +29,12 @@ __all__ = [
     "RawFix",
     "SegmentationResult",
     "Stay",
+    "Trip",
     "circular_mean_minute",
     "cluster_places",
     "derive_speed_kmh",
     "dwell_ms",
+    "extract_trips",
     "hour_of_week_bins",
     "label_place",
     "robust_z_score",
@@ -179,6 +182,106 @@ class Stay:
     # outside every place today may fall inside one created LATER (Task 10's
     # backfill step handles that case going forward, not this field).
     place_id: int | None = None
+
+
+@dataclass(frozen=True)
+class Trip:
+    """One movement span between stays (design/27 §4, issue #6) — the
+    complement of `Stay`: fixes NOT absorbed into any stay-forming group.
+    `distance_m`/`avg_speed_kmh` are derived from the trip's OWN fixes
+    (`derive_speed_kmh` pairwise, summed), never from Life360's
+    `speed_kmh`. `corridor` is the deduplicated address sequence — the
+    corridor-CLUSTERING input (Task 6); `corridor_id` is set once
+    clustered (Task 8), `None` until then, the same nullable-then-filled
+    shape `Stay.place_id` uses."""
+
+    subject_id: str
+    person_id: str
+    circle_id: str
+    started_ts: int
+    ended_ts: int
+    distance_m: float
+    avg_speed_kmh: float
+    fix_count: int
+    corridor: tuple[str, ...]
+    corridor_id: int | None = None
+
+
+def _trip_from_group(
+    group: list[RawFix], *, subject_id: str, person_id: str, circle_id: str,
+) -> Trip:
+    distance_m = 0.0
+    speeds: list[float] = []
+    for a, b in pairwise(group):
+        distance_m += haversine_distance_m(a.lat, a.lng, b.lat, b.lng)
+        speed = derive_speed_kmh(a, b)
+        if speed is not None:
+            speeds.append(speed)
+    duration_hours = (group[-1].ts - group[0].ts) / 3_600_000.0
+    avg_speed = (
+        distance_m / 1000 / duration_hours if duration_hours > 0
+        else (sum(speeds) / len(speeds) if speeds else 0.0)
+    )
+    corridor: list[str] = []
+    for f in group:
+        if f.address is None:
+            continue
+        if not corridor or corridor[-1] != f.address:
+            corridor.append(f.address)
+    return Trip(
+        subject_id=subject_id, person_id=person_id, circle_id=circle_id,
+        started_ts=group[0].ts, ended_ts=group[-1].ts,
+        distance_m=distance_m, avg_speed_kmh=avg_speed,
+        fix_count=len(group), corridor=tuple(corridor),
+    )
+
+
+def extract_trips(
+    fixes: list[RawFix], closed_stays: list[Stay], *, subject_id: str,
+    person_id: str, circle_id: str, min_trip_fixes: int,
+    open_stay_started_ts: int | None,
+) -> list[Trip]:
+    """The movement fixes NOT covered by any CLOSED stay, grouped into
+    trips — Tier 5's segmentation counterpart to `segment_stays` (design/27
+    §4, issue #6).
+
+    `fixes` and `closed_stays` come from the SAME batch `segment_stays`
+    already processed this cycle (`nora.analytics.rollup`'s Speed 1) —
+    `closed_stays` marks the ranges to EXCLUDE, not re-derive.
+    `open_stay_started_ts`, when not `None`, excludes every fix from that
+    point onward too: the trailing group is still undetermined (open
+    stay or a trip that has not yet ended), and Global Constraints
+    forbids guessing which. A short run below `min_trip_fixes` is
+    dropped as noise (a stray fix between two stays), the same
+    fail-closed posture `_close`'s own `min_dwell_ms` gate uses for
+    stays."""
+    if not fixes:
+        return []
+    in_stay_ranges = [(s.started_ts, s.ended_ts) for s in closed_stays]
+
+    def _in_a_stay(ts: int) -> bool:
+        return any(start <= ts <= end for start, end in in_stay_ranges)
+
+    trips: list[Trip] = []
+    buffer: list[RawFix] = []
+    for f in fixes:
+        if open_stay_started_ts is not None and f.ts >= open_stay_started_ts:
+            break
+        if _in_a_stay(f.ts):
+            if len(buffer) >= min_trip_fixes:
+                trips.append(_trip_from_group(
+                    buffer, subject_id=subject_id, person_id=person_id,
+                    circle_id=circle_id,
+                ))
+            buffer = []
+            continue
+        buffer.append(f)
+    if len(buffer) >= min_trip_fixes:
+        trips.append(_trip_from_group(
+            buffer, subject_id=subject_id, person_id=person_id,
+            circle_id=circle_id,
+        ))
+    return trips
 
 
 @dataclass(frozen=True)
