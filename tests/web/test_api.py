@@ -1,4 +1,5 @@
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from aiohttp import web
@@ -6,6 +7,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.agent.whereis import Circle
 from nora.app.events import EventService
+from nora.domain.events import RSVPResponse
 from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, WireState
 from nora.domain.reminders import ReminderCaps
@@ -472,3 +474,79 @@ async def test_presence_places_route_returns_empty_list_when_presence_is_disable
     resp = await client.get("/app/v1/presence/places")
     assert resp.status == 200
     assert await resp.json() == []
+
+
+@pytest.fixture
+async def client_with_events(aiohttp_client):
+    """Same fixture shape as `client`, but wired with a real `EventService`
+    over a NON-empty `FakeEventStore` — one seeded event with a real RSVP —
+    so the events routes exercise the actual request -> handler -> service
+    -> store path, not a fixture whose store is always empty regardless of
+    what a test asks for (CLAUDE.md's fake-fidelity rule; FakeEventStore's
+    own docstring makes the same commitment for its store-level contract)."""
+    events_service = EventService(
+        store=FakeEventStore(), reminders=FakeReminderStore(),
+        reminder_caps=ReminderCaps(), route_source=None, honcho=None,
+        ai_peer="nora",
+    )
+    event = await events_service.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    await events_service.rsvp(
+        event_id=event.id, person_id="daisy", response=RSVPResponse.YES,
+    )
+    app = web.Application()
+    register_web_routes(
+        app, store=FakeRecordStore(), honcho=FakeHoncho(),
+        reminders=FakeReminderStore(),
+        persons=Persons(by_person={"miles": MILES}, index={}),
+        ai_peer="nora", started_at=0.0,
+        games_client=None,
+        presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
+        events=events_service,
+    )
+    web_client = await aiohttp_client(app)
+    return web_client, event
+
+
+async def test_events_list_route_returns_the_seeded_event(client_with_events):
+    web_client, event = client_with_events
+    resp = await web_client.get("/app/v1/events?conversation_id=signal:group-1")
+    assert resp.status == 200
+    body = await resp.json()
+    assert len(body) == 1
+    assert body[0]["id"] == str(event.id)
+    assert body[0]["title"] == "Dinner"
+    assert body[0]["status"] == "proposed"
+
+
+async def test_events_list_route_without_conversation_id_is_400(client):
+    """No `conversation_id` query param at all — not an empty list, a
+    refusal, matching `events_list`'s own contract in nora/web/api.py."""
+    resp = await client.get("/app/v1/events")
+    assert resp.status == 400
+    body = await resp.json()
+    assert body["status"] == "refused"
+
+
+async def test_events_detail_route_returns_the_event_with_rsvps(client_with_events):
+    web_client, event = client_with_events
+    resp = await web_client.get(f"/app/v1/events/{event.id}")
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["id"] == str(event.id)
+    assert body["title"] == "Dinner"
+    assert body["rsvps"] == [{"person_id": "daisy", "response": "yes"}]
+
+
+async def test_events_detail_route_404s_for_a_missing_event(client_with_events):
+    web_client, _event = client_with_events
+    resp = await web_client.get(f"/app/v1/events/{uuid4()}")
+    assert resp.status == 404
+
+
+async def test_events_detail_route_400s_for_a_malformed_id(client_with_events):
+    web_client, _event = client_with_events
+    resp = await web_client.get("/app/v1/events/not-a-uuid")
+    assert resp.status == 400
