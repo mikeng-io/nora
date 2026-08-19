@@ -47,8 +47,8 @@ adapters (the agent tools, the web app), four write tools and two read
 tools, a migration for two tables, and read-only `/events` web pages.
 
 **Is not:** a scheduling system (reuses reminders), a skills system (plain
-tools, same as reminders), a route/ETA engine (explicitly deferred — see
-§6), or a background extraction job (recommendations are computed on
+tools, same as reminders), a route/ETA engine (descoped for scope discipline,
+not an infrastructure wait — see §5.1), or a background extraction job (recommendations are computed on
 request, not pre-computed).
 
 ## 1. Architecture
@@ -59,6 +59,9 @@ request, not pre-computed).
                                   validation, the open-event lookup rule, and
                                   the RSVP/status state machine. The ONLY
                                   place event business rules are written.
+                                  Takes the SAME route_source (PlaceResolver)
+                                  nora/agent/tools.py's place_info/route
+                                  already use — no second Google client.
     nora/infra/sql/events.py     Postgres EventStore
     nora/agent/tools.py          create_event / update_event / rsvp_event /
                                   cancel_event / list_events / suggest_venue —
@@ -98,17 +101,21 @@ next free number actually is at implementation time.)
       created_by         text  — person_id
       when               timestamptz, nullable — a proposed event may have no
                           time yet ("let's do dinner" before a date is picked)
-      location_text      text, nullable — free text as SAID in chat ("that
-                          ramen place near Central"), never a geocoded point
-                          or place_id. Deliberately decoupled from the
-                          presence/mobility substrate's schema, which does not
-                          exist yet (design/27 §5, Tier 5, not scheduled).
-      venue               text, nullable — filled once suggested/settled
-      status              EventStatus: proposed | confirmed | cancelled
-      reminder_series_id  UUID, nullable — `Series.id` (the reminders table's
+      venue_text         text, nullable — what was actually SAID in chat
+                          ("that ramen place near Central"), kept as the
+                          source-of-truth reference regardless of resolution
+      venue_place_id     text, nullable — Google place_id, resolved ONCE
+      venue_name         text, nullable — Google's canonical resolved name
+      venue_address      text, nullable
+      venue_rating       float, nullable
+      venue_price_level  text, nullable
+      venue_maps_url     text, nullable
+      venue_resolved_at  timestamptz, nullable
+      status             EventStatus: proposed | confirmed | cancelled
+      reminder_series_id UUID, nullable — `Series.id` (the reminders table's
                           `series_id` column, per `nora/infra/sql/reminders.py`),
                           shared across every occurrence in the linked series
-      created_at          timestamptz
+      created_at         timestamptz
 
     RSVP
       event_id     UUID, fk -> Event.id
@@ -125,10 +132,34 @@ Every datetime follows the reminders' UTC discipline
 (`nora/domain/reminders.py`'s `ensure_utc`/`normalise_reminder`): naive
 datetimes are rejected at the port boundary, not guessed.
 
+### 2.1 Venue resolution — cached once, not re-queried
+
+The `venue_*` columns are **not** raw free text plus a separate geocode —
+they are resolved exactly once, through infrastructure that already ships,
+not a new geocoder. `place_info` (`nora/agent/tools.py:2262`) already wraps
+Google Places Text Search behind a `PlaceResolver`
+(`nora/infra/routes/places.py:141`) and returns exactly this shape —
+`place_id`, canonical `name`, `address`, `rating`, `price_level`,
+`maps_url` — through the same `route_source` port `EventService` reuses (it
+does not own a second Google client). When `update_event` settles
+`venue_text`, `EventService` calls that resolver once, runs the venue
+string through the same R-28 identifier/coordinate screen `place_info`
+already applies, and writes the stable fields to `Event`. Reads (`get_event`,
+`list_events`, the web view) never re-query Google — they read the cached
+columns.
+
+Two things this deliberately does **not** cache: raw `lat`/`lng` (DEC-24 —
+never in a model-facing schema; the resolver keeps them as its own working
+state and `route()` never accepts a coordinate as an argument anyway, so
+`Event` has no use for them), and `open_now` (it goes stale by the hour —
+caching it risks confidently telling someone a place is open after it
+closed; "is it open right now" stays a fresh, rare, on-demand check, not a
+per-read cost).
+
 ## 3. `EventService` — the use-case layer
 
-    create_event(group_id, requester_person_id, title, when=None, location_text=None) -> Event
-    update_event(event_id, when=None, venue=None, location_text=None) -> Event
+    create_event(group_id, requester_person_id, title, when=None, venue_text=None) -> Event
+    update_event(event_id, when=None, venue_text=None) -> Event
     rsvp(event_id, person_id, response) -> RSVP
     cancel_event(event_id) -> Event
     list_events(group_id, status=None) -> list[Event]
@@ -196,19 +227,30 @@ subsystem):
 
 ### 5.1 Reserved extension point — routes
 
-`VenueSuggestions` carries a `route_hints` field, populated `None` in this
-version. Presence Tier 5 (corridor/route derivation,
-`design/proposed/27-presence-analytics.md`, not yet scheduled) is the
-eventual source for per-person ETAs to a candidate venue. When it ships, a
-later revision fills this field from the presence substrate through its own
-read surface — the port signature does not change, so neither the agent tool
-nor the web view need to change, they simply start rendering a field that
-used to always be empty. Full routing was explicitly descoped from this
-version because it sits on top of presence Tier 6 (co-location/meeting
-detection across people), which the presence-analytics design deliberately
-marked speculative and deferred for sensitivity reasons (design/27: it
-describes relationships between people, not one person's location, and no
-existing disclosure guardrail is scoped to that).
+**Correction from an earlier draft of this spec**: routing is not blocked on
+the presence-analytics substrate (design/27, Tiers 5-6). That substrate is
+about deriving corridors/co-location from historical GPS fixes, which is a
+different concern from point-to-point routing between two named places —
+`place_info` and `route()` (`nora/agent/tools.py:2085`) already ship today,
+already resolve places via `PlaceResolver`, and have nothing to do with the
+presence tiers.
+
+The real constraint is **R-28**: `route()` explicitly refuses a person or a
+raw coordinate as an origin/destination — "NEVER put a person where a place
+goes" — and only accepts a *named* place. A saved-places layer already
+exists (`saved_places()`, DEC-60) for resolving something like "home" to a
+specific saved spot per room. So a per-attendee route to the venue would be:
+for each RSVP'd person, check `saved_places()` for a saved "home"; if one
+exists, call `route(origin=<their saved place>, destination=venue_name,
+arrive_by=event.when)`; if not, that person simply gets no route — fail-closed
+(R-5), never a guessed origin from a stored position.
+
+This spec still descopes routes from v1 (matches the original decision to
+ship food + venue first), but the reserved extension point is **not** a wait
+for unbuilt infrastructure — it is scope discipline. `VenueSuggestions`
+still carries a `route_hints` field, `None` in this version, filled by a
+later revision that calls `saved_places()` + `route()` per attendee, under
+the same R-28 guard those tools already enforce.
 
 ### 5.2 Future optimization, not a dependency
 
