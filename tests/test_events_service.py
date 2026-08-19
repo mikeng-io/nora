@@ -486,3 +486,71 @@ async def test_venue_resolution_strips_a_google_returned_name_that_trips_the_scr
     assert updated.venue_name is None        # stripped: an identifier
     assert updated.venue_address is None      # stripped: a coordinate
     assert updated.venue_place_id == "ChIJfake456"  # untouched fields kept
+
+
+async def test_list_events_for_person_includes_created_and_rsvpd():
+    """Also proves list_events_for_person is NOT conversation-scoped —
+    "theirs" lives in a different conversation than "mine" and still
+    shows up, since miles RSVP'd to it."""
+    svc = _service()
+    mine = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    theirs = await svc.create_event(
+        conversation_id="discord:group-2", requester_person_id="daisy",
+        title="Movie",
+    )
+    await svc.rsvp(
+        event_id=theirs.id, conversation_id="discord:group-2",
+        person_id="miles", response=RSVPResponse.YES,
+    )
+    unrelated = await svc.create_event(
+        conversation_id="discord:group-2", requester_person_id="daisy",
+        title="Gym",
+    )
+
+    out = await svc.list_events_for_person(person_id="miles")
+    assert {e.id for e in out} == {mine.id, theirs.id}
+    assert unrelated.id not in {e.id for e in out}
+
+
+async def test_get_event_for_person_returns_event_when_creator():
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="miles",
+        title="Dinner",
+    )
+    out = await svc.get_event_for_person(event_id=ev.id, person_id="miles")
+    assert out is not None
+    assert out.id == ev.id
+
+
+async def test_get_event_for_person_returns_event_when_rsvpd():
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="daisy",
+        title="Dinner",
+    )
+    await svc.rsvp(
+        event_id=ev.id, conversation_id="signal:group-1",
+        person_id="miles", response=RSVPResponse.MAYBE,
+    )
+    out = await svc.get_event_for_person(event_id=ev.id, person_id="miles")
+    assert out is not None
+
+
+async def test_get_event_for_person_returns_none_when_not_a_participant():
+    svc = _service()
+    ev = await svc.create_event(
+        conversation_id="signal:group-1", requester_person_id="daisy",
+        title="Dinner",
+    )
+    out = await svc.get_event_for_person(event_id=ev.id, person_id="miles")
+    assert out is None
+
+
+async def test_get_event_for_person_returns_none_for_unknown_event():
+    svc = _service()
+    out = await svc.get_event_for_person(event_id=uuid.uuid4(), person_id="miles")
+    assert out is None

@@ -42,15 +42,14 @@ const EventDetailSchema = EventSchema.extend({
 });
 export type EventDetail = z.infer<typeof EventDetailSchema>;
 
-/** `conversation_id` is required by nora/web/api.py's `events_list` (400 if
- * missing) — the proxy route forwards it through untouched, so this throws
- * the same way `fetchServers()` does on a non-ok response rather than
- * papering over a 400 as "no events". */
-export async function fetchEvents(conversationId: string): Promise<Event[]> {
-  const res = await fetch(
-    `/api/events?conversation_id=${encodeURIComponent(conversationId)}`,
-    { cache: "no-store" },
-  );
+/** No conversation id — the list is participant-scoped, not
+ * conversation-scoped: `personId` (resolved server-side by the proxy
+ * route from the session, never client-supplied) is all `events_list`
+ * needs, and it already only returns events this person created or
+ * RSVP'd to. Throws on a non-ok response rather than papering over a 400
+ * as "no events", the same discipline `fetchServers()` uses. */
+export async function fetchEvents(): Promise<Event[]> {
+  const res = await fetch("/api/events", { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`fetchEvents failed: ${res.status}`);
   }

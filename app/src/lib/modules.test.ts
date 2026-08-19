@@ -6,7 +6,7 @@ describe("MODULES", () => {
     const ids = MODULES.map((m) => m.id);
     expect(new Set(ids).size).toBe(ids.length);
     const live = MODULES.filter((m) => m.status === "live").map((m) => m.id);
-    expect(live).toEqual(["status", "memory", "games", "map", "people"]);
+    expect(live).toEqual(["status", "memory", "games", "map", "people", "events"]);
   });
 
   it("every module has a leading-slash href", () => {

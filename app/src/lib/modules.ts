@@ -19,9 +19,8 @@ export const MODULES: Module[] = [
   { id: "games", labelKey: "games", href: "/games", status: "live" },
   { id: "map", labelKey: "map", href: "/map", status: "live" },
   { id: "people", labelKey: "people", href: "/people", status: "live" },
-  // "designed" (not "live"): the events LIST page requires a
-  // `?conversation_id=` query param nothing in the app can currently supply
-  // — no group/conversation picker exists yet, so a nav link would always
-  // land on the empty "pick a conversation" state with no way to pick one.
-  { id: "events", labelKey: "events", href: "/events", status: "designed" },
+  // Now participant-scoped (not conversation-scoped), so there's no
+  // group-picker gap left to block this — flipped from "designed" once
+  // fetchEvents() stopped needing a conversation_id.
+  { id: "events", labelKey: "events", href: "/events", status: "live" },
 ];

@@ -32,16 +32,20 @@ def _event_dict(event: Event) -> dict:
 
 
 async def build_events_payload(
-    *, events: EventService, conversation_id: str,
+    *, events: EventService, person_id: str,
 ) -> list[dict]:
-    out = await events.list_events(conversation_id=conversation_id)
+    """Not conversation-scoped, deliberately: every event `person_id`
+    created or RSVP'd to, across every group they're in. If they're not a
+    participant, they don't see it — the web app's whole authorization
+    model, simpler than a conversation-membership check and stricter."""
+    out = await events.list_events_for_person(person_id=person_id)
     return [_event_dict(e) for e in out]
 
 
 async def build_event_payload(
-    *, events: EventService, event_id: UUID,
+    *, events: EventService, event_id: UUID, person_id: str,
 ) -> dict | None:
-    event = await events.get_event(event_id=event_id)
+    event = await events.get_event_for_person(event_id=event_id, person_id=person_id)
     if event is None:
         return None
     rsvps = await events.rsvps_for(event_id=event_id)

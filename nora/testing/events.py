@@ -43,6 +43,16 @@ class FakeEventStore:
         ]
         return sorted(out, key=lambda e: e.created_at)
 
+    async def list_for_person(self, *, person_id: str) -> Sequence[Event]:
+        rsvpd_ids = {
+            eid for (eid, pid) in self._rsvps if pid == person_id
+        }
+        out = [
+            e for e in self._events.values()
+            if e.created_by == person_id or e.id in rsvpd_ids
+        ]
+        return sorted(out, key=lambda e: e.created_at)
+
     async def update(self, event: Event) -> None:
         row = normalise_event(event)
         if row.id not in self._events:

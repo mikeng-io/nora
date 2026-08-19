@@ -362,39 +362,31 @@ def register_web_routes(
         return web.json_response(body)
 
     async def events_list(request: web.Request) -> web.Response:
-        # Fix C1: an authenticated-but-anonymous-to-this-feature caller must
-        # not read another conversation's events by changing the query
-        # string. `personId` is required — the SAME convention `/app/v1/memory`
+        # `personId` is required — the SAME convention `/app/v1/memory`
         # already enforces (its own `person_id` param, resolved server-side by
         # the Next.js proxy from the session, never client-supplied) — and it
         # must resolve to a person this deployment actually knows, mirroring
         # `build_memory_payload`'s `persons.by_person.get(person_id)` check.
-        # This is the personId-required MINIMUM (spec §6's proxy pattern): it
-        # closes "any signed-in stranger can read any conversation's events",
-        # but does NOT yet verify the caller is a MEMBER of `conversation_id`
-        # specifically — there is no conversation-roster store this web
-        # request can consult (a live `Room` is per-turn, agent-layer-only,
-        # and not reachable from here). Closing that remaining gap needs new
-        # infrastructure this fix does not build.
+        # No `conversation_id` — this list is participant-scoped, not
+        # conversation-scoped: `build_events_payload` already only returns
+        # events `person_id` created or RSVP'd to, so there is nothing left
+        # for a query param to filter or leak.
         person_id = request.query.get("personId")
         if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
             return web.json_response(
                 {"status": "refused", "note": "a valid personId is required"},
                 status=400,
             )
-        conversation_id = request.query.get("conversation_id")
-        if not conversation_id:
-            return web.json_response(
-                {"status": "refused", "note": "conversation_id is required"},
-                status=400,
-            )
         body = await build_events_payload(
-            events=request.app["web_events"], conversation_id=conversation_id,
+            events=request.app["web_events"], person_id=person_id,
         )
         return web.json_response(body)
 
     async def events_detail(request: web.Request) -> web.Response:
-        # Fix C1: same personId-required minimum as `events_list` above.
+        # Same personId-required minimum as `events_list` above, PLUS
+        # participant scoping: `build_event_payload` returns `None` (→ 404,
+        # never a distinct "forbidden") unless `person_id` created this
+        # event or has an RSVP on it.
         person_id = request.query.get("personId")
         if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
             return web.json_response(
@@ -406,7 +398,7 @@ def register_web_routes(
         except ValueError:
             return web.json_response({"status": "refused", "note": "bad id"}, status=400)
         body = await build_event_payload(
-            events=request.app["web_events"], event_id=event_id,
+            events=request.app["web_events"], event_id=event_id, person_id=person_id,
         )
         if body is None:
             return web.json_response({"status": "not_found"}, status=404)

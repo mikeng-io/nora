@@ -266,7 +266,6 @@
     "loading": "Loading events…",
     "error": "Couldn't load events.",
     "empty": "No events yet — ask Nora to plan one in chat.",
-    "pickConversation": "Open this from a specific conversation to see its events.",
     "noVenue": "No venue yet",
     "back": "All events",
     "detailError": "Couldn't reach that event.",

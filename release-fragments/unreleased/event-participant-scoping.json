@@ -1,0 +1,13 @@
+{
+  "type": "feature",
+  "summary": "Events are now visible on the web app, scoped to whoever created or RSVP'd to them rather than requiring a conversation id nothing in the app could supply.",
+  "details": [
+    "New EventStore.list_for_person / EventService.list_events_for_person / get_event_for_person: an event shows up for a person if they created it or have an RSVP on it — across every conversation they're in, not just the one it started in.",
+    "GET /app/v1/events dropped its conversation_id requirement; both routes now enforce participant scoping (a valid personId who isn't a participant gets an empty list / 404, never someone else's event).",
+    "The Events nav entry flips from \"designed\" to \"live\" — the web app's events list/detail pages are now reachable from the portal nav."
+  ],
+  "limitations": [
+    "Someone in the group chat who hasn't RSVP'd yet won't see the event on the web page until they do — they still see it in chat via Nora's replies/reminders; this only affects the optional web view.",
+    "Chat-side tools (create_event/list_events/etc.) are unchanged — this only affects the web app's read surface."
+  ]
+}

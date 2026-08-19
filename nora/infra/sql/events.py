@@ -126,6 +126,22 @@ class SqlEventStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
 
+    async def list_for_person(self, *, person_id: str) -> Sequence[Event]:
+        rsvpd = sa.select(EVENT_RSVPS.c.event_id).where(
+            EVENT_RSVPS.c.person_id == person_id,
+        )
+        stmt = (
+            sa.select(EVENTS)
+            .where(sa.or_(
+                EVENTS.c.created_by == person_id,
+                EVENTS.c.id.in_(rsvpd),
+            ))
+            .order_by(EVENTS.c.created_at)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_row_to_event(r) for r in rows]
+
     async def update(self, event: Event) -> None:
         row = normalise_event(event)
         stmt = (

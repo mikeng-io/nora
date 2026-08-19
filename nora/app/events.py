@@ -212,6 +212,33 @@ class EventService:
     async def get_event(self, *, event_id: UUID) -> Event | None:
         return await self._store.get(event_id)
 
+    async def list_events_for_person(self, *, person_id: str) -> Sequence[Event]:
+        """The web app's ONLY read path (not conversation-scoped, unlike
+        `list_events`, which the chat tools use): every event `person_id`
+        created or RSVP'd to, across every conversation — deliberately not
+        limited to one group, so a friend group split across Discord and
+        Signal still sees the same event either way."""
+        return await self._store.list_for_person(person_id=person_id)
+
+    async def get_event_for_person(
+        self, *, event_id: UUID, person_id: str,
+    ) -> Event | None:
+        """The web app's per-event read: `None` (→ 404, never a distinct
+        "forbidden") unless `person_id` created this event or has an RSVP
+        on it — the same "an id from outside your scope reads as unknown"
+        discipline `_require_in_conversation` already applies for the chat
+        tools, applied here to event-level participation instead of
+        conversation membership."""
+        event = await self._store.get(event_id)
+        if event is None:
+            return None
+        if event.created_by == person_id:
+            return event
+        rsvps = await self._store.rsvps_for(event_id)
+        if any(r.person_id == person_id for r in rsvps):
+            return event
+        return None
+
     async def rsvps_for(self, *, event_id: UUID) -> Sequence[RSVP]:
         """Read-only RSVP projection for a given event — the public
         passthrough `nora.web.events` calls instead of reaching past the

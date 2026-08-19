@@ -21,6 +21,8 @@ from tests.fakes import FakeHoncho
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+DAISY = PersonRef(person_id="daisy", name="Daisy", honcho_peer_id="daisy")
+SAM = PersonRef(person_id="sam", name="Sam", honcho_peer_id="sam")
 # Deliberately absent — build_skills_payload's own "no skills configured"
 # state, not a fixture that needs real files on disk for tests unrelated
 # to /app/v1/skills.
@@ -518,7 +520,9 @@ async def client_with_events(aiohttp_client):
     register_web_routes(
         app, store=FakeRecordStore(), honcho=FakeHoncho(),
         reminders=FakeReminderStore(),
-        persons=Persons(by_person={"miles": MILES}, index={}),
+        persons=Persons(
+            by_person={"miles": MILES, "daisy": DAISY, "sam": SAM}, index={},
+        ),
         ai_peer="nora", started_at=0.0,
         games_client=None,
         presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
@@ -529,10 +533,9 @@ async def client_with_events(aiohttp_client):
 
 
 async def test_events_list_route_returns_the_seeded_event(client_with_events):
+    """`miles` created it — creator is always a participant."""
     web_client, event = client_with_events
-    resp = await web_client.get(
-        "/app/v1/events?conversation_id=signal:group-1&personId=miles",
-    )
+    resp = await web_client.get("/app/v1/events?personId=miles")
     assert resp.status == 200
     body = await resp.json()
     assert len(body) == 1
@@ -541,34 +544,42 @@ async def test_events_list_route_returns_the_seeded_event(client_with_events):
     assert body[0]["status"] == "proposed"
 
 
-async def test_events_list_route_without_conversation_id_is_400(client):
-    """No `conversation_id` query param at all — not an empty list, a
-    refusal, matching `events_list`'s own contract in nora/web/api.py."""
-    resp = await client.get("/app/v1/events?personId=miles")
-    assert resp.status == 400
+async def test_events_list_route_includes_events_ive_only_rsvpd_to(client_with_events):
+    """`daisy` never created anything — she RSVP'd `yes`, which is enough."""
+    web_client, event = client_with_events
+    resp = await web_client.get("/app/v1/events?personId=daisy")
+    assert resp.status == 200
     body = await resp.json()
-    assert body["status"] == "refused"
+    assert [e["id"] for e in body] == [str(event.id)]
+
+
+async def test_events_list_route_excludes_events_im_not_part_of(client_with_events):
+    """`sam` neither created nor RSVP'd — participant-scoping, not just
+    auth: a valid personId that isn't a participant sees an empty list,
+    not a 400 and not someone else's event."""
+    web_client, _event = client_with_events
+    resp = await web_client.get("/app/v1/events?personId=sam")
+    assert resp.status == 200
+    body = await resp.json()
+    assert body == []
 
 
 async def test_events_list_route_without_person_id_is_400(client_with_events):
-    """Fix C1: no `personId` at all — a client-supplied conversation_id
-    with no session-resolved identity behind it must not read the events,
-    matching the personId-required convention `/app/v1/memory` set."""
+    """No `personId` at all — a caller with no session-resolved identity
+    must not read anything, matching `/app/v1/memory`'s convention."""
     web_client, _event = client_with_events
-    resp = await web_client.get("/app/v1/events?conversation_id=signal:group-1")
+    resp = await web_client.get("/app/v1/events")
     assert resp.status == 400
     body = await resp.json()
     assert body["status"] == "refused"
 
 
 async def test_events_list_route_with_an_unknown_person_id_is_400(client_with_events):
-    """Fix C1: a `personId` that does not resolve to a known person (this
+    """A `personId` that does not resolve to a known person (this
     deployment's `identity.toml`) is refused exactly like a missing one —
     an unresolvable identity is not a real, session-backed caller."""
     web_client, _event = client_with_events
-    resp = await web_client.get(
-        "/app/v1/events?conversation_id=signal:group-1&personId=not-a-real-person",
-    )
+    resp = await web_client.get("/app/v1/events?personId=not-a-real-person")
     assert resp.status == 400
     body = await resp.json()
     assert body["status"] == "refused"
@@ -584,9 +595,18 @@ async def test_events_detail_route_returns_the_event_with_rsvps(client_with_even
     assert body["rsvps"] == [{"person_id": "daisy", "response": "yes"}]
 
 
+async def test_events_detail_route_404s_when_im_not_a_participant(client_with_events):
+    """`sam` is a valid, known person — just not part of THIS event. Must
+    read exactly like the event doesn't exist (404), never a distinct
+    "forbidden" that would confirm the id is real."""
+    web_client, event = client_with_events
+    resp = await web_client.get(f"/app/v1/events/{event.id}?personId=sam")
+    assert resp.status == 404
+
+
 async def test_events_detail_route_without_person_id_is_400(client_with_events):
-    """Fix C1: same personId-required minimum as the list route — this is
-    the route that leaks a specific event's RSVPs (a list of person_ids) to
+    """Same personId-required minimum as the list route — this is the
+    route that leaks a specific event's RSVPs (a list of person_ids) to
     anyone who can guess or enumerate an event id."""
     web_client, event = client_with_events
     resp = await web_client.get(f"/app/v1/events/{event.id}")

@@ -140,6 +140,52 @@ async def test_list_for_conversation_scopes_to_conversation(store):
     assert [e.id for e in out] == [here.id]
 
 
+async def test_list_for_person_includes_events_i_created(store):
+    mine = _event(conversation_id="signal:group-5", created_by="miles")
+    someone_elses = _event(conversation_id="signal:group-5", created_by="daisy")
+    await store.create(mine)
+    await store.create(someone_elses)
+
+    out = await store.list_for_person(person_id="miles")
+    assert [e.id for e in out] == [mine.id]
+
+
+async def test_list_for_person_includes_events_i_rsvpd_to(store):
+    ev = _event(conversation_id="signal:group-6", created_by="daisy")
+    await store.create(ev)
+    await store.add_rsvp(RSVP(
+        event_id=ev.id, person_id="miles", response=RSVPResponse.YES,
+        responded_at=datetime(2026, 8, 19, 13, 0, tzinfo=UTC),
+    ))
+
+    out = await store.list_for_person(person_id="miles")
+    assert [e.id for e in out] == [ev.id]
+
+
+async def test_list_for_person_excludes_events_im_not_part_of(store):
+    ev = _event(conversation_id="signal:group-7", created_by="daisy")
+    await store.create(ev)
+    await store.add_rsvp(RSVP(
+        event_id=ev.id, person_id="sam", response=RSVPResponse.YES,
+        responded_at=datetime(2026, 8, 19, 13, 0, tzinfo=UTC),
+    ))
+
+    out = await store.list_for_person(person_id="miles")
+    assert out == []
+
+
+async def test_list_for_person_deduplicates_creator_who_also_rsvpd(store):
+    ev = _event(conversation_id="signal:group-8", created_by="miles")
+    await store.create(ev)
+    await store.add_rsvp(RSVP(
+        event_id=ev.id, person_id="miles", response=RSVPResponse.YES,
+        responded_at=datetime(2026, 8, 19, 13, 0, tzinfo=UTC),
+    ))
+
+    out = await store.list_for_person(person_id="miles")
+    assert [e.id for e in out] == [ev.id]
+
+
 async def test_update_persists_changes(store):
     ev = _event()
     await store.create(ev)
