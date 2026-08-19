@@ -494,7 +494,8 @@ async def client_with_events(aiohttp_client):
         title="Dinner",
     )
     await events_service.rsvp(
-        event_id=event.id, person_id="daisy", response=RSVPResponse.YES,
+        event_id=event.id, conversation_id="signal:group-1",
+        person_id="daisy", response=RSVPResponse.YES,
     )
     app = web.Application()
     register_web_routes(
@@ -512,7 +513,9 @@ async def client_with_events(aiohttp_client):
 
 async def test_events_list_route_returns_the_seeded_event(client_with_events):
     web_client, event = client_with_events
-    resp = await web_client.get("/app/v1/events?conversation_id=signal:group-1")
+    resp = await web_client.get(
+        "/app/v1/events?conversation_id=signal:group-1&personId=miles",
+    )
     assert resp.status == 200
     body = await resp.json()
     assert len(body) == 1
@@ -524,7 +527,31 @@ async def test_events_list_route_returns_the_seeded_event(client_with_events):
 async def test_events_list_route_without_conversation_id_is_400(client):
     """No `conversation_id` query param at all — not an empty list, a
     refusal, matching `events_list`'s own contract in nora/web/api.py."""
-    resp = await client.get("/app/v1/events")
+    resp = await client.get("/app/v1/events?personId=miles")
+    assert resp.status == 400
+    body = await resp.json()
+    assert body["status"] == "refused"
+
+
+async def test_events_list_route_without_person_id_is_400(client_with_events):
+    """Fix C1: no `personId` at all — a client-supplied conversation_id
+    with no session-resolved identity behind it must not read the events,
+    matching the personId-required convention `/app/v1/memory` set."""
+    web_client, _event = client_with_events
+    resp = await web_client.get("/app/v1/events?conversation_id=signal:group-1")
+    assert resp.status == 400
+    body = await resp.json()
+    assert body["status"] == "refused"
+
+
+async def test_events_list_route_with_an_unknown_person_id_is_400(client_with_events):
+    """Fix C1: a `personId` that does not resolve to a known person (this
+    deployment's `identity.toml`) is refused exactly like a missing one —
+    an unresolvable identity is not a real, session-backed caller."""
+    web_client, _event = client_with_events
+    resp = await web_client.get(
+        "/app/v1/events?conversation_id=signal:group-1&personId=not-a-real-person",
+    )
     assert resp.status == 400
     body = await resp.json()
     assert body["status"] == "refused"
@@ -532,7 +559,7 @@ async def test_events_list_route_without_conversation_id_is_400(client):
 
 async def test_events_detail_route_returns_the_event_with_rsvps(client_with_events):
     web_client, event = client_with_events
-    resp = await web_client.get(f"/app/v1/events/{event.id}")
+    resp = await web_client.get(f"/app/v1/events/{event.id}?personId=miles")
     assert resp.status == 200
     body = await resp.json()
     assert body["id"] == str(event.id)
@@ -540,13 +567,24 @@ async def test_events_detail_route_returns_the_event_with_rsvps(client_with_even
     assert body["rsvps"] == [{"person_id": "daisy", "response": "yes"}]
 
 
+async def test_events_detail_route_without_person_id_is_400(client_with_events):
+    """Fix C1: same personId-required minimum as the list route — this is
+    the route that leaks a specific event's RSVPs (a list of person_ids) to
+    anyone who can guess or enumerate an event id."""
+    web_client, event = client_with_events
+    resp = await web_client.get(f"/app/v1/events/{event.id}")
+    assert resp.status == 400
+    body = await resp.json()
+    assert body["status"] == "refused"
+
+
 async def test_events_detail_route_404s_for_a_missing_event(client_with_events):
     web_client, _event = client_with_events
-    resp = await web_client.get(f"/app/v1/events/{uuid4()}")
+    resp = await web_client.get(f"/app/v1/events/{uuid4()}?personId=miles")
     assert resp.status == 404
 
 
 async def test_events_detail_route_400s_for_a_malformed_id(client_with_events):
     web_client, _event = client_with_events
-    resp = await web_client.get("/app/v1/events/not-a-uuid")
+    resp = await web_client.get("/app/v1/events/not-a-uuid?personId=miles")
     assert resp.status == 400

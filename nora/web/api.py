@@ -347,6 +347,26 @@ def register_web_routes(
         return web.json_response(body)
 
     async def events_list(request: web.Request) -> web.Response:
+        # Fix C1: an authenticated-but-anonymous-to-this-feature caller must
+        # not read another conversation's events by changing the query
+        # string. `personId` is required — the SAME convention `/app/v1/memory`
+        # already enforces (its own `person_id` param, resolved server-side by
+        # the Next.js proxy from the session, never client-supplied) — and it
+        # must resolve to a person this deployment actually knows, mirroring
+        # `build_memory_payload`'s `persons.by_person.get(person_id)` check.
+        # This is the personId-required MINIMUM (spec §6's proxy pattern): it
+        # closes "any signed-in stranger can read any conversation's events",
+        # but does NOT yet verify the caller is a MEMBER of `conversation_id`
+        # specifically — there is no conversation-roster store this web
+        # request can consult (a live `Room` is per-turn, agent-layer-only,
+        # and not reachable from here). Closing that remaining gap needs new
+        # infrastructure this fix does not build.
+        person_id = request.query.get("personId")
+        if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
+            return web.json_response(
+                {"status": "refused", "note": "a valid personId is required"},
+                status=400,
+            )
         conversation_id = request.query.get("conversation_id")
         if not conversation_id:
             return web.json_response(
@@ -359,6 +379,13 @@ def register_web_routes(
         return web.json_response(body)
 
     async def events_detail(request: web.Request) -> web.Response:
+        # Fix C1: same personId-required minimum as `events_list` above.
+        person_id = request.query.get("personId")
+        if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
+            return web.json_response(
+                {"status": "refused", "note": "a valid personId is required"},
+                status=400,
+            )
         try:
             event_id = UUID(request.match_info["id"])
         except ValueError:
