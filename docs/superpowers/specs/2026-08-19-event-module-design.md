@@ -87,12 +87,12 @@ on `nora.domain.reminders` for the linked-series relationship. It is not
 under the `nora.analytics` neutrality contract (`design/proposed/27-presence-analytics.md`
 §1.1) and needs no import-linter carve-out.
 
-## 2. Data model — migration `0016_events`
+## 2. Data model — migration `0015_events`
 
-(Latest on disk as of this writing is `0014_lang_obs_scope_idx.py`;
-`0015_presence_analytics` is reserved by the proposed presence-analytics
-spec but not yet landed. `0016` assumes it lands first — take whatever the
-next free number actually is at implementation time.)
+(`0015_presence_analytics`, which an earlier draft of this spec assumed
+would land first, has not — `0015` was free and this module took it. See
+the implementation plan, `docs/superpowers/plans/2026-08-19-event-module.md`,
+for the actual migration.)
 
     Event
       id                 UUID, pk

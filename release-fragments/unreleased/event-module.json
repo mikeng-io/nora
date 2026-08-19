@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Nora can now plan gatherings — dinners, outings — with RSVP tracking and reminders, entirely through chat.",
+  "details": [
+    "create_event/update_event/rsvp_event/cancel_event/list_events/suggest_venue tools, chat-first per docs/superpowers/specs/2026-08-19-event-module-design.md.",
+    "Venue data (rating, price level, address, a Maps link) is resolved once via the existing Places infra and cached, not re-queried on every read.",
+    "A read-only /events web view shows event and RSVP status.",
+    "An event with a time owns a one-shot reminder via the existing reminders fire path — no new scheduling."
+  ],
+  "limitations": [
+    "Route/ETA recommendations are not included — reserved for a later revision (spec §5.1).",
+    "The web app is view-only; all creation and changes happen through chat."
+  ]
+}
