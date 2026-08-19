@@ -181,6 +181,12 @@ class EventService:
     async def get_event(self, *, event_id: UUID) -> Event | None:
         return await self._store.get(event_id)
 
+    async def rsvps_for(self, *, event_id: UUID) -> Sequence[RSVP]:
+        """Read-only RSVP projection for a given event — the public
+        passthrough `nora.web.events` calls instead of reaching past the
+        underscore into `self._store` directly."""
+        return await self._store.rsvps_for(event_id)
+
     async def suggest_venue(
         self, *, event_id: UUID, roster_person_ids: Sequence[str],
     ) -> VenueSuggestions:

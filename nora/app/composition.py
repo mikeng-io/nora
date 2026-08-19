@@ -379,6 +379,13 @@ class Dependencies:
     language_store: SqlLanguageStore | None
     language_consolidators: tuple[RoomConsolidator, ...]
     language_scopes: Callable[[], Sequence[str]]
+    # The SAME `EventService` built above alongside `event_store`/
+    # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
+    # exposed here too so `nora.web.api.register_web_routes`'s read-only
+    # `/app/v1/events(/{id})` pair serves from the identical instance the
+    # agent's event tools use, rather than a second `EventService` over the
+    # same store.
+    events: EventService
 
 
 async def build_dependencies(cfg: Config) -> Dependencies:
@@ -1403,6 +1410,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         skills_dir=cfg.doctrine.dir.parent / "skills",
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
+        events=events,
     )
 
 

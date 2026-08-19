@@ -5,10 +5,13 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nora.agent.whereis import Circle
+from nora.app.events import EventService
 from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, WireState
+from nora.domain.reminders import ReminderCaps
 from nora.persons import Persons
 from nora.testing import FakeRecordStore
+from nora.testing.events import FakeEventStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.games import PulseGamesClient
@@ -20,6 +23,18 @@ ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
 # state, not a fixture that needs real files on disk for tests unrelated
 # to /app/v1/skills.
 NO_SKILLS_DIR = Path("/nonexistent-skills-dir-for-tests")
+
+
+def _fake_events() -> EventService:
+    """A minimal, always-`unavailable`-for-venue-suggestion `EventService`
+    (`route_source`/`honcho` both `None`) — these fixtures only exercise
+    routes unrelated to Event, so the real shape doesn't matter, just that
+    `register_web_routes` receives a real `EventService` instance."""
+    return EventService(
+        store=FakeEventStore(), reminders=FakeReminderStore(),
+        reminder_caps=ReminderCaps(), route_source=None, honcho=None,
+        ai_peer="nora",
+    )
 
 
 class FakePresenceReader:
@@ -56,6 +71,7 @@ async def client(aiohttp_client):
         # routes must degrade to 503, never fabricate 200s.
         games_client=None,
         presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
+        events=_fake_events(),
     )
     return await aiohttp_client(app)
 
@@ -255,6 +271,7 @@ async def client_with_games(aiohttp_client, pulse_server):
             token="test-token", base_url=base_url, timeout_seconds=5.0,  # noqa: S106
         ),
         presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
+        events=_fake_events(),
     )
     return await aiohttp_client(app)
 
@@ -407,6 +424,7 @@ async def client_with_presence(aiohttp_client):
         ai_peer="nora", started_at=0.0,
         games_client=None,
         presence=reader, presence_circles=(circle,), skills_dir=NO_SKILLS_DIR,
+        events=_fake_events(),
     )
     return await aiohttp_client(app)
 
