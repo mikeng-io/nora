@@ -30,6 +30,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -55,6 +56,7 @@ ADD CONSTRAINT presence_stays_pkey PRIMARY KEY (id);
 ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
 ADD CONSTRAINT room_exchange_pkey PRIMARY KEY (scope_id, act, participants);
 ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
+ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
 ADD CONSTRAINT sticker_index_pkey PRIMARY KEY (platform, fetch_token);
 ADD CONSTRAINT tool_call_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT uq_occupancy_bin UNIQUE (subject_id, place_id, hour_of_week);
@@ -85,6 +87,7 @@ ALTER TABLE ONLY public.presence_stays
 ALTER TABLE ONLY public.reminders
 ALTER TABLE ONLY public.room_exchange
 ALTER TABLE ONLY public.room_lexeme
+ALTER TABLE ONLY public.room_portrait
 ALTER TABLE ONLY public.sticker_index
 ALTER TABLE ONLY public.tool_call_log
 ALTER TABLE ONLY public.version_announcements
@@ -152,6 +155,7 @@ CREATE TABLE public.presence_stays (
 CREATE TABLE public.reminders (
 CREATE TABLE public.room_exchange (
 CREATE TABLE public.room_lexeme (
+CREATE TABLE public.room_portrait (
 CREATE TABLE public.sticker_index (
 CREATE TABLE public.tool_call_log (
 CREATE TABLE public.version_announcements (
@@ -244,6 +248,7 @@ error text,
 event_id uuid NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
+exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
 expires_at bigint
 extractor_confidence double precision NOT NULL
 extractor_confidence double precision NOT NULL,
@@ -284,6 +289,7 @@ lat double precision NOT NULL,
 lat double precision NOT NULL,
 lat double precision NOT NULL,
 lat_rounded double precision NOT NULL,
+lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
 lng double precision NOT NULL,
 lng double precision NOT NULL,
 lng double precision NOT NULL,
@@ -298,6 +304,7 @@ message_id integer NOT NULL,
 message_ids integer[] NOT NULL,
 model text NOT NULL,
 name text NOT NULL,
+narrative text NOT NULL,
 observed_at bigint NOT NULL,
 observed_at bigint NOT NULL,
 occurrence integer DEFAULT 0 NOT NULL,
@@ -349,6 +356,7 @@ scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
+scope_id text NOT NULL,
 sender_id text NOT NULL,
 sender_name text,
 sense text NOT NULL,
@@ -374,6 +382,7 @@ subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
 surface_form text NOT NULL,
+synthesized_at bigint NOT NULL
 tag_id text NOT NULL,
 task text NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,

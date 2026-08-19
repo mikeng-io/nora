@@ -14,6 +14,7 @@ from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
 from ..language.exchange_render import render_room_exchange
+from ..language.portrait_render import render_room_portrait
 from ..language.render import render_room_language
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
@@ -447,6 +448,16 @@ def _room_exchange_block(ctx: TagContext, *, max_entries: int) -> str:
     return f"{block}\n" if block else ""
 
 
+def _room_portrait_block(ctx: TagContext) -> str:
+    """Dreamer Plan 3's own sibling of `_room_language_block`/
+    `_room_exchange_block` — same volatile-tier placement, same trailing-
+    newline convention, `""` when empty. No `max_entries` parameter: a
+    portrait is one row per scope, not a top-N list (see
+    `render_room_portrait`'s own docstring)."""
+    block = render_room_portrait(ctx.room_portrait)
+    return f"{block}\n" if block else ""
+
+
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
@@ -500,6 +511,7 @@ def build_prefill(
             + _peer_history_block(ctx)
             + _room_language_block(ctx, max_entries=room_language_max_entries)
             + _room_exchange_block(ctx, max_entries=room_exchange_max_entries)
+            + _room_portrait_block(ctx)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),

@@ -9,7 +9,15 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from nora.agent.tools import NATIVE_TOOLS
 from nora.domain.media import MediaRef
-from nora.domain.models import NormalizedMessage
+from nora.domain.models import (
+    ExchangeExample,
+    LexemeExample,
+    NormalizedMessage,
+    RoomExchange,
+    RoomExchangePattern,
+    RoomLanguage,
+    RoomLexeme,
+)
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -17,6 +25,7 @@ from nora.infra.sql.schema import ROOM_EXCHANGE
 from nora.ingest.stages import media as media_stage
 from nora.ingest.stickers import StickerReader
 from nora.language.exchange_observer import _parse_item
+from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.metrics import Metrics
 from nora.platform.registry import MediaSourceRegistry
 from nora.testing import (
@@ -250,6 +259,15 @@ RULE_TESTS = {
     # gloss field exists (a closed-set `act` only), and the database refuses
     # any row naming fewer than two people.
     "DEC-120": "test_exchange_pattern_cannot_attribute_a_disposition_to_a_person",
+    # DEC-121 (Dreamer Plan 3, room portrait): the narrative-construction
+    # function cannot be called with participant/speaker identity —
+    # `_LexemeFact`/`_ExchangeFact` carry no `person_id`/`participants`
+    # field, so identity is stripped at the TYPE boundary before any
+    # narrative string is built, proved behaviourally against the real
+    # synthesizer (a `CHECK` cannot forbid "contains a person's id" in a
+    # free-text column, so this is the type-boundary sibling of DEC-120's
+    # DB-CHECK guarantee, not a weaker substitute for it).
+    "DEC-121": "test_room_portrait_narrative_cannot_reference_a_person",
 }
 
 
@@ -390,6 +408,69 @@ async def test_exchange_pattern_cannot_attribute_a_disposition_to_a_person(pg_ur
             await _insert_one_participant()
     finally:
         await engine.dispose()
+
+
+async def test_room_portrait_narrative_cannot_reference_a_person():
+    """DEC-121. The behavioural, grounded version of the guarantee (R-27:
+    bind to the real property) — a `CHECK` cannot forbid "contains a
+    person's id" in `room_portrait.narrative` (free text), so this proves it
+    the way DEC-111's own test does for `is_nora`: at the layer that cannot
+    be bypassed, which here is the REAL synthesizer, not a mock of it.
+
+    `LexemeExample.person_id` and `RoomExchangePattern.participants` both
+    carry a deliberately identifiable marker; if `PortraitSynthesizer` ever
+    started threading either field into `_build_narrative` (directly, or by
+    widening `_LexemeFact`/`_ExchangeFact` to carry it), this test goes red.
+    """
+    marker = "WITNESS_MARKER_person_should_never_appear"
+
+    class _FakeLanguageReader:
+        async def room_language(self, *, scope_id: str, limit: int) -> RoomLanguage:
+            return RoomLanguage(scope_id=scope_id, lexemes=(
+                RoomLexeme(
+                    canonical_form="big walk", sense="a group hike", occurrence_count=3,
+                    distinct_speakers=2, first_seen_ms=1, last_seen_ms=2, state="live",
+                    examples=(
+                        LexemeExample(message_id=1, person_id=marker, text="big walk?"),
+                    ),
+                ),
+            ))
+
+    class _FakeExchangeReader:
+        async def room_exchange(self, *, scope_id: str, limit: int) -> RoomExchange:
+            return RoomExchange(scope_id=scope_id, patterns=(
+                RoomExchangePattern(
+                    act="banter", participants=(marker, "someone_else"),
+                    occurrence_count=4, first_seen_ms=1, last_seen_ms=2, state="live",
+                    examples=(
+                        ExchangeExample(message_id=1, person_id=marker, text="lol stop"),
+                    ),
+                ),
+            ))
+
+    class _FakePortraitStore:
+        def __init__(self) -> None:
+            self.narrative: str | None = None
+
+        async def upsert_portrait(
+            self, *, scope_id: str, narrative: str,
+            lexeme_basis: tuple[str, ...], exchange_basis: tuple[str, ...],
+        ) -> None:
+            self.narrative = narrative
+
+    store = _FakePortraitStore()
+    synthesizer = PortraitSynthesizer(
+        language=_FakeLanguageReader(), exchange=_FakeExchangeReader(), store=store,
+        max_rendered_lexemes=6, max_rendered_exchanges=4,
+    )
+    await synthesizer.synthesize(scope_id="g1")
+
+    assert store.narrative is not None and store.narrative != "", (
+        "the synthesizer should have produced a narrative from real material"
+    )
+    assert marker not in store.narrative, (
+        f"a person identifier leaked into the room portrait narrative: {store.narrative!r}"
+    )
 
 
 def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():

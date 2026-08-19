@@ -28,6 +28,7 @@ from nora.domain.models import (
     PersonRef,
     RoomExchange,
     RoomLanguage,
+    RoomPortrait,
     TagContext,
     TranscriptRow,
 )
@@ -37,6 +38,7 @@ from nora.domain.ports import (
     RecordStore,
     RoomExchangeReader,
     RoomLanguageReader,
+    RoomPortraitReader,
 )
 from nora.persons import Persons
 
@@ -77,6 +79,7 @@ class TranscriptInjection:
         room_language_store_limit: int = DEFAULT_ROOM_LANGUAGE_STORE_LIMIT,
         exchange: RoomExchangeReader | None = None,
         room_exchange_store_limit: int = DEFAULT_ROOM_EXCHANGE_STORE_LIMIT,
+        portrait: RoomPortraitReader | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -95,6 +98,7 @@ class TranscriptInjection:
         self._room_language_store_limit = room_language_store_limit
         self._exchange = exchange
         self._room_exchange_store_limit = room_exchange_store_limit
+        self._portrait = portrait
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -111,20 +115,36 @@ class TranscriptInjection:
         # already there and the turn gets FASTER than before the block existed.
         #
         # Every helper is written not to raise, which is what makes `gather` safe
-        # here: one exception would otherwise cancel its four siblings and take
+        # here: one exception would otherwise cancel its six siblings and take
         # the turn down with it. That is the same property `MemoryStore`'s
         # "never load-bearing" rule already claims — this just stops relying on
-        # the adapter to honour it. `_room_language` is the fifth sibling
-        # (Task 10) and holds the same property.
+        # the adapter to honour it. `_room_language` (Task 10), `_room_exchange`
+        # (Dreamer Plan 2) and `_room_portrait` (Dreamer Plan 3) all hold the
+        # same property.
+        # NESTED gather, not one flat call: `asyncio.gather`'s stub only has
+        # distinctly-typed overloads up to six positional awaitables — a
+        # SEVENTH (`_room_portrait`, Dreamer Plan 3) falls through to the
+        # homogeneous `Future[list[_T]]` overload, where mypy joins all seven
+        # return types down to `object`. Nesting keeps every branch within
+        # the typed overloads AND keeps all seven leaf reads scheduled in the
+        # same wave: the outer `gather` wraps each inner `gather(...)`
+        # coroutine into a `Task` immediately, so the inner ones' own
+        # children start concurrently too — nothing here becomes sequential.
         (
-            transcript, card, self_card, tagger_card, room_language, room_exchange,
+            (transcript, card, self_card, tagger_card),
+            (room_language, room_exchange, room_portrait),
         ) = await asyncio.gather(
-            self._recent(msg),
-            self._peer_card(ref, msg),
-            self._recall_self(msg),
-            self._recall_tagger(ref, msg),
-            self._room_language(msg),
-            self._room_exchange(msg),
+            asyncio.gather(
+                self._recent(msg),
+                self._peer_card(ref, msg),
+                self._recall_self(msg),
+                self._recall_tagger(ref, msg),
+            ),
+            asyncio.gather(
+                self._room_language(msg),
+                self._room_exchange(msg),
+                self._room_portrait(msg),
+            ),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
@@ -141,6 +161,7 @@ class TranscriptInjection:
             tagger_card=tagger_card,
             room_language=room_language,
             room_exchange=room_exchange,
+            room_portrait=room_portrait,
         )
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
@@ -326,3 +347,19 @@ class TranscriptInjection:
             self._metrics.inc(
                 "nora_errors_total", stage="room_exchange", platform=msg.platform)
             return RoomExchange(scope_id=msg.conversation_id)
+
+    async def _room_portrait(self, msg: NormalizedMessage) -> RoomPortrait:
+        """Dreamer Plan 3's own sibling of `_room_language`/`_room_exchange`
+        — same reasoning, same guard. No store-limit parameter: unlike its
+        two siblings, `RoomPortraitReader.room_portrait` takes no `limit` —
+        a portrait is one row per scope by construction, not a top-N read
+        (see `nora.language.portrait_synthesizer`'s module docstring)."""
+        if self._portrait is None:
+            return RoomPortrait(scope_id=msg.conversation_id)
+        try:
+            return await self._portrait.room_portrait(scope_id=msg.conversation_id)
+        except Exception:
+            log.exception("room-portrait read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="room_portrait", platform=msg.platform)
+            return RoomPortrait(scope_id=msg.conversation_id)

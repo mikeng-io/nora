@@ -831,6 +831,25 @@ ROOM_EXCHANGE = sa.Table(
     ),
 )
 
+# Dreamer Plan 3 (2026-08-20 room-portrait design). One row per scope, UPSERT
+# — not append-only like the evidence/consolidated pairs above: a portrait has
+# no evidence layer of its own, it is entirely re-derived from Plan 1/2's
+# already-durable state on every trigger, so there is nothing to accumulate
+# and no watermark row (no `consolidator_name` key here at all — see the
+# design doc's "Trigger shape" for why this is not a `RoomConsolidator`).
+# `lexeme_basis`/`exchange_basis` store `canonical_form`/`act` only — the same
+# non-identifying vocabulary Plan 1/2 already proved safe — kept purely for
+# operator audit of what a narrative was built from, never rendered to her.
+ROOM_PORTRAIT = sa.Table(
+    "room_portrait",
+    METADATA,
+    sa.Column("scope_id", sa.Text, primary_key=True),
+    sa.Column("narrative", sa.Text, nullable=False),
+    sa.Column("lexeme_basis", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
+    sa.Column("exchange_basis", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
+    sa.Column("synthesized_at", sa.BigInteger, nullable=False),
+)
+
 # Serves the dream cycle's lag query EXACTLY:
 #   count(*) where conversation_id = :c and id > :watermark and is_nora = 0
 # `idx_messages_conv_ts` is (conversation_id, ts DESC) and carries neither `id`
