@@ -3,7 +3,7 @@ gains a second implementation — including a test fake — without a shared
 contract suite both pass."""
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -21,6 +21,11 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.testing.events import FakeEventStore
 
 pytestmark = pytest.mark.asyncio
+
+# This repo's own downstream clock is +08:00 (`nora.agent.tools._HKT`,
+# `ReminderCaps.timezone` default is Asia/Hong_Kong), so an offset that is
+# NOT UTC is the realistic input, not an exotic one.
+HKT = timezone(timedelta(hours=8), "HKT")
 
 
 def _event(**overrides) -> Event:
@@ -81,11 +86,33 @@ async def test_duplicate_create_raises(store):
 
 
 async def test_stored_datetimes_come_back_utc_aware(store):
-    ev = _event()
+    """UTC-AWARE IS THE CONTRACT, on the way in and on the way out.
+
+    A `timestamptz` column normalises to UTC and asyncpg hands the value back
+    with `tzinfo=UTC`; an in-memory dict hands back exactly the object it was
+    given. Both are "correct" instants, so `==` compares equal and cannot see
+    the difference — `utcoffset()` is what differs. Feed a +08:00 aware event
+    (this repo's own clock) and a store that only tags tzinfo rather than
+    normalising it would still pass a bare `tzinfo is not None` check while
+    printing the wrong hour downstream.
+    """
+    when_hkt = datetime(2026, 8, 22, 20, 0, tzinfo=HKT)
+    created_hkt = datetime(2026, 8, 19, 9, 0, tzinfo=HKT)
+    ev = _event(when=when_hkt, created_at=created_hkt)
     await store.create(ev)
+
     back = await store.get(ev.id)
-    assert back.when.tzinfo is not None
-    assert back.created_at.tzinfo is not None
+    assert back is not None
+    for label, value in (("when", back.when), ("created_at", back.created_at)):
+        assert value.tzinfo is not None
+        assert value.utcoffset() == timedelta(0), f"{label} is not UTC-normalised"
+
+    # Same instants, and the digits a downstream formatter would print are
+    # UTC's: 20:00+08:00 -> 12:00 UTC, 09:00+08:00 -> 01:00 UTC.
+    assert back.when == when_hkt
+    assert back.when.hour == 12
+    assert back.created_at == created_hkt
+    assert back.created_at.hour == 1
 
 
 async def test_list_for_conversation_filters_by_status(store):
