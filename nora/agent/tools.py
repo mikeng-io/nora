@@ -56,14 +56,16 @@ from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import Protocol
 from uuid import UUID
 
+from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
-from nora.agent.security import scan_identifiers
+from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_place
 
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from ..domain.events import (
     RSVP,
     AmbiguousOpenEventsError,
     Event,
+    EventCancelledError,
     EventNotFoundError,
     EventStatus,
     RSVPResponse,
@@ -1154,13 +1156,6 @@ def _known_names(persons) -> frozenset[str]:
     return frozenset(names)
 
 
-def _names_a_person(text: str, names: frozenset[str]) -> bool:
-    """Whether a route argument names a known person. Substring, because a home
-    address is phrased AROUND a name (「陳生屋企」), not as one."""
-    key = _key(text)
-    return any(name in key for name in names)
-
-
 def _count_known_names(text: str, names: frozenset[str]) -> int:
     """How many distinct known person-names/aliases appear in `text`.
 
@@ -1259,25 +1254,32 @@ class EventsCollaborator(Protocol):
     async def create_event(
         self, *, conversation_id: str, requester_person_id: str, title: str,
         when: datetime | None = None, venue_text: str | None = None,
+        person_names: frozenset[str] | None = None,
     ) -> Event: ...
 
     async def update_event(
-        self, *, event_id: UUID, when: datetime | None = None,
-        venue_text: str | None = None,
+        self, *, event_id: UUID, conversation_id: str,
+        when: datetime | None = None, venue_text: str | None = None,
+        person_names: frozenset[str] | None = None,
     ) -> Event: ...
 
     async def rsvp(
-        self, *, event_id: UUID, person_id: str, response: RSVPResponse,
+        self, *, event_id: UUID, conversation_id: str, person_id: str,
+        response: RSVPResponse,
     ) -> RSVP: ...
 
-    async def cancel_event(self, *, event_id: UUID) -> Event: ...
+    async def cancel_event(
+        self, *, event_id: UUID, conversation_id: str,
+    ) -> Event: ...
 
     async def list_events(
         self, *, conversation_id: str, status: EventStatus | None = None,
     ) -> Sequence[Event]: ...
 
     async def suggest_venue(
-        self, *, event_id: UUID, roster_person_ids: Sequence[str],
+        self, *, event_id: UUID, conversation_id: str,
+        roster_person_ids: Sequence[str],
+        person_names: frozenset[str] | None = None,
     ) -> VenueSuggestions: ...
 
 
@@ -2330,43 +2332,45 @@ def build_tool_specs(
         Args:
             name: The place, as it was said («泰斗», «Yoho Mall 嘅譚仔»).
         """
-        # R-28 at the one egress this tool has: the name leaves the host to
-        # Google Places, so an identifier must never ride it — the same screen
-        # `route` puts on origin/destination. A coordinate or a person's name is
-        # not a place to look up.
-        if scan_identifiers(name) is not None or _looks_like_coordinate(name):
-            _record(metrics, "place_info", "refused", reason="identifier")
+        # The FULL R-28 screen-call-screen sandwich (Fix I4) — outbound
+        # identifier/coordinate/person screen, the actual call wrapped in
+        # try/except, and a return-path screen on Google's own name/address
+        # — lives in `nora.agent.security.screen_and_resolve_place` now,
+        # shared with `EventService._resolve_place`.
+        result = await _screen_and_resolve_place(
+            name, route_source=route_source, person_names=_route_person_names,
+        )
+        if result.status == "refused":
+            _record(metrics, "place_info", "refused", reason=result.reason)
+            if result.reason == "person":
+                return {
+                    "status": "refused",
+                    "note": "I can only look up a PLACE — a shop or a restaurant — "
+                            "not a person.",
+                }
             return {
                 "status": "refused",
                 "note": "That's not a place name I can look up. Give me the name of "
                         "a shop, a restaurant, a building.",
             }
-        if _names_a_person(name, _route_person_names):
-            _record(metrics, "place_info", "refused", reason="person")
-            return {
-                "status": "refused",
-                "note": "I can only look up a PLACE — a shop or a restaurant — not a "
-                        "person.",
-            }
-        if route_source is None:
+        if result.status == "unavailable":
             _record(metrics, "place_info", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I can't look places up right now. Say you couldn't check — "
                         "don't guess a rating.",
             }
-        try:
-            out = await route_source.place_info(name)
-        except Exception:
-            log.exception("place_info failed")
-            out = {"status": "unavailable"}
-        # Belt-and-braces on the Google-authored name/address on the way to a
-        # reply, the same screen `route` gives its echoed fields.
-        if scan_identifiers(str(out.get("name", ""))) is not None:
-            out.pop("name", None)
-        addr = str(out.get("address", ""))
-        if scan_identifiers(addr) is not None or _looks_like_coordinate(addr):
-            out.pop("address", None)
+        out = result.data
+        if out is None:
+            # Unreachable in practice — `status == "resolved"` always carries
+            # `data` by construction — but degrades honestly (R-5) instead of
+            # trusting that invariant with an `assert` in production code.
+            _record(metrics, "place_info", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't look places up right now. Say you couldn't check — "
+                        "don't guess a rating.",
+            }
         if isinstance(out.get("could_be"), list):
             out["could_be"] = [c for c in out["could_be"]
                                if scan_identifiers(str(c)) is None]
@@ -3366,20 +3370,32 @@ def build_tool_specs(
                 "cancelled". Leave empty for everything.
         """
         if events is None:
+            _record(metrics, "list_events", "unavailable")
             return {"status": "unavailable", "note": "Events aren't set up here."}
         parsed_status: EventStatus | None = None
         if status:
             try:
                 parsed_status = EventStatus(status)
             except ValueError:
+                _record(metrics, "list_events", "refused", reason="bad_status")
                 return {
                     "status": "refused",
                     "note": "That's not a status I know — proposed, confirmed, or "
                             "cancelled.",
                 }
-        out = await events.list_events(
-            conversation_id=bound_conversation_id, status=parsed_status,
-        )
+        try:
+            out = await events.list_events(
+                conversation_id=bound_conversation_id, status=parsed_status,
+            )
+        except Exception:
+            log.exception("list_events failed")
+            _record(metrics, "list_events", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't check what's on. Say you couldn't check — "
+                        "don't guess what's planned.",
+            }
+        _record(metrics, "list_events", "ok", count=len(out))
         return {
             "status": "ok",
             "events": [
@@ -3411,15 +3427,18 @@ def build_tool_specs(
             venue_text: Optional. The place, the way it was said.
         """
         if events is None:
+            _record(metrics, "create_event", "unavailable")
             return {"status": "unavailable", "note": "Events aren't set up here."}
         tagger = room.tagger
         if tagger is None:
+            _record(metrics, "create_event", "refused", reason="no_tagger")
             return {
                 "status": "refused",
                 "note": "I don't know who you are well enough to start this.",
             }
         due_at = _parse_when(when) if when else None
         if when and due_at is None:
+            _record(metrics, "create_event", "refused", reason="bad_when")
             return {"status": "refused", "note": "I couldn't work out that time."}
         try:
             ev = await events.create_event(
@@ -3427,13 +3446,24 @@ def build_tool_specs(
                 requester_person_id=tagger.person_id,
                 title=title, when=due_at,
                 venue_text=venue_text or None,
+                person_names=_route_person_names,
             )
         except AmbiguousOpenEventsError:
+            _record(metrics, "create_event", "refused", reason="ambiguous")
             return {
                 "status": "refused",
                 "note": "There's more than one open event here already — "
                         "which one do you mean? Use list_events to check.",
             }
+        except Exception:
+            log.exception("create_event failed")
+            _record(metrics, "create_event", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't set that up. Say you're not sure it's on, "
+                        "rather than saying it is.",
+            }
+        _record(metrics, "create_event", "ok")
         return {"status": "ok", "id": str(ev.id)}
 
     async def update_event(
@@ -3448,19 +3478,40 @@ def build_tool_specs(
             venue_text: Optional. The place, the way it was said.
         """
         if events is None:
+            _record(metrics, "update_event", "unavailable")
             return {"status": "unavailable", "note": "Events aren't set up here."}
         due_at = _parse_when(when) if when else None
         if when and due_at is None:
+            _record(metrics, "update_event", "refused", reason="bad_when")
             return {"status": "refused", "note": "I couldn't work out that time."}
         try:
             ev = await events.update_event(
-                event_id=UUID(event_id), when=due_at,
-                venue_text=venue_text or None,
+                event_id=UUID(event_id), conversation_id=bound_conversation_id,
+                when=due_at, venue_text=venue_text or None,
+                person_names=_route_person_names,
             )
         except EventNotFoundError:
+            _record(metrics, "update_event", "refused", reason="not_found")
             return {"status": "refused", "note": "I don't know that event."}
+        except EventCancelledError:
+            _record(metrics, "update_event", "refused", reason="cancelled")
+            return {
+                "status": "refused",
+                "note": "That event's already been called off — there's nothing "
+                        "to update.",
+            }
         except ValueError:
+            _record(metrics, "update_event", "refused", reason="bad_id")
             return {"status": "refused", "note": "That doesn't look like an event id."}
+        except Exception:
+            log.exception("update_event failed")
+            _record(metrics, "update_event", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't update it. Say you're not sure it changed, "
+                        "rather than saying it did.",
+            }
+        _record(metrics, "update_event", "ok")
         return {
             "status": "ok", "id": str(ev.id),
             "venue": ev.venue_name or ev.venue_text,
@@ -3475,19 +3526,38 @@ def build_tool_specs(
             response: "yes", "no", or "maybe".
         """
         if events is None:
+            _record(metrics, "rsvp_event", "unavailable")
             return {"status": "unavailable", "note": "Events aren't set up here."}
         tagger = room.tagger
         if tagger is None:
+            _record(metrics, "rsvp_event", "refused", reason="no_tagger")
             return {"status": "refused", "note": "I don't know who you are."}
         try:
             await events.rsvp(
-                event_id=UUID(event_id), person_id=tagger.person_id,
-                response=RSVPResponse(response),
+                event_id=UUID(event_id), conversation_id=bound_conversation_id,
+                person_id=tagger.person_id, response=RSVPResponse(response),
             )
         except EventNotFoundError:
+            _record(metrics, "rsvp_event", "refused", reason="not_found")
             return {"status": "refused", "note": "I don't know that event."}
+        except EventCancelledError:
+            _record(metrics, "rsvp_event", "refused", reason="cancelled")
+            return {
+                "status": "refused",
+                "note": "That event's already been called off — no need to RSVP.",
+            }
         except ValueError:
+            _record(metrics, "rsvp_event", "refused", reason="bad_input")
             return {"status": "refused", "note": "That's not yes, no, or maybe."}
+        except Exception:
+            log.exception("rsvp_event failed")
+            _record(metrics, "rsvp_event", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't record that. Say you're not sure it's saved, "
+                        "rather than saying it is.",
+            }
+        _record(metrics, "rsvp_event", "ok")
         return {"status": "ok"}
 
     async def cancel_event(event_id: str) -> dict:
@@ -3497,13 +3567,27 @@ def build_tool_specs(
             event_id: The event's id, from list_events.
         """
         if events is None:
+            _record(metrics, "cancel_event", "unavailable")
             return {"status": "unavailable", "note": "Events aren't set up here."}
         try:
-            ev = await events.cancel_event(event_id=UUID(event_id))
+            ev = await events.cancel_event(
+                event_id=UUID(event_id), conversation_id=bound_conversation_id,
+            )
         except EventNotFoundError:
+            _record(metrics, "cancel_event", "refused", reason="not_found")
             return {"status": "refused", "note": "I don't know that event."}
         except ValueError:
+            _record(metrics, "cancel_event", "refused", reason="bad_id")
             return {"status": "refused", "note": "That doesn't look like an event id."}
+        except Exception:
+            log.exception("cancel_event failed")
+            _record(metrics, "cancel_event", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't cancel it. Say you're not sure it's off, "
+                        "rather than saying it is.",
+            }
+        _record(metrics, "cancel_event", "ok")
         return {"status": "ok", "id": str(ev.id)}
 
     async def suggest_venue(event_id: str) -> dict:
@@ -3519,6 +3603,7 @@ def build_tool_specs(
             event_id: The event's id, from list_events.
         """
         if events is None:
+            _record(metrics, "suggest_venue", "unavailable")
             return {"status": "unavailable", "note": "Events aren't set up here."}
         try:
             roster = await room.members()
@@ -3530,19 +3615,32 @@ def build_tool_specs(
             log.exception("suggest_venue couldn't read the room")
             roster = None
         if roster is None or not roster.available:
+            _record(metrics, "suggest_venue", "unavailable", reason="roster")
             return {
                 "status": "unavailable",
                 "note": "I couldn't read who's in this conversation right now.",
             }
         try:
             out = await events.suggest_venue(
-                event_id=UUID(event_id),
+                event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 roster_person_ids=[p.person_id for p in roster.people],
+                person_names=_route_person_names,
             )
         except EventNotFoundError:
+            _record(metrics, "suggest_venue", "refused", reason="not_found")
             return {"status": "refused", "note": "I don't know that event."}
         except ValueError:
+            _record(metrics, "suggest_venue", "refused", reason="bad_id")
             return {"status": "refused", "note": "That doesn't look like an event id."}
+        except Exception:
+            log.exception("suggest_venue failed")
+            _record(metrics, "suggest_venue", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't work out a suggestion. Say you couldn't "
+                        "check — don't guess a venue.",
+            }
+        _record(metrics, "suggest_venue", out.status)
         return {
             "status": out.status,
             "candidates": [
