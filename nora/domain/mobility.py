@@ -37,6 +37,7 @@ __all__ = [
     "dwell_ms",
     "edit_distance",
     "extract_trips",
+    "hour_of_week",
     "hour_of_week_bins",
     "label_place",
     "robust_z_score",
@@ -660,6 +661,25 @@ def _windowed_dwell(
             day_ms += _DAY_MS
             midnight += timedelta(days=1)
     return total, days, latest_day
+
+
+def hour_of_week(ts: int, tz_name: str) -> int:
+    """Which local hour-of-week bucket ONE moment falls in (0..167, Monday
+    00:00 = 0) — the single-timestamp sibling of `hour_of_week_bins`, and
+    Tier 5's speed-percentile grouping key (design/27 §4, issue #6).
+
+    A trip is bucketed by its `started_ts` alone, deliberately: unlike a
+    stay, whose whole point is the dwell it spreads across buckets, a
+    trip's `avg_speed_kmh` is ONE number for the whole span and cannot be
+    apportioned across the hours it crosses without inventing a
+    within-trip speed profile nothing measured. Splitting it with
+    `hour_of_week_bins` would look more careful and be less grounded.
+
+    LOCAL clock, never `ts // 3_600_000 % 168` — the epoch's own week
+    origin is a Thursday, and HKT is UTC+8, so the arithmetic shortcut is
+    wrong on both axes at once."""
+    local = datetime.fromtimestamp(ts / 1000, tz=ZoneInfo(tz_name))
+    return local.weekday() * 24 + local.hour
 
 
 def hour_of_week_bins(started_ts: int, ended_ts: int, tz_name: str) -> dict[int, int]:

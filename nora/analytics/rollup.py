@@ -32,6 +32,9 @@ from nora.domain.mobility import (
     Trip,
     circular_mean_minute,
     cluster_places,
+    cluster_trips,
+    extract_trips,
+    hour_of_week,
     hour_of_week_bins,
     label_place,
     robust_z_score,
@@ -172,7 +175,14 @@ class MobilityRollup:
         fixes = lag_probe[:batch_limit]
 
         if fixes:
-            raw = [RawFix(id=f.id, ts=f.ts, lat=f.lat, lng=f.lng) for f in fixes]
+            # `address=` is load-bearing from Tier 5 on (Task 2): it is the
+            # ONLY input `extract_trips` has for a trip's corridor
+            # sequence, and dropping it here silently produced empty
+            # corridors that cluster with each other and nothing real.
+            raw = [
+                RawFix(id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address)
+                for f in fixes
+            ]
             min_dwell_ms = int(self._cfg.stay_min_dwell_seconds * 1000)
             # `segment_stays` is purely spatial (its own docstring): fixes at
             # (near-)identical coordinates never break its radius test, no
@@ -194,6 +204,7 @@ class MobilityRollup:
             # fixtures, which construct discrete per-day `Stay` objects
             # directly rather than deriving them from a raw fix stream).
             new_stays: list[Stay] = []
+            new_trips: list[Trip] = []
             chunks = _chunk_by_gap(raw, DWELL_CAP_MS)
             last_open_stay: Stay | None = None
             for i, chunk in enumerate(chunks):
@@ -205,20 +216,43 @@ class MobilityRollup:
                     min_dwell_ms=min_dwell_ms,
                 )
                 new_stays.extend(seg.closed)
-                if seg.open_stay is None:
-                    continue
-                if i == len(chunks) - 1:
-                    # Only the FINAL chunk's trailing group is genuinely
-                    # open — nothing has been observed yet to say the
-                    # subject left; that is `settled_seconds`' job below.
-                    last_open_stay = seg.open_stay
-                elif seg.open_stay.ended_ts - seg.open_stay.started_ts >= min_dwell_ms:
-                    # A non-final chunk's trailing group ended because the
-                    # NEXT chunk's first fix was far enough away in time —
-                    # an observed gap, not a guess — so it closes now,
-                    # subject to the same min-dwell gate `segment_stays`'
-                    # own `_close` applies.
-                    new_stays.append(seg.open_stay)
+                # Tier 5 (design/27 §4): the SAME chunks the stay
+                # segmentation just walked — trips are the complement of
+                # stays over one identical partition of the batch, so
+                # re-chunking here could only produce a different answer,
+                # never a better one.
+                chunk_closed = list(seg.closed)
+                open_started: int | None = None
+                if seg.open_stay is not None:
+                    if i == len(chunks) - 1:
+                        # Only the FINAL chunk's trailing group is genuinely
+                        # open — nothing has been observed yet to say the
+                        # subject left; that is `settled_seconds`' job below.
+                        # `extract_trips` must therefore stop at its first
+                        # fix rather than call the tail a trip.
+                        last_open_stay = seg.open_stay
+                        open_started = seg.open_stay.started_ts
+                    elif seg.open_stay.ended_ts - seg.open_stay.started_ts >= min_dwell_ms:
+                        # A non-final chunk's trailing group ended because the
+                        # NEXT chunk's first fix was far enough away in time —
+                        # an observed gap, not a guess — so it closes now,
+                        # subject to the same min-dwell gate `segment_stays`'
+                        # own `_close` applies.
+                        new_stays.append(seg.open_stay)
+                        # ...and it is a CLOSED stay for this chunk's trip
+                        # extraction too. `seg.closed` alone would omit it,
+                        # and `extract_trips` would then read a genuine
+                        # stay's own fixes as movement and write them as a
+                        # ~0 km/h "trip" — the brief's own sketch had this
+                        # bug; the sub-min-dwell case correctly stays out,
+                        # since `segment_stays` discarded that group too.
+                        chunk_closed.append(seg.open_stay)
+                new_trips.extend(extract_trips(
+                    chunk, chunk_closed, subject_id=subject_id,
+                    person_id=person_ids[-1], circle_id=circle_id,
+                    min_trip_fixes=self._cfg.min_trip_fixes,
+                    open_stay_started_ts=open_started,
+                ))
             # An open stay closes THIS cycle only once settled_seconds has
             # elapsed since its last fix (spec §3.2/§4) — a wall-clock
             # decision run_once makes, not segment_stays itself.
@@ -258,6 +292,61 @@ class MobilityRollup:
                             "stay is already written and the watermark still "
                             "advances; rhythm is derived and recoverable, the "
                             "stay is not"
+                        )
+            if new_trips:
+                # Tier 5's half of Tier 3's Critical #1 (commit 9616af3):
+                # a derivation failure must NEVER strand the watermark, or
+                # the next tick re-reads the identical fixes, re-segments
+                # the identical stays and calls `write_stays` again against
+                # a table with no unique constraint on
+                # (subject_id, started_ts).
+                #
+                # The asymmetry with Tier 3 is REAL and accepted, and it is
+                # sharper than "the watermark advances past them": these
+                # trips are unrecoverable because `presence_trips` has no
+                # `corridor` column at all (`SqlMobilityStore
+                # .trips_for_subject` returns `corridor=()` on purpose), so
+                # even the fixes' own address sequences are gone with them
+                # — nothing downstream could reconstruct the input to retry.
+                # Tier 3's stays, by contrast, are already committed before
+                # its own guard is reached. Losing a batch of trips costs
+                # this cycle's corridor samples; stranding the watermark
+                # corrupts Tier 1/2 permanently, so this is the cheaper
+                # failure by a wide margin — but it IS a loss, not a defer.
+                try:
+                    await self._store.write_trips(new_trips)
+                except Exception:
+                    log.exception(
+                        "trip write failed — the watermark still advances, "
+                        "so this batch's trips are a genuine accepted LOSS "
+                        "(presence_trips carries no corridor column, so "
+                        "nothing can reconstruct them), unlike Tier 3's "
+                        "already-committed stays"
+                    )
+                else:
+                    if self._metrics is not None:
+                        self._metrics.inc(
+                            "nora_analytics_trips_total", value=len(new_trips),
+                            subject=subject_id,
+                        )
+                    try:
+                        await self._record_corridors(
+                            subject_id=subject_id, new_trips=new_trips, now_ms=now_ms,
+                        )
+                    except Exception:
+                        # Same contract, one layer down: the trips are
+                        # written, only their corridor linkage failed. That
+                        # linkage is NOT recoverable next cycle either (the
+                        # trips will not be in `new_trips` again and their
+                        # sequences are not persisted), but it is still
+                        # strictly cheaper than a stranded watermark. The
+                        # realistic trigger is the analytics image deploying
+                        # ahead of migration 0019 — every corridor write
+                        # raises UndefinedTable.
+                        log.exception(
+                            "corridor derivation failed — the trips are "
+                            "written and the watermark still advances; "
+                            "these trips keep corridor_id NULL permanently"
                         )
             await self._store.advance_fix_watermark(
                 subject_id=subject_id, fix_id=fixes[-1].id
@@ -380,6 +469,178 @@ class MobilityRollup:
                     subject_id=subject_id, fix_id=new_last_cluster
                 )
 
+    async def _record_corridors(
+        self, *, subject_id: str, new_trips: list[Trip], now_ms: int,
+    ) -> None:
+        """Tier 5 (design/27 §4, issue #6): group THIS cycle's new trips
+        into corridors, give each a durable identity, and recompute the
+        touched corridors' hour-of-week speed percentiles.
+
+        **Speed-3-ADJACENT, and gated on `new_trips` alone — no persisted
+        `last_trip_cluster_id` watermark.** Not because a third watermark
+        column would be expensive, but because it would have nothing to
+        gate: this method CANNOT re-cluster a subject's full history even
+        if it wanted to. `presence_trips` has no `corridor` column
+        (Task 5's own decision), so `trips_for_subject` returns
+        `corridor=()` for every stored row and `cluster_trips` over them
+        would be meaningless. The full-history re-cluster the watermark
+        would suppress does not exist as a code path.
+
+        The arithmetic says the same thing independently, and it is worth
+        recording because it is NOT the answer `cluster_places`' own
+        precedent would predict. Measured on this machine (n trips with
+        6 recurring corridors of 6-10 road names, jittered):
+
+            cluster_trips  n=66     37 ms      n=1000  6.8 s
+            cluster_trips  n=200   357 ms      n=3600   92 s
+            cluster_places n=3600  6.0 s
+
+        `cluster_places`' docstring calls its own O(n^2) "trivial" at 3,600
+        stays and it is (6 s, gated). `cluster_trips` at the SAME n is
+        **15x worse — 92 seconds of synchronous CPU inside one asyncio
+        tick**, because an edit distance over two 6-10 element sequences is
+        hundreds of Python-level operations where a haversine is a handful.
+        So DEC-115's "94% of the expensive half was waste" reasoning does
+        not merely carry over here, it is understated: a per-cycle full
+        re-cluster at 720-day retention would be unaffordable, not just
+        wasteful. What makes it moot is that `new_trips` is bounded by ONE
+        batch — ~66 trips at `backfill_batch_limit`'s ~11 days of fixes
+        (37 ms), and a handful in steady state. Even a 15x-pessimistic
+        batch (n=1000, 6.8 s) fits inside `tick_seconds`.
+
+        Cross-cycle continuity therefore comes from `existing_corridor`'s
+        similarity match against the PERSISTED sequences, not from
+        re-clustering — which is exactly why that method exists.
+        """
+        clusters = cluster_trips(
+            new_trips, max_edit_distance=self._cfg.corridor_max_edit_distance,
+            min_samples=self._cfg.corridor_min_samples,
+        )
+        # id -> the corridor's CANONICAL sequence (the PERSISTED one for a
+        # match, the representative for a fresh insert), so the reconciling
+        # upsert below is handed the corridor's own identity rather than
+        # whatever sequence happened to query it. Both stores currently
+        # IGNORE `sequence` on the `existing_id` path by design
+        # (`upsert_corridor`: "identity survives, does not chase every new
+        # trip's own sequence"), so a mutation check confirms this choice is
+        # not yet observable through the store's public surface — it is
+        # carried because it is the correct value to pass, not because a
+        # test can currently tell the difference.
+        touched: dict[int, tuple[str, ...]] = {}
+        clustered_starts = {t.started_ts for cluster in clusters for t in cluster}
+        for cluster in clusters:
+            if not cluster[0].corridor:
+                # Trips whose fixes carried no address at all DO cluster
+                # with each other (`edit_distance((), ()) == 0`, which
+                # `cluster_trips`' own docstring notes), but a corridor
+                # with an empty sequence has no identity to be. Minting one
+                # is actively harmful rather than merely useless: with
+                # `edit_distance((), x) == len(x)`, that row would become
+                # the nearest `existing_corridor` match for every 1-2
+                # element corridor this subject ever drives afterwards.
+                continue
+            # The cluster's FIRST trip's own sequence is the
+            # representative — `PRESENCE_CORRIDORS`' own "identity
+            # survives, does not chase every new trip's own sequence".
+            attached = await self._attach_corridor(
+                subject_id=subject_id, sequence=cluster[0].corridor,
+                trips=cluster, now_ms=now_ms, may_create=True,
+            )
+            if attached is not None:
+                touched[attached[0]] = attached[1]
+        # A trip `cluster_trips` called noise can still belong to a corridor
+        # this subject ALREADY has — and it usually does. `corridor_min_samples`
+        # similar trips have to arrive in ONE batch to mint a corridor, which
+        # happens on the initial backfill; after that a subject drives their
+        # commute once or twice per cycle and every one of those trips is a
+        # singleton. Without this second pass a corridor's `sample_count` and
+        # its speed percentiles would freeze at whatever the backfill saw, and
+        # Tier 5 would look built while silently never learning again.
+        # Creating from a singleton is still refused — that is
+        # `corridor_min_samples`' whole job.
+        for trip in new_trips:
+            if trip.started_ts in clustered_starts or not trip.corridor:
+                # An EMPTY corridor never joins a named one: `edit_distance(
+                # (), x) == len(x)`, so a trip whose fixes carried no address
+                # at all would match any 1-2 element corridor outright. That
+                # is a guess, and R-5's posture is silence over a wrong answer.
+                continue
+            attached = await self._attach_corridor(
+                subject_id=subject_id, sequence=trip.corridor,
+                trips=[trip], now_ms=now_ms, may_create=False,
+            )
+            if attached is not None:
+                touched[attached[0]] = attached[1]
+        for corridor_id, sequence in sorted(touched.items()):
+            await self._record_corridor_speeds(
+                subject_id=subject_id, corridor_id=corridor_id,
+                sequence=sequence, now_ms=now_ms,
+            )
+
+    async def _attach_corridor(
+        self, *, subject_id: str, sequence: tuple[str, ...], trips: list[Trip],
+        now_ms: int, may_create: bool,
+    ) -> tuple[int, tuple[str, ...]] | None:
+        """Link `trips` to the corridor `sequence` names, creating it when
+        `may_create` and no near-match exists. Returns `(corridor_id,
+        canonical_sequence)`, or `None` when nothing was attached."""
+        match = await self._store.existing_corridor(
+            subject_id=subject_id, sequence=sequence,
+            max_edit_distance=self._cfg.corridor_max_edit_distance,
+        )
+        if match is None and not may_create:
+            return None
+        existing_id, canonical = (None, sequence) if match is None else match
+        # `sample_count=len(trips)` is PROVISIONAL for an existing corridor —
+        # `_record_corridor_speeds` overwrites it with the authoritative count
+        # once the links have landed. It cannot be authoritative here: the id
+        # is needed to link, and the count is only knowable after linking.
+        # For a fresh insert it is already exact (no other trip carries the
+        # id yet), so the reconcile is a no-op in that case.
+        corridor_id = await self._store.upsert_corridor(
+            subject_id=subject_id, sequence=canonical, sample_count=len(trips),
+            now_ms=now_ms, existing_id=existing_id,
+        )
+        await self._store.set_trip_corridor_ids(
+            subject_id=subject_id,
+            started_ts_in=[t.started_ts for t in trips],
+            corridor_id=corridor_id,
+        )
+        if self._metrics is not None:
+            self._metrics.inc("nora_analytics_corridors_total", subject=subject_id)
+        return corridor_id, canonical
+
+    async def _record_corridor_speeds(
+        self, *, subject_id: str, corridor_id: int, sequence: tuple[str, ...],
+        now_ms: int,
+    ) -> None:
+        """Per-hour-of-week p50/p90 over EVERY trip ever linked to this
+        corridor — a full recompute from the whole sample set, never an
+        incremental update, the same posture `_apply_rhythm` takes."""
+        samples = await self._store.trip_speeds_for_corridor(
+            subject_id=subject_id, corridor_id=corridor_id,
+        )
+        if not samples:
+            return
+        # The authoritative sample count, now that the links have landed —
+        # see `_attach_corridor`'s provisional write.
+        await self._store.upsert_corridor(
+            subject_id=subject_id, sequence=sequence, sample_count=len(samples),
+            now_ms=now_ms, existing_id=corridor_id,
+        )
+        buckets: dict[int, list[float]] = {}
+        for started_ts, speed_kmh in samples:
+            buckets.setdefault(
+                hour_of_week(started_ts, self._cfg.tz_name), []
+            ).append(speed_kmh)
+        for how, speeds in buckets.items():
+            ordered = sorted(speeds)
+            await self._store.upsert_corridor_speed(
+                subject_id=subject_id, corridor_id=corridor_id, hour_of_week=how,
+                p50_kmh=_percentile(ordered, 0.5), p90_kmh=_percentile(ordered, 0.9),
+                sample_count=len(ordered), now_ms=now_ms,
+            )
+
     async def _record_rhythm(self, *, subject_id: str, stay: Stay, now_ms: int) -> None:
         """Tier 3 (design/27 §4, issue #6): occupancy + rhythm + anomaly
         for ONE closed stay, only when it falls inside an existing
@@ -491,6 +752,29 @@ class MobilityRollup:
             duration_median_ms=median_ms, duration_mad_ms=mad_ms,
             sample_count=len(linked), now_ms=now_ms,
         )
+
+
+def _percentile(ordered: list[float], q: float) -> float:
+    """Nearest-rank percentile over an ALREADY-SORTED, non-empty list —
+    `ordered[int(len * q)]`, clamped to the last index.
+
+    Deliberately NOT `statistics.median` / `quantiles`: those interpolate
+    between neighbours, inventing a speed no trip was ever measured at,
+    which this substrate's "bind to the real property" rule rules out. The
+    value returned is always one an actual trip actually recorded.
+
+    For ODD `len` the q=0.5 case coincides exactly with
+    `statistics.median` (verified in
+    `test_corridor_speed_percentiles_match_a_hand_computation`); for even
+    `len` it is the upper of the two middle samples rather than their
+    average, for the same never-interpolate reason.
+
+    The `min(...)` never actually fires at this module's two call sites:
+    `int(n * q) <= n - 1` for every `n >= 1` when `q <= 0.9`. It is there
+    for a `q` that does not exist yet (1.0 runs one past the end), and the
+    test asserts it at exactly that value rather than pretending 0.9
+    exercises it."""
+    return ordered[min(int(len(ordered) * q), len(ordered) - 1)]
 
 
 def _local_minute_of_day(ts_ms: int, tz: ZoneInfo) -> float:
