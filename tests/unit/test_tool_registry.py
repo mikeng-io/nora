@@ -71,6 +71,9 @@ def test_the_registry_exposes_every_declared_tool():
         "web_search", "web_fetch",
         "weather",
         "remind", "list_reminders", "cancel_reminder",
+        # The Event module (gatherings/RSVP/venue suggestions).
+        "create_event", "update_event", "rsvp_event", "cancel_event",
+        "list_events", "suggest_venue",
         # Nora Compute spec §4 (Task 5).
         "make_artifact",
         # DEC-97: what she is running, and what was in an earlier version.
@@ -148,6 +151,17 @@ def test_budgets_match_todays_table():
         # reminders exist is `max_pending_per_requester`, checked inside
         # `remind` (§9), which no budget can substitute for.
         "remind": 2, "list_reminders": 2, "cancel_reminder": 2,
+        # The Event module: `list_events` is 1 like `group_members` (a
+        # room-scoped read, same answer if called twice). `create_event`/
+        # `suggest_venue` are the ones that reach further — `suggest_venue`
+        # asks Honcho's dialectic once per roster member and resolves venues
+        # after, sized like `media_fetch`'s 4; `create_event` is 3, between
+        # `remind`'s 2 and `suggest_venue`'s 4, for the same round-trip
+        # reason. `update_event`/`cancel_event` are 2, sized like the
+        # reminder verbs. `rsvp_event` is 1 — a single yes/no/maybe, and a
+        # second call in the same turn is a model looping on its own write.
+        "list_events": 1, "create_event": 3, "update_event": 2,
+        "rsvp_event": 1, "cancel_event": 2, "suggest_venue": 4,
         # 1 — like `group_members`/`saved_places`: a slow, external call
         # (Nora Compute spec §4), sized by model round trips rather than by
         # cost. A second `make_artifact` in one turn is a model looping on a

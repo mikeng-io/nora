@@ -112,6 +112,35 @@ class VenueSuggestions:
     route_hints: None = None
 
 
+class EventNotFoundError(Exception):
+    """Raised by `EventService` (`nora.app.events`) whenever an `event_id`
+    does not resolve. Lives here, not on `EventService` itself, so
+    `nora.agent` — which sits BELOW `nora.app` in the layered-architecture
+    import-linter contract and may not import it — can still catch it: a
+    caller several layers up mints the concrete `EventService`, but the
+    exception TYPE has to be reachable from every layer that calls a method
+    which can raise it."""
+
+    def __init__(self, event_id: UUID) -> None:
+        super().__init__(f"event {event_id} not found")
+        self.event_id = event_id
+
+
+class AmbiguousOpenEventsError(Exception):
+    """More than one proposed event exists for a conversation — spec
+    §3.1's fail-closed-on-ambiguity case. The caller (the `create_event`
+    tool) is expected to catch this and ask which event is meant, never
+    guess. Same layering reason as `EventNotFoundError` above for why this
+    lives in `nora.domain` rather than alongside `EventService`."""
+
+    def __init__(self, conversation_id: str, open_events: Sequence[Event]) -> None:
+        super().__init__(
+            f"{len(open_events)} open events for {conversation_id}"
+        )
+        self.conversation_id = conversation_id
+        self.open_events = tuple(open_events)
+
+
 @runtime_checkable
 class EventStore(Protocol):
     async def create(self, event: Event) -> None: ...

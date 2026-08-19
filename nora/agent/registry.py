@@ -50,7 +50,13 @@ from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room
-from .tools import NATIVE_TOOL_BUDGETS, NATIVE_TOOLS, build_tool_specs, utc_now
+from .tools import (
+    NATIVE_TOOL_BUDGETS,
+    NATIVE_TOOLS,
+    EventsCollaborator,
+    build_tool_specs,
+    utc_now,
+)
 from .whereis import Circle, PresenceReader
 
 
@@ -98,6 +104,7 @@ class ToolRegistry:
         ai_peer: str = "nora",
         reminders: ReminderStore | None = None,
         reminder_caps: ReminderCaps | None = None,
+        events: EventsCollaborator | None = None,
         compute_backend: ComputeBackend | None = None,
         compute_jobs: ComputeJobStore | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
@@ -199,6 +206,12 @@ class ToolRegistry:
         # state (R-5). `nora.app.composition` passes the same `SqlReminderStore`
         # the heartbeat's tick reads from; two would be two queues.
         self._reminders = reminders
+        # `EventService`'s own collaborator (the Event module design spec),
+        # wired the identical honest way `reminders` is: NOT default-constructed
+        # — there is no serviceless default — so every composition that has not
+        # wired Events (offline, eval, and any test that does not care) leaves
+        # this None and the six event tools answer `unavailable` (R-5).
+        self._events = events
         # `make_artifact`'s pair (Nora Compute spec §4), wired the same honest
         # way `reminders` is: NOT default-constructed — there is no backendless
         # or storeless default — so every composition that has not wired Nora
@@ -536,6 +549,7 @@ class ToolRegistry:
             question=question, context_window=context_window,
             ai_peer=self._ai_peer, fire_turn=fire_turn,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
+            events=self._events,
             links=links,
             relay=self._relay,
             versions=self._versions,

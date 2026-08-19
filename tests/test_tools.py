@@ -106,6 +106,9 @@ def test_every_declared_tool_is_built(wiring):
         "web_search", "web_fetch",
         "weather",
         "remind", "list_reminders", "cancel_reminder",
+        # The Event module (gatherings/RSVP/venue suggestions).
+        "create_event", "update_event", "rsvp_event", "cancel_event",
+        "list_events", "suggest_venue",
         # Nora Compute spec §4 (Task 5).
         "make_artifact",
         # DEC-97: what she is running, and what was in an earlier version.

@@ -31,6 +31,12 @@ from nora.domain.events import (
     VenueCandidate,
     VenueSuggestions,
 )
+from nora.domain.events import (
+    AmbiguousOpenEventsError as AmbiguousOpenEventsError,
+)
+from nora.domain.events import (
+    EventNotFoundError as EventNotFoundError,
+)
 from nora.domain.reminders import (
     Reminder,
     ReminderCaps,
@@ -60,26 +66,6 @@ class _Honcho(Protocol):
         self, *, peer_id: str, query: str, reasoning_level: str = "low",
         target: str | None = None,
     ) -> str | None: ...
-
-
-class EventNotFoundError(Exception):
-    def __init__(self, event_id: UUID) -> None:
-        super().__init__(f"event {event_id} not found")
-        self.event_id = event_id
-
-
-class AmbiguousOpenEventsError(Exception):
-    """More than one proposed event exists for a conversation — spec
-    §3.1's fail-closed-on-ambiguity case. The caller (the `create_event`
-    tool) is expected to catch this and ask which event is meant, never
-    guess."""
-
-    def __init__(self, conversation_id: str, open_events: Sequence[Event]) -> None:
-        super().__init__(
-            f"{len(open_events)} open events for {conversation_id}"
-        )
-        self.conversation_id = conversation_id
-        self.open_events = tuple(open_events)
 
 
 class EventService:

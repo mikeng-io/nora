@@ -50,14 +50,25 @@ import json
 import logging
 import urllib.parse
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
+from typing import Protocol
+from uuid import UUID
 
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
 from nora.agent.security import scan_identifiers
 
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
+from ..domain.events import (
+    RSVP,
+    AmbiguousOpenEventsError,
+    Event,
+    EventNotFoundError,
+    EventStatus,
+    RSVPResponse,
+    VenueSuggestions,
+)
 from ..domain.media import HANDLE_CHARS, GifCandidate
 from ..domain.models import WeatherObservation
 from ..domain.ports import ComputeBackend, GifSource, JobStatus, MessageHits, Recollection
@@ -484,6 +495,25 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                     "another room's"),
     "cancel_reminder": NativeTool(2, "somebody calls one off — takes the id "
                                      "list_reminders gave you, never one you made up"),
+    "create_event": NativeTool(3, "somebody is proposing a gathering — dinner, an "
+                                "outing — with a title and optionally a time and a "
+                                "venue. Check list_events for an ALREADY-OPEN "
+                                "proposed event in this conversation first — this "
+                                "is for a genuinely NEW gathering, not an update to "
+                                "one already being planned"),
+    "update_event": NativeTool(2, "new information about an event already being "
+                                "planned in this conversation — a time now settled, "
+                                "a venue now settled. Use the id list_events gave "
+                                "you"),
+    "rsvp_event": NativeTool(1, "somebody says whether they are coming — yes, no, "
+                              "or maybe — to an event already proposed here"),
+    "cancel_event": NativeTool(2, "an event already proposed here is called off"),
+    "list_events": NativeTool(1, "what gatherings are proposed or confirmed in "
+                              "THIS conversation — call this BEFORE create_event "
+                              "to check whether one is already open"),
+    "suggest_venue": NativeTool(4, "somebody wants a venue recommendation for an "
+                                 "event already proposed here, drawn from what "
+                                 "people have said they like"),
     "make_artifact": NativeTool(1, "someone wants you to build or research "
                                    "something and hand back a file — a report, "
                                    "a chart, a document — not just say it in "
@@ -1213,6 +1243,43 @@ def _weather_result(obs: WeatherObservation) -> dict[str, object]:
     return result
 
 
+class EventsCollaborator(Protocol):
+    """Structural type for `nora.app.events.EventService` — a local Protocol
+    rather than an import of the concrete class, because `nora.agent` sits
+    BELOW `nora.app` in the "layered architecture" import-linter contract
+    (`pyproject.toml`) and may not import it, even for a bare type
+    annotation: grimp's `exclude_type_checking_imports` defaults to False and
+    this repo does not set it, so a `TYPE_CHECKING` guard would not rescue
+    it either. `nora.app.composition` builds the real `EventService` and
+    injects it here (and into `ToolRegistry`); this module only needs its
+    shape. `EventNotFoundError`/`AmbiguousOpenEventsError` live in
+    `nora.domain.events` for the identical reason — an exception TYPE has to
+    be importable from every layer that catches it."""
+
+    async def create_event(
+        self, *, conversation_id: str, requester_person_id: str, title: str,
+        when: datetime | None = None, venue_text: str | None = None,
+    ) -> Event: ...
+
+    async def update_event(
+        self, *, event_id: UUID, when: datetime | None = None,
+        venue_text: str | None = None,
+    ) -> Event: ...
+
+    async def rsvp(
+        self, *, event_id: UUID, person_id: str, response: RSVPResponse,
+    ) -> RSVP: ...
+
+    async def cancel_event(self, *, event_id: UUID) -> Event: ...
+
+    async def list_events(
+        self, *, conversation_id: str, status: EventStatus | None = None,
+    ) -> Sequence[Event]: ...
+
+    async def suggest_venue(
+        self, *, event_id: UUID, roster_person_ids: Sequence[str],
+    ) -> VenueSuggestions: ...
+
 
 def build_tool_specs(
     *,
@@ -1252,6 +1319,7 @@ def build_tool_specs(
     compute_jobs: ComputeJobStore | None = None,
     tool_call_log_store: ToolCallLogStore | None = None,
     relay: Relay | None = None,
+    events: EventsCollaborator | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -3288,6 +3356,206 @@ def build_tool_specs(
         _record(metrics, "cancel_reminder", "ok")
         return {"status": "ok"}
 
+    async def list_events(status: str = "") -> dict:
+        """What gatherings are proposed or confirmed in THIS conversation.
+        Call this BEFORE create_event — an existing open event should be
+        updated (update_event), not duplicated.
+
+        Args:
+            status: Optional filter — "proposed", "confirmed", or
+                "cancelled". Leave empty for everything.
+        """
+        if events is None:
+            return {"status": "unavailable", "note": "Events aren't set up here."}
+        parsed_status: EventStatus | None = None
+        if status:
+            try:
+                parsed_status = EventStatus(status)
+            except ValueError:
+                return {
+                    "status": "refused",
+                    "note": "That's not a status I know — proposed, confirmed, or "
+                            "cancelled.",
+                }
+        out = await events.list_events(
+            conversation_id=bound_conversation_id, status=parsed_status,
+        )
+        return {
+            "status": "ok",
+            "events": [
+                {
+                    "id": str(e.id), "title": e.title,
+                    "when": e.when.isoformat() if e.when else None,
+                    "venue": e.venue_name or e.venue_text,
+                    "status": e.status.value,
+                }
+                for e in out
+            ],
+        }
+
+    async def create_event(
+        title: str, when: str = "", venue_text: str = "",
+    ) -> dict:
+        """Propose a NEW gathering in this conversation. Call list_events
+        FIRST — if one is already open (status "proposed"), call
+        update_event against it instead of creating a second one.
+
+        Outcomes: `ok` with the id; `refused` with a note (two or more
+        events are already open here — ask which one is meant, do not
+        guess which); `unavailable` when events aren't configured.
+
+        Args:
+            title: What the gathering is, in their words.
+            when: Optional. ISO-8601 with an offset, the first moment it's
+                for. Resolve relative time the same way `remind` does.
+            venue_text: Optional. The place, the way it was said.
+        """
+        if events is None:
+            return {"status": "unavailable", "note": "Events aren't set up here."}
+        tagger = room.tagger
+        if tagger is None:
+            return {
+                "status": "refused",
+                "note": "I don't know who you are well enough to start this.",
+            }
+        due_at = _parse_when(when) if when else None
+        if when and due_at is None:
+            return {"status": "refused", "note": "I couldn't work out that time."}
+        try:
+            ev = await events.create_event(
+                conversation_id=bound_conversation_id,
+                requester_person_id=tagger.person_id,
+                title=title, when=due_at,
+                venue_text=venue_text or None,
+            )
+        except AmbiguousOpenEventsError:
+            return {
+                "status": "refused",
+                "note": "There's more than one open event here already — "
+                        "which one do you mean? Use list_events to check.",
+            }
+        return {"status": "ok", "id": str(ev.id)}
+
+    async def update_event(
+        event_id: str, when: str = "", venue_text: str = "",
+    ) -> dict:
+        """Update an event ALREADY proposed here — a time now settled, a
+        venue now settled. Use the id list_events gave you.
+
+        Args:
+            event_id: The event's id, from list_events.
+            when: Optional. ISO-8601 with an offset.
+            venue_text: Optional. The place, the way it was said.
+        """
+        if events is None:
+            return {"status": "unavailable", "note": "Events aren't set up here."}
+        due_at = _parse_when(when) if when else None
+        if when and due_at is None:
+            return {"status": "refused", "note": "I couldn't work out that time."}
+        try:
+            ev = await events.update_event(
+                event_id=UUID(event_id), when=due_at,
+                venue_text=venue_text or None,
+            )
+        except EventNotFoundError:
+            return {"status": "refused", "note": "I don't know that event."}
+        except ValueError:
+            return {"status": "refused", "note": "That doesn't look like an event id."}
+        return {
+            "status": "ok", "id": str(ev.id),
+            "venue": ev.venue_name or ev.venue_text,
+        }
+
+    async def rsvp_event(event_id: str, response: str) -> dict:
+        """Record whether the person talking now is coming to an event
+        already proposed here.
+
+        Args:
+            event_id: The event's id, from list_events.
+            response: "yes", "no", or "maybe".
+        """
+        if events is None:
+            return {"status": "unavailable", "note": "Events aren't set up here."}
+        tagger = room.tagger
+        if tagger is None:
+            return {"status": "refused", "note": "I don't know who you are."}
+        try:
+            await events.rsvp(
+                event_id=UUID(event_id), person_id=tagger.person_id,
+                response=RSVPResponse(response),
+            )
+        except EventNotFoundError:
+            return {"status": "refused", "note": "I don't know that event."}
+        except ValueError:
+            return {"status": "refused", "note": "That's not yes, no, or maybe."}
+        return {"status": "ok"}
+
+    async def cancel_event(event_id: str) -> dict:
+        """Call off an event already proposed here.
+
+        Args:
+            event_id: The event's id, from list_events.
+        """
+        if events is None:
+            return {"status": "unavailable", "note": "Events aren't set up here."}
+        try:
+            ev = await events.cancel_event(event_id=UUID(event_id))
+        except EventNotFoundError:
+            return {"status": "refused", "note": "I don't know that event."}
+        except ValueError:
+            return {"status": "refused", "note": "That doesn't look like an event id."}
+        return {"status": "ok", "id": str(ev.id)}
+
+    async def suggest_venue(event_id: str) -> dict:
+        """Suggest a venue for an event already proposed here, drawn from
+        what people in this conversation have said they like.
+
+        Outcomes: `ok` with `candidates` (name, address, rating,
+        price_level, maps_url, and why it was suggested); `nothing_found`
+        when nobody's said anything usable — say so, don't invent a pick;
+        `unavailable` when this isn't configured.
+
+        Args:
+            event_id: The event's id, from list_events.
+        """
+        if events is None:
+            return {"status": "unavailable", "note": "Events aren't set up here."}
+        try:
+            roster = await room.members()
+        except Exception:
+            # `Room.members` is documented never to raise (its own docstring:
+            # "available=False if it could not be read"). This is the belt
+            # for those braces, landing on `unavailable` rather than an
+            # unhandled exception escaping the tool (R-5).
+            log.exception("suggest_venue couldn't read the room")
+            roster = None
+        if roster is None or not roster.available:
+            return {
+                "status": "unavailable",
+                "note": "I couldn't read who's in this conversation right now.",
+            }
+        try:
+            out = await events.suggest_venue(
+                event_id=UUID(event_id),
+                roster_person_ids=[p.person_id for p in roster.people],
+            )
+        except EventNotFoundError:
+            return {"status": "refused", "note": "I don't know that event."}
+        except ValueError:
+            return {"status": "refused", "note": "That doesn't look like an event id."}
+        return {
+            "status": out.status,
+            "candidates": [
+                {
+                    "venue_text": c.venue_text, "name": c.name,
+                    "address": c.address, "rating": c.rating,
+                    "price_level": c.price_level, "maps_url": c.maps_url,
+                    "why": c.source,
+                }
+                for c in out.candidates
+            ],
+        }
+
     async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
         """Pull back facts you (or an earlier turn) already looked up in
         THIS conversation, within the last 7 days — a place's rating, a
@@ -3685,6 +3953,12 @@ def build_tool_specs(
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),
         _spec("cancel_reminder", cancel_reminder),
+        _spec("list_events", list_events),
+        _spec("create_event", create_event),
+        _spec("update_event", update_event),
+        _spec("rsvp_event", rsvp_event),
+        _spec("cancel_event", cancel_event),
+        _spec("suggest_venue", suggest_venue),
         _spec("make_artifact", make_artifact),
         _spec("version", version),
         _spec("send_reply", send_reply),
