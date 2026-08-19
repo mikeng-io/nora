@@ -61,6 +61,7 @@ from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.events import SqlEventStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.presence import PresenceStore
@@ -96,6 +97,7 @@ from .announce import AnnouncementTarget, VersionAnnouncer
 from .compute_poller import ComputeJobPoller
 from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
+from .events import EventService
 from .fire import FirePath, lost_job_occasion, relay_occasion
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .runtime import BackgroundTasks
@@ -706,6 +708,31 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "route enabled but %s is unset — routing stays unavailable",
                 cfg.route.api_key_env,
             )
+    # §9's caps as the DOMAIN value, extracted to a variable (not built inline
+    # at the `ToolRegistry(...)` call below the way it was before Events) so
+    # `EventService` and `ToolRegistry` share the exact SAME `ReminderCaps` —
+    # an event's linked reminder must respect the identical anti-runaway caps
+    # a manually requested one does, and two separately constructed instances
+    # read as "the same value" only by coincidence of both reading `cfg.reminders`.
+    reminder_caps = ReminderCaps(**cfg.reminders.model_dump())
+    # `EventService` (Event module design spec): the ONE use-case layer for
+    # Event business rules. `event_store` REUSES `engine` for the same reason
+    # `reminders`/`compute_jobs`/`tool_call_log_store` do above — a second
+    # `create_sql_engine` would fork the pool. `route_source=route_client` is
+    # the SAME `RouteClient` (or `None`) `place_info`/`route` already use —
+    # a second instance would be a second, unrelated key check and a second
+    # client the composition root has no other reason to own. `honcho=memory`
+    # and `ai_peer=cfg.memory.ai_peer` are the SAME Honcho client and id
+    # already threaded to `TranscriptInjection`/`ToolRegistry` below.
+    event_store = SqlEventStore(engine)
+    events = EventService(
+        store=event_store,
+        reminders=reminders,
+        reminder_caps=reminder_caps,
+        route_source=route_client,
+        honcho=memory,
+        ai_peer=cfg.memory.ai_peer,
+    )
     # `media_fetch` (DEC-56) reads a stored blob back through MiMo. Its two
     # collaborators are wired together: the blob store (already built above,
     # `None` while `[media] enabled=false` or unkeyed) and a `VisionClient` over
@@ -1067,6 +1094,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # rows `remind` wrote would sit in one while the heartbeat watched the
         # other.
         reminders=reminders,
+        # `EventService`, built above alongside `event_store`/`reminder_caps` —
+        # the six event tools (`create_event`/`update_event`/`rsvp_event`/
+        # `cancel_event`/`list_events`/`suggest_venue`) answer `unavailable`
+        # (R-5) whenever a composition has not wired one; every deployment
+        # here has, since it needs nothing this file does not already build.
+        events=events,
         # `make_artifact`'s own pair (Nora Compute spec §4): `compute_jobs` is
         # ALWAYS the store built above, `compute_backend` is `None` whenever
         # `[compute] enabled` is false — the tool answers `unavailable` in
@@ -1076,13 +1109,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # first two: EngagementPipeline/FirePath, via `deliver.build`) —
         # `recall_lookups`'s own collaborator, tool-recall-log spec §4.
         tool_call_log_store=tool_call_log_store,
-        # §9's caps as the DOMAIN value. `nora.agent` may not import
-        # `nora.config` (import-linter's "only app and __main__ read config"),
-        # so THIS is the conversion point: `RemindersConfig`'s fields are
-        # `ReminderCaps`'s fields, and `model_dump()` keeps them one edit rather
-        # than three. A field added to one and not the other is a `TypeError`
-        # here, at startup, which is the failure worth having.
-        reminder_caps=ReminderCaps(**cfg.reminders.model_dump()),
+        # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
+        # `EventService` was built with above — see that variable's own
+        # comment for why they must not be two separately constructed copies.
+        # `nora.agent` may not import `nora.config` (import-linter's "only app
+        # and __main__ read config"), so THAT construction is the conversion
+        # point: `RemindersConfig`'s fields are `ReminderCaps`'s fields, and
+        # `model_dump()` keeps them one edit rather than three. A field added
+        # to one and not the other is a `TypeError` there, at startup, which
+        # is the failure worth having.
+        reminder_caps=reminder_caps,
         # The same wall clock the tick runs on. `remind` compares `when` against
         # it for three of its six refusals, and a registry clock that disagreed
         # with the tick's would let a row be accepted as "two minutes out" and
