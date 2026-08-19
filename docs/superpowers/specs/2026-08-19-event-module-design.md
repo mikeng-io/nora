@@ -89,10 +89,23 @@ under the `nora.analytics` neutrality contract (`design/proposed/27-presence-ana
 
 ## 2. Data model — migration `0015_events`
 
-(`0015_presence_analytics`, which an earlier draft of this spec assumed
-would land first, has not — `0015` was free and this module took it. See
-the implementation plan, `docs/superpowers/plans/2026-08-19-event-module.md`,
-for the actual migration.)
+(**Known unresolved merge-time issue, updated 2026-08-19** — this branch
+forked from `origin/master` at `9ab0d1e`, before `0015_presence_analytics`
+landed. Since then, a concurrent branch has merged
+`nora/infra/sql/migrations/versions/0015_presence_analytics.py` into
+`origin/master`, chained off `0014_lang_obs_scope_idx`. This module's
+`0015_events.py` also chains `down_revision = "0014_lang_obs_scope_idx"` —
+the two migrations now collide on the number `0015` and will produce a
+split head if merged as-is. This is a **known, explicit, unresolved
+TODO**, not something already handled: before this branch merges,
+`0015_events.py` must be renumbered to `0016_events.py` with
+`revision = "0016"` and `down_revision = "0015_presence_analytics"`'s
+actual revision id, and `tests/infra/pg_schema_baseline.sql` regenerated
+against the combined chain. See
+`.superpowers/sdd/2026-08-19-event-module/KNOWN-ISSUES.md` for the full
+writeup and why it isn't fixed in this branch right now. See also the
+implementation plan, `docs/superpowers/plans/2026-08-19-event-module.md`,
+for the migration as originally written.)
 
     Event
       id                 UUID, pk

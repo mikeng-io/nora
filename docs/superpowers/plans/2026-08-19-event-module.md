@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Migration number is `0015_events`, not `0016`** — the spec assumed `0015_presence_analytics` had landed first; it hasn't (`0014_lang_obs_scope_idx.py` is still the latest on disk as of this plan). Task 15 fixes the spec's stale assumption.
+- **Migration number is `0015_events`, not `0016`** — the spec assumed `0015_presence_analytics` had landed first; it hasn't (`0014_lang_obs_scope_idx.py` is still the latest on disk as of this plan). Task 15 fixes the spec's stale assumption. This was accurate as a point-in-time decision when this plan was written — **it is no longer accurate as of 2026-08-19**: `0015_presence_analytics` has since landed on `origin/master` via a concurrent branch, so `0015_events` as built by this plan collides with it and needs renumbering to `0016_events` at merge time. See `.superpowers/sdd/2026-08-19-event-module/KNOWN-ISSUES.md` — this plan's Task 2 migration is NOT merge-ready as written below.
 - **`Event.conversation_id`, not `group_id`.** The spec called this field `group_id` ("same group→workspace concept reminders use") — but reminders' own field for exactly that concept is named `conversation_id` (`nora/domain/reminders.py`'s `Reminder.conversation_id`). This plan uses `conversation_id` throughout so Event's field is *the same field*, not a same-meaning synonym under a different name.
 - **`Event.reminder_id: UUID | None`, not `reminder_series_id`.** Event never has a recurrence concept (no repeat field anywhere in the spec's data model) — its linked reminder is always one-shot (`series=None`). Storing a `Series.id` for something that's never a series is wrong; store the `Reminder.id` directly.
 - **No `pip install`** — dependencies via `uv add` if any are needed (none should be for this plan).
@@ -330,6 +330,15 @@ git commit -m "feat(nora): add Event/RSVP domain types and EventStore port"
 ---
 
 ### Task 2: Schema + hand-written migration `0015_events`
+
+> **Known merge-time issue (2026-08-19):** since this plan was written, a
+> concurrent branch has merged `0015_presence_analytics.py` into
+> `origin/master`, also chained off `0014_lang_obs_scope_idx`. The
+> `0015_events` migration this task produces collides with it and must be
+> renumbered to `0016_events` (with `down_revision` pointed at
+> `0015_presence_analytics`'s actual revision id) before this branch
+> merges — not fixed here; see
+> `.superpowers/sdd/2026-08-19-event-module/KNOWN-ISSUES.md`.
 
 **Files:**
 - Modify: `nora/infra/sql/schema.py`
