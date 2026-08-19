@@ -1,4 +1,3 @@
-# nora/infra/sql/events.py
 """`EventStore` over SQLAlchemy Core. Shaped like `nora.infra.sql.reminders`:
 the engine comes through `__init__`, every write is one statement inside
 `async with self._engine.begin()`, every read inside
@@ -21,10 +20,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.events import (
+    RSVP,
     DuplicateEventError,
     Event,
     EventStatus,
-    RSVP,
     RSVPResponse,
     normalise_event,
 )
@@ -70,24 +69,24 @@ def _row_to_rsvp(r: Row[Any]) -> RSVP:
 
 
 def _insert_values(event: Event) -> dict[str, Any]:
-    return dict(
-        id=event.id,
-        conversation_id=event.conversation_id,
-        title=event.title,
-        created_by=event.created_by,
-        when=event.when,
-        venue_text=event.venue_text,
-        venue_place_id=event.venue_place_id,
-        venue_name=event.venue_name,
-        venue_address=event.venue_address,
-        venue_rating=event.venue_rating,
-        venue_price_level=event.venue_price_level,
-        venue_maps_url=event.venue_maps_url,
-        venue_resolved_at=event.venue_resolved_at,
-        status=event.status.value,
-        reminder_id=event.reminder_id,
-        created_at=event.created_at,
-    )
+    return {
+        "id": event.id,
+        "conversation_id": event.conversation_id,
+        "title": event.title,
+        "created_by": event.created_by,
+        "when": event.when,
+        "venue_text": event.venue_text,
+        "venue_place_id": event.venue_place_id,
+        "venue_name": event.venue_name,
+        "venue_address": event.venue_address,
+        "venue_rating": event.venue_rating,
+        "venue_price_level": event.venue_price_level,
+        "venue_maps_url": event.venue_maps_url,
+        "venue_resolved_at": event.venue_resolved_at,
+        "status": event.status.value,
+        "reminder_id": event.reminder_id,
+        "created_at": event.created_at,
+    }
 
 
 class SqlEventStore:
@@ -152,9 +151,10 @@ class SqlEventStore:
             )
             .on_conflict_do_update(
                 index_elements=[EVENT_RSVPS.c.event_id, EVENT_RSVPS.c.person_id],
-                set_=dict(
-                    response=rsvp.response.value, responded_at=rsvp.responded_at,
-                ),
+                set_={
+                    "response": rsvp.response.value,
+                    "responded_at": rsvp.responded_at,
+                },
             )
         )
         async with self._engine.begin() as conn:
