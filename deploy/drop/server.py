@@ -97,7 +97,25 @@ PUBLIC_PORT = int(os.environ.get("DROP_PUBLIC_PORT", "9102"))
 # build the URLs `POST /api/links` and `POST /api/artifacts` hand back
 # (this listener is INTERNAL, §5a, and never sees a public request's Host
 # header, so the public base has to be told to it instead).
-PUBLIC_BASE_URL = os.environ.get("DROP_PUBLIC_BASE_URL", "https://nora.example.net")
+PUBLIC_BASE_URL = os.environ.get("DROP_PUBLIC_BASE_URL", "https://nora.67.zone")
+
+# The RETIRED public hostname (nora.example.net) — its Tunnel ingress rule and DNS
+# record stay live, still pointed at this same process, so an already-shared
+# `nora.example.net/i/<slug>` or `/drop/<slug>` link never breaks; it just 301s
+# once more onto the new host instead of being served from here directly.
+# Unset (empty string) disables the check entirely, matching PUBLIC_BASE_URL's
+# own "no legacy host" default for a fresh deployment that never had one.
+LEGACY_PUBLIC_HOSTNAME = os.environ.get("DROP_LEGACY_PUBLIC_HOSTNAME", "nora.example.net")
+
+
+def _legacy_host_redirect(request: Request) -> Response | None:
+    """A 301 onto `PUBLIC_BASE_URL` if this request arrived on the retired
+    hostname, `None` otherwise — checked first thing in both slug-serving
+    routes so an old link keeps working forever, not just until someone
+    remembers to update it."""
+    if not LEGACY_PUBLIC_HOSTNAME or request.url.hostname != LEGACY_PUBLIC_HOSTNAME:
+        return None
+    return RedirectResponse(f"{PUBLIC_BASE_URL}{request.url.path}", status_code=301)
 
 
 async def health(request: Request) -> JSONResponse:
@@ -322,6 +340,8 @@ async def update_artifact(request: Request) -> JSONResponse:
 # ── public: path-routed redirect + render (module docstring) ────────────────
 
 async def redirect_link(request: Request) -> Response:
+    if (legacy := _legacy_host_redirect(request)) is not None:
+        return legacy
     slug = request.path_params["slug"]
     try:
         url = await request.app.state.links.resolve(slug=slug)
@@ -333,6 +353,8 @@ async def redirect_link(request: Request) -> Response:
 
 
 async def render_artifact(request: Request) -> Response:
+    if (legacy := _legacy_host_redirect(request)) is not None:
+        return legacy
     slug = request.path_params["slug"]
     try:
         row = await request.app.state.artifacts.get_by_slug(slug=slug)

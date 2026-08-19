@@ -22,7 +22,7 @@ def test_a_mint_returns_a_slug_and_short_url(wired_apps):
     assert resp.status_code == 200
     body = resp.json()
     assert set(body) == {"slug", "short_url"}
-    assert body["short_url"] == f"https://nora.example.net/i/{body['slug']}"
+    assert body["short_url"] == f"https://nora.67.zone/i/{body['slug']}"
     assert links.created == ["https://example.com/a/very/long/path"]
 
 

@@ -8,6 +8,7 @@
     "memory": "記憶",
     "games": "遊戲",
     "map": "地圖",
+    "people": "友仔",
     "events": "活動",
     "language": "語言",
     "chat": "傾偈"
@@ -241,6 +242,22 @@
       "no_fix": "從未定位過",
       "unavailable": "而家check唔到"
     }
+  },
+  "people": {
+    "eyebrow": "Nora · 友仔",
+    "heading": "友仔",
+    "dek": "Nora 識嘅所有人 — 跨晒平台同遊戲。",
+    "loading": "載入緊…",
+    "error": "連唔到 Nora。",
+    "empty": "重未設置任何人。",
+    "back": "所有友仔",
+    "notFound": "搵唔到嗰個人。",
+    "identityLabel": "身份",
+    "gameProfilesLabel": "遊戲檔案",
+    "noGameProfilesYet": "重未喺任何遊戲見過佢。",
+    "youBadge": "呢個係你",
+    "yourMemoryLabel": "你嘅記憶",
+    "memoryPrivateNote": "淨係你先睇到。"
   },
   "events": {
     "eyebrow": "聚會",

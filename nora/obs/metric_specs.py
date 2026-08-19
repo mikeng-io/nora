@@ -212,7 +212,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # signal-cli, not the model.
     _CounterSpec(
         "nora_room_lookups_total",
-        "Room-scoped tool calls, by tool and how the tool answered. SIX values, "
+        "Room-scoped tool calls, by tool and how the tool answered. FIVE values, "
         "and two pairs of them are easy to conflate: "
         "`ok`; "
         "`not_found` — a NAME resolved to nobody in this room (lookup_person, "
@@ -225,8 +225,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "hit-rate unreadable on the one series that would show her searching "
         "constantly and finding nothing; "
         "`ambiguous`; "
-        "`refused` — somebody in the room could not be placed, so the group's "
-        "history stays out of it (R-31 fails closed rather than disclosing); "
         "`withheld` — it FOUND things the egress guard will not let her repeat, "
         "which is emphatically not the same as finding nothing; "
         "`unavailable` — it could not be checked at all. "
@@ -514,6 +512,26 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "cannot name. The count of unmapped accounts is on the log line, not a "
         "label, so cardinality stays fixed.",
         ("reason",),
+    ),
+    # ── the analytics rollup (DEC-115) ────────────────────────────────────
+    # A separate process (`python -m nora.analytics`); spec §5.
+    _CounterSpec(
+        "nora_analytics_stays_total",
+        "Stays written to presence_stays, by subject.",
+        ("subject",),
+    ),
+    _CounterSpec(
+        "nora_analytics_places_total",
+        "Derived places upserted, by subject and kind (home/work).",
+        ("subject", "kind"),
+    ),
+    # A rise is the tell that Life360's behaviour or the cadence changed
+    # (spec §5) — nothing here should trend upward under a stable population.
+    _CounterSpec(
+        "nora_analytics_unlabeled_total",
+        "Times a cluster resolved to unlabeled instead of home/work, or an "
+        "existing place expired to unlabeled on a freshness recheck.",
+        ("subject",),
     ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
     # never actually called" impossible to read from silence: a cache hit and a
@@ -869,6 +887,15 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Seconds since this circle's last SUCCESSFUL collection. Climbing means "
         "the daemon is up but not collecting.",
         ("circle",),
+    ),
+    # The climbing-age liveness shape design/19 §4 uses, applied to the
+    # rollup: set after every successful run_once, so a stalled daemon
+    # shows a climbing age rather than a frozen derivation count.
+    _GaugeSpec(
+        "nora_analytics_rollup_age_seconds",
+        "Seconds since this subject's last successful analytics rollup run. "
+        "Climbing means the daemon is up but not deriving.",
+        ("subject",),
     ),
     # The R-21 startup invariant (design/19 §5): 1 when the Signal group is a
     # SUBSET of the Life360 circle (disclosure holds by construction), 0 the day

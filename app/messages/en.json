@@ -8,6 +8,7 @@
     "memory": "Memory",
     "games": "Games",
     "map": "Map",
+    "people": "People",
     "events": "Events",
     "language": "Language",
     "chat": "Chat"
@@ -241,6 +242,22 @@
       "no_fix": "Never located",
       "unavailable": "Can't check right now"
     }
+  },
+  "people": {
+    "eyebrow": "Nora · People",
+    "heading": "People",
+    "dek": "Everyone Nora knows, across every platform and game.",
+    "loading": "Loading…",
+    "error": "Couldn't reach Nora.",
+    "empty": "Nobody configured yet.",
+    "back": "All people",
+    "notFound": "Couldn't find that person.",
+    "identityLabel": "Identity",
+    "gameProfilesLabel": "Game profiles",
+    "noGameProfilesYet": "Not seen in any game yet.",
+    "youBadge": "This is you",
+    "yourMemoryLabel": "Your memory",
+    "memoryPrivateNote": "Only visible to you."
   },
   "events": {
     "eyebrow": "Gatherings",

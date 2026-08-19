@@ -8,7 +8,7 @@
  */
 export interface Module {
   id: string;
-  labelKey: "status" | "memory" | "games" | "map" | "events";
+  labelKey: "status" | "memory" | "games" | "map" | "events" | "people";
   href: string;
   status: "live" | "designed" | "future";
 }
@@ -18,6 +18,7 @@ export const MODULES: Module[] = [
   { id: "memory", labelKey: "memory", href: "/memory", status: "live" },
   { id: "games", labelKey: "games", href: "/games", status: "live" },
   { id: "map", labelKey: "map", href: "/map", status: "live" },
+  { id: "people", labelKey: "people", href: "/people", status: "live" },
   // "designed" (not "live"): the events LIST page requires a
   // `?conversation_id=` query param nothing in the app can currently supply
   // — no group/conversation picker exists yet, so a nav link would always

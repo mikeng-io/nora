@@ -620,7 +620,8 @@ class PresenceConfig(BaseModel):
 
     `cadence_seconds` is the per-circle poll interval - ~60-120 s, roughly what
     the Life360 app itself does (§1). `retention_days` is the prune window
-    (§9, operator decision: 180).
+    (§9, operator decision: 720 — see the field's own comment for the sizing
+    math and why it moved off 180, design/27 §5).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -645,7 +646,10 @@ class PresenceConfig(BaseModel):
     # cadence_seconds.
     cadence_moving_seconds: float = Field(default=20.0, ge=1.0)
     cadence_still_seconds: float = Field(default=300.0, ge=1.0)
-    retention_days: int = Field(default=180, ge=1)
+    # 180 -> 720 (operator, 2026-08-19): 378 B/row x ~1,800 fixes/day x 720d ~=
+    # 490MB — cheap, and it is what keeps Tier-4 forecasting training data from
+    # being pruned before it is usable.
+    retention_days: int = Field(default=720, ge=1)
     # The collector's own metrics/health endpoint (§4: liveness lives in the
     # daemon). A separate process, so a separate port from `obs.metrics.port`.
     metrics_port: int = 9101
@@ -681,6 +685,58 @@ class PresenceConfig(BaseModel):
     hkgov_token_env: str = "HKGOV_MAPS_TOKEN"  # noqa: S105 — names an env var, not a secret
     hkgov_lang_zh: str = "zh"
     hkgov_lang_en: str = "en"
+
+
+class AnalyticsConfig(BaseModel):
+    """The presence analytics substrate — the DERIVED layer (docs/superpowers/
+    specs/2026-08-18-presence-analytics-substrate-design), DEC-115.
+
+    Ships INERT like `[presence]`/`[search]`/`[compute]`/`[language]` before
+    it: `enabled` defaults False, and while off `nora.analytics` builds
+    nothing and writes nothing (spec §6, Acceptance Criterion 11).
+
+    Computation knobs ONLY — no consumer knobs (spec §1.1: the substrate
+    serves no particular consumer, and nothing here may name one).
+
+    The three fire conditions (spec §4): `safety_lag` (threshold, backlog of
+    unprocessed FIXES not messages), `settled_seconds` (event, the
+    arrival/departure boundary — `[language]`'s `quiet_seconds` shape
+    applied to movement), `max_age_seconds` (fires at lag == 0 ON PURPOSE,
+    because labelling is recency-gated — spec §3.5/§4.2).
+
+    `batch_limit` is inert in steady state (1,443x measured headroom, spec
+    §4.3) and binds only during a full re-derive; `backfill_batch_limit`
+    (used once a subject's lag exceeds `backfill_threshold`) is what makes
+    that rebuild ~14 minutes instead of ~12 hours — the operator's own
+    decision (2026-08-19) that this ships in P0 because a 12-hour rebuild
+    means `stay_radius_m`/`stay_min_dwell_seconds` (both inherited, both
+    unvalidated per spec §7.1) would never actually get tuned.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    tick_seconds: float = Field(default=120.0, gt=0)
+    safety_lag: int = Field(default=600, ge=1)
+    settled_seconds: float = Field(default=900.0, ge=0)
+    max_age_seconds: float = Field(default=86_400.0, gt=0)
+    batch_limit: int = Field(default=400, ge=1)
+    backfill_batch_limit: int = Field(default=20_000, ge=1)
+    backfill_threshold: int = Field(default=4_000, ge=1)
+    grace_seconds: float = Field(default=60.0, ge=0)
+    stay_radius_m: float = Field(default=120.0, gt=0)
+    stay_min_dwell_seconds: float = Field(default=600.0, gt=0)
+    cluster_eps_m: float = Field(default=100.0, gt=0)
+    cluster_min_samples: int = Field(default=3, ge=1)
+    min_nights: int = Field(default=3, ge=1)
+    min_weekdays: int = Field(default=3, ge=1)
+    label_freshness_days: int = Field(default=45, ge=1)
+    tz_name: str = "Asia/Hong_Kong"
+    # The substrate's own metrics/health endpoint. 9100 is Nora's own
+    # (`[obs.metrics]`), 9101 is the presence collector's
+    # (`PresenceConfig.metrics_port`), 9102 is the drop service's public
+    # listener — the next free port in the same numbering.
+    metrics_port: int = 9103
 
 
 class SearchConfig(BaseModel):
@@ -1223,6 +1279,10 @@ class Config(BaseModel):
     # collector is a SEPARATE process (`python -m nora.presence`) that reads this
     # same tree.
     presence: PresenceConfig = PresenceConfig()
+    # Optional and defaulted — see `AnalyticsConfig`. Ships INERT
+    # (`enabled = false`); off, `nora.analytics` builds and writes nothing
+    # (spec §6, Acceptance Criterion 11).
+    analytics: AnalyticsConfig = AnalyticsConfig()
     # Optional and defaulted — see `SearchConfig`. Off (inert) unless an operator
     # turns it on AND a Tavily key is present (`api_key_env`, DEC-8/DEC-73); a
     # config.toml without a `[search]` section keeps loading.

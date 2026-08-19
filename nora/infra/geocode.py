@@ -30,9 +30,12 @@ exception in the collector loop or a stalled cycle.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
+
+if TYPE_CHECKING:
+    from nora.domain.ports import GeocodeCacheStore
 
 log = logging.getLogger("nora.geocode")
 
@@ -58,11 +61,15 @@ class CachingBilingualGeocoder:
     _CACHE_PRECISION = 4
     _CACHE_MAX = 512
 
-    def __init__(self) -> None:
+    def __init__(self, *, cache_store: GeocodeCacheStore | None = None) -> None:
         # (rounded lat, rounded lng) -> address. Only successful lookups are
         # cached; a miss (None) is NOT stored, so a transient geocode outage does
         # not pin a coordinate to "no address" for the life of the process.
         self._cache: dict[tuple[float, float], str] = {}
+        # The durable half (2026-08-19): survives a restart, where the dict
+        # above does not. Optional — `where_is` wires it, a caller that does
+        # not is unchanged (in-memory-only, exactly as before this existed).
+        self._store = cache_store
 
     async def address_for(self, *, lat: float, lng: float) -> str | None:
         """The best formatted address for `lat,lng` in BOTH languages, or None.
@@ -73,12 +80,25 @@ class CachingBilingualGeocoder:
         a Cantonese group). One language missing still yields the other; both
         missing is None (the caller falls back to Life360's label, or the raw
         coordinate). Two calls per NEW coordinate, but the ~11 m cache means a
-        stationary member pays it once, not every cycle.
+        stationary member pays it once, not every cycle — and with `_store`
+        wired, once per COORDINATE ever, not once per process lifetime.
         """
         key = (round(lat, self._CACHE_PRECISION), round(lng, self._CACHE_PRECISION))
         cached = self._cache.get(key)
         if cached is not None:
             return cached
+        if self._store is not None:
+            try:
+                persisted = await self._store.get(lat_rounded=key[0], lng_rounded=key[1])
+            except Exception:
+                # The port promises never to raise; a caller must not depend
+                # on that — a store outage costs one live re-resolve, same as
+                # a cold cache, never a raised exception here.
+                log.exception("geocode_cache read failed — resolving live instead")
+                persisted = None
+            if persisted is not None:
+                self._remember(key, persisted)
+                return persisted
         zh = await self._fetch(lat, lng, "zh")
         en = await self._fetch(lat, lng, "en")
         if zh and en and zh != en:
@@ -86,12 +106,22 @@ class CachingBilingualGeocoder:
         else:
             address = zh or en
         if address is not None:
-            if len(self._cache) >= self._CACHE_MAX:
-                # Drop the oldest entry (dicts preserve insertion order) so a
-                # long-running collector's cache stays bounded.
-                del self._cache[next(iter(self._cache))]
-            self._cache[key] = address
+            self._remember(key, address)
+            if self._store is not None:
+                try:
+                    await self._store.put(
+                        lat_rounded=key[0], lng_rounded=key[1], address=address,
+                    )
+                except Exception:
+                    log.exception("geocode_cache write failed; the address is not cached")
         return address
+
+    def _remember(self, key: tuple[float, float], address: str) -> None:
+        if len(self._cache) >= self._CACHE_MAX:
+            # Drop the oldest entry (dicts preserve insertion order) so a
+            # long-running process's in-memory tier stays bounded.
+            del self._cache[next(iter(self._cache))]
+        self._cache[key] = address
 
     async def _fetch(self, lat: float, lng: float, language: str) -> str | None:
         raise NotImplementedError
@@ -105,8 +135,11 @@ class GoogleGeocoder(CachingBilingualGeocoder):
     collector with no key simply has no geocoder and stores the coordinate as-is.
     """
 
-    def __init__(self, *, api_key: str, timeout_seconds: float = 5.0) -> None:
-        super().__init__()
+    def __init__(
+        self, *, api_key: str, timeout_seconds: float = 5.0,
+        cache_store: GeocodeCacheStore | None = None,
+    ) -> None:
+        super().__init__(cache_store=cache_store)
         self._api_key = api_key
         self._timeout_seconds = timeout_seconds
 

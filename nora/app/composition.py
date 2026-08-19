@@ -942,6 +942,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # alone, never Google. Switchable behind the SAME `ReverseGeocoder` port
     # (`[presence] geocode_provider`, "google" default or "hkgov"), same
     # config fields this used to read on the collector's side.
+    # The durable half of the cache (2026-08-19): survives a restart, and is
+    # what `nora.analytics` reads (READ-ONLY — it never calls a geocoder
+    # itself) to label a derived place. REUSES `engine` for the same reason
+    # `presence_store` above does — a second `create_sql_engine` would fork
+    # the pool.
+    from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
+    geocode_cache_store = SqlGeocodeCacheStore(engine)
     geocoder: ReverseGeocoder | None = None
     if cfg.presence.geocode_provider == "hkgov":
         hkgov_token = os.environ.get(cfg.presence.hkgov_token_env, "")
@@ -950,12 +957,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             geocoder = HKGovGeocoder(
                 service_url=cfg.presence.hkgov_geocode_url, token=hkgov_token,
                 lang_zh=cfg.presence.hkgov_lang_zh, lang_en=cfg.presence.hkgov_lang_en,
+                cache_store=geocode_cache_store,
             )
     else:
         maps_key = os.environ.get(cfg.presence.geocode_api_key_env, "")
         if maps_key:
             from nora.infra.geocode import GoogleGeocoder
-            geocoder = GoogleGeocoder(api_key=maps_key)
+            geocoder = GoogleGeocoder(api_key=maps_key, cache_store=geocode_cache_store)
     # `LocalDockerBackend` (Nora Compute spec §2/§3), wired ONLY when
     # `[compute] enabled` — the `[heartbeat]`-shaped gate: off leaves
     # `compute_backend` None and `make_artifact` answers `unavailable` (R-5),

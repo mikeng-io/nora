@@ -94,6 +94,13 @@ class _PersonEntry(BaseModel):
     # index: making a hand-written nickname resolve a sender would hand
     # identity to anyone who can set a profile name.
     aliases: list[str] = Field(default_factory=list)
+    # Prior `person_id`s this SAME person was known under, most recently
+    # design/27 §1.2's finding: `clara_yates` -> `clara_lawson` split one
+    # continuous presence-fixes track into two identities because the
+    # rename changed the TOML section header itself. Declared here, never
+    # inferred — an operator states a merge happened; the analytics rollup
+    # (nora.analytics) never guesses one from timing/proximity alone.
+    former_person_ids: list[str] = Field(default_factory=list)
     # One dict per ACCOUNT (the baseline case, not an edge case); the keys
     # inside are that account's id KINDS plus the never-matched `label`.
     #

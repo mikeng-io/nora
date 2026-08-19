@@ -1,0 +1,13 @@
+{
+  "type": "feature",
+  "summary": "A new platform-wide People section: a roster of everyone in identity.toml, each with a public profile page (their cross-game presence) and, on your own profile only, a private section (your Honcho memory) — distinct from the per-game player pages, which stay scoped to one game.",
+  "details": [
+    "New nav item 'People' → /people, a roster listing everyone identity.toml knows (opt-out, matching how the games/players pages already list every known person by default) — visible to any logged-in allowlisted user, since the portal has no weaker anonymous tier to build a second trust level against.",
+    "Each person's /people/{personId} page shows their identity (avatar + name) and game profiles (which servers know them, cross-referenced via identity.toml's steamId, currently working for local-save games like Big Walk; container-backed games like Abiotic are a known limitation — see below) — all public, visible to anyone.",
+    "The same page's private section (your own Honcho memory: identity facts + episodes) renders ONLY when you're viewing your own profile, reusing the existing user-scoped /app/v1/memory endpoint rather than duplicating its logic.",
+    "New backend: nora/web/persons.py (GET /app/v1/persons, GET /app/v1/persons/{personId})."
+  ],
+  "limitations": [
+    "Game-profile cross-referencing only works for local-save games (Big Walk), whose /world payload already carries every crew member's steamId at no extra cost. Container-backed games (Abiotic) only expose steamId on a per-player detail call, so cross-referencing them would need either an N+1 loop over every player or a new Pulse endpoint exposing its steamId map — deliberately left undone rather than either, for now."
+  ]
+}

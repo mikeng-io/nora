@@ -1,13 +1,20 @@
 """events + event_rsvps
 
-Revision ID: 0015_events
-Revises: 0014_lang_obs_scope_idx
+Revision ID: 0017_events
+Revises: 0016_geocode_cache
 Create Date: 2026-08-19
 
 Hand-written (CLAUDE.md: `idx_messages_conv_ts` is the one index
 autogenerate must never touch; neither table here is that index, but this
 migration is hand-written anyway to stay consistent with every other
 table-adding revision in this repo and to keep the CHECK constraints exact).
+
+Originally authored as `0015_events` against a fork point that predated two
+other migrations landing on `origin/master` concurrently
+(`0015_presence_analytics`, `0016_geocode_cache`) — renumbered to `0017` and
+rechained onto `0016_geocode_cache` at merge time. See
+`docs/superpowers/specs/2026-08-19-event-module-design.md` §2 for the full
+history.
 """
 
 from __future__ import annotations
@@ -17,8 +24,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0015_events"
-down_revision: str | None = "0014_lang_obs_scope_idx"
+revision: str = "0017_events"
+down_revision: str | None = "0016_geocode_cache"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 

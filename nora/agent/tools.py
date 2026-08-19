@@ -1839,15 +1839,16 @@ def build_tool_specs(
         not a profile (`about`) or a reasoned answer (`ask_memory`). It searches
         what people in THIS group have said and hands back the matching lines.
 
-        Outcomes, and they are five different answers: `ok` with the lines
+        Outcomes, and they are four different answers: `ok` with the lines
         (each with who said it); `nothing_found` when nothing matches;
         `withheld` when it found things you may not repeat —
         `found_but_unquotable` counts them; say you can't quote it, NOT that
-        nobody said it; `refused` when somebody here can't be
-        placed, so the group's history stays out of this room; `unavailable`
-        when it couldn't be checked at all. Never report the last as
-        `nothing_found`. Only ever surfaces words from people in this
-        conversation.
+        nobody said it; `unavailable` when it couldn't be checked at all.
+        Never report the last as `nothing_found`. The guard is per MESSAGE,
+        not per room: only words from a NAMED sender ever get quoted — an
+        unmapped account present in the room, or the room being only
+        partly known, never blocks the search, it just means that
+        account's own words don't come back.
 
         Args:
             query: what to look for — a phrase, a topic, a thing that was said.
@@ -1860,17 +1861,13 @@ def build_tool_specs(
                 "note": "I can't work out who is here, so I can't look back through "
                         "what was said. Say you can't check — do not guess.",
             }
-        # An UNVERIFIED room (someone here Nora can't place) does not get the
-        # group's history surfaced into it — the same fail-closed shape whereis
-        # draws (R-31), sharper here because these are raw words, not a distilled
-        # model. A degraded view (roster unreadable) refuses for the same reason.
-        if view.degraded or view.unnamed > 0:
-            _record_room(metrics, "search_memory", "refused")
-            return {
-                "status": "refused",
-                "note": "I can't dig up what was said here — someone in this "
-                        "conversation I can't place. Say so; do not guess.",
-            }
+        # No room-wide gate here (dropped `unnamed > 0`, then `degraded`,
+        # operator direction 2026-08-19). The guard is the per-hit filter
+        # right below: a hit is surfaced only if its sender resolves to a
+        # NAMED person in `roster`. An unmapped account in the room, or a
+        # DEGRADED view (roster unreadable, `roster` narrowed to the tagger
+        # alone), both fall out of that same filter automatically — fewer
+        # names in `roster` means fewer hits pass, never a blanket refusal.
         # OBSERVED speakers Nora may surface into THIS room: the resolved people
         # here, by their peer id. A message from anyone else — Nora's own peer, or
         # a peer not in this room — is dropped.

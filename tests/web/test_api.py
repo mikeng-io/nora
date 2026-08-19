@@ -111,6 +111,23 @@ async def test_memory_route_with_an_unrecognized_person_id_returns_empty(client)
     assert await resp.json() == []
 
 
+async def test_persons_route_returns_the_roster(client):
+    resp = await client.get("/app/v1/persons")
+    assert resp.status == 200
+    assert await resp.json() == [{"personId": "miles", "displayName": "Miles"}]
+
+
+async def test_person_route_returns_the_profile(client):
+    resp = await client.get("/app/v1/persons/miles")
+    assert resp.status == 200
+    assert await resp.json() == {"personId": "miles", "displayName": "Miles", "gameProfiles": []}
+
+
+async def test_person_route_is_404_for_an_unrecognized_person(client):
+    resp = await client.get("/app/v1/persons/stranger")
+    assert resp.status == 404
+
+
 async def test_games_servers_route_is_503_when_pulse_is_not_wired(client):
     """Matches app/src/lib/games-schema.ts's fetchServers(): a non-2xx makes
     it throw BEFORE `.parse()` ever runs, so a 503 needs no schema-shaped

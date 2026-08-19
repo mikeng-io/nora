@@ -244,9 +244,12 @@ budget = 5
 # for freshness. Keep the band ~15–300 s, roughly what the Life360 app itself
 # does; set moving == still == cadence_seconds for the old fixed interval. The
 # collector is a CHANGE-RECORDER (it writes only when a member's position
-# advances). `retention_days` is the prune window (operator
-# decision: 180). `metrics_port` is the daemon's own /metrics + /health endpoint,
-# separate from obs.metrics.port because it is a separate process.
+# advances). `retention_days` is the prune window (operator decision: 720 —
+# 180 -> 720 as of 2026-08-19: 378 B/row x ~1,800 fixes/day x 720d ~= 490MB,
+# cheap, and it is what keeps Tier-4 forecasting training data from being
+# pruned before it is usable). `metrics_port` is the daemon's own /metrics +
+# /health endpoint, separate from obs.metrics.port because it is a separate
+# process.
 #
 # This section carries NO ids. Circle membership lives entirely in identity.toml:
 # each person gets a `[[persons.<id>.life360]]` block with `member_id = "…"` and
@@ -261,7 +264,7 @@ client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
 username_env = "LIFE360_USERNAME"
 password_env = "LIFE360_PASSWORD"
 cadence_seconds = 90
-retention_days = 180
+retention_days = 720
 metrics_port = 9101
 # Reverse-geocode backend — a switchable OPTION, never a replacement. "google"
 # (default, proven; needs GOOGLE_MAPS_API_KEY) or "hkgov" (the HK-gov LandsD
@@ -276,6 +279,31 @@ metrics_port = 9101
 # hkgov_token_env = "HKGOV_MAPS_TOKEN"
 # hkgov_lang_zh = "zh"
 # hkgov_lang_en = "en"
+
+# The presence analytics substrate — the DERIVED layer (docs/superpowers/
+# specs/2026-08-18-presence-analytics-substrate-design.md), DEC-115. Ships
+# INERT like [presence]/[search]/[compute]/[language]: turning it on is an
+# operator decision, never something a missing section decides. Computation
+# knobs ONLY — no consumer knobs (spec §1.1).
+[analytics]
+enabled = false
+# tick_seconds = 120
+# safety_lag = 600            # unprocessed FIXES, not messages
+# settled_seconds = 900       # no new fix -> the stay is closeable
+# max_age_seconds = 86400     # fires at lag == 0 on purpose (spec §4.2)
+# batch_limit = 400           # steady state; inert in practice (spec §4.3)
+# backfill_batch_limit = 20000
+# backfill_threshold = 4000
+# grace_seconds = 60
+# stay_radius_m = 120         # INHERITED, not measured (spec §7.1)
+# stay_min_dwell_seconds = 600 # INHERITED, not measured (spec §7.1)
+# cluster_eps_m = 100
+# cluster_min_samples = 3
+# min_nights = 3
+# min_weekdays = 3
+# label_freshness_days = 45
+# tz_name = "Asia/Hong_Kong"
+# metrics_port = 9103
 
 # Web search (SearXNG) + page fetch (Firecrawl) for the `search`/`fetch` tools
 # (DEC-57, design/22). The WHOLE SECTION IS OPTIONAL and every key defaults — a

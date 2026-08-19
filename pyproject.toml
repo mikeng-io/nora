@@ -121,6 +121,32 @@ source_modules = ["nora.domain"]
 forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus_client", "opentelemetry", "yaml", "openai"]
 
 [[tool.importlinter.contracts]]
+name = "the analytics substrate serves no particular consumer"
+type = "forbidden"
+# DEC-115 / spec §1.1: the operator's constraint was that nora.analytics
+# serve neither the agent nor the app, but sit under both as a substrate.
+# A neutrality claim living only in a docstring is decoration — this is
+# what turns it into a build failure the first time it is violated.
+#
+# allow_indirect_imports = "True" is load-bearing for the same reason it is on
+# the evals contract below: nora.analytics.composition legitimately imports
+# nora.config (its own composition root reading its own config), and
+# nora.config in turn carries deliberate one-way, function-scoped validation
+# imports into nora.agent.tools and nora.engagement.context (see
+# nora/config.py's own comments on those imports — "safe from cycles" because
+# agent/engagement may never import config back). ForbiddenContract's default
+# walks the whole transitive chain, which would flag
+# `nora.analytics -> nora.config -> nora.agent.tools -> ... -> nora.doctrine.loader`
+# even though nora.analytics never writes that import itself. This contract is
+# only about nora.analytics's/nora.domain.mobility's own direct imports.
+source_modules = ["nora.analytics", "nora.domain.mobility"]
+forbidden_modules = [
+    "nora.agent", "nora.app", "nora.platform", "nora.tag",
+    "nora.doctrine", "nora.ingest", "nora.engagement", "nora.skills",
+]
+allow_indirect_imports = "True"
+
+[[tool.importlinter.contracts]]
 name = "layered architecture"
 type = "layers"
 # Middle rows reflect the real import order among today's packages (agent -> doctrine
@@ -128,7 +154,7 @@ type = "layers"
 # not fight legitimate cross-package imports. The property this contract exists to
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
 layers = [
-    "nora.app | nora.presence",
+    "nora.app | nora.presence | nora.analytics",
     "nora.ingest | nora.engagement",
     "nora.agent | nora.platform",
     "nora.doctrine",
@@ -185,7 +211,7 @@ source_modules = ["evals"]
 forbidden_modules = [
     "nora.agent", "nora.config", "nora.domain", "nora.engagement",
     "nora.infra", "nora.ingest", "nora.obs", "nora.doctrine", "nora.persons",
-    "nora.platform", "nora.tag", "nora.skills", "nora.presence", "tests",
+    "nora.platform", "nora.tag", "nora.skills", "nora.presence", "nora.analytics", "tests",
 ]
 allow_indirect_imports = "True"
 

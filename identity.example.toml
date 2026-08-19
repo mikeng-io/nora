@@ -16,6 +16,15 @@ name = "Miles"
 [[persons.miles.signal]]
 phone = "+85212345678"
 
+# If you ever rename a [persons.<id>] block's key (the id itself, not just
+# `name`), record the old id(s) here so analytics derived from data recorded
+# under the old id still resolves to this person instead of splitting into a
+# second, orphaned identity (design/27 §1.2). A former id must not also be a
+# live person_id, and no two people may claim the same former id — both are
+# refused at startup rather than guessed.
+#
+# former_person_ids = ["miles_old_id"]
+
 # A second account for the SAME person. Once a platform holds two or more, each
 # needs a distinct `label`: it is never matched on, it is what
 # `nora persons pending` prints back so you can tell them apart.

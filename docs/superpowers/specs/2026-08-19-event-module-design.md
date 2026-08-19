@@ -87,23 +87,23 @@ on `nora.domain.reminders` for the linked-series relationship. It is not
 under the `nora.analytics` neutrality contract (`design/proposed/27-presence-analytics.md`
 §1.1) and needs no import-linter carve-out.
 
-## 2. Data model — migration `0015_events`
+## 2. Data model — migration `0017_events`
 
-(**Known unresolved merge-time issue, updated 2026-08-19** — this branch
-forked from `origin/master` at `9ab0d1e`, before `0015_presence_analytics`
-landed. Since then, a concurrent branch has merged
-`nora/infra/sql/migrations/versions/0015_presence_analytics.py` into
-`origin/master`, chained off `0014_lang_obs_scope_idx`. This module's
-`0015_events.py` also chains `down_revision = "0014_lang_obs_scope_idx"` —
-the two migrations now collide on the number `0015` and will produce a
-split head if merged as-is. This is a **known, explicit, unresolved
-TODO**, not something already handled: before this branch merges,
-`0015_events.py` must be renumbered to `0016_events.py` with
-`revision = "0016"` and `down_revision = "0015_presence_analytics"`'s
-actual revision id, and `tests/infra/pg_schema_baseline.sql` regenerated
-against the combined chain. See also the implementation plan,
-`docs/superpowers/plans/2026-08-19-event-module.md`,
-for the migration as originally written.)
+(**Resolved at merge time, 2026-08-19.** This branch forked from
+`origin/master` at `9ab0d1e`, originally as `0015_events`. By the time of
+merge, THREE concurrent branches had landed migrations on `origin/master`
+ahead of it — `0015_presence_analytics`, then `0016_geocode_cache` — each
+one moving the collision target again while this branch was in review.
+Rather than chase a moving number a fourth time mid-development, the
+renumbering was deliberately deferred to the actual merge, when
+`origin/master`'s tip could be read once, correctly, and not need
+re-verifying again before landing. At merge time `0016_geocode_cache` was
+confirmed as the tip; this migration was renamed `0015_events.py` →
+`0017_events.py`, `revision`/`down_revision` updated to chain onto it, and
+`tests/infra/pg_schema_baseline.sql` regenerated against the full combined
+chain (`uv run python scripts/gen_pg_baseline.py`). See the implementation
+plan, `docs/superpowers/plans/2026-08-19-event-module.md`, for the
+migration as originally authored under the stale number.)
 
     Event
       id                 UUID, pk

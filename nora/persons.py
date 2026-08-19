@@ -62,6 +62,48 @@ class Persons:
     # Every person's Life360 membership(s), the source the presence collector
     # derives its circles from (design/19 §3) — so config.toml carries no ids.
     life360: tuple[Life360Membership, ...] = ()
+    # former_person_id -> current person_id, built from every
+    # `former_person_ids` entry across identity.toml (design/27 §1.2). A
+    # person_id absent from this dict resolves to itself. Defaulted (not a
+    # bare required field) so every existing direct `Persons(...)` fixture in
+    # the test suite that predates this task keeps constructing without it.
+    _subject_aliases: dict[str, str] = field(default_factory=dict)
+
+    def subject_id_for(self, person_id: str) -> str:
+        """The stable id to derive analytics under. Resolves a RETIRED
+        person_id to whoever currently claims it; an id this dict does not
+        mention (including a live, never-renamed person_id, or an id this
+        identity.toml has never heard of at all) resolves to itself."""
+        return self._subject_aliases.get(person_id, person_id)
+
+    def former_ids_for(self, person_id: str) -> tuple[str, ...]:
+        """The reverse of `subject_id_for`: every RETIRED id whose
+        `former_person_ids` entry currently resolves to `person_id`.
+
+        `_subject_aliases` only maps former → current (built once by
+        `load_persons` from each block's `former_person_ids`), and
+        `life360` memberships — by `load_persons`' own fail-closed
+        construction (a `former_person_ids` entry colliding with a live
+        `[persons.<id>]` block raises `PersonsError`) — can therefore only
+        ever carry LIVE ids. Any caller that needs every id a subject has
+        ever been observed under (`nora.analytics.composition
+        ._subjects_from_identity`, folding a renamed person's historical
+        fixes under their former id into the SAME subject) needs this
+        reverse lookup; forward-only `subject_id_for` is a no-op over
+        `life360`'s own ids and can never surface a former id on its own.
+
+        Built by scanning `_subject_aliases` on each call rather than a
+        second cached index: the dict is small (one entry per rename in the
+        whole deployment) and this avoids a second copy of the same fact
+        that could drift from `_subject_aliases` after a future edit —
+        exactly `platform_ids`' own reasoning for computing fresh each call.
+        Order is insertion order over `_subject_aliases` (stable, but not
+        meaningful — callers should not rely on a particular ordering
+        beyond stability)."""
+        return tuple(
+            former for former, current in self._subject_aliases.items()
+            if current == person_id
+        )
 
     def resolve(self, platform: str, sender_id: str) -> PersonRef | None:
         person_id = self.index.get((platform, sender_id))
@@ -231,4 +273,27 @@ def load_persons(path: Path) -> Persons:
                             "would silently misattribute Honcho memory"
                         )
                     index[key] = person_id
-    return Persons(by_person=by_person, index=index, life360=tuple(life360))
+
+    subject_aliases: dict[str, str] = {}
+    for person_id, entry in parsed.persons.items():
+        for former in entry.former_person_ids:
+            if former in parsed.persons:
+                raise PersonsError(
+                    f"former_person_ids entry {former!r} on "
+                    f"[persons.{person_id}] collides with a LIVE "
+                    f"[persons.{former}] block — a former id must not also "
+                    "be a live person_id; remove one or the other"
+                )
+            if former in subject_aliases:
+                raise PersonsError(
+                    f"former_person_ids entry {former!r} is claimed by both "
+                    f"[persons.{subject_aliases[former]}] and "
+                    f"[persons.{person_id}] — an ambiguous merge is refused "
+                    "rather than silently resolved to one of them"
+                )
+            subject_aliases[former] = person_id
+
+    return Persons(
+        by_person=by_person, index=index, life360=tuple(life360),
+        _subject_aliases=subject_aliases,
+    )

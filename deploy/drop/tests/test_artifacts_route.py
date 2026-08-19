@@ -30,7 +30,7 @@ def test_a_successful_register_returns_artifact_id_and_url(wired_apps):
     body = resp.json()
     assert set(body) == {"artifact_id", "url"}
     assert body["artifact_id"].startswith("art_")
-    assert body["url"].startswith("https://nora.example.net/drop/")
+    assert body["url"].startswith("https://nora.67.zone/drop/")
 
 
 def test_a_successful_update_overwrites_title_and_media_type(wired_apps):
