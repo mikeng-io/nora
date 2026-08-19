@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,6 +60,18 @@ class FakeMobilityStore:
             (s for s in self._stays if s.subject_id == subject_id),
             key=lambda s: s.started_ts,
         )
+
+    async def set_place_ids(
+        self, *, subject_id: str, started_ts_in: list[int], place_id: int
+    ) -> None:
+        targets = set(started_ts_in)
+        for i, s in enumerate(self._stays):
+            if (
+                s.subject_id == subject_id
+                and s.started_ts in targets
+                and s.place_id is None
+            ):
+                self._stays[i] = dataclasses.replace(s, place_id=place_id)
 
     async def existing_place(
         self, *, subject_id: str, kind: str

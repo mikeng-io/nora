@@ -101,9 +101,30 @@ class SqlMobilityStore:
                 subject_id=r.subject_id, person_id=r.person_id, circle_id=r.circle_id,
                 started_ts=r.started_ts, ended_ts=r.ended_ts,
                 lat=r.lat, lng=r.lng, radius_m=r.radius_m, fix_count=r.fix_count,
+                place_id=r.place_id,
             )
             for r in rows
         ]
+
+    async def set_place_ids(
+        self, *, subject_id: str, started_ts_in: list[int], place_id: int
+    ) -> None:
+        """Fills `place_id` ONLY where it is currently NULL — a stay's link
+        to a place, once set, is never silently reassigned by a later,
+        different cluster touching the same coordinate (Task 10's own
+        docstring on why this can only ever be additive)."""
+        if not started_ts_in:
+            return
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                sa.update(PRESENCE_STAYS)
+                .where(
+                    PRESENCE_STAYS.c.subject_id == subject_id,
+                    PRESENCE_STAYS.c.started_ts.in_(started_ts_in),
+                    PRESENCE_STAYS.c.place_id.is_(None),
+                )
+                .values(place_id=place_id)
+            )
 
     async def existing_place(
         self, *, subject_id: str, kind: str
