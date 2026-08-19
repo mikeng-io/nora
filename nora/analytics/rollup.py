@@ -116,6 +116,8 @@ class RollupConfig:
     tz_name: str = "Asia/Hong_Kong"
     anomaly_min_samples: int = 5
     anomaly_z_threshold: float = 3.0
+    corridor_max_edit_distance: int = 2
+    corridor_min_samples: int = 3
 
 
 class MobilityRollup:

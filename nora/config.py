@@ -741,6 +741,14 @@ class AnalyticsConfig(BaseModel):
     # only; this substrate emits typed facts, never a consumer-facing
     # alert (spec §1.1's neutrality rule still applies to Tier 3).
     anomaly_z_threshold: float = Field(default=3.0, gt=0)
+    # Tier 5 (design/27 §4, issue #6): corridor identity is a SIMILARITY
+    # match, not exact — two trips along the same road on different days
+    # rarely produce byte-identical address sequences (a slightly
+    # different fix cadence, a missing address on one fix). Neither value
+    # is measured; same "inherited, not measured" honesty design/27 §7.1
+    # already gives stay_radius_m/stay_min_dwell_seconds.
+    corridor_max_edit_distance: int = Field(default=2, ge=0)
+    corridor_min_samples: int = Field(default=3, ge=1)
     tz_name: str = "Asia/Hong_Kong"
     # The substrate's own metrics/health endpoint. 9100 is Nora's own
     # (`[obs.metrics]`), 9101 is the presence collector's

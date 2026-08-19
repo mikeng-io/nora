@@ -304,6 +304,8 @@ enabled = false
 # label_freshness_days = 45
 # anomaly_min_samples = 5     # Tier 3 — fewer prior stays and no anomaly claim (fail-closed)
 # anomaly_z_threshold = 3.0   # Tier 3 — |z| above this counts nora_analytics_anomalies_total
+# corridor_max_edit_distance = 2   # Tier 5 — corridor identity tolerance
+# corridor_min_samples = 3         # Tier 5 — trips needed before a corridor is named
 # tz_name = "Asia/Hong_Kong"
 # metrics_port = 9103
 
