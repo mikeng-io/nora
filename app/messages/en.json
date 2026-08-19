@@ -210,7 +210,8 @@
     "bigWalkCrewLabel": "Crew",
     "bigWalkWalkingProven": "Walking proven",
     "bigWalkSlotName": "Save slot {name}",
-    "bigWalkAssistOff": "Assist off",
+    "bigWalkSkipAidsOn": "Skip aids: on",
+    "bigWalkSkipAidsOff": "Skip aids: off",
     "bigWalkShowAllGourds": "Show all {count}",
     "linkedPerson": "This is {name}"
   },

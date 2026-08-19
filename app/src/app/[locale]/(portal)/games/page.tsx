@@ -98,9 +98,13 @@ function ServerCard(
 ) {
   const t = useTranslations("games");
   const current = server.current;
-  const isLocalSave = current === null;
+  // `current === null` alone is ambiguous — it's also a container server's
+  // state before its first sample lands, not just "this is a local-save
+  // game". Only the confirmed `/status` fetch (surfaced as `localStatus`)
+  // proves it's local-save; until then this falls through to the ordinary
+  // container card, same as an unsampled container server already does.
 
-  if (isLocalSave) {
+  if (localStatus) {
     return (
       <Link href={`/games/${server.id}`} className="block">
         <Card className="transition-colors hover:bg-bg-elevated">

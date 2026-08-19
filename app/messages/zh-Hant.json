@@ -210,7 +210,8 @@
     "bigWalkCrewLabel": "隊員",
     "bigWalkWalkingProven": "識行路",
     "bigWalkSlotName": "存檔位 {name}",
-    "bigWalkAssistOff": "已關輔助",
+    "bigWalkSkipAidsOn": "Skip aids：開",
+    "bigWalkSkipAidsOff": "Skip aids：關",
     "bigWalkShowAllGourds": "顯示全部 {count} 個",
     "linkedPerson": "呢個係 {name}"
   },

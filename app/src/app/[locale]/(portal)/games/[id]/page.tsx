@@ -86,11 +86,19 @@ export default function GameServerPage() {
   }, [id]);
 
   const isLocalSave = status?.kind === "local-save";
+  // Stable primitives to depend on instead of `status` itself — a fresh
+  // status object is allocated every 20s poll tick (`fetchServerStatus`
+  // never returns the same reference twice), so depending on `status`
+  // directly re-ran these effects on every tick forever, hammering Pulse
+  // with full insights/weekly aggregation queries every 20 seconds instead
+  // of once per page view.
+  const statusKind = status?.kind ?? null;
+  const lastUploadedAt = status?.kind === "local-save" ? status.status.lastUploadedAt : undefined;
 
   // Container-backed history (CPU/memory/network/players over time) — no
   // container, no route, for a local-save game.
   useEffect(() => {
-    if (!status || isLocalSave) return;
+    if (!statusKind || statusKind === "local-save") return;
     let cancelled = false;
     fetchServerGraph(id, hours)
       .then((g) => {
@@ -102,12 +110,13 @@ export default function GameServerPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, hours, status, isLocalSave]);
+  }, [id, hours, statusKind]);
 
   // Local-save history (playtime/completion counts per upload) — the
-  // save-upload equivalent, fetched only once we know which kind this is.
+  // save-upload equivalent, fetched only once we know which kind this is,
+  // and again whenever a new save actually lands.
   useEffect(() => {
-    if (!status || !isLocalSave) return;
+    if (statusKind !== "local-save") return;
     let cancelled = false;
     Promise.all([
       fetchServerProgress(id).catch(() => null),
@@ -120,8 +129,10 @@ export default function GameServerPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, hours, status, isLocalSave]);
+  }, [id, hours, statusKind, lastUploadedAt]);
 
+  // World detail (checklist/crew/notes) — refetched only when a new save
+  // upload actually lands, not on every status poll tick.
   useEffect(() => {
     let cancelled = false;
     fetchServerWorld(id)
@@ -132,14 +143,14 @@ export default function GameServerPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, lastUploadedAt]);
 
   // Weekly summary and insights (leaderboard, death causes, coplay) are built
   // from container-log-derived sessions and kill events — a local-save game
   // like Big Walk has neither, so these panels have nothing to show and are
   // skipped entirely rather than rendered empty.
   useEffect(() => {
-    if (!status || isLocalSave) return;
+    if (!statusKind || statusKind === "local-save") return;
     let cancelled = false;
     Promise.all([
       fetchServerWeekly(id).catch(() => null),
@@ -152,7 +163,7 @@ export default function GameServerPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, status, isLocalSave]);
+  }, [id, statusKind]);
 
   return (
     <div>
@@ -180,10 +191,19 @@ export default function GameServerPage() {
 
       {status && (
         <>
-          <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <NavCard href={`/games/${id}/players`} icon={Users} label={t("playersHeading")} />
+          {/* Players and Sessions come from the abiotic-log activity watcher a
+              local-save game has no config for — Pulse answers both with a
+              well-formed empty page rather than an error, which reads as
+              missing data rather than a section that doesn't apply. Activity
+              stays: Big Walk's own save-diff events populate it for real. */}
+          <div className={cn("mb-6 grid grid-cols-1 gap-3", !isLocalSave && "sm:grid-cols-3")}>
+            {!isLocalSave && (
+              <NavCard href={`/games/${id}/players`} icon={Users} label={t("playersHeading")} />
+            )}
             <NavCard href={`/games/${id}/activity`} icon={Activity} label={t("activityHeading")} />
-            <NavCard href={`/games/${id}/sessions`} icon={Clock} label={t("sessionsHeading")} />
+            {!isLocalSave && (
+              <NavCard href={`/games/${id}/sessions`} icon={Clock} label={t("sessionsHeading")} />
+            )}
           </div>
 
           {weekly && <WeeklyCard weekly={weekly} locale={locale} />}
@@ -961,7 +981,13 @@ function BigWalkWorldPanels({ world, locale }: { world: BigWalkWorld; locale: st
           </div>
           <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-text-muted">
             <span>{t("bigWalkSlotName", { name: world.slotName })}</span>
-            {world.skipAidsActive && <Badge variant="designed">{t("bigWalkAssistOff")}</Badge>}
+            {/* A literal readout of the raw field, not an interpretation —
+                nothing in Pulse documents what "skip aids" means in-game,
+                so this states the flag rather than asserting an "assist
+                on/off" meaning it hasn't earned. */}
+            <Badge variant="designed">
+              {t(world.skipAidsActive ? "bigWalkSkipAidsOn" : "bigWalkSkipAidsOff")}
+            </Badge>
           </div>
         </CardContent>
       </Card>
