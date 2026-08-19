@@ -18,5 +18,9 @@ export const MODULES: Module[] = [
   { id: "memory", labelKey: "memory", href: "/memory", status: "live" },
   { id: "games", labelKey: "games", href: "/games", status: "live" },
   { id: "map", labelKey: "map", href: "/map", status: "live" },
-  { id: "events", labelKey: "events", href: "/events", status: "live" },
+  // "designed" (not "live"): the events LIST page requires a
+  // `?conversation_id=` query param nothing in the app can currently supply
+  // — no group/conversation picker exists yet, so a nav link would always
+  // land on the empty "pick a conversation" state with no way to pick one.
+  { id: "events", labelKey: "events", href: "/events", status: "designed" },
 ];
