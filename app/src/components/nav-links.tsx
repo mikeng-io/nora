@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Activity, CalendarDays, Gamepad2, MapPin, Sparkles, Users } from "lucide-react";
+import { Activity, BookOpen, CalendarDays, Gamepad2, MapPin, Sparkles, Users } from "lucide-react";
 import { Link, usePathname } from "@/i18n/routing";
 import { MODULES } from "@/lib/modules";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ export const ICONS: Record<string, typeof Activity> = {
   map: MapPin,
   people: Users,
   events: CalendarDays,
+  doctrine: BookOpen,
 };
 
 export function NavLinks() {

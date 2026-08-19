@@ -112,6 +112,7 @@ class App:
             games_client=deps.games_client,
             presence=deps.presence, presence_circles=deps.presence_circles,
             skills_dir=deps.skills_dir, events=deps.events,
+            doctrine_store=deps.doctrine_store,
         )
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 

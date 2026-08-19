@@ -17,6 +17,7 @@ from nora.testing.events import FakeEventStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.games import PulseGamesClient
+from tests.conftest import build_test_doctrine_store
 from tests.fakes import FakeHoncho
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
@@ -75,7 +76,7 @@ async def client(aiohttp_client):
         # routes must degrade to 503, never fabricate 200s.
         games_client=None,
         presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(),
+        events=_fake_events(), doctrine_store=build_test_doctrine_store(),
     )
     return await aiohttp_client(app)
 
@@ -85,6 +86,16 @@ async def test_status_route_returns_200_with_the_expected_shape(client):
     assert resp.status == 200
     body = await resp.json()
     assert set(body) == {"uptime_seconds", "store", "honcho", "reminders"}
+
+
+async def test_doctrine_route_returns_the_shipped_sections_in_order(client):
+    resp = await client.get("/app/v1/doctrine")
+    assert resp.status == 200
+    body = await resp.json()
+    assert [section["name"] for section in body] == [
+        "identity", "voice", "silence", "conduct", "capability", "constraints",
+    ]
+    assert set(body[0]) == {"name", "description", "version", "body"}
 
 
 async def test_memory_route_returns_only_the_requested_person(client):
@@ -292,7 +303,7 @@ async def client_with_games(aiohttp_client, pulse_server):
             token="test-token", base_url=base_url, timeout_seconds=5.0,  # noqa: S106
         ),
         presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(),
+        events=_fake_events(), doctrine_store=build_test_doctrine_store(),
     )
     return await aiohttp_client(app)
 
@@ -445,7 +456,7 @@ async def client_with_presence(aiohttp_client):
         ai_peer="nora", started_at=0.0,
         games_client=None,
         presence=reader, presence_circles=(circle,), skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(),
+        events=_fake_events(), doctrine_store=build_test_doctrine_store(),
     )
     return await aiohttp_client(app)
 
@@ -526,7 +537,7 @@ async def client_with_events(aiohttp_client):
         ai_peer="nora", started_at=0.0,
         games_client=None,
         presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
-        events=events_service,
+        events=events_service, doctrine_store=build_test_doctrine_store(),
     )
     web_client = await aiohttp_client(app)
     return web_client, event

@@ -10,6 +10,7 @@
     "map": "地圖",
     "people": "友仔",
     "events": "活動",
+    "doctrine": "行為準則",
     "language": "語言",
     "chat": "傾偈"
   },
@@ -63,10 +64,6 @@
       "transit": {
         "title": "交通",
         "description": "由已儲低嘅地點出發，下一班巴士或者火車幾時到。"
-      },
-      "doctrine": {
-        "title": "佢嘅行為準則",
-        "description": "用白話講返佢而家點樣被調教 — 同埋呢啲設定點樣隨時間變過。"
       },
       "mediaGallery": {
         "title": "媒體庫",
@@ -280,5 +277,13 @@
     "yes": "去",
     "no": "唔去",
     "maybe": "未定"
+  },
+  "doctrine": {
+    "eyebrow": "Nora · 行為準則",
+    "heading": "佢嘅行為準則",
+    "dek": "用白話講返佢而家點樣被調教 — 同一份文字亦係佢每個回覆要守嘅準則。",
+    "loading": "載入緊行為準則…",
+    "error": "連唔到佢嘅行為準則。",
+    "version": "v{version}"
   }
 }

@@ -10,6 +10,7 @@
     "map": "Map",
     "people": "People",
     "events": "Events",
+    "doctrine": "Doctrine",
     "language": "Language",
     "chat": "Chat"
   },
@@ -63,10 +64,6 @@
       "transit": {
         "title": "Transit",
         "description": "Next bus or train from a saved place, on demand."
-      },
-      "doctrine": {
-        "title": "Her doctrine",
-        "description": "A plain-language read of how she's currently tuned to behave — and how that's changed over time."
       },
       "mediaGallery": {
         "title": "Media gallery",
@@ -280,5 +277,13 @@
     "yes": "Yes",
     "no": "No",
     "maybe": "Maybe"
+  },
+  "doctrine": {
+    "eyebrow": "Nora · doctrine",
+    "heading": "Her doctrine",
+    "dek": "A plain read of how she's currently tuned to behave — the same text every reply of hers is held to.",
+    "loading": "Loading doctrine…",
+    "error": "Couldn't load her doctrine.",
+    "version": "v{version}"
   }
 }

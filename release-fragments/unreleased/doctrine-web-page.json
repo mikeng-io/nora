@@ -1,0 +1,12 @@
+{
+  "type": "feature",
+  "summary": "Nora's doctrine — identity, voice, silence, conduct, capability, and constraints — is now readable on the web portal.",
+  "details": [
+    "New GET /app/v1/doctrine reuses the same live DoctrineStore the tag cycle itself reads, so the portal never drifts from what she is actually running on (mtime hot-reload included).",
+    "Only name/description/version/body cross to the browser — the doctrine engine's internal wiring (authority_above/below, change_policy, sha256, path) stays server-side.",
+    "New /doctrine portal page and nav entry; the status page's placeholder \"Her doctrine\" capability tile is removed now that it has a real page, same as skills graduated earlier."
+  ],
+  "limitations": [
+    "Current text only — no changelog of how the doctrine has changed over time."
+  ]
+}

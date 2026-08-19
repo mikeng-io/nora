@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Bus, Cloud, BookOpen, Puzzle, Image as ImageIcon, Hash } from "lucide-react";
+import { Bus, Cloud, Puzzle, Image as ImageIcon, Hash } from "lucide-react";
 import { fetchStatus, type Status } from "@/lib/status-schema";
 import { fetchSkills, type SkillEntry } from "@/lib/skills-schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,12 +21,12 @@ const POLL_INTERVAL_MS = 20_000;
 //              user-facing exists yet — a new endpoint away.
 // "future"   = genuinely new capability, nothing built yet either side.
 // Skills is NOT here — it's a real, live section below (real SkillStore
-// data, not a placeholder) since 2026-08-18.
+// data, not a placeholder) since 2026-08-18. Doctrine is NOT here either —
+// it has its own portal page (/doctrine) since 2026-08-20.
 const CAPABILITIES = [
   { id: "weather", icon: Cloud, variant: "live" as const },
   { id: "transit", icon: Bus, variant: "live" as const },
   { id: "roomVocabulary", icon: Hash, variant: "designed" as const },
-  { id: "doctrine", icon: BookOpen, variant: "future" as const },
   { id: "mediaGallery", icon: ImageIcon, variant: "future" as const },
 ];
 

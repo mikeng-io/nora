@@ -1,4 +1,4 @@
-"""Registers GET /app/v1/status, GET /app/v1/memory, the
+"""Registers GET /app/v1/status, GET /app/v1/memory, GET /app/v1/doctrine, the
 GET /app/v1/games/servers* trio, GET /app/v1/presence*, and the read-only
 GET /app/v1/events(/{id}) pair onto an existing aiohttp Application — same
 process/container as Nora (design spec §3, §5.3).
@@ -20,9 +20,11 @@ from aiohttp import web
 
 from nora.agent.whereis import Circle, PresenceReader
 from nora.app.events import EventService
+from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
 from nora.persons import Persons
+from nora.web.doctrine import build_doctrine_payload
 from nora.web.events import build_event_payload, build_events_payload
 from nora.web.games import (
     GamesUnavailableError,
@@ -120,7 +122,7 @@ def register_web_routes(
     reminders: ReminderStore, persons: Persons, ai_peer: str, started_at: float,
     games_client: PulseGamesClient | None,
     presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
-    skills_dir: Path, events: EventService,
+    skills_dir: Path, events: EventService, doctrine_store: DoctrineStore,
 ) -> None:
     app["web_store"] = store
     app["web_honcho"] = honcho
@@ -133,6 +135,7 @@ def register_web_routes(
     app["web_presence_circles"] = presence_circles
     app["web_skills_dir"] = skills_dir
     app["web_events"] = events
+    app["web_doctrine_store"] = doctrine_store
 
     async def status(request: web.Request) -> web.Response:
         a = request.app
@@ -361,6 +364,10 @@ def register_web_routes(
         body = await build_skills_payload(skills_dir=request.app["web_skills_dir"])
         return web.json_response(body)
 
+    async def doctrine(request: web.Request) -> web.Response:
+        body = build_doctrine_payload(doctrine_store=request.app["web_doctrine_store"])
+        return web.json_response(body)
+
     async def events_list(request: web.Request) -> web.Response:
         # `personId` is required — the SAME convention `/app/v1/memory`
         # already enforces (its own `person_id` param, resolved server-side by
@@ -406,6 +413,7 @@ def register_web_routes(
 
     app.router.add_get("/app/v1/status", status)
     app.router.add_get("/app/v1/skills", skills)
+    app.router.add_get("/app/v1/doctrine", doctrine)
     app.router.add_get("/app/v1/memory", memory)
     app.router.add_get("/app/v1/persons", persons_roster)
     app.router.add_get("/app/v1/persons/{personId}", person_profile)
