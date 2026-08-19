@@ -1,4 +1,3 @@
-# nora/testing/events.py
 """In-memory `EventStore` for tests. Must reproduce the REAL store's
 failure/edge shapes — a duplicate `create` raises `DuplicateEventError`
 exactly like `SqlEventStore` does, `update`/`add_rsvp` on the same
@@ -46,6 +45,8 @@ class FakeEventStore:
 
     async def update(self, event: Event) -> None:
         row = normalise_event(event)
+        if row.id not in self._events:
+            return
         self._events[row.id] = row
 
     async def add_rsvp(self, rsvp: RSVP) -> None:
