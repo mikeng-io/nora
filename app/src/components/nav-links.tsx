@@ -6,7 +6,11 @@ import { Link, usePathname } from "@/i18n/routing";
 import { MODULES } from "@/lib/modules";
 import { cn } from "@/lib/utils";
 
-const ICONS: Record<string, typeof Activity> = {
+// Every MODULES entry needs a key here, live or not — a module flipping
+// back to "live" must never re-expose the missing-icon crash that shipped
+// once already. src/components/nav-icons.test.ts asserts this map (and
+// bottom-nav.tsx's) stays in sync with MODULES.
+export const ICONS: Record<string, typeof Activity> = {
   status: Activity,
   memory: Sparkles,
   games: Gamepad2,
@@ -20,7 +24,7 @@ export function NavLinks() {
 
   return (
     <nav className="flex flex-col gap-0.5">
-      {MODULES.map((m) => {
+      {MODULES.filter((m) => m.status === "live").map((m) => {
         const Icon = ICONS[m.id];
         const active = pathname === m.href || pathname.startsWith(`${m.href}/`);
         return (
