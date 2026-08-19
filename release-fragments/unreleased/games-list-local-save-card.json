@@ -1,0 +1,8 @@
+{
+  "type": "fix",
+  "summary": "The games list card for a local-save game (Big Walk) showed a misleading red 'Offline' badge and four dashed-out stat tiles (Players/CPU/Memory/Uptime) that don't apply to it — it now shows a 'Local save' badge and its real facts (last uploaded, playtime), matching the detail page's own local-save treatment.",
+  "details": [
+    "GamesPage now fetches /status for any server whose /v1/servers `current` is null (container metrics don't exist for a local-save game) and renders a distinct card variant from that, instead of treating a null `current` as an offline container."
+  ],
+  "limitations": []
+}
