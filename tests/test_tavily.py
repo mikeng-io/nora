@@ -1,8 +1,9 @@
-"""`TavilySearchProvider` — Tavily web search and its fail-soft / untrusted-wrap
-discipline (DEC-73). Runs offline against a local aiohttp server that behaves like
-the real Tavily `/search`, INCLUDING its wrong-call shapes: a 401 on a bad key, a
-422 on a bad param, and a `{results:[…]}` envelope. Reverting the never-raises or
-the untrusted wrap turns a test here red.
+"""`TavilySearchProvider` — Tavily web search AND page extraction, and their
+fail-soft / untrusted-wrap discipline (DEC-73, DEC-116). Runs offline against a
+local aiohttp server that behaves like the real Tavily `/search` and `/extract`,
+INCLUDING their wrong-call shapes: a 401 on a bad key, a 422 on a bad param, a
+`{results:[…]}` search envelope and a `{results:[…], failed_results:[…]}` extract
+envelope. Reverting the never-raises or the untrusted wrap turns a test here red.
 """
 
 from __future__ import annotations
@@ -15,12 +16,15 @@ from nora.infra.search.tavily import TavilySearchProvider
 
 
 class _Tavily:
-    """The Tavily `/search` endpoint, behaving like the real host: results with
-    title/url/content, and per-mode failures (401 bad key, 422 bad param)."""
+    """The Tavily `/search` AND `/extract` endpoints, behaving like the real
+    host: `/search` returns results with title/url/content, `/extract` returns
+    `results`/`failed_results` with `raw_content`; both share the same per-mode
+    failures (401 bad key, 422 bad param)."""
 
     def __init__(self) -> None:
-        self.mode = "ok"          # ok | empty | unauth | badparam | notjson
+        self.mode = "ok"          # ok | empty | unauth | badparam | notjson | failed
         self.requests: list[dict] = []
+        self.extract_requests: list[dict] = []
 
     async def search(self, request: web.Request) -> web.Response:
         self.requests.append(await request.json())
@@ -43,18 +47,50 @@ class _Tavily:
             ],
         })
 
+    async def extract(self, request: web.Request) -> web.Response:
+        self.extract_requests.append(await request.json())
+        if self.mode == "unauth":
+            return web.json_response({"detail": "Unauthorized"}, status=401)
+        if self.mode == "badparam":
+            return web.json_response({"detail": {"error": "Invalid extract_depth."}}, status=422)
+        if self.mode == "notjson":
+            return web.Response(text="<html>gateway</html>", content_type="text/html")
+        if self.mode == "empty":
+            return web.json_response({"results": [], "failed_results": []})
+        if self.mode == "failed":
+            return web.json_response({
+                "results": [],
+                "failed_results": [{"url": "https://dead.example/x", "error": "timeout"}],
+            })
+        if self.mode == "malformed":
+            # A 200 whose body does not carry the documented `results`/
+            # `failed_results` shape at all — an API change or a proxy's error
+            # page, not Tavily's own "could not read this page" answer.
+            return web.json_response({"answer": "unexpected shape"})
+        body = self.extract_requests[-1]
+        url = (body.get("urls") or ["https://hko.gov.hk/x"])[0]
+        return web.json_response({
+            "results": [
+                {"url": url, "raw_content": "y" * 5000},   # long → clamp probe
+            ],
+            "failed_results": [],
+        })
+
 
 @pytest.fixture
 async def tavily():
     fake = _Tavily()
     app = web.Application()
     app.router.add_post("/search", fake.search)
+    app.router.add_post("/extract", fake.extract)
     server = TestServer(app)
     await server.start_server()
     url = str(server.make_url("/search"))
+    extract_url = str(server.make_url("/extract"))
     provider = TavilySearchProvider(
         api_key="tvly-test", url=url, max_results=5,
         content_max_chars=1500, timeout_seconds=5.0,
+        extract_url=extract_url, extract_max_chars=3000,
     )
     yield fake, provider
     await server.close()
@@ -120,3 +156,85 @@ async def test_country_is_never_sent(tavily):
     fake, provider = tavily
     await provider.search(query="q")
     assert "country" not in fake.requests[0]
+
+
+# ---- fetch (DEC-116, /extract) --------------------------------------------
+
+
+async def test_fetch_returns_wrapped_content_for_the_requested_url(tavily):
+    fake, provider = tavily
+    out = await provider.fetch(url="https://hko.gov.hk/x")
+    assert out["status"] == "ok"
+    assert out["url"] == "https://hko.gov.hk/x"             # url rides PLAIN
+    assert out["content"].startswith("<untrusted")           # page wrapped
+    assert fake.extract_requests[0]["urls"] == ["https://hko.gov.hk/x"]
+
+
+async def test_long_fetched_content_is_clamped_and_flagged(tavily):
+    _fake, provider = tavily
+    out = await provider.fetch(url="https://hko.gov.hk/x")
+    assert out["truncated"] is True
+    assert len(out["content"]) < 3300
+
+
+async def test_a_failed_extraction_is_nothing_found_not_unavailable(tavily):
+    """A dead/blocked page lands in Tavily's `failed_results`, not `results` —
+    that is «nothing there», not a failure of the call itself."""
+    fake, provider = tavily
+    fake.mode = "failed"
+    out = await provider.fetch(url="https://dead.example/x")
+    assert out["status"] == "nothing_found"
+
+
+async def test_an_empty_extract_envelope_is_nothing_found(tavily):
+    fake, provider = tavily
+    fake.mode = "empty"
+    out = await provider.fetch(url="https://hko.gov.hk/x")
+    assert out["status"] == "nothing_found"
+
+
+async def test_a_malformed_extract_envelope_is_unavailable_not_nothing_found(tavily):
+    """A 200 whose body does not carry `results`/`failed_results` at all is an
+    envelope-shape wiring gap, not Tavily's own "could not read this page" —
+    the mechanism the module docstring and DEC-116 claim, not merely an empty
+    `results` list."""
+    fake, provider = tavily
+    fake.mode = "malformed"
+    out = await provider.fetch(url="https://hko.gov.hk/x")
+    assert out["status"] == "unavailable"
+
+
+async def test_fetch_a_bad_key_is_unavailable_not_nothing_found(tavily):
+    fake, provider = tavily
+    fake.mode = "unauth"
+    out = await provider.fetch(url="https://hko.gov.hk/x")
+    assert out["status"] == "unavailable"   # 401 must not read as "found nothing"
+
+
+async def test_fetch_a_rejected_param_is_unavailable(tavily):
+    fake, provider = tavily
+    fake.mode = "badparam"
+    assert (await provider.fetch(url="https://hko.gov.hk/x"))["status"] == "unavailable"
+
+
+async def test_fetch_a_non_json_body_is_unavailable(tavily):
+    fake, provider = tavily
+    fake.mode = "notjson"
+    assert (await provider.fetch(url="https://hko.gov.hk/x"))["status"] == "unavailable"
+
+
+async def test_fetch_a_dead_host_is_unavailable_never_raises():
+    provider = TavilySearchProvider(
+        api_key="k", extract_url="http://127.0.0.1:1/dead", timeout_seconds=1.0,
+    )
+    assert (await provider.fetch(url="https://hko.gov.hk/x"))["status"] == "unavailable"
+
+
+async def test_search_and_fetch_share_one_client_and_key(tavily):
+    """Both verbs go through the same `TavilySearchProvider` instance — the
+    reason `web_fetch` needed no new wiring in the registry."""
+    fake, provider = tavily
+    await provider.search(query="q")
+    await provider.fetch(url="https://hko.gov.hk/x")
+    assert len(fake.requests) == 1
+    assert len(fake.extract_requests) == 1

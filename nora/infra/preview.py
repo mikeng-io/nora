@@ -13,17 +13,19 @@ is `None`, and `None` means the message goes out without a card. `LinkShortener`
 is the shape being copied deliberately (a mint that fails leaves the long URL);
 a reply that failed over a preview would be R-5 with extra steps.
 
-THE SSRF GUARD, AND WHY THIS MODULE NEEDS ONE WHEN `web_search` DOES NOT
-------------------------------------------------------------------------
-DEC-73 deleted `web_fetch` and, with it, "the `is_global`/`getaddrinfo`
+THE SSRF GUARD, AND WHY THIS MODULE NEEDS ONE WHEN `web_search`/`web_fetch` DO NOT
+-----------------------------------------------------------------------------------
+DEC-73 deleted the old `web_fetch` and, with it, "the `is_global`/`getaddrinfo`
 precheck, the post-redirect `sourceURL` re-validation, the per-tag
 `allowed_urls` fence". The argument was precise and is worth re-reading before
-assuming this module reopens the hole: Tavily is never HANDED a URL, it
-searches from ITS servers, so a model-invented `http://127.0.0.1:18080` reaches
-nothing of Nora's. **That argument does not extend here.** This module is
-handed a URL and fetches it itself, so the exposure DEC-73 removed is exactly
-the one this feature reintroduces — and the guard comes back with it, in the
-narrowest form that does the job:
+assuming this module reopens the hole: Tavily fetches from ITS OWN servers,
+never Nora's, so a model-invented `http://127.0.0.1:18080` reaches nothing of
+Nora's — true for `web_search`'s query AND, since DEC-116, for `web_fetch`'s URL
+too (`SearchProvider.fetch` hands Tavily a url, but Tavily is still the one
+connecting). **That argument does not extend here.** This module is handed a
+URL and fetches it ITSELF, over Nora's own network, so the exposure DEC-73
+removed is exactly the one this feature reintroduces — and the guard comes back
+with it, in the narrowest form that does the job:
 
 1. `http`/`https` only. `file:`, `data:`, `gopher:` and friends are not
    previewable and are not fetched.

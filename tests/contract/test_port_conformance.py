@@ -222,11 +222,14 @@ def test_the_media_description_stores_conform_to_the_port():
 
 def test_tavily_provider_satisfies_the_search_provider_port():
     """`TavilySearchProvider` is `SearchProvider`'s only implementation today; the
-    port (DEC-73) exists so another search backend plugs in behind `web_search`
-    with a shared contract. `isinstance` against the `runtime_checkable` Protocol
-    checks the `search` method name; the behavioural contract (fail-soft,
-    untrusted wrap, clamp) is `tests/test_tavily.py`."""
+    port (DEC-73, extended DEC-116) exists so another backend plugs in behind
+    `web_search`/`web_fetch` with a shared contract. `isinstance` against the
+    `runtime_checkable` Protocol checks the `search`/`fetch` method names; the
+    behavioural contract (fail-soft, untrusted wrap, clamp, for both verbs) is
+    `tests/test_tavily.py`."""
     from nora.domain.ports import SearchProvider
     from nora.infra.search import TavilySearchProvider
 
-    assert isinstance(TavilySearchProvider(api_key="k"), SearchProvider)
+    provider = TavilySearchProvider(api_key="k")
+    assert isinstance(provider, SearchProvider)
+    assert hasattr(provider, "fetch")

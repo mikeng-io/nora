@@ -29,7 +29,20 @@ sibling service, its shapes are the documented, versioned wire contract
 `games-schema.ts`'s zod schemas already validate client-side, and this
 module is a thin projection (same posture as `nora/web/status.py`,
 `nora/web/memory.py`), not a second parser of a third-party format the way
-`nora/infra/weather/hko.py` has to be."""
+`nora/infra/weather/hko.py` has to be.
+
+Pulse is GAME-NEUTRAL as of game-server-monitor@67ce88a (AGENTS.md's
+"abstracted server model"): a server is either container-backed (Abiotic
+Factor — Docker metrics, a game log, live sessions) or local-save
+(Big Walk — the host PC uploads a save file over its own, Nora-unrelated
+POST endpoint; Pulse derives progress/statistics from it). `/status` and
+`/world` answer with a GAME-SPECIFIC shape depending on which kind a
+server is (`games-schema.ts`'s zod schemas — a `.safeParse`/discriminated
+handling per shape — are the client-side authority on telling them
+apart); `/progress` and `/save-history` exist ONLY for local-save games,
+the save-upload equivalent of a container's live status and CPU/memory/
+network history. A local-save server with no upload yet answers `503`,
+same fail-closed posture as everything else here."""
 
 from __future__ import annotations
 
@@ -38,6 +51,8 @@ from typing import Any
 from urllib.parse import quote
 
 import aiohttp
+
+from nora.persons import Persons
 
 log = logging.getLogger("nora.web.games")
 
@@ -97,6 +112,21 @@ class PulseGamesClient:
     async def insights(self, server_id: str, *, days: int) -> dict:
         return await self._get_dict(
             f"/servers/{_seg(server_id)}/insights", params={"days": str(days)},
+        )
+
+    async def progress(self, server_id: str) -> dict:
+        """Local-save games only (e.g. Big Walk) — a synthesized completion
+        summary derived from the last uploaded save. A container-backed
+        game has no such route."""
+        return await self._get_dict(f"/servers/{_seg(server_id)}/progress")
+
+    async def save_history(self, server_id: str, hours: int) -> dict:
+        """Local-save games only — time series of playtime/completion
+        counts per upload, the save-upload equivalent of `server_graph`'s
+        CPU/memory/network history (which needs a container Big Walk
+        doesn't have)."""
+        return await self._get_dict(
+            f"/servers/{_seg(server_id)}/save-history", params={"hours": str(hours)},
         )
 
     async def players(
@@ -196,10 +226,45 @@ async def build_game_server_weekly_payload(
 
 
 async def build_game_server_world_payload(
+    *, client: PulseGamesClient | None, server_id: str, persons: Persons,
+) -> dict:
+    """`GET /app/v1/games/servers/{id}/world`.
+
+    A local-save game's `players` entries are enriched with `linkedPerson`
+    the same way `build_game_server_player_payload` enriches Abiotic's —
+    each entry there is only a bare `steamId` with no name from the save
+    itself. The container-backed shape has no `players` key at all, so this
+    is a no-op for it rather than a second code path."""
+    payload = await _require_client(client).world(server_id)
+    players = payload.get("players")
+    if isinstance(players, list):
+        enriched = []
+        for player in players:
+            steam_id = player.get("steamId") if isinstance(player, dict) else None
+            ref = persons.resolve("pulse", steam_id) if isinstance(steam_id, str) else None
+            if ref is not None:
+                player = {
+                    **player,
+                    "linkedPerson": {"personId": ref.person_id, "displayName": ref.name},
+                }
+            enriched.append(player)
+        payload = {**payload, "players": enriched}
+    return payload
+
+
+async def build_game_server_progress_payload(
     *, client: PulseGamesClient | None, server_id: str,
 ) -> dict:
-    """`GET /app/v1/games/servers/{id}/world`."""
-    return await _require_client(client).world(server_id)
+    """`GET /app/v1/games/servers/{id}/progress` — local-save games only."""
+    return await _require_client(client).progress(server_id)
+
+
+async def build_game_server_save_history_payload(
+    *, client: PulseGamesClient | None, server_id: str, hours: int,
+) -> dict:
+    """`GET /app/v1/games/servers/{id}/save-history?hours=` — local-save
+    games only."""
+    return await _require_client(client).save_history(server_id, hours)
 
 
 async def build_game_server_insights_payload(
@@ -221,9 +286,27 @@ async def build_game_server_players_payload(
 
 async def build_game_server_player_payload(
     *, client: PulseGamesClient | None, server_id: str, player_key: str,
+    persons: Persons,
 ) -> dict:
-    """`GET /app/v1/games/servers/{id}/players/{playerKey}`."""
-    return await _require_client(client).player(server_id, player_key)
+    """`GET /app/v1/games/servers/{id}/players/{playerKey}`.
+
+    Enriched with `linkedPerson` when the response's `steamId` resolves to
+    an identity.toml person (`persons.resolve("pulse", steam_id)`) — the
+    one deliberate deviation from this module's pure-passthrough posture,
+    matching `nora/web/memory.py`'s own precedent for combining an external
+    payload with `Persons`. Absent when there is no `steamId` (Pulse's own
+    login-line pairing never captured one for this player) or it resolves
+    to nobody identity.toml names."""
+    payload = await _require_client(client).player(server_id, player_key)
+    steam_id = payload.get("steamId")
+    if isinstance(steam_id, str):
+        ref = persons.resolve("pulse", steam_id)
+        if ref is not None:
+            payload = {
+                **payload,
+                "linkedPerson": {"personId": ref.person_id, "displayName": ref.name},
+            }
+    return payload
 
 
 async def build_game_server_activity_payload(

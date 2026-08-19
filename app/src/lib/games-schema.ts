@@ -63,6 +63,24 @@ export const ServerStatusSchema = z.object({
   activeProfiles: z.array(ActivePlayerSchema).optional(),
 });
 
+// Local-save games (Big Walk, and any future one) have no container, so
+// no `current` — /status answers with the last upload's own facts instead
+// (game-server-monitor@67ce88a, AGENTS.md's "abstracted server model").
+export const LocalSaveStatusSchema = z.object({
+  server: ServerSummarySchema,
+  game: z.literal("big-walk"),
+  lastUploadedAt: z.number(),
+  lastPlayedAt: z.number().optional(),
+  totalPlaytimeSeconds: z.number().optional(),
+  activePlayers: z.array(z.string()),
+  activeProfiles: z.array(ActivePlayerSchema).optional(),
+});
+export type LocalSaveStatus = z.infer<typeof LocalSaveStatusSchema>;
+
+export type AnyServerStatus =
+  | { kind: "container"; status: ServerStatus }
+  | { kind: "local-save"; status: LocalSaveStatus };
+
 export const GraphPointSchema = z.object({
   timestamp: z.number(),
   online: z.number(),
@@ -102,14 +120,22 @@ export async function fetchServers(): Promise<Server[]> {
   return ServersListSchema.parse(await res.json());
 }
 
-export async function fetchServerStatus(id: string): Promise<ServerStatus> {
+export async function fetchServerStatus(id: string): Promise<AnyServerStatus> {
   const res = await fetch(`/api/games/servers/${encodeURIComponent(id)}/status`, {
     cache: "no-store",
   });
   if (!res.ok) {
     throw new Error(`game server status fetch failed: ${res.status}`);
   }
-  return ServerStatusSchema.parse(await res.json());
+  const body = await res.json();
+  if (isRecord(body) && body.game === "big-walk") {
+    return { kind: "local-save", status: LocalSaveStatusSchema.parse(body) };
+  }
+  return { kind: "container", status: ServerStatusSchema.parse(body) };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export async function fetchServerGraph(id: string, hours = 24): Promise<Graph> {
@@ -244,13 +270,16 @@ const AbioticFactorSaveSchema = z.object({
 });
 export type AbioticFactorSave = z.infer<typeof AbioticFactorSaveSchema>;
 
-// `limbHealth` itself is occasionally absent from a point too (observed
-// live: 2/156) — same "not every meter sampled every save" reasoning as
-// the optional fields inside `SurvivalVitalsSchema`.
+// `limbHealth` (observed live: 2/156) and `survival` itself (observed
+// live: 1/76 on a second player's real history) are each occasionally
+// absent from a point — same "not every meter sampled every save"
+// reasoning as the optional fields inside `SurvivalVitalsSchema`. `savedAt`
+// and `money` were 100% present across both captures, so those stay
+// required rather than guessed-optional.
 const VitalsHistoryPointSchema = z.object({
   savedAt: z.number(),
   limbHealth: LimbHealthSchema.optional(),
-  survival: SurvivalVitalsSchema,
+  survival: SurvivalVitalsSchema.optional(),
   money: z.number(),
 });
 export type VitalsHistoryPoint = z.infer<typeof VitalsHistoryPointSchema>;
@@ -288,6 +317,11 @@ export const PlayerDetailSchema = PlayerSummarySchema.extend({
   vitalsHistory: z.array(VitalsHistoryPointSchema).optional(),
   statEvents: z.array(StatEventSchema).optional(),
   skillProgress: SkillProgressSchema.optional(),
+  // Set server-side (nora/web/games.py) only when the response's steamId
+  // resolves through identity.toml (`persons.resolve("pulse", steamId)`)
+  // — the user↔platform↔game cross-reference, absent for anyone not yet
+  // linked or without a steamId Pulse could capture.
+  linkedPerson: z.object({ personId: z.string(), displayName: z.string() }).optional(),
 });
 export type PlayerDetail = z.infer<typeof PlayerDetailSchema>;
 
@@ -377,6 +411,90 @@ export const WorldStateSchema = z.object({
 });
 export type WorldState = z.infer<typeof WorldStateSchema>;
 
+// Big Walk (game-server-monitor@67ce88a) — a completely different
+// game-specific `/world` shape from Abiotic Factor's above, since Pulse's
+// server model is now game-neutral (AGENTS.md): a local-save game has no
+// container, no stockpile/sectors, and its own progress vocabulary
+// instead (gourds/big keys/FM stations/lookout lights/named doors).
+const BigWalkPlayerLookSchema = z.object({
+  steamId: z.string(),
+  head: z.number().optional(),
+  torso: z.number().optional(),
+  legs: z.number().optional(),
+  walkingProven: z.boolean().optional(),
+  linkedPerson: z.object({ personId: z.string(), displayName: z.string() }).optional(),
+});
+export type BigWalkPlayerLook = z.infer<typeof BigWalkPlayerLookSchema>;
+
+export const BigWalkWorldSchema = z.object({
+  game: z.literal("big-walk"),
+  savedAt: z.number(),
+  slotName: z.string(),
+  filenameUid: z.string(),
+  worldSeed: z.number(),
+  lastPlayedAt: z.number(),
+  totalPlaytimeSeconds: z.number(),
+  skipAidsActive: z.boolean(),
+  players: z.array(BigWalkPlayerLookSchema),
+  completions: z.object({
+    gourds: z.record(z.string(), z.number()),
+    bigKeys: z.record(z.string(), z.number()),
+    fmStations: z.record(z.string(), z.number()),
+    lookoutLights: z.record(z.string(), z.number()),
+    namedDoors: z.record(z.string(), z.number()),
+  }),
+  uuidFlags: z.record(z.string(), z.number()),
+  notes: z.record(z.string(), z.string()),
+  inventory: z.array(z.string()),
+});
+export type BigWalkWorld = z.infer<typeof BigWalkWorldSchema>;
+
+export type AnyWorldState =
+  | { kind: "abiotic-factor"; world: WorldState }
+  | { kind: "big-walk"; world: BigWalkWorld };
+
+export const GameProgressSchema = z.object({
+  game: z.literal("big-walk"),
+  slotName: z.string(),
+  lastPlayedAt: z.number(),
+  totalPlaytimeSeconds: z.number(),
+  totalPlaytimeHours: z.number(),
+  playerCount: z.number(),
+  inventoryCount: z.number(),
+  completionCounts: z.object({
+    gourds: z.number(),
+    bigKeys: z.number(),
+    fmStations: z.number(),
+    lookoutLights: z.number(),
+    namedDoors: z.number(),
+    uuidFlags: z.number(),
+  }),
+});
+export type GameProgress = z.infer<typeof GameProgressSchema>;
+
+const SaveHistoryPointSchema = z.object({
+  uploadedAt: z.number(),
+  hash: z.string(),
+  totalPlaytimeSeconds: z.number().optional(),
+  completedGourds: z.number(),
+  completedBigKeys: z.number(),
+  completedFmStations: z.number(),
+  completedLookoutLights: z.number(),
+  completedNamedDoors: z.number(),
+  completedUuidFlags: z.number(),
+  playerCount: z.number(),
+  inventoryCount: z.number(),
+});
+export type SaveHistoryPoint = z.infer<typeof SaveHistoryPointSchema>;
+
+export const SaveHistorySchema = z.object({
+  hours: z.number(),
+  from: z.number(),
+  to: z.number(),
+  data: z.array(SaveHistoryPointSchema),
+});
+export type SaveHistory = z.infer<typeof SaveHistorySchema>;
+
 const LeaderboardEntrySchema = z.object({
   playerKey: z.string(),
   playerName: z.string(),
@@ -446,9 +564,23 @@ export async function fetchServerWeekly(id: string): Promise<WeeklySummary> {
   );
 }
 
-export async function fetchServerWorld(id: string): Promise<WorldState> {
-  return WorldStateSchema.parse(
-    await getJson(`/api/games/servers/${encodeURIComponent(id)}/world`),
+export async function fetchServerWorld(id: string): Promise<AnyWorldState> {
+  const body = await getJson(`/api/games/servers/${encodeURIComponent(id)}/world`);
+  if (isRecord(body) && body.game === "big-walk") {
+    return { kind: "big-walk", world: BigWalkWorldSchema.parse(body) };
+  }
+  return { kind: "abiotic-factor", world: WorldStateSchema.parse(body) };
+}
+
+export async function fetchServerProgress(id: string): Promise<GameProgress> {
+  return GameProgressSchema.parse(
+    await getJson(`/api/games/servers/${encodeURIComponent(id)}/progress`),
+  );
+}
+
+export async function fetchServerSaveHistory(id: string, hours = 168): Promise<SaveHistory> {
+  return SaveHistorySchema.parse(
+    await getJson(`/api/games/servers/${encodeURIComponent(id)}/save-history?hours=${hours}`),
   );
 }
 

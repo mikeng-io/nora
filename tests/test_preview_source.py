@@ -67,9 +67,10 @@ def _card(body: str):
     ],
 )
 async def test_a_destination_that_is_not_globally_routable_is_refused(url):
-    """DEC-73 deleted this guard along with `web_fetch` because Tavily is never
-    HANDED a url. This module IS handed one, from model output, and fetches it
-    over Nora's own network — so the guard comes back with the exposure.
+    """DEC-73 deleted this guard because Tavily fetches from ITS OWN servers,
+    never Nora's — true even now that `SearchProvider.fetch` (DEC-116) is handed
+    a url too. This module IS handed one, from model output, and fetches it over
+    NORA'S OWN network — so the guard comes back with the exposure.
 
     Each of these is a real thing on Nora's network or her host, not a
     hypothetical: `127.0.0.1:9100` is her `/health`+`/metrics`, `:18080` is

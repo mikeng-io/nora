@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   ActivityEventSchema,
+  BigWalkWorldSchema,
+  GameProgressSchema,
   GraphSchema,
   InsightsSchema,
+  LocalSaveStatusSchema,
   PlayerDetailSchema,
   PlayersPageSchema,
+  SaveHistorySchema,
   ServerSchema,
   ServerStatusSchema,
   SessionSchema,
@@ -239,6 +243,13 @@ describe("PlayerDetailSchema", () => {
           survival: { hunger: 100, thirst: 100, sanity: 100, fatigue: 0, continence: 100 },
           money: 95,
         },
+        // survival itself absent — observed live on 1/76 real points from a
+        // second player's history (miles_novak, 2026-08-19).
+        {
+          savedAt: 1786724632923,
+          limbHealth: { head: 64, torso: 100, leftArm: 100, rightArm: 86.7, leftLeg: 100, rightLeg: 100 },
+          money: 109,
+        },
       ],
       statEvents: [
         { kind: "crafted", subject: { id: "laser_collector", en: "laser_collector", zhHant: "laser_collector", known: false }, delta: 1, occurredAt: 1785470366713 },
@@ -341,5 +352,108 @@ describe("InsightsSchema", () => {
       ],
     };
     expect(() => InsightsSchema.parse(body)).not.toThrow();
+  });
+});
+
+// Big Walk (game-server-monitor@67ce88a) — shapes below are transcribed
+// from that commit's actual response-builder source (bigWalkWorldResponse,
+// the /progress and /save-history handlers in src/api.ts), NOT from a live
+// capture: the live deployment has a separate, confirmed bug where
+// worldState() returns Abiotic Factor's snapshot for a server with no
+// upload yet, so the only trustworthy ground truth right now is the
+// merged source.
+
+describe("LocalSaveStatusSchema", () => {
+  it("parses a real /status response for a local-save server with an upload", () => {
+    const body = {
+      server: { id: "big_walk", displayName: "Big Walk", color: "#78dcca" },
+      game: "big-walk",
+      lastUploadedAt: 1786726722336,
+      lastPlayedAt: 1786726700000,
+      totalPlaytimeSeconds: 54000,
+      activePlayers: [],
+      activeProfiles: [],
+    };
+    expect(() => LocalSaveStatusSchema.parse(body)).not.toThrow();
+  });
+
+  it("parses before lastPlayedAt/totalPlaytimeSeconds exist (JSON drops undefined keys)", () => {
+    const body = {
+      server: { id: "big_walk", displayName: "Big Walk", color: "#78dcca" },
+      game: "big-walk",
+      lastUploadedAt: 1786726722336,
+      activePlayers: [],
+      activeProfiles: [],
+    };
+    expect(() => LocalSaveStatusSchema.parse(body)).not.toThrow();
+  });
+});
+
+describe("BigWalkWorldSchema", () => {
+  it("parses a real /world response (bigWalkWorldResponse's own shape)", () => {
+    const body = {
+      game: "big-walk",
+      savedAt: 1786726722336,
+      slotName: "save_zone_1",
+      filenameUid: "abc123",
+      worldSeed: 42,
+      lastPlayedAt: 1786726700000,
+      totalPlaytimeSeconds: 54000,
+      skipAidsActive: false,
+      players: [
+        { steamId: "76561190000000001", head: 3, torso: 1, legs: 2, walkingProven: true },
+      ],
+      completions: {
+        gourds: { gourd_1: 1 },
+        bigKeys: { bigKey_1: 1 },
+        fmStations: {},
+        lookoutLights: {},
+        namedDoors: { SpawnHubGate: 1 },
+      },
+      uuidFlags: { "0000aaaa-1111-2222-3333-444455556666": 1 },
+      notes: { note_1: "a warning scrawled on the wall" },
+      inventory: ["item_flashlight", "item_map"],
+    };
+    expect(() => BigWalkWorldSchema.parse(body)).not.toThrow();
+  });
+});
+
+describe("GameProgressSchema", () => {
+  it("parses a real /progress response", () => {
+    const body = {
+      game: "big-walk",
+      slotName: "save_zone_1",
+      lastPlayedAt: 1786726700000,
+      totalPlaytimeSeconds: 54000,
+      totalPlaytimeHours: 15,
+      playerCount: 2,
+      inventoryCount: 8,
+      completionCounts: {
+        gourds: 3, bigKeys: 1, fmStations: 0, lookoutLights: 2, namedDoors: 1, uuidFlags: 4,
+      },
+    };
+    expect(() => GameProgressSchema.parse(body)).not.toThrow();
+  });
+});
+
+describe("SaveHistorySchema", () => {
+  it("parses a real /save-history response", () => {
+    const body = {
+      hours: 168, from: 1786470056152, to: 1787074856152,
+      data: [
+        {
+          uploadedAt: 1786726722336, hash: "abc123def456",
+          totalPlaytimeSeconds: 54000, completedGourds: 3, completedBigKeys: 1,
+          completedFmStations: 0, completedLookoutLights: 2, completedNamedDoors: 1,
+          completedUuidFlags: 4, playerCount: 2, inventoryCount: 8,
+        },
+      ],
+    };
+    expect(() => SaveHistorySchema.parse(body)).not.toThrow();
+  });
+
+  it("parses an empty history before any upload", () => {
+    const body = { hours: 168, from: 0, to: 1, data: [] };
+    expect(() => SaveHistorySchema.parse(body)).not.toThrow();
   });
 });

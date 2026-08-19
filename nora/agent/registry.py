@@ -147,12 +147,13 @@ class ToolRegistry:
         # description on every deploy — `None` (every composition that has not
         # wired one) leaves it exactly as it was before this task.
         self._vision_cache = VisionCache(store=descriptions)
-        # `search` (Tavily, DEC-73) is NOT default-constructed, for the same
-        # reason `route` is not: `web_search` ships INERT behind `[search] enabled`
-        # AND a key, so every composition that has not wired one — offline, eval,
-        # keyless — leaves this None and `web_search` answers `unavailable` (the
-        # honest «not configured» state, R-5). No `web_fetch` and no SSRF gate:
-        # Tavily searches from its own servers and is never handed a URL.
+        # `search` (Tavily, DEC-73/DEC-116) is NOT default-constructed, for the
+        # same reason `route` is not: `web_search`/`web_fetch` ship INERT behind
+        # `[search] enabled` AND a key, so every composition that has not wired
+        # one — offline, eval, keyless — leaves this None and both answer
+        # `unavailable` (the honest «not configured» state, R-5). No SSRF gate
+        # needed for either verb: Tavily fetches from its own servers, never
+        # Nora's, whether it is handed a query or a url.
         self._search = search
         # `weather` (HKO, DEC-72) is NOT default-constructed either, for symmetry
         # with `route`/`search`: it ships behind `[weather] enabled`, and every
@@ -430,12 +431,18 @@ class ToolRegistry:
         # (external review, 2026-08-10). The precedence the model needs is only
         # own-over-web; which own source fits is the tool's own `when` clause.
         web = self.web_tier_tools()
+        # Singular/plural agreement is not decoration here: `web_fetch` joining
+        # the tier (DEC-116) makes `web` two long, and "web_search, which
+        # reaches..." reading as a garden-path plural would be exactly the kind
+        # of sentence a model reads past.
+        web_verb = "reaches" if len(web) == 1 else "reach"
+        web_be = "is" if len(web) == 1 else "are"
         sourcing = (
             f"When a fact could come from more than one place, prefer your own: a "
             f"Hong Kong thing you can confirm (the weather, a place, a bus, a route) "
             f"and a place or person this household has named or saved both come before "
-            f"{' or '.join(web)}, which reaches the open web and is the last resort, "
-            f"not the first move.\n" if web else ""
+            f"{' or '.join(web)}, which {web_verb} the open web and {web_be} the last "
+            f"resort, not the first move.\n" if web else ""
         )
         # The CLOSED-WORLD clause (DEC-90). The list above is what she can do,
         # and until now nothing said it was the WHOLE of what she can do — so a

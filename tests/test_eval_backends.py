@@ -46,6 +46,12 @@ async def test_canned_search_answers_ok():
     assert out["results"]
 
 
+async def test_canned_fetch_answers_ok():
+    out = await CannedSearchProvider().fetch(url="https://example.com/a")
+    assert out["status"] == "ok"
+    assert out["content"]
+
+
 async def test_canned_place_and_transit_answer_ok():
     place = await CannedRouteSource().place_info("Festival Walk")
     assert place["name"] == "Festival Walk" and place.get("open_now") is True

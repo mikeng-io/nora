@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Clock, Cpu, HardDrive, Users } from "lucide-react";
+import { Clock, Cpu, HardDrive, Upload, Users } from "lucide-react";
 import { Link } from "@/i18n/routing";
-import { fetchServers, type Server } from "@/lib/games-schema";
-import { formatBytes, formatCpuPercent, formatUptime, uptimeSecondsFrom } from "@/lib/games-format";
+import { fetchServers, fetchServerStatus, type LocalSaveStatus, type Server } from "@/lib/games-schema";
+import {
+  formatBytes, formatCpuPercent, formatDurationMs, formatRelativeTime, formatUptime, uptimeSecondsFrom,
+} from "@/lib/games-format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
@@ -18,15 +20,29 @@ export default function GamesPage() {
   const locale = useLocale();
   const [servers, setServers] = useState<Server[] | null>(null);
   const [error, setError] = useState(false);
+  // `/v1/servers`' `current` is container metrics only — null for a
+  // local-save game (Big Walk has no container to poll), not "offline".
+  // Its own `/status` answers with the last upload's facts instead.
+  const [localStatuses, setLocalStatuses] = useState<Record<string, LocalSaveStatus>>({});
 
   useEffect(() => {
     let cancelled = false;
     const tick = () => {
       fetchServers()
         .then((s) => {
-          if (!cancelled) {
-            setServers(s);
-            setError(false);
+          if (cancelled) return;
+          setServers(s);
+          setError(false);
+          for (const server of s) {
+            if (server.current !== null) continue;
+            fetchServerStatus(server.id)
+              .then((status) => {
+                if (cancelled || status.kind !== "local-save") return;
+                setLocalStatuses((prev) => ({ ...prev, [server.id]: status.status }));
+              })
+              .catch(() => {
+                // Fail-soft per card — the list itself must not blank.
+              });
           }
         })
         .catch(() => {
@@ -66,7 +82,10 @@ export default function GamesPage() {
         // once there's more than one to actually arrange.
         <div className={servers.length > 1 ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "grid grid-cols-1 gap-3"}>
           {servers.map((server) => (
-            <ServerCard key={server.id} server={server} locale={locale} />
+            <ServerCard
+              key={server.id} server={server} locale={locale}
+              localStatus={localStatuses[server.id]}
+            />
           ))}
         </div>
       )}
@@ -74,9 +93,52 @@ export default function GamesPage() {
   );
 }
 
-function ServerCard({ server, locale }: { server: Server; locale: string }) {
+function ServerCard(
+  { server, locale, localStatus }: { server: Server; locale: string; localStatus?: LocalSaveStatus },
+) {
   const t = useTranslations("games");
   const current = server.current;
+  // `current === null` alone is ambiguous — it's also a container server's
+  // state before its first sample lands, not just "this is a local-save
+  // game". Only the confirmed `/status` fetch (surfaced as `localStatus`)
+  // proves it's local-save; until then this falls through to the ordinary
+  // container card, same as an unsampled container server already does.
+
+  if (localStatus) {
+    return (
+      <Link href={`/games/${server.id}`} className="block">
+        <Card className="transition-colors hover:bg-bg-elevated">
+          <CardHeader className="flex-row items-center justify-between space-y-0 p-4 pb-2">
+            <div className="flex items-center gap-2">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: server.color }}
+              />
+              <CardTitle>{server.displayName}</CardTitle>
+            </div>
+            <Badge variant="designed">{t("localSaveBadge")}</Badge>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-2 p-4 pt-0">
+            <StatTile
+              icon={Upload}
+              label={t("lastUploaded")}
+              value={localStatus ? formatRelativeTime(localStatus.lastUploadedAt, locale) : "—"}
+            />
+            <StatTile
+              icon={Clock}
+              label={t("playtime")}
+              value={
+                localStatus?.totalPlaytimeSeconds !== undefined
+                  ? formatDurationMs(localStatus.totalPlaytimeSeconds * 1000, locale)
+                  : "—"
+              }
+            />
+          </CardContent>
+        </Card>
+      </Link>
+    );
+  }
+
   const online = current?.online ?? false;
 
   return (

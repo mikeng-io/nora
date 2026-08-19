@@ -34,12 +34,14 @@ one nav — modules are the only thing that varies.
   isn't designed yet, so v1 stays REST-only.
 - No Life360 / presence history map, no interactive chat — both noted as
   future modules (§5.4, §5.5), neither designed here.
-- No per-person opt-in/opt-out for the memory showcase. Every whitelisted
+- ~~No per-person opt-in/opt-out for the memory showcase. Every whitelisted
   person's full Honcho representation is visible to every other whitelisted
-  person. This is a **deliberate** choice (trusted friend group, not a public
-  surface), made explicitly during brainstorming — not an oversight. Revisit
-  if the friend group ever grows past "people who'd already see this in the
-  Signal group."
+  person.~~ **REVERSED (operator, 2026-08-19):** the memory page is now
+  user-scoped — `GET /app/v1/memory` requires the caller's own `person_id`
+  and returns only their own entry, fail-closed to `[]` on a missing or
+  unrecognized one (`nora/web/memory.py`'s module docstring carries the full
+  reasoning). The v1 choice above was made explicitly during brainstorming,
+  not an oversight, but it did not survive contact with actual use.
 
 ## 3. Architecture
 
