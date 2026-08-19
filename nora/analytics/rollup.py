@@ -210,9 +210,32 @@ class MobilityRollup:
             if new_stays:
                 await self._store.write_stays(new_stays)
                 for closed_stay in new_stays:
-                    await self._record_rhythm(
-                        subject_id=subject_id, stay=closed_stay, now_ms=now_ms,
-                    )
+                    try:
+                        await self._record_rhythm(
+                            subject_id=subject_id, stay=closed_stay, now_ms=now_ms,
+                        )
+                    except Exception:
+                        # A Tier 3 derivation failure must NEVER block the Tier
+                        # 1/2 watermark contract. `write_stays` has already
+                        # durably committed these stays; if the exception
+                        # escaped, `advance_fix_watermark` below would be
+                        # skipped, the next tick would re-read the identical
+                        # fixes, re-segment the identical stays and call
+                        # `write_stays` again — and `presence_stays` has no
+                        # unique constraint on (subject_id, started_ts), so
+                        # that duplicates rows forever at tick cadence,
+                        # poisoning `label_place`'s time-weighted shares and
+                        # `cluster_places`' centroids. The realistic trigger is
+                        # the analytics image deploying ahead of migration 0017
+                        # (every occupancy/rhythm call raises UndefinedTable).
+                        # Rhythm is derived and recoverable; the stay is not.
+                        # Found by the final whole-branch review (Critical #1).
+                        log.exception(
+                            "rhythm recording failed for a closed stay — the "
+                            "stay is already written and the watermark still "
+                            "advances; rhythm is derived and recoverable, the "
+                            "stay is not"
+                        )
             await self._store.advance_fix_watermark(
                 subject_id=subject_id, fix_id=fixes[-1].id
             )
@@ -370,36 +393,58 @@ class MobilityRollup:
             # Found by Task 10's review, Critical #2.
             return
 
-        duration_ms = stay.ended_ts - stay.started_ts
-        # Baseline read BEFORE this stay is linked, so it is never
-        # anomalous relative to itself.
-        history = await self._store.stay_durations_for_place(
-            subject_id=subject_id, place_id=place_id,
-        )
-        z = robust_z_score(
-            float(duration_ms), [float(d) for d in history],
-            min_samples=self._cfg.anomaly_min_samples,
-        )
-        if z is not None and abs(z) >= self._cfg.anomaly_z_threshold and self._metrics is not None:
-            self._metrics.inc("nora_analytics_anomalies_total", subject=subject_id)
-
-        await self._store.set_place_ids(
-            subject_id=subject_id, started_ts_in=[stay.started_ts], place_id=place_id,
-        )
-        bins = hour_of_week_bins(stay.started_ts, stay.ended_ts, self._cfg.tz_name)
-        await self._store.record_occupancy(
-            subject_id=subject_id, place_id=place_id, bins=bins, now_ms=now_ms,
-        )
-        if self._metrics is not None:
-            self._metrics.inc(
-                "nora_analytics_occupancy_bins_total", value=len(bins), subject=subject_id,
+        already_linked = current is not None and current.place_id == place_id
+        if not already_linked:
+            # The ONLY branch that may record occupancy or score an anomaly:
+            # this is the first time the stay is being attributed to
+            # `place_id`. `record_occupancy` ACCUMULATES dwell
+            # (`dwell_ms = dwell_ms + excluded.dwell_ms`) — correct for many
+            # distinct stays, catastrophic if the SAME stay is replayed, and
+            # nothing else guards that. A re-fired first-place backfill, or a
+            # caller retry after the `_record_rhythm` guard in `run_once`
+            # swallowed an exception, both re-enter here for an
+            # already-linked stay; without this gate each replay would re-add
+            # the stay's dwell to `presence_occupancy` and re-score it for
+            # anomaly. Found by the final whole-branch review (Important #2).
+            duration_ms = stay.ended_ts - stay.started_ts
+            # Baseline read BEFORE this stay is linked, so it is never
+            # anomalous relative to itself.
+            history = await self._store.stay_durations_for_place(
+                subject_id=subject_id, place_id=place_id,
             )
+            z = robust_z_score(
+                float(duration_ms), [float(d) for d in history],
+                min_samples=self._cfg.anomaly_min_samples,
+            )
+            if (
+                z is not None
+                and abs(z) >= self._cfg.anomaly_z_threshold
+                and self._metrics is not None
+            ):
+                self._metrics.inc("nora_analytics_anomalies_total", subject=subject_id)
+
+            await self._store.set_place_ids(
+                subject_id=subject_id, started_ts_in=[stay.started_ts],
+                place_id=place_id,
+            )
+            bins = hour_of_week_bins(stay.started_ts, stay.ended_ts, self._cfg.tz_name)
+            await self._store.record_occupancy(
+                subject_id=subject_id, place_id=place_id, bins=bins, now_ms=now_ms,
+            )
+            if self._metrics is not None:
+                self._metrics.inc(
+                    "nora_analytics_occupancy_bins_total",
+                    value=len(bins), subject=subject_id,
+                )
 
         # Rhythm recomputes from EVERY stay now linked to this place — re-read
-        # fresh (set_place_ids just landed). `linked` is guaranteed non-empty:
-        # either `current` already belonged to `place_id` (the early-return
-        # above would have caught any mismatch), or set_place_ids just linked
-        # it, so the re-read below will show it.
+        # fresh (set_place_ids may have just landed). Unlike occupancy this is
+        # a FULL recompute, not an accumulation, so it is idempotent and runs
+        # unconditionally — including as a harmless redundant call for an
+        # already-linked stay. `linked` is guaranteed non-empty: either
+        # `current` already belonged to `place_id` (the early-return above
+        # would have caught any mismatch), or set_place_ids just linked it, so
+        # the re-read below will show it.
         all_stays = await self._store.stays_for_subject(subject_id=subject_id)
         linked = [s for s in all_stays if s.place_id == place_id]
         tz = ZoneInfo(self._cfg.tz_name)

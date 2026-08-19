@@ -8,6 +8,7 @@
   ],
   "limitations": [
     "Anomaly scoring needs anomaly_min_samples (default 5) prior stays at a place before it will say anything — fail-closed, not a bug.",
+    "The first-place backfill only applies to a home/work place created after this deploys — a subject who already has a labelled home or work place before this ships starts their rhythm and anomaly history from zero, not from that existing place's past stays. Their history builds from the stays that close after the deploy.",
     "Tier 5 (routes/corridors, the other half of issue #6) is a separate, not-yet-written plan."
   ]
 }
