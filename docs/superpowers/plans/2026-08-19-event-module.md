@@ -654,8 +654,12 @@ class SqlEventStore:
             await conn.execute(stmt)
 
     async def add_rsvp(self, rsvp: RSVP) -> None:
+        # `on_conflict_do_update` is a postgres-dialect-insert method, not
+        # `sa.insert`'s — a person can RSVP more than once (changing their
+        # mind), and (event_id, person_id) is the primary key, so a repeat
+        # RSVP must UPDATE, not raise `DuplicateEventError`-shaped noise.
         stmt = (
-            sa.insert(EVENT_RSVPS)
+            pg_insert(EVENT_RSVPS)
             .values(
                 event_id=rsvp.event_id,
                 person_id=rsvp.person_id,
@@ -686,9 +690,9 @@ class SqlEventStore:
         await self._engine.dispose()
 ```
 
-**Note on `add_rsvp`'s upsert**: `on_conflict_do_update` requires the postgres dialect's insert (`from sqlalchemy.dialects.postgresql import insert as pg_insert`), not `sa.insert`. Fix the import before running Task 5: replace `sa.insert(EVENT_RSVPS)` with `pg_insert(EVENT_RSVPS)` and add `from sqlalchemy.dialects.postgresql import insert as pg_insert` — a person can RSVP more than once (changing their mind), and `(event_id, person_id)` is the primary key, so a repeat RSVP must update, not raise `DuplicateEventError`-shaped noise.
+Add `from sqlalchemy.dialects.postgresql import insert as pg_insert` to this file's imports (alongside `import sqlalchemy as sa`) before running Step 2.
 
-- [ ] **Step 2: Fix the upsert import per the note above, then type-check**
+- [ ] **Step 2: Type-check**
 
 Run: `uv run mypy nora/infra/sql/events.py`
 Expected: no new errors (Task 5 provides the actual behavioral test).
@@ -965,18 +969,18 @@ async def test_rsvp_upserts_on_same_person(store):
 - [ ] **Step 2: Run against the fake first (no Postgres needed)**
 
 Run: `uv run pytest tests/contract/test_event_store_contract.py -k fake -v`
-Expected: PASS (10 tests) once `on_conflict_do_update`'s test (`test_rsvp_upserts_on_same_person`) also passes for the fake — the `FakeEventStore.add_rsvp` implementation from Task 4 already upserts by dict key, so this should pass immediately; if it doesn't, fix `FakeEventStore` before touching `SqlEventStore`.
+Expected: PASS (10 tests), including `test_rsvp_upserts_on_same_person` — the `FakeEventStore.add_rsvp` implementation from Task 4 already upserts by dict key.
 
-- [ ] **Step 3: Fix `SqlEventStore`'s upsert import (Task 3's flagged note) and run against Postgres**
+- [ ] **Step 3: Run against Postgres**
 
 Run: `uv run pytest tests/contract/test_event_store_contract.py -k sql -v`
-Expected: PASS (10 tests). If this exposes the `sa.insert` vs `pg_insert` issue from Task 3, fix it now — this is exactly what the contract suite exists to catch.
+Expected: PASS (10 tests) — this confirms Task 3's `pg_insert`-based upsert behaves identically to the fake.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests/contract/test_event_store_contract.py nora/infra/sql/events.py
-git commit -m "test(nora): add EventStore contract suite, fix RSVP upsert dialect"
+git add tests/contract/test_event_store_contract.py
+git commit -m "test(nora): add EventStore contract suite"
 ```
 
 ---
