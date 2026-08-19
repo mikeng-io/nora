@@ -357,6 +357,19 @@ class MobilityRollup:
     async def _apply_rhythm(
         self, *, subject_id: str, place_id: int, stay: Stay, now_ms: int,
     ) -> None:
+        all_stays = await self._store.stays_for_subject(subject_id=subject_id)
+        current = next(
+            (s for s in all_stays if s.started_ts == stay.started_ts), None,
+        )
+        if current is not None and current.place_id is not None and current.place_id != place_id:
+            # Already linked to a DIFFERENT place — a same-cycle race between
+            # two first-place backfills reading the same stale snapshot, or a
+            # stay `_record_rhythm` already handled this cycle. set_place_ids
+            # would no-op; attributing this stay's dwell to `place_id` anyway
+            # would double-count it across two places' occupancy/rhythm.
+            # Found by Task 10's review, Critical #2.
+            return
+
         duration_ms = stay.ended_ts - stay.started_ts
         # Baseline read BEFORE this stay is linked, so it is never
         # anomalous relative to itself.
@@ -382,20 +395,16 @@ class MobilityRollup:
                 "nora_analytics_occupancy_bins_total", value=len(bins), subject=subject_id,
             )
 
-        # Rhythm recomputes from EVERY stay now linked to this place,
-        # including the one just linked above — `label_place`'s own
-        # "recompute from scratch, never an incremental average" posture.
+        # Rhythm recomputes from EVERY stay now linked to this place — re-read
+        # fresh (set_place_ids just landed). `linked` is guaranteed non-empty:
+        # either `current` already belonged to `place_id` (the early-return
+        # above would have caught any mismatch), or set_place_ids just linked
+        # it, so the re-read below will show it.
         all_stays = await self._store.stays_for_subject(subject_id=subject_id)
-        linked = [s for s in all_stays if s.place_id == place_id] + (
-            [] if any(s.started_ts == stay.started_ts for s in all_stays) else [stay]
-        )
+        linked = [s for s in all_stays if s.place_id == place_id]
         tz = ZoneInfo(self._cfg.tz_name)
-        arrivals = [
-            _local_minute_of_day(s.started_ts, tz) for s in linked
-        ]
-        departures = [
-            _local_minute_of_day(s.ended_ts, tz) for s in linked
-        ]
+        arrivals = [_local_minute_of_day(s.started_ts, tz) for s in linked]
+        departures = [_local_minute_of_day(s.ended_ts, tz) for s in linked]
         durations = [float(s.ended_ts - s.started_ts) for s in linked]
         sorted_d = sorted(durations)
         n = len(sorted_d)

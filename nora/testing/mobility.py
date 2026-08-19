@@ -85,9 +85,22 @@ class FakeMobilityStore:
         lng: float, radius_m: float, result: LabelResult, now_ms: int,
         label: str | None = None,
     ) -> None:
+        # `kind == result.kind` (steady-state reconfirm — Speed 3 re-labels
+        # the SAME physical place every cycle) UPDATEs in place, preserving
+        # `place_id` — see SqlMobilityStore.upsert_place's docstring
+        # (behavioral twin, per this project's contract-suite convention;
+        # Task 10 review, Critical #1: churning the id every cycle orphaned
+        # stay/occupancy/rhythm links keyed off it).
+        if kind == result.kind and result.kind != "unlabeled":
+            existing = self._places.get((subject_id, result.kind))
+            if existing is not None:
+                place_id = existing[0]
+                self._places[(subject_id, result.kind)] = (
+                    place_id, lat, lng, radius_m, result, label,
+                )
+                return
         # `kind` is the slot being re-evaluated, independent of
-        # `result.kind` — see SqlMobilityStore.upsert_place's docstring
-        # (behavioral twin, per this project's contract-suite convention).
+        # `result.kind` — see SqlMobilityStore.upsert_place's docstring.
         # The delete clears EITHER `kind` OR `result.kind` (when it is a
         # real kind and differs from `kind`) — never just one, never both
         # `home`/`work` unconditionally. Without also clearing `result.kind`,

@@ -154,11 +154,16 @@ class SqlMobilityStore:
         lng: float, radius_m: float, result: LabelResult, now_ms: int,
         label: str | None = None,
     ) -> None:
-        """Delete-then-insert for THIS subject's `kind` slot, in one
-        transaction — the same shape `PresenceStore.replace_places` uses,
-        and for the same reason: a handful of rarely-changing rows per
-        subject, so the simplest write that cannot leave a stale row behind
-        wins.
+        """Delete-then-insert ONLY for a genuine kind reassignment or an
+        unlabeled downgrade. The common case — `kind == result.kind`, Speed 3
+        reconfirming the SAME physical place every re-cluster cycle — UPDATEs
+        the existing row in place instead, preserving its `id`. Found by
+        Task 10's review: `presence_stays.place_id` / `presence_occupancy` /
+        `presence_place_rhythm` all key off this id, and churning it every
+        cycle orphaned all of Tier 3's data and left the anomaly baseline
+        permanently empty in production. See this method's git history for
+        the original delete-then-insert-always docstring/rationale, which is
+        still correct for the reassignment/downgrade branches below.
 
         `kind` is the slot being RE-EVALUATED — independent of
         `result.kind`, the classification the recheck actually produced.
@@ -177,14 +182,31 @@ class SqlMobilityStore:
         deleting unconditionally over BOTH `home` and `work` regresses to
         the original bug this store was built to avoid (a `home` recheck
         must never delete an unrelated, still-valid `work` row it never
-        touched). In the normal case `kind == result.kind` (a caller
-        re-checks the same kind it is writing) and this is a no-op
-        widening.
+        touched).
 
         A downgrade to `unlabeled` deletes the row entirely rather than
         storing a row with kind='unlabeled' — `existing_place` for a kind
         that no longer holds correctly returns None (Step 1's
         `test_a_stale_place_can_be_downgraded_to_unlabeled_in_place`)."""
+        if kind == result.kind and result.kind != "unlabeled":
+            async with self._engine.begin() as conn:
+                existing = (await conn.execute(
+                    sa.select(PRESENCE_DERIVED_PLACES.c.id).where(
+                        PRESENCE_DERIVED_PLACES.c.subject_id == subject_id,
+                        PRESENCE_DERIVED_PLACES.c.kind == result.kind,
+                    )
+                )).first()
+                if existing is not None:
+                    await conn.execute(
+                        sa.update(PRESENCE_DERIVED_PLACES).where(
+                            PRESENCE_DERIVED_PLACES.c.id == existing.id,
+                        ).values(
+                            lat=lat, lng=lng, radius_m=radius_m,
+                            confidence=result.confidence, label=label,
+                            last_seen_ts=now_ms,
+                        )
+                    )
+                    return
         delete_kinds = {kind}
         if result.kind != "unlabeled":
             delete_kinds.add(result.kind)
