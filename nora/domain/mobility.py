@@ -432,6 +432,16 @@ def label_place(
     `delia_lindberg`'s real-corpus assertion in
     `tests/unit/test_mobility_real_corpus.py` stays `xfail` — see that
     file's `reason=` and task 13b's report for the full numeric trace.
+    Everything ruled out above is share/ratio-shaped; ONE untried
+    alternative is a genuinely different signal: an absolute distinct
+    NIGHT-DAY COUNT gate (`len(night_days)`) rather than a share of dwell
+    — `delia_lindberg`=11 nights vs. `aaron_larsen`=5 (real) / 3 (synthetic), a real
+    gap a share-based test never sees, since the day-count RATIO variant
+    (already tried) fails for the same reason the share does (synthetic
+    `aaron_larsen` attends 100% of its own observed nights, same as
+    `delia_lindberg`). Not wired in here — it would need to be conditioned on
+    the ambiguous zone specifically, or it breaks the existing 3-night
+    `min_nights` home test — left as future work, not attempted.
 
     **Why `is_work` gained `_MIN_WORK_DWELL_MS` (task 13b fix)**: a share
     (`work_share >= 0.5`) alone has no notion of scale — a location visited
