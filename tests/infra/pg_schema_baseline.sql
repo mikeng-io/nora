@@ -1,3 +1,6 @@
+"when" timestamp with time zone,
+);
+);
 );
 );
 );
@@ -20,6 +23,9 @@ ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
 ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
+ADD CONSTRAINT event_rsvps_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
+ADD CONSTRAINT event_rsvps_pkey PRIMARY KEY (event_id, person_id);
+ADD CONSTRAINT events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT media_descriptions_pkey PRIMARY KEY (sha256);
@@ -36,6 +42,9 @@ ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.consolidation_watermark
+ALTER TABLE ONLY public.event_rsvps
+ALTER TABLE ONLY public.event_rsvps
+ALTER TABLE ONLY public.events
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.media_descriptions
@@ -54,6 +63,8 @@ CACHE 1
 CACHE 1
 CACHE 1
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text])))
+CONSTRAINT ck_event_rsvps_response CHECK ((response = ANY (ARRAY['yes'::text, 'no'::text, 'maybe'::text])))
+CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['proposed'::text, 'confirmed'::text, 'cancelled'::text])))
 CONSTRAINT ck_reminders_recurrence CHECK ((((recurrence = 'none'::text) AND (recurrence_tz IS NULL) AND (recurrence_count IS NULL) AND (recurrence_until IS NULL) AND (series_id IS NULL) AND (series_anchor_at IS NULL) AND (occurrence = 0)) OR ((recurrence <> 'none'::text) AND (recurrence_tz IS NOT NULL) AND (recurrence_count >= 1) AND (series_id IS NOT NULL) AND (series_anchor_at IS NOT NULL) AND (occurrence >= 0) AND (occurrence < recurrence_count)))),
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
 CONSTRAINT ck_reminders_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'cancelled'::text, 'failed'::text])))
@@ -61,6 +72,7 @@ CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing
 CONSTRAINT messages_conversation_type_check CHECK ((conversation_type = ANY (ARRAY['group'::text, 'dm'::text])))
 CONSTRAINT room_lexeme_state_check CHECK ((state = ANY (ARRAY['live'::text, 'fading'::text, 'stale'::text])))
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
+CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
 CREATE INDEX idx_messages_dream_lag ON public.messages USING btree (conversation_id, id) WHERE (is_nora = 0);
@@ -72,6 +84,8 @@ CREATE TABLE public.alembic_version (
 CREATE TABLE public.artifacts (
 CREATE TABLE public.compute_jobs (
 CREATE TABLE public.consolidation_watermark (
+CREATE TABLE public.event_rsvps (
+CREATE TABLE public.events (
 CREATE TABLE public.language_observation (
 CREATE TABLE public.media_descriptions (
 CREATE TABLE public.messages (
@@ -118,6 +132,7 @@ conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
@@ -128,11 +143,14 @@ created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone NOT NULL,
+created_at timestamp with time zone NOT NULL,
+created_by text NOT NULL,
 delivery_status text DEFAULT 'pending'::text NOT NULL,
 description text NOT NULL,
 distinct_speakers integer DEFAULT 0 NOT NULL,
 due_at timestamp with time zone NOT NULL,
 error text,
+event_id uuid NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 expires_at bigint
 extractor_confidence double precision NOT NULL
@@ -145,6 +163,7 @@ id integer NOT NULL,
 id integer NOT NULL,
 id integer NOT NULL,
 id text NOT NULL,
+id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -170,6 +189,7 @@ outcome text,
 outcome text,
 part_of_speech text,
 person_id text NOT NULL,
+person_id text NOT NULL,
 person_id text,
 person_id text,
 place_id text NOT NULL,
@@ -187,8 +207,11 @@ recurrence text DEFAULT 'none'::text NOT NULL,
 recurrence_count integer,
 recurrence_tz text,
 recurrence_until timestamp with time zone,
+reminder_id uuid,
 requester_person_id text NOT NULL,
 requester_person_id text NOT NULL,
+responded_at timestamp with time zone NOT NULL,
+response text NOT NULL,
 result_summary text,
 result_url text,
 scope_id text NOT NULL,
@@ -210,11 +233,13 @@ state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
+status text NOT NULL,
 surface_form text NOT NULL,
 tag_id text NOT NULL,
 task text NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
+title text NOT NULL,
 title text NOT NULL,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
@@ -223,6 +248,14 @@ ts bigint NOT NULL,
 ts bigint NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_ms bigint NOT NULL
+venue_address text,
+venue_maps_url text,
+venue_name text,
+venue_place_id text,
+venue_price_level text DEFAULT ''::text NOT NULL,
+venue_rating double precision,
+venue_resolved_at timestamp with time zone,
+venue_text text,
 version text NOT NULL,
 version_num character varying(32) NOT NULL
 wire_state text NOT NULL,
