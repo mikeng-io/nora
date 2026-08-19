@@ -600,6 +600,20 @@ enabled = true
 # max_rendered_lexemes = 6
 # model = "ollamacloud/deepseek-v4-flash"
 # timeout_seconds = 120.0
+#
+# false → true (operator, 2026-08-19). Plans 2 (exchange patterns, DEC-120)
+# and 3 (room portrait, DEC-121) need no separate flag — both ride this same
+# `enabled` above, so they went live the moment this deploy's image landed.
+# This one line is the only additional gate: the search+classify step (Plan
+# 1, DEC-111's known-entity check) that stopped a real pre-existing thing —
+# "Big Walk", a game, and 小KAM, a self-flagged possible in-joke — from being
+# recorded as room-coined slang the way both were before this shipped. Costs
+# an extra search credit + model completion per candidate; verify_max_candidates
+# below bounds the worst case per cycle rather than dropping candidates past it.
+verify_known_entities = true
+# verify_max_candidates = 10
+# exchange_model = "ollamacloud/deepseek-v4-flash"
+# max_rendered_exchanges = 4
 
 [tools.mcp.pulse]
 enabled = true
