@@ -72,9 +72,9 @@ async def test_profile_has_no_game_profiles_when_the_person_has_no_pulse_steam_i
 class _FakePulseForProfiles:
     """A container-backed server (`current` set) and a local-save server
     (`current: None`) — the profile builder must cross-reference the
-    local-save one via its world payload's steamIds and leave the
-    container one alone (module docstring: no N+1 loop over player detail
-    for the container case)."""
+    local-save one via its world payload's steamIds and the container one
+    via a players-list-then-detail lookup (module docstring: an accepted
+    N+1, personal-scale, not built around)."""
 
     def __init__(self) -> None:
         self.servers_body: object = [
@@ -87,8 +87,15 @@ class _FakePulseForProfiles:
         self.world_by_server: dict[str, object] = {
             "big_walk": {
                 "game": "big-walk",
-                "players": [{"steamId": "772857399", "walkingProven": True}],
+                "players": [{"steamId": "77285739900000001", "walkingProven": True}],
             },
+        }
+        self.players_by_server: dict[str, object] = {
+            "abiotic_factor": {"data": [{"playerKey": "pk1"}, {"playerKey": "pk2"}]},
+        }
+        self.player_detail: dict[tuple[str, str], object] = {
+            ("abiotic_factor", "pk1"): {"steamId": "77285739900000002"},
+            ("abiotic_factor", "pk2"): {"steamId": "77285739900000003"},
         }
         self.seen: list[str] = []
 
@@ -104,6 +111,19 @@ class _FakePulseForProfiles:
             return web.Response(status=503)
         return web.json_response(body)
 
+    async def players(self, request: web.Request) -> web.Response:
+        self.seen.append(request.path)
+        server_id = request.match_info["id"]
+        body = self.players_by_server.get(server_id, {"data": []})
+        return web.json_response(body)
+
+    async def player(self, request: web.Request) -> web.Response:
+        self.seen.append(request.path)
+        server_id = request.match_info["id"]
+        player_key = request.match_info["playerKey"]
+        body = self.player_detail.get((server_id, player_key), {})
+        return web.json_response(body)
+
 
 @pytest.fixture
 async def pulse_for_profiles():
@@ -111,6 +131,8 @@ async def pulse_for_profiles():
     app = web.Application()
     app.router.add_get("/v1/servers", fake.servers)
     app.router.add_get("/v1/servers/{id}/world", fake.world)
+    app.router.add_get("/v1/servers/{id}/players", fake.players)
+    app.router.add_get("/v1/servers/{id}/players/{playerKey}", fake.player)
     server = TestServer(app)
     await server.start_server()
     base_url = str(server.make_url("/v1")).rstrip("/")
@@ -123,7 +145,7 @@ async def pulse_for_profiles():
 
 async def test_profile_finds_a_matching_local_save_server_by_steam_id(pulse_for_profiles):
     fake, client = pulse_for_profiles
-    persons = _persons(MILES, index={("pulse", "772857399"): "miles_novak"})
+    persons = _persons(MILES, index={("pulse", "77285739900000001"): "miles_novak"})
 
     profile = await build_person_profile_payload(
         persons=persons, games_client=client, person_id="miles_novak",
@@ -133,14 +155,36 @@ async def test_profile_finds_a_matching_local_save_server_by_steam_id(pulse_for_
     assert profile["gameProfiles"] == [
         {"serverId": "big_walk", "displayName": "Big Walk", "game": "big-walk"},
     ]
-    # The container-backed server's world was never fetched — no N+1 cross-
-    # reference attempted for it (module docstring's documented limitation).
+    # The container-backed server is still cross-referenced (players list +
+    # per-player detail), just finds no match — /world is never the route
+    # used for it (that shape belongs to local-save games only).
     assert "/v1/servers/abiotic_factor/world" not in fake.seen
+    assert "/v1/servers/abiotic_factor/players" in fake.seen
+
+
+async def test_profile_finds_a_matching_container_backed_server_via_player_detail(
+    pulse_for_profiles,
+):
+    fake, client = pulse_for_profiles
+    persons = _persons(AARON, index={("pulse", "77285739900000002"): "aaron_larsen"})
+
+    profile = await build_person_profile_payload(
+        persons=persons, games_client=client, person_id="aaron_larsen",
+    )
+
+    assert profile is not None
+    assert profile["gameProfiles"] == [
+        {"serverId": "abiotic_factor", "displayName": "Abiotic Factor", "game": None},
+    ]
+    # pk1 (Aaron's match) is the first entry — pk2 is never looked up once a
+    # match is already found on this server.
+    assert "/v1/servers/abiotic_factor/players/pk1" in fake.seen
+    assert "/v1/servers/abiotic_factor/players/pk2" not in fake.seen
 
 
 async def test_profile_has_no_game_profiles_when_the_steam_id_does_not_match(pulse_for_profiles):
     _fake, client = pulse_for_profiles
-    persons = _persons(AARON, index={("pulse", "some-other-steam-id"): "aaron_larsen"})
+    persons = _persons(AARON, index={("pulse", "77285739999999999"): "aaron_larsen"})
 
     profile = await build_person_profile_payload(
         persons=persons, games_client=client, person_id="aaron_larsen",

@@ -64,7 +64,7 @@ export function BottomNav() {
           <button
             onClick={() => setChatOpen(true)}
             aria-label={t("chat")}
-            className="group relative flex h-14 w-14 items-center justify-center rounded-xl border border-accent/35 bg-accent text-bg-base outline-none transition-colors hover:bg-accent-dim focus-visible:ring-2 focus-visible:ring-accent/70 active:scale-95"
+            className="group relative flex h-14 w-14 items-center justify-center rounded-full border border-accent/35 bg-accent text-bg-base outline-none transition-colors hover:bg-accent-dim focus-visible:ring-2 focus-visible:ring-accent/70 active:scale-95"
           >
             <MessageCircle className="h-6 w-6" />
           </button>

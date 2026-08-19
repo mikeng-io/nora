@@ -72,8 +72,13 @@ export default async function PortalLayout({
       </aside>
 
       {/* Mobile top bar — brand + language switcher only; NavLinks moves
-          into BottomNav below md. */}
-      <div className="flex items-center justify-between border-b border-border bg-bg-surface p-3.5 md:hidden">
+          into BottomNav below md. `sticky top-0` (not `fixed`): on mobile
+          <main> has no independent scroll container of its own (that's
+          `md:h-screen md:overflow-y-auto`, md+ only), so the whole document
+          scrolls and this bar scrolled away with it — `sticky` pins it to
+          the top of that same scroll without needing a fixed-position
+          offset hack for the content below it. */}
+      <div className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-bg-surface p-3.5 md:hidden">
         <span className="text-[15px] font-semibold tracking-tight">Nora</span>
         <LanguageSwitcher />
       </div>

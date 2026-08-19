@@ -122,6 +122,15 @@ run in `pytest`. There is no module-size gate (deleted 2026-08-06). See
 `docs/CONVENTIONS.md` for the DEC-11 story, the `lint-imports` cache note, and why
 the size gate went.
 
+## Design backlog
+
+Not-yet-built design ideas discussed in a session get filed as a **GitHub issue**
+on `mikeng-io/nora` (not left only in chat/memory) and tracked there — comments,
+scoping, status all live on the issue, not scattered across sessions. Only a
+decision that actually lands gets a `design/09-decision-index.md` entry; an open
+issue is a candidate, not a decision. Example: #4 (per-conversation rolling
+summary — update-in-place, separate from the Dreamer and Honcho).
+
 ## Never (one line each — the war-story behind each is in `docs/CONVENTIONS.md`)
 
 - **Never `pip install`** — dependencies via `uv add` (operational constraint 5).

@@ -8,14 +8,18 @@ to build; the Next.js proxy routes gate this the same way every other
 `/app/v1/*` route is gated (checkSession()), not a new one.
 
 `Persons.by_person` already IS identity.toml's roster; this module is a
-thin projection over it, plus one cross-reference into Pulse for the one
-case that's cheap: a local-save game's `/world` payload already carries
-every crew member's steamId (no extra Pulse call beyond one already
-needed elsewhere). Container-backed games (Abiotic) only expose steamId
-on a per-player detail call, so cross-referencing them would mean either
-an N+1 loop over every player or a new Pulse-side endpoint — left as a
-known limitation rather than either, until Pulse exposes its steamId map
-the way it already does for a local-save game's world payload.
+thin projection over it, plus a cross-reference into Pulse to find which
+servers know a person. A local-save game's `/world` payload already
+carries every crew member's steamId (one call, no extra cost). A
+container-backed game (Abiotic) only exposes steamId on a per-player
+detail call, so it costs one `players()` list call plus one `player()`
+detail call per player on that server — an N+1 loop, deliberately
+accepted rather than built around: this is a personal-scale roster (a
+handful of players per server, called on a profile page view, not a
+poll tick), where the honest per-player lookup is simpler and no less
+correct than adding a bulk steamId endpoint to Pulse for one caller.
+`_CONTAINER_PLAYER_LOOKUP_CAP` bounds it if that scale assumption is
+ever wrong.
 
 Memory stays on its own existing endpoint (`nora/web/memory.py`'s
 `/app/v1/memory?personId=`) rather than being duplicated here — a
@@ -26,6 +30,11 @@ from __future__ import annotations
 
 from nora.persons import Persons
 from nora.web.games import GamesUnavailableError, PulseGamesClient
+
+# One page of Abiotic's player list is fetched per profile view (not per
+# poll tick), then at most this many are detail-looked-up for a steamId
+# match — a personal-scale bound, not a real pagination story.
+_CONTAINER_PLAYER_LOOKUP_CAP = 50
 
 
 def build_persons_roster_payload(*, persons: Persons) -> list[dict]:
@@ -76,25 +85,59 @@ async def _game_profiles(
 
     profiles: list[dict] = []
     for server in servers:
-        if not isinstance(server, dict) or server.get("current") is not None:
-            continue  # container-backed cross-ref not available yet — see module docstring
+        if not isinstance(server, dict):
+            continue
         server_id = server.get("id")
         if not isinstance(server_id, str):
             continue
-        try:
-            world = await games_client.world(server_id)
-        except GamesUnavailableError:
-            continue
-        players = world.get("players")
-        if not isinstance(players, list):
-            continue
-        matched = any(
-            isinstance(p, dict) and p.get("steamId") in steam_ids for p in players
+        display_name = server.get("displayName", server_id)
+        is_local_save = server.get("current") is None
+        matched, game = (
+            await _local_save_match(games_client, server_id, steam_ids)
+            if is_local_save
+            else await _container_match(games_client, server_id, steam_ids)
         )
         if matched:
-            profiles.append({
-                "serverId": server_id,
-                "displayName": server.get("displayName", server_id),
-                "game": world.get("game"),
-            })
+            profiles.append({"serverId": server_id, "displayName": display_name, "game": game})
     return profiles
+
+
+async def _local_save_match(
+    games_client: PulseGamesClient, server_id: str, steam_ids: frozenset[str],
+) -> tuple[bool, str | None]:
+    try:
+        world = await games_client.world(server_id)
+    except GamesUnavailableError:
+        return False, None
+    players = world.get("players")
+    if not isinstance(players, list):
+        return False, None
+    matched = any(isinstance(p, dict) and p.get("steamId") in steam_ids for p in players)
+    return matched, world.get("game")
+
+
+async def _container_match(
+    games_client: PulseGamesClient, server_id: str, steam_ids: frozenset[str],
+) -> tuple[bool, str | None]:
+    try:
+        page = await games_client.players(
+            server_id, page=1, page_size=_CONTAINER_PLAYER_LOOKUP_CAP, online=None,
+        )
+    except GamesUnavailableError:
+        return False, None
+    entries = page.get("data")
+    if not isinstance(entries, list):
+        return False, None
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        player_key = entry.get("playerKey")
+        if not isinstance(player_key, str):
+            continue
+        try:
+            detail = await games_client.player(server_id, player_key)
+        except GamesUnavailableError:
+            continue
+        if detail.get("steamId") in steam_ids:
+            return True, None
+    return False, None

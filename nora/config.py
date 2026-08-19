@@ -689,7 +689,7 @@ class PresenceConfig(BaseModel):
 
 class AnalyticsConfig(BaseModel):
     """The presence analytics substrate — the DERIVED layer (docs/superpowers/
-    specs/2026-08-18-presence-analytics-substrate-design.md), DEC-115.
+    specs/2026-08-18-presence-analytics-substrate-design), DEC-115.
 
     Ships INERT like `[presence]`/`[search]`/`[compute]`/`[language]` before
     it: `enabled` defaults False, and while off `nora.analytics` builds

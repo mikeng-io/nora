@@ -664,3 +664,33 @@ model = ""
 [media.describe.video]
 enabled = false
 model = ""
+
+[analytics]
+# The presence analytics substrate (DEC-115) — the DERIVED layer over
+# [presence]'s raw fixes: stay segmentation, DBSCAN place clustering,
+# fail-closed home/work/unlabeled labelling. Emits typed facts only, never
+# prose — no Nora tool, no app route reads from it yet.
+#
+# Ships INERT like [presence]/[search]/[compute]/[language] before it, and
+# this is the FIRST deployment of it, so turning it on is an operator
+# decision, never something a missing section decides.
+#
+# false -> true (operator, 2026-08-19).
+enabled = true
+# tick_seconds = 120
+# safety_lag = 600            # unprocessed FIXES, not messages
+# settled_seconds = 900       # no new fix -> the stay is closeable
+# max_age_seconds = 86400     # fires at lag == 0 on purpose
+# batch_limit = 400           # steady state; inert in practice
+# backfill_batch_limit = 20000
+# backfill_threshold = 4000
+# grace_seconds = 60
+# stay_radius_m = 120         # INHERITED, not measured — see design/27 §7.1
+# stay_min_dwell_seconds = 600 # INHERITED, not measured — see design/27 §7.1
+# cluster_eps_m = 100
+# cluster_min_samples = 3
+# min_nights = 3
+# min_weekdays = 3
+# label_freshness_days = 45
+# tz_name = "Asia/Hong_Kong"
+# metrics_port = 9103
