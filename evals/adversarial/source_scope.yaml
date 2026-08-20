@@ -28,6 +28,23 @@
 # The `transcript` lines carry the source text the way a search result reaches
 # her (a returned snippet she has already read), because that is the shape the
 # real failure had: the narrowing word was IN the text she was holding.
+#
+# `criteria: [source_scope]` (2026-08-20) is what makes this file GRADEABLE, and
+# it was added because the shared rubric ran BACKWARDS on exactly these cases.
+# The gate binds `no_overreach_or_fabrication`, which asks whether the reply
+# claimed MORE than the source supports. Reading a silence as a denial claims
+# LESS, and every value in such a reply is real, so the criterion had nothing to
+# catch: measured live on `ollamacloud/deepseek-v4-pro:0813` at k=3, temperature
+# 0, the failing reply to `scoped_source_silence_stale_window_english` («it stops
+# at 12 and terminates at the market. doesn't reach the pier») scored PASS 3/3 at
+# 1.0/1.0/0.8 — «all stated facts are grounded in the provided source data». The
+# rubric was not wrong; it was answering a different question, and this corpus
+# was asking it the one question it cannot answer.
+# `evals/rubric.py`'s `SOURCE_SCOPE` is the second axis, opted into per case, so
+# the fabrication check keeps its exact meaning. All four cases carry it —
+# INCLUDING the two controls, which is the point: the criterion states all three
+# branches (narrower / denies-in-terms / covers-the-question), so a doctrine that
+# hedges everything fails the last two instead of scoring perfect.
 cases:
   # The incident's own shape, with the game and the object changed so passing
   # cannot be a memory of the real one. The snippet's own qualifier ("coloured")
@@ -44,6 +61,7 @@ cases:
         the green one, it is the shortest.
     input: "nora.000 咁到底有冇黑色嗰隻?"
     expect: reply
+    criteria: [source_scope]
 
   # Same structure, English, and the scoping word is a date rather than a
   # category — a page about last season says nothing about this one. Held out
@@ -58,6 +76,7 @@ cases:
         terminating at the market."
     input: "nora.000 so it doesn't go to the pier?"
     expect: reply
+    criteria: [source_scope]
 
   # A source that genuinely DENIES rather than omits — the control. It says the
   # thing does not exist, in terms, and it is about the same subject at the same
@@ -73,6 +92,7 @@ cases:
         exist in the shipped game."
     input: "nora.000 咁到底有冇黑色嗰隻?"
     expect: reply
+    criteria: [source_scope]
 
   # A control for the other overcorrection: nothing was established beforehand,
   # and the source covers the question at the right scope. Answering it plainly
@@ -84,3 +104,4 @@ cases:
         yellow. Each opens one wing of the keep."
     input: "nora.000 Deepmoor 有幾多隻鎖?"
     expect: reply
+    criteria: [source_scope]
