@@ -1011,8 +1011,36 @@ Shared — true of **any** `DreamSink`, so they belong in `tests/contract/`:
 | `propose(key, ())` is legal and returns `()` | R-27 at the port: "nothing to write" is distinct from `unavailable` |
 | `supersede` on an absent target returns `0` and does **not** raise | absence is a finding, not an error |
 | a superseded row is **retained**, with the time it was superseded | supersession is a status change; §7.4 and `fact`'s own history depend on it |
-| **a foreign payload is refused, not duck-typed** — proposed here, not on their list | the price of `payload: object` (§15.4). The *type* differs per sink; the *refusal* does not, so the assertion is parameterised on each store's own type |
-| **provenance round-trips** — `instruction_sha256`, `model`, `established_by` are persisted and readable back — proposed here | those three ride on `Proposal` precisely because they are true of every adaptor; a sink that accepted and dropped them would satisfy every other assertion |
+| **a foreign payload is refused, not duck-typed** | the price of `payload: object` (§15.4). The *type* differs per sink; the *refusal* does not, so the assertion is parameterised on each store's own type. Without it the `isinstance` rule is a convention, and a convention is not a contract |
+| **provenance round-trips**, with a **distinct value per field** | see below — this is the assertion the other five are blind to |
+
+Both were proposed from this side and **confirmed by the fact-tier session**
+(2026-08-21) as correct for `SqlFactStore` too.
+
+**Why the round-trip is the strongest assertion in the suite, and why the values
+must differ.** `fact` declares `instruction_sha256`, `model` and
+`established_by` all `NOT NULL`, which invites the conclusion that its store
+*cannot* silently lose them and the assertion is redundant. It is not. `NOT NULL`
+catches **dropping to null**; it does not catch **writing the wrong value** — a
+sink that stamped a constant on every row, or swapped `model` and
+`established_by`, or hashed the wrong text, satisfies every column constraint and
+passes all four of the shared assertions above.
+
+So the suite writes a **different value into each of the three fields** and reads
+all three back. With one repeated string a swap is invisible, and the assertion
+becomes the thing it exists to prevent: a check that looks like rigour and
+verifies nothing.
+
+**A trap this creates for the suite, and how it is resolved.** "Distinct" cannot
+mean `"a"` / `"b"` / `"c"`: `fact_instruction_sha256_check` demands 64 lowercase
+hex, and `fact_model_is_named_check` demands non-empty after `btrim`. If the
+shared suite hard-codes values valid for the fact store, it has quietly become
+the fact store's suite — precisely the failure §15.4.1 exists to prevent.
+
+**So each implementation supplies its own fixture factory** — a callable
+returning a valid `Proposal` for that store, with per-field values the caller can
+vary — and the shared suite asserts *behaviour* over whatever it is handed. Per-
+tier validity rules stay with the tier; the suite stays about the port.
 
 **Not shared, and deliberately so: successor cardinality.** With `replaced_by`
 nullable at the port, `fact`'s biconditional stops being a universal rule and
@@ -1022,9 +1050,9 @@ the fact store refuses** — supersede with no successor, which is retirement
 (§7.4) — and the shared suite must permit it. Cardinality belongs in each
 implementation's own tests.
 
-The last two rows are this tier's proposals and are not yet confirmed by the
-other implementation; they are written here so the suite's author does not have
-to re-derive the argument for them.
+`SqlFactStore` will state in its own docstring that **the port permits a null
+successor and that store refuses one** — so nobody infers the port's shape from
+its table. A DB CHECK reads as a universal rule by default, and this one is not.
 
 ### 15.5 What is still genuinely open
 
