@@ -63,7 +63,50 @@ workspace and starts with an empty tier rather than inheriting this one's world.
 
 ### 1.2 Store: relational triples, shaped so a graph stays a swap
 
-Not Graphiti. The handoff's three-way rejection stands and was not re-litigated:
+Not Graphiti — and the rejection was **re-verified at source** (v0.29.x, `main`,
+2026-08-20) rather than inherited from the handoff, because the operator has
+said he may want to adopt it later and a store choice resting on a summary is
+not a store choice.
+
+**What is actually there, and it is more than the handoff credited.**
+`EntityEdge` (`graphiti_core/edges.py`) is a genuine triple —
+`source_node_uuid` + `name` + `target_node_uuid` — with true bi-temporality
+(`valid_at`/`invalid_at` for event time, `created_at`/`expired_at` for
+transaction time), `episodes: list[str]` for provenance, and **`group_id`**,
+which is Graphiti's own scoping key and maps **1:1 onto this tier's
+`workspace`**. So §1.2's "a graph stays a query-layer swap" is now a verified
+correspondence rather than a hope.
+
+**One mismatch this document found that the handoff did not.** An `EntityEdge`
+connects two node *uuids*. `fact.object_literal` — "5 gourds", "patch 2.4" —
+has **no edge form at all**; it would have to be promoted to a node. So the
+`(object_entity_id is null) <> (object_literal is null)` CHECK is precisely
+the part that would not port naively, and it is worth knowing now rather than
+during a migration. This is the same shape as the handoff's finding about
+negative existentials, reached from the data model instead of the extraction
+prompt.
+
+**And the rejection's central claim holds, checked line by line.**
+`resolve_edge_contradictions` (`utils/maintenance/edge_operations.py:538`)
+invalidates only inside this branch:
+
+```python
+elif (edge_valid_at_utc is not None
+      and resolved_edge_valid_at_utc is not None
+      and edge_valid_at_utc < resolved_edge_valid_at_utc):
+```
+
+Both timestamps must be non-`None` and the comparison is **strict**. A tie
+falls through; a missing timestamp falls through. Grepping the function for
+`logger|warn|count|metric` returns **nothing** — so an LLM-flagged
+contradiction can be dropped with no trace, which is an ERROR reading as a
+PASS and is exactly what R-27 exists to prevent.
+
+Operationally it also needs Neo4j / FalkorDB / Neptune (Kuzu deprecated, **no
+Postgres**), an embedder, and an LLM per ingestion — retrieval is hybrid
+search, which is inert at this tier's expected size (§5 of the handoff).
+
+The handoff's three original reasons stand and were not re-litigated:
 its extractor emits edges between two DISTINCT entities so a negative existential
 most likely yields no edge at all; its contradiction judge scored 1/3 and 0/3 on
 our shape in a graded eval; and `resolve_edge_contradictions` discards a flagged
