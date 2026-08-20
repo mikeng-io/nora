@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Contributor convention only (CLAUDE.md + docs/CONVENTIONS.md). Records that every change starts in a worktree on its own branch and reaches master by merge, because this checkout is the bind-mount source for the running container: nora/doctrine is mounted read-only from the working tree with reload = mtime, so an edit on master reaches the group on the next message with no build and no gate. No code, config, schema or behaviour changes.",
+  "details": [],
+  "limitations": []
+}

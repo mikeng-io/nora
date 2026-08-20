@@ -92,6 +92,22 @@ counting a module's responsibilities to counting its lines.
   code. `git log --oneline -1`, `docker exec … python -c "import config"`, the
   metric endpoint — one command, every time. The check is cheaper than the
   correction.
+- **Never edit, commit, or merge on `master` in this checkout.** 2026-08-20: a
+  session ran five worktree agents correctly, then merged all five, committed two
+  specs, and pushed — all directly on `master`, in the checkout the running
+  container bind-mounts. `nora/doctrine` is mounted read-only from this working
+  tree and `[doctrine] reload = "mtime"`, so the doctrine changes went live on
+  the *next message* with no build, no deploy step, and no gate between the merge
+  and the group reading it. Nothing broke, and nobody decided to deploy — the
+  merge deployed itself. The same session also swept two untracked spec files and
+  an unreviewed `AGENTS.md` into a merge commit via a reflexive `git add -A`
+  while resolving a conflict.
+
+  Both failures share one cause: on `master` there is no step between "I changed
+  a file" and "it is live and public". A worktree restores that step. Every
+  change starts on a branch — a one-line doc fix included — and reaches `master`
+  by merge, so the merge is the moment somebody decides, rather than a side
+  effect of editing.
 - **Never run two agents against this checkout at once.** Three times on
   2026-08-06 a subagent's `git add -A` swept another session's staged work into
   its commit, and once an agent amended a commit it did not author. Nothing was

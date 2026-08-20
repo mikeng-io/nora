@@ -148,6 +148,12 @@ summary — update-in-place, separate from the Dreamer and Honcho).
   concluding from a null one.
 - **Never claim a merge, deploy or fix without reading back the state you claim**
   — `git log -1`, `docker exec … import config`, the metric endpoint. Every time.
+- **Never edit, commit, or merge on `master` in this checkout** — every change,
+  including a one-line doc fix, starts in a worktree on its own branch and
+  reaches `master` by merge. `master` here is a bind-mount source for the
+  running container (`nora/doctrine`, `config.toml`), so an edit on `master` is
+  a deploy: the doctrine hot-reloads on mtime and reaches the group with no gate
+  between the edit and production.
 - **Never run two agents against this checkout at once** — sequence them, or give
   each a worktree.
 - **Never trust `alembic revision --autogenerate` for `idx_messages_conv_ts`** —
