@@ -143,9 +143,12 @@ def test_config_uses_the_target_shape(toml_path):
     # store replaces buffer
     assert cfg.store.max_per_conversation == 500
     assert cfg.store.context_window == 40
-    # tiers replace default/deep, and carry their own timeout
-    assert cfg.llm.model == "opencode-zen/deepseek-v4-flash"
-    assert cfg.llm.timeout_seconds == 30
+    # tiers replace default/deep, and carry their own timeout. These two track
+    # the DEPLOYMENT (DEC-84's opencode-zen → ollamacloud move, and 30 → 60 →
+    # 120); `tests/test_env_template.py` is what keeps the template and
+    # config.toml from drifting apart again.
+    assert cfg.llm.model == "ollamacloud/deepseek-v4-flash"
+    assert cfg.llm.timeout_seconds == 120
     assert cfg.llm.limits.turns == 20
     assert cfg.llm.max_tokens == 2000
     # engagement owns the trigger; policy is declared even though only one exists

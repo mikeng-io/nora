@@ -100,6 +100,18 @@ def create_model_provider(
         client=client,
         params={
             "max_tokens": max_tokens,
+            # `temperature` is the ONLY sampling parameter we send. `top_p` is
+            # absent from this dict ON PURPOSE and has no config key, so the
+            # value in force is the PROVIDER's default and no nucleus
+            # truncation is applied by us anywhere in the loop.
+            #
+            # Stated here because the absence was invisible from both the code
+            # and config.example.toml, and an audit reasoning about her
+            # sampling got the wrong picture (F8, the 2026-08-20
+            # prompt-architecture audit). Do NOT "make it explicit" by adding
+            # `top_p`: 1.0 is a no-op, and anything below it truncates the
+            # distribution on a guess. See the sampling note in
+            # config.example.toml's `[llm]` for what measuring it would take.
             "temperature": temperature,
             "tool_choice": FIRST_CALL,
             # Comes from the tier (config.toml), not from here — a runtime

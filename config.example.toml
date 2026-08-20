@@ -23,45 +23,149 @@ token_env = "DISCORD_BOT_TOKEN"  # env var holding the bot token; never the valu
 [memory]
 base_url = "http://127.0.0.1:8000"
 workspace_id = "nora"
+# `<self_card>` — how many of HER OWN conclusions ride in the per-tag prefill,
+# so a promise she made last night survives falling out of the transcript
+# window. 0 turns the block off. From `representation`, never from the peer
+# CARD: read live 2026-08-11 her card asserts «Kind: AI chatbot/assistant» and
+# «Owner: 主人 with admin authority» — both distilled from her own output, both
+# contradicting identity.md, and both would WIN against the doctrine because a
+# concrete observation outranks a prescription in practice.
+#
+# 8, not 25. This block is per-tag, so it is re-sent on every model call of the
+# loop rather than living in the cached static head: 25 conclusions measured
+# 2,459 chars (~820 tokens), which at `turns = 20` is ~16k of the 128k budget.
+# Eight measured ~1,080 chars.
+self_card_conclusions = 8
+# `<peer_history>` — how many of her conclusions ABOUT THE TAGGER ride in the
+# per-tag prefill. 0 disables the block. NOT a duplicate of `<peer_card>`: read
+# live 2026-08-15 the two shared ZERO items — the card renders IDENTITY claims,
+# the representation states dated episodes. Who they are, and what happened.
+#
+# Same per-tag arithmetic as `self_card_conclusions`: 8 (~360 tokens) is ~7.2k
+# of the 128k budget at `turns = 20`. Raising BOTH to 16 spends ~29k before
+# anybody has said anything — measure a real turn's total_tokens first.
+tagger_card_conclusions = 8
 
 [llm]
 base_url = "http://localhost:20128/v1"
 api_key_env = "OMNIROUTE_API_KEY"     # env var NAME, never the value
 
-# PINNED to one upstream, not the `nora` combo. The combo fans out per request
-# and only ONE of its three upstreams accepts a forced tool_choice while
-# thinking is enabled — measured 4/4 each, not sampled:
+# PINNED to one upstream, not the `nora` combo — the combo fans out per request
+# and the upstreams disagree about forced `tool_choice`, so on it she was on a
+# coin flip. See ADR 0006 for the full measurement behind BOTH values here.
+#
+# SUPERSEDED (kept: the wrong turn stays visible so it is not retaken). Until
+# 2026-08-10 this line read `opencode-zen/deepseek-v4-flash`, on this argument:
+# only ONE of the combo's three upstreams accepted a forced tool_choice while
+# thinking was enabled — measured 4/4 each, not sampled:
 #
 #   deepseek/deepseek-v4-flash       400 "Thinking mode does not support this
 #   opencode-go/deepseek-v4-flash    400  tool_choice" (deepseek-ai/DeepSeek-V3#1376)
 #   opencode-zen/deepseek-v4-flash   200, and picks the right tool 4/4
 #
-# So on the combo she was on a coin flip: routed to zen she chained correctly,
-# routed to either other she 400'd mid-turn and went silent — showing the group
-# ⚠️, which reads as "gave up" rather than "the provider refused the request".
+# Routed to zen she chained correctly, routed to either other she 400'd mid-turn
+# and went silent — showing the group ⚠️, which reads as "gave up" rather than
+# "the provider refused the request". The note ALSO said to watch zen, because
+# it was the only one of the three reporting no reasoning_tokens in usage, which
+# suggested a different — possibly older — build.
 #
-# This gives up the alias's benefit of keeping the upstream name out of her
+# opencode-zen → ollamacloud (DEC-84, 2026-08-10). Two reasons, in order:
+#   1. ECONOMICS. ollama-cloud is subscription-based; opencode-zen is credit-based
+#      and was returning 403/429 «All credentials for model deepseek-v4-flash are
+#      cooling down» throughout a probing session. A route that rate-limits under
+#      load is not a route for the only path the group can reach her by.
+#   2. tool_choice. The 400 «Thinking mode does not support this tool_choice»
+#      that forced the zen pin does NOT occur here: 0 errors in 32 forced calls
+#      across all three deepseek tags.
+#
+# `deepseek-v4-flash` and NEVER `-pro` (operator). Measured, `pro` is not better
+# at the one thing that matters here — it obeyed a forced tool_choice 2/3 where
+# flash-at-none obeyed 8/8 — so the larger model buys nothing and costs more.
+#
+# Pinning gives up the alias's benefit of keeping the upstream name out of her
 # process (R-18 still blocks model names from replies, so she cannot say it).
 # Determinism is worth more than the indirection.
-#
-# WATCH THIS: zen is the only one of the three that reports no reasoning_tokens
-# in usage, which suggests a different — possibly older — build than the other
-# two. If that is why it accepts the forced tool_choice, their next update
-# could start 400ing with nothing changing here. The version-independent
-# fallback is reasoning_effort = "none", which works on all three.
-model = "opencode-zen/deepseek-v4-flash"
+model = "ollamacloud/deepseek-v4-flash"
 # The provider's per-CALL ceiling — NOT the turn's budget (see [llm.limits]
 # below, which is where the loop's budget lives). Was 4000, an unmeasured
 # number that doubled as the loop budget; measured 2026-08-06, the largest
 # legitimate completion — reasoning block plus the tool call — was 371 tokens,
 # so 2000 is 5.4x headroom.
 max_tokens = 2000
+# SAMPLING — and this one key is the whole of it: `temperature` is the ONLY
+# sampling parameter this deployment sets. The `top_p` note below it is the
+# other half of the picture and is deliberately not a key.
+#
+# 0.7 is INHERITED, not measured — it has been this value since the first
+# config and no probe has ever moved it. Nothing here argues for it.
 temperature = 0.7
-# "none" | "low" | "medium" | "high". A tag is one short reply from context she
-# already holds — nothing to reason through. Measured on deepseek-v4-flash:
-# "none" 4.7s, "low" 9.5s, unset 16.1s, all producing the tool call.
-reasoning_effort = "low"
-timeout_seconds = 30
+# `top_p` is UNSET, and deliberately has no key in this file, so the value in
+# force is whatever the provider defaults to. `nora/agent/factory.py`'s
+# `create_model_provider` builds `params` from exactly four entries —
+# `max_tokens`, `temperature`, `tool_choice`, `reasoning_effort` — so no
+# nucleus truncation is applied by us at any point in the loop.
+#
+# This is recorded because the absence was INVISIBLE: reading this file gave no
+# hint that a sampling parameter was in play at all, and an audit reasoning
+# about her sampling from the repo got the wrong picture (F8, the 2026-08-20
+# prompt-architecture audit).
+#
+# DO NOT add a `top_p` key to make the knob "explicit" without measuring first.
+# `top_p = 1.0` is a no-op that buys nothing but the illusion of control, and
+# any value below it truncates the distribution on a guess — for work that is
+# «pick one tool and call it correctly», the failure mode that matters is her
+# ending a turn without calling `send_reply`, which is exactly what the
+# `reasoning_effort` series below shows sampling changes can move. Measure it
+# the way that series was measured — auto tool-choice rate and no_send_call
+# journeys, n≥5 — and only then decide whether a knob should exist.
+
+# REASONING EFFORT: "none" | "low" | "medium" | "high". NOT "auto" — the
+# provider 400s on it.
+#
+# SUPERSEDED, kept because the reasoning is still half-right and the value it
+# argued for is the documented fallback: this line read `low` on the argument
+# that «a tag is one short reply from context she already holds — nothing to
+# reason through», with latency measured on deepseek-v4-flash at "none" 4.7s,
+# "low" 9.5s, unset 16.1s, all producing the tool call.
+#
+# Measured 2026-08-10 on ollamacloud/deepseek-v4-flash. Two independent probes,
+# same monotonic shape — and this measurement is NOT retracted by the value
+# below it:
+#
+#   effort   out tok p50   p50 s   auto tool-choice   no_send_call (journeys)
+#   none              49     1.2         5/5                    5
+#   low               70     1.1         3/5                    4
+#   medium            81     1.2         2/5                    —
+#   high             104     2.9         1/5                   15
+#
+# ROUTING is a wash — journeys total-samples high 21/24, none 20/24, low 19/24,
+# i.e. one sample apart at n=3. What is not a wash is the last column: `high`
+# ends the turn without calling `send_reply` three times as often, and that is
+# her going mute in the group.
+#
+# `none` → `low` (operator, 2026-08-11). Measured against the real shipped
+# doctrine, same scene 「阿豪又遲到，仲賴塞車」, one call each: `low` was FASTER
+# and better, producing the escalating three-beat burst DEC-95 asks for where
+# `none` produced neither. The work is no longer «pick one tool and call it
+# correctly» — since DEC-95 it is «read the room, choose how hard, and compose
+# several messages», which is deliberation, and the model needs a little of it.
+#
+# `low` → `high` (operator, 2026-08-17), against the 2026-08-10 table above.
+# The failure mode to watch is the one that table names: at `high`, 1/5 auto
+# tool-choice and 15 no_send_call journeys — her ending a turn without calling
+# `send_reply` at all. Revert to `low` if silent turns show up in the traces.
+reasoning_effort = "high"
+# 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container,
+# and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
+# so every real image timed out while the tiny probe PNG passed.
+# 60 → 120 (2026-08-08, Kimi audit): this is the WHOLE-TURN wall-clock
+# (`asyncio.wait_for` in the invoke stage). It was sized when the web pair could
+# spend 4×15 s fetching pages (web_fetch, now retired, DEC-73); Tavily's one-call
+# web_search is ~12 s, so a research turn is far cheaper now. 120 is kept as
+# comfortable headroom for a multi-tool turn (web_search + weather + model
+# round-trips); a normal turn is still ~10 s, so this only bounds the rare slow
+# turn (the operator: a longer wait is fine). Vision derives min(configured 20, 120×0.5).
+timeout_seconds = 120
 
 # The three caps around the WHOLE agent loop for one tag — all measured
 # 2026-08-06, all three previously wrong in the same direction.
@@ -111,6 +215,17 @@ output_tokens = 12000
 [engagement]
 policy = "trigger_text"
 
+[engagement.reactions]
+# 👀 while she works, then ✅ (replied) or ⚠️ (failed).
+# Off = she writes nothing to the group but replies.
+enabled = true
+
+[engagement.queue]
+# Per-conversation FIFO depth beyond which an arriving tag is shed as a flood
+# (R-29). Bounds runaway growth, not waiting — a queued tag keeps its place
+# however long the turn ahead of it takes, and there is no staleness rule.
+max_depth = 16
+
 [engagement.trigger]
 text = "nora.000"
 min_interval_seconds = 5
@@ -140,6 +255,21 @@ context_window = 40
 # Do NOT fake it by widening `max_per_conversation`: `prune_all` runs a
 # `row_number()` window over the whole `messages` table on every tick, so a huge
 # number keeps paying for that scan in order to delete nothing.
+#
+# The live deployment sets this FALSE, and the measurement behind that is the
+# reason to read the paragraph above rather than skim it. Measured 2026-08-15:
+# the busy group was sitting at exactly 500 rows — at the cap, evicting its
+# oldest message every time a new one arrived, on a sweep that runs every 300s
+# — with its earliest surviving message only eight days old and ids below 121
+# already gone. History is the input to everything downstream (the transcript
+# window's own past, any consolidator built on the record), and a rolling 500
+# is not history.
+#
+# It stays COMMENTED OUT here on purpose, and that is load-bearing rather than
+# an oversight: `tests/test_main.py::test_the_retention_sweep_is_spawned_when_
+# the_flag_is_on` loads this very file to pin the CODE default (absent means
+# enabled), so writing the key here would silently delete that assertion.
+# `tests/test_env_template.py` names it as the one key allowed to be absent.
 # prune_enabled = false
 
 # Attachment byte custody (DEC-43), encrypted at rest (DEC-47). The WHOLE
@@ -199,6 +329,42 @@ vision_max_tokens = 1024
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
 vision_timeout_seconds = 20.0
+# Reading a sticker automatically at INGEST (sticker spec §6) — separate from
+# media_fetch above because the two calls have different budgets and risk.
+#
+# ON since 2026-08-16, operator's call. The spec §7 probe (2026-08-15, live
+# gateway) cleared the animated-WebP risk this flag was originally gated on;
+# what remained was a latency trade-off. The cost being accepted, measured
+# rather than estimated: a NEW sticker blocks the ingest path 3.9-12.2s while
+# the vision call runs, and when it rides on the tagging message that lands on
+# Nora's reply latency. A repeat is free — 41% of sightings already, rising as
+# the group's sticker set saturates. Watch nora_sticker_describe_seconds and the
+# level= label on nora_sticker_descriptions_total; if the p99 hurts, this line
+# is the off switch and nothing else has to change.
+sticker_descriptions = true
+
+# Nora's own link shortener / drop delivery (deploy/drop/, this repo's own
+# compose service — docs/superpowers/specs/2026-08-12-nora-drop-design.md §5).
+# The WHOLE SECTION IS OPTIONAL and every key defaults; off (or an unset token)
+# leaves long URLs in replies, never a failure. Self-hosted on purpose — a
+# third-party shortener would see every destination the group routes to — and
+# never load-bearing: a mint that fails leaves the long URL exactly as it was.
+#
+# `base_url` points at `drop`'s INTERNAL listener, NOT the public hostname.
+# `drop` deliberately splits an internal listener (`drop:8081`, no `ports:`
+# entry, no Tunnel rule — spec §5a) carrying `POST /api/links` from a PUBLIC
+# listener carrying only the read-only `GET /i/<slug>` redirect, so the public
+# host has no `/api/links` route at all and minting against it 404s. Nora's own
+# container sits on the same Docker network and reaches `drop:8081` by
+# container DNS. The public `short_url` a mint returns is unaffected — `drop`
+# builds it server-side from its own DROP_PUBLIC_BASE_URL and hands it back.
+#
+# `token_env` NAMES the env var holding the mint bearer (DEC-8); the value is
+# `drop`'s own secret.
+[shortener]
+enabled = false
+base_url = "http://drop:8081"
+token_env = "NORA_DROP_TOKEN"
 
 # Google routing for the `route` tool (DEC-46). The WHOLE SECTION IS OPTIONAL
 # and every key defaults — a config.toml without it behaves as if routing is
@@ -220,6 +386,44 @@ enabled = false
 base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
 token_env = "PULSE_MCP_TOKEN"
 budget = 5
+
+# `make_artifact` — she builds a FILE (a report, a chart, a map) in a sandboxed
+# container and hands back a link, instead of typing the answer into chat.
+#
+# Ships INERT, like [presence] and [search] before it, and this one has more
+# reason than either: turning it on gives her process the host Docker socket
+# (docker-compose.yml mounts it, with the argument for that beside the mount)
+# and lets an LLM-authored program run on this box. That is an operator
+# decision every time, never something a missing section decides.
+#
+# Turning `enabled` on ALSO requires four host-injected values, and Nora
+# REFUSES TO START without any of them rather than accepting every job and
+# failing it minutes later in front of the group:
+#   NORA_DATA_HOST_ROOT   the host-side path of the /app/data mount. It exists
+#                         because a sandbox's workspace is bind-mounted by the
+#                         HOST Docker daemon, which resolves the source on the
+#                         host filesystem — an in-container path silently
+#                         resolves to an empty directory and the job produces
+#                         nothing. docker-compose.yml sets it from the same
+#                         expression as the mount itself, so the two agree.
+#   NORA_DROP_TOKEN       [shortener].token_env — the credential each job's own
+#                         scoped, short-lived Drop token is minted against.
+#   GOOGLE_MAPS_API_KEY   [route].api_key_env — the SAME key the `route` tool
+#                         uses, shared with the map-rendering skill.
+#   OMNIROUTE_API_KEY     [llm].api_key_env — the model the sandbox itself runs
+#                         on (the same OmniRoute triple Nora uses).
+[compute]
+enabled = false
+# sandbox_image = "smith:latest"
+# job_timeout_seconds = 300   # wall-clock guardrail; the container is killed
+# max_concurrent_jobs = 2     # containers in flight at once
+# poll_tick_seconds = 10      # how often the poller WAKES to check for a
+#                             # finished job — the same "best case for
+#                             # lateness, not an upper bound" shape that the
+#                             # heartbeat section's own tick_seconds has.
+# mem_limit = "8g"            # docker-py's own containers.run mem_limit shape
+# nano_cpus = 2000000000      # billionths of a CPU core (2 vCPUs)
+# data_host_root_env = "NORA_DATA_HOST_ROOT"
 
 # The presence collector (design/19, DEC-54/55) — a SEPARATE process,
 # `python -m nora.presence`, that records circle members' distinct location
@@ -264,8 +468,21 @@ client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
 username_env = "LIFE360_USERNAME"
 password_env = "LIFE360_PASSWORD"
 cadence_seconds = 90
+# Adaptive cadence (design/19 §4.1): floor while a circle has a driver, ceiling
+# once it's been still long enough to hit the ramp. `cadence_seconds` above
+# stays the base for the SEPARATE ban-safe backoff (cadence_seconds *
+# 2^auth_failures), not the steady-state poll interval anymore.
+cadence_moving_seconds = 5
+cadence_still_seconds = 60
 retention_days = 720
 metrics_port = 9101
+# On-demand LIVE refresh (DEC-67): where_is pings the phone for a fresh position
+# before answering, so it reports where they ARE, not where they were last seen.
+# `refresh_url` is the collector's HTTP endpoint AS NORA REACHES IT (the presence
+# service by name in compose, e.g. "http://presence:9101"); empty leaves where_is
+# read-only, answering from the last stored fix.
+refresh_url = ""
+refresh_timeout_seconds = 8
 # Reverse-geocode backend — a switchable OPTION, never a replacement. "google"
 # (default, proven; needs GOOGLE_MAPS_API_KEY) or "hkgov" (the HK-gov LandsD
 # ArcGIS locator). Both sit behind the ReverseGeocoder port and both are optional
@@ -531,11 +748,23 @@ headers_env = ""                      # env var NAME holding OTLP auth headers, 
                                        # value (DEC-8); only read when exporter = "otlp_http"
 
 [evals]
-# judge_model grades the adversarial live run; MUST differ from llm.model
-# (a model grading itself self-scores). Kept at deepseek-v4-pro: a measured run
-# had cheaper flash miss fabrications pro caught, so pro is the conservative
-# default (DEC-75). The judge runs once per graded case, pre-deploy only.
-judge_model = "deepseek-v4-pro"
+# The model that GRADES the adversarial live run (DEC-75). MUST differ from
+# llm.model's exact id — the runner refuses a string match, because a model
+# grading itself self-scores. The judge runs once per graded case, pre-deploy
+# only.
+#
+# SUPERSEDED (kept so the wrong turn is not retaken): this read
+# `deepseek-v4-pro` on the argument that «a measured run had cheaper flash miss
+# fabrications pro caught, so pro is the conservative default».
+#
+# That run was CONFOUNDED SINGLE-SAMPLE NOISE. A controlled measurement (A4:
+# same frozen replies, k=3) showed flash MATCHES pro — 3/3 fabrications caught,
+# control PASS, both — once the attribution prompt (A1) and majority-of-3 (A2)
+# are in. So flash via a DIFFERENT provider route grades as well as pro here at
+# a fraction of the cost. Same base model = weaker independence (Kimi) but
+# measured to work for this class; n=4 controlled, revisit with the diversified
+# corpus (C1). Revert to deepseek-v4-pro if a larger run shows a gap.
+judge_model = "deepseek/deepseek-v4-flash"
 # judge_samples: the judge grades each reply k times; the gate binds the majority
 # safety verdict (A2, kills single-sample noise). 1 = single sample; 3 = stable.
 judge_samples = 1
