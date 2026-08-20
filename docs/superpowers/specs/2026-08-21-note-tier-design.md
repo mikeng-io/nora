@@ -1094,7 +1094,7 @@ implementation's own tests.
 successor and that store refuses one** — so nobody infers the port's shape from
 its table. A DB CHECK reads as a universal rule by default, and this one is not.
 
-### 15.4.3 What actually landed, and the two gaps in it
+### 15.4.3 What actually landed, and the three gaps in it
 
 `tests/contract/test_dream_sink_contract.py` **already exists** — 15 tests,
 `IMPLEMENTATIONS = {"fake": _FakeDreamSink}`, everything parametrised — so the
@@ -1108,7 +1108,7 @@ tier's proposals were taken seriously, and one of them landed
 `"a" * 64`, a model string, `"run-42"` — so the swap-invisibility problem
 §15.4.1 raised is genuinely handled.
 
-Two gaps remain, raised with the fact-tier session on 2026-08-21 while it was
+Three gaps remain, raised with the fact-tier session on 2026-08-21 while it was
 still editing the file:
 
 **Gap 1 — the shared fixture is the fact tier's.** The helper is
@@ -1133,9 +1133,43 @@ joins. It therefore lands with the *first real implementation* or not at all —
 and if it does not, the `isinstance`-at-the-sink rule stays a convention, which
 is the one thing §15.4 says it must not be.
 
-Neither gap is a defect in the port. Both are the suite not yet being general,
-which is the specific failure a shared contract suite is most prone to and least
-able to announce.
+**Gap 3 — five tests read `sink.rows`, which only the fake has.**
+`test_a_supersession_records_why_and_optionally_from_where`,
+`test_provenance_survives_the_write`,
+`test_a_supersession_can_name_its_successor`,
+`test_a_supersession_with_no_successor_is_legal_at_the_port` and
+`test_source_and_replaced_by_are_kept_apart` all reach into
+`_FakeDreamSink.rows` — a dict of its own `_Row`. `DreamSink` has two verbs and
+**deliberately no third**, so there is no read verb on the port and no real store
+will have that attribute. This blocks the *fact* store's join as much as the note
+store's.
+
+The fix is the fixture factory's shape again: each `IMPLEMENTATIONS` entry
+supplies a **read-back adapter** returning a normalised row view (`proposal`,
+`because`, `source`, `replaced_by`, `retired_at`). **Not** a read verb on the
+port — `DreamSink` is a write boundary and "two verbs, no third" is a
+load-bearing claim in its own docstring; adding `get` so tests can assert
+conveniently would let the suite reshape the thing it exists to check.
+
+**The rule all three gaps are instances of**, and the one worth carrying into the
+suite's module docstring:
+
+> **Anything the shared suite needs that is not on the port must be supplied per
+> implementation.**
+
+Assertions *are* on the port, so they are shared. Constructing a valid `Proposal`
+is not → factory. Reading a row back is not → adapter. Stated once, it catches
+the fourth instance at the next reading rather than at the next join.
+
+**A fake that accepts everything passes Gap 2's assertion vacuously**, which
+would make it the kind of test CLAUDE.md names directly — a fake that answers
+every request the same way, green whether or not the rule holds. So the note fake
+declares a payload type of its own and participates properly; being excluded with
+a stated reason is the acceptable alternative, and passing silently is not.
+
+None of the three is a defect in the port. All three are the suite not yet being
+general, which is the specific failure a shared contract suite is most prone to
+and least able to announce — every assertion in it looks like rigour.
 
 
 ### 15.5 What is still genuinely open
