@@ -174,6 +174,42 @@ fix uses (`corridor_id IS NULL` as the durable "not yet processed"
 marker) — a real gate expressed as "don't consume this yet," not a
 timer or a second watermark column.
 
+**The stall this buys, stated with its duration rather than waved at.**
+Holding the watermark back means it can stop advancing entirely: if an
+entire batch is one undecided group, the target reduces to the current
+watermark and the cycle is a no-op write. Nothing is lost — that is the
+whole point — but nothing progresses either, and the batch is re-read
+next cycle. This is **bounded and self-healing, but it is real, and the
+bound is hours, not minutes.** `run_once` reads at `batch_limit` (400)
+until the backlog crosses `backfill_threshold` (4000), at which point it
+switches to `backfill_batch_limit` (20000); a wider batch has an older
+trailing fix and a longer span, so it settles on the clock or trips
+`max_trip_duration_seconds`, and the backlog drains. The stall therefore
+lasts roughly `backfill_threshold × fix_cadence` in the worst case —
+at a ~10 s cadence during continuous driving, **on the order of 11
+hours** before the widening kicks in. Two things keep this off the
+critical path in practice rather than in principle: `is_driving` flipping
+`False` at the end of any real drive settles the group immediately, and
+`max_trip_duration_seconds` (§2.4) caps the group's span at 3 hours
+regardless. It is nonetheless the sharp edge of this mechanism, and the
+reason `max_trip_duration_seconds` is a safety valve rather than a
+nicety. If the cap were ever raised much above 3 hours, this bound is
+what would have to be re-derived.
+
+A second, subtler stall was found during implementation and is closed in
+the design rather than left to the reader: the `is_driving is None`
+fallback measures the trailing fix's age against `settled_seconds` (900
+s), but Life360's **resting** cadence is ~10 minutes — inside that
+window. A subject sitting still therefore never settles by the clock, so
+their whole day is held back and eventually flushes as 0 km/h, 0 m
+phantom trips instead of a stay. The `None` path consequently needs a
+second gate alongside the clock: if the trailing group has already
+dwelled past `stay_min_dwell_seconds`, it is the stay-in-progress it
+looks like, not undecided movement. This gate applies **only** when there
+is no `is_driving` reading — gridlock is a real drive whose tail looks
+spatially exactly like a stay, and an actual signal must win over a
+spatial proxy.
+
 **A note on scope, stated plainly rather than left implicit:** tracing
 this raised a real question about whether the *existing* open-stay
 mechanism has an analogous property — whether a stay spanning many ticks

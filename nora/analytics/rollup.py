@@ -39,6 +39,7 @@ from nora.domain.mobility import (
     label_place,
     robust_z_score,
     segment_stays,
+    trailing_fix_is_settled,
 )
 from nora.domain.ports import GeocodeCacheStore
 from nora.domain.presence import haversine_distance_m
@@ -262,27 +263,75 @@ class MobilityRollup:
                 # is gated on `open_stay_started_ts is None`, so without this
                 # guard it could never have fired from here at all.
                 #
-                # `is_driving is True` on the final chunk's LAST fix is the
-                # discriminator, and it is the SAME fix `extract_trips`
-                # judges (`buffer[-1]`), so run_once and the settlement check
-                # can never disagree about which reading decided. When it
-                # says the subject is still moving there is no
-                # stay-in-progress to cut at, and the trailing group's fate
-                # is genuinely undetermined — which is precisely the state
-                # `open_stay_started_ts=None` means. `last_open_stay` is
-                # deliberately left unset in that case too: a group that is
-                # being held back as candidate TRIP fixes must not also be
-                # closable as a stay by the `settled_seconds` block below, or
-                # the same fixes would land in both tables.
+                # The discriminator is `trailing_fix_is_settled` — the SAME
+                # predicate, on the SAME fix (`chunk[-1]` is `extract_trips`'
+                # own `buffer[-1]` for the final chunk), that `extract_trips`
+                # uses to decide whether to finalize. Sharing it is not
+                # tidiness: if these two ever disagreed, the same fixes would
+                # be held back as candidate TRIP fixes here and written as a
+                # STAY below, landing in both tables.
                 #
-                # Deliberately narrow: `is_driving` False or None both keep
-                # the pre-existing behaviour byte-for-byte. False is a real
-                # arrival (the parked tail IS a stay-in-progress, and calling
-                # it movement would swallow every stay this substrate exists
-                # to find — `test_a_parked_tail_with_is_driving_false_is_
-                # still_an_open_stay`), and None is "no reading", where the
-                # only honest answer is the one this code already gave.
-                tail_is_movement = is_final_chunk and chunk[-1].is_driving is True
+                # Unsettled means there is no stay-in-progress to cut at and
+                # the trailing group's fate is genuinely undetermined — which
+                # is precisely the state `open_stay_started_ts=None` means.
+                # `last_open_stay` is deliberately left unset in that case
+                # too, for the same reason: a group being held back must not
+                # also be closable as a stay by the `settled_seconds` block
+                # below (`test_a_gridlocked_drive_never_writes_a_stay_while_
+                # the_tail_is_still_movement`).
+                #
+                # All three readings matter, and `None` is NOT a synonym for
+                # `False` here. `True` (still driving) never settles. `False`
+                # is a real arrival — the parked tail IS a stay-in-progress,
+                # and calling it movement would swallow every stay this
+                # substrate exists to find
+                # (`test_a_parked_tail_with_is_driving_false_is_still_an_
+                # open_stay`). `None` is no reading at all — the real state
+                # of every historical fix and anything Life360 omits the flag
+                # on — and falls back to `settled_seconds`, the same
+                # quiet-boundary clock Tier 1 already uses for a stay's
+                # arrival (design §2, bullet 2). Treating `None` as settled
+                # left the original fragmentation bug fully intact for
+                # exactly the fixes that have no signal to fix it with.
+                tail_settled = trailing_fix_is_settled(
+                    chunk[-1], now_ms=now_ms,
+                    settled_seconds=self._cfg.settled_seconds,
+                )
+                # `tail_dwelled` is the SECOND gate, and it exists only for
+                # the `None` case. The clock alone is not enough there: at a
+                # RESTING cadence (Life360 emits every ~10 min when still)
+                # the trailing fix is never older than `settled_seconds`, so
+                # a subject sitting at home all day would have their whole
+                # day held back as "undecided movement" — and when it finally
+                # flushed, their stationary fixes came out as 0 km/h, 0 m
+                # trips instead of a stay. Measured on
+                # `test_a_repeating_commute_actually_grows_corridors_over_
+                # days`: 41 such phantom trips, and 7 stays where the fixture
+                # documents zero.
+                #
+                # The discriminator is the trailing group's own DWELL. A
+                # resting tail is one spatially-coherent group whose span
+                # passes `min_dwell_ms` — the same bar `_close` uses to call
+                # something a stay. A driving tail is a fix that just broke
+                # the radius, so its group's span is ~0. So: no signal, but
+                # the tail has already dwelled like a stay -> treat it as the
+                # stay-in-progress it looks like.
+                #
+                # Only for `None`. When Life360 actually says `is_driving`,
+                # that reading wins over the spatial proxy — gridlock is
+                # precisely a real drive whose tail looks spatially like a
+                # stay, and the signal is the thing bound to the real
+                # property (`test_a_gridlocked_drive_never_writes_a_stay_
+                # while_the_tail_is_still_movement`).
+                tail_dwelled = (
+                    chunk[-1].is_driving is None
+                    and seg.open_stay is not None
+                    and seg.open_stay.ended_ts - seg.open_stay.started_ts
+                    >= min_dwell_ms
+                )
+                tail_is_movement = (
+                    is_final_chunk and not tail_settled and not tail_dwelled
+                )
                 if seg.open_stay is not None and not tail_is_movement:
                     if is_final_chunk:
                         # Only the FINAL chunk's trailing group is genuinely

@@ -44,6 +44,7 @@ __all__ = [
     "label_place",
     "robust_z_score",
     "segment_stays",
+    "trailing_fix_is_settled",
 ]
 
 # The observed 1800s still-ceiling (config.toml's cadence_still_seconds)
@@ -307,6 +308,36 @@ def _trip_from_group(
     )
 
 
+def trailing_fix_is_settled(
+    last: RawFix, *, now_ms: int, settled_seconds: float
+) -> bool:
+    """Does `last` — the newest fix of a trailing, still-undecided group —
+    say that group has stopped moving? (The 2026-08-20 trip-settlement
+    design's `_is_settled`, §2.2.)
+
+    `is_driving is True` is Life360 saying movement is ongoing, so no
+    amount of elapsed wall-clock settles it. `False` is Life360 saying it
+    stopped, which settles immediately. `None` is **no reading at all** —
+    a nullable column, and the real state of every historical fix and
+    anything Life360 omits the flag on — and the only honest fallback
+    there is the same quiet-boundary clock Tier 1 already uses for a
+    stay's arrival. A `None` fix must never be treated as settled just
+    because it isn't `True`: that is the original fragmentation bug with
+    the signal simply absent.
+
+    ONE predicate, shared on purpose, by the two decisions that must
+    agree about the same fix: `extract_trips` below (finalize this group,
+    or hold it back?) and `nora.analytics.rollup.run_once` (is this
+    trailing group a stay-in-progress at all, or undecided movement?).
+    Two copies of this would drift, and the two callers disagreeing means
+    the same fixes finalized as a trip AND written as a stay."""
+    if last.is_driving is True:
+        return False
+    if last.is_driving is None:
+        return (now_ms - last.ts) / 1000 >= settled_seconds
+    return True
+
+
 def extract_trips(
     fixes: list[RawFix], closed_stays: list[Stay], *, subject_id: str,
     person_id: str, circle_id: str, min_trip_fixes: int,
@@ -375,13 +406,10 @@ def extract_trips(
                 and span_s >= max_trip_duration_seconds
             )
             if not forced:
-                last = buffer[-1]
-                if last.is_driving is True:
-                    settled = False
-                elif last.is_driving is None:
-                    elapsed_s = (now_ms - last.ts) / 1000
-                    settled = elapsed_s >= (settled_seconds or 0.0)
-                # is_driving is False -> settled stays True
+                settled = trailing_fix_is_settled(
+                    buffer[-1], now_ms=now_ms,
+                    settled_seconds=settled_seconds or 0.0,
+                )
         if settled:
             if len(buffer) >= min_trip_fixes:
                 trips.append(_trip_from_group(
