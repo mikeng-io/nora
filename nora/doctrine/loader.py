@@ -62,9 +62,10 @@ DERIVED_KINDS = ("capability", "situation")
 KINDS = (*AUTHORED_KINDS, *DERIVED_KINDS)
 
 # What `authority_above`/`authority_below` may name besides another section: the
-# tail of design/17 §7b's chain, which runs past doctrine and terminates at tool
-# output. These have no file, so they are never checked for symmetry.
-CHAIN_TERMINALS = ("capability", "situation", "message-content", "tool-output")
+# tail of design/17 §7b's tier order, which runs past doctrine and terminates at
+# tool output. These have no file, so they are never checked for symmetry — and
+# they are sinks, so no cycle can run through them.
+AUTHORITY_TERMINALS = ("capability", "situation", "message-content", "tool-output")
 
 # Who may edit a file without asking. `voice.md` is the operator's — her
 # register, her teasing rules, her language policy — and until this field
@@ -344,14 +345,14 @@ def _capability_section(
     """The one section with no file (design/17 §4, §5).
 
     `order = 35` puts it after `conduct` and before `constraints`, which is
-    where design/17 §7b's chain puts it: constraint -> identity/voice -> conduct
-    -> capability -> situation. A file claiming order 35 collides and is
+    where design/17 §7b's tier order puts it: constraint -> identity/voice ->
+    conduct -> capability -> situation. A file claiming order 35 collides and is
     rejected by the existing duplicate-order rule, which is the behaviour we
     want — there is only one capability section and it is this one.
 
     `authority_above` is DERIVED — it is exactly the authored sections that
     already say `capability` is below them — so the symmetry check in
-    `check_authority_chain` holds without anyone maintaining both ends, and it
+    `check_authority_graph` holds without anyone maintaining both ends, and it
     stays holding when a fifth authored file is added. Deriving it rather than
     hard-coding the four names is the difference between a declaration that
     tracks the files and one that has to be remembered.
@@ -373,19 +374,78 @@ def _capability_section(
     )
 
 
-def check_authority_chain(sections: Sequence[DoctrineSection]) -> None:
-    """`authority_above`/`authority_below` name real things, and agree with each other.
+def _first_authority_cycle(outranks: dict[str, tuple[str, ...]]) -> tuple[str, ...] | None:
+    """The first cycle in the outranking graph, as the path that closes it.
+
+    Depth-first with the standard three colours: a grey node is on the current
+    path, so an edge back into it is the cycle, and the slice of the path from
+    that node onwards IS the cycle to report. Returning the path rather than a
+    bare `True` is the point — "the graph has a cycle" leaves the reader to find
+    it by hand across four files, which is the same work the check exists to
+    save.
+    """
+    on_path: list[str] = []
+    state: dict[str, str] = {}
+
+    def walk(name: str) -> tuple[str, ...] | None:
+        state[name] = "open"
+        on_path.append(name)
+        for below in outranks.get(name, ()):
+            if state.get(below) == "open":
+                return (*on_path[on_path.index(below):], below)
+            if below not in state:
+                found = walk(below)
+                if found is not None:
+                    return found
+        on_path.pop()
+        state[name] = "done"
+        return None
+
+    for name in outranks:
+        if name not in state:
+            found = walk(name)
+            if found is not None:
+                return found
+    return None
+
+
+def check_authority_graph(sections: Sequence[DoctrineSection]) -> None:
+    """`authority_above`/`authority_below` name real things, agree, and do not loop.
 
     design/17 §6 is honest that the ordering BETWEEN authored files is asserted,
     not mechanical — nothing reads the section tag at inference time. What can
     be checked is that the declaration is internally coherent: every name is
-    either another section or one of the chain's terminals, nothing outranks
-    itself, and if A says B is below it then B says A is above it. That is what
-    stops half of a re-ordering being written and the other half forgotten,
-    which is the failure mode a relative declaration exists to prevent.
+    either another section or one of the terminals, nothing outranks itself, if
+    A says B is below it then B says A is above it, and **the outranking
+    relation is acyclic**. The symmetry half is what stops one side of a
+    re-ordering being written and the other forgotten. The acyclicity half is
+    what stops the two sides being written to *agree on something impossible*:
+    `a` above `b` and `b` above `a` is perfectly symmetric and perfectly
+    meaningless — it declares a precedence that no reader, human or model, can
+    satisfy. Both a direct 2-cycle and a longer one passed every check here
+    until this was added.
+
+    **It is a graph, not a chain, and the name says so.** The function was
+    called `check_authority_chain` and the word was wrong in a way that hid a
+    real property of the shipped doctrine: `identity` and `voice` declare
+    byte-identical authority fields and neither names the other, and so do
+    `silence` and `conduct`. They are UNRANKED PEERS. That is not an oversight
+    to correct by ranking them — design/17 §7b's own ordering writes the tier as
+    `constraint -> identity/voice -> conduct -> capability -> situation ->
+    message content -> tool output`, with `identity/voice` deliberately one
+    rung, and `kind` — the only part of the authority model design/17 §6 says
+    can be mechanised — puts `silence` and `conduct` on one rung by
+    construction, both being `kind: conduct`. Inventing an order between two
+    files that nothing reads at inference time would be asserting a fact no gate
+    could check and no measurement supports.
+
+    So what is declared here is a strict partial order over sections (a total
+    order over TIERS, with peers inside a tier), and what is enforced is
+    exactly the three properties a strict partial order has: irreflexive, with
+    the two declarations of each edge agreeing, and acyclic.
     """
     by_name = {s.name: s for s in sections}
-    known = set(by_name) | set(CHAIN_TERMINALS)
+    known = set(by_name) | set(AUTHORITY_TERMINALS)
     for s in sections:
         for key, names in (("authority_above", s.authority_above),
                            ("authority_below", s.authority_below)):
@@ -397,7 +457,7 @@ def check_authority_chain(sections: Sequence[DoctrineSection]) -> None:
                 if other not in known:
                     raise DoctrineError(
                         f"{s.path.name}: {key} names {other!r}, which is neither a "
-                        f"doctrine section nor one of {', '.join(CHAIN_TERMINALS)}"
+                        f"doctrine section nor one of {', '.join(AUTHORITY_TERMINALS)}"
                     )
         for other in s.authority_below:
             peer = by_name.get(other)
@@ -413,6 +473,23 @@ def check_authority_chain(sections: Sequence[DoctrineSection]) -> None:
                     f"{s.path.name}: says {other!r} is above it, but {peer.path.name} "
                     f"does not list {s.name!r} in authority_below"
                 )
+    # Both directions feed the edge set, so acyclicity does not depend on the
+    # symmetry check above having already passed — a `b` in `a.authority_above`
+    # is the same edge as an `a` in `b.authority_below`, and either alone is
+    # enough to close a loop. Terminals are sinks and never become nodes.
+    outranks: dict[str, tuple[str, ...]] = {}
+    for s in sections:
+        below = {n for n in s.authority_below if n in by_name}
+        below |= {other.name for other in sections if s.name in other.authority_above}
+        outranks[s.name] = tuple(sorted(below))
+    cycle = _first_authority_cycle(outranks)
+    if cycle is not None:
+        raise DoctrineError(
+            f"{by_name[cycle[0]].path.name}: the authority declaration is cyclic "
+            f"({' > '.join(cycle)}). A section cannot outrank something that "
+            "outranks it — the order this declares cannot be satisfied, so one of "
+            "those edges is written the wrong way round."
+        )
 
 
 class DoctrineStore:
@@ -487,7 +564,7 @@ class DoctrineStore:
                     f"duplicate order {s.order}: {by_order[s.order].name}, {s.path.name}"
                 )
             by_name[s.name], by_order[s.order] = s.path, s.path
-        check_authority_chain(sections)
+        check_authority_graph(sections)
         # `order` is authoritative; filenames break ties.
         self._sections = tuple(sorted(sections, key=lambda s: (s.order, s.path.name)))
         self._cache.clear()

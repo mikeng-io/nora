@@ -81,7 +81,7 @@ def test_voice_is_the_operators_alone():
     assert parse_section(DOCTRINE_DIR / "identity.md").change_policy == "operator-only"
 
 
-def test_the_authority_chain_is_declared_relatively_and_terminates_at_tool_output():
+def test_the_authority_graph_is_declared_relatively_and_terminates_at_tool_output():
     """`constraints.md` used to call itself "not negotiable" — an adjective with
     no position in an ordering. It now states its edges, and every other file
     states the same edge from the other side (the loader checks that symmetry).
@@ -91,6 +91,27 @@ def test_the_authority_chain_is_declared_relatively_and_terminates_at_tool_outpu
     for name in ("identity", "voice", "conduct"):
         assert "constraints" in sections[name].authority_above
         assert "tool-output" in sections[name].authority_below
+
+
+def test_identity_voice_and_silence_conduct_are_peers_on_purpose():
+    """The graph is a TOTAL order over tiers and a PARTIAL one over sections.
+
+    design/17 §7b writes the tier order as `constraint -> identity/voice ->
+    conduct -> ...`, with `identity/voice` deliberately one rung; `kind` — the
+    only part of the authority model design/17 §6 says can be mechanised — puts
+    `silence` and `conduct` on one rung the same way, both being `kind:
+    conduct`. So neither pair naming the other is the declaration, not an
+    omission, and this pins it: a later edit that ranks one of these pairs is
+    asserting something no gate checks and no measurement supports, and should
+    have to delete this test to do it.
+    """
+    sections = {s.name: s for s in _shipped().get().sections}
+    for a, b in (("identity", "voice"), ("silence", "conduct")):
+        assert sections[a].kind == sections[b].kind
+        assert b not in sections[a].authority_above
+        assert b not in sections[a].authority_below
+        assert a not in sections[b].authority_above
+        assert a not in sections[b].authority_below
 
 
 

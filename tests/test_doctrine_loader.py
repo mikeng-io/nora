@@ -302,8 +302,40 @@ def test_a_section_may_not_outrank_itself(doctrine_dir):
         _store(doctrine_dir).get(applies_to="tag")
 
 
-def test_the_chain_terminals_are_nameable_without_a_matching_section(doctrine_dir):
-    """design/17 §7b: the chain runs past doctrine, through message content, and
+def test_a_two_section_authority_cycle_is_a_startup_failure(doctrine_dir):
+    """Symmetric AND impossible: `soul` outranks `conduct` and `conduct`
+    outranks `soul`. Every pairwise check passes — both files declare both ends
+    of both edges — and the order they jointly declare still cannot be
+    satisfied. This shape passed the loader until acyclicity was added."""
+    write(doctrine_dir, "identity.md", name="soul", order=10,
+          above="conduct", below="conduct", body="Who you are.")
+    write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
+          above="soul", below="soul", body="How you behave.")
+    with pytest.raises(DoctrineError, match="cyclic"):
+        _store(doctrine_dir).get(applies_to="tag")
+
+
+def test_a_three_section_authority_cycle_is_a_startup_failure(doctrine_dir):
+    """The same defect with no two files naming each other twice: soul > voice >
+    conduct > soul. Nothing is visible in any single pair, which is why a
+    pairwise check cannot see it and a walk of the graph must."""
+    write(doctrine_dir, "identity.md", name="soul", order=10,
+          above="conduct", below="voice", body="Who you are.")
+    write(doctrine_dir, "voice.md", name="voice", order=20,
+          above="soul", below="conduct", body="The sound.")
+    write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
+          above="voice", below="soul", body="How you behave.")
+    with pytest.raises(DoctrineError, match="cyclic") as caught:
+        _store(doctrine_dir).get(applies_to="tag")
+    # The message names the loop it found, so the reader does not have to
+    # rediscover it across three files. Which section it starts from is scan
+    # order, so pin the edges rather than one rendering of them.
+    for edge in ("soul > voice", "voice > conduct", "conduct > soul"):
+        assert edge in str(caught.value)
+
+
+def test_the_authority_terminals_are_nameable_without_a_matching_section(doctrine_dir):
+    """design/17 §7b: the order runs past doctrine, through message content, and
     down to tool output — the slot design/14 needed and could not cite. Those
     have no file, so they are never checked for symmetry."""
     write(doctrine_dir, "conduct.md", name="conduct", order=30, kind="conduct",
