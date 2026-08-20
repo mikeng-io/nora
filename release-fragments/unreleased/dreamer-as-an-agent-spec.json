@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design document only (docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md). Specifies the Dreamer as a read-only research agent with each synthesizer as an adaptor supplying objective, inputs, output schema, tool subset and sink; act verbs are excluded from the runtime. Status is proposed, no code exists, nothing added to design/09-decision-index.md. Keystone for the prompt-substrate and Standing/Facts specs, which are revised against it. No schema, config or behaviour changes.",
+  "details": [],
+  "limitations": []
+}
