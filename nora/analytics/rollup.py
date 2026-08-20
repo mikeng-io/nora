@@ -126,6 +126,7 @@ class RollupConfig:
     corridor_min_samples: int = 3
     corridor_cluster_batch_limit: int = 500
     min_trip_fixes: int = 3
+    max_trip_duration_seconds: float = 10800.0
 
 
 class MobilityRollup:

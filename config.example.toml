@@ -533,6 +533,11 @@ enabled = false
 #                                  #   n=1000 costs 7.6s. Must be >= corridor_min_samples
 #                                  #   or no corridor could ever form (startup refuses).
 # min_trip_fixes = 3               # Tier 5 — shorter runs between stays are noise, not trips
+# max_trip_duration_seconds = 10800 # Tier 5 — safety valve: force-settle a trip
+                                      # even mid-drive once its span exceeds this
+                                      # (a stuck is_driving signal shouldn't hold
+                                      # the watermark back forever). A judgment
+                                      # call, not a measured value.
 # tz_name = "Asia/Hong_Kong"
 # metrics_port = 9103
 
