@@ -257,7 +257,7 @@ question that this section closes.
 
 | | the **injected index** (§5.1) | the **search index** |
 |---|---|---|
-| what it is | one line per note in the prompt | Postgres `tsvector` + GIN over the head revision body |
+| what it is | one line per note in the prompt | a GIN index over the head revision body |
 | what it buys | **awareness** — she cannot search for what she does not know exists | **retrieval by content** |
 | covers | title + description | the body |
 
@@ -267,8 +267,28 @@ nothing; searching bodies reaches what the index structurally cannot carry —
 *"did anyone mention a hotel?"* across notes whose titles say nothing about
 hotels.
 
-The `tsvector` is maintained on the **head revision only**. Superseded revisions
-are retained (§7.4) but not searched: a search that surfaced a body which is no
+**Trigram (`pg_trgm`), not `tsvector` — decided on what the live database
+actually has.** Read back from `nora-db-1` on 2026-08-21 (PostgreSQL 18.4,
+musl): `pg_trgm` is **available and not yet installed**; `zhparser`, `pgroonga`
+and `pg_bigm` are **not available at all**.
+
+That settles it, because the corpus is mixed English and Cantonese and
+`to_tsvector('english', …)` **does not segment Chinese at all** — a note whose
+body is 婚禮 would be unfindable while reporting `nothing_found`, which is the
+`unavailable`-as-`nothing_found` failure dressed as a search result. The
+CJK-segmenting extensions that would fix a `tsvector` are exactly the ones the
+image does not carry, and building a custom image is the same packaging wall
+DEC-129 hit with Apache AGE — a cost this feature cannot justify.
+
+A trigram GIN index sidesteps segmentation entirely: it indexes 3-character
+grams, so it matches CJK and English substrings alike with no language
+configuration to be wrong about. What it gives up is **stemming** — "wedding"
+will not match "weddings" — which is acceptable for a notebook holding tens of
+notes and is a knowable limitation rather than a silent one. The migration
+carries `CREATE EXTENSION IF NOT EXISTS pg_trgm`.
+
+The index is maintained on the **head revision only**. Superseded revisions are
+retained (§7.4) but not searched: a search that surfaced a body which is no
 longer the note's content would return something true-in-the-past as though it
 were current, which is the same class of error `Fact.is_standing` and the partial
 `idx_fact_standing` avoid by never rendering a superseded fact.
@@ -673,8 +693,9 @@ because a note body is bounded and a fetched page is not.
 The tier splits cleanly at the runtime dependency (§15), so it ships in two
 parts rather than waiting on the slower one.
 
-**Part 1a — nothing blocked.** Domain types; migration `0026`, including the
-`tsvector` + GIN index on the head revision (§5.3); the `<notes>` block;
+**Part 1a — nothing blocked.** Domain types; migration `0026`, including
+`CREATE EXTENSION pg_trgm` and the trigram GIN index on the head revision
+(§5.3); the `<notes>` block;
 `note_read` / `note_search` / `note_create` / `note_update` with R-7 budgets and
 the §6.2 latch; the debrief's fourth output; the `note_candidate` miss cache.
 
@@ -689,6 +710,33 @@ strike state (§9.6).
 **1a is a complete, useful tier on its own**: she writes and revises notes on the
 tag path, and the always-injected index makes her aware of them. 1b adds
 housekeeping; Part 2 adds the notebook thinking about itself.
+
+### 15.3 Both passes land on the Dreamer runtime — not a fourth extractor
+
+**Operator decision, 2026-08-21.** `NoteCurator` and `NoteRevisitor` are
+**adaptors on the Dreamer runtime**. Neither is written as a fourth
+hand-written extractor beside `LanguageConsolidator` / `ExchangeConsolidator` /
+`PortraitSynthesizer`.
+
+This is a real constraint, not a preference, and it costs something: §15.2 shows
+`NoteCurator` *could* be built today on the existing `complete(prompt) -> str`
+port. Building it that way would ship housekeeping sooner and then require
+rewriting it onto the runtime — and it would put a fourth bespoke extractor into
+the exact shape the keystone exists to replace. **So 1b waits.** Only Part 1a is
+genuinely unblocked.
+
+**What needs aligning with the fact-tier session** before this document is final:
+
+| question | why it is theirs to answer |
+|---|---|
+| `DreamSink` / `Proposal` — final signature | the fact store implements it; the note store must implement the same port, and CLAUDE.md forbids a second implementation without a shared contract suite (`tests/contract/`) |
+| does `Proposal` carry a payload general enough for a **note revision**, or is it verdict-shaped? | if it is verdict-shaped, either it generalises or the note tier needs its own sink and the "one runtime, many adaptors" claim weakens |
+| migration ordering | `0026` is claimed by whichever lands first; the note tier will renumber rather than contend |
+| `workspace_scopes()` (§9.1) | the fact tier is workspace-keyed too and has the same conversation-vs-workspace mismatch; it should be built once, by whoever needs it first |
+
+Until those are answered, the note tier's Dreamer-side design is **provisional in
+its interface and settled in its behaviour** — §9's triggers, criteria and loop
+breakers do not change with the sink's shape.
 
 **No reminder-tier change in either part.** An earlier draft added a `revisit`
 reminder kind; §9.5 replaced it with a fire condition inside the curator's pass.
@@ -794,19 +842,38 @@ no-self-attestation:
   duplicate-notebook failure §6.5 splits the tools to prevent. Under a single
   `note_write` this series would not exist to watch.
 
-## 14. Open
+## 14. Closed, and what remains open
 
-1. **Does a note write get acknowledged in the room?** Proposed: no. R-2 gives
-   her one reply per tag and it belongs to the person in front of her, not to her
-   bookkeeping; the note appears in the index next turn.
-2. **The revisit adaptor's tool budget and timeout**, which §10 requires and
-   does not size. Needs the same treatment `web_fetch`'s `fetch_max_chars` got.
-3. **Which text-search configuration the `tsvector` uses.** The corpus is
-   mixed English and Cantonese, and `to_tsvector('english', …)` will not segment
-   Chinese at all. Either accept that bodies are searchable in English only in
-   v1 and **count it** rather than let it read as "nothing found", or carry a
-   second column. Not a blocker for §5.3's shape; it is a blocker for claiming
-   search works.
+### 14.1 Closed — a note write is silent
+
+**Decided: no acknowledgement.** R-2 gives her one reply per tag and it belongs
+to the person in front of her, not to her bookkeeping. The note appears in the
+index on the next turn, which is where it is useful; a turn spent announcing it
+spends the reply on the wrong thing.
+
+The consequence accepted with it: a note written wrongly is not visible to the
+room until someone reads the index entry. That is what
+`nora_note_writes_total{kind}` and the curator exist for — the correction path is
+`note_update` on a later turn, not an interruption on this one.
+
+### 14.2 Closed — search is trigram, not `tsvector`
+
+Settled in §5.3 against the live database rather than by preference: `pg_trgm` is
+available on `nora-db-1` (PostgreSQL 18.4, musl) and every CJK-segmenting
+alternative is not. The limitation that comes with it — no stemming — is stated
+in §5.3 rather than discovered later.
+
+### 14.3 Still open — owned elsewhere
+
+**The revisit adaptor's tool budget and wall-clock timeout** (§10). This is not
+this document's to size: it is a property of the **Dreamer runtime's** tool loop,
+which does not exist yet (§15.1), and every adaptor on that runtime will need the
+same treatment `web_fetch`'s `fetch_max_chars` got. It belongs to the runtime's
+design, and the note tier inherits whatever that decides.
+
+**Cross-tier alignment with the fact-tier session** (§15.3) — the sink interface
+and the migration ordering. Raised with that session on 2026-08-21; this document
+is not final until it answers.
 
 ## 15. Status, and what this depends on
 
