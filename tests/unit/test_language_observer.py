@@ -18,6 +18,8 @@ import json
 import pytest
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.provenance import instruction_sha256
+from nora.language import observer as observer_module
 from nora.language.observer import LexemeObserver
 from nora.obs.metrics import Metrics
 
@@ -339,3 +341,67 @@ async def test_the_search_outcome_is_counted_by_status():
     await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
     assert metrics.get("nora_language_verification_total", status="ok") == 1
     assert metrics.get("nora_language_candidates_dropped_total", reason="known_entity") == 1
+
+
+# ── instruction provenance (2026-08-20 instruction-substrate spec §4.3) ──────
+#
+# The wrong row this column exists for was written by THIS observer: `big walk`
+# glossed as 「群內約定俗成嘅散步/行路活動」, a nighttime stroll, for a co-op puzzle
+# video game — and nothing recorded which instruction text asked for it, so no
+# later edit could be shown to have fixed it. These tests are the writer half
+# of the guarantee; `tests/infra/test_language_store.py`'s own provenance block
+# is the row half.
+
+async def test_every_candidate_carries_the_instruction_that_produced_it():
+    observer = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
+    result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    [c] = result.candidates
+    assert c.instruction_sha256 == observer.instruction_sha256
+    assert len(c.instruction_sha256) == 64, "a real digest, not a placeholder"
+
+
+async def test_the_stamp_is_the_digest_of_the_instruction_actually_sent():
+    """Bound to the real property, not a proxy: the digest is over
+    `_PROMPT_PREAMBLE` itself, so a row's stamp is reproducible by hand from
+    the constant with `sha256sum`. An observer that hashed a version number,
+    or the assembled per-batch prompt (which varies with the transcript and
+    would give every batch its own digest), would pass a weaker assertion and
+    fail this one."""
+    observer = LexemeObserver(FakeModel(responses=['{"observations": []}']))
+    assert observer.instruction_sha256 == instruction_sha256(observer_module._PROMPT_PREAMBLE)
+
+
+async def test_editing_the_instruction_text_changes_every_row_it_writes(monkeypatch):
+    """The whole point of the column: two corpora written either side of an
+    instruction edit must be distinguishable. Patching the constant is the
+    only way to simulate the edit in-process — production changes it by
+    editing the file."""
+    before = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
+    result_before = await before.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    monkeypatch.setattr(
+        observer_module, "_PROMPT_PREAMBLE",
+        observer_module._PROMPT_PREAMBLE + "\nAlso: a name with a public meaning is NOT slang.\n",
+    )
+    after = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
+    result_after = await after.observe(batch=rows_with_id(7, "?? Big walk ??"))
+
+    assert before.instruction_sha256 != after.instruction_sha256
+    [c_before] = result_before.candidates
+    [c_after] = result_after.candidates
+    assert c_before.instruction_sha256 != c_after.instruction_sha256
+
+
+async def test_wiring_the_known_entity_check_changes_the_stamp():
+    """The verification instruction decides whether a candidate becomes a
+    row, so two deployments differing only in `verify_known_entities` write
+    different POPULATIONS. A stamp that could not tell them apart would be
+    bound to half its input — §4.3's own reason for rejecting
+    `objective_sha256`."""
+    unverified = LexemeObserver(FakeModel(responses=[]))
+    verified = LexemeObserver(
+        FakeModel(responses=[]), search=FakeSearch(by_query={}),
+    )
+    assert unverified.instruction_sha256 != verified.instruction_sha256
+    assert verified.instruction_sha256 == instruction_sha256(
+        observer_module._PROMPT_PREAMBLE, observer_module._VERIFICATION_PROMPT_TEMPLATE,
+    )

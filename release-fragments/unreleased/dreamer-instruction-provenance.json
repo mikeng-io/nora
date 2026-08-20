@@ -1,0 +1,15 @@
+{
+  "type": "change",
+  "summary": "Every row the Dreamer's model-calling adaptors write now records which instruction text produced it. `language_observation`, `room_lexeme`, `exchange_observation` and `room_exchange` gain an `instruction_sha256` column, so a wrong gloss — the one that read `big walk` as a nighttime stroll, for a co-op puzzle video game — can be attributed to a revision, and a later instruction edit can be shown to have fixed it or not.",
+  "details": [
+    "The digest is one SHA-256 over the instruction text the adaptor actually sends (nora/domain/provenance.py). Today that is the inline prompt constant; when the instruction substrate lands it becomes the assembled doctrine plus objective. Same column either way — which is why it ships now rather than with the substrate: a backfill is impossible, so every row written in between would otherwise be permanently unattributable.",
+    "The lexeme adaptor's digest covers its extraction instruction plus, when the known-entity check is wired, its verification instruction — that second instruction decides whether a candidate becomes a row at all, so two deployments differing only in `verify_known_entities` write different corpora and must be distinguishable.",
+    "`room_lexeme` and `room_exchange` reach no model: they inherit the stamp of the newest observation in each group — the same row `last_seen_at` already reports — so a consolidated row names the instruction currently keeping its gloss alive. The full mixture stays queryable in the evidence tables.",
+    "`room_portrait` deliberately gets no stamp: its objective is executed in code with no model call, so no instruction text governed the row. Its provenance resolves through `lexeme_basis`/`exchange_basis`, whose rows now carry stamps.",
+    "Migration 0023 adds the column NULLABLE with no server default and no backfill. Rows already in the database were produced by instructions nobody recorded; a default would be a fabricated attribution, and NULL honestly reads as «nobody recorded it». A CHECK constraint on each table refuses anything that is not 64 lowercase hex characters, so a stamp is either a real digest or absent — never a version string that merely looks like provenance."
+  ],
+  "limitations": [
+    "Rows written before this migration stay unattributable. That is not fixable — the instructions that produced them were never recorded anywhere.",
+    "The stamp covers the instruction text only. Which model ran, which tools were available, and the loop budget are all inputs that can change a row too; the substrate spec leaves those open, and answering them adds a column rather than changing this one."
+  ]
+}

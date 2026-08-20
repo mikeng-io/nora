@@ -194,6 +194,14 @@ class SqlLanguageStore:
                 .label("context"),
                 MESSAGES.c.ts.label("observed_at"),
                 sa.literal(obs.confidence, type_=sa.Float).label("extractor_confidence"),
+                # PROVENANCE, per candidate — the digest the OBSERVER computed
+                # over the instruction text it was configured to send
+                # (`nora.language.observer.LexemeObserver.instruction_sha256`).
+                # It rides the candidate rather than arriving as a separate
+                # argument so this store can never write a row whose stamp
+                # came from somewhere other than the object that produced it.
+                sa.literal(obs.instruction_sha256, type_=sa.Text)
+                .label("instruction_sha256"),
             ).where(MESSAGES.c.id == obs.message_id)
             for obs in observations
         ]
@@ -205,6 +213,7 @@ class SqlLanguageStore:
                     "scope_id", "conversation_id", "message_id", "person_id",
                     "surface_form", "canonical_form", "sense", "part_of_speech",
                     "context", "observed_at", "extractor_confidence",
+                    "instruction_sha256",
                 ],
                 combined,
             )
@@ -248,6 +257,18 @@ class SqlLanguageStore:
         them as one more distinct person would be a claim with no identity
         behind it. The rendered "N people" stays a real count of known people.
 
+        `instruction_sha256` is INHERITED, not computed: this method never
+        reaches a model, so the only honest stamp for a consolidated row is
+        the one carried by the evidence that most recently produced it — the
+        `rn = 1` row of the same window `examples` already ranks, i.e. the
+        observation whose `observed_at` IS this row's `last_seen_at`. A group
+        spanning an instruction edit therefore reports the instruction
+        currently keeping the gloss alive, which is the one to interrogate
+        first; the whole mixture stays queryable in `language_observation`,
+        where a per-row history belongs. A group whose newest evidence
+        predates the column inherits NULL — «nobody recorded it», never a
+        guess.
+
         `examples` is capped at `_EXAMPLES_PER_LEXEME_CAP`, most-recent-first:
         a `ROW_NUMBER() OVER (PARTITION BY canonical_form, sense ORDER BY
         observed_at DESC)` window ranks each group's own rows, filtered to
@@ -264,6 +285,7 @@ class SqlLanguageStore:
                 LO.c.person_id,
                 LO.c.context,
                 LO.c.observed_at,
+                LO.c.instruction_sha256,
                 sa.func.row_number()
                 .over(
                     partition_by=(LO.c.canonical_form, LO.c.sense),
@@ -286,6 +308,16 @@ class SqlLanguageStore:
             .where(LO.c.scope_id == scope_id)
             .group_by(LO.c.canonical_form, LO.c.sense)
             .cte("aggregated")
+        )
+        # The newest observation per group — `rn = 1` of the SAME window
+        # `examples_cte` filters, so the inherited stamp and `last_seen_at`
+        # can never name different rows.
+        latest = (
+            sa.select(
+                ranked.c.canonical_form, ranked.c.sense, ranked.c.instruction_sha256,
+            )
+            .where(ranked.c.rn == 1)
+            .cte("latest")
         )
         example_obj = sa.func.jsonb_build_object(
             "message_id", ranked.c.message_id,
@@ -312,12 +344,19 @@ class SqlLanguageStore:
             aggregated.c.first_seen_at,
             aggregated.c.last_seen_at,
             examples_cte.c.examples,
+            latest.c.instruction_sha256,
         ).select_from(
             aggregated.join(
                 examples_cte,
                 sa.and_(
                     aggregated.c.canonical_form == examples_cte.c.canonical_form,
                     aggregated.c.sense == examples_cte.c.sense,
+                ),
+            ).join(
+                latest,
+                sa.and_(
+                    aggregated.c.canonical_form == latest.c.canonical_form,
+                    aggregated.c.sense == latest.c.sense,
                 ),
             )
         )
@@ -349,6 +388,7 @@ class SqlLanguageStore:
                     "recognition_score": recognition_score,
                     "state": state,
                     "examples": r.examples,
+                    "instruction_sha256": r.instruction_sha256,
                 })
 
             upsert_stmt = pg.insert(ROOM_LEXEME).values(upsert_rows)
@@ -366,6 +406,7 @@ class SqlLanguageStore:
                     "recognition_score": upsert_stmt.excluded.recognition_score,
                     "state": upsert_stmt.excluded.state,
                     "examples": upsert_stmt.excluded.examples,
+                    "instruction_sha256": upsert_stmt.excluded.instruction_sha256,
                 },
             )
             await conn.execute(upsert_stmt)

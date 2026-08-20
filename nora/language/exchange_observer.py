@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from nora.domain.models import ExchangeCandidate, TranscriptRow
+from nora.domain.provenance import instruction_sha256
 from nora.infra.sql.schema import EXCHANGE_ACTS
 from nora.obs.metrics import Metrics
 
@@ -154,6 +155,24 @@ class ExchangePatternObserver:
     def __init__(self, model: _ModelClient, *, metrics: Metrics | None = None) -> None:
         self._model = model
         self._metrics = metrics
+        # Computed once, over the one instruction this adaptor sends — see
+        # the property below.
+        self._instruction_sha256 = instruction_sha256(_PROMPT_PREAMBLE)
+
+    @property
+    def instruction_sha256(self) -> str:
+        """The digest stamped onto every candidate this instance produces
+        (`nora.domain.provenance`), over `_PROMPT_PREAMBLE` — the whole of
+        the instruction text this adaptor sends. There is no verification
+        sibling here (`nora.language.observer.LexemeObserver` has one, and
+        folds it in only when it is wired), so the set is one part and the
+        digest necessarily differs from that adaptor's even where the
+        vocabulary overlaps.
+
+        Read by nothing yet; §4.4 of the instruction-substrate spec wants a
+        Dreamer tick to log it beside the lexeme adaptor's.
+        """
+        return self._instruction_sha256
 
     async def observe(
         self, *, batch: Sequence[TranscriptRow]
@@ -214,5 +233,8 @@ class ExchangePatternObserver:
                 message_ids=parsed["message_ids"],
                 participants=tuple(participants),
                 confidence=parsed["confidence"],
+                # Provenance, stamped where the model's answer becomes a
+                # candidate — the sibling of `LexemeObserver`'s own stamp.
+                instruction_sha256=self._instruction_sha256,
             ))
         return ExchangeObservationResult(candidates=tuple(candidates), parsed=True)

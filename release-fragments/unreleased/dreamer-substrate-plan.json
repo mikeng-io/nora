@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Planning document only — no runtime behaviour changes and no code. Adds docs/superpowers/plans/2026-08-20-dreamer-substrate-plan.md, the ordered task breakdown for the Dreamer substrate (Phase 1 instruction substrate, Phase 2 runtime, Phase 3 migration of LexemeObserver and ExchangePatternObserver to adaptors), sequenced against the three settled specs. It records five decision gates rather than resolving them — which model the Dreamer runs and per-adaptor failure isolation stay open where the keystone left them — and ten places where the specs are wrong or silent against HEAD, including that the keystone's act-verb list omits the four event-writing tools and that create_agent cannot construct a loop with no terminal verb. Each phase writes its own fragment when it ships."
+}
