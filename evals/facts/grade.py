@@ -15,12 +15,18 @@ that is *structurally* a verdict (`status`, `removes_nothing`); the real
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
+@runtime_checkable
 class _Verdict(Protocol):
     """The two `FactVerdict` attributes this grader needs — expressed
-    structurally so this module never imports `nora.domain.facts`."""
+    structurally so this module never imports `nora.domain.facts`.
+    `@runtime_checkable` lets `isinstance(verdict, _Verdict)` be asserted
+    (name-only, no signature check — see `evals/sink.py::EvalSink`'s same
+    pattern) against the real `FactVerdict`, which is the only mechanical
+    conformance check this shape gets: `evals/` sits outside the scoped mypy
+    gate."""
 
     status: str
 
