@@ -94,6 +94,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import FrozenInstanceError, dataclass, field
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.facts import FactVerdict
 from nora.domain.ports import DreamSink, Proposal
@@ -225,10 +226,29 @@ def _sql_make_because() -> str:
     return next(_sql_because_cycle)
 
 
-# name -> (make_proposal, make_because, read_row, nullable_replaced_by)
-IMPLEMENTATIONS: dict[str, tuple[Callable[..., Proposal], Callable[[], str], Callable, bool]] = {
-    "fake": (_fake_proposal_factory, _fake_make_because, _fake_read_row, True),
-    "sql": (fact_proposal_factory, _sql_make_because, _sql_read_row, False),
+# name -> (store_ctor, make_proposal, make_because, read_row, nullable_replaced_by).
+# `store_ctor` is the thing this dict adds over `IMPLEMENTATIONS` dicts
+# elsewhere in this repo (`test_tool_call_log_store_contract.py`'s own
+# `store` fixture, `test_room_consolidator_contract.py`'s `_backing`):
+# `None` means "no engine, build the fake"; any other value is a
+# `Callable[[AsyncEngine], object]` `_open_sink` calls generically. Without
+# this, `_open_sink` would have to hard-code a THIRD implementation's own
+# store class by name — the exact "joins by adding one entry" claim this
+# file's docstring makes would be false the moment a second SQL-backed
+# implementation (a note store, most likely) showed up. The one assumption
+# this does not remove: a third implementation must be constructible from a
+# bare `AsyncEngine`, same as `SqlFactStore` — true of every SQLAlchemy Core
+# store in this repo today, and exactly the shape `SqlFactStore.__init__`'s
+# own docstring commits to for the same contract-suite reason.
+IMPLEMENTATIONS: dict[
+    str,
+    tuple[
+        Callable[[AsyncEngine], object] | None, Callable[..., Proposal],
+        Callable[[], str], Callable, bool,
+    ],
+] = {
+    "fake": (None, _fake_proposal_factory, _fake_make_because, _fake_read_row, True),
+    "sql": (SqlFactStore, fact_proposal_factory, _sql_make_because, _sql_read_row, False),
 }
 
 FOREIGN_PAYLOAD_EXEMPT: dict[str, str] = {
@@ -246,15 +266,17 @@ FOREIGN_PAYLOAD_EXEMPT: dict[str, str] = {
 @contextlib.asynccontextmanager
 async def _open_sink(name: str, request) -> AsyncIterator[tuple]:
     """Builds the store for `name` and yields
-    `(sink, make_proposal, read_row, nullable_replaced_by)`. The construction
-    logic itself (fake needs nothing, sql needs a migrated Postgres) is NOT
-    part of `IMPLEMENTATIONS` — it mirrors
+    `(sink, make_proposal, read_row, nullable_replaced_by)`.
+    `IMPLEMENTATIONS[name][0]` is `None` for the fake and a
+    `Callable[[AsyncEngine], object]` for every Postgres-backed store — the
+    Postgres wiring itself (pg_url, migrate, engine, dispose) stays here,
+    generic over WHICH store class gets built, mirroring
     `tests/contract/test_tool_call_log_store_contract.py`'s own `store`
-    fixture, which the same "if fake: return; else: pg_url+migrate+engine"
-    branch already establishes as this repo's shape for a second SQL
-    implementation joining a contract suite."""
-    make_proposal, make_because, read_row, nullable_replaced_by = IMPLEMENTATIONS[name]
-    if name == "fake":
+    fixture's "if fake: return; else: pg_url+migrate+engine" shape."""
+    store_ctor, make_proposal, make_because, read_row, nullable_replaced_by = (
+        IMPLEMENTATIONS[name]
+    )
+    if store_ctor is None:
         yield (
             _FakeDreamSink(), make_proposal, make_because, read_row,
             nullable_replaced_by,
@@ -265,7 +287,7 @@ async def _open_sink(name: str, request) -> AsyncIterator[tuple]:
     engine = create_sql_engine(pg_url)
     try:
         yield (
-            SqlFactStore(engine), make_proposal, make_because, read_row,
+            store_ctor(engine), make_proposal, make_because, read_row,
             nullable_replaced_by,
         )
     finally:
@@ -625,7 +647,7 @@ async def test_a_foreign_payload_is_refused_not_duck_typed(impl_name, request):
 
     async with _open_sink(impl_name, request) as (sink, _make, _because, _read, _null):
         foreign_name = next(n for n in IMPLEMENTATIONS if n != impl_name)
-        foreign_make_proposal = IMPLEMENTATIONS[foreign_name][0]
+        foreign_make_proposal = IMPLEMENTATIONS[foreign_name][1]
         foreign_proposal = foreign_make_proposal()
 
         with pytest.raises(TypeError):
