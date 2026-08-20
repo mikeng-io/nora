@@ -173,10 +173,16 @@ the sentence that actually carries the claim, and it is what a later adjudicatio
 re-reads to ask the §4 question — *did this source address this claim?* A URL
 alone re-opens the fetch and re-opens the ambiguity.
 
-**`instruction_sha256` from the first migration.** Adopted unchanged from the
-substrate spec §4.3. A column now is one migration; a backfill later is
-impossible, because the rows needing it were written by an instruction nobody
-recorded.
+**`instruction_sha256` from the first migration, and NOT NULL.** The substrate
+session landed it on the four live Dreamer tables in `707e99c` (DEC-125,
+migration `0023_dreamer_instruction_sha256`) as `sa.Text`, **nullable**, with a
+CHECK `instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'`.
+`fact` matches the type and the CHECK, and **drops the NULL branch**: those four
+tables are nullable because they hold rows written before the column existed;
+`fact` has no legacy rows and never will. That is the concrete payoff of adding
+it in the first migration rather than later — not just that a backfill is
+impossible, but that the invariant can be total. A fact whose instruction is
+unknown cannot be written at all.
 
 **`fact_entity.aliases` is load-bearing at this scope, not cosmetic.** In a
 Cantonese/English room `big walk` / `Big Walk` / 大步行 must resolve to one
@@ -194,7 +200,7 @@ The Dreamer-as-agent keystone §3 requires each adaptor to supply five things.
 | **objective** | given a claim asserted in this workspace, find a source that actually addresses it, and report whether it supports, contradicts, or does not cover it |
 | **inputs** | recent `tool_call_log` rows; the transcript window per room; attached media; peer/self cards; **and the live fact set for the subjects in play** |
 | **output schema** | `FactVerdict`, below |
-| **tool subset** | `web_search`, `web_fetch`, `load_transcript`, `recall_lookups`, `media_fetch`, `about` / `ask_memory` / `lookup_person`, `search_memory`, `pulse_*`, `now`, `calculate` |
+| **tool subset** | `web_search`, `web_fetch`, `load_transcript`, `recall_lookups`, `media_fetch`, `about` / `ask_memory` / `lookup_person`, `search_memory`, `pulse_*` (see below), `now`, `calculate` |
 | **sink** | the two-verb fact port — `propose`, `supersede`. No delete verb exists |
 
 ### 4.1 The output schema is where R-27 lives
@@ -224,6 +230,16 @@ This is the same three-state discipline R-27 already enforces on tool results
 (`ok` / `nothing_found` / `unavailable`), applied one layer up to inference over
 them, which is precisely the layer R-53 identified and prose alone was left
 holding.
+
+**`pulse_*` is named here and the mechanism cannot classify it** (keystone §9.7,
+correction `a624b72`). The read/act split is a field on `NativeTool`, and
+`pulse_*` arrives over MCP, which has no row to carry the flag. This matters more
+for the fact adaptor than for any other: the game-state family is the *most*
+directly relevant tool to the motivating case — 07:08:36's error was reading
+2-of-5 gourds as complete, which `pulse_game_progress` answers directly. So the
+one adaptor that most needs `pulse_*` is the one whose tool subset cannot be
+derived for it. Substrate's question to close; recorded here because this
+document's §4 depends on the answer.
 
 ### 4.2 No fact-read tool — the live set is an input
 
@@ -335,6 +351,16 @@ nothing.
 | the workspace startup check | no |
 | the adjudication corpus (§9) | no |
 | **the adaptor's execution** | **yes** — needs the runtime, the port signature, the tool subset, a budget |
+
+**And that wait is longer than the keystone implied.** Its `a624b72` correction
+found that `create_agent` cannot build the Dreamer at all: it requires a
+`ReplyGuard`, and `create_model_provider` hardcodes `tool_choice="required"` —
+so a loop with **no terminal verb** (and §4 removes every act verb, which is what
+the terminal ones are) can never stop by itself, because the guard's
+`BeforeModelCallEvent` hook is what ends a loop and it ends it by observing a
+terminal call. The Dreamer needs its own guard and its own stopping condition.
+This does not change anything in this document; it is recorded because it is the
+reason the dormant-tier ordering matters rather than being a convenience.
 
 So the tier lands **dormant**: schema, both ports, the block, the corpus, no
 writer. The dependency runs favourably — the substrate needs a sink to write to,
@@ -497,4 +523,7 @@ Design only. No code. No `design/09-decision-index.md` entry — a candidate.
 **Owns:** the fact tier's store, adaptor values, retrieval, rendering, measurement.
 **Constrained by:** `2026-08-20-dreamer-as-an-agent-design.md` §3.1/§3.2/§7.
 **Constrains:** the substrate session's sink port (two verbs) and adaptor
-scheduling (a non-`scope_id` key) — both accepted there on 2026-08-20.
+scheduling (a non-`scope_id` key). Both are now **on master**, not merely agreed
+in conversation: `a624b72` closes keystone §9.2 as *"adaptors declare their own
+key, and the runtime schedules per adaptor"* and answers §9.3 **no**, citing this
+workstream's workspace key as the reason.

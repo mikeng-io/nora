@@ -1,7 +1,7 @@
 {
   "type": "none",
-  "summary": "Design spec for the fact tier — workspace-scoped triples with warrants, three-state adjudication.",
+  "summary": "Fact tier design spec, plus the eval judge moved onto a reachable route.",
   "details": [],
   "limitations": [],
-  "reason": "Design document only. No code, no schema, no user-observable change; the tier ships OFF behind [facts] enabled when it is built."
+  "reason": "Design document only — no code, no schema, no user-observable change; the tier ships OFF behind [facts] enabled when built. Also repoints [evals] judge_model from the deepseek/ direct route (HTTP 402, Insufficient Balance) to ollamacloud/deepseek-v4-pro:0813, which is eval infrastructure and affects no runtime behaviour."
 }
