@@ -1199,6 +1199,31 @@ moment nobody new joins; the fourth was caught by the rule itself, which is the
 point of writing the rule down.
 
 
+### 15.4.4 The shape of a multi-tier port
+
+Three separate decisions tonight resolved the same way, which is enough to stop
+calling it a coincidence and start relying on it:
+
+| what | permissive at the shared layer | strict at each implementation |
+|---|---|---|
+| `replaced_by` | `str \| None` — cardinality | `fact` keeps its biconditional; notes retire with `None` |
+| `Proposal.payload` | `object` — type | each sink `isinstance`-refuses what it does not own |
+| `because` | `str` — vocabulary | `supported\|contradicted\|...` vs `merged\|retired-*` |
+
+> **Permissive at the shared layer, strict at each sink.**
+
+Each time, the tempting move was the opposite — a required field, a typed
+payload, an enum on the view — and each time it reads as *more* rigorous while
+quietly making the shared layer satisfiable by exactly one tier. That is the
+failure mode of a port declared from one implementation, and it does not announce
+itself: the first tier passes everything.
+
+Its companion, from §15.4.3, is the same statement about the test layer:
+**anything the shared suite needs that is not on the port must be supplied per
+implementation.** Four gaps, four layers — assertions, fixtures, read-back,
+vocabulary — every one found by someone reading a file they had not written,
+before committing to it.
+
 ### 15.5 What is still genuinely open
 
 Two items, both for the implementation plan rather than this document, and
