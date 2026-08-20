@@ -55,6 +55,7 @@ def test_a_superseded_fact_is_never_rendered():
         source_excerpt="x", valid_from=1, created_at=1,
         instruction_sha256=DIGEST, model=MODEL, established_by="tick-1",
         superseded_at=5, superseded_by="0191f2c4-0000-7000-8000-000000000001",
+        supersede_reason="stale",
     )
     assert render_facts((superseded,)) == ""
 
@@ -85,6 +86,7 @@ def test_a_mix_of_standing_and_superseded_keeps_only_the_standing_one():
         source_excerpt="x", valid_from=1, created_at=1,
         instruction_sha256=DIGEST, model=MODEL, established_by="tick-1",
         superseded_at=5, superseded_by="0191f2c4-0000-7000-8000-000000000001",
+        supersede_reason="stale",
     )
     out = render_facts((superseded, standing))
     assert "gone" not in out

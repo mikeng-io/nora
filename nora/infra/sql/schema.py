@@ -1172,18 +1172,43 @@ FACT = sa.Table(
     sa.Column("predicate", sa.Text, nullable=False),
     sa.Column("object_entity_id", sa.Text),
     sa.Column("object_literal", sa.Text),
-    sa.Column("source_url", sa.Text, nullable=False),
-    sa.Column("source_excerpt", sa.Text, nullable=False),
+    # 2026-08-21: the warrant axis. `warrant_kind` names WHAT kind of
+    # evidence backs the row; `source_url`/`source_excerpt` are no longer
+    # unconditionally NOT NULL (see the two CHECKs below) because a fact can
+    # now be warranted by other facts (`premises`), by a repeated observation
+    # (`observation`), or by someone simply deciding something (`stated`),
+    # none of which have a page behind them.
+    sa.Column("warrant_kind", sa.Text, nullable=False,
+              server_default=sa.text("'source'")),
+    sa.Column("source_url", sa.Text),
+    sa.Column("source_excerpt", sa.Text),
     sa.Column("valid_from", sa.BigInteger, nullable=False),
     sa.Column("valid_to", sa.BigInteger),
     sa.Column("created_at", sa.BigInteger, nullable=False),
     sa.Column("superseded_at", sa.BigInteger),
-    sa.Column("superseded_by", pg.UUID(as_uuid=False)),
+    sa.Column("superseded_by", pg.UUID(as_uuid=False),
+              sa.ForeignKey("fact.id", name="fact_superseded_by_fkey")),
+    # Set iff superseded_at is set (fact_supersede_reason_is_timed_check
+    # below) — the reason a fact was superseded cannot be reconstructed from
+    # the row afterwards at any price, so it is captured at supersession
+    # time or not at all.
+    sa.Column("supersede_reason", sa.Text),
     # NOT NULL, unlike migration 0023's four tables: those hold rows written
     # before the column existed, this one never will.
     sa.Column("instruction_sha256", sa.Text, nullable=False),
     sa.Column("model", sa.Text, nullable=False),
     sa.Column("established_by", sa.Text, nullable=False),
+    # The epistemic axis, orthogonal to superseded_at's temporal one: a fact
+    # can be high-fidelity + low-currency (true but outdated) or
+    # low-fidelity + high-currency (fresh but unconfirmed). Deliberately not
+    # a float — a numeric confidence invites false precision nobody in this
+    # tier can calibrate. Server default 'tentative', not 'proven': a
+    # default is what a row gets when nobody thought about it, and in a
+    # fail-closed codebase (R-27, R-5) that value must underclaim, never
+    # overclaim. 'tentative' is also where an abduced claim's epistemic
+    # status lands (spec §13.5) — the default, not an opt-in.
+    sa.Column("fidelity", sa.Text, nullable=False,
+              server_default=sa.text("'tentative'")),
     sa.CheckConstraint(
         "instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="fact_instruction_sha256_check",
@@ -1216,6 +1241,40 @@ FACT = sa.Table(
         "(superseded_by is null) = (superseded_at is null)",
         name="fact_supersession_is_timed_check",
     ),
+    sa.CheckConstraint(
+        "warrant_kind in ('source', 'premises', 'observation', 'stated')",
+        name="fact_warrant_kind_check",
+    ),
+    # Each source column is set if and only if warrant_kind = 'source' — two
+    # separate CHECKs, not one combined predicate, so each is independently
+    # red-on-revert testable and neither column can be set alone for a
+    # non-'source' warrant. "Forbidden otherwise", not merely "optional": an
+    # optional stray source_url on a 'premises'-warranted fact would be
+    # undefined in meaning, which is the exact ambiguity this discriminated
+    # warrant exists to kill.
+    sa.CheckConstraint(
+        "(source_url is not null) = (warrant_kind = 'source')",
+        name="fact_source_url_warrant_check",
+    ),
+    sa.CheckConstraint(
+        "(source_excerpt is not null) = (warrant_kind = 'source')",
+        name="fact_source_excerpt_warrant_check",
+    ),
+    sa.CheckConstraint(
+        "fidelity in ('tentative', 'proven', 'deprecated')",
+        name="fact_fidelity_check",
+    ),
+    # Biconditional, same shape as fact_supersession_is_timed_check: a
+    # reason is recorded at supersession time or not at all.
+    sa.CheckConstraint(
+        "(supersede_reason is null) = (superseded_at is null)",
+        name="fact_supersede_reason_is_timed_check",
+    ),
+    sa.CheckConstraint(
+        "supersede_reason is null or supersede_reason in "
+        "('stale', 'wrong', 'merged')",
+        name="fact_supersede_reason_check",
+    ),
 )
 
 # Serves the ONE read on the turn's critical path: the standing facts for a
@@ -1226,4 +1285,39 @@ IDX_FACT_STANDING = sa.Index(
     FACT.c.workspace,
     FACT.c.subject_id,
     postgresql_where=FACT.c.superseded_at.is_(None),
+)
+
+# 2026-08-21: replaces `fact.premise_ids UUID[]`. The array made "warranted
+# by other facts" representable but not QUERYABLE in the direction that
+# matters — §13.5 records transitive supersession (a premise superseded
+# leaves every fact deduced from it standing on a retracted foundation) as
+# an open problem, and answering "which facts depend on this one" is an
+# unindexable array-containment scan with the array, an indexed lookup with
+# this table. Both FKs target `fact.id`; `idx_fact_premise_premise_fact_id`
+# below serves the reverse direction the composite PK does not (it indexes
+# `fact_id` first). "warrant_kind = 'premises' ⇒ at least one premise" is a
+# cross-table invariant now — Postgres CHECK constraints cannot express it,
+# and this table does not fake it with a trigger; until a writer exists,
+# nothing in the database enforces it (see the migration's docstring).
+FACT_PREMISE = sa.Table(
+    "fact_premise",
+    METADATA,
+    sa.Column("fact_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("fact.id", name="fact_premise_fact_id_fkey"),
+              primary_key=True),
+    sa.Column("premise_fact_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("fact.id", name="fact_premise_premise_fact_id_fkey"),
+              primary_key=True),
+    # The one cycle cheap to rule out at the row level: a fact cannot be its
+    # own premise. Longer cycles (A premises B premises A) are NOT detected
+    # here — that needs a graph walk, not a row CHECK — and are left as a
+    # known gap rather than silently assumed away.
+    sa.CheckConstraint(
+        "fact_id <> premise_fact_id",
+        name="fact_premise_no_self_reference_check",
+    ),
+)
+
+IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
+    "idx_fact_premise_premise_fact_id", FACT_PREMISE.c.premise_fact_id,
 )

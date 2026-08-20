@@ -88,8 +88,22 @@ async def test_a_blank_model_is_refused_not_stored(pg_engine):
 
 async def test_superseded_by_requires_superseded_at(pg_engine):
     """`superseded_by` set alone names a successor with no record of when the
-    supersession happened — half a merge record, not a full one."""
+    supersession happened — half a merge record, not a full one.
+
+    `superseded_by` now FOREIGN KEYs to `fact.id`, so a random, non-existent
+    UUID would trip the FK instead of the CHECK under test here — the exact
+    "isolate to the one constraint" discipline this file is written to keep.
+    A real fact is seeded first and its own id is used as `superseded_by`, so
+    the FK is satisfied and only `fact_supersession_is_timed_check` fails."""
     async with pg_engine.begin() as conn:
+        seed_id = (await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_literal, source_url, source_excerpt, valid_from, "
+            "created_at, instruction_sha256, model, established_by) values "
+            "(gen_random_uuid(), 'nora', 'e1', 'has', 'seed', "
+            f"'https://x.test/seed', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1') "
+            "returning id"
+        ))).scalar_one()
         with pytest.raises(sa.exc.IntegrityError):
             await conn.execute(sa.text(
                 "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
@@ -98,7 +112,7 @@ async def test_superseded_by_requires_superseded_at(pg_engine):
                 "superseded_by) "
                 "values (gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
                 f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
-                "gen_random_uuid())"
+                f"'{seed_id}')"
             ))
 
 
@@ -110,18 +124,286 @@ async def test_superseded_at_requires_superseded_by(pg_engine):
     `superseded_at IS NULL` alone, so such a row is hidden from every read
     with no record of what replaced it. This is precisely the Graphiti issue
     #1771 failure the constraint exists to prevent: a merge computed and then
-    thrown away."""
+    thrown away.
+
+    `supersede_reason` is now required whenever `superseded_at` is set
+    (`fact_supersede_reason_is_timed_check`); without supplying one here that
+    CHECK would ALSO fail on this insert, so `supersede_reason` is set to
+    isolate the failure to `fact_supersession_is_timed_check` alone."""
     async with pg_engine.begin() as conn:
         with pytest.raises(sa.exc.IntegrityError):
             await conn.execute(sa.text(
                 "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
                 "object_literal, source_url, source_excerpt, valid_from, "
                 "created_at, instruction_sha256, model, established_by, "
-                "superseded_at) "
+                "superseded_at, supersede_reason) "
                 "values (gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
                 f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
-                "1)"
+                "1, 'stale')"
             ))
+
+
+async def test_fact_warrant_kind_is_constrained(pg_engine):
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, warrant_kind, valid_from, created_at, "
+                "instruction_sha256, model, established_by) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', 'guess', "
+                f"1, 1, '{'a' * 64}', 'gpt', 'tick-1')"
+            ))
+
+
+async def test_source_url_required_when_warrant_is_source(pg_engine):
+    """Replaces the old unconditional NOT NULL on `source_url`: warrant_kind
+    defaults to 'source', so an excerpt with no url is a fact with half its
+    warrant missing."""
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, source_excerpt, valid_from, created_at, "
+                "instruction_sha256, model, established_by) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', 'x', "
+                f"1, 1, '{'a' * 64}', 'gpt', 'tick-1')"
+            ))
+
+
+async def test_source_excerpt_required_when_warrant_is_source(pg_engine):
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, source_url, valid_from, created_at, "
+                "instruction_sha256, model, established_by) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
+                f"'https://x.test/a', 1, 1, '{'a' * 64}', 'gpt', 'tick-1')"
+            ))
+
+
+async def test_source_url_forbidden_when_warrant_is_not_source(pg_engine):
+    """The other half of the discriminated warrant: a `premises`/`observation`/
+    `stated` fact carrying a stray `source_url` is undefined in meaning — is
+    it corroborating, decorative? — which is the ambiguity this CHECK exists
+    to kill, not merely a symmetrical NOT NULL."""
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, warrant_kind, source_url, "
+                "valid_from, created_at, instruction_sha256, model, "
+                "established_by) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', 'observation', "
+                f"'https://x.test/a', 1, 1, "
+                f"'{'a' * 64}', 'gpt', 'tick-1')"
+            ))
+
+
+async def test_fidelity_defaults_to_tentative_not_proven(pg_engine):
+    """A default is what a row gets when nobody thought about it — in a
+    fail-closed codebase that value must underclaim, never overclaim
+    (2026-08-21 correction: this column first shipped defaulting to
+    'proven', reasoned from today's only writer path rather than from the
+    invariant; fixed before any row existed — see the migration)."""
+    async with pg_engine.begin() as conn:
+        fidelity = (await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_literal, source_url, source_excerpt, valid_from, "
+            "created_at, instruction_sha256, model, established_by) values "
+            "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
+            f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1') "
+            "returning fidelity"
+        ))).scalar_one()
+        assert fidelity == "tentative"
+
+
+async def test_fidelity_is_constrained(pg_engine):
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, source_url, source_excerpt, valid_from, "
+                "created_at, instruction_sha256, model, established_by, "
+                "fidelity) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
+                f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
+                "'sure')"
+            ))
+
+
+async def test_supersede_reason_requires_superseded_at(pg_engine):
+    """The reason a fact was superseded cannot be reconstructed from the row
+    afterwards at any price — recording one with no `superseded_at` names a
+    supersession that never happened."""
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, source_url, source_excerpt, valid_from, "
+                "created_at, instruction_sha256, model, established_by, "
+                "supersede_reason) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
+                f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
+                "'stale')"
+            ))
+
+
+async def test_supersede_reason_is_constrained(pg_engine):
+    """A real successor is seeded first so `superseded_by`'s FK is satisfied
+    and only `fact_supersede_reason_check` fails on the invalid value."""
+    async with pg_engine.begin() as conn:
+        seed_id = (await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_literal, source_url, source_excerpt, valid_from, "
+            "created_at, instruction_sha256, model, established_by) values "
+            "(gen_random_uuid(), 'nora', 'e1', 'has', 'seed', "
+            f"'https://x.test/seed', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1') "
+            "returning id"
+        ))).scalar_one()
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, source_url, source_excerpt, valid_from, "
+                "created_at, instruction_sha256, model, established_by, "
+                "superseded_at, superseded_by, supersede_reason) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
+                f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
+                f"5, '{seed_id}', 'fabricated')"
+            ))
+
+
+async def test_superseded_by_must_reference_an_existing_fact(pg_engine):
+    """`superseded_by` previously had no FK at all — it could name a fact
+    that does not exist. `superseded_at` and `supersede_reason` are both set
+    correctly here so only the new FK fails, not either biconditional."""
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, source_url, source_excerpt, valid_from, "
+                "created_at, instruction_sha256, model, established_by, "
+                "superseded_at, superseded_by, supersede_reason) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
+                f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
+                "5, gen_random_uuid(), 'stale')"
+            ))
+
+
+async def test_a_well_formed_premises_fact_is_accepted(pg_engine):
+    """The positive case for the discriminated warrant's other branch: a
+    `premises`-warranted fact with no source url/excerpt is satisfiable, not
+    just the `source` default. Its premises are separate `fact_premise` rows
+    — nothing in the database requires one to exist for this insert to
+    succeed (see the migration's note on where that invariant now lives, or
+    rather does not yet)."""
+    async with pg_engine.begin() as conn:
+        await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_literal, warrant_kind, valid_from, "
+            "created_at, instruction_sha256, model, established_by, "
+            "fidelity) values "
+            "(gen_random_uuid(), 'nora', 'e1', 'has', 'black_tower', "
+            f"'premises', 1, 1, '{'a' * 64}', "
+            "'gpt', 'tick-1', 'tentative')"
+        ))
+        count = (await conn.execute(sa.text(
+            "select count(*) from fact where warrant_kind = 'premises'"
+        ))).scalar_one()
+        assert count == 1
+
+
+async def test_a_fact_premise_edge_cannot_be_self_referential(pg_engine):
+    """`fact_premise_no_self_reference_check` — the one cycle cheap to rule
+    out at the row level. A real fact is seeded first so both FKs are
+    satisfied and only the self-reference CHECK fails."""
+    async with pg_engine.begin() as conn:
+        seed_id = (await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_literal, source_url, source_excerpt, valid_from, "
+            "created_at, instruction_sha256, model, established_by) values "
+            "(gen_random_uuid(), 'nora', 'e1', 'has', 'seed', "
+            f"'https://x.test/seed', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1') "
+            "returning id"
+        ))).scalar_one()
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                f"insert into fact_premise (fact_id, premise_fact_id) "  # noqa: S608 - fixed test literals, no external input
+                f"values ('{seed_id}', '{seed_id}')"
+            ))
+
+
+async def test_a_fact_premise_edge_requires_the_fact_to_exist(pg_engine):
+    """`fact_premise_fact_id_fkey` — a premise recorded for a fact that does
+    not exist. The premise side is a real, seeded fact so only the `fact_id`
+    FK fails, not the premise side's."""
+    async with pg_engine.begin() as conn:
+        premise_id = (await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_literal, source_url, source_excerpt, valid_from, "
+            "created_at, instruction_sha256, model, established_by) values "
+            "(gen_random_uuid(), 'nora', 'e1', 'has', 'premise', "
+            f"'https://x.test/premise', 'x', 1, 1, '{'a' * 64}', 'gpt', "
+            "'tick-1') returning id"
+        ))).scalar_one()
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact_premise (fact_id, premise_fact_id) "  # noqa: S608 - fixed test literals, no external input
+                f"values (gen_random_uuid(), '{premise_id}')"
+            ))
+
+
+async def test_a_fact_premise_edge_requires_the_premise_to_exist(pg_engine):
+    """`fact_premise_premise_fact_id_fkey` — the mirror of the test above.
+    `superseded_by`'s FK proved the "existence, not standing-ness" point
+    already; this is the same shape one table over."""
+    async with pg_engine.begin() as conn:
+        fact_id = (await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_literal, warrant_kind, valid_from, created_at, "
+            "instruction_sha256, model, established_by) values "
+            "(gen_random_uuid(), 'nora', 'e1', 'has', 'derived', 'premises', "
+            f"1, 1, '{'a' * 64}', 'gpt', 'tick-1') returning id"
+        ))).scalar_one()
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact_premise (fact_id, premise_fact_id) "  # noqa: S608 - fixed test literals, no external input
+                f"values ('{fact_id}', gen_random_uuid())"
+            ))
+
+
+async def test_a_well_formed_fact_premise_edge_is_accepted_and_reverse_looked_up(
+    pg_engine,
+):
+    """The positive case, AND the reason this table replaced `premise_ids
+    UUID[]`: "which facts depend on this one" (the transitive-supersession
+    question §13.5 leaves open) is this exact query — an indexed lookup on
+    `premise_fact_id`, not an array-containment scan."""
+    async with pg_engine.begin() as conn:
+        premise_id = (await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_literal, source_url, source_excerpt, valid_from, "
+            "created_at, instruction_sha256, model, established_by) values "
+            "(gen_random_uuid(), 'nora', 'e1', 'has', 'premise', "
+            f"'https://x.test/premise', 'x', 1, 1, '{'a' * 64}', 'gpt', "
+            "'tick-1') returning id"
+        ))).scalar_one()
+        fact_id = (await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_literal, warrant_kind, valid_from, created_at, "
+            "instruction_sha256, model, established_by) values "
+            "(gen_random_uuid(), 'nora', 'e1', 'has', 'derived', 'premises', "
+            f"1, 1, '{'a' * 64}', 'gpt', 'tick-1') returning id"
+        ))).scalar_one()
+        await conn.execute(sa.text(
+            "insert into fact_premise (fact_id, premise_fact_id) "  # noqa: S608 - fixed test literals, no external input
+            f"values ('{fact_id}', '{premise_id}')"
+        ))
+        dependents = (await conn.execute(sa.text(
+            "select fact_id from fact_premise where "  # noqa: S608 - fixed test literals, no external input
+            f"premise_fact_id = '{premise_id}'"
+        ))).scalars().all()
+        assert dependents == [fact_id]
 
 
 async def test_candidate_status_is_constrained(pg_engine):
