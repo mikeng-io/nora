@@ -15,6 +15,7 @@ so no consumer can get the 5.6x count-weighting bias wrong independently.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from itertools import pairwise
@@ -30,6 +31,7 @@ __all__ = [
     "SegmentationResult",
     "Stay",
     "Trip",
+    "best_corridor_match",
     "circular_mean_minute",
     "cluster_places",
     "cluster_trips",
@@ -159,6 +161,40 @@ def edit_distance(a: tuple[str, ...], b: tuple[str, ...]) -> int:
             )
         prev = curr
     return prev[-1]
+
+
+def best_corridor_match(
+    candidates: Iterable[tuple[int, tuple[str, ...]]], *,
+    sequence: tuple[str, ...], max_edit_distance: int,
+) -> tuple[int, tuple[str, ...]] | None:
+    """The nearest of `candidates` (`(corridor_id, sequence)` pairs) within
+    `max_edit_distance` of `sequence`, or `None`. **Ties break on the
+    LOWEST corridor id.**
+
+    This lives in the domain, not in either store, because BOTH
+    `MobilityStore` implementations have to answer `existing_corridor`
+    identically and they previously did not: each carried its own copy of
+    this loop, `SqlMobilityStore` resolving a tie on whatever order
+    Postgres happened to return its heap in and `FakeMobilityStore` on dict
+    insertion order (final whole-branch review, Important #3). Two
+    corridors equidistant from a new trip's sequence is routine, not
+    exotic, at `corridor_max_edit_distance=2` over short sequences, and
+    resolving it differently on different days splits one real route's
+    samples across two corridor rows.
+
+    The `(dist, cid)` comparison makes the answer independent of the order
+    `candidates` arrives in, so no caller has to sort first for
+    correctness. `SqlMobilityStore` still adds `ORDER BY id ASC` — cheap on
+    an already-indexed column, and it keeps the SQL readable as the same
+    rule — but the rule does not depend on it."""
+    best: tuple[int, int, tuple[str, ...]] | None = None  # (dist, id, seq)
+    for cid, candidate in candidates:
+        dist = edit_distance(sequence, candidate)
+        if dist > max_edit_distance:
+            continue
+        if best is None or (dist, cid) < (best[0], best[1]):
+            best = (dist, cid, candidate)
+    return None if best is None else (best[1], best[2])
 
 
 @dataclass(frozen=True)
@@ -331,10 +367,29 @@ def cluster_trips(
     refactoring it into a generic metric-parameterized version under this
     plan's time budget risks that verification for the ~20 lines it would
     save (CLAUDE.md's own "three similar lines is better than a premature
-    abstraction"). A trip with an empty `corridor` (every fix in the
-    group had no `address`) still participates: `edit_distance((), x) ==
-    len(x)`, so it simply clusters only with other near-empty corridors,
-    never spuriously with a real one.
+    abstraction").
+
+    **Callers MUST hold out trips with an empty `corridor` before calling
+    this.** An address-less trip (every fix in its group had no `address`)
+    is NOT harmlessly self-segregating: `edit_distance((), x) == len(x)`,
+    so an empty sequence is within a typical `max_edit_distance` of ANY
+    short real corridor and this function will legitimately put it in the
+    same cluster as three real, named trips. What happens next depends on
+    input order and is wrong both ways round — judging the cluster by its
+    first trip discards a whole real cluster when that trip is the empty
+    one, and contaminates a real corridor's sample count and speed
+    percentiles when it is not (reproduced in both directions in
+    `tests/unit/test_analytics_rollup.py::
+    test_an_address_less_trip_clustered_with_real_ones_is_held_out`; this
+    docstring previously claimed the opposite and was simply false).
+
+    Tier 5's own caller enforces the hold-out at the QUERY:
+    `MobilityStore.unclustered_named_trips_for_subject` — the pool
+    `MobilityRollup._record_corridors` clusters — filters
+    `jsonb_array_length(sequence) > 0`, so an address-less trip never
+    reaches here at all and ends its life with `corridor_id` NULL, the
+    honest record of "no address, so no route". A future caller sourcing
+    trips any other way owes itself the same filter.
 
     Checked by hand against the same three usual hand-rolled-DBSCAN
     failure modes `cluster_places`'s own docstring names (a border point

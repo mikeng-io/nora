@@ -749,6 +749,33 @@ class AnalyticsConfig(BaseModel):
     # already gives stay_radius_m/stay_min_dwell_seconds.
     corridor_max_edit_distance: int = Field(default=2, ge=0)
     corridor_min_samples: int = Field(default=3, ge=1)
+    # Tier 5: how many not-yet-clustered trips one corridor-clustering pass
+    # may read back and re-cluster (`MobilityStore
+    # .unclustered_named_trips_for_subject`). Unlike the two knobs above
+    # this one IS measured, because `cluster_trips` is O(n^2) in an
+    # edit-distance metric that is itself expensive, and the pass now runs
+    # over an ACCUMULATED pool every cycle rather than one tick's handful
+    # of fresh trips.
+    #
+    # Measured on this machine (2026-08-20), same corpus shape as
+    # `MobilityRollup._record_corridors`' own table — n trips over 6
+    # recurring corridors of 6-10 road names, jittered:
+    #
+    #     n=200  296 ms    n=500  1.87 s    n=1000  7.59 s
+    #     n=400  1.19 s    n=600  2.67 s    n=2000  30.6 s
+    #
+    # Budget: one subject's clustering must stay under 2% of a
+    # `tick_seconds=120` tick (2.4 s), which the curve puts at n≈560.
+    # Rounded DOWN to 500 (1.87 s, 1.6% of a tick) for headroom on a host
+    # that also runs Nora, signal-cli, Postgres and Honcho, and so several
+    # subjects still fit: 4 subjects cost ~7.5 s, 6% of a tick.
+    #
+    # The pool DRAINS — a trip leaves it the moment it is linked to a
+    # corridor — so this bound is a ceiling against pathological growth (a
+    # subject whose routes never repeat), not the steady-state size. It is
+    # read newest-first, so saturating it ages out the OLDEST never-matched
+    # trips rather than starving the ones that just arrived.
+    corridor_cluster_batch_limit: int = Field(default=500, ge=1)
     # Tier 5: `extract_trips`'s noise gate — a run of movement fixes
     # shorter than this between two stays is DROPPED rather than written
     # as a trip, the same fail-closed shape `min_dwell_ms` gives stays.
@@ -765,6 +792,27 @@ class AnalyticsConfig(BaseModel):
     # (`PresenceConfig.metrics_port`), 9102 is the drop service's public
     # listener — the next free port in the same numbering.
     metrics_port: int = 9103
+
+    @model_validator(mode="after")
+    def _corridor_pool_can_hold_a_corridor(self) -> AnalyticsConfig:
+        """A cluster-batch limit below `corridor_min_samples` makes corridor
+        birth arithmetically impossible — the pool could never hold enough
+        similar trips for `cluster_trips` to call any of them a cluster.
+
+        That is exactly the shape of the bug this knob exists to fix
+        (Tier 5's final whole-branch review, Critical #1: clustering that
+        could only ever see one tick's batch minted zero corridors, forever,
+        silently). Refusing the config is where it is cheapest to catch: the
+        failure it prevents has no log line and no metric of its own, only a
+        counter that never moves."""
+        if self.corridor_cluster_batch_limit < self.corridor_min_samples:
+            raise ValueError(
+                "analytics.corridor_cluster_batch_limit "
+                f"({self.corridor_cluster_batch_limit}) is below "
+                f"corridor_min_samples ({self.corridor_min_samples}) — no "
+                "corridor could ever be created"
+            )
+        return self
 
 
 class SearchConfig(BaseModel):

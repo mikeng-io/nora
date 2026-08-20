@@ -17,7 +17,13 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.mobility import LabelResult, RawFix, Stay, Trip, edit_distance
+from nora.domain.mobility import (
+    LabelResult,
+    RawFix,
+    Stay,
+    Trip,
+    best_corridor_match,
+)
 from nora.infra.sql.schema import (
     ANALYTICS_WATERMARK,
     PRESENCE_CORRIDOR_SPEED,
@@ -31,6 +37,20 @@ from nora.infra.sql.schema import (
 )
 
 DERIVER_NAME = "mobility"
+
+
+def _trip_from_row(r: Any) -> Trip:
+    """One `presence_trips` row -> `Trip`. `sequence` is JSONB (a JSON list
+    of road names, or NULL on a row written before migration 0020) and
+    `Trip.corridor` is a tuple, so the conversion is explicit."""
+    return Trip(
+        subject_id=r.subject_id, person_id=r.person_id, circle_id=r.circle_id,
+        started_ts=r.started_ts, ended_ts=r.ended_ts,
+        distance_m=r.distance_m, avg_speed_kmh=r.avg_speed_kmh,
+        fix_count=r.fix_count,
+        corridor=tuple(r.sequence) if r.sequence else (),
+        corridor_id=r.corridor_id,
+    )
 
 
 class SqlMobilityStore:
@@ -148,6 +168,10 @@ class SqlMobilityStore:
                         "circle_id": t.circle_id, "started_ts": t.started_ts,
                         "ended_ts": t.ended_ts, "distance_m": t.distance_m,
                         "avg_speed_kmh": t.avg_speed_kmh, "fix_count": t.fix_count,
+                        # `list(...)` for the same reason `upsert_corridor`
+                        # converts `PRESENCE_CORRIDORS.sequence` — JSONB
+                        # takes a JSON array, and a Python tuple is not one.
+                        "sequence": list(t.corridor),
                         "corridor_id": t.corridor_id,
                     }
                     for t in trips
@@ -155,6 +179,15 @@ class SqlMobilityStore:
             )
 
     async def trips_for_subject(self, *, subject_id: str) -> list[Trip]:
+        """Every trip for the subject, oldest first, WITH its real road-name
+        sequence.
+
+        `corridor` used to come back hardcoded `()` here, justified by
+        "`presence_trips` has no column for it and no caller re-reads it."
+        Migration 0020 added `sequence` and `_record_corridors` now re-reads
+        exactly this data every cycle, so both halves of that reasoning are
+        gone. A store method that silently discarded a column it now has
+        would be a trap for the next caller."""
         stmt = (
             sa.select(PRESENCE_TRIPS)
             .where(PRESENCE_TRIPS.c.subject_id == subject_id)
@@ -162,28 +195,49 @@ class SqlMobilityStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [
-            Trip(
-                subject_id=r.subject_id, person_id=r.person_id, circle_id=r.circle_id,
-                started_ts=r.started_ts, ended_ts=r.ended_ts,
-                distance_m=r.distance_m, avg_speed_kmh=r.avg_speed_kmh,
-                fix_count=r.fix_count,
-                # `presence_trips` has NO `corridor` column of its own
-                # (design/27 §4, issue #6 follow-up) — a trip's address
-                # sequence is deliberately NOT persisted per-row. The ONLY
-                # consumer (Task 11's rollup wiring) calls `cluster_trips`
-                # against `extract_trips`'s in-memory `Trip` objects, never
-                # against a re-read from this store, and this plan's Global
-                # Constraint ("recompute from the full sample set, every
-                # time") means there is no later caller that re-clusters
-                # from storage either — so there is nothing here that ever
-                # needs `corridor` back. Do not "fix" this into a schema
-                # change; it would add a JSONB column with no reader.
-                corridor=(),
-                corridor_id=r.corridor_id,
+        return [_trip_from_row(r) for r in rows]
+
+    async def unclustered_named_trips_for_subject(
+        self, *, subject_id: str, limit: int
+    ) -> list[Trip]:
+        """The corridor-clustering POOL: this subject's trips that have a
+        road-name sequence and are not linked to a corridor yet, newest
+        first, capped at `limit`.
+
+        `corridor_id IS NULL` is the durable "not yet processed" marker —
+        the same shape `presence_stays.place_id IS NULL` already plays for
+        Tier 3's first-place backfill — which is why Tier 5 needs no
+        separate watermark column. A trip leaves this pool exactly when
+        `set_trip_corridor_ids` links it.
+
+        **The empty-sequence exclusion lives HERE, not in the caller.**
+        `edit_distance((), x) == len(x)`, so an address-less trip is a
+        similarity-neighbour of nearly any short real corridor: letting one
+        into `cluster_trips` either discards a whole real cluster or
+        contaminates a corridor's sample count and speed percentiles,
+        depending on input order (Task 11 review, Important #1). A NULL
+        `sequence` (a row predating migration 0020) is excluded by the same
+        predicate and for the stronger reason that its sequence is not
+        merely empty but unknown.
+
+        **Newest first, so the cap drops the OLDEST trips.** A trip that
+        has sat unlinked for a long time is one nothing has ever matched;
+        ageing it out of the window is what stops a pool of permanent
+        non-matches from crowding out the trips that just arrived."""
+        stmt = (
+            sa.select(PRESENCE_TRIPS)
+            .where(
+                PRESENCE_TRIPS.c.subject_id == subject_id,
+                PRESENCE_TRIPS.c.corridor_id.is_(None),
+                PRESENCE_TRIPS.c.sequence.is_not(None),
+                sa.func.jsonb_array_length(PRESENCE_TRIPS.c.sequence) > 0,
             )
-            for r in rows
-        ]
+            .order_by(PRESENCE_TRIPS.c.started_ts.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_trip_from_row(r) for r in rows]
 
     async def set_trip_corridor_ids(
         self, *, subject_id: str, started_ts_in: list[int], corridor_id: int
@@ -217,19 +271,29 @@ class SqlMobilityStore:
         handful of real corridors, not thousands) and computes
         `edit_distance` in Python — the same "SQL narrows, Python decides"
         shape `nora/infra/sql/geocode_cache.py`'s `nearest_within` already
-        established for a different metric (haversine)."""
-        stmt = sa.select(PRESENCE_CORRIDORS.c.id, PRESENCE_CORRIDORS.c.sequence).where(
-            PRESENCE_CORRIDORS.c.subject_id == subject_id,
+        established for a different metric (haversine).
+
+        The DECISION itself is `nora.domain.mobility.best_corridor_match`,
+        shared with `FakeMobilityStore` (final whole-branch review,
+        Important #3): each store used to carry its own copy of the loop,
+        and the two copies broke a distance tie differently — this one on
+        whatever order Postgres returned its heap in, the fake's on dict
+        insertion order. Ties break on the LOWEST corridor id, and that
+        rule is now in ONE place both stores call. `ORDER BY id ASC` is
+        kept as well: correctness no longer depends on it, but it costs
+        nothing on an indexed column and it makes the SQL read as the same
+        rule the Python enforces."""
+        stmt = (
+            sa.select(PRESENCE_CORRIDORS.c.id, PRESENCE_CORRIDORS.c.sequence)
+            .where(PRESENCE_CORRIDORS.c.subject_id == subject_id)
+            .order_by(PRESENCE_CORRIDORS.c.id.asc())
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        best: tuple[int, int, tuple[str, ...]] | None = None  # (dist, id, seq)
-        for row in rows:
-            seq = tuple(row.sequence)
-            dist = edit_distance(sequence, seq)
-            if dist <= max_edit_distance and (best is None or dist < best[0]):
-                best = (dist, row.id, seq)
-        return None if best is None else (best[1], best[2])
+        return best_corridor_match(
+            ((row.id, tuple(row.sequence)) for row in rows),
+            sequence=sequence, max_edit_distance=max_edit_distance,
+        )
 
     async def upsert_corridor(
         self, *, subject_id: str, sequence: tuple[str, ...], sample_count: int,

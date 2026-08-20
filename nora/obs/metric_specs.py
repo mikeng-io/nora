@@ -552,10 +552,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Trips written to presence_trips (Tier 5), by subject.",
         ("subject",),
     ),
+    # `outcome` is the axis that makes "no corridor has EVER been created"
+    # readable. Without it this counted attach OPERATIONS, so a flat-but-
+    # nonzero line could equally mean "one corridor, reconfirmed daily" or
+    # "corridors are being born" — and the Tier 5 defect where none could
+    # ever be born (final whole-branch review, Critical #1) was invisible
+    # except by graphing this against nora_analytics_trips_total. Counted
+    # once per DISTINCT corridor per clustering pass, not once per trip
+    # attached to it.
     _CounterSpec(
         "nora_analytics_corridors_total",
-        "Corridors upserted (Tier 5, new or reconfirmed), by subject.",
-        ("subject",),
+        "Corridors touched by clustering (Tier 5), by subject and outcome "
+        "(created = a brand-new corridor row; reconfirmed = an existing one "
+        "gained samples).",
+        ("subject", "outcome"),
     ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
     # never actually called" impossible to read from silence: a cache hit and a

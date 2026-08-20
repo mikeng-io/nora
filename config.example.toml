@@ -305,7 +305,16 @@ enabled = false
 # anomaly_min_samples = 5     # Tier 3 — fewer prior stays and no anomaly claim (fail-closed)
 # anomaly_z_threshold = 3.0   # Tier 3 — |z| above this counts nora_analytics_anomalies_total
 # corridor_max_edit_distance = 2   # Tier 5 — corridor identity tolerance
-# corridor_min_samples = 3         # Tier 5 — trips needed before a corridor is named
+# corridor_min_samples = 3         # Tier 5 — similar trips needed before a corridor is
+#                                  #   named. They accumulate ACROSS cycles (a trip stays
+#                                  #   in the pool until it is linked), so this is "3
+#                                  #   occurrences of the route", not "3 in one tick".
+# corridor_cluster_batch_limit = 500 # Tier 5 — cap on the not-yet-clustered trips one
+#                                  #   pass re-clusters. MEASURED, not inherited:
+#                                  #   cluster_trips is O(n^2) over an edit-distance
+#                                  #   metric — n=500 costs 1.87s, 1.6% of a 120s tick;
+#                                  #   n=1000 costs 7.6s. Must be >= corridor_min_samples
+#                                  #   or no corridor could ever form (startup refuses).
 # min_trip_fixes = 3               # Tier 5 — shorter runs between stays are noise, not trips
 # tz_name = "Asia/Hong_Kong"
 # metrics_port = 9103

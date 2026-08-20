@@ -485,6 +485,32 @@ def test_min_trip_fixes_defaults_to_three_and_refuses_a_one_fix_trip():
         AnalyticsConfig(min_trip_fixes=1)
 
 
+def test_corridor_cluster_batch_limit_defaults_to_the_measured_bound():
+    """Tier 5. How many not-yet-clustered trips one corridor-clustering
+    pass may re-cluster. MEASURED, unlike the two knobs beside it:
+    `cluster_trips` is O(n^2) over an edit-distance metric, n=500 costs
+    1.87s on this machine and n=1000 costs 7.59s, so 500 is under 2% of a
+    `tick_seconds=120` tick for one subject."""
+    assert AnalyticsConfig().corridor_cluster_batch_limit == 500
+    assert AnalyticsConfig(corridor_cluster_batch_limit=50).corridor_cluster_batch_limit == 50
+    with pytest.raises(ValidationError):
+        AnalyticsConfig(corridor_cluster_batch_limit=0)
+
+
+def test_a_cluster_batch_limit_below_corridor_min_samples_is_refused():
+    """Fail-closed on a config that could never mint a corridor. A pool
+    smaller than `corridor_min_samples` cannot arithmetically hold enough
+    similar trips for `cluster_trips` to call any of them a cluster — the
+    exact shape of the defect this knob exists to fix (Tier 5's final
+    whole-branch review, Critical #1), and one with no log line and no
+    metric of its own, only a counter that never moves."""
+    with pytest.raises(ValidationError):
+        AnalyticsConfig(corridor_cluster_batch_limit=2, corridor_min_samples=3)
+    # ...and the boundary itself is allowed: exactly enough IS enough.
+    cfg = AnalyticsConfig(corridor_cluster_batch_limit=3, corridor_min_samples=3)
+    assert cfg.corridor_cluster_batch_limit == 3
+
+
 def test_tools_mcp_is_optional_and_defaults_to_empty(toml_path):
     text = toml_path.read_text()
     head, _, tail = text.partition("[tools.mcp.pulse]\n")

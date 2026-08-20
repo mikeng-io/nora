@@ -59,6 +59,9 @@ class MobilityStore(Protocol):
     ) -> None: ...
     async def write_trips(self, trips: list[Trip]) -> None: ...
     async def trips_for_subject(self, *, subject_id: str) -> list[Trip]: ...
+    async def unclustered_named_trips_for_subject(
+        self, *, subject_id: str, limit: int
+    ) -> list[Trip]: ...
     async def set_trip_corridor_ids(
         self, *, subject_id: str, started_ts_in: list[int], corridor_id: int
     ) -> None: ...
@@ -121,6 +124,7 @@ class RollupConfig:
     anomaly_z_threshold: float = 3.0
     corridor_max_edit_distance: int = 2
     corridor_min_samples: int = 3
+    corridor_cluster_batch_limit: int = 500
     min_trip_fixes: int = 3
 
 
@@ -301,27 +305,24 @@ class MobilityRollup:
                 # a table with no unique constraint on
                 # (subject_id, started_ts).
                 #
-                # The asymmetry with Tier 3 is REAL and accepted, and it is
-                # sharper than "the watermark advances past them": these
-                # trips are unrecoverable because `presence_trips` has no
-                # `corridor` column at all (`SqlMobilityStore
-                # .trips_for_subject` returns `corridor=()` on purpose), so
-                # even the fixes' own address sequences are gone with them
-                # — nothing downstream could reconstruct the input to retry.
-                # Tier 3's stays, by contrast, are already committed before
-                # its own guard is reached. Losing a batch of trips costs
-                # this cycle's corridor samples; stranding the watermark
-                # corrupts Tier 1/2 permanently, so this is the cheaper
-                # failure by a wide margin — but it IS a loss, not a defer.
+                # The asymmetry with Tier 3 is REAL and accepted: these
+                # trips are unrecoverable, because the fixes that produced
+                # them are behind the watermark and nothing re-derives
+                # them. Tier 3's stays, by contrast, are already committed
+                # before its own guard is reached. Losing a batch of trips
+                # costs those trips' corridor samples; stranding the
+                # watermark corrupts Tier 1/2 permanently, so this is the
+                # cheaper failure by a wide margin — but it IS a loss, not
+                # a defer.
                 try:
                     await self._store.write_trips(new_trips)
                 except Exception:
                     log.exception(
                         "trip write failed — the watermark still advances, "
                         "so this batch's trips are a genuine accepted LOSS "
-                        "(presence_trips carries no corridor column, so "
-                        "nothing can reconstruct them), unlike Tier 3's "
-                        "already-committed stays"
+                        "(the fixes behind them are consumed and nothing "
+                        "re-derives them), unlike Tier 3's already-committed "
+                        "stays"
                     )
                 else:
                     if self._metrics is not None:
@@ -331,22 +332,27 @@ class MobilityRollup:
                         )
                     try:
                         await self._record_corridors(
-                            subject_id=subject_id, new_trips=new_trips, now_ms=now_ms,
+                            subject_id=subject_id, now_ms=now_ms,
                         )
                     except Exception:
-                        # Same contract, one layer down: the trips are
-                        # written, only their corridor linkage failed. That
-                        # linkage is NOT recoverable next cycle either (the
-                        # trips will not be in `new_trips` again and their
-                        # sequences are not persisted), but it is still
-                        # strictly cheaper than a stranded watermark. The
-                        # realistic trigger is the analytics image deploying
-                        # ahead of migration 0019 — every corridor write
-                        # raises UndefinedTable.
+                        # Same contract, one layer down — but unlike the
+                        # write above, this one IS recoverable now. The
+                        # trips are committed WITH their `sequence`, and
+                        # their `corridor_id` is still NULL, which is
+                        # exactly the predicate
+                        # `unclustered_named_trips_for_subject` selects on:
+                        # the next cycle that writes a trip re-reads these
+                        # and clusters them again. Migration 0020 is what
+                        # turned "permanently unlinked" into "retried next
+                        # cycle". The realistic trigger is the analytics
+                        # image deploying ahead of migration 0019/0020 —
+                        # every corridor write raises UndefinedTable, and
+                        # every cycle after the migration lands recovers.
                         log.exception(
                             "corridor derivation failed — the trips are "
-                            "written and the watermark still advances; "
-                            "these trips keep corridor_id NULL permanently"
+                            "written with their sequences and the watermark "
+                            "still advances; they keep corridor_id NULL and "
+                            "are re-clustered on a later cycle"
                         )
             await self._store.advance_fix_watermark(
                 subject_id=subject_id, fix_id=fixes[-1].id
@@ -469,66 +475,102 @@ class MobilityRollup:
                     subject_id=subject_id, fix_id=new_last_cluster
                 )
 
-    async def _record_corridors(
-        self, *, subject_id: str, new_trips: list[Trip], now_ms: int,
-    ) -> None:
-        """Tier 5 (design/27 §4, issue #6): group THIS cycle's new trips
-        into corridors, give each a durable identity, and recompute the
-        touched corridors' hour-of-week speed percentiles.
+    async def _record_corridors(self, *, subject_id: str, now_ms: int) -> None:
+        """Tier 5 (design/27 §4, issue #6): cluster this subject's
+        NOT-YET-LINKED trips into corridors, give each corridor a durable
+        identity, and recompute the touched corridors' hour-of-week speed
+        percentiles.
 
-        **Speed-3-ADJACENT, and gated on `new_trips` alone — no persisted
-        `last_trip_cluster_id` watermark.** Not because a third watermark
-        column would be expensive, but because it would have nothing to
-        gate: this method CANNOT re-cluster a subject's full history even
-        if it wanted to. `presence_trips` has no `corridor` column
-        (Task 5's own decision), so `trips_for_subject` returns
-        `corridor=()` for every stored row and `cluster_trips` over them
-        would be meaningless. The full-history re-cluster the watermark
-        would suppress does not exist as a code path.
+        **The set clustered here is the accumulated pool, not this cycle's
+        batch** — `unclustered_named_trips_for_subject` reads back every
+        trip with a road-name sequence whose `corridor_id` is still NULL,
+        newest first, bounded by `corridor_cluster_batch_limit`. That is
+        the whole point of the redesign. Clustering only the trips
+        extracted in the current tick meant `corridor_min_samples` similar
+        trips had to arrive inside ONE ~120 s tick, and in real deployment
+        each occurrence of a real route (a daily commute) arrives in its
+        own separate tick — so `cluster_trips` always saw a batch of one
+        and dropped it as noise. Tier 5 would have shipped minting zero
+        corridors and zero speed percentiles, silently, forever (final
+        whole-branch review, Critical #1). Now an occurrence of a route
+        waits in the pool for its siblings, however many days apart they
+        fall. Measured both ways on the same fixture — a 6-day/4324-tick
+        repeating commute driven through the real `run_once` loop gives 60
+        trips / 0 corridors / 0 speed rows with per-batch clustering, and
+        60 / 10 / 60 with this
+        (`tests/unit/test_analytics_rollup.py::
+        test_a_repeating_commute_actually_grows_corridors_over_days`).
 
-        The arithmetic says the same thing independently, and it is worth
-        recording because it is NOT the answer `cluster_places`' own
-        precedent would predict. Measured on this machine (n trips with
-        6 recurring corridors of 6-10 road names, jittered):
+        **Still no `last_trip_cluster_id` watermark column, and now for a
+        positive reason rather than the absence of a code path**:
+        `presence_trips.corridor_id IS NULL` already IS the durable "not
+        yet processed" marker, and it is a strictly better one than a
+        watermark id — it is per-trip, so a trip that fails to link stays
+        eligible next cycle instead of being skipped past. This is the same
+        shape `presence_stays.place_id IS NULL` already plays for Tier 3's
+        first-place backfill.
 
-            cluster_trips  n=66     37 ms      n=1000  6.8 s
-            cluster_trips  n=200   357 ms      n=3600   92 s
+        **Gated on new trips arriving** — the only caller runs it inside
+        `run_once`'s `if new_trips:` branch, after `write_trips` lands. Not
+        because re-clustering an unchanged pool would be WRONG (it is
+        idempotent: same trips, same corridors, same answer) but because it
+        would be pure waste at tick cadence, and expensive waste — see the
+        cost table below. A new trip is precisely the event that can push a
+        group over `corridor_min_samples` or bring a match into range, so
+        nothing is ever delayed by more than one arriving trip. The one
+        thing the gate does defer is a CONFIG change (a lowered
+        `corridor_min_samples` takes effect on the next trip, not on the
+        next tick), which is the same bargain DEC-115's `last_cluster_id`
+        dirty-set gate already strikes for `cluster_places`.
+
+        The cost is why the gate and the bound both exist. `cluster_trips`
+        is O(n^2) in an edit-distance metric that is itself expensive.
+        Measured on this machine (2026-08-20; n trips over 6 recurring
+        corridors of 6-10 road names, jittered — the same corpus shape as
+        the pre-redesign table this replaces, and reproducing it closely):
+
+            cluster_trips  n=66     31 ms     n=600    2.67 s
+            cluster_trips  n=200   296 ms     n=1000   7.59 s
+            cluster_trips  n=400  1.19 s      n=2000  30.6 s
+            cluster_trips  n=500  1.87 s      n=3600  ~92 s (extrapolated)
             cluster_places n=3600  6.0 s
 
         `cluster_places`' docstring calls its own O(n^2) "trivial" at 3,600
-        stays and it is (6 s, gated). `cluster_trips` at the SAME n is
-        **15x worse — 92 seconds of synchronous CPU inside one asyncio
-        tick**, because an edit distance over two 6-10 element sequences is
+        stays and it is (6 s, gated). `cluster_trips` at the same n is ~15x
+        worse, because an edit distance over two 6-10 element sequences is
         hundreds of Python-level operations where a haversine is a handful.
-        So DEC-115's "94% of the expensive half was waste" reasoning does
-        not merely carry over here, it is understated: a per-cycle full
-        re-cluster at 720-day retention would be unaffordable, not just
-        wasteful. What makes it moot is that `new_trips` is bounded by ONE
-        batch — ~66 trips at `backfill_batch_limit`'s ~11 days of fixes
-        (37 ms), and a handful in steady state. Even a 15x-pessimistic
-        batch (n=1000, 6.8 s) fits inside `tick_seconds`.
+        `corridor_cluster_batch_limit` defaults to 500 for a stated budget
+        — under 2% of a `tick_seconds=120` tick for one subject (see that
+        field's own comment for the arithmetic).
 
-        Cross-cycle continuity therefore comes from `existing_corridor`'s
-        similarity match against the PERSISTED sequences, not from
-        re-clustering — which is exactly why that method exists.
+        Cross-cycle continuity ALSO still comes from `existing_corridor`'s
+        similarity match against the persisted corridor sequences (pass 2
+        below); the pool is what lets a corridor be BORN, the similarity
+        match is what lets it keep growing once it exists.
         """
-        # Trips whose fixes carried no address at all are held out of BOTH
-        # passes, and held out BEFORE clustering rather than filtered after
-        # it. `edit_distance((), x) == len(x)` makes an empty corridor a
+        # The address-less hold-out is enforced by the QUERY, not here.
+        # `edit_distance((), x) == len(x)` makes an empty sequence a
         # similarity-neighbour of every 1-2 element real corridor, so
         # `cluster_trips` will legitimately put an address-less trip in the
-        # same cluster as three real, named ones — it is not only clusterable
-        # with other address-less trips. Judging that cluster by its FIRST
-        # trip's sequence is then a coin-flip on input order, wrong in both
-        # directions: an empty `cluster[0]` discards the whole cluster and
-        # silently unlinks the real trips in it, and a named `cluster[0]`
+        # same cluster as three real, named ones — it is not merely
+        # clusterable with other address-less trips. Judging that cluster by
+        # its FIRST trip's sequence is a coin-flip on input order, wrong in
+        # both directions: an empty `cluster[0]` discards the whole cluster
+        # and silently unlinks the real trips in it, and a named `cluster[0]`
         # attaches the empty one too, contaminating the corridor's
-        # `sample_count` and its speed percentiles with an ungrounded sample.
-        # Partitioning first makes the question unaskable.
-        # (Task 11 review, Important #1.)
-        named_trips = [t for t in new_trips if t.corridor]
+        # `sample_count` and its speed percentiles with an ungrounded sample
+        # (Task 11 review, Important #1). Task 11 partitioned in this method;
+        # the filter moved into `unclustered_named_trips_for_subject`'s
+        # `jsonb_array_length(sequence) > 0` when the pool became a query, so
+        # there is ONE place it is enforced and the contract suite holds both
+        # store implementations to it
+        # (`test_unclustered_named_trips_excludes_linked_and_address_less`).
+        pool = await self._store.unclustered_named_trips_for_subject(
+            subject_id=subject_id,
+            limit=self._cfg.corridor_cluster_batch_limit,
+        )
         clusters = cluster_trips(
-            named_trips, max_edit_distance=self._cfg.corridor_max_edit_distance,
+            pool, max_edit_distance=self._cfg.corridor_max_edit_distance,
             min_samples=self._cfg.corridor_min_samples,
         )
         # id -> the corridor's CANONICAL sequence (the PERSISTED one for a
@@ -542,42 +584,69 @@ class MobilityRollup:
         # carried because it is the correct value to pass, not because a
         # test can currently tell the difference.
         touched: dict[int, tuple[str, ...]] = {}
+        created: set[int] = set()
         clustered_starts = {t.started_ts for cluster in clusters for t in cluster}
         for cluster in clusters:
             # The cluster's FIRST trip's own sequence is the
             # representative — `PRESENCE_CORRIDORS`' own "identity
-            # survives, does not chase every new trip's own sequence".
+            # survives, does not chase every new trip's own sequence". The
+            # pool arrives newest-first, so that representative is the most
+            # RECENTLY observed spelling of the route, which is the better
+            # of the two arbitrary choices.
             attached = await self._attach_corridor(
                 subject_id=subject_id, sequence=cluster[0].corridor,
                 trips=cluster, now_ms=now_ms, may_create=True,
             )
             if attached is not None:
-                touched[attached[0]] = attached[1]
+                corridor_id, canonical, was_created = attached
+                touched[corridor_id] = canonical
+                if was_created:
+                    created.add(corridor_id)
         # A trip `cluster_trips` called noise can still belong to a corridor
-        # this subject ALREADY has — and it usually does. `corridor_min_samples`
-        # similar trips have to arrive in ONE batch to mint a corridor, which
-        # happens on the initial backfill; after that a subject drives their
-        # commute once or twice per cycle and every one of those trips is a
-        # singleton. Without this second pass a corridor's `sample_count` and
-        # its speed percentiles would freeze at whatever the backfill saw, and
-        # Tier 5 would look built while silently never learning again.
-        # Creating from a singleton is still refused — that is
-        # `corridor_min_samples`' whole job.
-        # `named_trips`, not `new_trips` — an address-less trip must not join
-        # an existing corridor either, for the same edit-distance reason the
-        # partition above exists: it would match any 1-2 element corridor
-        # outright, which is a guess, and R-5 prefers silence to a wrong
-        # answer. It therefore ends this method with `corridor_id` still NULL,
-        # which is the honest record of "no address, so no route".
-        for trip in named_trips:
+        # this subject ALREADY has — and it usually does. Once a corridor
+        # exists, each new occurrence of that route arrives alone in its own
+        # tick and is a singleton for clustering purposes. Without this
+        # second pass a corridor's `sample_count` and its speed percentiles
+        # would freeze at whatever minted it, and Tier 5 would look built
+        # while silently never learning again. Creating from a singleton is
+        # still refused — that is `corridor_min_samples`' whole job.
+        #
+        # Grouped by EXACT sequence rather than walked trip by trip: the
+        # leftovers are dominated by repeats of the same route, `existing_
+        # corridor` would return the identical answer for each of them, and
+        # this pass now runs over an accumulated pool of up to
+        # `corridor_cluster_batch_limit` trips rather than one tick's
+        # handful — so the naive loop would be up to that many store
+        # round-trips per tick. Grouping also makes the linking one
+        # `set_trip_corridor_ids` call per corridor instead of one per trip.
+        leftovers: dict[tuple[str, ...], list[Trip]] = {}
+        for trip in pool:
             if trip.started_ts in clustered_starts:
                 continue
+            leftovers.setdefault(trip.corridor, []).append(trip)
+        for sequence, trips in leftovers.items():
             attached = await self._attach_corridor(
-                subject_id=subject_id, sequence=trip.corridor,
-                trips=[trip], now_ms=now_ms, may_create=False,
+                subject_id=subject_id, sequence=sequence,
+                trips=trips, now_ms=now_ms, may_create=False,
             )
             if attached is not None:
-                touched[attached[0]] = attached[1]
+                corridor_id, canonical, was_created = attached
+                touched[corridor_id] = canonical
+                if was_created:
+                    created.add(corridor_id)
+        if self._metrics is not None:
+            # ONE increment per distinct corridor per pass, labelled by
+            # outcome — not one per attach operation, which is what this
+            # counted before and why "no corridor has ever been created"
+            # was unreadable from it (final whole-branch review, Important
+            # #2). `created` is decided by `_attach_corridor` from whether
+            # `existing_corridor` matched, so it is the real thing and not
+            # a guess from the count.
+            for corridor_id in sorted(touched):
+                self._metrics.inc(
+                    "nora_analytics_corridors_total", subject=subject_id,
+                    outcome="created" if corridor_id in created else "reconfirmed",
+                )
         for corridor_id, sequence in sorted(touched.items()):
             await self._record_corridor_speeds(
                 subject_id=subject_id, corridor_id=corridor_id,
@@ -587,10 +656,16 @@ class MobilityRollup:
     async def _attach_corridor(
         self, *, subject_id: str, sequence: tuple[str, ...], trips: list[Trip],
         now_ms: int, may_create: bool,
-    ) -> tuple[int, tuple[str, ...]] | None:
+    ) -> tuple[int, tuple[str, ...], bool] | None:
         """Link `trips` to the corridor `sequence` names, creating it when
         `may_create` and no near-match exists. Returns `(corridor_id,
-        canonical_sequence)`, or `None` when nothing was attached."""
+        canonical_sequence, created)`, or `None` when nothing was attached.
+
+        `created` — whether this call INSERTed a brand-new corridor row
+        rather than reconfirming one that already existed — is returned
+        rather than counted here, because the counting has to be per
+        corridor and this method is called once per cluster/leftover group.
+        See `_record_corridors`' own increment."""
         match = await self._store.existing_corridor(
             subject_id=subject_id, sequence=sequence,
             max_edit_distance=self._cfg.corridor_max_edit_distance,
@@ -613,9 +688,7 @@ class MobilityRollup:
             started_ts_in=[t.started_ts for t in trips],
             corridor_id=corridor_id,
         )
-        if self._metrics is not None:
-            self._metrics.inc("nora_analytics_corridors_total", subject=subject_id)
-        return corridor_id, canonical
+        return corridor_id, canonical, existing_id is None
 
     async def _record_corridor_speeds(
         self, *, subject_id: str, corridor_id: int, sequence: tuple[str, ...],

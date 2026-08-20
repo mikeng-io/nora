@@ -6,7 +6,13 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.mobility import LabelResult, RawFix, Stay, Trip, edit_distance
+from nora.domain.mobility import (
+    LabelResult,
+    RawFix,
+    Stay,
+    Trip,
+    best_corridor_match,
+)
 
 
 @dataclass
@@ -85,16 +91,36 @@ class FakeMobilityStore:
         self._trips.extend(trips)
 
     async def trips_for_subject(self, *, subject_id: str) -> list[Trip]:
-        # Unlike SqlMobilityStore, this naturally preserves `corridor` — it
-        # never throws anything away. That is fine and expected: the two
-        # implementations are behavioral twins on every METHOD's contract,
-        # not on every unobserved field, the same relationship
-        # `existing_place`'s `most_recent_support_ts` already has between
-        # the two stores.
+        # `corridor` survives the round trip in BOTH stores as of migration
+        # 0020 (`presence_trips.sequence`) — see
+        # `SqlMobilityStore.trips_for_subject`'s docstring for why the old
+        # "the SQL side returns () on purpose" divergence is gone.
         return sorted(
             (t for t in self._trips if t.subject_id == subject_id),
             key=lambda t: t.started_ts,
         )
+
+    async def unclustered_named_trips_for_subject(
+        self, *, subject_id: str, limit: int
+    ) -> list[Trip]:
+        # Behavioral twin of `SqlMobilityStore
+        # .unclustered_named_trips_for_subject` — see that docstring for
+        # why `corridor_id IS NULL` is the watermark, why the empty-
+        # sequence exclusion lives in the query rather than in the caller,
+        # and why the cap drops the OLDEST trips. `if t.corridor` is the
+        # in-memory spelling of `sequence IS NOT NULL AND
+        # jsonb_array_length(sequence) > 0`: this store cannot represent a
+        # NULL sequence at all, so an empty tuple covers both cases.
+        return sorted(
+            (
+                t for t in self._trips
+                if t.subject_id == subject_id
+                and t.corridor_id is None
+                and t.corridor
+            ),
+            key=lambda t: t.started_ts,
+            reverse=True,
+        )[:limit]
 
     async def set_trip_corridor_ids(
         self, *, subject_id: str, started_ts_in: list[int], corridor_id: int
@@ -111,14 +137,20 @@ class FakeMobilityStore:
     async def existing_corridor(
         self, *, subject_id: str, sequence: tuple[str, ...], max_edit_distance: int,
     ) -> tuple[int, tuple[str, ...]] | None:
-        best: tuple[int, int, tuple[str, ...]] | None = None
-        for cid, row in self._corridors.items():
-            if row["subject_id"] != subject_id:
-                continue
-            dist = edit_distance(sequence, row["sequence"])
-            if dist <= max_edit_distance and (best is None or dist < best[0]):
-                best = (dist, cid, row["sequence"])
-        return None if best is None else (best[1], best[2])
+        # The DECISION is `nora.domain.mobility.best_corridor_match`, the
+        # SAME function `SqlMobilityStore.existing_corridor` calls: a
+        # distance tie breaks on the LOWEST corridor id, by rule, in one
+        # place. Each store used to carry its own copy of this loop and the
+        # two copies resolved ties differently — dict insertion order here,
+        # Postgres heap order there (final whole-branch review, Important
+        # #3).
+        return best_corridor_match(
+            (
+                (cid, row["sequence"]) for cid, row in self._corridors.items()
+                if row["subject_id"] == subject_id
+            ),
+            sequence=sequence, max_edit_distance=max_edit_distance,
+        )
 
     async def upsert_corridor(
         self, *, subject_id: str, sequence: tuple[str, ...], sample_count: int,

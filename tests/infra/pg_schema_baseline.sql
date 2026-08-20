@@ -228,8 +228,8 @@ conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
-corridor_id integer
 corridor_id integer NOT NULL,
+corridor_id integer,
 created_at text DEFAULT (now())::text NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
@@ -360,6 +360,7 @@ sender_id text NOT NULL,
 sender_name text,
 sense text NOT NULL,
 sense text NOT NULL,
+sequence jsonb
 sequence jsonb NOT NULL,
 series_anchor_at timestamp with time zone,
 series_id uuid,

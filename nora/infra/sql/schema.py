@@ -318,9 +318,24 @@ PRESENCE_TRIPS = sa.Table(
     sa.Column("distance_m", sa.Float, nullable=False),
     sa.Column("avg_speed_kmh", sa.Float, nullable=False),
     sa.Column("fix_count", sa.Integer, nullable=False),
-    # NULL until clustered (Tier 5's own dirty-set gated Speed) — the
-    # SAME nullable-then-filled-once shape `presence_stays.place_id`
-    # already established in Tier 3.
+    # This trip's OWN road-name sequence (JSONB array of strings), the same
+    # shape and type `PRESENCE_CORRIDORS.sequence` uses for a corridor's
+    # representative sequence. `[]` for a trip whose fixes all carried no
+    # `address`; NULL only for a row written before migration 0020 existed.
+    # It is what makes corridor clustering ACCUMULATE: a trip that has not
+    # been linked yet can be re-read and re-clustered against later trips,
+    # so a route that recurs once per tick over many days still reaches
+    # `corridor_min_samples`. Without it, clustering could only ever see one
+    # tick's in-memory batch and no corridor could be born in steady state
+    # (final whole-branch review, Critical #1).
+    sa.Column("sequence", pg.JSONB, nullable=True),
+    # NULL until this trip is linked to a corridor — and that NULL IS the
+    # "not yet clustered" marker `_record_corridors` reads back every cycle
+    # (`SqlMobilityStore.unclustered_named_trips_for_subject`), so no
+    # separate watermark column is needed. The SAME nullable-then-filled-
+    # once shape `presence_stays.place_id` already established in Tier 3,
+    # used for the same purpose there (the first-place backfill's own
+    # "which stays predate this place" query).
     sa.Column("corridor_id", sa.Integer, nullable=True),
 )
 
