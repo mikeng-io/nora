@@ -489,8 +489,10 @@ class _CountingConsolidator:
 
     def __init__(self, appended: int) -> None:
         self._appended = appended
+        self.consolidations = 0
 
     async def consolidate(self, *, scope_id: str, batch: list[TranscriptRow]) -> int:
+        self.consolidations += 1
         return self._appended
 
 
@@ -944,3 +946,84 @@ async def test_the_dream_loop_says_it_started(caplog):
     assert "0.02" in started[0]      # the tick it will actually keep
     assert "2" in started[0]         # the scopes it can see
     assert len(started) == 1, "announced once at start, not on every tick"
+
+
+# --- the per-tick instruction-versions line (substrate spec 4.4) -----------
+
+
+class _FakeInstructions:
+    """The `_InstructionVersions` shape, plus a lever for the failure path."""
+
+    def __init__(self, versions=None, fail: bool = False) -> None:
+        self._versions = versions or {"dreamer": 1, "room-language": 2}
+        self._fail = fail
+        self.calls = 0
+
+    def versions(self) -> dict[str, int]:
+        self.calls += 1
+        if self._fail:
+            raise OSError("the bind mount went away")
+        return dict(self._versions)
+
+
+async def test_a_tick_logs_the_instruction_revision_it_is_running(caplog):
+    """Spec 4.4: a Dreamer tick names its instruction versions the way a tag
+    start logs `doctrine_versions={...}`, so a trace ties to a revision without
+    anyone opening the database. Without it the only way to ask "which
+    objective wrote these rows" is a SQL query against a hash."""
+    instructions = _FakeInstructions({"dreamer": 1, "room-language": 3})
+    task = asyncio.create_task(dream_loop(
+        _FakeRecord({"g1": []}), _FakeLanguage(lag=0), [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+        instructions=instructions,
+    ))
+    with caplog.at_level(logging.INFO):
+        await asyncio.sleep(0.1)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    lines = [r.getMessage() for r in caplog.records if "instruction_versions" in r.getMessage()]
+    assert lines
+    assert "'dreamer': 1" in lines[0]
+    assert "'room-language': 3" in lines[0]
+
+
+async def test_a_broken_instruction_corpus_cannot_take_the_clock_down(caplog):
+    """The line reads a HOT-RELOADING corpus off a bind mount, and it runs
+    OUTSIDE `dream_loop`'s per-scope try/except — so an uncaught exception here
+    would stop the Dreamer's clock for the life of the process, in the name of
+    a log line. Warned rather than swallowed: an operator has to be able to see
+    that the corpus stopped being readable."""
+    instructions = _FakeInstructions(fail=True)
+    consolidator = _CountingConsolidator(appended=1)
+    task = asyncio.create_task(dream_loop(
+        _FakeRecord({"g1": [_row(1)]}), _FakeLanguage(lag=1000), [consolidator],
+        Metrics(), scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+        instructions=instructions,
+    ))
+    with caplog.at_level(logging.WARNING):
+        await asyncio.sleep(0.15)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    assert instructions.calls > 1, "the loop kept ticking after the failure"
+    assert consolidator.consolidations > 0, "the Dreamer kept working"
+    assert any("instruction versions unavailable" in r.getMessage() for r in caplog.records)
+
+
+async def test_no_instruction_source_logs_no_line_and_changes_nothing(caplog):
+    """`instructions` is optional so every existing caller and test keeps
+    working unchanged; absent, the loop is byte-for-byte what it was."""
+    task = asyncio.create_task(dream_loop(
+        _FakeRecord({"g1": []}), _FakeLanguage(lag=0), [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+    ))
+    with caplog.at_level(logging.INFO):
+        await asyncio.sleep(0.1)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    assert not [r for r in caplog.records if "instruction_versions" in r.getMessage()]

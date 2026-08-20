@@ -178,6 +178,21 @@ class DreamerInstructions:
     def objective_names(self) -> tuple[str, ...]:
         return tuple(sorted(self._current().objectives))
 
+    def versions(self) -> dict[str, int]:
+        """The doctrine's version and every objective's, as one mapping.
+
+        The corpus-wide sibling of `InstructionSet.versions`, which names only
+        the two parts one adaptor assembled. This one is what a Dreamer TICK
+        logs (substrate spec §4.4), the way a tag start logs
+        `doctrine_versions={…}`: a line that ties a trace to a revision without
+        anyone opening the database.
+        """
+        corpus = self._current()
+        versions = {corpus.doctrine.name: _version(corpus.doctrine)}
+        for name in sorted(corpus.objectives):
+            versions[name] = _version(corpus.objectives[name])
+        return versions
+
     def _current(self) -> _Corpus:
         corpus = self._watcher.current()
         if self._watcher.generation != self._generation:

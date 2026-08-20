@@ -38,6 +38,9 @@ async def env(tmp_path, monkeypatch, aiohttp_server, pg_url):
     cfg["store"]["data_dir"] = str(tmp_path)
     cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
     cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
+    # Same reason as the doctrine line above: the config file lives in tmp_path,
+    # which has no `nora/dreamer`, and the corpus is validated at startup.
+    cfg["dreamer"]["dir"] = str(ROOT / "nora" / "dreamer")
     cfg["identity_file"] = str(tmp_path / "identity.toml")
     cfg["policy_file"] = str(tmp_path / "policy.toml")
     cfg["obs"]["metrics"]["port"] = 0
@@ -80,6 +83,34 @@ async def test_a_broken_doctrine_refuses_to_start(env, tmp_path):
     cfg["doctrine"]["dir"] = str(doctrine_dir)
     env.write_text(tomli_w.dumps(cfg))
     with pytest.raises(StartupError, match="doctrine"):
+        await build_app(env)
+
+
+async def test_a_broken_dreamer_objective_refuses_to_start(env, tmp_path):
+    """The Dreamer's corpus is validated at STARTUP, not lazily on the first
+    tick, and the difference is the whole point: `dream_loop` runs every 300s in
+    a background task whose failures are per-scope and logged, so a malformed
+    objective discovered there is a Dreamer that quietly stops writing rows
+    hours after the deploy that broke it. Refused here instead, with the
+    filename in the message."""
+    dreamer_dir = tmp_path / "dreamer"
+    shutil.copytree(ROOT / "nora" / "dreamer", dreamer_dir)
+    (dreamer_dir / "objectives" / "broken.md").write_text("no frontmatter")
+    cfg = tomllib.loads(env.read_text())
+    cfg["dreamer"]["dir"] = str(dreamer_dir)
+    env.write_text(tomli_w.dumps(cfg))
+    with pytest.raises(StartupError, match=r"broken\.md"):
+        await build_app(env)
+
+
+async def test_a_missing_dreamer_corpus_refuses_to_start(env, tmp_path):
+    """Deny-by-default for instructions: an absent tree is not an empty one.
+    A Dreamer that came up with no objectives would look identical to a healthy
+    one until somebody went looking for rows that were never written."""
+    cfg = tomllib.loads(env.read_text())
+    cfg["dreamer"]["dir"] = str(tmp_path / "not-there")
+    env.write_text(tomli_w.dumps(cfg))
+    with pytest.raises(StartupError, match="Dreamer"):
         await build_app(env)
 
 

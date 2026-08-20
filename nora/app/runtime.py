@@ -300,12 +300,48 @@ def _backoff_elapsed(
     return bool((time.monotonic() - last_failure_at.get(scope_id, 0.0)) >= delay)
 
 
+def _log_instruction_versions(instructions: _InstructionVersions | None) -> None:
+    """One line per tick naming the instruction revision this tick is running
+    (substrate spec §4.4), the way `nora.engagement.pipeline` logs
+    `doctrine_versions={…}` at the start of a tag.
+
+    Why the whole thing is wrapped: this is a LOG LINE, and the corpus it reads
+    is hot-reloading off a bind mount. A directory that vanished mid-run, or a
+    permission change, must not be able to take the Dreamer's clock down —
+    which is what an uncaught exception here would do, because `dream_loop`'s
+    try/except is per SCOPE and this runs outside it. Reported at WARNING, so
+    the failure is visible rather than swallowed.
+    """
+    if instructions is None:
+        return
+    try:
+        log.info("dream tick: instruction_versions=%s", instructions.versions())
+    except Exception as exc:                      # noqa: BLE001 - see docstring
+        log.warning("dream tick: instruction versions unavailable: %s", exc)
+
+
+class _InstructionVersions(Protocol):
+    """The Dreamer instruction corpus, seen from the clock: one mapping of
+    artifact name to version, and nothing else.
+
+    A documented structural type rather than a `nora.domain.ports` Protocol,
+    the same reason the observers' own `_ObjectiveSource` is one: a shape with
+    one consumer does not earn a shared contract suite. `nora.app` COULD import
+    `nora.instructions.dreamer` directly and be within the layer contract —
+    this narrows the loop's dependency to the one method it uses, so a test can
+    supply a mapping without building a corpus on disk.
+    """
+
+    def versions(self) -> dict[str, int]: ...
+
+
 async def dream_loop(
     record: _SinceReadable, language: _ConsolidationCursor,
     consolidators: Sequence[RoomConsolidator], metrics: Metrics, *,
     scopes: Callable[[], Sequence[str]], tick_seconds: float,
     safety_lag: int, quiet_seconds: float, max_age_seconds: float,
     batch_limit: int, portrait: RoomPortraitSynthesizer | None = None,
+    instructions: _InstructionVersions | None = None,
 ) -> None:
     """The Dreamer's clock. A sibling of `prune_loop`, with two differences
     that are not stylistic.
@@ -396,6 +432,7 @@ async def dream_loop(
     try:
         while True:
             await asyncio.sleep(tick_seconds)
+            _log_instruction_versions(instructions)
             for scope_id in scopes():
                 if scope_id in running:
                     # A slow extraction is still going. Skipping is the whole

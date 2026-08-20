@@ -58,10 +58,17 @@ def cfg(tmp_path, monkeypatch, pg_url):
     # doctrine.dir ("nora/doctrine", config.example.toml) resolves relative to the
     # copied config file's directory (tmp_path here), which has no such subdirectory
     # — point it at the real, already-valid doctrine files instead of copying them.
+    #
+    # `dreamer.dir` resolves the same way and for the same reason - the Dreamer's
+    # instruction corpus is validated at STARTUP (a malformed objective must not
+    # become a silent Dreamer three hours later), so an unpointed `[dreamer]`
+    # section makes every wiring test here fail on a missing directory rather
+    # than on the thing it is testing.
     return override_config(load(dst), {
         "store.data_dir": tmp_path,
         "platforms.signal.account": "+85290000100",
         "doctrine.dir": ROOT / "nora" / "doctrine",
+        "dreamer.dir": ROOT / "nora" / "dreamer",
     })
 
 

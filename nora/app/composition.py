@@ -404,6 +404,11 @@ class Dependencies:
     # .dream_loop` takes it as its own `portrait=` keyword, not a member of
     # `language_consolidators` — see that module's docstring for why.
     portrait_synthesizer: RoomPortraitSynthesizer | None
+    # The Dreamer's instruction corpus. Built unconditionally (see its
+    # construction below), so unlike its neighbours here it is never None —
+    # `dream_loop` reads it for the per-tick `instruction_versions=` line, and
+    # both observers hold it as their objective source.
+    dreamer_instructions: DreamerInstructions
     # The SAME `EventService` built above alongside `event_store`/
     # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
     # exposed here too so `nora.web.api.register_web_routes`'s read-only
@@ -1541,6 +1546,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
         portrait_synthesizer=portrait_synthesizer,
+        dreamer_instructions=dreamer_instructions,
         events=events,
     )
 
