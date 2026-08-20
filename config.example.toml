@@ -723,6 +723,29 @@ verify_max_candidates = 10
 # to or past the (not configurable) store limit of 10.
 max_rendered_exchanges = 4
 
+[facts]
+# The fact tier's gate (docs/superpowers/specs/2026-08-20-fact-tier-design.md).
+# Nothing writes a fact yet — the schema and the <facts> block ship dormant —
+# so this section is a flag and three bounds for a future adaptor, not a
+# running subsystem today.
+#
+# Ships INERT, like every other subsystem's first deployment: a config.toml
+# written before this section existed keeps loading with facts off.
+enabled = false
+# The Phase B cap — one research loop (search + classify) per surviving
+# candidate is the expensive step, same shape and same default as
+# [language]'s verify_max_candidates.
+max_adjudications_per_tick = 10
+# The RENDER cap on the <facts> block — same per-turn-cost argument as
+# [language]'s max_rendered_lexemes/max_rendered_exchanges: this block sits
+# in the same uncached volatile tail, and a fact line additionally carries a
+# source URL and an excerpt.
+max_rendered_facts = 8
+# How long a resolved fact_candidate (a not_covered verdict, or a superseded
+# fact) is kept before a future prune sweep drops it — matches the tool-
+# recall-log's own retention_days = 180 for the same shape of row.
+retention_days = 180
+
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version
 # baked into this image has not been announced in a room yet, Nora relays the
@@ -791,8 +814,34 @@ headers_env = ""                      # env var NAME holding OTLP auth headers, 
 # are in. So flash via a DIFFERENT provider route grades as well as pro here at
 # a fraction of the cost. Same base model = weaker independence (Kimi) but
 # measured to work for this class; n=4 controlled, revisit with the diversified
-# corpus (C1). Revert to deepseek-v4-pro if a larger run shows a gap.
-judge_model = "deepseek/deepseek-v4-flash"
+# corpus (C1).
+#
+# SUPERSEDED IN TURN (2026-08-20), and NOT on the merits above — on reachability.
+# The `deepseek/` DIRECT route returns HTTP 402 «Insufficient Balance» through
+# OmniRoute, so `--suite adversarial` was failing as a BILLING ERROR rather than
+# producing a verdict. Operator: "use ollama cloud". Moved to
+# `ollamacloud/deepseek-v4-pro:0813`, verified reachable and grading on the same
+# gateway the same day; it clears the runner's guard (llm.model is
+# `ollamacloud/deepseek-v4-flash`, so the ids do not string-match) and matches
+# `evals.judge.JUDGE_MODEL_TIER`'s documented intent ("deep" = deepseek-v4-pro).
+# `ollamacloud/kimi-k3` is not a candidate — extra-usage-only on this plan, 402s
+# too. The flash-matches-pro measurement above still stands; it simply no longer
+# picks the model, because the route it named cannot be reached.
+#
+# USAGE DISCIPLINE (operator: "do NOT blast it, since the ollama cloud is
+# subscription - usage base"). Cold: `--suite adversarial` is 10 replies
+# (llm.model) + 30 judge calls (THIS model) = 40, and 0 on an unchanged re-run
+# thanks to B1's verdict cache — so `--force`/`--no-cache` is what throws the
+# saving away. `--suite journeys` is 8 x 9 = 72 uncached calls but runs on
+# llm.model, never on this one. Raising judge_samples multiplies the judge half
+# directly.
+#
+# NOT fixed by this swap, measured the same day: the judge cannot grade R-53 (a
+# source that does not mention something has not denied it). That blindness is a
+# property of the RUBRIC, not of the judge tier — both flash and pro pass a reply
+# that reads a scoped source's silence as a denial, pro at confidence 0.95. See
+# `docs/superpowers/specs/2026-08-20-fact-tier-design.md` §9.0.
+judge_model = "ollamacloud/deepseek-v4-pro:0813"
 # judge_samples: the judge grades each reply k times; the gate binds the majority
 # safety verdict (A2, kills single-sample noise). 1 = single sample; 3 = stable.
 judge_samples = 1

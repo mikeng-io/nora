@@ -1115,3 +1115,115 @@ EVENT_RSVPS = sa.Table(
         "response IN ('yes','no','maybe')", name="ck_event_rsvps_response",
     ),
 )
+
+# The fact tier (2026-08-20 fact-tier design). Keyed on WORKSPACE, not
+# scope_id: a room's words are that room's, the world is not. `workspace` is
+# `nora.policy.Conversation.workspace` (DEC-105) — the same key R-49 refuses to
+# relay across, which is what makes a fact rendering into a sibling room
+# something other than a leak.
+FACT_ENTITY = sa.Table(
+    "fact_entity",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("workspace", sa.Text, nullable=False),
+    sa.Column("canonical_name", sa.Text, nullable=False),
+    sa.Column("aliases", pg.ARRAY(sa.Text), nullable=False,
+              server_default=sa.text("'{}'")),
+    sa.Column("created_at", sa.BigInteger, nullable=False),
+    sa.UniqueConstraint("workspace", "canonical_name",
+                        name="fact_entity_workspace_name_key"),
+)
+
+FACT_CANDIDATE = sa.Table(
+    "fact_candidate",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("workspace", sa.Text, nullable=False),
+    sa.Column("subject_id", sa.Text, nullable=False),
+    sa.Column("predicate", sa.Text, nullable=False),
+    sa.Column("object", sa.Text, nullable=False),
+    sa.Column("first_seen_at", sa.BigInteger, nullable=False),
+    sa.Column("last_seen_at", sa.BigInteger, nullable=False),
+    sa.Column("occurrence_count", sa.Integer, nullable=False,
+              server_default=sa.text("1")),
+    sa.Column("observed_in", pg.ARRAY(sa.Text), nullable=False,
+              server_default=sa.text("'{}'")),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("last_adjudicated_at", sa.BigInteger),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("established_by", sa.Text, nullable=False),
+    sa.CheckConstraint(
+        "status in ('pending', 'adjudicated', 'not_covered')",
+        name="fact_candidate_status_check",
+    ),
+    sa.UniqueConstraint("workspace", "subject_id", "predicate", "object",
+                        name="fact_candidate_triple_key"),
+)
+
+FACT = sa.Table(
+    "fact",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("workspace", sa.Text, nullable=False),
+    sa.Column("subject_id", sa.Text, nullable=False),
+    sa.Column("predicate", sa.Text, nullable=False),
+    sa.Column("object_entity_id", sa.Text),
+    sa.Column("object_literal", sa.Text),
+    sa.Column("source_url", sa.Text, nullable=False),
+    sa.Column("source_excerpt", sa.Text, nullable=False),
+    sa.Column("valid_from", sa.BigInteger, nullable=False),
+    sa.Column("valid_to", sa.BigInteger),
+    sa.Column("created_at", sa.BigInteger, nullable=False),
+    sa.Column("superseded_at", sa.BigInteger),
+    sa.Column("superseded_by", pg.UUID(as_uuid=False)),
+    # NOT NULL, unlike migration 0023's four tables: those hold rows written
+    # before the column existed, this one never will.
+    sa.Column("instruction_sha256", sa.Text, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("established_by", sa.Text, nullable=False),
+    sa.CheckConstraint(
+        "instruction_sha256 ~ '^[0-9a-f]{64}$'",
+        name="fact_instruction_sha256_check",
+    ),
+    # NOT a pattern, deliberately, and NOT 0023's shape. A SHA-256 has a
+    # provable form; a model name has none — no width, no alphabet, no
+    # registry this process can consult — so a pattern would be a guess about
+    # naming conventions dressed as a constraint, and would one day reject a
+    # real provider rename and lose a row's provenance to keep the guess.
+    # But NULL-or-anything is not honest either: '' and '   ' are non-NULL to
+    # every query asking "which rows are attributable", turning R-27's
+    # `unavailable` into a false `ok`. So this asserts only what is provable
+    # and load-bearing. The NULL branch 0024 carries is dropped here: that
+    # column is nullable for rows written before it existed, and `fact` has
+    # none.
+    sa.CheckConstraint(
+        "length(btrim(model)) > 0",
+        name="fact_model_is_named_check",
+    ),
+    sa.CheckConstraint(
+        "(object_entity_id is null) <> (object_literal is null)",
+        name="fact_one_object_check",
+    ),
+    # Biconditional, not an implication: a fact is either standing (both
+    # NULL) or superseded (both set). `superseded_at` set alone would hide
+    # the row from `Fact.is_standing` and `idx_fact_standing` with no record
+    # of what replaced it — the unauditable merge Graphiti issue #1771 warns
+    # against.
+    sa.CheckConstraint(
+        "(superseded_by is null) = (superseded_at is null)",
+        name="fact_supersession_is_timed_check",
+    ),
+)
+
+# Serves the ONE read on the turn's critical path: the standing facts for a
+# set of subjects in one workspace. Partial on the standing rows, because a
+# superseded fact is history and is never rendered.
+IDX_FACT_STANDING = sa.Index(
+    "idx_fact_standing",
+    FACT.c.workspace,
+    FACT.c.subject_id,
+    postgresql_where=FACT.c.superseded_at.is_(None),
+)

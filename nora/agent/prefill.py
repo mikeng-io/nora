@@ -14,6 +14,7 @@ from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
 from ..language.exchange_render import render_room_exchange
+from ..language.fact_render import render_facts
 from ..language.portrait_render import render_room_portrait
 from ..language.render import render_room_language
 
@@ -509,6 +510,22 @@ def _room_portrait_block(ctx: TagContext) -> str:
     return f"{block}\n" if block else ""
 
 
+def _facts_block(ctx: TagContext) -> str:
+    """The fact tier's own sibling of `_room_portrait_block` — same volatile-
+    tier placement, same trailing-newline convention, `""` when there is
+    nothing standing. Unlike every block above it, a fact is keyed on the
+    WORKSPACE rather than this room (see `render_facts`'s own docstring) — it
+    still belongs in the volatile tail and never in `_context_header`'s cached
+    prefix, because nothing about that scoping makes the content any less
+    per-turn: `TagContext.facts` is assembled fresh on every tag, same as
+    `room_language`/`room_exchange`/`room_portrait`, and a workspace-wide
+    block in the cached head would fragment the prefix across every workspace
+    instead of every room.
+    """
+    block = render_facts(ctx.facts)
+    return f"{block}\n" if block else ""
+
+
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
@@ -548,21 +565,25 @@ def build_prefill(
             # decided this. It is still the first thing after the static
             # instructions, so nothing about how she reads it changes.
             # `self_card` before `peer_card`/`peer_history` before
-            # `room_language` before the transcript: her own past, then
-            # theirs, then the room's own slang, then the room — each block
-            # widening scope, and the transcript stays adjacent to the message
-            # it explains. The two person blocks are adjacent because they are
-            # one person: who they are, then what happened with them.
-            # `room_language` sits here — the VOLATILE tier, after
-            # `_peer_history_block` and before `_transcript_block` — and
-            # deliberately not inside `_context_header` above; see
-            # `_room_language_block`'s own docstring for why.
+            # `room_language` before `facts` before the transcript: her own
+            # past, then theirs, then the room's own slang, then the
+            # workspace's standing facts, then the room — each block widening
+            # scope (facts widest of all — workspace, not room), and the
+            # transcript stays adjacent to the message it explains. The two
+            # person blocks are adjacent because they are one person: who
+            # they are, then what happened with them.
+            # `room_language`/`room_exchange`/`room_portrait`/`facts` all sit
+            # here — the VOLATILE tier, after `_peer_history_block` and before
+            # `_transcript_block` — and deliberately not inside
+            # `_context_header` above; see `_room_language_block`'s and
+            # `_facts_block`'s own docstrings for why.
             _now_line(now) + _where_line(ctx.message.platform)
             + _self_card_block(ctx) + _peer_card_block(ctx)
             + _peer_history_block(ctx)
             + _room_language_block(ctx, max_entries=room_language_max_entries)
             + _room_exchange_block(ctx, max_entries=room_exchange_max_entries)
             + _room_portrait_block(ctx)
+            + _facts_block(ctx)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),

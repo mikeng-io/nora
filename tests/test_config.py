@@ -374,6 +374,32 @@ def test_the_language_section_is_optional_and_ships_inert(toml_path):
     )
 
 
+def test_the_facts_section_is_optional_and_ships_inert(toml_path):
+    """The fact tier's `[facts]` — a config.toml written before this section
+    existed must keep loading, and `enabled` must default to False: a new
+    subsystem does not switch itself on, and nothing writes a fact yet. The
+    values asserted are the class defaults, so this fails if one silently
+    changes.
+
+    The workspace startup check the design doc's §7 argued for was cut
+    (operator, 2026-08-20): the store's read (`standing_facts`, Task 3, not
+    yet built) is specified to scope by workspace in SQL, so once it exists
+    there will be no second refusal-shaped property to test here — see
+    `docs/superpowers/plans/2026-08-20-fact-tier.md`'s Task 6 note."""
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[facts]\n")
+    assert tail, "config.example.toml no longer declares [facts]"
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
+
+    cfg = load(toml_path)
+
+    assert cfg.facts.enabled is False
+    assert cfg.facts.max_adjudications_per_tick == 10
+    assert cfg.facts.max_rendered_facts == 8
+    assert cfg.facts.retention_days == 180
+
+
 def test_a_render_cap_at_or_above_the_store_limit_is_refused(toml_path):
     """`[language].max_rendered_lexemes` has no upper bound of its own
     (`Field(ge=1)`) — this cross-field relation was a comment in

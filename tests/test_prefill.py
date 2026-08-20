@@ -1,4 +1,5 @@
 from nora.agent.prefill import build_prefill, build_tag_message, escape
+from nora.domain.facts import Fact
 from nora.domain.models import (
     DeliveryStatus,
     ExchangeExample,
@@ -17,10 +18,10 @@ from nora.domain.models import (
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", room_language=None, room_portrait=None,
-         room_exchange=None, tagger_card=()) -> TagContext:
+         room_exchange=None, tagger_card=(), facts=()) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
-    kwargs = {"tagger_card": tuple(tagger_card)}
+    kwargs = {"tagger_card": tuple(tagger_card), "facts": tuple(facts)}
     if room_language is not None:
         kwargs["room_language"] = room_language
     if room_portrait is not None:
@@ -29,6 +30,17 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, se
         kwargs["room_exchange"] = room_exchange
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card), **kwargs)
+
+
+def _fact(obj="black_tower") -> Fact:
+    return Fact(
+        id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+        subject_id="Big Walk", predicate="has", object_entity_id=None,
+        object_literal=obj, source_url="https://keengamer.test/w",
+        source_excerpt="Red, Green, Yellow, Blue, and Black towers",
+        valid_from=1, created_at=1, instruction_sha256="a" * 64,
+        model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+    )
 
 
 def _room_language(scope_id="g1") -> RoomLanguage:
@@ -122,7 +134,7 @@ def test_transcript_is_wrapped_and_labelled_untrusted():
 # be suspicious of.
 _ALL_BLOCKS = (
     "group_transcript", "self_card", "peer_card", "peer_history",
-    "room_language", "room_exchange", "room_portrait",
+    "room_language", "room_exchange", "room_portrait", "facts",
 )
 
 
@@ -133,7 +145,7 @@ def _full_prefill_body() -> str:
         _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
         room_language=_room_language(), room_exchange=_room_exchange(),
-        room_portrait=_room_portrait(),
+        room_portrait=_room_portrait(), facts=(_fact(),),
     )
     return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
 
@@ -147,7 +159,7 @@ def _opening_tag(body: str, name: str) -> str:
 
 
 def test_every_injected_block_is_labelled_untrusted():
-    """F3/F4: the marker, on all seven, not on one."""
+    """F3/F4: the marker, on all eight, not on one."""
     body = _full_prefill_body()
     for name in _ALL_BLOCKS:
         assert 'untrusted="true"' in _opening_tag(body, name), name
