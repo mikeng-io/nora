@@ -25,14 +25,31 @@ import sqlalchemy as sa
 
 from nora.domain.models import LexemeCandidate, NormalizedMessage
 from nora.domain.ports import RoomLanguageReader
+from nora.domain.provenance import instruction_sha256
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.sql.schema import LANGUAGE_OBSERVATION, MESSAGES
+from nora.infra.sql.schema import LANGUAGE_OBSERVATION, MESSAGES, ROOM_LEXEME
 
 DAY_MS = 86_400_000
 NOW = int(time.time() * 1000)
+
+# REAL digests over stand-in instruction text, never 64 characters of filler:
+# `language_observation.instruction_sha256` carries a CHECK on the hex shape,
+# so a helper minting something Postgres would refuse would hide that
+# constraint from every test in this file. Two of them, because provenance
+# that cannot tell two instruction revisions apart is the defect the column
+# exists to remove.
+INSTRUCTION_A = instruction_sha256("stand-in extraction instruction, revision A")
+INSTRUCTION_B = instruction_sha256("stand-in extraction instruction, revision B")
+
+# Two model names, for the same reason there are two instruction digests: a
+# `model` column that cannot tell two models apart records nothing. They vary
+# INDEPENDENTLY of the digests below — the same instruction run against a new
+# model is exactly the case `instruction_sha256` alone cannot see.
+MODEL_A = "stand-in-model-a"
+MODEL_B = "stand-in-model-b"
 
 
 def observation(
@@ -44,6 +61,8 @@ def observation(
     part_of_speech: str = "adjective",
     person_id: str | None = "miles",
     confidence: float = 0.9,
+    instruction: str = INSTRUCTION_A,
+    model: str = MODEL_A,
 ) -> LexemeCandidate:
     return LexemeCandidate(
         surface_form=surface_form or canonical_form,
@@ -53,6 +72,8 @@ def observation(
         message_id=message_id,
         person_id=person_id,
         confidence=confidence,
+        instruction_sha256=instruction,
+        model=model,
     )
 
 
@@ -608,3 +629,241 @@ async def test_watermark_is_behind_the_record_is_false_on_the_first_tick_of_an_o
     await record.append(message=_msg(conv="g1"))  # g1's own oldest row, id 11
     assert await store.watermark_is_behind_the_record(
         scope_id="g1", watermark=0) is False
+
+
+# ---------------------------------------------------------------------------
+# instruction provenance (2026-08-20 instruction-substrate spec §4.3)
+#
+# `room_lexeme` holds a model-authored `sense` and, until this column, no
+# record of the instruction that asked for it — which is why the `big walk`
+# gloss cannot be attributed to a revision. These tests are the ROW half of
+# the guarantee; `tests/unit/test_language_observer.py`'s own provenance block
+# is the writer half.
+# ---------------------------------------------------------------------------
+
+
+async def _stamps(store) -> list:
+    """Every `language_observation.instruction_sha256` in insertion order.
+    Read straight off the table — no reader surfaces this column, and none
+    should: provenance is for an operator auditing the corpus, never for the
+    rendered block."""
+    async with store._engine.connect() as conn:
+        return list((await conn.execute(
+            sa.select(LANGUAGE_OBSERVATION.c.instruction_sha256)
+            .order_by(LANGUAGE_OBSERVATION.c.id)
+        )).scalars())
+
+
+async def test_an_appended_observation_carries_its_instruction_stamp(store, record):
+    [mid] = await _seed(record, 1)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=mid, instruction=INSTRUCTION_A),
+    ])
+    assert await _stamps(store) == [INSTRUCTION_A]
+
+
+async def test_two_instruction_revisions_are_distinguishable_in_the_evidence(
+    store, record,
+):
+    """The question §3.3 needs answerable: given a corpus, which rows were
+    written by which revision. Rows written either side of an instruction edit
+    must not read the same."""
+    ids = await _seed(record, 2)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[0], canonical_form="kam", instruction=INSTRUCTION_A),
+        observation(message_id=ids[1], canonical_form="bik", instruction=INSTRUCTION_B),
+    ])
+    assert sorted(await _stamps(store)) == sorted([INSTRUCTION_A, INSTRUCTION_B])
+
+
+async def test_the_consolidated_lexeme_inherits_the_newest_observations_stamp(
+    store, record,
+):
+    """`rescore` reaches no model, so the honest stamp on `room_lexeme` is the
+    one carried by the evidence that most recently produced the gloss — the
+    same row `last_seen_at` reports. Two observations of one word, a day
+    apart, written under two revisions: the row must name the LATER one, the
+    instruction currently keeping the gloss alive."""
+    ids = await _seed(record, 2, ts=NOW - DAY_MS, step=DAY_MS)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[0], canonical_form="kam", instruction=INSTRUCTION_A),
+        observation(message_id=ids[1], canonical_form="kam", instruction=INSTRUCTION_B),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_LEXEME))).one()
+    assert row.occurrence_count == 2, "both observations consolidated into one row"
+    assert row.instruction_sha256 == INSTRUCTION_B
+
+
+async def test_a_rescored_lexeme_never_loses_its_stamp(store, record):
+    """`rescore` runs on every tick, including ticks that append nothing. A
+    row that arrived stamped must not come back NULL — that would turn «this
+    revision wrote it» into «nobody recorded it» through pure decay."""
+    [mid] = await _seed(record, 1)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=mid, instruction=INSTRUCTION_A),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    await store.rescore(scope_id="g1", now_ms=NOW + DAY_MS)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_LEXEME))).one()
+    assert row.instruction_sha256 == INSTRUCTION_A
+
+
+async def test_the_database_refuses_a_stamp_that_is_not_a_digest(store, record):
+    """Fail-closed, structurally: a version string or an empty string would be
+    unverifiable provenance that still LOOKS stamped. `alembic check` is blind
+    to CHECK constraints, so this is what proves the constraint landed."""
+    [mid] = await _seed(record, 1)
+    with pytest.raises(sa.exc.IntegrityError):
+        await store.append_observations(scope_id="g1", observations=[
+            observation(message_id=mid, instruction="v1"),
+        ])
+
+
+# ---------------------------------------------------------------------------
+# model provenance (2026-08-20 substrate spec §6.2 question 2, decided in
+# favour the same day) — the second half of the pair above. The instruction
+# is one input to a row; the model that read it is another, and
+# `[language].model` has changed before, so a corpus split by revision alone
+# silently mixes two writers.
+# ---------------------------------------------------------------------------
+
+
+async def _models(store) -> list:
+    """Every `language_observation.model` in insertion order — read straight
+    off the table, for the reason `_stamps` gives (no reader surfaces
+    provenance and none should)."""
+    async with store._engine.connect() as conn:
+        return list((await conn.execute(
+            sa.select(LANGUAGE_OBSERVATION.c.model)
+            .order_by(LANGUAGE_OBSERVATION.c.id)
+        )).scalars())
+
+
+async def test_an_appended_observation_carries_the_model_that_produced_it(
+    store, record,
+):
+    [mid] = await _seed(record, 1)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=mid, model=MODEL_A),
+    ])
+    assert await _models(store) == [MODEL_A]
+
+
+async def test_two_models_are_distinguishable_under_one_instruction(store, record):
+    """The case `instruction_sha256` alone cannot see, and the whole reason
+    this column exists: the SAME instruction text run against two models. If
+    the model were inferred from the instruction — or defaulted from config —
+    these two rows would read identically."""
+    ids = await _seed(record, 2)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(
+            message_id=ids[0], canonical_form="kam",
+            instruction=INSTRUCTION_A, model=MODEL_A,
+        ),
+        observation(
+            message_id=ids[1], canonical_form="bik",
+            instruction=INSTRUCTION_A, model=MODEL_B,
+        ),
+    ])
+    assert sorted(await _models(store)) == sorted([MODEL_A, MODEL_B])
+    assert await _stamps(store) == [INSTRUCTION_A, INSTRUCTION_A], (
+        "one instruction, two models — the digests must NOT have moved"
+    )
+
+
+async def test_the_consolidated_lexeme_inherits_the_newest_observations_model(
+    store, record,
+):
+    """`rescore` reaches no model, so `room_lexeme.model` is inherited from
+    the evidence that most recently produced the gloss — the same `rn = 1`
+    row `last_seen_at` and `instruction_sha256` already name."""
+    ids = await _seed(record, 2, ts=NOW - DAY_MS, step=DAY_MS)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[0], canonical_form="kam", model=MODEL_A),
+        observation(message_id=ids[1], canonical_form="kam", model=MODEL_B),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_LEXEME))).one()
+    assert row.occurrence_count == 2, "both observations consolidated into one row"
+    assert row.model == MODEL_B
+
+
+async def test_the_consolidated_lexemes_two_provenance_fields_name_one_row(
+    store, record,
+):
+    """The pair must be inherited TOGETHER or they describe a run that never
+    happened. Three observations of one word, engineered so that «newest
+    model» and «newest instruction» would disagree if either were taken from
+    anywhere but the one `rn = 1` row: the middle observation is the only one
+    pairing B with B, and the newest pairs A with B. Taking each field from
+    its own lookup — most recent non-null, most common, anything but the same
+    row — yields (B, A) or (A, A); only the shared `latest` CTE yields the
+    pairing that was actually run."""
+    ids = await _seed(record, 3, ts=NOW - 2 * DAY_MS, step=DAY_MS)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(
+            message_id=ids[0], canonical_form="kam", sense="s1",
+            instruction=INSTRUCTION_B, model=MODEL_A,
+        ),
+        observation(
+            message_id=ids[1], canonical_form="kam", sense="s1",
+            instruction=INSTRUCTION_B, model=MODEL_B,
+        ),
+        observation(
+            message_id=ids[2], canonical_form="kam", sense="s1",
+            instruction=INSTRUCTION_A, model=MODEL_B,
+        ),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_LEXEME))).one()
+        newest = (await conn.execute(
+            sa.select(LANGUAGE_OBSERVATION.c.instruction_sha256, LANGUAGE_OBSERVATION.c.model)
+            .order_by(LANGUAGE_OBSERVATION.c.observed_at.desc())
+            .limit(1)
+        )).one()
+    assert row.occurrence_count == 3
+    assert (row.instruction_sha256, row.model) == (newest.instruction_sha256, newest.model)
+    assert (row.instruction_sha256, row.model) == (INSTRUCTION_A, MODEL_B)
+
+
+async def test_a_rescored_lexeme_never_loses_its_model(store, record):
+    """`rescore` runs on every tick, including ticks that append nothing — a
+    row that arrived attributed must not decay back to «nobody recorded it»."""
+    [mid] = await _seed(record, 1)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=mid, model=MODEL_A),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    await store.rescore(scope_id="g1", now_ms=NOW + DAY_MS)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_LEXEME))).one()
+    assert row.model == MODEL_A
+
+
+async def test_the_database_refuses_a_model_that_names_nothing(store, record):
+    """The CHECK is NOT the digest's shape check — a model name has no
+    provable form — but it does refuse the one thing that is provably wrong:
+    a value that reads as recorded and names nothing. `''` is non-NULL to
+    every query asking which rows are attributable, which turns R-27's
+    `unavailable` into a false `ok`. `alembic check` is blind to CHECK
+    constraints, so this is what proves it landed."""
+    [mid] = await _seed(record, 1)
+    with pytest.raises(sa.exc.IntegrityError):
+        await store.append_observations(scope_id="g1", observations=[
+            observation(message_id=mid, model=""),
+        ])
+
+
+async def test_the_database_refuses_a_whitespace_only_model(store, record):
+    """`'   '` is the same defect wearing a disguise — non-NULL, non-empty by
+    `length()`, and naming nothing. `btrim` in the CHECK is what closes it."""
+    [mid] = await _seed(record, 1)
+    with pytest.raises(sa.exc.IntegrityError):
+        await store.append_observations(scope_id="g1", observations=[
+            observation(message_id=mid, model="   "),
+        ])

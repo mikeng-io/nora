@@ -40,6 +40,7 @@ from typing import Any, Protocol
 
 from nora.domain.models import LexemeCandidate, TranscriptRow
 from nora.domain.ports import SearchProvider
+from nora.domain.provenance import instruction_sha256
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
@@ -76,9 +77,25 @@ _MAX_FIELD_CHARS = {
 
 class _ModelClient(Protocol):
     """The structural shape `LexemeObserver`'s `model` collaborator must
-    satisfy — one method, one call per `observe()`. See module docstring for
-    why this stays a documented duck-type instead of a declared Protocol on
-    `nora.domain.ports`."""
+    satisfy — one call per `observe()`, plus the NAME of the model it makes
+    that call against. See module docstring for why this stays a documented
+    duck-type instead of a declared Protocol on `nora.domain.ports`.
+
+    **Why `model` is on the collaborator and not a separate `__init__`
+    argument.** `LexemeCandidate.model` is provenance, and provenance binds
+    to the property it names or it is worthless: the only object that knows
+    which model a completion actually went to is the one that sends it.
+    Passing the name in beside the client would create two sources for one
+    fact, wired at the same call site and free to drift the moment one is
+    edited and the other is not — a row would then claim a model it was never
+    produced by, which is the exact defect the column exists to remove.
+    `nora.language` may not read config (module docstring), so the honest
+    minimum is to ask the client. It is a READ-ONLY property in the protocol,
+    so a fake satisfies it with a plain attribute.
+    """
+
+    @property
+    def model(self) -> str: ...
 
     async def complete(self, *, prompt: str) -> str: ...
 
@@ -276,6 +293,72 @@ class LexemeObserver:
         self._metrics = metrics
         self._search = search
         self._verify_max_candidates = verify_max_candidates
+        # Computed ONCE, from the instruction text this instance is
+        # CONFIGURED to send — see the property below for what that set is
+        # and why the verification template is in it only when `search` is
+        # wired. Constant per instance, so every row one Dreamer cycle
+        # writes carries the same stamp and a corpus can be split by
+        # revision.
+        self._instruction_sha256 = instruction_sha256(*(
+            (_PROMPT_PREAMBLE, _VERIFICATION_PROMPT_TEMPLATE)
+            if search is not None else (_PROMPT_PREAMBLE,)
+        ))
+        # Read from the CLIENT, once, for the same reason the digest is
+        # computed once: constant per instance, so every row one Dreamer
+        # cycle writes names the same model. See `_ModelClient.model` for why
+        # it is asked of the client rather than passed in beside it.
+        self._model_name = model.model
+
+    @property
+    def model(self) -> str:
+        """The model name stamped onto every candidate this instance produces
+        — the one the injected client reports it calls.
+
+        The sibling of `instruction_sha256` below, and neither answers the
+        other's question: the instructions are one input to a row, the model
+        that read them is another. `[language].model` has changed before, and
+        the same instruction text run against a different model produces
+        different glosses — so a corpus split by instruction revision alone
+        would silently mix two writers. A row already in the database when
+        this landed carries NULL rather than today's configured model, which
+        would be a guess about a row nobody recorded (R-27).
+        """
+        return self._model_name
+
+    @property
+    def instruction_sha256(self) -> str:
+        """The digest stamped onto every candidate this instance produces
+        (`nora.domain.provenance`), over the instruction text that actually
+        governs a row here: `_PROMPT_PREAMBLE`, plus
+        `_VERIFICATION_PROMPT_TEMPLATE` when — and only when — a `search`
+        collaborator is wired.
+
+        **Why the verification template is in the set at all**, given that it
+        authors no field: it decides whether a candidate becomes a row. Two
+        corpora written either side of an edit to it differ in POPULATION,
+        and a stamp that could not tell them apart would be bound to half its
+        input — the same defect §4.3 rejects `objective_sha256` for. **Why it
+        drops out when `search is None`**: it is then never sent, and
+        stamping text that did not reach a model is provenance bound to the
+        wrong property, which is the defect this column exists to remove.
+
+        The set is a property of the CONFIGURED instance, not of each
+        candidate's control flow: a candidate kept because verification was
+        `unavailable`, or because it fell past `verify_max_candidates`,
+        carries the same stamp as its verified siblings. That is deliberate —
+        the question the column answers is "which instruction revision was
+        this Dreamer running when it wrote this row", which is what makes an
+        eval's «does the row from revision X survive» answerable at all
+        (spec §3.3). Per-candidate branch-accurate stamping would make the
+        digest vary within one cycle for reasons that have nothing to do with
+        the instruction text.
+
+        Exposed rather than private because §4.4 wants a Dreamer tick to LOG
+        its instruction versions the way a tag start logs
+        `doctrine_versions={…}`; that is a later change, and this is the value
+        it will read.
+        """
+        return self._instruction_sha256
 
     async def observe(self, *, batch: Sequence[TranscriptRow]) -> ObservationResult:
         """One model call over `batch`, or nothing for an empty batch (no
@@ -410,5 +493,11 @@ class LexemeObserver:
                 # nora.infra.sql.language rescores speaker spread against.
                 person_id=row.person_id,
                 confidence=parsed["confidence"],
+                # Provenance, stamped at the ONE place a model's answer
+                # becomes a candidate — see the `instruction_sha256` and
+                # `model` properties. Both ride the SAME construction, so a
+                # candidate can never carry one without the other.
+                instruction_sha256=self._instruction_sha256,
+                model=self._model_name,
             ))
         return ObservationResult(candidates=tuple(candidates), parsed=True)

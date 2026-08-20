@@ -1,0 +1,16 @@
+{
+  "type": "change",
+  "summary": "Every row the Dreamer's model-calling adaptors write now also records WHICH MODEL produced it, beside the instruction digest that shipped the same day. `language_observation`, `room_lexeme`, `exchange_observation` and `room_exchange` gain a `model` column, so a wrong gloss can be attributed to a model as well as to an instruction revision — the same instruction run against a different model writes different rows, which `instruction_sha256` alone cannot see.",
+  "details": [
+    "The name is read off the model client that actually makes the call, not from config beside it. The observers ask their injected client which model it calls and stamp that; a name passed in separately would be a second source for one fact, free to drift from what really went on the wire.",
+    "`room_lexeme` and `room_exchange` reach no model: they inherit `model` from the SAME newest-observation row they already inherit `instruction_sha256` from. Taking the two fields from two different evidence rows would name a pairing that never ran — an instruction that was never executed against that model.",
+    "`room_portrait` gets no `model` column, for a reason one step stronger than its instruction exemption: it makes no model call at all, so there is no model to attribute. Its provenance still resolves through `lexeme_basis`/`exchange_basis`, whose rows carry both fields.",
+    "Migration 0024 adds the column NULLABLE with no server default and no backfill — rows already in the database were written by a model nothing recorded, and stamping them with today's configured model would be a fabricated attribution that happens to look entirely plausible. NULL honestly reads as «nobody recorded it».",
+    "The CHECK constraint is deliberately not the digest's. A SHA-256 has a provable shape and 0023 asserts it; a model name has none, so a pattern here would be a guess about naming conventions that would one day reject a real provider rename. What each table's CHECK does refuse is a value that reads as recorded and names nothing — an empty or whitespace-only string — because that turns «I could not check» into a false «recorded»."
+  ],
+  "limitations": [
+    "Rows written before this migration stay unattributable to a model, exactly as they stay unattributable to an instruction. Not fixable: nothing recorded it at the time.",
+    "The Dreamer currently runs deepseek-v4-flash for both adaptors, so in today's deployment every new row names the same model. That is a config value, not a guarantee — which is the reason the column exists rather than a reason to have skipped it.",
+    "Two inputs that can still change a row are unrecorded: the tool subset an adaptor had available and its loop budget. The substrate spec leaves both open; answering them adds columns rather than changing these."
+  ]
+}

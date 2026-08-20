@@ -4,7 +4,8 @@ Run deliberately, only when the schema legitimately changes:
 
     uv run python scripts/gen_pg_baseline.py
 
-It spins a throwaway `postgres:16-alpine`, runs `alembic upgrade head`, takes a
+It spins a throwaway container on `tests.conftest.PG_IMAGE` (the same image the
+test suite uses, which tracks the deployment), runs `alembic upgrade head`, takes a
 `pg_dump --schema-only --no-owner --no-privileges` via `docker exec`, normalises
 it with the SAME function `tests/infra/test_schema_parity.py` uses, and writes
 the result. Using the test's own normaliser is what keeps the baseline and the
@@ -21,8 +22,9 @@ from testcontainers.postgres import PostgresContainer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nora.infra.sql.migrations_runner import run_migrations  # noqa: E402
-from tests.infra.test_schema_parity import (  # noqa: E402
+from nora.infra.sql.migrations_runner import run_migrations
+from tests.conftest import PG_IMAGE
+from tests.infra.test_schema_parity import (
     BASELINE,
     _dump_schema,
     _normalise,
@@ -39,7 +41,10 @@ class _Admin:
 
 
 def main() -> int:
-    with PostgresContainer("postgres:16-alpine", driver="psycopg") as pg:
+    # The SAME image the suite runs on — imported, never re-pinned here. A second
+    # literal is how the oracle and the gate came to be generated on different
+    # major versions than production (2026-08-20).
+    with PostgresContainer(PG_IMAGE, driver="psycopg") as pg:
         admin = _Admin(
             host=pg.get_container_host_ip(),
             port=int(pg.get_exposed_port(5432)),

@@ -16,6 +16,7 @@ wiring to build at all.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Protocol
 
 from ...domain.media import MediaRef, label_for, render_placeholder
@@ -118,6 +119,35 @@ def _sticker_ref(item: object) -> MediaRef | None:
     )
 
 
+_MENTION_TOKEN = re.compile(r"<@!?(\d+)>")
+
+
+def _resolve_inbound_mentions(content: str, mentions: list[_DiscordUser]) -> str:
+    """Rewrite Discord's `<@id>`/`<@!id>` wire syntax to `@display_name`.
+
+    discord.py already resolved WHO these ids are — `message.mentions` — so
+    this is a pure text substitution, no extra I/O. Doing it here, once, at
+    comprehend time, means everything that reads `NormalizedMessage.body`
+    downstream (the model's own transcript in `nora.agent.prefill`, the
+    Honcho feed in `nora.ingest.stages.memory_feed`) sees a name instead of a
+    bare snowflake nobody — human or model — can read.
+
+    An id present in `content` but absent from `mentions` (a shape Discord
+    should not send) is left as its raw token: guessing a name for it would
+    be worse than the unreadable-but-honest original (R-5's shape applied to
+    inbound normalization).
+    """
+    if not mentions:
+        return content
+    names = {str(u.id): (u.display_name or "someone") for u in mentions}
+
+    def _sub(m: re.Match[str]) -> str:
+        name = names.get(m.group(1))
+        return f"@{name}" if name is not None else m.group(0)
+
+    return _MENTION_TOKEN.sub(_sub, content)
+
+
 def _body_parts(message: _DiscordMessage, refs: tuple[MediaRef, ...]) -> list[str]:
     """The renderable body, or an empty list if there is genuinely nothing.
 
@@ -146,7 +176,7 @@ def _body_parts(message: _DiscordMessage, refs: tuple[MediaRef, ...]) -> list[st
     a message carries at most one of these in practice.
     """
     parts = []
-    text = (message.content or "").strip()
+    text = _resolve_inbound_mentions(message.content or "", message.mentions).strip()
     if text:
         parts.append(text)
     parts += [render_placeholder(label_for(ref)) for ref in refs]

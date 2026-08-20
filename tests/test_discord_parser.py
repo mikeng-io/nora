@@ -145,6 +145,60 @@ def test_mentions_are_collected_as_ids():
     assert result.mentions == frozenset({"7", "8"})
 
 
+def test_inbound_mention_syntax_is_rewritten_to_a_display_name():
+    """`<@id>` is Discord's own wire syntax, and it is meaningless to anyone
+    downstream who cannot look the id up — the model's own transcript and the
+    Honcho feed both read `body` verbatim. discord.py already resolved WHO
+    the id is (`message.mentions`), so this is a pure text substitution, no
+    extra I/O: the raw snowflake never has to leave the parser."""
+    msg = _message(
+        content="<@7> where are you my fd",
+        mentions=[FakeUser(id=7, display_name="Miles Novak")],
+    )
+
+    result = parse_discord_message(msg, own_id=OWN_ID)
+
+    assert result.body == "@Miles Novak where are you my fd"
+
+
+def test_inbound_mention_syntax_handles_the_nickname_variant():
+    """Discord sends `<@!id>` instead of `<@id>` for a mention that carries a
+    per-guild nickname override on the wire — same id, different marker."""
+    msg = _message(
+        content="<@!7> hi",
+        mentions=[FakeUser(id=7, display_name="Miles Novak")],
+    )
+
+    result = parse_discord_message(msg, own_id=OWN_ID)
+
+    assert result.body == "@Miles Novak hi"
+
+
+def test_multiple_inbound_mentions_are_each_rewritten():
+    msg = _message(
+        content="<@7> <@8>",
+        mentions=[
+            FakeUser(id=7, display_name="Miles Novak"),
+            FakeUser(id=8, display_name="Tyler Cortez"),
+        ],
+    )
+
+    result = parse_discord_message(msg, own_id=OWN_ID)
+
+    assert result.body == "@Miles Novak @Tyler Cortez"
+
+
+def test_an_unresolvable_mention_token_is_left_as_is():
+    """The id is in the text but NOT in `message.mentions` — a shape Discord
+    should not send, but guessing a name for it would be worse than leaving
+    the raw token visible (R-5's shape applied to inbound normalization)."""
+    msg = _message(content="<@999999> hello", mentions=[])
+
+    result = parse_discord_message(msg, own_id=OWN_ID)
+
+    assert result.body == "<@999999> hello"
+
+
 def test_an_attachment_becomes_a_placeholder_and_a_media_ref():
     msg = _message(
         content="",

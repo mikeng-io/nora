@@ -333,6 +333,25 @@ class LexemeCandidate:
     from `canonical_form` (what it normalised to) because "kam"/"劲"/"勁"
     can all be one word, and collapsing them at extraction time would make a
     wrong normalisation unreviewable later.
+
+    `instruction_sha256` is PROVENANCE, and it is the one field here that is
+    about the writer rather than the evidence: `sense` is model-authored, and
+    without a record of the instruction text that asked for it a wrong gloss
+    cannot be attributed to a revision (see `nora.domain.provenance`). It has
+    NO default on purpose — `confidence` beside it is the model's own
+    self-report, which is the opposite of provenance, and a defaulted stamp
+    would let a new adaptor write unattributable rows in silence, which is
+    exactly the state this field exists to end.
+
+    `model` is the OTHER half of that same provenance, and it is undefaulted
+    for the same reason. The instruction text is one input to the row; the
+    model that read it is another, and the two do not substitute for each
+    other — the same instruction run against a different model produces
+    different glosses, so `instruction_sha256` alone cannot answer "what
+    produced this row". It is the model NAME the injected client reports, not
+    a config value read alongside it: a value read from anywhere but the
+    object that makes the call is a proxy that can drift from what actually
+    went on the wire.
     """
 
     surface_form: str
@@ -342,6 +361,8 @@ class LexemeCandidate:
     message_id: int
     person_id: str | None
     confidence: float
+    instruction_sha256: str
+    model: str
 
 
 @dataclass(frozen=True)
@@ -401,12 +422,26 @@ class ExchangeCandidate:
     drops anything shorter, mirroring the DB's own `array_length(...) >= 2`
     CHECK) — the second guarantee: a candidate describing one person cannot
     exist.
+
+    `instruction_sha256` is PROVENANCE, undefaulted, for the same reason
+    `LexemeCandidate`'s is: `act` is drawn from a closed set, but WHICH act a
+    stretch of messages was called is still a model judgement, and the
+    instruction text that framed the choice is what a later reviewer has to
+    be able to name.
+
+    `model` is the second half of that provenance, undefaulted for the reason
+    `LexemeCandidate.model` gives — and it is INDEPENDENTLY reachable here:
+    `[language].exchange_model` lets this adaptor run a different model from
+    the lexeme one against the same room, so two rows written on the same
+    tick can legitimately name different models.
     """
 
     act: str
     message_ids: tuple[int, ...]
     participants: tuple[str, ...]
     confidence: float
+    instruction_sha256: str
+    model: str
 
 
 @dataclass(frozen=True)

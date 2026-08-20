@@ -211,14 +211,58 @@ configured — it is a property of the runtime.
 - `about` / `ask_memory` / `lookup_person` — *the user profile*
 - `search_memory`, `group_members`
 - `web_search`, `web_fetch`
-- `pulse_*` (the game-state family — directly relevant to the motivating case)
+- ~~`pulse_*`~~ — **excluded, see §9.6.** MCP-sourced, so nothing carries its
+  classification. Named here because it is what the Dreamer *wants*; the
+  mechanism cannot grant it yet.
 - `now`, `calculate`
 
-**Out** — every act verb: `send_reply`, `send_to`, `send_gif`, `remind`,
-`cancel_reminder`, `make_artifact` — **and any write verb.** A tool that
-persists an adaptor's result would be an act verb pointed at the database
-instead of at the group; §3.2 is why the runtime writes the validated return
-instead.
+**Out** — every act verb, **and any write verb.** A tool that persists an
+adaptor's result would be an act verb pointed at the database instead of at the
+group; §3.2 is why the runtime writes the validated return instead.
+
+**CORRECTION (2026-08-20).** An earlier draft of this section hand-listed six act
+verbs: `send_reply`, `send_to`, `send_gif`, `remind`, `cancel_reminder`,
+`make_artifact`. **That list was four short.** It omitted `create_event`,
+`update_event`, `rsvp_event` and `cancel_event`, which had been added to the
+registry (DEC-117) after the mental model behind the list was formed.
+
+A plan written against that list verbatim **would have handed a background agent
+four write verbs.** The implementation plan caught it while sequencing; nothing
+was built on it.
+
+Derived from `NATIVE_TOOLS` rather than recalled, there are 34 native tools, of
+which **ten** act:
+
+```
+remind  cancel_reminder
+create_event  update_event  rsvp_event  cancel_event
+make_artifact
+send_reply  send_to  send_gif
+```
+
+`suggest_venue` recommends without creating and `search_gifs` searches while
+`send_gif` is the terminal verb — both read.
+
+**This is the argument for the field, made by its own absence.** The list above
+is illustrative and dated; it is not the specification. The specification is that
+the Dreamer's set is **derived from a field on the tool**, so a tool added
+tomorrow is classified by whoever adds it and cannot silently join the Dreamer's
+set. A hand-list is exactly the pre-DEC-29 stale-catalogue failure this repo
+already fixed once, and the draft above is a fresh instance of it.
+
+**The field goes on `NativeTool` (`nora/agent/tools.py`), not `ToolSpec`.** An
+earlier draft named `ToolSpec` (`nora/agent/ports.py`) — wrong: `ToolSpec`
+carries `budget`, `terminal`, `time_shiftable`, `disclose_failure` and
+`timeout_seconds`, but **not** `cacheable`, and all four derived subsets
+(`terminal_tools()`, `cacheable_tools()`, `live_only_tools()`,
+`web_tier_tools()`) read `NativeTool`. That is where the pattern lives and where
+the new field belongs.
+
+**`pulse_*` is not in `NATIVE_TOOLS` at all** — it arrives over MCP, which has no
+row to carry the flag, so it cannot be classified. **Resolved 2026-08-20: MCP
+tools are excluded from the Dreamer until they have a classification surface**
+(§9.6). Fail-closed, at the cost of the game-state family the motivating case
+most wants.
 
 `ToolSpec` (`nora/agent/ports.py:74-83`) already carries `budget`, `terminal`,
 `time_shiftable`, `cacheable`, `disclose_failure`, `timeout_seconds`, and the
@@ -249,6 +293,24 @@ the pre-DEC-29 tool catalogue did.
 This keeps the existing boundary rather than widening it, and it is the same
 split the Dreamer already uses for its model client — the pattern is proven in
 this codebase, not imported from elsewhere.
+
+**CORRECTION (2026-08-20): `create_agent` cannot build the Dreamer, and this
+section read as though it could.** The implementation plan found it while
+sequencing, and it is the largest hidden cost in the design.
+
+`nora/agent/factory.py`'s `create_agent` requires a `ReplyGuard` — a deliverer, a
+set of terminal verbs, and the `tool_choice` relaxation — none of which a
+read-only research loop has. Worse, `create_model_provider` hardcodes
+`tool_choice="required"`, which that module documents as *"load-bearing, not a
+tuning knob"*. Under `required` the model must call something on every pass, so
+**a loop with no terminal verb can never stop by itself**: the guard's
+`BeforeModelCallEvent` hook is the only thing that ends the loop, and it ends it
+by observing that a terminal verb was called (DEC-21, DEC-32).
+
+The Dreamer has no terminal verb by construction — §4 removes every act verb, and
+the terminal ones are act verbs. So it needs its own stopping condition and its
+own guard, not a reused `ReplyGuard`. That is two implementation tasks this
+document implied were free.
 
 ## 6. Budget
 
@@ -309,21 +371,82 @@ fields. Nothing in `Standing`, the debrief, or the propose/dispose split changes
 
 ## 9. Open questions
 
-1. **Which model does the Dreamer run?** `[language].model` today. A research
-   loop is a different workload from a one-shot extraction, and the repo has a
-   measurement precedent for deciding this rather than guessing.
-2. **Adaptor scheduling.** Today every consolidator gets the same batch on the
-   same tick. Facts do not need the same cadence as slang — does the runtime
-   schedule per adaptor?
-3. **Does the fact adaptor use the shared watermark?** `_dream_once` owns one
-   watermark per scope and hands every consolidator the same batch. A fact
-   adaptor consuming the fact tier rather than a message batch may not want it.
-4. **Failure isolation.** `dream_loop`'s try/except is already per-scope so one
-   scope cannot starve another. Per *adaptor* isolation is a second axis and is
-   not there today.
+1. ~~**Which model does the Dreamer run?**~~ **DECIDED 2026-08-20 (operator):
+   `deepseek-v4-flash` — the same model Nora runs.** `LanguageConfig.model`
+   already defaults to `ollamacloud/deepseek-v4-flash`, so this needs no config
+   change; the decision is to keep it rather than reach for something heavier for
+   the research loop.
+
+   **This makes §2's central claim falsifiable, which is the reason it is worth
+   recording as a decision rather than a non-change.** §2 argues the motivating
+   failure was *situational, not a capability limit*: the same model read a
+   scoped source's silence as denial and capitulated under `屌你` on the tag
+   path, and the Dreamer is meant to do better **because it is differently
+   situated** — no social pressure, no turn budget, a loop, and `fetch` — not
+   because it is smarter.
+
+   Running the *same model* is the honest test of that claim. If a Flash research
+   loop still cannot distinguish a source that contradicts from one that merely
+   does not cover, then "differently situated, not smarter" was wrong and the
+   design needs revisiting — not the model swapped quietly to hide it.
+
+   **Task 2.9 in the plan therefore changes shape rather than disappearing**: it
+   was "measure and choose"; it is now "verify Flash holds under a research
+   loop", against the corpus in §2. A negative result reopens this.
+2. ~~**Adaptor scheduling.**~~ **CLOSED 2026-08-20 — a requirement, not a
+   question.** The fact-store workstream keys the fact adaptor on a *workspace*
+   (`Conversation.workspace`, DEC-105) while every existing adaptor is keyed on a
+   `scope_id`. That is not a wider or narrower batch — it is a **different key**,
+   and `_dream_once` cannot host it unchanged. **Adaptors declare their own key,
+   and the runtime schedules per adaptor.**
+3. ~~**Does the fact adaptor use the shared watermark?**~~ **ANSWERED: no.**
+   Follows from (2). Precedent: `RoomPortraitSynthesizer` already participates
+   with no watermark/lag/quiet (`runtime.py:352`); the fact adaptor is the second
+   such participant and the first with a non-`scope_id` key.
+
+   **Hazard the plan surfaced, recorded here because it bites at cutover:**
+   `_dream_once` hardcodes a single watermark named `"language"` and `exchange`
+   rides it. An adaptor renamed during migration gets `watermark_for → 0` and
+   **re-reads every room from the beginning.**
+4. ~~**Failure isolation.**~~ **DECIDED 2026-08-20 (operator): isolate PER
+   ADAPTOR.** `dream_loop`'s try/except is already per-scope so one scope cannot
+   starve another; adaptor isolation is a second axis and is added.
+
+   A throwing adaptor must not cost the tick for the others. The asymmetry that
+   settles it: the adaptors have different *value densities* — a fact adaptor
+   researching the open web has far more ways to fail than a lexeme extractor
+   reading its own message batch, and letting the riskiest one silence the
+   cheapest is backwards. `RoomPortraitSynthesizer`'s branch already behaves this
+   way, so this generalises existing behaviour rather than inventing it.
+
+   **Implementation consequence the plan flagged:** `_run_one`'s backoff key has
+   to move with the isolation boundary. A per-adaptor try/except with a
+   per-*scope* backoff key would let one failing adaptor back off every adaptor
+   in that scope — the bug this decision exists to prevent, reintroduced one
+   layer down.
 5. **Does the Dreamer get its own doctrine files, or a single objective file per
    adaptor?** Settled in the substrate spec once revised.
-6. **The fact tier's store and its retrieval** — NOT open here. Owned by the
+6. ~~**How is an MCP-sourced tool classified read-or-act?**~~ **DECIDED
+   2026-08-20 (operator): MCP tools are EXCLUDED from the Dreamer until they have
+   a classification surface.** `pulse_*` arrives over MCP, which has no row to
+   carry the field the read/act split derives from, so it cannot be classified —
+   and an unclassifiable tool must not be granted by default.
+
+   **This is fail-closed, and it costs something real.** The Dreamer loses
+   `pulse_*` — the game-state family, which is directly relevant to the
+   motivating case: the save file is what actually settles a Big Walk progress
+   claim. A fact adaptor without it can research the open web but cannot read the
+   group's own game state.
+
+   That cost is accepted rather than hidden. The alternative — defaulting
+   unclassified MCP tools to "read" — would mean an MCP server added later could
+   silently hand a background agent a write verb, which is precisely the failure
+   §4's derived-not-hand-listed rule exists to prevent, and which §4's own
+   four-verb omission already demonstrated is not hypothetical.
+
+   **Reopen** by giving MCP tools a classification surface; the tool set in §4
+   stops naming `pulse_*` until then.
+7. **The fact tier's store and its retrieval** — NOT open here. Owned by the
    fact-store workstream; see `2026-08-20-fact-store-research-handoff.md`. The
    only constraint this document places on it is §3.1's interface.
 

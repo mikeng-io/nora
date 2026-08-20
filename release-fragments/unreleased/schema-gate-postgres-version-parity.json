@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "The schema gate was validating migrations against PostgreSQL 16 while production runs 18 — a major version behind the thing it guards. The test suite now runs the deployment's version, scripts/gen_pg_baseline.py imports that one image instead of re-pinning its own, and a named test fails if the two ever diverge again.",
+  "details": [
+    "tests/conftest.py pinned PG_IMAGE = \"postgres:16-alpine\" while docker-compose.yml deploys postgres:18-alpine (production reports PostgreSQL 18.4 on musl). tests/infra/test_schema_parity.py is the gate every migration passes through, so its oracle was a major version away from what it guards.",
+    "scripts/gen_pg_baseline.py — which GENERATES the checked-in schema-parity oracle — carried a second, independent \"postgres:16-alpine\" literal, so the baseline was produced on 16 as well. It now imports tests.conftest.PG_IMAGE, so there is one pin rather than two that can drift apart.",
+    "The checked-in baseline did NOT need regenerating: test_normalised_pg_dump_matches_the_checked_in_baseline passes unchanged on 18, because the shared normaliser strips what differs between the two majors for this schema. The oracle was still valid; only the gate was on the wrong version.",
+    "New test_the_test_container_tracks_the_deployment compares MAJOR versions only, parsed from docker-compose.yml — a patch bump in the deployment is a deployment decision and must not turn the suite red, while a major bump changes what pg_dump emits and what compare_metadata sees, and must. Verified red on revert.",
+    "Found by the fact-store workstream while measuring Apache AGE extension availability against the live database — i.e. by somebody looking at something else entirely."
+  ],
+  "limitations": [
+    "This makes the gate measure the right major version; it does not widen what the gate covers. The baseline remains a frozen normalised pg_dump, so it catches drift from that baseline rather than proving the schema correct."
+  ]
+}

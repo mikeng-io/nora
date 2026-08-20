@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Two design decisions recorded (docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md §9.4 and §9.6), operator's calls. §9.4: the Dreamer isolates failures PER ADAPTOR, not only per scope — a fact adaptor researching the open web has far more ways to fail than a lexeme extractor reading its own batch, and letting the riskiest silence the cheapest is backwards; the plan's note that _run_one's backoff key must move with the isolation boundary is carried, since a per-adaptor try/except with a per-scope backoff key reintroduces the same bug one layer down. §9.6: MCP-sourced tools are EXCLUDED from the Dreamer until they have a classification surface — pulse_* has no row to carry the read/act field, and an unclassifiable tool must not be granted by default; §4's tool set stops naming pulse_* and the real cost (no game-state access for the fact adaptor) is stated rather than hidden. No code, config, schema or behaviour changes.",
+  "details": [],
+  "limitations": []
+}

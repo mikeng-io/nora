@@ -172,6 +172,17 @@ class _LanguageModelClient:
         self._model = model
         self._timeout_seconds = timeout_seconds
 
+    @property
+    def model(self) -> str:
+        """The model name every `complete` below actually calls — the second
+        half of `_ModelClient`'s shape, read by the observers so each row they
+        write records what produced it (`nora.domain.models.LexemeCandidate
+        .model`). It returns THIS object's `_model`, the same attribute the
+        request is built from, so the stamp and the wire cannot name
+        different models; handing the name to the observer separately would
+        make that possible."""
+        return self._model
+
     async def complete(self, *, prompt: str) -> str:
         response = await asyncio.wait_for(
             self._client.chat.completions.create(

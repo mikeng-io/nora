@@ -23,6 +23,7 @@ pytestmark = pytest.mark.asyncio
 class _FakeModel:
     def __init__(self, responses: list[str]) -> None:
         self._responses = list(responses)
+        self.model = "fake-exchange-consolidator-model"
 
     async def complete(self, *, prompt: str) -> str:
         return self._responses.pop(0)

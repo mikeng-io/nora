@@ -805,7 +805,60 @@ LANGUAGE_OBSERVATION = sa.Table(
     # Epoch MILLISECONDS — the MESSAGE's own ts, arriving from a platform wire.
     sa.Column("observed_at", sa.BigInteger, nullable=False),
     sa.Column("extractor_confidence", sa.Float, nullable=False),
+    # PROVENANCE — which instruction text produced this row
+    # (`nora.domain.provenance`, 2026-08-20 instruction-substrate spec §4.3).
+    # `extractor_confidence` above is the model's own self-report, which is
+    # the OPPOSITE of provenance: it says how sure the writer felt, never who
+    # the writer was.
+    #
+    # NULLABLE, with no server default. Every row written from here on carries
+    # a digest (`LexemeObserver` stamps at construction and the column has no
+    # other writer), so the nullable half is entirely about the rows already
+    # in `nora-db-1`: they were produced by instructions nobody recorded, and
+    # no backfill can recover which. A server default would stamp them with a
+    # digest they were not written under — a fabricated attribution, strictly
+    # worse than an honest absent one, and the exact "bound to a proxy" defect
+    # the column exists to remove. NULL reads as «I could not check», never
+    # «there was nothing» (R-27).
+    sa.Column("instruction_sha256", sa.Text),
+    # PROVENANCE, second half — WHICH MODEL read that instruction text
+    # (2026-08-20 substrate spec §6.2, decided in favour on the same day).
+    # The instructions are one input to this row and the model is another:
+    # the same text run against a different model produces a different
+    # `sense`, so `instruction_sha256` alone does not answer "what produced
+    # this row". `[language].model` has changed before and is a config value,
+    # not a guarantee — which is exactly why it is recorded rather than
+    # assumed. Nullable/no-default/no-backfill for the identical reason as
+    # the digest above: the rows already here were written by a model nothing
+    # recorded, and stamping them with today's configured model would be a
+    # fabricated attribution. NULL is «I could not check» (R-27).
+    sa.Column("model", sa.Text),
     sa.UniqueConstraint("message_id", "canonical_form", "sense"),
+    # The digest is 64 lowercase hex chars or it is nothing — a CHECK, not a
+    # convention, because `alembic check` is blind to CHECK constraints and a
+    # future adaptor stamping a version string or an empty string would
+    # otherwise land unverifiable provenance that still LOOKS stamped. NULL
+    # satisfies it, which is what keeps the pre-column rows legal.
+    sa.CheckConstraint(
+        "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
+        name="language_observation_instruction_sha256_check",
+    ),
+    # A model NAME has no provable shape — no width, no alphabet, no
+    # registry this process can check against — so there is deliberately no
+    # pattern here to mirror the digest's. What the CHECK still buys is the
+    # ONE thing that is provable and that matters: a stamp is either a real
+    # name or honestly absent, never a value that LOOKS recorded and names
+    # nothing. Without it `''` (or `'   '`) reads as non-NULL to every query
+    # that asks "which rows are attributable", turning R-27's `unavailable`
+    # into a false `ok` — the same failure `instruction_sha256()` refuses by
+    # raising on an empty part list. Anything else about the name is the
+    # config's business, not the database's; over-constraining it would
+    # reject a legitimate provider rename and lose the row's provenance to
+    # keep a guess about naming conventions.
+    sa.CheckConstraint(
+        "model IS NULL OR length(btrim(model)) > 0",
+        name="language_observation_model_check",
+    ),
 )
 
 # `rescore` (`nora.infra.sql.language.SqlLanguageStore`) reads this table with
@@ -845,7 +898,33 @@ ROOM_LEXEME = sa.Table(
     # person_id: a bare array of strings has no query path to redact one person's
     # quotes, and nothing in this system deletes anything any more.
     sa.Column("examples", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    # PROVENANCE, INHERITED. This table is not written by a model — `rescore`
+    # recomputes it in SQL from `language_observation` — so the honest stamp
+    # is the one on the evidence that most recently produced this gloss: the
+    # `instruction_sha256` of the group's newest observation, the same row
+    # `last_seen_at` already reports. A row whose newest evidence predates the
+    # column inherits NULL, and a group spanning an instruction edit reports
+    # the instruction currently keeping it alive, which is the one to
+    # interrogate first; the full mixture is always recoverable from the
+    # evidence table, which is where a per-row history belongs.
+    sa.Column("instruction_sha256", sa.Text),
+    # INHERITED with the digest, from the SAME `rn = 1` evidence row — see
+    # `nora.infra.sql.language.SqlLanguageStore.rescore`. Riding one row is
+    # the point: two provenance fields taken from two different observations
+    # would name a pairing that never existed, an instruction that was never
+    # run against that model.
+    sa.Column("model", sa.Text),
     sa.CheckConstraint("state IN ('live','fading','stale')"),
+    sa.CheckConstraint(
+        "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
+        name="room_lexeme_instruction_sha256_check",
+    ),
+    # See `LANGUAGE_OBSERVATION`'s own `model` CHECK for why this refuses
+    # only emptiness and nothing about the name's shape.
+    sa.CheckConstraint(
+        "model IS NULL OR length(btrim(model)) > 0",
+        name="room_lexeme_model_check",
+    ),
 )
 
 # Dreamer Plan 2 (2026-08-20 exchange-patterns design). Evidence for the
@@ -880,6 +959,14 @@ EXCHANGE_OBSERVATION = sa.Table(
     sa.Column("participants", pg.ARRAY(sa.Text), nullable=False),
     sa.Column("observed_at", sa.BigInteger, nullable=False),
     sa.Column("extractor_confidence", sa.Float, nullable=False),
+    # PROVENANCE — see `LANGUAGE_OBSERVATION.instruction_sha256` for the
+    # nullable/default argument; identical here.
+    sa.Column("instruction_sha256", sa.Text),
+    # PROVENANCE, second half — see `LANGUAGE_OBSERVATION.model`. Not
+    # redundant with that column even on the same tick:
+    # `[language].exchange_model` may name a different model from the lexeme
+    # adaptor's, so the two evidence tables can honestly disagree.
+    sa.Column("model", sa.Text),
     sa.UniqueConstraint("scope_id", "act", "message_ids"),
     sa.CheckConstraint(
         "act IN " + str(_EXCHANGE_ACTS), name="exchange_observation_act_check"
@@ -889,6 +976,14 @@ EXCHANGE_OBSERVATION = sa.Table(
     ),
     sa.CheckConstraint(
         "array_length(participants, 1) >= 2", name="exchange_observation_participants_check"
+    ),
+    sa.CheckConstraint(
+        "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
+        name="exchange_observation_instruction_sha256_check",
+    ),
+    sa.CheckConstraint(
+        "model IS NULL OR length(btrim(model)) > 0",
+        name="exchange_observation_model_check",
     ),
 )
 
@@ -912,12 +1007,26 @@ ROOM_EXCHANGE = sa.Table(
     sa.Column("recognition_score", sa.Float, nullable=False, server_default=sa.text("0")),
     sa.Column("state", sa.Text, nullable=False, server_default=sa.text("'live'")),
     sa.Column("examples", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    # PROVENANCE, INHERITED from the newest `exchange_observation` in the
+    # group — see `ROOM_LEXEME.instruction_sha256` for the argument.
+    sa.Column("instruction_sha256", sa.Text),
+    # INHERITED from the same newest observation the digest comes from — see
+    # `ROOM_LEXEME.model`.
+    sa.Column("model", sa.Text),
     sa.CheckConstraint(
         "act IN " + str(_EXCHANGE_ACTS), name="room_exchange_act_check"
     ),
     sa.CheckConstraint("state IN ('live','fading','stale')", name="room_exchange_state_check"),
     sa.CheckConstraint(
         "array_length(participants, 1) >= 2", name="room_exchange_participants_check"
+    ),
+    sa.CheckConstraint(
+        "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
+        name="room_exchange_instruction_sha256_check",
+    ),
+    sa.CheckConstraint(
+        "model IS NULL OR length(btrim(model)) > 0",
+        name="room_exchange_model_check",
     ),
 )
 

@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from nora.domain.models import ExchangeCandidate, TranscriptRow
+from nora.domain.provenance import instruction_sha256
 from nora.infra.sql.schema import EXCHANGE_ACTS
 from nora.obs.metrics import Metrics
 
@@ -39,6 +40,18 @@ _MIN_PARTICIPANTS = 2
 
 
 class _ModelClient(Protocol):
+    """The lexeme observer's `_ModelClient` shape, duplicated here for the
+    reason that module documents. `model` is the name of the model
+    `complete` calls — read `nora.language.observer._ModelClient` for why
+    provenance asks the client rather than taking the name as a second
+    `__init__` argument. It matters more here, not less: this adaptor is
+    wired from `[language].exchange_model or [language].model`, so the name
+    beside the client would be a DIFFERENT expression from the one inside
+    it."""
+
+    @property
+    def model(self) -> str: ...
+
     async def complete(self, *, prompt: str) -> str: ...
 
 
@@ -154,6 +167,36 @@ class ExchangePatternObserver:
     def __init__(self, model: _ModelClient, *, metrics: Metrics | None = None) -> None:
         self._model = model
         self._metrics = metrics
+        # Computed once, over the one instruction this adaptor sends — see
+        # the property below.
+        self._instruction_sha256 = instruction_sha256(_PROMPT_PREAMBLE)
+        # The other half of the provenance pair, read from the client itself
+        # — see `model` below and `LexemeObserver`'s own note.
+        self._model_name = model.model
+
+    @property
+    def model(self) -> str:
+        """The model name stamped onto every candidate this instance
+        produces — the sibling of `nora.language.observer.LexemeObserver
+        .model`, and independently meaningful here because
+        `[language].exchange_model` may name a different model from the
+        lexeme adaptor's for the same room and the same tick."""
+        return self._model_name
+
+    @property
+    def instruction_sha256(self) -> str:
+        """The digest stamped onto every candidate this instance produces
+        (`nora.domain.provenance`), over `_PROMPT_PREAMBLE` — the whole of
+        the instruction text this adaptor sends. There is no verification
+        sibling here (`nora.language.observer.LexemeObserver` has one, and
+        folds it in only when it is wired), so the set is one part and the
+        digest necessarily differs from that adaptor's even where the
+        vocabulary overlaps.
+
+        Read by nothing yet; §4.4 of the instruction-substrate spec wants a
+        Dreamer tick to log it beside the lexeme adaptor's.
+        """
+        return self._instruction_sha256
 
     async def observe(
         self, *, batch: Sequence[TranscriptRow]
@@ -214,5 +257,10 @@ class ExchangePatternObserver:
                 message_ids=parsed["message_ids"],
                 participants=tuple(participants),
                 confidence=parsed["confidence"],
+                # Provenance, stamped where the model's answer becomes a
+                # candidate — the sibling of `LexemeObserver`'s own stamp,
+                # both fields on the one construction.
+                instruction_sha256=self._instruction_sha256,
+                model=self._model_name,
             ))
         return ExchangeObservationResult(candidates=tuple(candidates), parsed=True)
