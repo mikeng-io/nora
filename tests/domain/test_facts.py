@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from nora.domain.facts import Fact, FactCandidate, FactEntity, FactVerdict
+from nora.domain.facts import (
+    Fact,
+    FactCandidate,
+    FactEntity,
+    FactPremise,
+    FactVerdict,
+)
 
 
 def _verdict(**over):
@@ -224,31 +230,37 @@ def test_a_non_source_warrant_forbids_a_source_excerpt():
         )
 
 
-def test_a_premises_warrant_requires_at_least_one_premise():
-    with pytest.raises(ValueError, match="premise_ids"):
-        Fact(
-            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
-            warrant_kind="premises",
-            source_url=None, source_excerpt=None, premise_ids=(),
-            valid_from=1, created_at=1, instruction_sha256="a" * 64,
-            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
-        )
+def test_a_premises_fact_needs_no_source_url_or_excerpt():
+    """The positive case for a warrant kind not backed by a page: satisfiable,
+    not just violable. Premises themselves are `FactPremise` rows, not a field
+    on `Fact` (2026-08-21) — this dataclass cannot check "at least one premise
+    exists" any more than the database can; see `FactPremise`'s docstring."""
+    f = Fact(
+        id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+        subject_id="e1", predicate="has", object_entity_id="e2",
+        object_literal=None,
+        warrant_kind="premises",
+        source_url=None, source_excerpt=None,
+        valid_from=1, created_at=1, instruction_sha256="a" * 64,
+        model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+        fidelity="tentative",
+    )
+    assert f.warrant_kind == "premises"
 
 
-def test_a_non_premises_warrant_forbids_premise_ids():
-    with pytest.raises(ValueError, match="premise_ids"):
-        Fact(
-            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
-            warrant_kind="observation",
-            source_url=None, source_excerpt=None,
-            premise_ids=("0191f2c4-0000-7000-8000-000000000009",),
-            valid_from=1, created_at=1, instruction_sha256="a" * 64,
-            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
-        )
+def test_fidelity_defaults_to_tentative_not_proven():
+    """A default is what a value gets when nobody thought about it — in a
+    fail-closed codebase that value must underclaim, never overclaim. An
+    omitted `fidelity` must not silently read as verified."""
+    f = Fact(
+        id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+        subject_id="e1", predicate="has", object_entity_id="e2",
+        object_literal=None,
+        source_url="https://example.test/a", source_excerpt="x",
+        valid_from=1, created_at=1, instruction_sha256="a" * 64,
+        model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+    )
+    assert f.fidelity == "tentative"
 
 
 def test_an_unknown_fidelity_is_refused():
@@ -307,22 +319,16 @@ def test_an_unknown_supersede_reason_is_refused():
         )
 
 
-def test_a_well_formed_premises_fact_is_accepted():
-    """The positive case for the two new warrant kinds not warranted by a
-    page: satisfiable, not just violable."""
-    f = Fact(
-        id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-        subject_id="e1", predicate="has", object_entity_id="e2",
-        object_literal=None,
-        warrant_kind="premises",
-        source_url=None, source_excerpt=None,
-        premise_ids=("0191f2c4-0000-7000-8000-000000000009",),
-        valid_from=1, created_at=1, instruction_sha256="a" * 64,
-        model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
-        fidelity="tentative",
-    )
-    assert f.warrant_kind == "premises"
-    assert f.fidelity == "tentative"
+def test_a_fact_cannot_be_its_own_premise():
+    with pytest.raises(ValueError, match="premise"):
+        FactPremise(fact_id="0191f2c4-0000-7000-8000-000000000001",
+                    premise_fact_id="0191f2c4-0000-7000-8000-000000000001")
+
+
+def test_a_fact_premise_edge_names_two_distinct_facts():
+    edge = FactPremise(fact_id="0191f2c4-0000-7000-8000-000000000001",
+                       premise_fact_id="0191f2c4-0000-7000-8000-000000000002")
+    assert edge.fact_id != edge.premise_fact_id
 
 
 def test_candidate_and_entity_carry_their_workspace():

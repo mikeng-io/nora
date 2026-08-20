@@ -1182,13 +1182,6 @@ FACT = sa.Table(
               server_default=sa.text("'source'")),
     sa.Column("source_url", sa.Text),
     sa.Column("source_excerpt", sa.Text),
-    # UUID[], not FOREIGN KEYed element-by-element — Postgres has no
-    # per-element FK on an array column, so referential integrity for
-    # premises (that each id names a real, standing `fact` row) is the
-    # WRITER's job, not the database's. The CHECK below enforces only
-    # cardinality, nothing about content.
-    sa.Column("premise_ids", pg.ARRAY(pg.UUID(as_uuid=False)), nullable=False,
-              server_default=sa.text("'{}'")),
     sa.Column("valid_from", sa.BigInteger, nullable=False),
     sa.Column("valid_to", sa.BigInteger),
     sa.Column("created_at", sa.BigInteger, nullable=False),
@@ -1209,9 +1202,13 @@ FACT = sa.Table(
     # can be high-fidelity + low-currency (true but outdated) or
     # low-fidelity + high-currency (fresh but unconfirmed). Deliberately not
     # a float — a numeric confidence invites false precision nobody in this
-    # tier can calibrate.
+    # tier can calibrate. Server default 'tentative', not 'proven': a
+    # default is what a row gets when nobody thought about it, and in a
+    # fail-closed codebase (R-27, R-5) that value must underclaim, never
+    # overclaim. 'tentative' is also where an abduced claim's epistemic
+    # status lands (spec §13.5) — the default, not an opt-in.
     sa.Column("fidelity", sa.Text, nullable=False,
-              server_default=sa.text("'proven'")),
+              server_default=sa.text("'tentative'")),
     sa.CheckConstraint(
         "instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="fact_instruction_sha256_check",
@@ -1264,10 +1261,6 @@ FACT = sa.Table(
         name="fact_source_excerpt_warrant_check",
     ),
     sa.CheckConstraint(
-        "(warrant_kind = 'premises') = (cardinality(premise_ids) > 0)",
-        name="fact_premise_ids_warrant_check",
-    ),
-    sa.CheckConstraint(
         "fidelity in ('tentative', 'proven', 'deprecated')",
         name="fact_fidelity_check",
     ),
@@ -1292,4 +1285,39 @@ IDX_FACT_STANDING = sa.Index(
     FACT.c.workspace,
     FACT.c.subject_id,
     postgresql_where=FACT.c.superseded_at.is_(None),
+)
+
+# 2026-08-21: replaces `fact.premise_ids UUID[]`. The array made "warranted
+# by other facts" representable but not QUERYABLE in the direction that
+# matters — §13.5 records transitive supersession (a premise superseded
+# leaves every fact deduced from it standing on a retracted foundation) as
+# an open problem, and answering "which facts depend on this one" is an
+# unindexable array-containment scan with the array, an indexed lookup with
+# this table. Both FKs target `fact.id`; `idx_fact_premise_premise_fact_id`
+# below serves the reverse direction the composite PK does not (it indexes
+# `fact_id` first). "warrant_kind = 'premises' ⇒ at least one premise" is a
+# cross-table invariant now — Postgres CHECK constraints cannot express it,
+# and this table does not fake it with a trigger; until a writer exists,
+# nothing in the database enforces it (see the migration's docstring).
+FACT_PREMISE = sa.Table(
+    "fact_premise",
+    METADATA,
+    sa.Column("fact_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("fact.id", name="fact_premise_fact_id_fkey"),
+              primary_key=True),
+    sa.Column("premise_fact_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("fact.id", name="fact_premise_premise_fact_id_fkey"),
+              primary_key=True),
+    # The one cycle cheap to rule out at the row level: a fact cannot be its
+    # own premise. Longer cycles (A premises B premises A) are NOT detected
+    # here — that needs a graph walk, not a row CHECK — and are left as a
+    # known gap rather than silently assumed away.
+    sa.CheckConstraint(
+        "fact_id <> premise_fact_id",
+        name="fact_premise_no_self_reference_check",
+    ),
+)
+
+IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
+    "idx_fact_premise_premise_fact_id", FACT_PREMISE.c.premise_fact_id,
 )

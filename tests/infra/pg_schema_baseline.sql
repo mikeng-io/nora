@@ -39,6 +39,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -55,6 +56,9 @@ ADD CONSTRAINT fact_candidate_triple_key UNIQUE (workspace, subject_id, predicat
 ADD CONSTRAINT fact_entity_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_entity_workspace_name_key UNIQUE (workspace, canonical_name);
 ADD CONSTRAINT fact_pkey PRIMARY KEY (id);
+ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id);
+ADD CONSTRAINT fact_premise_pkey PRIMARY KEY (fact_id, premise_fact_id);
+ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) REFERENCES public.fact(id);
 ADD CONSTRAINT fact_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.fact(id);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
@@ -95,6 +99,9 @@ ALTER TABLE ONLY public.fact_candidate
 ALTER TABLE ONLY public.fact_candidate
 ALTER TABLE ONLY public.fact_entity
 ALTER TABLE ONLY public.fact_entity
+ALTER TABLE ONLY public.fact_premise
+ALTER TABLE ONLY public.fact_premise
+ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.geocode_cache
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
@@ -155,7 +162,7 @@ CONSTRAINT fact_fidelity_check CHECK ((fidelity = ANY (ARRAY['tentative'::text, 
 CONSTRAINT fact_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT fact_model_is_named_check CHECK ((length(btrim(model)) > 0)),
 CONSTRAINT fact_one_object_check CHECK (((object_entity_id IS NULL) <> (object_literal IS NULL))),
-CONSTRAINT fact_premise_ids_warrant_check CHECK (((warrant_kind = 'premises'::text) = (cardinality(premise_ids) > 0))),
+CONSTRAINT fact_premise_no_self_reference_check CHECK ((fact_id <> premise_fact_id))
 CONSTRAINT fact_source_excerpt_warrant_check CHECK (((source_excerpt IS NOT NULL) = (warrant_kind = 'source'::text))),
 CONSTRAINT fact_source_url_warrant_check CHECK (((source_url IS NOT NULL) = (warrant_kind = 'source'::text))),
 CONSTRAINT fact_supersede_reason_check CHECK (((supersede_reason IS NULL) OR (supersede_reason = ANY (ARRAY['stale'::text, 'wrong'::text, 'merged'::text])))),
@@ -176,6 +183,7 @@ CONSTRAINT room_lexeme_state_check CHECK ((state = ANY (ARRAY['live'::text, 'fad
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
+CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
 CREATE INDEX idx_fact_standing ON public.fact USING btree (workspace, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
@@ -199,6 +207,7 @@ CREATE TABLE public.exchange_observation (
 CREATE TABLE public.fact (
 CREATE TABLE public.fact_candidate (
 CREATE TABLE public.fact_entity (
+CREATE TABLE public.fact_premise (
 CREATE TABLE public.geocode_cache (
 CREATE TABLE public.language_observation (
 CREATE TABLE public.media_descriptions (
@@ -335,8 +344,9 @@ exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
 expires_at bigint
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
+fact_id uuid NOT NULL,
 fetch_token text NOT NULL,
-fidelity text DEFAULT 'proven'::text NOT NULL,
+fidelity text DEFAULT 'tentative'::text NOT NULL,
 fired_at timestamp with time zone,
 first_seen timestamp with time zone DEFAULT now() NOT NULL,
 first_seen_at bigint NOT NULL,
@@ -445,7 +455,7 @@ platform text NOT NULL,
 platform text NOT NULL,
 predicate text NOT NULL,
 predicate text NOT NULL,
-premise_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+premise_fact_id uuid NOT NULL,
 quoted_ts bigint,
 radius_m double precision NOT NULL,
 radius_m double precision NOT NULL,

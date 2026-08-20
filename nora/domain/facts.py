@@ -185,13 +185,20 @@ class Fact:
     required to required exactly when `warrant_kind == "source"` — a fact
     warranted by other facts (`premises`), a repeated observation
     (`observation`), or a decision (`stated`) has no page behind it, and
-    demanding a URL for it would be demanding evidence of the wrong kind.
-    `premise_ids` is non-empty exactly when `warrant_kind == "premises"`;
-    referential integrity for those ids (that each names a real, standing
-    `Fact`) is the WRITER's job — this type, like the DB CHECK it mirrors,
-    enforces only cardinality. `fidelity` is the orthogonal epistemic axis:
-    `superseded_at` says whether a fact is still CURRENT, `fidelity` says how
-    well-supported it is regardless of currency."""
+    demanding a URL for it would be demanding evidence of the wrong kind. A
+    `premises`-warranted fact's premises live in `FactPremise` rows, not on
+    this dataclass — `Fact` mirrors one `fact` row, and premises are a
+    separate relation (`fact_premise`) precisely so "which facts depend on
+    this one" is a query, not a scan (see `FactPremise`'s own docstring).
+    That means THIS type cannot enforce "premises ⇒ at least one premise
+    exists" any more than the database can: it is a cross-table invariant,
+    unenforced until a writer exists to hold it (see the migration). `fidelity`
+    is the orthogonal epistemic axis: `superseded_at` says whether a fact is
+    still CURRENT, `fidelity` says how well-supported it is regardless of
+    currency. Its default is **`tentative`**, not `proven` — a default is what
+    a value gets when nobody thought about it, and that value must underclaim,
+    never overclaim (2026-08-21 correction; see the migration's docstring for
+    the full argument)."""
 
     id: str
     workspace: str
@@ -207,12 +214,11 @@ class Fact:
     warrant_kind: WarrantKind = "source"
     source_url: str | None = None
     source_excerpt: str | None = None
-    premise_ids: tuple[str, ...] = ()
     valid_to: int | None = None
     superseded_at: int | None = None
     superseded_by: str | None = None
     supersede_reason: SupersedeReason | None = None
-    fidelity: FidelityStatus = "proven"
+    fidelity: FidelityStatus = "tentative"
 
     def __post_init__(self) -> None:
         if not _INSTRUCTION_SHA256_RE.fullmatch(self.instruction_sha256):
@@ -263,11 +269,6 @@ class Fact:
                 "and unset otherwise: a fact not warranted by a page cannot "
                 "carry the excerpt that would have carried its claim"
             )
-        if (self.warrant_kind == "premises") != (len(self.premise_ids) > 0):
-            raise ValueError(
-                "premise_ids must be non-empty when warrant_kind is "
-                "'premises' and empty otherwise"
-            )
         if self.fidelity not in _FIDELITY_STATUSES:
             raise ValueError(
                 f"fidelity must be one of {sorted(_FIDELITY_STATUSES)}, "
@@ -293,3 +294,29 @@ class Fact:
     @property
     def is_standing(self) -> bool:
         return self.superseded_at is None
+
+
+@dataclass(frozen=True)
+class FactPremise:
+    """One edge of a `premises`-warranted `Fact`'s deduction: `fact_id` was
+    deduced FROM `premise_fact_id`. A separate relation from `Fact` itself
+    (2026-08-21, replacing an earlier `Fact.premise_ids UUID[]` column) so
+    that "which facts depend on this one" — the reverse direction §13.5's
+    transitive-supersession problem needs — is an indexed lookup rather than
+    an array-containment scan with no useful index. Referential integrity
+    that `premise_fact_id` names a fact that is not just real but STANDING
+    is not enforced here or in the database; only existence is (via the DB's
+    FK). The one cycle cheap to rule out — a fact cannot be its own premise —
+    is enforced by `__post_init__` below, mirroring the DB's
+    `fact_premise_no_self_reference_check`; longer cycles are not detected
+    anywhere yet."""
+
+    fact_id: str
+    premise_fact_id: str
+
+    def __post_init__(self) -> None:
+        if self.fact_id == self.premise_fact_id:
+            raise ValueError(
+                "a fact cannot be its own premise: fact_id and "
+                "premise_fact_id must differ"
+            )
