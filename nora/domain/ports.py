@@ -204,6 +204,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
+from nora.domain.facts import Fact as Fact
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
@@ -1321,4 +1322,41 @@ class DreamSink(Protocol):
         on the implementing side (`stale|wrong|merged` in the fact tier) — which
         it could not be if it had to carry a successor id as free text.
         """
+        ...
+
+
+@runtime_checkable
+class FactReader(Protocol):
+    """The fact tier's own read half — never on `DreamSink`, which the
+    module's own three-word rule ("two verbs, deliberately no third") makes
+    load-bearing rather than negotiable. A read verb belongs to each tier's
+    own interface, not to the shared write boundary; this is the fact tier's,
+    the way `RoomLanguageReader` is the language tier's.
+
+    `standing_facts` is the one read on a tag's critical path — the facts a
+    turn actually renders — so it carries `RoomLanguageReader.room_language`'s
+    own guarantee: **NEVER raises.** An unavailable store degrades to `()`,
+    the same "silence beats a wrong answer" shape every other critical-path
+    read in this module uses; a caller on that path cannot afford one failed
+    read to cancel its siblings in a `asyncio.gather`.
+
+    `fact_by_id` is a history read — retrieving one fact by id, including a
+    superseded one, for whatever wants to show "what did we used to believe"
+    rather than "what do we believe now". It carries no such promise: it is
+    not on the hot path this module's other never-raises reads protect, and a
+    caller that asks for a specific id by name can be trusted to handle not
+    getting an answer.
+    """
+
+    async def standing_facts(
+        self, *, workspace: str, subject_ids: Sequence[str], limit: int,
+    ) -> tuple[Fact, ...]:
+        """The standing (non-superseded) facts for `subject_ids` in
+        `workspace`, most recent first, capped at `limit`. Never raises."""
+        ...
+
+    async def fact_by_id(self, *, workspace: str, fact_id: str) -> Fact | None:
+        """One fact by id, standing or superseded. `None` if it does not
+        exist in `workspace` — never a proxy for "the store could not be
+        reached"."""
         ...

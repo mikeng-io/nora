@@ -249,6 +249,27 @@ async def test_supersede_reason_requires_superseded_at(pg_engine):
             ))
 
 
+async def test_supersede_source_requires_superseded_at(pg_engine):
+    """`supersede_source` (`DreamSink.supersede`'s `source` argument, a
+    WARRANT — a URL or equivalent pointer, never a row id) is optional even
+    on a superseded row, so the CHECK is a one-directional implication, not
+    the biconditional `fact_supersede_reason_is_timed_check` uses above — but
+    it must still never be set on a STANDING row: a citation for a
+    supersession that never happened is exactly the same unreconstructable
+    hole `supersede_reason` closes."""
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, source_url, source_excerpt, valid_from, "
+                "created_at, instruction_sha256, model, established_by, "
+                "supersede_source) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
+                f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
+                "'https://x.test/correction')"
+            ))
+
+
 async def test_supersede_reason_is_constrained(pg_engine):
     """A real successor is seeded first so `superseded_by`'s FK is satisfied
     and only `fact_supersede_reason_check` fails on the invalid value."""

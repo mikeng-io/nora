@@ -37,6 +37,14 @@ port (`ComputeJobStore`, Nora Compute spec §4) rather than one of
 `nora.infra.sql.compute_jobs.SqlComputeJobStore` by
 `tests/contract/test_compute_job_store_contract.py`.
 
+`InMemoryFactStore` (`DreamSink` + the fact tier's own `FactReader`) is bound
+to `nora.infra.sql.facts.SqlFactStore` by
+`tests/contract/test_dream_sink_contract.py`, and lives in its own module
+(`nora.testing.fact_store`) rather than `fakes.py` because it ships alongside
+`fact_proposal_factory` — a builder for a valid `Proposal` another tier's own
+contract suite hands to *its own* store to prove a foreign payload is
+refused, which only stays usable there if it is domain-only.
+
 `FakeAdapter` is exempt *as a whole*: it keeps
 `.parse()` public and `.listen()` a no-op rather than mirroring
 `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop (nothing
@@ -63,6 +71,7 @@ from nora.testing.eval_backends import (
     CannedTransitSource,
     CannedWeatherProvider,
 )
+from nora.testing.fact_store import InMemoryFactStore, fact_proposal_factory
 from nora.testing.fakes import (
     FakeAdapter,
     FakeArtifactIngest,
@@ -112,8 +121,10 @@ __all__ = [
     "FakeRecordStore",
     "FakeRosterSource",
     "FakeToolCallLogStore",
+    "InMemoryFactStore",
     "ScriptedModel",
     "ScriptedTurn",
+    "fact_proposal_factory",
     "group_event",
     "limit_stop_reason",
 ]

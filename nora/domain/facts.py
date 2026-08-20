@@ -219,6 +219,14 @@ class Fact:
     superseded_by: str | None = None
     supersede_reason: SupersedeReason | None = None
     fidelity: FidelityStatus = "tentative"
+    # `DreamSink.supersede`'s `source` argument, landed 2026-08-21 alongside
+    # `SqlFactStore`. A WARRANT, not a row id — `replaced_by`/`superseded_by`
+    # already carries the successor, so this is never that. Unlike
+    # `supersede_reason`, it is OPTIONAL even when superseded (the port's own
+    # docstring: "`because` is required, `source` is not"), so the invariant
+    # below is a one-directional implication, not the biconditional the other
+    # supersession columns use.
+    supersede_source: str | None = None
 
     def __post_init__(self) -> None:
         if not _INSTRUCTION_SHA256_RE.fullmatch(self.instruction_sha256):
@@ -289,6 +297,11 @@ class Fact:
             raise ValueError(
                 f"supersede_reason must be one of {sorted(_SUPERSEDE_REASONS)}, "
                 f"got {self.supersede_reason!r}"
+            )
+        if self.supersede_source is not None and self.superseded_at is None:
+            raise ValueError(
+                "supersede_source may only be set on a superseded fact: a "
+                "standing fact has no supersession to warrant"
             )
 
     @property
