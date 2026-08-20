@@ -1200,3 +1200,95 @@ class EngagePolicy(Protocol):
 @runtime_checkable
 class ContextAssembler(Protocol):
     async def assemble(self, *, request: EngagementRequest) -> TagContext: ...
+
+
+@dataclass(frozen=True)
+class Proposal:
+    """One validated result an adaptor wants written, with the provenance that
+    says what produced it.
+
+    `payload` is deliberately `object`: the runtime never names an adaptor's own
+    value type. A `DreamSink` implementation knows what it stores; the loop that
+    hands it a `Proposal` does not, and typing this as anything narrower would
+    put `FactVerdict` (or `Lexeme`, or an exchange pattern) in the runtime's
+    imports and make every new adaptor a change to the runtime.
+
+    Provenance rides HERE rather than inside `payload` for the same reason. Both
+    fields are the columns DEC-125/DEC-126 added to every adaptor-written table,
+    and DEC-128 fixes what `instruction_sha256` must be: the digest of what was
+    ACTUALLY SENT to the model, read per run, never cached at construction and
+    never covering text the model did not see.
+
+    `established_by` is the run that produced it — the handle a later
+    `supersede` names when it retires this row.
+    """
+
+    payload: object
+    instruction_sha256: str
+    model: str
+    established_by: str
+
+
+@runtime_checkable
+class DreamSink(Protocol):
+    """Where a Dreamer adaptor's validated result is written.
+
+    Two verbs, and deliberately no third. **There is no delete — not on this
+    port, and not on any implementation of it.** That is the enforcement, not a
+    convention: «invalidate, never delete» written as a type cannot be forgotten
+    by either side, whereas the same rule written in a docstring is remembered
+    until the night someone is tired. A single opaque `write(result)` is also
+    rejected — it cannot express supersede at all, so the distinction between
+    "this is new" and "this replaces that" would be lost at the boundary.
+
+    **The key is the adaptor's own.** Every existing adaptor's unit of work is a
+    `scope_id`; the fact adaptor's is a workspace (`Conversation.workspace`,
+    DEC-105). The port takes `key: str` and does not care which, because
+    `_dream_once`'s shared per-scope watermark cannot host a workspace-keyed
+    adaptor unchanged and the port must not bake in the assumption that it can.
+
+    **An empty `propose` is R-27's three states expressed in the port:**
+
+    - `propose(key, ())` — the adaptor ran and found nothing. `nothing_found`,
+      «I looked and there was nothing». It is a LEGAL call and the sink may act
+      on it: `LanguageConsolidator` rescores even for an empty batch, because
+      decay is time-driven and the 24h fire condition exists exactly to fade a
+      dormant room's lexicon. None of the five adaptor fields has a slot for
+      that, so this is where it lives.
+    - not calling `propose` at all — the adaptor could not check. `unavailable`,
+      «I could not check». An ERROR is never a PASS.
+
+    Collapsing those two, or treating an empty tuple as "nothing to do, skip the
+    call", silently drops decay and turns a wiring gap into a false negative.
+    """
+
+    async def propose(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> Sequence[str]:
+        """Write `proposals` under `key`; return the id of each row written, in
+        order.
+
+        Ids, not a count: `supersede` has to be able to NAME what a previous
+        `propose` produced, and a count cannot. An empty return is correct for
+        an empty `proposals`.
+
+        `now_ms` is on the verb rather than on `Proposal` because one tick
+        writes many proposals at a single instant — putting the clock on each
+        proposal invites a batch whose rows disagree about when the batch
+        happened.
+        """
+        ...
+
+    async def supersede(
+        self, *, key: str, target: str, because: str, source: str | None, now_ms: int
+    ) -> int:
+        """Retire `target`, recording WHAT replaced it and WHY. Returns rows
+        affected.
+
+        `because` is required and `source` is not: a supersession always has a
+        reason, and only sometimes a citation. Retiring a row with neither
+        leaves a fact hidden from every read with no record of its successor —
+        the failure the fact tier's supersession CHECK is a biconditional to
+        prevent.
+        """
+        ...
