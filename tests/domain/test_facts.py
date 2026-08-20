@@ -126,6 +126,35 @@ def test_a_fact_has_exactly_one_object():
         )
 
 
+def test_a_fact_cannot_be_superseded_at_without_a_successor():
+    """The direction a one-directional implication would miss: `superseded_at`
+    set with `superseded_by` NULL hides the row from `is_standing` with no
+    record of what replaced it — half a merge record, thrown away."""
+    with pytest.raises(ValueError, match="superseded"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url="https://example.test/a", source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+            superseded_at=2,
+        )
+
+
+def test_a_fact_cannot_name_a_successor_without_a_time():
+    with pytest.raises(ValueError, match="superseded"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url="https://example.test/a", source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+            superseded_by="0191f2c4-0000-7000-8000-000000000002",
+        )
+
+
 def test_candidate_and_entity_carry_their_workspace():
     c = FactCandidate(
         id="c1", workspace="nora", subject_id="e1", predicate="has",

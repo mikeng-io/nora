@@ -38,9 +38,15 @@ proves each one live by attempting the exact insert it exists to refuse.
   `has_entity == has_literal` guard. The domain type refuses what the column
   would already refuse; this is the enforcement the domain type assumes
   exists underneath it.
-- `fact_supersession_is_timed_check` — `superseded_by` implies
-  `superseded_at`. A merge record without its time is exactly the
-  unauditable supersession Graphiti's own issue #1771 documents.
+- `fact_supersession_is_timed_check` — `superseded_by` and `superseded_at`
+  are set together or not at all (a biconditional, not an implication): a
+  fact is either standing (both NULL) or superseded (both set). The hole a
+  one-directional implication leaves — `superseded_at` set with
+  `superseded_by` NULL — is exactly the unauditable supersession Graphiti's
+  own issue #1771 documents: a merge computed and then thrown away, no
+  record of what replaced it, while `Fact.is_standing` and the partial
+  `idx_fact_standing` (both keyed on `superseded_at IS NULL`) already treat
+  the row as gone.
 - `fact_candidate_status_check` — `pending` / `adjudicated` / `not_covered`,
   matching `nora.domain.facts.CandidateStatus`.
 
@@ -133,7 +139,7 @@ def upgrade() -> None:
                            name="fact_model_is_named_check"),
         sa.CheckConstraint("(object_entity_id is null) <> (object_literal is null)",
                            name="fact_one_object_check"),
-        sa.CheckConstraint("(superseded_by is null) or (superseded_at is not null)",
+        sa.CheckConstraint("(superseded_by is null) = (superseded_at is null)",
                            name="fact_supersession_is_timed_check"),
     )
     op.create_index("idx_fact_standing", "fact", ["workspace", "subject_id"],

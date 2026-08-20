@@ -87,8 +87,8 @@ async def test_a_blank_model_is_refused_not_stored(pg_engine):
 
 
 async def test_superseded_by_requires_superseded_at(pg_engine):
-    """A merge record without its time is exactly the unauditable supersession
-    Graphiti's own issue #1771 documents."""
+    """`superseded_by` set alone names a successor with no record of when the
+    supersession happened — half a merge record, not a full one."""
     async with pg_engine.begin() as conn:
         with pytest.raises(sa.exc.IntegrityError):
             await conn.execute(sa.text(
@@ -99,6 +99,28 @@ async def test_superseded_by_requires_superseded_at(pg_engine):
                 "values (gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
                 f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
                 "gen_random_uuid())"
+            ))
+
+
+async def test_superseded_at_requires_superseded_by(pg_engine):
+    """The direction the old one-directional implication missed:
+    `superseded_at` set with `superseded_by` NULL is accepted by
+    `(superseded_by is null) or (superseded_at is not null)` — but
+    `Fact.is_standing` and the partial `idx_fact_standing` both key on
+    `superseded_at IS NULL` alone, so such a row is hidden from every read
+    with no record of what replaced it. This is precisely the Graphiti issue
+    #1771 failure the constraint exists to prevent: a merge computed and then
+    thrown away."""
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_literal, source_url, source_excerpt, valid_from, "
+                "created_at, instruction_sha256, model, established_by, "
+                "superseded_at) "
+                "values (gen_random_uuid(), 'nora', 'e1', 'has', 'bt', "
+                f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
+                "1)"
             ))
 
 

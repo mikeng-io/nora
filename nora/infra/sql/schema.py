@@ -1207,9 +1207,13 @@ FACT = sa.Table(
         "(object_entity_id is null) <> (object_literal is null)",
         name="fact_one_object_check",
     ),
-    # A merge record without its time is an unauditable supersession.
+    # Biconditional, not an implication: a fact is either standing (both
+    # NULL) or superseded (both set). `superseded_at` set alone would hide
+    # the row from `Fact.is_standing` and `idx_fact_standing` with no record
+    # of what replaced it — the unauditable merge Graphiti issue #1771 warns
+    # against.
     sa.CheckConstraint(
-        "(superseded_by is null) or (superseded_at is not null)",
+        "(superseded_by is null) = (superseded_at is null)",
         name="fact_supersession_is_timed_check",
     ),
 )

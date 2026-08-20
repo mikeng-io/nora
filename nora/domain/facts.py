@@ -184,6 +184,18 @@ class Fact:
                 "a fact needs exactly one object: an entity id or a literal, "
                 "never both and never neither"
             )
+        # The DB CHECK is `(superseded_by is null) = (superseded_at is
+        # null)` — a biconditional, not an implication. `superseded_at` set
+        # alone would hide the row from `is_standing` (below) with no record
+        # of what replaced it; `superseded_by` set alone names a successor
+        # with no record of when. Both are the unauditable merge Graphiti
+        # issue #1771 warns against.
+        if (self.superseded_by is None) != (self.superseded_at is None):
+            raise ValueError(
+                "superseded_at and superseded_by must be set together or "
+                "not at all: a fact is either standing or superseded, and a "
+                "superseded fact needs both the time and the successor"
+            )
 
     @property
     def is_standing(self) -> bool:

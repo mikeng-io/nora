@@ -152,7 +152,7 @@ CONSTRAINT fact_candidate_status_check CHECK ((status = ANY (ARRAY['pending'::te
 CONSTRAINT fact_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT fact_model_is_named_check CHECK ((length(btrim(model)) > 0)),
 CONSTRAINT fact_one_object_check CHECK (((object_entity_id IS NULL) <> (object_literal IS NULL))),
-CONSTRAINT fact_supersession_is_timed_check CHECK (((superseded_by IS NULL) OR (superseded_at IS NOT NULL)))
+CONSTRAINT fact_supersession_is_timed_check CHECK (((superseded_by IS NULL) = (superseded_at IS NULL)))
 CONSTRAINT language_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT language_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0)))
 CONSTRAINT messages_conversation_type_check CHECK ((conversation_type = ANY (ARRAY['group'::text, 'dm'::text])))
