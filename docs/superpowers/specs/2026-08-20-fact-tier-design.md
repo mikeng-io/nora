@@ -600,61 +600,95 @@ undeclared name raises `KeyError`.
    with its warrant in the prompt is a different prompt from the one that failed.
    Worth measuring after this lands, and it is a hypothesis, not a claim.
 
-## 13.5 The three inference modes, and the one this tier cannot hold
+## 13.5 The three inference modes, and the ones this tier cannot hold
 
 Raised by the operator, 2026-08-21, pointing at Honcho: *abduction, deduction,
 induction*. It is not a decoration on this design — it names a gap in it.
 
-Honcho's own dreamer decomposes reasoning into specialists (Deduction and
-Induction) over the `(observer, observed)` axis: inferences about **people**.
-This tier is the same decomposition on the **world** axis — the axis §4 of the
-Standing/Facts spec argues Honcho structurally cannot hold, because a fact about
-the world has no `observed` peer. Read that way, the Dreamer's tiers already
-implement two of the three modes, each with its own kind of warrant:
+**Correction, 2026-08-21 (this section originally mislabelled both rows of its
+own table).** Under Peirce's taxonomy, an inference from a general rule plus a
+specific case to a specific consequence is **deduction** — including the
+degenerate case where the "rule" is simply "this source's statement is taken as
+given": a source that *states* a claim licenses believing it deductively, no new
+information inferred. A claim warranted by *other stored facts* is deduction too
+— a different premise set, the same mode. **Neither of the tier's two warrant
+shapes is abduction.** Abduction is inference to the best explanation — "X
+because Y", where Y is not given but *inferred as the cause of X* — and it is
+**absent from the tier entirely**, and so is volition (somebody simply
+*deciding* something, whose warrant is who decided, not evidence). Honcho's own
+dreamer decomposes reasoning into specialists (Deduction and Induction) over the
+`(observer, observed)` axis: inferences about **people**. This tier is the same
+decomposition on the **world** axis — the axis §4 of the Standing/Facts spec
+argues Honcho structurally cannot hold, because a fact about the world has no
+`observed` peer. Read that way:
 
-| mode | what it does | warrant | where it lives today |
+| mode | what it does | warrant | where it lives |
 |---|---|---|---|
 | **Induction** | generalise from repeated observation — `big walk` said 12 times by 4 people becomes a room lexeme | `occurrence_count`, `distinct_speakers`, `recognition_score` | `room_lexeme` (Dreamer Plan 1) |
-| **Abduction** | inference to the best explanation — a claim was made; find a source that actually addresses it | `source_url` + `source_excerpt`, plus §4.1's `addresses_claim` | **this tier**, as built |
-| **Deduction** | necessary consequence of stored premises — `black_tower --unlocked_by--> {4 colours}` together with `blue_tower --incomplete--> true` yields that the black tower is not yet reachable | **the premise fact ids** | **nowhere** |
+| **Deduction (source)** | a source *states* the claim; take it as given — specific→specific, no new information inferred | `source_url` + `source_excerpt`, plus §4.1's `addresses_claim` | **this tier**, `warrant_kind = 'source'`, as built |
+| **Deduction (premises)** | necessary consequence of stored premises — `black_tower --unlocked_by--> {4 colours}` together with `blue_tower --incomplete--> true` yields that the black tower is not yet reachable | **the premise fact ids** | **this tier**, `warrant_kind = 'premises'` — schema landed 2026-08-21, no writer yet |
+| **Abduction** | inference to the best *explanation* — "X because Y", where Y is inferred as the cause, not given | — | **absent from the tier entirely** |
+| **Volition** | somebody simply *decided* something; the warrant is who decided, not evidence | — | **this tier**, `warrant_kind = 'stated'` — schema landed 2026-08-21, no writer yet |
 
-**The gap, stated plainly: `fact.source_url` and `fact.source_excerpt` are NOT
-NULL, so a fact whose warrant is *other facts* cannot be written at all.** A
-deduced fact has no page behind it and never will; demanding a URL for it is
-demanding evidence of the wrong kind. This tier can currently hold only abduced
-facts.
+**The gap this section originally reported, restated correctly: the tier holds
+only deduction (of both shapes), and had no schema room for anything else.**
+`fact.source_url`/`fact.source_excerpt` being unconditionally NOT NULL meant a
+fact whose warrant was *other facts* could not be written at all — a deduced
+fact from premises has no page behind it and never will, and demanding a URL
+for it is demanding evidence of the wrong kind. That was an uncomfortable result
+for a design whose whole principle is that the honest case must be
+representable — §4.1 makes «this source omitted it, therefore drop the fact»
+unrepresentable *on purpose*, and the same NOT NULL made «this follows from what
+I already know» unrepresentable *by accident*.
 
-That is an uncomfortable result for a design whose whole principle is that the
-honest case must be representable — §4.1 makes «this source omitted it, therefore
-drop the fact» unrepresentable *on purpose*, and then the same NOT NULL makes «this
-follows from what I already know» unrepresentable *by accident*.
+**Fixed 2026-08-21** (`fact_warrant_axis`, in place on migration `0025` — this
+tier had never been applied anywhere, so there was no deployed state to
+migrate). The shape is a **discriminated warrant**, not a nullable URL:
 
-**Deliberately not fixed here**, because the fix is a schema change and this tier
-ships dormant with no writer; there is nothing to migrate and no urgency, and
-getting the warrant model right matters more than getting it early. When it is
-fixed, the shape is a **discriminated warrant** rather than a nullable URL:
+- `warrant_kind`: `source` | `premises` | `observation` | `stated`
+- `source` ⇒ `source_url` + `source_excerpt` required (today's rule,
+  unchanged), forbidden otherwise
+- `premises` ⇒ a non-empty `premise_ids` (`UUID[]`); Postgres cannot FK array
+  elements, so that each id names a real, standing `fact` is the WRITER's job,
+  not the database's
+- `observation` / `stated` ⇒ no source fields, no premises — the row's warrant
+  is entirely outside what this schema can check (a repeated observation's
+  count lives in `room_lexeme`; a decision's "who decided" lives in
+  `established_by`)
+- A nullable `source_url` with no CHECK would have been wrong regardless: it
+  would permit a fact with *no* warrant of any kind, which is exactly the
+  unattributable claim §3 exists to prevent — a discriminated, CHECK-enforced
+  `warrant_kind` is what keeps that impossible.
 
-- `warrant_kind`: `source` | `premises` | `observation`
-- `source` ⇒ url + excerpt required (today's rule, unchanged)
-- `premises` ⇒ a non-empty set of premise `fact.id`s, and a CHECK that they exist
-  and are themselves standing
-- Nullable-URL alone would be wrong: it permits a fact with *no* warrant of any
-  kind, which is exactly the unattributable claim §3 exists to prevent.
+**`warrant_kind`'s four values give volition somewhere to live (`stated`), and
+the companion `fidelity` column (also landed 2026-08-21: `tentative` / `proven`
+/ `deprecated`, orthogonal to `superseded_at`'s currency axis) gives abduction
+somewhere to live too — not as a fifth warrant kind, but as a fidelity state.**
+An abduced claim still has to be *written* under one of the four warrant kinds
+(most often `source`, if the inferred cause is itself suggested by a page, or
+`premises`, if inferred from stored facts) — the schema has no shape for "cause
+inferred, not stated" as evidence — but it can be marked `fidelity = 'tentative'`
+to record honestly that it is inference to a plausible cause rather than a
+proven deduction. That is a real place to land, not a full model of abduction:
+the *inference itself* (which candidate cause was chosen, and why) is still
+unrepresented, only its *epistemic status* is.
 
 Two consequences worth recording now, while they are cheap:
 
-1. **Deduction makes supersession transitive, and nothing here handles that.** If
-   a premise is superseded, every fact deduced from it is now standing on a
-   retracted foundation. Neither the schema nor `FactVerdict` models that. A
-   `premises` warrant makes the dependency *visible*, which is the precondition
-   for ever handling it — a URL warrant hides it entirely.
-2. **Only deduction can be checked without a network call.** It is the one mode
-   whose verification is a pure function of the store, so it is the cheapest
-   adaptor to run and the only one that could sensibly run on every tick rather
-   than under a per-tick cap (§5.7).
+1. **Deduction-from-premises makes supersession transitive, and nothing here
+   handles that.** If a premise is superseded, every fact deduced from it is now
+   standing on a retracted foundation. Neither the schema nor `FactVerdict`
+   models that. A `premises` warrant makes the dependency *visible*, which is
+   the precondition for ever handling it — a URL warrant hides it entirely.
+2. **Only deduction-from-premises can be checked without a network call.** It is
+   the one mode whose verification is a pure function of the store, so it is the
+   cheapest adaptor to run and the only one that could sensibly run on every
+   tick rather than under a per-tick cap (§5.7). Deduction-from-source still
+   needs the fetch; induction needs the room's own transcript.
 
 Filed as a design gap, not a defect: the tier does what it was specified to do,
-and what it was specified to do turns out to be one of three things.
+and what it was specified to do turns out to be two of four things, with a
+fidelity state standing in for a third.
 
 ## 14. Status
 

@@ -55,6 +55,7 @@ ADD CONSTRAINT fact_candidate_triple_key UNIQUE (workspace, subject_id, predicat
 ADD CONSTRAINT fact_entity_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_entity_workspace_name_key UNIQUE (workspace, canonical_name);
 ADD CONSTRAINT fact_pkey PRIMARY KEY (id);
+ADD CONSTRAINT fact_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.fact(id);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
@@ -88,6 +89,7 @@ ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.events
 ALTER TABLE ONLY public.exchange_observation
 ALTER TABLE ONLY public.exchange_observation
+ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact_candidate
 ALTER TABLE ONLY public.fact_candidate
@@ -149,10 +151,17 @@ CONSTRAINT exchange_observation_message_ids_check CHECK ((array_length(message_i
 CONSTRAINT exchange_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
 CONSTRAINT exchange_observation_participants_check CHECK ((array_length(participants, 1) >= 2))
 CONSTRAINT fact_candidate_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'adjudicated'::text, 'not_covered'::text])))
+CONSTRAINT fact_fidelity_check CHECK ((fidelity = ANY (ARRAY['tentative'::text, 'proven'::text, 'deprecated'::text]))),
 CONSTRAINT fact_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT fact_model_is_named_check CHECK ((length(btrim(model)) > 0)),
 CONSTRAINT fact_one_object_check CHECK (((object_entity_id IS NULL) <> (object_literal IS NULL))),
-CONSTRAINT fact_supersession_is_timed_check CHECK (((superseded_by IS NULL) = (superseded_at IS NULL)))
+CONSTRAINT fact_premise_ids_warrant_check CHECK (((warrant_kind = 'premises'::text) = (cardinality(premise_ids) > 0))),
+CONSTRAINT fact_source_excerpt_warrant_check CHECK (((source_excerpt IS NOT NULL) = (warrant_kind = 'source'::text))),
+CONSTRAINT fact_source_url_warrant_check CHECK (((source_url IS NOT NULL) = (warrant_kind = 'source'::text))),
+CONSTRAINT fact_supersede_reason_check CHECK (((supersede_reason IS NULL) OR (supersede_reason = ANY (ARRAY['stale'::text, 'wrong'::text, 'merged'::text])))),
+CONSTRAINT fact_supersede_reason_is_timed_check CHECK (((supersede_reason IS NULL) = (superseded_at IS NULL))),
+CONSTRAINT fact_supersession_is_timed_check CHECK (((superseded_by IS NULL) = (superseded_at IS NULL))),
+CONSTRAINT fact_warrant_kind_check CHECK ((warrant_kind = ANY (ARRAY['source'::text, 'premises'::text, 'observation'::text, 'stated'::text])))
 CONSTRAINT language_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT language_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0)))
 CONSTRAINT messages_conversation_type_check CHECK ((conversation_type = ANY (ARRAY['group'::text, 'dm'::text])))
@@ -327,6 +336,7 @@ expires_at bigint
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
 fetch_token text NOT NULL,
+fidelity text DEFAULT 'proven'::text NOT NULL,
 fired_at timestamp with time zone,
 first_seen timestamp with time zone DEFAULT now() NOT NULL,
 first_seen_at bigint NOT NULL,
@@ -435,6 +445,7 @@ platform text NOT NULL,
 platform text NOT NULL,
 predicate text NOT NULL,
 predicate text NOT NULL,
+premise_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
 quoted_ts bigint,
 radius_m double precision NOT NULL,
 radius_m double precision NOT NULL,
@@ -478,8 +489,8 @@ sha256 text NOT NULL,
 size integer DEFAULT 0 NOT NULL,
 size_bytes bigint NOT NULL,
 slug text NOT NULL,
-source_excerpt text NOT NULL,
-source_url text NOT NULL,
+source_excerpt text,
+source_url text,
 speed_kmh double precision
 started_ts bigint NOT NULL,
 started_ts bigint NOT NULL,
@@ -500,6 +511,7 @@ subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
+supersede_reason text,
 superseded_at bigint,
 superseded_by uuid,
 surface_form text NOT NULL,
@@ -533,6 +545,7 @@ venue_resolved_at timestamp with time zone,
 venue_text text,
 version text NOT NULL,
 version_num character varying(32) NOT NULL
+warrant_kind text DEFAULT 'source'::text NOT NULL,
 wire_state text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,

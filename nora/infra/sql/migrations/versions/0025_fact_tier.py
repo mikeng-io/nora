@@ -50,6 +50,71 @@ proves each one live by attempting the exact insert it exists to refuse.
 - `fact_candidate_status_check` — `pending` / `adjudicated` / `not_covered`,
   matching `nora.domain.facts.CandidateStatus`.
 
+**2026-08-21: the warrant axis.** The original shape above models TIME four
+ways (`valid_from`/`valid_to`/`created_at`/`superseded_at`) and WARRANT QUALITY
+zero ways — everything the tier can ever say about how well a claim is
+supported had to squeeze through `superseded_at`, a single bit. Two axes were
+conflated and one was missing (see `nora/domain/facts.py`'s module docstring
+for the full argument):
+
+- **Currency** — temporal validity, "was true then, isn't now". Already
+  modelled by the four time columns above.
+- **Fidelity** — epistemic status, "unconfirmed / confirmed / retracted".
+  Orthogonal to currency: a fact can be high-fidelity + low-currency (true but
+  outdated) or low-fidelity + high-currency (fresh but unconfirmed).
+
+And `source_url`/`source_excerpt` being NOT NULL meant the only representable
+warrant was "a page said so" — a fact warranted by other facts, by a repeated
+observation, or by someone simply deciding something could not be written at
+all. This migration adds:
+
+- `fact_warrant_kind_check` — `warrant_kind in ('source', 'premises',
+  'observation', 'stated')`, matching `nora.domain.facts.WarrantKind`.
+  `source` is today's only writer-producible case; `premises`, `observation`,
+  `stated` give the other three warrant shapes discussed in
+  `docs/superpowers/specs/2026-08-20-fact-tier-design.md` §13.5 somewhere to
+  land without a further migration.
+- `fact_source_url_warrant_check` / `fact_source_excerpt_warrant_check` —
+  each column is set if and only if `warrant_kind = 'source'`. This REPLACES
+  the two columns' NOT NULL (dropped below): a nullable column with no CHECK
+  would permit a fact with no warrant of any kind, which is exactly the
+  unattributable claim this tier exists to prevent. The two columns are kept
+  as separate CHECKs (rather than one combined predicate) so each is
+  independently red-on-revert testable, and so a row can never carry
+  `source_url` set while `source_excerpt` is null or vice versa for a
+  non-`source` warrant — "forbidden otherwise", not merely "optional", is the
+  deliberate choice: an optional stray `source_url` on a `premises`-warranted
+  fact would be undefined in meaning (corroborating? decorative?), which is
+  the exact ambiguity the discriminated warrant exists to kill.
+- `fact_premise_ids_warrant_check` — `premise_ids` (see below) is non-empty
+  if and only if `warrant_kind = 'premises'`.
+- `fact_fidelity_check` — `fidelity in ('tentative', 'proven',
+  'deprecated')`, matching `nora.domain.facts.Fidelity`. Deliberately not a
+  float: a numeric confidence invites false precision nobody in this tier can
+  calibrate. `tentative` is where an unconfirmed claim lands — the state the
+  adaptor will produce whether or not the schema admits it.
+- `fact_supersede_reason_is_timed_check` — `supersede_reason` is set if and
+  only if `superseded_at` is set, the same biconditional shape as
+  `fact_supersession_is_timed_check` above and for the same reason: the
+  *reason* a fact was superseded cannot be reconstructed from the row
+  afterwards at any price, so it is captured at supersession time or not at
+  all.
+- `fact_supersede_reason_check` — when set, `supersede_reason in ('stale',
+  'wrong', 'merged')`, matching `nora.domain.facts.SupersedeReason`.
+- `fact_superseded_by_fkey` — `superseded_by` now FOREIGN KEYs to `fact.id`.
+  It previously had none, so it could name a fact that does not exist. Being
+  self-referential (same table), it needs no cross-table ordering in either
+  `upgrade`/`downgrade`: `DROP TABLE fact` drops it with the table, same as
+  any other constraint on `fact`. It does not change the existing
+  biconditional's logic, only strengthens it: a non-NULL `superseded_by` must
+  now also be a real, existing row.
+
+`premise_ids` (`UUID[]`, NOT NULL, default `'{}'`) cannot have its elements
+FOREIGN KEYed — Postgres has no per-element FK on an array column — so
+referential integrity for premises (that each id names a real, standing
+`fact` row) is the WRITER's job, not the database's. Said here plainly rather
+than implied: this CHECK only enforces cardinality, nothing about content.
+
 `idx_fact_standing` serves the one read on the turn's critical path: the
 standing facts for a set of subjects in one workspace. It is PARTIAL on
 `superseded_at IS NULL` because a superseded fact is history and is never
@@ -123,16 +188,24 @@ def upgrade() -> None:
         sa.Column("predicate", sa.Text, nullable=False),
         sa.Column("object_entity_id", sa.Text),
         sa.Column("object_literal", sa.Text),
-        sa.Column("source_url", sa.Text, nullable=False),
-        sa.Column("source_excerpt", sa.Text, nullable=False),
+        sa.Column("warrant_kind", sa.Text, nullable=False,
+                  server_default=sa.text("'source'")),
+        sa.Column("source_url", sa.Text),
+        sa.Column("source_excerpt", sa.Text),
+        sa.Column("premise_ids", pg.ARRAY(pg.UUID(as_uuid=False)), nullable=False,
+                  server_default=sa.text("'{}'")),
         sa.Column("valid_from", sa.BigInteger, nullable=False),
         sa.Column("valid_to", sa.BigInteger),
         sa.Column("created_at", sa.BigInteger, nullable=False),
         sa.Column("superseded_at", sa.BigInteger),
-        sa.Column("superseded_by", pg.UUID(as_uuid=False)),
+        sa.Column("superseded_by", pg.UUID(as_uuid=False),
+                  sa.ForeignKey("fact.id", name="fact_superseded_by_fkey")),
+        sa.Column("supersede_reason", sa.Text),
         sa.Column("instruction_sha256", sa.Text, nullable=False),
         sa.Column("model", sa.Text, nullable=False),
         sa.Column("established_by", sa.Text, nullable=False),
+        sa.Column("fidelity", sa.Text, nullable=False,
+                  server_default=sa.text("'proven'")),
         sa.CheckConstraint("instruction_sha256 ~ '^[0-9a-f]{64}$'",
                            name="fact_instruction_sha256_check"),
         sa.CheckConstraint("length(btrim(model)) > 0",
@@ -141,6 +214,35 @@ def upgrade() -> None:
                            name="fact_one_object_check"),
         sa.CheckConstraint("(superseded_by is null) = (superseded_at is null)",
                            name="fact_supersession_is_timed_check"),
+        sa.CheckConstraint(
+            "warrant_kind in ('source', 'premises', 'observation', 'stated')",
+            name="fact_warrant_kind_check",
+        ),
+        sa.CheckConstraint(
+            "(source_url is not null) = (warrant_kind = 'source')",
+            name="fact_source_url_warrant_check",
+        ),
+        sa.CheckConstraint(
+            "(source_excerpt is not null) = (warrant_kind = 'source')",
+            name="fact_source_excerpt_warrant_check",
+        ),
+        sa.CheckConstraint(
+            "(warrant_kind = 'premises') = (cardinality(premise_ids) > 0)",
+            name="fact_premise_ids_warrant_check",
+        ),
+        sa.CheckConstraint(
+            "fidelity in ('tentative', 'proven', 'deprecated')",
+            name="fact_fidelity_check",
+        ),
+        sa.CheckConstraint(
+            "(supersede_reason is null) = (superseded_at is null)",
+            name="fact_supersede_reason_is_timed_check",
+        ),
+        sa.CheckConstraint(
+            "supersede_reason is null or supersede_reason in "
+            "('stale', 'wrong', 'merged')",
+            name="fact_supersede_reason_check",
+        ),
     )
     op.create_index("idx_fact_standing", "fact", ["workspace", "subject_id"],
                     postgresql_where=sa.text("superseded_at is null"))

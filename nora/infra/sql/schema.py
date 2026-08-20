@@ -1172,18 +1172,46 @@ FACT = sa.Table(
     sa.Column("predicate", sa.Text, nullable=False),
     sa.Column("object_entity_id", sa.Text),
     sa.Column("object_literal", sa.Text),
-    sa.Column("source_url", sa.Text, nullable=False),
-    sa.Column("source_excerpt", sa.Text, nullable=False),
+    # 2026-08-21: the warrant axis. `warrant_kind` names WHAT kind of
+    # evidence backs the row; `source_url`/`source_excerpt` are no longer
+    # unconditionally NOT NULL (see the two CHECKs below) because a fact can
+    # now be warranted by other facts (`premises`), by a repeated observation
+    # (`observation`), or by someone simply deciding something (`stated`),
+    # none of which have a page behind them.
+    sa.Column("warrant_kind", sa.Text, nullable=False,
+              server_default=sa.text("'source'")),
+    sa.Column("source_url", sa.Text),
+    sa.Column("source_excerpt", sa.Text),
+    # UUID[], not FOREIGN KEYed element-by-element — Postgres has no
+    # per-element FK on an array column, so referential integrity for
+    # premises (that each id names a real, standing `fact` row) is the
+    # WRITER's job, not the database's. The CHECK below enforces only
+    # cardinality, nothing about content.
+    sa.Column("premise_ids", pg.ARRAY(pg.UUID(as_uuid=False)), nullable=False,
+              server_default=sa.text("'{}'")),
     sa.Column("valid_from", sa.BigInteger, nullable=False),
     sa.Column("valid_to", sa.BigInteger),
     sa.Column("created_at", sa.BigInteger, nullable=False),
     sa.Column("superseded_at", sa.BigInteger),
-    sa.Column("superseded_by", pg.UUID(as_uuid=False)),
+    sa.Column("superseded_by", pg.UUID(as_uuid=False),
+              sa.ForeignKey("fact.id", name="fact_superseded_by_fkey")),
+    # Set iff superseded_at is set (fact_supersede_reason_is_timed_check
+    # below) — the reason a fact was superseded cannot be reconstructed from
+    # the row afterwards at any price, so it is captured at supersession
+    # time or not at all.
+    sa.Column("supersede_reason", sa.Text),
     # NOT NULL, unlike migration 0023's four tables: those hold rows written
     # before the column existed, this one never will.
     sa.Column("instruction_sha256", sa.Text, nullable=False),
     sa.Column("model", sa.Text, nullable=False),
     sa.Column("established_by", sa.Text, nullable=False),
+    # The epistemic axis, orthogonal to superseded_at's temporal one: a fact
+    # can be high-fidelity + low-currency (true but outdated) or
+    # low-fidelity + high-currency (fresh but unconfirmed). Deliberately not
+    # a float — a numeric confidence invites false precision nobody in this
+    # tier can calibrate.
+    sa.Column("fidelity", sa.Text, nullable=False,
+              server_default=sa.text("'proven'")),
     sa.CheckConstraint(
         "instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="fact_instruction_sha256_check",
@@ -1215,6 +1243,44 @@ FACT = sa.Table(
     sa.CheckConstraint(
         "(superseded_by is null) = (superseded_at is null)",
         name="fact_supersession_is_timed_check",
+    ),
+    sa.CheckConstraint(
+        "warrant_kind in ('source', 'premises', 'observation', 'stated')",
+        name="fact_warrant_kind_check",
+    ),
+    # Each source column is set if and only if warrant_kind = 'source' — two
+    # separate CHECKs, not one combined predicate, so each is independently
+    # red-on-revert testable and neither column can be set alone for a
+    # non-'source' warrant. "Forbidden otherwise", not merely "optional": an
+    # optional stray source_url on a 'premises'-warranted fact would be
+    # undefined in meaning, which is the exact ambiguity this discriminated
+    # warrant exists to kill.
+    sa.CheckConstraint(
+        "(source_url is not null) = (warrant_kind = 'source')",
+        name="fact_source_url_warrant_check",
+    ),
+    sa.CheckConstraint(
+        "(source_excerpt is not null) = (warrant_kind = 'source')",
+        name="fact_source_excerpt_warrant_check",
+    ),
+    sa.CheckConstraint(
+        "(warrant_kind = 'premises') = (cardinality(premise_ids) > 0)",
+        name="fact_premise_ids_warrant_check",
+    ),
+    sa.CheckConstraint(
+        "fidelity in ('tentative', 'proven', 'deprecated')",
+        name="fact_fidelity_check",
+    ),
+    # Biconditional, same shape as fact_supersession_is_timed_check: a
+    # reason is recorded at supersession time or not at all.
+    sa.CheckConstraint(
+        "(supersede_reason is null) = (superseded_at is null)",
+        name="fact_supersede_reason_is_timed_check",
+    ),
+    sa.CheckConstraint(
+        "supersede_reason is null or supersede_reason in "
+        "('stale', 'wrong', 'merged')",
+        name="fact_supersede_reason_check",
     ),
 )
 

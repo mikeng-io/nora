@@ -25,8 +25,35 @@ from .provenance import INSTRUCTION_SHA256_HEX_LEN
 FactStatus = Literal["supported", "contradicted", "not_covered"]
 CandidateStatus = Literal["pending", "adjudicated", "not_covered"]
 
+# The warrant axis (2026-08-21). WHAT kind of evidence backs a fact — a page
+# (`source`, today's only writer-producible case), other standing facts
+# (`premises`), a repeated observation (`observation`, the room_lexeme shape
+# one tier down), or somebody simply deciding something (`stated` — its
+# warrant is WHO decided, not evidence). Orthogonal to `FidelityStatus` below:
+# a `source`-warranted fact can still be `tentative`, and a `stated` one can
+# be `proven` the moment it is decided.
+WarrantKind = Literal["source", "premises", "observation", "stated"]
+
+# The fidelity axis (2026-08-21), epistemic status — "unconfirmed / confirmed
+# / retracted" — orthogonal to `superseded_at`'s CURRENCY axis ("was true
+# then, isn't now"): a fact can be high-fidelity + low-currency (true but
+# outdated) or low-fidelity + high-currency (fresh but unconfirmed).
+# Deliberately not a float: a numeric confidence invites false precision
+# nobody in this tier can calibrate. `tentative` is where an unconfirmed
+# claim lands — the state the adaptor will produce whether or not the schema
+# admits it.
+FidelityStatus = Literal["tentative", "proven", "deprecated"]
+
+# Why a fact was superseded — paired with `superseded_at`/`superseded_by`.
+# Captured at supersession time because it cannot be reconstructed from the
+# row afterwards at any price.
+SupersedeReason = Literal["stale", "wrong", "merged"]
+
 _STATUSES: frozenset[str] = frozenset(get_args(FactStatus))
 _CANDIDATE_STATUSES: frozenset[str] = frozenset(get_args(CandidateStatus))
+_WARRANT_KINDS: frozenset[str] = frozenset(get_args(WarrantKind))
+_FIDELITY_STATUSES: frozenset[str] = frozenset(get_args(FidelityStatus))
+_SUPERSEDE_REASONS: frozenset[str] = frozenset(get_args(SupersedeReason))
 
 # The DB CHECK constraint this column maps to is
 # `instruction_sha256 ~ '^[0-9a-f]{64}$'` (see nora.domain.provenance); the
@@ -151,7 +178,20 @@ class Fact:
     before, and the same instruction run through a different model is a
     different act. The Dreamer is pinned to `deepseek-v4-flash` today, which is
     a config value and not a guarantee — which is exactly why it is recorded
-    rather than assumed."""
+    rather than assumed.
+
+    **The warrant axis (2026-08-21).** `warrant_kind` names WHAT kind of
+    evidence backs the row. `source_url`/`source_excerpt` moved from always
+    required to required exactly when `warrant_kind == "source"` — a fact
+    warranted by other facts (`premises`), a repeated observation
+    (`observation`), or a decision (`stated`) has no page behind it, and
+    demanding a URL for it would be demanding evidence of the wrong kind.
+    `premise_ids` is non-empty exactly when `warrant_kind == "premises"`;
+    referential integrity for those ids (that each names a real, standing
+    `Fact`) is the WRITER's job — this type, like the DB CHECK it mirrors,
+    enforces only cardinality. `fidelity` is the orthogonal epistemic axis:
+    `superseded_at` says whether a fact is still CURRENT, `fidelity` says how
+    well-supported it is regardless of currency."""
 
     id: str
     workspace: str
@@ -159,16 +199,20 @@ class Fact:
     predicate: str
     object_entity_id: str | None
     object_literal: str | None
-    source_url: str
-    source_excerpt: str
     valid_from: int
     created_at: int
     instruction_sha256: str
     model: str
     established_by: str
+    warrant_kind: WarrantKind = "source"
+    source_url: str | None = None
+    source_excerpt: str | None = None
+    premise_ids: tuple[str, ...] = ()
     valid_to: int | None = None
     superseded_at: int | None = None
     superseded_by: str | None = None
+    supersede_reason: SupersedeReason | None = None
+    fidelity: FidelityStatus = "proven"
 
     def __post_init__(self) -> None:
         if not _INSTRUCTION_SHA256_RE.fullmatch(self.instruction_sha256):
@@ -195,6 +239,55 @@ class Fact:
                 "superseded_at and superseded_by must be set together or "
                 "not at all: a fact is either standing or superseded, and a "
                 "superseded fact needs both the time and the successor"
+            )
+        if self.warrant_kind not in _WARRANT_KINDS:
+            raise ValueError(
+                f"warrant_kind must be one of {sorted(_WARRANT_KINDS)}, "
+                f"got {self.warrant_kind!r}"
+            )
+        # Mirrors the DB's two separate CHECKs
+        # (fact_source_url_warrant_check / fact_source_excerpt_warrant_check):
+        # each column is set if and only if warrant_kind == "source" —
+        # "forbidden otherwise", not merely optional, so a non-`source`
+        # warrant can never carry an undefined stray URL or excerpt.
+        is_source = self.warrant_kind == "source"
+        if (self.source_url is not None) != is_source:
+            raise ValueError(
+                "source_url must be set when warrant_kind is 'source' and "
+                "unset otherwise: a fact not warranted by a page cannot "
+                "carry one"
+            )
+        if (self.source_excerpt is not None) != is_source:
+            raise ValueError(
+                "source_excerpt must be set when warrant_kind is 'source' "
+                "and unset otherwise: a fact not warranted by a page cannot "
+                "carry the excerpt that would have carried its claim"
+            )
+        if (self.warrant_kind == "premises") != (len(self.premise_ids) > 0):
+            raise ValueError(
+                "premise_ids must be non-empty when warrant_kind is "
+                "'premises' and empty otherwise"
+            )
+        if self.fidelity not in _FIDELITY_STATUSES:
+            raise ValueError(
+                f"fidelity must be one of {sorted(_FIDELITY_STATUSES)}, "
+                f"got {self.fidelity!r}"
+            )
+        # Same biconditional shape as the superseded_at/superseded_by check
+        # above, and for the same reason: the reason a fact was superseded
+        # cannot be reconstructed from the row afterwards at any price.
+        if (self.supersede_reason is None) != (self.superseded_at is None):
+            raise ValueError(
+                "supersede_reason must be set together with superseded_at "
+                "and not at all otherwise"
+            )
+        if (
+            self.supersede_reason is not None
+            and self.supersede_reason not in _SUPERSEDE_REASONS
+        ):
+            raise ValueError(
+                f"supersede_reason must be one of {sorted(_SUPERSEDE_REASONS)}, "
+                f"got {self.supersede_reason!r}"
             )
 
     @property
