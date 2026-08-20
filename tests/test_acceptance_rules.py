@@ -243,6 +243,15 @@ RULE_TESTS = {
     # `[sticker a3f2c1]` placeholder, never a blank `[sticker a3f2c1: ]` and
     # never a guessed sentence. Next free number after R-50.
     "R-51": "test_r51_a_sticker_description_is_never_invented",
+    # R-53 (DEC-122): a source that is SILENT on the question is not a source
+    # that denies it. Behavioural, the same shape as R-14 and R-41 — asserted
+    # by `conduct.md`'s "What a source does not say", measured by the corpus,
+    # NOT a currently-passing gate. R-27's three-state discipline is enforced
+    # on tool RESULTS; this is the same discipline one level up, on INFERENCE
+    # OVER results, where nothing enforced it: a scoped article's omission was
+    # read as a denial and overturned a correct sourced answer (audit F7,
+    # 2026-08-17 02:16 UTC). Next free number after R-52.
+    "R-53": "test_r53_is_covered_by_the_source_scope_corpus",
     # R-52 (DEC-117): `create_event` fail-closes on ambiguity — spec §3.1's
     # "more than one open event" case — refusing rather than guessing which
     # of two-or-more already-open events is meant.
@@ -299,6 +308,25 @@ def test_r41_is_covered_by_the_identity_grounding_corpus():
     findable, not that the rule holds; see DEC-75 for the honest number.
     """
     assert (ROOT / "evals" / "adversarial" / "identity_grounding.yaml").exists()
+
+
+def test_r53_is_covered_by_the_source_scope_corpus():
+    """R-53 is behavioural: asserted by conduct.md, measured by this corpus.
+
+    Same posture as R-41 above, and for the same reason. The corpus replays the
+    2026-08-17 incident's SHAPE — a source narrower than the question, whose
+    silence about the rest was read as a denial — with the game and the objects
+    changed so a pass cannot be a memory of the real one, plus two controls: a
+    source that genuinely denies (she may overturn) and a source that covers the
+    question at the right scope (she answers plainly). Without those, a fix that
+    overcorrected into hedging everything would score as a pass.
+
+    It is deliberately NOT wired into `evals/run.py`'s `SUITES`: it is a
+    measured record of the doctrine gap, not a gate the shipped doctrine is
+    known to clear. This test pins that the measurement exists and is findable,
+    not that the rule holds.
+    """
+    assert (ROOT / "evals" / "adversarial" / "source_scope.yaml").exists()
 
 
 def _message(*, platform: str, body: str, media: tuple[MediaRef, ...]) -> NormalizedMessage:

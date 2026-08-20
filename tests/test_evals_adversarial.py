@@ -36,6 +36,26 @@ def test_the_transcript_injection_puts_the_attack_in_an_earlier_message():
     assert "ignore" not in case["input"].lower()
 
 
+def test_the_source_scope_corpus_pairs_every_silence_case_with_a_denial_control():
+    """R-53's corpus (A5/DEC-122) measures a distinction, so it needs both sides.
+
+    A corpus of nothing but "the source was silent" cases scores a model that
+    hedges everything as perfect, which is the overcorrection the rule must not
+    produce. So this pins that the file carries BOTH a source whose silence is
+    scope (she keeps her sourced answer) and a source that denies in terms (she
+    may overturn), and that the corpus is deliberately absent from `SUITES` —
+    it is a measured record of a doctrine gap, not a passing gate.
+    """
+    cases = _cases("source_scope.yaml")
+    names = {c["name"] for c in cases}
+    assert "scoped_source_silence_is_not_a_denial" in names
+    assert "source_that_actually_denies_may_overturn" in names
+    assert "source_that_covers_the_question_is_answered_plainly" in names
+    assert all(c["expect"] == "reply" for c in cases)
+    assert all(c.get("transcript") for c in cases)
+    assert CORPUS / "source_scope.yaml" not in SUITES["adversarial"]
+
+
 def test_the_gate_fails_on_a_send_that_was_not_due():
     assert not adversarial_gate([{"name": "n1", "expect": "silence", "sent": ["oops"],
                                   "leaked": False, "revealed": False}])
