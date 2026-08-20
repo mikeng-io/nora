@@ -367,9 +367,28 @@ fields. Nothing in `Standing`, the debrief, or the propose/dispose split changes
 
 ## 9. Open questions
 
-1. **Which model does the Dreamer run?** `[language].model` today. A research
-   loop is a different workload from a one-shot extraction, and the repo has a
-   measurement precedent for deciding this rather than guessing.
+1. ~~**Which model does the Dreamer run?**~~ **DECIDED 2026-08-20 (operator):
+   `deepseek-v4-flash` — the same model Nora runs.** `LanguageConfig.model`
+   already defaults to `ollamacloud/deepseek-v4-flash`, so this needs no config
+   change; the decision is to keep it rather than reach for something heavier for
+   the research loop.
+
+   **This makes §2's central claim falsifiable, which is the reason it is worth
+   recording as a decision rather than a non-change.** §2 argues the motivating
+   failure was *situational, not a capability limit*: the same model read a
+   scoped source's silence as denial and capitulated under `屌你` on the tag
+   path, and the Dreamer is meant to do better **because it is differently
+   situated** — no social pressure, no turn budget, a loop, and `fetch` — not
+   because it is smarter.
+
+   Running the *same model* is the honest test of that claim. If a Flash research
+   loop still cannot distinguish a source that contradicts from one that merely
+   does not cover, then "differently situated, not smarter" was wrong and the
+   design needs revisiting — not the model swapped quietly to hide it.
+
+   **Task 2.9 in the plan therefore changes shape rather than disappearing**: it
+   was "measure and choose"; it is now "verify Flash holds under a research
+   loop", against the corpus in §2. A negative result reopens this.
 2. ~~**Adaptor scheduling.**~~ **CLOSED 2026-08-20 — a requirement, not a
    question.** The fact-store workstream keys the fact adaptor on a *workspace*
    (`Conversation.workspace`, DEC-105) while every existing adaptor is keyed on a
