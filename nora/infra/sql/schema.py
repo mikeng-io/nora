@@ -1193,6 +1193,13 @@ FACT = sa.Table(
     # the row afterwards at any price, so it is captured at supersession
     # time or not at all.
     sa.Column("supersede_reason", sa.Text),
+    # `DreamSink.supersede`'s `source` argument (2026-08-21, `SqlFactStore`).
+    # A WARRANT, never a row id — `superseded_by` already carries the
+    # successor. Optional even when superseded (`because` is required,
+    # `source` is not — the port's own docstring), so the CHECK below is a
+    # one-directional implication, not the biconditional `supersede_reason`
+    # uses.
+    sa.Column("supersede_source", sa.Text),
     # NOT NULL, unlike migration 0023's four tables: those hold rows written
     # before the column existed, this one never will.
     sa.Column("instruction_sha256", sa.Text, nullable=False),
@@ -1274,6 +1281,10 @@ FACT = sa.Table(
         "supersede_reason is null or supersede_reason in "
         "('stale', 'wrong', 'merged')",
         name="fact_supersede_reason_check",
+    ),
+    sa.CheckConstraint(
+        "supersede_source is null or superseded_at is not null",
+        name="fact_supersede_source_is_timed_check",
     ),
 )
 

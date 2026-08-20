@@ -160,6 +160,19 @@ precondition for ever handling it.
   that it is current. Same "writer's job" boundary as before, now scoped
   tighter (existence is enforced; standing-ness is not).
 
+**2026-08-21, third pass: `supersede_source`.** `DreamSink.supersede`'s `source`
+argument (a WARRANT — a URL or equivalent pointer to evidence, never a row id;
+`superseded_by` already carries the successor) had nowhere to land: this table
+modelled `because` (`supersede_reason`) but not the optional citation beside
+it. `SqlFactStore.supersede` (this task) needs to round-trip whatever `source`
+it was given, so this migration adds the column and
+`fact_supersede_source_is_timed_check` — a one-directional implication
+(`supersede_source is null or superseded_at is not null`), not the
+biconditional `fact_supersede_reason_is_timed_check` uses, because `source` is
+optional even on a superseded row (the port's own docstring: "`because` is
+required and stays narrow enough to be a constrained enum... `source`" is
+not).
+
 `idx_fact_standing` serves the one read on the turn's critical path: the
 standing facts for a set of subjects in one workspace. It is PARTIAL on
 `superseded_at IS NULL` because a superseded fact is history and is never
@@ -244,6 +257,7 @@ def upgrade() -> None:
         sa.Column("superseded_by", pg.UUID(as_uuid=False),
                   sa.ForeignKey("fact.id", name="fact_superseded_by_fkey")),
         sa.Column("supersede_reason", sa.Text),
+        sa.Column("supersede_source", sa.Text),
         sa.Column("instruction_sha256", sa.Text, nullable=False),
         sa.Column("model", sa.Text, nullable=False),
         sa.Column("established_by", sa.Text, nullable=False),
@@ -281,6 +295,10 @@ def upgrade() -> None:
             "supersede_reason is null or supersede_reason in "
             "('stale', 'wrong', 'merged')",
             name="fact_supersede_reason_check",
+        ),
+        sa.CheckConstraint(
+            "supersede_source is null or superseded_at is not null",
+            name="fact_supersede_source_is_timed_check",
         ),
     )
     op.create_index("idx_fact_standing", "fact", ["workspace", "subject_id"],
