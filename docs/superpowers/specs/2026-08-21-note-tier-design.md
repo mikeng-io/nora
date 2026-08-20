@@ -1094,7 +1094,7 @@ implementation's own tests.
 successor and that store refuses one** — so nobody infers the port's shape from
 its table. A DB CHECK reads as a universal rule by default, and this one is not.
 
-### 15.4.3 What actually landed, and the three gaps in it
+### 15.4.3 What actually landed, and the four gaps in it
 
 `tests/contract/test_dream_sink_contract.py` **already exists** — 15 tests,
 `IMPLEMENTATIONS = {"fake": _FakeDreamSink}`, everything parametrised — so the
@@ -1108,7 +1108,7 @@ tier's proposals were taken seriously, and one of them landed
 `"a" * 64`, a model string, `"run-42"` — so the swap-invisibility problem
 §15.4.1 raised is genuinely handled.
 
-Three gaps remain, raised with the fact-tier session on 2026-08-21 while it was
+Four gaps remain, raised with the fact-tier session on 2026-08-21 while it was
 still editing the file:
 
 **Gap 1 — the shared fixture is the fact tier's.** The helper is
@@ -1167,9 +1167,36 @@ every request the same way, green whether or not the rule holds. So the note fak
 declares a payload type of its own and participates properly; being excluded with
 a stated reason is the acceptable alternative, and passing silently is not.
 
-None of the three is a defect in the port. All three are the suite not yet being
+**Gap 4, found by applying the rule rather than by joining.**
+`test_a_supersession_records_why_and_optionally_from_where` passes
+`because="contradicted"` and asserts it back — `"contradicted"` is a `FactStatus`
+value. The note tier's reasons are `merged` / `retired-expired` /
+`retired-closed` and it has no notion of contradiction at all. The port types
+`because` as `str`, so the **field** is shared and the **vocabulary** is not.
+
+Fix: assert **round-trip, not literal** — that `supersede` recorded what it was
+handed, whatever that was. Better regardless, since it cannot rot when either
+tier's enum changes. Same for `source`, which is a URL for facts and will
+usually be `None` for notes, whose warrant is the message that caused the
+revision rather than a citation.
+
+Which fixes the read-back adapter's one fact-shaped risk in advance: **the
+normalised view must type `because` as an opaque `str`**, not as the fact tier's
+enum, with each store constraining it locally — the same nullable-at-port /
+strict-at-sink shape `replaced_by` already has.
+
+**What the note row needs from that view**, so it can be designed against both
+shapes rather than one: `proposal`, `because`, `source`, `replaced_by`,
+`retired_at`, `written_at`. Nothing more — and the tier's one exotic field, the
+head-revision id for §6.3's CAS, lives **inside `payload`**, which the suite
+treats as opaque by construction. It never reaches the view.
+
+None of the four is a defect in the port. All four are the suite not yet being
 general, which is the specific failure a shared contract suite is most prone to
-and least able to announce — every assertion in it looks like rigour.
+and least able to announce — every assertion in it looks like rigour. Three were
+caught by a second implementer reading the file, a mechanism that stops the
+moment nobody new joins; the fourth was caught by the rule itself, which is the
+point of writing the rule down.
 
 
 ### 15.5 What is still genuinely open
