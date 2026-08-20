@@ -15,8 +15,10 @@ so no consumer can get the 5.6x count-weighting bias wrong independently.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from itertools import pairwise
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -28,9 +30,16 @@ __all__ = [
     "RawFix",
     "SegmentationResult",
     "Stay",
+    "Trip",
+    "best_corridor_match",
     "circular_mean_minute",
     "cluster_places",
+    "cluster_trips",
+    "derive_speed_kmh",
     "dwell_ms",
+    "edit_distance",
+    "extract_trips",
+    "hour_of_week",
     "hour_of_week_bins",
     "label_place",
     "robust_z_score",
@@ -112,6 +121,82 @@ def dwell_ms(ts: int, next_ts: int | None, cap_ms: int = DWELL_CAP_MS) -> int:
     return min(next_ts - ts, cap_ms)
 
 
+def derive_speed_kmh(a: RawFix, b: RawFix) -> float | None:
+    """Speed between two consecutive fixes, km/h — Tier 5's ground truth
+    (design/27 §4, issue #6). Life360's own `speed_kmh` (on the stored
+    fix, never read here) is only 14.7% filled and must never stand in
+    for this.
+
+    `None` when `b.ts <= a.ts` — a non-positive elapsed time has no
+    speed, and out-of-order/duplicate-timestamp fixes are a measured,
+    rare property of the live corpus (design/27 §1: 1 in 20,156 fixes)."""
+    dt_ms = b.ts - a.ts
+    if dt_ms <= 0:
+        return None
+    distance_m = haversine_distance_m(a.lat, a.lng, b.lat, b.lng)
+    dt_hours = dt_ms / 3_600_000.0
+    return distance_m / 1000 / dt_hours
+
+
+def edit_distance(a: tuple[str, ...], b: tuple[str, ...]) -> int:
+    """Classic Levenshtein distance over two corridor address sequences —
+    Tier 5's trip-similarity metric (design/27 §4, issue #6: "cluster
+    trips by address-sequence edit distance"). Hand-rolled, O(len(a) *
+    len(b)) — corridor sequences are short (a handful of road names per
+    trip), matching `cluster_places`'s own "trivial at this scale, no
+    scipy" precedent."""
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, x in enumerate(a, start=1):
+        curr = [i] + [0] * len(b)
+        for j, y in enumerate(b, start=1):
+            cost = 0 if x == y else 1
+            curr[j] = min(
+                prev[j] + 1,        # deletion
+                curr[j - 1] + 1,    # insertion
+                prev[j - 1] + cost, # substitution / match
+            )
+        prev = curr
+    return prev[-1]
+
+
+def best_corridor_match(
+    candidates: Iterable[tuple[int, tuple[str, ...]]], *,
+    sequence: tuple[str, ...], max_edit_distance: int,
+) -> tuple[int, tuple[str, ...]] | None:
+    """The nearest of `candidates` (`(corridor_id, sequence)` pairs) within
+    `max_edit_distance` of `sequence`, or `None`. **Ties break on the
+    LOWEST corridor id.**
+
+    This lives in the domain, not in either store, because BOTH
+    `MobilityStore` implementations have to answer `existing_corridor`
+    identically and they previously did not: each carried its own copy of
+    this loop, `SqlMobilityStore` resolving a tie on whatever order
+    Postgres happened to return its heap in and `FakeMobilityStore` on dict
+    insertion order (final whole-branch review, Important #3). Two
+    corridors equidistant from a new trip's sequence is routine, not
+    exotic, at `corridor_max_edit_distance=2` over short sequences, and
+    resolving it differently on different days splits one real route's
+    samples across two corridor rows.
+
+    The `(dist, cid)` comparison makes the answer independent of the order
+    `candidates` arrives in, so no caller has to sort first for
+    correctness. `SqlMobilityStore` still adds `ORDER BY id ASC` — cheap on
+    an already-indexed column, and it keeps the SQL readable as the same
+    rule — but the rule does not depend on it."""
+    best: tuple[int, int, tuple[str, ...]] | None = None  # (dist, id, seq)
+    for cid, candidate in candidates:
+        dist = edit_distance(sequence, candidate)
+        if dist > max_edit_distance:
+            continue
+        if best is None or (dist, cid) < (best[0], best[1]):
+            best = (dist, cid, candidate)
+    return None if best is None else (best[1], best[2])
+
+
 @dataclass(frozen=True)
 class RawFix:
     """One accuracy/wire_state-filtered fix, ts-ascending as segmentation
@@ -123,6 +208,12 @@ class RawFix:
     ts: int
     lat: float
     lng: float
+    # Tier 5 (design/27 §4, issue #6): Life360's own address label,
+    # 100% filled (design/27 §1) — the corridor-identity input. `None`
+    # only when the store's own filter admits a row Life360 sent with no
+    # address (rare; `extract_trips`, Task 4, drops it from the corridor
+    # sequence rather than guessing).
+    address: str | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +246,191 @@ class Stay:
     # outside every place today may fall inside one created LATER (Task 10's
     # backfill step handles that case going forward, not this field).
     place_id: int | None = None
+
+
+@dataclass(frozen=True)
+class Trip:
+    """One movement span between stays (design/27 §4, issue #6) — the
+    complement of `Stay`: fixes NOT absorbed into any stay-forming group.
+    `distance_m`/`avg_speed_kmh` are derived from the trip's OWN fixes
+    (`derive_speed_kmh` pairwise, summed), never from Life360's
+    `speed_kmh`. `corridor` is the deduplicated address sequence — the
+    corridor-CLUSTERING input (Task 6); `corridor_id` is set once
+    clustered (Task 8), `None` until then, the same nullable-then-filled
+    shape `Stay.place_id` uses."""
+
+    subject_id: str
+    person_id: str
+    circle_id: str
+    started_ts: int
+    ended_ts: int
+    distance_m: float
+    avg_speed_kmh: float
+    fix_count: int
+    corridor: tuple[str, ...]
+    corridor_id: int | None = None
+
+
+def _trip_from_group(
+    group: list[RawFix], *, subject_id: str, person_id: str, circle_id: str,
+) -> Trip:
+    distance_m = 0.0
+    speeds: list[float] = []
+    for a, b in pairwise(group):
+        distance_m += haversine_distance_m(a.lat, a.lng, b.lat, b.lng)
+        speed = derive_speed_kmh(a, b)
+        if speed is not None:
+            speeds.append(speed)
+    duration_hours = (group[-1].ts - group[0].ts) / 3_600_000.0
+    avg_speed = (
+        distance_m / 1000 / duration_hours if duration_hours > 0
+        else (sum(speeds) / len(speeds) if speeds else 0.0)
+    )
+    corridor: list[str] = []
+    for f in group:
+        if f.address is None:
+            continue
+        if not corridor or corridor[-1] != f.address:
+            corridor.append(f.address)
+    return Trip(
+        subject_id=subject_id, person_id=person_id, circle_id=circle_id,
+        started_ts=group[0].ts, ended_ts=group[-1].ts,
+        distance_m=distance_m, avg_speed_kmh=avg_speed,
+        fix_count=len(group), corridor=tuple(corridor),
+    )
+
+
+def extract_trips(
+    fixes: list[RawFix], closed_stays: list[Stay], *, subject_id: str,
+    person_id: str, circle_id: str, min_trip_fixes: int,
+    open_stay_started_ts: int | None,
+) -> list[Trip]:
+    """The movement fixes NOT covered by any CLOSED stay, grouped into
+    trips — Tier 5's segmentation counterpart to `segment_stays` (design/27
+    §4, issue #6).
+
+    `fixes` and `closed_stays` come from the SAME batch `segment_stays`
+    already processed this cycle (`nora.analytics.rollup`'s Speed 1) —
+    `closed_stays` marks the ranges to EXCLUDE, not re-derive.
+    `open_stay_started_ts`, when not `None`, excludes every fix from that
+    point onward too: the trailing group is still undetermined (open
+    stay or a trip that has not yet ended), and Global Constraints
+    forbids guessing which. A short run below `min_trip_fixes` is
+    dropped as noise (a stray fix between two stays), the same
+    fail-closed posture `_close`'s own `min_dwell_ms` gate uses for
+    stays."""
+    if not fixes:
+        return []
+    in_stay_ranges = [(s.started_ts, s.ended_ts) for s in closed_stays]
+
+    def _in_a_stay(ts: int) -> bool:
+        return any(start <= ts <= end for start, end in in_stay_ranges)
+
+    trips: list[Trip] = []
+    buffer: list[RawFix] = []
+    for f in fixes:
+        if open_stay_started_ts is not None and f.ts >= open_stay_started_ts:
+            break
+        if _in_a_stay(f.ts):
+            if len(buffer) >= min_trip_fixes:
+                trips.append(_trip_from_group(
+                    buffer, subject_id=subject_id, person_id=person_id,
+                    circle_id=circle_id,
+                ))
+            buffer = []
+            continue
+        buffer.append(f)
+    if len(buffer) >= min_trip_fixes:
+        trips.append(_trip_from_group(
+            buffer, subject_id=subject_id, person_id=person_id,
+            circle_id=circle_id,
+        ))
+    return trips
+
+
+def _trip_neighbors(i: int, trips: list[Trip], max_edit_distance: int) -> list[int]:
+    return [
+        j for j in range(len(trips))
+        if j != i and edit_distance(trips[i].corridor, trips[j].corridor) <= max_edit_distance
+    ]
+
+
+def cluster_trips(
+    trips: list[Trip], *, max_edit_distance: int, min_samples: int
+) -> list[list[Trip]]:
+    """DBSCAN over trip corridor sequences, edit-distance metric
+    (design/27 §4, issue #6). Same algorithm shape as `cluster_places`
+    (noise points below `min_samples` are DROPPED, never a singleton
+    cluster), deliberately NOT sharing code with it — a separate,
+    parallel implementation (task 6's own brief): `cluster_places` is
+    independently verified against 70,000 randomized point sets, and
+    refactoring it into a generic metric-parameterized version under this
+    plan's time budget risks that verification for the ~20 lines it would
+    save (CLAUDE.md's own "three similar lines is better than a premature
+    abstraction").
+
+    **Callers MUST hold out trips with an empty `corridor` before calling
+    this.** An address-less trip (every fix in its group had no `address`)
+    is NOT harmlessly self-segregating: `edit_distance((), x) == len(x)`,
+    so an empty sequence is within a typical `max_edit_distance` of ANY
+    short real corridor and this function will legitimately put it in the
+    same cluster as three real, named trips. What happens next depends on
+    input order and is wrong both ways round — judging the cluster by its
+    first trip discards a whole real cluster when that trip is the empty
+    one, and contaminates a real corridor's sample count and speed
+    percentiles when it is not (reproduced in both directions in
+    `tests/unit/test_analytics_rollup.py::
+    test_an_address_less_trip_clustered_with_real_ones_is_held_out`; this
+    docstring previously claimed the opposite and was simply false).
+
+    Tier 5's own caller enforces the hold-out at the QUERY:
+    `MobilityStore.unclustered_named_trips_for_subject` — the pool
+    `MobilityRollup._record_corridors` clusters — filters
+    `jsonb_array_length(sequence) > 0`, so an address-less trip never
+    reaches here at all and ends its life with `corridor_id` NULL, the
+    honest record of "no address, so no route". A future caller sourcing
+    trips any other way owes itself the same filter.
+
+    Checked by hand against the same three usual hand-rolled-DBSCAN
+    failure modes `cluster_places`'s own docstring names (a border point
+    left unlabeled instead of folded into its core point's cluster; the
+    expansion loop failing to re-visit and relabel a point marked noise
+    before its reaching core point was discovered; non-contiguous or
+    merged cluster ids across 3+ clusters) —
+    `test_cluster_trips_three_clusters_with_border_points_and_noise`
+    reproduces all three in one fixture and was hand-verified against a
+    deliberately-reintroduced version of the noise-relabelling bug before
+    being committed."""
+    n = len(trips)
+    labels: list[int | None] = [None] * n  # None = unvisited; -1 = noise
+    cluster_id = 0
+
+    for i in range(n):
+        if labels[i] is not None:
+            continue
+        neighbors = _trip_neighbors(i, trips, max_edit_distance)
+        if len(neighbors) + 1 < min_samples:
+            labels[i] = -1
+            continue
+        labels[i] = cluster_id
+        seeds = list(neighbors)
+        while seeds:
+            j = seeds.pop()
+            if labels[j] == -1:
+                labels[j] = cluster_id  # a noise point reachable from a core point
+            if labels[j] is not None:
+                continue
+            labels[j] = cluster_id
+            j_neighbors = _trip_neighbors(j, trips, max_edit_distance)
+            if len(j_neighbors) + 1 >= min_samples:
+                seeds.extend(j_neighbors)
+        cluster_id += 1
+
+    clusters: dict[int, list[Trip]] = {}
+    for i, label in enumerate(labels):
+        if label is not None and label >= 0:
+            clusters.setdefault(label, []).append(trips[i])
+    return list(clusters.values())
 
 
 @dataclass(frozen=True)
@@ -440,6 +716,25 @@ def _windowed_dwell(
             day_ms += _DAY_MS
             midnight += timedelta(days=1)
     return total, days, latest_day
+
+
+def hour_of_week(ts: int, tz_name: str) -> int:
+    """Which local hour-of-week bucket ONE moment falls in (0..167, Monday
+    00:00 = 0) — the single-timestamp sibling of `hour_of_week_bins`, and
+    Tier 5's speed-percentile grouping key (design/27 §4, issue #6).
+
+    A trip is bucketed by its `started_ts` alone, deliberately: unlike a
+    stay, whose whole point is the dwell it spreads across buckets, a
+    trip's `avg_speed_kmh` is ONE number for the whole span and cannot be
+    apportioned across the hours it crosses without inventing a
+    within-trip speed profile nothing measured. Splitting it with
+    `hour_of_week_bins` would look more careful and be less grounded.
+
+    LOCAL clock, never `ts // 3_600_000 % 168` — the epoch's own week
+    origin is a Thursday, and HKT is UTC+8, so the arithmetic shortcut is
+    wrong on both axes at once."""
+    local = datetime.fromtimestamp(ts / 1000, tz=ZoneInfo(tz_name))
+    return local.weekday() * 24 + local.hour
 
 
 def hour_of_week_bins(started_ts: int, ended_ts: int, tz_name: str) -> dict[int, int]:

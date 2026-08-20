@@ -234,7 +234,7 @@ def test_identity_makes_no_claim_about_what_she_can_find_out():
 
 def test_guardrails_covers_every_r14_clause():
     text = (DOCTRINE_DIR / "constraints.md").read_text()
-    # RE-POINTED 2026-08-20 (A4/DEC-122). This used to assert `group_transcript`
+    # RE-POINTED 2026-08-20 (A4/DEC-123). This used to assert `group_transcript`
     # and `tag_message` were named. They no longer are, ON PURPOSE: naming them
     # was the enumeration the audit's F4 measured as covering 2 of the 8 blocks
     # actually injected, and re-asserting the names here would pin the
@@ -252,7 +252,7 @@ def test_guardrails_covers_every_r14_clause():
 
 
 def test_constraints_covers_every_block_by_kind_rather_than_by_name():
-    """A4/DEC-122, closing the audit's F4.
+    """A4/DEC-123, closing the audit's F4.
 
     `constraints.md`'s anti-instruction rule named exactly two blocks —
     `group_transcript` and `tag_message` — while EIGHT are injected. The six
@@ -676,7 +676,7 @@ def test_conduct_separates_a_source_that_is_silent_from_a_source_that_denies():
 
 
 def test_pushback_is_split_by_kind_across_voice_and_conduct():
-    """RESTORED 2026-08-20 (A7/DEC-122). DEC-92 split the pushback rule across
+    """RESTORED 2026-08-20 (A7/DEC-123). DEC-92 split the pushback rule across
     two kinds precisely so the halves could not drift: `voice.md` owns how a
     concession or a refusal SOUNDS, `conduct.md` owns whether the challenge
     should move her at all — a grounding question that belongs beside «check

@@ -6,7 +6,13 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.mobility import LabelResult, RawFix, Stay
+from nora.domain.mobility import (
+    LabelResult,
+    RawFix,
+    Stay,
+    Trip,
+    best_corridor_match,
+)
 
 
 @dataclass
@@ -19,12 +25,14 @@ class _SeededFix:
     accuracy_m: float
     wire_state: str
     recorded_at: int
+    address: str | None = None
 
 
 class FakeMobilityStore:
     def __init__(self) -> None:
         self._fixes: list[_SeededFix] = []
         self._stays: list[Stay] = []
+        self._trips: list[Trip] = []
         self._places: dict[
             tuple[str, str], tuple[int, float, float, float, LabelResult, str | None]
         ] = {}
@@ -32,6 +40,9 @@ class FakeMobilityStore:
         self._next_place_id = 1
         self._occupancy: dict[tuple[str, int, int], int] = {}  # (subject, place, how) -> dwell_ms
         self._rhythm: dict[tuple[str, int], dict[str, float | int]] = {}
+        self._corridors: dict[int, dict[str, Any]] = {}
+        self._next_corridor_id = 1
+        self._corridor_speed: dict[tuple[str, int, int], dict[str, float | int]] = {}
 
     async def watermark(self, *, subject_id: str) -> tuple[int, int]:
         return self._watermarks.get(subject_id, (0, 0))
@@ -51,7 +62,8 @@ class FakeMobilityStore:
         ]
         matches.sort(key=lambda f: f.id)
         return [
-            RawFix(id=f.id, ts=f.ts, lat=f.lat, lng=f.lng) for f in matches[:limit]
+            RawFix(id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address)
+            for f in matches[:limit]
         ]
 
     async def write_stays(self, stays: list[Stay]) -> None:
@@ -74,6 +86,104 @@ class FakeMobilityStore:
                 and s.place_id is None
             ):
                 self._stays[i] = dataclasses.replace(s, place_id=place_id)
+
+    async def write_trips(self, trips: list[Trip]) -> None:
+        self._trips.extend(trips)
+
+    async def trips_for_subject(self, *, subject_id: str) -> list[Trip]:
+        # `corridor` survives the round trip in BOTH stores as of migration
+        # 0020 (`presence_trips.sequence`) — see
+        # `SqlMobilityStore.trips_for_subject`'s docstring for why the old
+        # "the SQL side returns () on purpose" divergence is gone.
+        return sorted(
+            (t for t in self._trips if t.subject_id == subject_id),
+            key=lambda t: t.started_ts,
+        )
+
+    async def unclustered_named_trips_for_subject(
+        self, *, subject_id: str, limit: int
+    ) -> list[Trip]:
+        # Behavioral twin of `SqlMobilityStore
+        # .unclustered_named_trips_for_subject` — see that docstring for
+        # why `corridor_id IS NULL` is the watermark, why the empty-
+        # sequence exclusion lives in the query rather than in the caller,
+        # and why the cap drops the OLDEST trips. `if t.corridor` is the
+        # in-memory spelling of `sequence IS NOT NULL AND
+        # jsonb_array_length(sequence) > 0`: this store cannot represent a
+        # NULL sequence at all, so an empty tuple covers both cases.
+        return sorted(
+            (
+                t for t in self._trips
+                if t.subject_id == subject_id
+                and t.corridor_id is None
+                and t.corridor
+            ),
+            key=lambda t: t.started_ts,
+            reverse=True,
+        )[:limit]
+
+    async def set_trip_corridor_ids(
+        self, *, subject_id: str, started_ts_in: list[int], corridor_id: int
+    ) -> None:
+        targets = set(started_ts_in)
+        for i, t in enumerate(self._trips):
+            if (
+                t.subject_id == subject_id
+                and t.started_ts in targets
+                and t.corridor_id is None
+            ):
+                self._trips[i] = dataclasses.replace(t, corridor_id=corridor_id)
+
+    async def existing_corridor(
+        self, *, subject_id: str, sequence: tuple[str, ...], max_edit_distance: int,
+    ) -> tuple[int, tuple[str, ...]] | None:
+        # The DECISION is `nora.domain.mobility.best_corridor_match`, the
+        # SAME function `SqlMobilityStore.existing_corridor` calls: a
+        # distance tie breaks on the LOWEST corridor id, by rule, in one
+        # place. Each store used to carry its own copy of this loop and the
+        # two copies resolved ties differently — dict insertion order here,
+        # Postgres heap order there (final whole-branch review, Important
+        # #3).
+        return best_corridor_match(
+            (
+                (cid, row["sequence"]) for cid, row in self._corridors.items()
+                if row["subject_id"] == subject_id
+            ),
+            sequence=sequence, max_edit_distance=max_edit_distance,
+        )
+
+    async def upsert_corridor(
+        self, *, subject_id: str, sequence: tuple[str, ...], sample_count: int,
+        now_ms: int, existing_id: int | None,
+    ) -> int:
+        if existing_id is not None:
+            self._corridors[existing_id]["sample_count"] = sample_count
+            self._corridors[existing_id]["last_seen_ts"] = now_ms
+            return existing_id
+        cid = self._next_corridor_id
+        self._next_corridor_id += 1
+        self._corridors[cid] = {
+            "subject_id": subject_id, "sequence": sequence,
+            "sample_count": sample_count, "first_seen_ts": now_ms,
+            "last_seen_ts": now_ms,
+        }
+        return cid
+
+    async def trip_speeds_for_corridor(
+        self, *, subject_id: str, corridor_id: int,
+    ) -> list[tuple[int, float]]:
+        return [
+            (t.started_ts, t.avg_speed_kmh) for t in self._trips
+            if t.subject_id == subject_id and t.corridor_id == corridor_id
+        ]
+
+    async def upsert_corridor_speed(
+        self, *, subject_id: str, corridor_id: int, hour_of_week: int,
+        p50_kmh: float, p90_kmh: float, sample_count: int, now_ms: int,
+    ) -> None:
+        self._corridor_speed[(subject_id, corridor_id, hour_of_week)] = {
+            "p50_kmh": p50_kmh, "p90_kmh": p90_kmh, "sample_count": sample_count,
+        }
 
     async def existing_place(
         self, *, subject_id: str, kind: str

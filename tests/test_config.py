@@ -474,6 +474,46 @@ def test_analytics_config_rejects_unknown_keys_directly():
         AnalyticsConfig(enabled=True, nonexistent_key=1)
 
 
+def test_min_trip_fixes_defaults_to_three_and_refuses_a_one_fix_trip():
+    """Tier 5. `extract_trips`'s own noise gate: a run shorter than this is
+    dropped rather than written as a trip. `ge=2`, not `ge=1` — a one-fix
+    "trip" has no pair to run `derive_speed_kmh`/`haversine_distance_m`
+    over, so its `distance_m` and `avg_speed_kmh` are both structurally
+    0.0; admitting one would put a fabricated zero-speed sample into
+    `presence_corridor_speed`'s percentiles, which is precisely the
+    "never assert what you cannot ground" rule."""
+    assert AnalyticsConfig().min_trip_fixes == 3
+    assert AnalyticsConfig(min_trip_fixes=2).min_trip_fixes == 2
+    with pytest.raises(ValidationError):
+        AnalyticsConfig(min_trip_fixes=1)
+
+
+def test_corridor_cluster_batch_limit_defaults_to_the_measured_bound():
+    """Tier 5. How many not-yet-clustered trips one corridor-clustering
+    pass may re-cluster. MEASURED, unlike the two knobs beside it:
+    `cluster_trips` is O(n^2) over an edit-distance metric, n=500 costs
+    1.87s on this machine and n=1000 costs 7.59s, so 500 is under 2% of a
+    `tick_seconds=120` tick for one subject."""
+    assert AnalyticsConfig().corridor_cluster_batch_limit == 500
+    assert AnalyticsConfig(corridor_cluster_batch_limit=50).corridor_cluster_batch_limit == 50
+    with pytest.raises(ValidationError):
+        AnalyticsConfig(corridor_cluster_batch_limit=0)
+
+
+def test_a_cluster_batch_limit_below_corridor_min_samples_is_refused():
+    """Fail-closed on a config that could never mint a corridor. A pool
+    smaller than `corridor_min_samples` cannot arithmetically hold enough
+    similar trips for `cluster_trips` to call any of them a cluster — the
+    exact shape of the defect this knob exists to fix (Tier 5's final
+    whole-branch review, Critical #1), and one with no log line and no
+    metric of its own, only a counter that never moves."""
+    with pytest.raises(ValidationError):
+        AnalyticsConfig(corridor_cluster_batch_limit=2, corridor_min_samples=3)
+    # ...and the boundary itself is allowed: exactly enough IS enough.
+    cfg = AnalyticsConfig(corridor_cluster_batch_limit=3, corridor_min_samples=3)
+    assert cfg.corridor_cluster_batch_limit == 3
+
+
 def test_tools_mcp_is_optional_and_defaults_to_empty(toml_path):
     text = toml_path.read_text()
     head, _, tail = text.partition("[tools.mcp.pulse]\n")

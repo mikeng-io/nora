@@ -243,7 +243,7 @@ RULE_TESTS = {
     # `[sticker a3f2c1]` placeholder, never a blank `[sticker a3f2c1: ]` and
     # never a guessed sentence. Next free number after R-50.
     "R-51": "test_r51_a_sticker_description_is_never_invented",
-    # R-53 (DEC-122): a source that is SILENT on the question is not a source
+    # R-53 (DEC-123): a source that is SILENT on the question is not a source
     # that denies it. Behavioural, the same shape as R-14 and R-41 — asserted
     # by `conduct.md`'s "What a source does not say", measured by the corpus,
     # NOT a currently-passing gate. R-27's three-state discipline is enforced

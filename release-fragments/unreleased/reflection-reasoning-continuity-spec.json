@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design document only (docs/superpowers/specs/2026-08-20-reflection-reasoning-continuity-design.md, elaborating Issue #4). Specifies a two-tier reasoning-continuity design — a per-conversation Standing revised in-slot by a debrief stage, plus a Fact tier disposed of by a FactSynthesizer on the existing Dreamer clock — derived from live Langfuse traces, tool observations and nora.log. Status is proposed, the fact store's shape is left open, no code exists and nothing is added to design/09-decision-index.md. No schema, config or behaviour changes. The feature will carry its own fragment when it is implemented.",
+  "details": [],
+  "limitations": []
+}

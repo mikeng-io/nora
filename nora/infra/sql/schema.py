@@ -299,6 +299,96 @@ PRESENCE_PLACE_RHYTHM = sa.Table(
     sa.Column("updated_ts", sa.BigInteger, nullable=False),
 )
 
+# `presence_trips` / `presence_corridors` / `presence_corridor_speed` —
+# Tier 5 (design/27 §4, issue #6). A trip is the movement BETWEEN two
+# stays (or before the first / after the last), never inside one; a
+# corridor is a NAMED cluster of trips whose address sequences are close
+# by edit distance — no OSM, no map-matching, built entirely from the
+# `presence_fixes.address` strings Life360 already sends (100% filled,
+# design/27 §1).
+PRESENCE_TRIPS = sa.Table(
+    "presence_trips",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column("subject_id", sa.Text, nullable=False),
+    sa.Column("person_id", sa.Text, nullable=False),
+    sa.Column("circle_id", sa.Text, nullable=False),
+    sa.Column("started_ts", sa.BigInteger, nullable=False),
+    sa.Column("ended_ts", sa.BigInteger, nullable=False),
+    sa.Column("distance_m", sa.Float, nullable=False),
+    sa.Column("avg_speed_kmh", sa.Float, nullable=False),
+    sa.Column("fix_count", sa.Integer, nullable=False),
+    # This trip's OWN road-name sequence (JSONB array of strings), the same
+    # shape and type `PRESENCE_CORRIDORS.sequence` uses for a corridor's
+    # representative sequence. `[]` for a trip whose fixes all carried no
+    # `address`; NULL only for a row written before migration 0020 existed.
+    # It is what makes corridor clustering ACCUMULATE: a trip that has not
+    # been linked yet can be re-read and re-clustered against later trips,
+    # so a route that recurs once per tick over many days still reaches
+    # `corridor_min_samples`. Without it, clustering could only ever see one
+    # tick's in-memory batch and no corridor could be born in steady state
+    # (final whole-branch review, Critical #1).
+    sa.Column("sequence", pg.JSONB, nullable=True),
+    # NULL until this trip is linked to a corridor — and that NULL IS the
+    # "not yet clustered" marker `_record_corridors` reads back every cycle
+    # (`SqlMobilityStore.unclustered_named_trips_for_subject`), so no
+    # separate watermark column is needed. The SAME nullable-then-filled-
+    # once shape `presence_stays.place_id` already established in Tier 3,
+    # used for the same purpose there (the first-place backfill's own
+    # "which stays predate this place" query).
+    sa.Column("corridor_id", sa.Integer, nullable=True),
+)
+
+IDX_PRESENCE_TRIPS_SUBJECT_STARTED = sa.Index(
+    "idx_presence_trips_subject_started",
+    PRESENCE_TRIPS.c.subject_id, sa.text("started_ts DESC"),
+)
+
+# One row per NAMED corridor. `sequence` is the representative address
+# sequence (JSONB array of strings) — the first trip's own sequence when
+# the corridor is created; re-confirmed corridors do NOT overwrite it with
+# a newer trip's sequence, only `last_seen_ts`/`sample_count` — the same
+# "identity survives, content updates conservatively" posture
+# `presence_place_rhythm` already has for arrival/departure minutes
+# (recomputed) versus a place's OWN row (id preserved, Tier 3 Critical #1).
+PRESENCE_CORRIDORS = sa.Table(
+    "presence_corridors",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column("subject_id", sa.Text, nullable=False),
+    sa.Column("sequence", pg.JSONB, nullable=False),
+    sa.Column("sample_count", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("first_seen_ts", sa.BigInteger, nullable=False),
+    sa.Column("last_seen_ts", sa.BigInteger, nullable=False),
+)
+
+IDX_PRESENCE_CORRIDORS_SUBJECT = sa.Index(
+    "idx_presence_corridors_subject", PRESENCE_CORRIDORS.c.subject_id,
+)
+
+# Recomputed WHOLESALE from `presence_trips` every time (never
+# incremental — percentiles are not mergeable the way a sum is), for one
+# `(subject_id, corridor_id, hour_of_week)` slot. `hour_of_week` is the
+# SAME 0..167 Monday-00:00-=-0 bucketing `presence_occupancy` already
+# uses (Tier 3), keyed on the TRIP's `started_ts`, not split across hours
+# the way a stay's dwell is — a trip is a single event, not a span to
+# divide.
+PRESENCE_CORRIDOR_SPEED = sa.Table(
+    "presence_corridor_speed",
+    METADATA,
+    sa.Column("subject_id", sa.Text, primary_key=True),
+    sa.Column("corridor_id", sa.Integer, primary_key=True),
+    sa.Column("hour_of_week", sa.Integer, primary_key=True),
+    sa.Column("p50_kmh", sa.Float, nullable=False),
+    sa.Column("p90_kmh", sa.Float, nullable=False),
+    sa.Column("sample_count", sa.Integer, nullable=False),
+    sa.Column("updated_ts", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        "hour_of_week >= 0 AND hour_of_week < 168",
+        name="ck_corridor_speed_how",
+    ),
+)
+
 # Packs TWO watermarks per row deliberately — `last_fix_id` (segmentation) and
 # `last_cluster_id` (the dirty-set marker, spec §4.2) are read together every
 # cycle to decide whether clustering is dirty, so one row avoids two indexed

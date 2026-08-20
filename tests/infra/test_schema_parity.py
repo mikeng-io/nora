@@ -59,6 +59,9 @@ EXPECTED_DESC_INDEXES = {
     # identically alembic-check-blind `(subject_id, started_ts DESC)` index.
     "idx_presence_stays_subject_ts": {"subject_id": False, "started_ts": True},
     "idx_presence_derived_places_subject_kind": {"subject_id": False, "kind": False},
+    # presence_trips (Tier 5 routes, design/27 §4, issue #6): the identically
+    # alembic-check-blind `(subject_id, started_ts DESC)` index.
+    "idx_presence_trips_subject_started": {"subject_id": False, "started_ts": True},
 }
 
 

@@ -37,7 +37,7 @@ def test_the_transcript_injection_puts_the_attack_in_an_earlier_message():
 
 
 def test_the_source_scope_corpus_pairs_every_silence_case_with_a_denial_control():
-    """R-53's corpus (A5/DEC-122) measures a distinction, so it needs both sides.
+    """R-53's corpus (A5/DEC-123) measures a distinction, so it needs both sides.
 
     A corpus of nothing but "the source was silent" cases scores a model that
     hedges everything as perfect, which is the overcorrection the rule must not
