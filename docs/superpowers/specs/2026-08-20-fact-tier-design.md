@@ -458,10 +458,44 @@ an earlier turn** reads as ungrounded and fails. Its rationale on the last row:
 
 > *"the earlier claim of it being listed is not grounded in the provided data"*
 
-That is the mechanism the Standing/Facts spec §3 named — *a conclusion outliving
-its evidence, and therefore being cheap to overturn* — reproduced by the grader,
-because the grader is handed the same impoverished context Nora is: the claim,
-with its warrant gone.
+**CORRECTED 2026-08-21, and the correction matters.** The paragraph that stood
+here said the grader failed because it was handed *"the claim, with its warrant
+gone"*. That is **false**, and re-reading the probe's own transcript shows it:
+the fence contained Nora's earlier turn *and* the source she cited for it
+(「我頭先查過，wiki 個 unlockables 表列咗佢」). The warrant was present.
+
+The real defect, found by the substrate session while fixing this: the block is
+handed over **unlabelled**. A search snippet and a prior assistant assertion sit
+in the same fence with nothing stating what the fence contains, so the grader
+cannot tell a source from a claim — not because the source is absent, but
+because nothing distinguishes them.
+
+**A second overstatement, also corrected.** The table's fourth row (a reply that
+refuses to update against a source that genuinely denies → FAIL 3/3) was
+presented as evidence that *keeping* a sourced fact is punished. In that case
+refusing to update is genuinely wrong, so FAIL is the **right verdict** — what
+is wrong is the *rationale*, which faulted the carry-forward rather than the
+ignored denial. The rationale evidence stands; the verdict evidence does not
+support the inversion as cleanly as first written. An independent re-measurement
+also found the negative half **noisy rather than stably inverted** (carry-forward
+PASS 2/3 with one sample at 0.3; a Cantonese variant at 1.0/1.0/0.0) — so correct
+behaviour was being arbitrated at random, which is a different and more accurate
+charge than "reliably punished".
+
+The finding that survives all of this is the one that mattered: **the grader
+passed the R-53 failure 3/3 at 1.0 on two different models while quoting a denial
+the source never made.** That was real, it was the reason the corpus could not
+gate its own rule, and it has since been fixed (`8ffe33b`: a `SOURCE_SCOPE`
+criterion outside `RUBRIC`, opted into per case, binding fail-closed — silence-as-
+denial now scores SCOPE FAIL 2/3).
+
+The mechanism it *does* illustrate is still the Standing/Facts spec §3's — a
+claim that cannot be told apart from an unsourced assertion loses to whatever
+arrived most recently — and the residual the fix ships with is exactly this
+tier's shape: an earlier turn that merely asserted something, with no source, is
+credited when the reply restates it, because **nothing in a transcript records
+what a prior claim rested on**. That is the gap `fact.source_url` /
+`source_excerpt` / `instruction_sha256` exist to close, one level down.
 
 Two consequences.
 
