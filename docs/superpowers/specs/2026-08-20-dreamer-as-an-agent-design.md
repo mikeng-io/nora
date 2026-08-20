@@ -1,7 +1,7 @@
 ---
 kind: spec
 title: "The Dreamer is an agent, and the synthesizers are adaptors"
-description: "Today the Dreamer is a clock that calls three hand-written extractors, each with its own inline prompt and one shot at a bare text-completion. Proving a fact is not a one-shot task — it is search, read, notice the source does not cover the question, search differently, cross-check. That is a tool loop with judgement in it, which is what Nora already is. This makes the Dreamer a real read-only research agent, and turns each synthesizer into an ADAPTOR supplying five things: objective, inputs, output schema, tool subset, sink. The act verbs are excluded as a hard line — a background agent that can speak to the group unprompted is a categorically different thing."
+description: "Today the Dreamer is a clock that calls three hand-written extractors, each with its own inline prompt and one shot at a bare text-completion. Proving a fact is not a one-shot task — it is search, read, notice the source does not cover the question, search differently, cross-check. That is a tool loop with judgement in it, which is what Nora already is. This makes the Dreamer a real read-only research agent, and turns each synthesizer into an ADAPTOR supplying five things: objective, inputs, output schema, tool subset, sink. The act verbs are excluded as a hard line — a background agent that can speak to the group unprompted is a categorically different thing — and so is any write verb: the runtime writes the schema-validated return, so the model proposes and code disposes. Facts land in Postgres beside the room adaptors, not Graphiti, whose two value-adds (extraction, automatic contradiction detection) are exactly what this architecture replaces."
 tags: [nora, spec, dreamer, agent, adaptor, architecture, tools]
 timestamp: '2026-08-20'
 status: proposed
@@ -128,6 +128,115 @@ prose from them would reintroduce exactly the [risk]."* It is an adaptor whose
 tool subset is empty and whose objective is executed in code. Making everything
 an agent is not the goal; making everything *the same interface* is.
 
+### 3.1 The sink is Postgres, not Graphiti
+
+The room adaptors already write to Postgres (`room_lexeme`, `room_exchange`,
+`room_portrait`). **The fact adaptor writes there too.**
+
+Graphiti (`github.com/getzep/graphiti`) was researched as the alternative and
+rejected — and this architecture makes the rejection stronger rather than
+weaker, because **its two real value-adds are exactly the two things we have
+replaced**:
+
+| Graphiti provides | what we do instead |
+|---|---|
+| LLM **extraction** of triples from prose | edges are **declared** by the adaptor |
+| **automatic contradiction detection** (one small-model judge) | a **research loop** with `fetch` adjudicates |
+
+Both replacements are the point of this document, and both are better on the
+motivating case:
+
+- Graphiti's extractor emits positive triples between two **distinct entities**.
+  *"There is no black tower"* is a negative existential over one entity and has
+  no triple form — so the retraction most likely produces **no edge at all**, and
+  the fabrication survives untouched.
+- Its contradiction judge measured **1/3 on a clear two-fact contradiction** and
+  0/3 on the cross-list shape that is ours ([issue #1666]), behind a rule that
+  **silently discards** the verdict when either `valid_at` is null or the two
+  timestamps tie — no warning, no counter. An ERROR reading as a PASS is the
+  R-27 anti-pattern.
+- Even `add_triplet`, the skip-extraction path, still runs that same judge. So
+  adopting it for declared edges drags back in the one component this design
+  replaces.
+
+Two practical arguments on top. **There is no Postgres driver** — only an
+unmerged RFC — so it means operating Neo4j or FalkorDB. And splitting one
+subsystem across two stores means no shared transaction, no shared backup, and
+the Dreamer reasoning across a boundary for no gain at this scale.
+
+**What survives is the shape, and it is free in Postgres**: bi-temporal columns
+(`valid_from`/`valid_to` for event time, `created_at`/`superseded_at` for
+transaction time), `superseded_by` as an explicit link — *invalidate, never
+delete* — and per-fact provenance.
+
+**This settles STORAGE. It does not settle RETRIEVAL, and an earlier draft of
+this section conflated the two.** "An edge table is a table" is true and answers
+the wrong half: traversal — multi-hop, *what connects to X*, path queries — is
+precisely where a graph engine differs from a table, and storing edges does not
+provide it. The earlier framing also presented a false binary (a Postgres table
+*or* Graphiti) that skipped a real option:
+
+| option | traversal | new database? |
+|---|---|---|
+| edge table + `WITH RECURSIVE` | bounded depth, hand-written SQL | no |
+| **Apache AGE** — openCypher *as a Postgres extension* | real graph queries | no |
+| Graphiti | full, plus extraction and a contradiction judge | **yes** — Neo4j/FalkorDB |
+| no engine — load the live set | the model reads it | no |
+
+**At today's scale the last row is the honest answer.** At tens of facts you do
+not retrieve, you load the topic's live set into the prompt and the model
+traverses it by reading. The Graphiti research reached the same conclusion about
+this cardinality: *"At that cardinality you don't retrieve — you paste the whole
+set into the prompt. Retrieval sophistication is solving a problem you do not
+have."* Hybrid search, RRF, reranking and node-distance are all inert at n≈30.
+
+**So retrieval goes behind a port and the decision is deferred with the option
+preserved.** The Dreamer is an agent, so retrieval is a tool it calls
+(`related_facts(subject)` or similar). Its first implementation is a `WHERE`
+clause returning the live set; if the tier grows to where multi-hop pays rent
+the implementation swaps to a recursive CTE, or AGE, or a graph database — **and
+the agent does not change.** That is the `SearchProvider` pattern exactly: one
+port, a contract suite, `TavilySearchProvider` as today's implementation.
+
+**Revisit** if the fact tier reaches the 10⁴ range. Apache AGE's maturity and
+packaging need verifying before it is recommended rather than merely named —
+this document names it as the option the earlier draft overlooked, not as a
+choice already made.
+
+### 3.2 How an adaptor writes — the return value is the write
+
+**There is no write tool, and there must not be one.** A `write_fact` tool is an
+act verb pointed at the database instead of at the group, and §4 makes "no act
+verbs" a property of the runtime rather than a setting. It would also defeat §7:
+if the model writes directly there is no sink left to screen at.
+
+The path is:
+
+```
+adaptor declares an output schema
+  → agent researches with read-only tools
+  → returns a structured result
+  → runtime VALIDATES it against the schema
+  → runtime SCREENS it (§7)
+  → runtime WRITES it to the sink
+```
+
+**The model proposes; the runtime disposes.** This is the same asymmetry the
+Standing/Facts spec already applies one level up (the debrief may append, only
+the background pass may invalidate), and it is how the existing consolidators
+already work — `LexemeObserver` extracts, the consolidator persists. The model
+returns data; code writes it. Nothing about that changes when the model gains a
+tool loop.
+
+It also narrows the injection surface materially. With a write tool, a crafted
+page reached through `web_fetch` could *cause a write*. With a schema-validated
+return, an injection can only influence the content of a structured value that
+then has to pass the sink screen — a real risk, but a much smaller one.
+
+**Invalidation is the same answer.** The fact adaptor never deletes. It returns
+*"supersede fact X, because Y, per source Z"* and the runtime performs it, which
+keeps the append-only/dispose asymmetry intact at both levels.
+
 ## 4. The tool set — read verbs in, act verbs out
 
 **The hard line: the Dreamer may look, and may not act.** A background process
@@ -147,7 +256,10 @@ configured — it is a property of the runtime.
 - `now`, `calculate`
 
 **Out** — every act verb: `send_reply`, `send_to`, `send_gif`, `remind`,
-`cancel_reminder`, `make_artifact`.
+`cancel_reminder`, `make_artifact` — **and any write verb.** A tool that
+persists an adaptor's result would be an act verb pointed at the database
+instead of at the group; §3.2 is why the runtime writes the validated return
+instead.
 
 `ToolSpec` (`nora/agent/ports.py:74-83`) already carries `budget`, `terminal`,
 `time_shiftable`, `cacheable`, `disclose_failure`, `timeout_seconds`, and the
@@ -252,6 +364,10 @@ fields. Nothing in `Standing`, the debrief, or the propose/dispose split changes
    not there today.
 5. **Does the Dreamer get its own doctrine files, or a single objective file per
    adaptor?** Settled in the substrate spec once revised.
+6. **Does the fact tier ever need graph traversal, and if so by what engine?**
+   §3.1 defers this behind a retrieval port. Reopen when the tier's size makes
+   multi-hop worth paying for; Apache AGE is the first candidate to evaluate,
+   and its maturity is unverified.
 
 ## 10. Status
 
