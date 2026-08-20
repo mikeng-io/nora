@@ -1202,7 +1202,9 @@ class LanguageConfig(BaseModel):
 
 
 class FactsConfig(BaseModel):
-    """The fact tier's gate — `docs/superpowers/specs/2026-08-20-fact-tier-design.md`.
+    """The fact tier's gate (the `2026-08-20-fact-tier-design` spec under
+    `docs/superpowers/specs/`).
+
     Nothing writes a fact yet (the schema and the `<facts>` block ship dormant,
     Tasks 1/2/5 of that plan); this section is the flag the future adaptor
     checks and the three bounds it stays inside once it runs.
