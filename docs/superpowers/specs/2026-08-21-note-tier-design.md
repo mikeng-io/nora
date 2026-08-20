@@ -995,6 +995,37 @@ writes the *second* `DreamSink` implementation. On current sequencing that is
 store and the note store both, is **in Part 1b's scope** (§11.1) rather than
 somebody else's.
 
+### 15.4.1 What the contract suite may and may not assert
+
+Settled with the fact-tier session, and it is a real constraint on the suite
+rather than a note about it:
+
+> **A contract suite that over-specifies is how a general port quietly becomes
+> one tier's port.**
+
+Shared — true of **any** `DreamSink`, so they belong in `tests/contract/`:
+
+| assertion | why it is universal |
+|---|---|
+| there is no delete verb, on the port or any implementation | the port's own shape |
+| `propose(key, ())` is legal and returns `()` | R-27 at the port: "nothing to write" is distinct from `unavailable` |
+| `supersede` on an absent target returns `0` and does **not** raise | absence is a finding, not an error |
+| a superseded row is **retained**, with the time it was superseded | supersession is a status change; §7.4 and `fact`'s own history depend on it |
+| **a foreign payload is refused, not duck-typed** — proposed here, not on their list | the price of `payload: object` (§15.4). The *type* differs per sink; the *refusal* does not, so the assertion is parameterised on each store's own type |
+| **provenance round-trips** — `instruction_sha256`, `model`, `established_by` are persisted and readable back — proposed here | those three ride on `Proposal` precisely because they are true of every adaptor; a sink that accepted and dropped them would satisfy every other assertion |
+
+**Not shared, and deliberately so: successor cardinality.** With `replaced_by`
+nullable at the port, `fact`'s biconditional stops being a universal rule and
+becomes a **fact-tier** rule, enforced by `SqlFactStore` and its DB CHECK rather
+than by the interface. **The note store will therefore legitimately do something
+the fact store refuses** — supersede with no successor, which is retirement
+(§7.4) — and the shared suite must permit it. Cardinality belongs in each
+implementation's own tests.
+
+The last two rows are this tier's proposals and are not yet confirmed by the
+other implementation; they are written here so the suite's author does not have
+to re-derive the argument for them.
+
 ### 15.5 What is still genuinely open
 
 Two items, both for the implementation plan rather than this document, and
