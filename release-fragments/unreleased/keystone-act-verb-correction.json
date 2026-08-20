@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design document correction only (docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md). Three errors found by the implementation plan while sequencing it, all recorded in place rather than silently rewritten: the hand-listed act verbs were four short (omitting create_event/update_event/rsvp_event/cancel_event, so a plan following it verbatim would have given a background agent four write verbs); the read/act field was placed on ToolSpec when all four derived tool subsets read NativeTool; and create_agent cannot build the Dreamer at all, because it requires a ReplyGuard and tool_choice=required, under which a loop with no terminal verb can never stop. Also closes open questions 2 and 3 with the answers already agreed with the fact-store workstream, and opens a new one for MCP-sourced tools, which have no row to carry the classification field. No code, config, schema or behaviour changes.",
+  "details": [],
+  "limitations": []
+}
