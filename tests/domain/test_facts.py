@@ -63,6 +63,26 @@ def test_only_contradicted_removes_anything():
     assert _verdict(
         status="contradicted", supersedes="0191f2c4-0000-7000-8000-000000000001"
     ).removes_nothing is False
+    # Without the supported-status guard, this would build a verdict with
+    # removes_nothing is False despite nothing having been contradicted —
+    # exactly the outcome this property exists to rule out.
+    with pytest.raises(ValueError, match="supersedes"):
+        _verdict(
+            status="supported",
+            supersedes="0191f2c4-0000-7000-8000-000000000001",
+        )
+
+
+def test_supported_cannot_supersede_anything():
+    """A source that agrees with a claim does not thereby remove some other
+    fact. `supersedes` is reachable only from `contradicted`."""
+    with pytest.raises(ValueError, match="supersedes"):
+        FactVerdict(
+            subject="x", predicate="has", object="y", status="supported",
+            addresses_claim=True, source_url="https://a.test/1",
+            source_excerpt="...",
+            supersedes="0191f2c4-0000-7000-8000-000000000001",
+        )
 
 
 def test_a_fact_requires_a_full_instruction_digest():
@@ -75,6 +95,21 @@ def test_a_fact_requires_a_full_instruction_digest():
             object_literal=None,
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="deadbeef",
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+        )
+
+
+def test_a_fact_requires_a_hex_instruction_digest():
+    """The DB CHECK is `instruction_sha256 ~ '^[0-9a-f]{64}$'`; a 64-character
+    string that is the right length but not hex must not slip past the
+    domain only to be refused at the column."""
+    with pytest.raises(ValueError, match="instruction_sha256"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url="https://example.test/a", source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="z" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
         )
 

@@ -16,6 +16,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal, get_args
 
@@ -26,6 +27,11 @@ CandidateStatus = Literal["pending", "adjudicated", "not_covered"]
 
 _STATUSES: frozenset[str] = frozenset(get_args(FactStatus))
 _CANDIDATE_STATUSES: frozenset[str] = frozenset(get_args(CandidateStatus))
+
+# The DB CHECK constraint this column maps to is
+# `instruction_sha256 ~ '^[0-9a-f]{64}$'` (see nora.domain.provenance); the
+# domain must refuse everything the column would, not just the wrong length.
+_INSTRUCTION_SHA256_RE = re.compile(rf"^[0-9a-f]{{{INSTRUCTION_SHA256_HEX_LEN}}}$")
 
 
 @dataclass(frozen=True)
@@ -63,6 +69,13 @@ class FactVerdict:
                 f"a {self.status} verdict needs a source url and the excerpt that "
                 "carries the claim"
             )
+        if self.status == "supported":
+            if self.supersedes is not None:
+                raise ValueError(
+                    "a supported verdict may not set supersedes: a source that "
+                    "agrees with a claim does not thereby remove a different fact"
+                )
+            return
         if self.status == "contradicted":
             if self.supersedes is None:
                 raise ValueError(
@@ -158,10 +171,11 @@ class Fact:
     superseded_by: str | None = None
 
     def __post_init__(self) -> None:
-        if len(self.instruction_sha256) != INSTRUCTION_SHA256_HEX_LEN:
+        if not _INSTRUCTION_SHA256_RE.fullmatch(self.instruction_sha256):
             raise ValueError(
-                "instruction_sha256 must be a full 64-character digest; a fact "
-                "whose instruction is unknown is not attributable and is refused"
+                "instruction_sha256 must be a full 64-character lowercase hex "
+                "digest; a fact whose instruction is unknown is not "
+                "attributable and is refused"
             )
         has_entity = self.object_entity_id is not None
         has_literal = self.object_literal is not None
