@@ -1,0 +1,12 @@
+{
+  "type": "feature",
+  "summary": "Developers get a fast local test loop: `make test-fast` runs the whole suite in parallel (pytest-xdist, -n 8; ~420s serial to ~96-98s measured on a 16-core box), and `make test-affected` additionally selects only the pytest targets a change actually needs, via scripts/affected_tests.py.",
+  "details": [
+    "Selection fails closed: anything it cannot map to a narrow rule with confidence (any nora/**, evals/**, pyproject.toml, Makefile, uv.lock, migrations, or an unrecognised path) runs the full suite. Docs-only changes (docs/**, design/**, release-fragments/**, *.md) select nothing, except nora/doctrine/** and nora/dreamer/** — markdown the running application loads and hashes — which are deliberately excluded from the docs-only rule and always select the full suite.",
+    "`make gate` and `make test` are unchanged: still the serial full suite, still what the merge gate runs. The fast pass only serves local iteration.",
+    "Measured under -n 8: 3719 passed, 1 skipped, 1 xfailed, zero failures — no order-dependent tests found. Each xdist worker that touches the pg_url fixture spawns its own Postgres testcontainer (paired with its own Ryuk reaper), not a shared one; expect up to one Postgres container per active worker."
+  ],
+  "limitations": [
+    "The selector is coarse by design (whole-diff rules, no import-graph inference) — a change spanning multiple categories always falls back to ALL rather than trying to be clever about a partial subset."
+  ]
+}
