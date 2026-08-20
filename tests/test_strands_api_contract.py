@@ -194,3 +194,46 @@ def test_obligation_7_the_tool_choice_flip_is_reachable_from_a_before_model_hook
         "them — nora.agent.tool_choice.relax reads-copies-writes to survive the "
         "replace, which is still correct, but the docstring's reasoning is stale"
     )
+
+
+def test_obligation_8_the_before_model_hook_fires_inside_the_retry_loop():
+    """A11 / audit F12: `_model_calls` counts COMPLETIONS because the BEFORE
+    hook cannot tell a fresh call from a re-attempt of the same one.
+
+    Asserted against the SDK's own source rather than described in a comment,
+    because the whole reason `ReplyGuard._after_model` exists is this ordering.
+    Three facts, and losing any of them changes what the counter means:
+
+    * `BeforeModelCallEvent` is constructed INSIDE the `while True:` retry loop
+      in `_handle_model_execution`, so it fires once per ATTEMPT;
+    * the exception handler `continue`s back to the top of that loop, which is
+      the re-attempt;
+    * `AfterModelCallEvent` carries `exception`, which is the only thing that
+      separates «the model answered» from «the attempt threw».
+
+    If the SDK ever moves the before-hook OUTSIDE the retry loop, this reds and
+    the guard's `_model_call_in_flight` bookkeeping becomes dead weight rather
+    than a fix.
+    """
+    import dataclasses
+
+    from strands.event_loop import event_loop
+    from strands.hooks import AfterModelCallEvent
+
+    src = inspect.getsource(event_loop._handle_model_execution)
+    loop_at = src.index("while True:")
+    hook_at = src.index("BeforeModelCallEvent(")
+    assert loop_at < hook_at, (
+        "DRIFT: BeforeModelCallEvent is no longer raised inside the retry loop — "
+        "ReplyGuard._model_calls could go back to counting it directly (A11)"
+    )
+    assert "continue  # Retry the model call" in src, (
+        "DRIFT: _handle_model_execution no longer re-enters the loop on a "
+        "retryable failure — re-read ReplyGuard._after_model's reasoning"
+    )
+
+    after = {f.name for f in dataclasses.fields(AfterModelCallEvent)}
+    assert "exception" in after, (
+        "DRIFT: AfterModelCallEvent.exception is gone — ReplyGuard cannot tell a "
+        "model call that answered from an attempt that threw (A11)"
+    )

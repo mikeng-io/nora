@@ -66,15 +66,77 @@ def _event(model):
     return SimpleNamespace(agent=SimpleNamespace(model=model), cancel=None)
 
 
+def _answered():
+    """`AfterModelCallEvent` for a call the model actually answered."""
+    return SimpleNamespace(exception=None, retry=False)
+
+
+def _raised(exc=None):
+    """`AfterModelCallEvent` for an attempt that threw — a throttle, say.
+
+    Strands' own retry strategy (`strands/event_loop/_retry.py`) only sets
+    `retry` after `is_retryable(event.exception)`, so an exception here is
+    exactly the shape that sends the loop back round to `BeforeModelCallEvent`
+    without a model answer in hand.
+    """
+    return SimpleNamespace(exception=exc or RuntimeError("throttled"), retry=True)
+
+
 def test_guard_forces_on_first_call_then_releases_on_second():
     m = _Model()
     guard = _guard("place_info")
 
     guard._before_model(_event(m))          # call 1 → force place_info
     assert _tc(m) == FIRST_TOOL
+    guard._after_model(_answered())         # ...and the model answered it
 
     guard._before_model(_event(m))          # call 2 → release to required
     assert _tc(m) == "required"
+
+
+def test_a_retried_first_call_does_not_release_the_pin():
+    """A11 / audit F12. `BeforeModelCallEvent` fires INSIDE the retry loop —
+    `strands/event_loop/event_loop.py::_handle_model_execution` invokes it at
+    the top of a `while True:` that the exception path `continue`s back to — so
+    a throttled first attempt used to bump `_model_calls` to 2 and release the
+    pin before any successful call had ever used it.
+
+    Revert `_before_model` to `self._model_calls += 1` / `== 1` / `== 2` and
+    this goes red: the retry re-enters as «call 2» and hands the model
+    `required` on the only call the router meant to pin.
+    """
+    m = _Model()
+    guard = _guard("place_info")
+
+    guard._before_model(_event(m))          # attempt 1 of call 1 → force
+    assert _tc(m) == FIRST_TOOL
+    guard._after_model(_raised())           # throttled: no answer came back
+
+    guard._before_model(_event(m))          # attempt 2 of THE SAME call
+    assert _tc(m) == FIRST_TOOL, "a retry released the pin the first call never used"
+    assert guard._model_calls == 0, "an attempt that raised is not a model call"
+
+    guard._after_model(_answered())         # this attempt answered
+    assert guard._model_calls == 1
+
+    guard._before_model(_event(m))          # now genuinely call 2 → release
+    assert _tc(m) == "required"
+
+
+def test_a_model_call_this_guard_cancelled_is_not_counted():
+    """Strands synthesises a stop response for a cancelled call and still fires
+    `AfterModelCallEvent` with `exception=None`, which is indistinguishable
+    from a real answer at that event alone — so the count is gated on the
+    guard's own record of having admitted the call."""
+    m = _Model()
+    guard = _guard("place_info")
+    guard._turn_is_over = True
+
+    event = _event(m)
+    guard._before_model(event)
+    assert event.cancel                      # no model call happened
+    guard._after_model(_answered())
+    assert guard._model_calls == 0
 
 
 def test_guard_without_a_forced_tool_leaves_the_opening_required():

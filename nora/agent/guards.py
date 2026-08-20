@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from strands.hooks import (
+    AfterModelCallEvent,
     AfterToolCallEvent,
     BeforeModelCallEvent,
     BeforeToolCallEvent,
@@ -508,8 +509,8 @@ def _unwrap_tool_status(result: Any) -> str | None:
     check (`evaluate`, below) so the unwrap logic exists exactly once.
 
     Returns `None` for a result shaped in a way this cannot parse (a tool
-    that returns a bare value with no `status` key at all — `now`,
-    `send_reply`, `load_transcript` all do this today) — callers treat
+    that carries no `status` key at all — `now` and `send_reply` return a
+    bare value, `load_transcript` a status-free envelope) — callers treat
     `None` as "not `ok`", never as "assume ok"."""
     try:
         content = result["content"]
@@ -650,7 +651,23 @@ class ReplyGuard(HookProvider):
         # call 2 — a pin left in place would make her call it every pass and
         # never `send_reply`.
         self._forced_first_tool = forced_first_tool
+        # Model calls that COMPLETED, not attempts — audit F12/A11.
+        # `BeforeModelCallEvent` fires INSIDE the retry loop
+        # (`strands/event_loop/event_loop.py::_handle_model_execution`: the
+        # `while True:` invokes it at the top of every pass, and both the
+        # exception path and the hook-requested path `continue` back to it), so
+        # a throttle-retry of call #1 used to increment this to 2 and release
+        # the `forced_first_tool` pin before any successful call had used it.
+        # Counted in `_after_model` instead, where the difference between «the
+        # model answered» and «the attempt raised» is actually visible.
         self._model_calls = 0
+        # A real (not cancelled) model call is admitted and not yet counted.
+        # Distinguishes the retry pass — which must NOT advance the counter —
+        # from a fresh call, and keeps a call this guard cancelled out of the
+        # count entirely: Strands fires `AfterModelCallEvent` with a synthesised
+        # stop response for a cancelled call, which is indistinguishable from a
+        # real answer at that event alone.
+        self._model_call_in_flight = False
         # R-45: has the make_artifact/context nudge already fired this turn?
         # One-shot, like R-4/R-2's own care about not silently blocking a
         # correction (DEC-33) — a second veto on the SAME defect the model
@@ -868,6 +885,7 @@ class ReplyGuard(HookProvider):
         registry.add_callback(BeforeToolCallEvent, self._before_tool)
         registry.add_callback(AfterToolCallEvent, self._after_tool)
         registry.add_callback(BeforeModelCallEvent, self._before_model)
+        registry.add_callback(AfterModelCallEvent, self._after_model)
 
     def _terminal_budget_spent(self) -> bool:
         """True once NO terminal verb can be called again this turn.
@@ -958,7 +976,14 @@ class ReplyGuard(HookProvider):
             self.cancelled_model_call = True
             return
         model = getattr(getattr(event, "agent", None), "model", None)
-        self._model_calls += 1
+        # A real call from here on: whatever this pass does, it is not the
+        # cancel branch above. Set BEFORE the `_spoke` return so a relaxed call
+        # is counted like any other.
+        self._model_call_in_flight = True
+        # Which call this IS, counting from 1 — completed calls plus this one.
+        # A retry pass re-enters here with `_model_calls` unchanged, so it
+        # re-computes the SAME index and re-applies the same pin (A11).
+        call_index = self._model_calls + 1
         if self._spoke:
             tool_choice.relax(model)
             return
@@ -969,10 +994,40 @@ class ReplyGuard(HookProvider):
         # Ordered after the `_spoke` return so a forced pin never survives into
         # the post-reply relaxation.
         if self._forced_first_tool is not None:
-            if self._model_calls == 1:
+            if call_index == 1:
                 tool_choice.force(model, self._forced_first_tool)
-            elif self._model_calls == 2:
+            elif call_index == 2:
                 tool_choice.require(model)
+
+    def _after_model(self, event: AfterModelCallEvent) -> None:
+        """Count the model call that just COMPLETED (A11, audit F12).
+
+        `exception is None` is the whole discriminator, and it is exact: the
+        shipped retry strategy (`strands/event_loop/_retry.py`) sets
+        `event.retry` only after `is_retryable(event.exception)`, so a pass that
+        raised is always a pass that produced no answer, and the next
+        `BeforeModelCallEvent` is a re-attempt of the SAME call rather than the
+        next one.
+
+        `event.retry` is deliberately NOT consulted. `AfterModelCallEvent` uses
+        reverse callback ordering, so a strategy registered after this guard has
+        not necessarily run yet and the flag is not final here. The one case
+        that reads differently — a hook discarding a SUCCESSFUL response to
+        re-ask — is counted as a call, which is honest: the model was called and
+        it answered.
+
+        Never raises, for `_before_tool`'s reason: a counter is not worth
+        killing a turn over.
+        """
+        try:
+            if not self._model_call_in_flight:
+                return                      # a call this guard cancelled
+            if getattr(event, "exception", None) is not None:
+                return                      # attempt failed; a retry re-uses the index
+            self._model_calls += 1
+            self._model_call_in_flight = False
+        except Exception:
+            log.exception("ReplyGuard._after_model raised; ignoring")
 
     def _before_tool(self, event) -> None:
         try:

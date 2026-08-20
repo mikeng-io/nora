@@ -151,7 +151,7 @@ def test_every_tool_has_a_model_facing_docstring(wiring):
 
 
 async def test_load_transcript_returns_rows_oldest_first(wiring):
-    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     assert [r["body"] for r in rows] == ["m0", "m1", "m2"]
 
 
@@ -245,14 +245,14 @@ async def test_load_transcript_reads_the_bound_conversation_and_nothing_else(wir
     closed by construction. This still asserts on the returned rows rather than
     on the signature: what matters is that g2's messages never come back.
     """
-    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     bodies = [r["body"] for r in rows]
     assert bodies == ["m0", "m1", "m2"]
     assert not any(b.startswith("secret") for b in bodies)
 
 
 async def test_load_transcript_returns_only_model_relevant_fields(wiring):
-    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     # No raw_json, no ids. `reply_to` is absent rather than null on an
     # unthreaded row — see test_load_transcript_omits_reply_to_* below.
     assert set(rows[0]) == {"sender", "body", "ts"}
@@ -275,7 +275,7 @@ async def test_load_transcript_names_speakers_the_same_way_the_prefill_does(wiri
     await store.append(message=NormalizedMessage(
         "signal", "g1", "group", "+852111", "陳志明 Chi Ming", 8, "我返到屋企", {},
     ))
-    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     row = next(r for r in rows if r["body"] == "我返到屋企")
     assert row["sender"] == "Miles"
     assert not any(r["sender"] == "陳志明 Chi Ming" for r in rows)
@@ -290,7 +290,7 @@ async def test_load_transcript_keeps_the_profile_name_for_an_unmapped_speaker(wi
     await store.append(message=NormalizedMessage(
         "signal", "g1", "group", "+85299999999", "A Stranger", 7, "hi", {},
     ))
-    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     row = next(r for r in rows if r["body"] == "hi")
     assert row["sender"] == "A Stranger"          # not "unknown"
 
@@ -306,7 +306,7 @@ async def test_load_transcript_marks_a_reply_with_the_name_it_answers(wiring):
         "signal", "g1", "group", "+852333", "Tyler", 9, "你屋企", {},
         quote=Quote(author_id="+852111", text="whatever", quoted_ts=1),
     ))
-    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     assert rows[-1] == {"sender": "Tyler", "body": "你屋企", "ts": 9, "reply_to": "Miles"}
 
 
@@ -319,7 +319,7 @@ async def test_load_transcript_omits_reply_to_when_the_parent_is_not_in_the_rows
         "signal", "g1", "group", "+852333", "Tyler", 9, "你屋企", {},
         quote=Quote(author_id="+852111", text="whatever", quoted_ts=999_999),
     ))
-    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     assert "reply_to" not in rows[-1]
 
 
@@ -333,7 +333,7 @@ async def test_load_transcript_names_nora_the_same_way_in_reply_to_as_in_sender(
         "signal", "g1", "group", "+852333", "Tyler", 9, "得", {},
         quote=Quote(author_id="nora", text="whatever", quoted_ts=8),
     ))
-    rows = await _call(wiring["tools"]["load_transcript"], limit=40)
+    rows = (await _call(wiring["tools"]["load_transcript"], limit=40))["messages"]
     assert rows[-2]["sender"] == "Nora"
     assert rows[-1]["reply_to"] == "Nora"
 
@@ -355,7 +355,7 @@ async def test_load_transcript_clamps_a_hostile_limit(wiring, monkeypatch):
 
     monkeypatch.setattr(wiring["store"], "recent", spy)
     for hostile in (-1, 0):
-        rows = await _call(wiring["tools"]["load_transcript"], limit=hostile)
+        rows = (await _call(wiring["tools"]["load_transcript"], limit=hostile))["messages"]
         assert len(rows) <= 1
     assert seen == [1, 1]
 
@@ -514,7 +514,8 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(wiring["store"], "recent", boom)
-    assert await _call(wiring["tools"]["load_transcript"], limit=40) == []
+    dead = await _call(wiring["tools"]["load_transcript"], limit=40)
+    assert dead["messages"] == []
 
 
 # ---- every tool call is counted, by outcome ---------------------------------

@@ -118,7 +118,12 @@ def test_the_budget_a_vetoed_call_leaves_is_the_one_the_correction_uses():
 
 
 def test_register_hooks_subscribes_to_both_events():
-    from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent
+    from strands.hooks import (
+        AfterModelCallEvent,
+        AfterToolCallEvent,
+        BeforeModelCallEvent,
+        BeforeToolCallEvent,
+    )
 
     registered = []
 
@@ -128,6 +133,10 @@ def test_register_hooks_subscribes_to_both_events():
     _guard().register_hooks(registry)
     assert BeforeToolCallEvent in registered
     assert AfterToolCallEvent in registered
+    assert BeforeModelCallEvent in registered
+    # A11: without the AFTER half the model-call counter has nothing to count
+    # completions with, and falls back to counting attempts (audit F12).
+    assert AfterModelCallEvent in registered
 
 
 def test_the_guard_satisfies_the_hook_provider_protocol():
