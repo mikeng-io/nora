@@ -10,6 +10,7 @@ from tests.test_doctrine_loader import write  # reuse the frontmatter writer
 
 ROOT = Path(__file__).resolve().parents[1]
 SHIPPED = ROOT / "nora" / "doctrine"
+FIXTURES = ROOT / "tests" / "fixtures"
 _SECTION_RE = re.compile(r"<section[^>]*>\n(.*?)\n</section>", re.DOTALL)
 
 
@@ -168,3 +169,21 @@ def test_get_is_cached_between_calls_when_nothing_changed(doctrine_dir):
 
 def test_loaded_at_is_populated(doctrine_dir):
     assert _store(doctrine_dir).get().loaded_at > 0
+
+
+def test_the_assembled_doctrine_is_byte_stable(doctrine_dir):
+    """The safety net for the loader extraction (Phase 1 Task 1.2).
+
+    Properties-only assertions cannot catch a refactor that changes a single
+    newline in `_assemble` — and that newline lands in the live system prompt
+    and in `doctrine_sha256`, which every trace's provenance is bound to. The
+    golden is over the FIXTURE corpus, never the shipped doctrine: those files
+    are operator-edited and bind-mounted, so a golden over them would be red on
+    every legitimate edit, which is exactly why
+    `tests/fixtures/doctrine_assembled_at_rename.txt` was deleted (see the note
+    at the top of this file). A synthetic corpus this file already owns has no
+    such cost — it changes only when `doctrine_dir` above changes.
+    """
+    store = _store(doctrine_dir)
+    golden = (FIXTURES / "doctrine_assembly_golden.txt").read_text(encoding="utf-8")
+    assert store.get(applies_to="tag").doctrine_text == golden
