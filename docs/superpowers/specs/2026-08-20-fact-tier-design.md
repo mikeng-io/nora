@@ -184,6 +184,13 @@ it in the first migration rather than later — not just that a backfill is
 impossible, but that the invariant can be total. A fact whose instruction is
 unknown cannot be written at all.
 
+The digest itself is **not** recomputed here: `nora.domain.provenance.
+instruction_sha256` arrived with that migration, stdlib-only at the layers'
+floor precisely so `nora.language` and `nora.agent` can both name it without
+importing each other. The fact tier calls it. A second hashing helper would be
+the "port never gains a second implementation" rule broken at its cheapest
+possible scale.
+
 **`fact_entity.aliases` is load-bearing at this scope, not cosmetic.** In a
 Cantonese/English room `big walk` / `Big Walk` / 大步行 must resolve to one
 subject or the tier fragments into near-duplicates that can never contradict
