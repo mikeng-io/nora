@@ -26,14 +26,26 @@ from nora.obs.metrics import Metrics
 pytestmark = pytest.mark.asyncio
 
 
+# The name the fake client below reports, distinct from anything in
+# `config.toml` so a test asserting it cannot pass by accidentally reading a
+# default from somewhere other than the injected client.
+FAKE_MODEL = "fake-observer-model-v1"
+
+
 class FakeModel:
     """A same-process double for the `model` collaborator. `responses` is
     consumed in order, one per `observe()` call, mirroring exactly how a real
     client answers one prompt with one completion — never a canned "always
-    one clean candidate" reply."""
+    one clean candidate" reply.
 
-    def __init__(self, responses: list[str]) -> None:
+    `model` mirrors the real client's own read-only name
+    (`nora.app.composition._LanguageModelClient.model`): the observer reads
+    the model it stamps off THIS object, so a double that omitted it would
+    not be the shape production wires."""
+
+    def __init__(self, responses: list[str], *, model: str = FAKE_MODEL) -> None:
         self._responses = list(responses)
+        self.model = model
 
     async def complete(self, *, prompt: str) -> str:
         return self._responses.pop(0)
@@ -405,3 +417,47 @@ async def test_wiring_the_known_entity_check_changes_the_stamp():
     assert verified.instruction_sha256 == instruction_sha256(
         observer_module._PROMPT_PREAMBLE, observer_module._VERIFICATION_PROMPT_TEMPLATE,
     )
+
+
+# ── model provenance (2026-08-20 substrate spec §6.2 question 2) ─────────────
+#
+# The other half of the pair above, and it answers a question the digest
+# cannot: the same instruction text run against a different model writes
+# different rows. `[language].model` has changed before and will change again
+# (the keystone's §9.1 is open), so this is the writer half of making rows
+# either side of that change distinguishable.
+
+async def test_every_candidate_carries_the_model_that_produced_it():
+    observer = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
+    result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    [c] = result.candidates
+    assert c.model == observer.model
+    assert c.model == FAKE_MODEL
+
+
+async def test_the_stamped_model_is_the_one_the_client_reports():
+    """Bound to the real property. The observer reads the name off the CLIENT
+    that makes the call, so a client wired to a different model stamps a
+    different name with no other change anywhere — an observer that took the
+    name as its own argument, or read it from config, would pass a weaker
+    assertion and fail this one."""
+    other = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response()], model="some-other-model"),
+    )
+    result = await other.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    [c] = result.candidates
+    assert other.model == "some-other-model"
+    assert c.model == "some-other-model"
+
+
+async def test_changing_the_model_leaves_the_instruction_digest_alone():
+    """The two fields are independent inputs, and neither substitutes for the
+    other. Two observers over identical instruction text and different models
+    must agree on the digest and disagree on the model — if `model` moved with
+    the digest it would be recording nothing new."""
+    a = LexemeObserver(FakeModel(responses=[_one_candidate_response()], model="m-a"))
+    b = LexemeObserver(FakeModel(responses=[_one_candidate_response()], model="m-b"))
+    [c_a] = (await a.observe(batch=rows_with_id(7, "?? Big walk ??"))).candidates
+    [c_b] = (await b.observe(batch=rows_with_id(7, "?? Big walk ??"))).candidates
+    assert c_a.instruction_sha256 == c_b.instruction_sha256
+    assert c_a.model != c_b.model

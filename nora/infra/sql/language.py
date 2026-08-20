@@ -202,6 +202,13 @@ class SqlLanguageStore:
                 # came from somewhere other than the object that produced it.
                 sa.literal(obs.instruction_sha256, type_=sa.Text)
                 .label("instruction_sha256"),
+                # The other half of the same provenance, from the same
+                # candidate for the same reason — the model the observer read
+                # off the client that actually made the call
+                # (`LexemeObserver.model`). Two fields, one source object, so
+                # a row can never name an instruction and a model that were
+                # never run together.
+                sa.literal(obs.model, type_=sa.Text).label("model"),
             ).where(MESSAGES.c.id == obs.message_id)
             for obs in observations
         ]
@@ -213,7 +220,7 @@ class SqlLanguageStore:
                     "scope_id", "conversation_id", "message_id", "person_id",
                     "surface_form", "canonical_form", "sense", "part_of_speech",
                     "context", "observed_at", "extractor_confidence",
-                    "instruction_sha256",
+                    "instruction_sha256", "model",
                 ],
                 combined,
             )
@@ -257,7 +264,8 @@ class SqlLanguageStore:
         them as one more distinct person would be a claim with no identity
         behind it. The rendered "N people" stays a real count of known people.
 
-        `instruction_sha256` is INHERITED, not computed: this method never
+        `instruction_sha256` and `model` are INHERITED, not computed, and they
+        are inherited from the SAME row: this method never
         reaches a model, so the only honest stamp for a consolidated row is
         the one carried by the evidence that most recently produced it — the
         `rn = 1` row of the same window `examples` already ranks, i.e. the
@@ -268,6 +276,14 @@ class SqlLanguageStore:
         where a per-row history belongs. A group whose newest evidence
         predates the column inherits NULL — «nobody recorded it», never a
         guess.
+
+        Both fields come off the ONE `latest` row rather than two lookups,
+        which is what makes the pair honest: an instruction taken from the
+        newest row and a model taken from, say, the most common row would
+        together describe a run that never happened. They are also the reason
+        a consolidated row can carry NULL for both while its group holds
+        stamped evidence — the newest observation is the one that speaks, and
+        if it predates the columns it says nothing.
 
         `examples` is capped at `_EXAMPLES_PER_LEXEME_CAP`, most-recent-first:
         a `ROW_NUMBER() OVER (PARTITION BY canonical_form, sense ORDER BY
@@ -286,6 +302,7 @@ class SqlLanguageStore:
                 LO.c.context,
                 LO.c.observed_at,
                 LO.c.instruction_sha256,
+                LO.c.model,
                 sa.func.row_number()
                 .over(
                     partition_by=(LO.c.canonical_form, LO.c.sense),
@@ -315,6 +332,7 @@ class SqlLanguageStore:
         latest = (
             sa.select(
                 ranked.c.canonical_form, ranked.c.sense, ranked.c.instruction_sha256,
+                ranked.c.model,
             )
             .where(ranked.c.rn == 1)
             .cte("latest")
@@ -345,6 +363,7 @@ class SqlLanguageStore:
             aggregated.c.last_seen_at,
             examples_cte.c.examples,
             latest.c.instruction_sha256,
+            latest.c.model,
         ).select_from(
             aggregated.join(
                 examples_cte,
@@ -389,6 +408,7 @@ class SqlLanguageStore:
                     "state": state,
                     "examples": r.examples,
                     "instruction_sha256": r.instruction_sha256,
+                    "model": r.model,
                 })
 
             upsert_stmt = pg.insert(ROOM_LEXEME).values(upsert_rows)
@@ -407,6 +427,7 @@ class SqlLanguageStore:
                     "state": upsert_stmt.excluded.state,
                     "examples": upsert_stmt.excluded.examples,
                     "instruction_sha256": upsert_stmt.excluded.instruction_sha256,
+                    "model": upsert_stmt.excluded.model,
                 },
             )
             await conn.execute(upsert_stmt)

@@ -41,6 +41,8 @@ class _FakeModelClient:
     marker for "these two are in an exchange" the way `"<form>:<sense>"`
     stands in for a lexeme)."""
 
+    model = "fake-contract-exchange-model"
+
     async def complete(self, *, prompt: str) -> str:
         ids: list[int] = []
         for line in prompt.splitlines():
