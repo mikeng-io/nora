@@ -90,12 +90,21 @@ class DirectoryWatcher(Generic[T]):
         return self._generation
 
     def fingerprint(self) -> tuple:
-        """Name, mtime and size of every matching file, sorted.
+        """Path, mtime and size of every matching file, sorted.
 
-        Size is in there beside mtime because a same-second rewrite of the same
-        file to a different length is a real edit that a coarse mtime can miss.
+        Size is in there beside mtime because an edit written back at the file's
+        original timestamp — a restored backup, `rsync --times`, an editor that
+        preserves timestamps — moves no clock at all, and the resulting failure
+        is the worst kind: the operator sees their edit on disk while the running
+        system serves the old text with nothing logged.
+
+        The full path rather than `p.name`, because `glob` may be nested: the
+        Dreamer's tree is `doctrine/*.md` plus `objectives/*.md`, where two
+        files can share a basename. For a flat directory the two are the same
+        string modulo the prefix, so the doctrine's fingerprint is unchanged in
+        everything but spelling.
         """
-        return tuple(sorted((p.name, p.stat().st_mtime_ns, p.stat().st_size)
+        return tuple(sorted((str(p), p.stat().st_mtime_ns, p.stat().st_size)
                             for p in self._dir.glob(self._glob)))
 
     def current(self) -> T:

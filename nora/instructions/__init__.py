@@ -22,12 +22,15 @@ This package reads `.md` files and nothing else. It takes no config: the
 directory arrives as a `Path` from the composition root.
 """
 
+from .dreamer import DreamerInstructions, InstructionSet
 from .frontmatter import InstructionError, ParsedDocument, parse_document
 from .reload import DirectoryWatcher
 
 __all__ = [
     "DirectoryWatcher",
+    "DreamerInstructions",
     "InstructionError",
+    "InstructionSet",
     "ParsedDocument",
     "parse_document",
 ]
