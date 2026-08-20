@@ -159,7 +159,7 @@ layers = [
     "nora.agent | nora.platform",
     "nora.doctrine",
     "nora.language",
-    "nora.skills",
+    "nora.skills | nora.instructions",
     "nora.obs",
     "nora.infra | nora.testing",
     "nora.domain",
@@ -172,7 +172,7 @@ source_modules = [
     "nora.agent", "nora.obs", "nora.doctrine", "nora.language", "nora.platform",
     "nora.domain", "nora.persons", "nora.tag",
     "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
-    "nora.skills",
+    "nora.skills", "nora.instructions",
 ]
 forbidden_modules = ["nora.config"]
 
@@ -211,7 +211,8 @@ source_modules = ["evals"]
 forbidden_modules = [
     "nora.agent", "nora.config", "nora.domain", "nora.engagement",
     "nora.infra", "nora.ingest", "nora.obs", "nora.doctrine", "nora.persons",
-    "nora.platform", "nora.tag", "nora.skills", "nora.presence", "nora.analytics", "tests",
+    "nora.platform", "nora.tag", "nora.skills", "nora.presence", "nora.analytics",
+    "nora.instructions", "tests",
 ]
 allow_indirect_imports = "True"
 
