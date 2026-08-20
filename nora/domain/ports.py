@@ -1280,15 +1280,45 @@ class DreamSink(Protocol):
         ...
 
     async def supersede(
-        self, *, key: str, target: str, because: str, source: str | None, now_ms: int
+        self,
+        *,
+        key: str,
+        target: str,
+        replaced_by: str | None,
+        because: str,
+        source: str | None,
+        now_ms: int,
     ) -> int:
-        """Retire `target`, recording WHAT replaced it and WHY. Returns rows
+        """Retire `target`, naming WHAT replaced it and WHY. Returns rows
         affected.
 
-        `because` is required and `source` is not: a supersession always has a
-        reason, and only sometimes a citation. Retiring a row with neither
-        leaves a fact hidden from every read with no record of its successor —
-        the failure the fact tier's supersession CHECK is a biconditional to
-        prevent.
+        **`replaced_by` is the successor IN THIS TIER, and it is nullable at the
+        port on purpose.** Two tiers derived the need for it from different
+        specs — the fact tier, whose supersessions always have a successor
+        because a contradicted fact is replaced by the corrected one, and the
+        note tier, whose `retire` case has none (an anchor date passed; a dinner
+        that happened is not replaced by anything). A non-nullable field would
+        force the second tier to mint a placeholder id to satisfy the signature,
+        which is the "invent a value to satisfy a schema" move this codebase
+        forbids everywhere else.
+
+        So: **permissive at the port, strict at each implementation.** A sink
+        whose rows require a successor refuses the null itself — the fact
+        store's `(superseded_by is null) = (superseded_at is null)` biconditional
+        is a FACT-TIER rule enforced in its own CHECK, not a universal one. A
+        port that hard-codes one tier's cardinality is the same mistake as a
+        `payload` typed to one tier's value: the port stays general, and the sink
+        is where the type AND the cardinality are known again.
+
+        **`source` is a WARRANT** — a URL or equivalent pointer to evidence —
+        and never the id of a row in the tier. That separation is why
+        `replaced_by` exists rather than being smuggled through `source`: the
+        same field meaning "a citation" to one tier and "the surviving row" to
+        another is a collision where whoever writes first fixes it wrong for the
+        other.
+
+        `because` is required and stays narrow enough to be a constrained enum
+        on the implementing side (`stale|wrong|merged` in the fact tier) — which
+        it could not be if it had to carry a successor id as free text.
         """
         ...

@@ -44,7 +44,8 @@ class _Row:
     key: str
     proposal: Proposal
     written_at: int
-    superseded_by: str | None = None
+    replaced_by: str | None = None
+    retired_at: int | None = None
     because: str | None = None
     source: str | None = None
 
@@ -73,11 +74,12 @@ class _FakeDreamSink:
             ids.append(rid)
         return tuple(ids)
 
-    async def supersede(self, *, key, target, because, source, now_ms):
+    async def supersede(self, *, key, target, replaced_by, because, source, now_ms):
         row = self.rows.get(target)
-        if row is None or row.key != key or row.superseded_by is not None:
+        if row is None or row.key != key or row.retired_at is not None:
             return 0
-        row.superseded_by = f"superseded@{now_ms}"
+        row.retired_at = now_ms
+        row.replaced_by = replaced_by
         row.because = because
         row.source = source
         return 1
@@ -164,7 +166,8 @@ async def test_keys_do_not_leak_into_each_other(sink):
     a = await sink.propose(key="room-a", proposals=(_proposal("x"),), now_ms=NOW)
 
     moved = await sink.supersede(
-        key="room-b", target=a[0], because="wrong room", source=None, now_ms=NOW + 1,
+        key="room-b", target=a[0], replaced_by=None, because="wrong room",
+        source=None, now_ms=NOW + 1,
     )
 
     assert moved == 0, "a key must not be able to supersede another key's row"
@@ -181,8 +184,8 @@ async def test_supersede_retires_a_row_proposed_earlier(sink):
     )
 
     affected = await sink.supersede(
-        key="room-1", target=ids[0], because="a later source contradicted it",
-        source="keengamer", now_ms=NOW + 1,
+        key="room-1", target=ids[0], replaced_by=None,
+        because="a later source contradicted it", source="keengamer", now_ms=NOW + 1,
     )
 
     assert affected == 1
@@ -192,7 +195,7 @@ async def test_superseding_an_unknown_row_reports_zero_rather_than_raising(sink)
     """A background pass that raises on a row someone else already retired takes
     the tick down with it. Reporting zero lets the caller notice and continue."""
     affected = await sink.supersede(
-        key="room-1", target="row-does-not-exist", because="stale",
+        key="room-1", target="row-does-not-exist", replaced_by=None, because="stale",
         source=None, now_ms=NOW,
     )
 
@@ -204,11 +207,13 @@ async def test_superseding_twice_affects_nothing_the_second_time(sink):
     it already did — the same property `RoomConsolidator`'s contract turns on."""
     ids = await sink.propose(key="room-1", proposals=(_proposal("x"),), now_ms=NOW)
     first = await sink.supersede(
-        key="room-1", target=ids[0], because="r", source=None, now_ms=NOW + 1,
+        key="room-1", target=ids[0], replaced_by=None, because="r", source=None,
+        now_ms=NOW + 1,
     )
 
     second = await sink.supersede(
-        key="room-1", target=ids[0], because="r", source=None, now_ms=NOW + 2,
+        key="room-1", target=ids[0], replaced_by=None, because="r", source=None,
+        now_ms=NOW + 2,
     )
 
     assert (first, second) == (1, 0)
@@ -220,7 +225,8 @@ async def test_a_supersession_records_why_and_optionally_from_where(sink):
     hidden-with-no-successor failure the fact tier's biconditional prevents."""
     ids = await sink.propose(key="room-1", proposals=(_proposal("x"),), now_ms=NOW)
     await sink.supersede(
-        key="room-1", target=ids[0], because="contradicted", source=None, now_ms=NOW + 1,
+        key="room-1", target=ids[0], replaced_by=None, because="contradicted",
+        source=None, now_ms=NOW + 1,
     )
 
     row = sink.rows[ids[0]]
@@ -256,3 +262,72 @@ def test_a_proposal_is_frozen():
 
     with pytest.raises(FrozenInstanceError):
         p.model = "something-else"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# the successor axis — replaced_by
+# ---------------------------------------------------------------------------
+
+
+async def test_a_supersession_can_name_its_successor(sink):
+    """The field two tiers needed and the port did not have.
+
+    Without it a supersession records that something died and not what replaced
+    it — the fact tier's `(superseded_by is null) = (superseded_at is null)`
+    biconditional cannot be satisfied at all, and a merge in the note tier is
+    unauditable. Both derived that from their own specs independently, which is
+    what makes it a port defect rather than one tier's preference.
+    """
+    old = await sink.propose(key="room-1", proposals=(_proposal("v1"),), now_ms=NOW)
+    new = await sink.propose(key="room-1", proposals=(_proposal("v2"),), now_ms=NOW + 1)
+
+    affected = await sink.supersede(
+        key="room-1", target=old[0], replaced_by=new[0], because="wrong",
+        source="https://example.test/correction", now_ms=NOW + 2,
+    )
+
+    assert affected == 1
+    assert sink.rows[old[0]].replaced_by == new[0]
+
+
+async def test_a_supersession_with_no_successor_is_legal_at_the_port(sink):
+    """Permissive at the port, strict at each implementation.
+
+    The note tier's `retire` has no successor — an anchor date passed, the
+    uncertainty is simply over, and a dinner that happened is not replaced by
+    anything. A non-nullable `replaced_by` would force it to mint a placeholder
+    id to satisfy the signature, which is the invent-a-value-to-satisfy-a-schema
+    move forbidden elsewhere in this codebase.
+
+    A sink whose own rows require a successor refuses the null ITSELF — that
+    biconditional is a fact-tier rule, enforced in its CHECK, not here.
+    """
+    ids = await sink.propose(key="room-1", proposals=(_proposal("x"),), now_ms=NOW)
+
+    affected = await sink.supersede(
+        key="room-1", target=ids[0], replaced_by=None, because="retired",
+        source=None, now_ms=NOW + 1,
+    )
+
+    assert affected == 1
+    assert sink.rows[ids[0]].replaced_by is None
+
+
+async def test_source_and_replaced_by_are_kept_apart(sink):
+    """`source` is a WARRANT — a URL or equivalent pointer to evidence — and
+    never the id of a row in the tier. They are two fields because they are two
+    kinds of thing: overloading one field to mean "a citation" in one tier and
+    "the surviving row" in another is a collision where whoever writes first
+    fixes it wrong for the other."""
+    old = await sink.propose(key="room-1", proposals=(_proposal("v1"),), now_ms=NOW)
+    new = await sink.propose(key="room-1", proposals=(_proposal("v2"),), now_ms=NOW + 1)
+
+    await sink.supersede(
+        key="room-1", target=old[0], replaced_by=new[0], because="wrong",
+        source="https://keengamer.test/big-walk", now_ms=NOW + 2,
+    )
+
+    row = sink.rows[old[0]]
+    assert row.replaced_by == new[0]
+    assert row.source == "https://keengamer.test/big-walk"
+    assert row.source != row.replaced_by
