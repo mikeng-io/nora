@@ -648,6 +648,17 @@ verify_known_entities = true
 # exchange_model = "ollamacloud/deepseek-v4-flash"
 # max_rendered_exchanges = 4
 
+[facts]
+# The fact tier's gate (docs/superpowers/specs/2026-08-20-fact-tier-design.md).
+# Nothing writes a fact yet — the schema and the <facts> block ship dormant —
+# so this section is a flag and three bounds for a future adaptor, not a
+# running subsystem today. Stays off with this first deployment of the
+# schema, the same "off at first" period [language] shipped in.
+enabled = false
+# max_adjudications_per_tick = 10
+# max_rendered_facts = 8
+# retention_days = 180
+
 [tools.mcp.pulse]
 enabled = true
 base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"

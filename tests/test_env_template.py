@@ -22,6 +22,7 @@ def test_config_example_exists_and_parses():
         "platforms", "llm", "memory", "store", "media", "route", "presence",
         "analytics", "shortener", "compute",
         "search", "weather", "preview", "heartbeat", "reminders", "language",
+        "facts",
         "version", "engagement", "doctrine", "identity_file", "policy_file",
         "obs", "evals", "tools",
     }

@@ -718,6 +718,29 @@ verify_max_candidates = 10
 # to or past the (not configurable) store limit of 10.
 max_rendered_exchanges = 4
 
+[facts]
+# The fact tier's gate (docs/superpowers/specs/2026-08-20-fact-tier-design.md).
+# Nothing writes a fact yet — the schema and the <facts> block ship dormant —
+# so this section is a flag and three bounds for a future adaptor, not a
+# running subsystem today.
+#
+# Ships INERT, like every other subsystem's first deployment: a config.toml
+# written before this section existed keeps loading with facts off.
+enabled = false
+# The Phase B cap — one research loop (search + classify) per surviving
+# candidate is the expensive step, same shape and same default as
+# [language]'s verify_max_candidates.
+max_adjudications_per_tick = 10
+# The RENDER cap on the <facts> block — same per-turn-cost argument as
+# [language]'s max_rendered_lexemes/max_rendered_exchanges: this block sits
+# in the same uncached volatile tail, and a fact line additionally carries a
+# source URL and an excerpt.
+max_rendered_facts = 8
+# How long a resolved fact_candidate (a not_covered verdict, or a superseded
+# fact) is kept before a future prune sweep drops it — matches the tool-
+# recall-log's own retention_days = 180 for the same shape of row.
+retention_days = 180
+
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version
 # baked into this image has not been announced in a room yet, Nora relays the
