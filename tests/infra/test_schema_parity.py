@@ -28,6 +28,7 @@ Parameterised over every table in `nora`'s metadata, so when `presence_fixes`
 
 from __future__ import annotations
 
+import re
 import subprocess
 import uuid
 from pathlib import Path
@@ -39,6 +40,7 @@ from alembic.migration import MigrationContext
 
 from nora.infra.sql.migrations_runner import run_migrations, sync_url_for
 from nora.infra.sql.schema import METADATA
+from tests.conftest import PG_IMAGE
 
 BASELINE = Path(__file__).resolve().parent / "pg_schema_baseline.sql"
 
@@ -141,6 +143,43 @@ def _dbname_of(pg_url: str) -> str:
 def migrated(pg_url) -> str:
     run_migrations(pg_url)
     return pg_url
+
+
+def test_the_test_container_tracks_the_deployment():
+    """The suite's Postgres MAJOR VERSION must match the one production runs.
+
+    This file is the gate every migration passes through. Until 2026-08-20 it
+    ran on `postgres:16-alpine` while `docker-compose.yml` deployed
+    `postgres:18-alpine` — so the oracle was a major version behind the thing it
+    guarded, and `scripts/gen_pg_baseline.py` generated the checked-in baseline
+    on 16 as well. A schema gate validating against the wrong major version is
+    the repo's own «never read an instrument's output as evidence without first
+    checking it can measure the thing» rule failing on the instrument that
+    guards the schema.
+
+    Found by the fact-store workstream while measuring Apache AGE availability
+    against the live database — i.e. by somebody looking at something else,
+    which is why this test exists rather than a note.
+
+    Compares MAJOR versions only. A patch bump in compose is a deployment
+    decision and must not turn the suite red; a MAJOR bump changes what
+    `pg_dump` emits and what `compare_metadata` sees, and must.
+    """
+    compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(
+        encoding="utf-8"
+    )
+    deployed = re.search(r"image:\s*(postgres:(\d+)[\w.-]*)", compose)
+    assert deployed is not None, "no postgres image found in docker-compose.yml"
+
+    tested = re.match(r"postgres:(\d+)", PG_IMAGE)
+    assert tested is not None, f"PG_IMAGE is not a postgres image: {PG_IMAGE!r}"
+
+    assert tested.group(1) == deployed.group(2), (
+        f"the test suite runs {PG_IMAGE} but the deployment runs "
+        f"{deployed.group(1)}. This gate's oracle must not be a major version "
+        f"away from what it guards — bump tests/conftest.py's PG_IMAGE and "
+        f"regenerate the baseline with scripts/gen_pg_baseline.py."
+    )
 
 
 @pytest.mark.parametrize("table", sorted(METADATA.tables))
