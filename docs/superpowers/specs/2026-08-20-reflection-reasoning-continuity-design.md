@@ -1,11 +1,12 @@
 ---
 kind: spec
 title: "Standing and Facts: reasoning continuity across a stateless turn boundary"
-description: "Nora read a correct, sourced fact out of a web search — Big Walk's fifth Black Tower — then ten minutes later overturned it because a NARROWER source did not mention it, then repudiated it entirely using a source about something else, under social pressure. Twenty-nine hours later she recovered it unaided. Nothing carries a sourced conclusion across a turn: the agent is rebuilt per tag, reasoningContent is dropped at the transport, nothing binds a claim to the result that supported it, and Honcho's (observer, observed) axis holds conclusions about PEOPLE, not facts about the world. This proposes two tiers with three cadences: a debrief that revises a per-conversation Standing in-slot and PROPOSES facts append-only, and a FactSynthesizer on the existing Dreamer clock that DISPOSES — adjudicating contradictions cold, off the critical path, where silence removes nothing."
+description: "Nora read a correct, sourced fact out of a web search — Big Walk's fifth Black Tower — then ten minutes later overturned it because a NARROWER source did not mention it, then repudiated it entirely using a source about something else, under social pressure. Twenty-nine hours later she recovered it unaided. Nothing carries a sourced conclusion across a turn: the agent is rebuilt per tag, reasoningContent is dropped at the transport, nothing binds a claim to the result that supported it, and Honcho's (observer, observed) axis holds conclusions about PEOPLE, not facts about the world. This proposes two tiers with three cadences: a debrief that revises a per-conversation Standing in-slot and PROPOSES facts append-only, and a FactSynthesizer on the existing Dreamer clock that DISPOSES — adjudicating contradictions cold, off the critical path, where silence removes nothing. Revised against the Dreamer-as-an-agent keystone: the fact tier is one ADAPTOR of the Dreamer runtime — objective, inputs, output schema, tool subset, sink — not a RoomPortraitSynthesizer-shaped special case routing around an append-only consolidator port. Nothing on the tag path moves."
 tags: [nora, spec, standing, facts, reasoning-continuity, memory, honcho, dreamer, grounding]
 timestamp: '2026-08-20'
 status: proposed
 derives_from:
+  - docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md
   - https://github.com/mikeng-io/nora/issues/4
   - design/proposed/24-honcho-integration-v2.md
   - design/09-decision-index.md
@@ -62,6 +63,19 @@ summary* — §3, §10.4) and point 5 (the fold runs off the critical path on a
 consolidator tick — §7, §10.5). Issue #4 should carry a comment recording both.
 Issue #4's note that the Dreamer is "not live" is **stale**: it is enabled in the
 deployed config and ticking (§5.3).
+
+**Revised 2026-08-20 against the keystone**,
+`docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md`, which settles
+the Dreamer's architecture: the Dreamer is a read-only research agent, and every
+synthesizer — the room-language, room-exchange and room-portrait ones included —
+is an **adaptor** supplying objective, inputs, output schema, tool subset and
+sink. That obsoletes this document's argument that `FactSynthesizer` had to be
+"Synthesizer-shaped, not Consolidator-shaped": the append-only port it was
+routing around is no longer the interface. §5.3 and §8.2 are rewritten, §8.1,
+§10.5, §12 and §14.10 follow, and the superseded reasoning is left visible where
+it stood rather than deleted. **Nothing on the tag path moves** — `Standing`, the
+debrief, `TagTrace`, `TurnVerdict` and the propose/dispose split are unaffected,
+as the keystone's own §8 states.
 
 ## 1. Evidence
 
@@ -348,7 +362,7 @@ is the axis that was never there.
 | **Fact** | one declarative world-statement, conversation-scoped |
 | **TurnVerdict** | the per-turn grounding judgement, never overwritten |
 | **TagTrace** | one turn's complete input to the debrief |
-| **FactSynthesizer** | the Dreamer-side suppression pass (§5.3) |
+| **FactSynthesizer** | the fact **adaptor** — the Dreamer-side suppression pass (§5.3) |
 | **`<standing>`** | the injected prompt block |
 
 Deliberately **not** "reflect": it is third-party (a third party does not reflect
@@ -389,7 +403,7 @@ the next turn does not have. That rejection is **cadence-specific** and was
 wrongly generalised to the whole feature. Suppression is not time-critical, and
 the Dreamer is exactly shaped for it.
 
-### 5.3 The Dreamer is live, and suppression is Synthesizer-shaped
+### 5.3 The Dreamer is live, and suppression is an adaptor
 
 Issue #4's "not live" note is stale. `config.example.toml` defaults
 `[language] enabled = false`, but the **deployed** `config.toml` enables it and
@@ -404,17 +418,55 @@ Its output demonstrably reaches a prompt — the `<room_language>` block in the
 example. The machinery (watermark store, exponential backoff, bounded timeout,
 per-scope try/except) is carrying traffic today.
 
-**But suppression is not a `RoomConsolidator`.** That Protocol
-(`nora/domain/ports.py:686`) is `consolidate(scope_id, batch:
-Sequence[TranscriptRow]) -> int` — *observations appended*. `ExchangeConsolidator`
-states the contract: "extract, append, rescore, and nothing else", and
-`_dream_once` owns the one shared watermark and hands every consolidator the same
-batch. Suppression consumes the **fact tier**, not a message batch, and
-*invalidates* rather than appends.
+That evidence is measured and stands. **What this section used to conclude from
+it does not.**
 
-The precedent is `RoomPortraitSynthesizer` — `runtime.py:352`, *"deliberately NOT
-a `RoomConsolidator` and carries no watermark/lag/quiet"*. **`FactSynthesizer`
-takes that shape**, a dream-loop participant that is not a consolidator.
+The superseded argument, left where it stood: suppression is not a
+`RoomConsolidator`, because that Protocol (`nora/domain/ports.py:686`) is
+`consolidate(scope_id, batch: Sequence[TranscriptRow]) -> int` — *observations
+appended*, "extract, append, rescore, and nothing else" — while suppression
+consumes the **fact tier** rather than a message batch and *invalidates* rather
+than appends. So it reached for `RoomPortraitSynthesizer` (`runtime.py:352`,
+*"deliberately NOT a `RoomConsolidator` and carries no watermark/lag/quiet"*) as
+the precedent for a dream-loop participant that is not a consolidator.
+
+That was correct against HEAD and is obsolete against the keystone
+(`2026-08-20-dreamer-as-an-agent-design.md`), which makes the Dreamer the
+**runtime** — loop, tool set, budget, doctrine — and every synthesizer an
+**adaptor** of it. The append-shaped port `FactSynthesizer` was working around
+stops being the interface, so there is no mismatch left to route around and no
+precedent to borrow: it is an adaptor like the other three. The workaround is
+recorded rather than deleted because it was real, and because what removed it was
+an architectural decision, not a change of mind about facts.
+
+**The five adaptor fields are what this document already specifies**, under other
+names:
+
+| adaptor field | for the fact adaptor | specified in |
+|---|---|---|
+| **objective** | prove or refute a candidate claim — above all, tell a source that *contradicts* a claim from one that merely does not *cover* it | §8.2 |
+| **inputs** | the fact tier, Honcho conclusions, `tool_call_log`, the raw message record; a wide window | §8.2 |
+| **output schema** | `invalid_at` / `superseded_by` on `Fact`, set by nothing else | §5.2, §6.3 |
+| **tool subset** | `web_search` / `web_fetch` — read verbs only; the keystone's act-verb exclusion (its §4) is a property of the runtime, so no adaptor can widen it | §8.2 |
+| **sink** | the fact store, whichever §6.8 resolves to | §6.8 |
+
+Two properties now arrive with the runtime rather than with this document. Its
+**budget is per-adaptor** (keystone §6) — proving a fact is worth more calls than
+glossing a word, and a runaway here is quiet because no user is waiting. Its
+**output is screened at the sink** (keystone §7) — a fact distilled from a fetched
+page renders into every later turn without passing Nora's egress screens, so the
+screen moves to the write (§14.10).
+
+Three of the keystone's open questions land on this adaptor and are **left open
+here**, not resolved: which model the Dreamer runs (its §9.1), whether the runtime
+schedules per adaptor instead of handing every adaptor the same tick (its §9.2 —
+facts do not need slang's cadence), and whether a fact adaptor consuming the fact
+tier wants `_dream_once`'s shared per-scope watermark at all (its §9.3). §12's
+"rides `[language]`'s loop settings" is provisional on the last two.
+
+What does **not** move: §5.2's propose/dispose split. The debrief still appends
+and only the background pass invalidates — that is a property of who may write
+`invalid_at`, not of what shape the background pass has.
 
 ## 6. Schema
 
@@ -622,8 +674,8 @@ Three candidates, unresolved (§16.1):
   found its specific weakness is exactly the missing supersession chain, so it is
   listed for completeness rather than recommended.
 
-Whichever wins, it is the **FactSynthesizer's** store, because suppression is the
-only thing that ever writes an `invalid_at`.
+Whichever wins, it is the fact adaptor's **sink** (§5.3), because suppression is
+the only thing that ever writes an `invalid_at`.
 
 ### 6.9 Revision, and why the loss is the mechanism
 
@@ -768,27 +820,40 @@ The stage is `nora/engagement/stages/debrief.py`, beside `feedback.py`. The
 confusion) with a fake at `nora/testing/scripted_agent.py:283`; both widen
 together.
 
-`FactSynthesizer` lives in `nora/language/`, beside `portrait_synthesizer.py`
-whose shape it takes (§5.3).
+`FactSynthesizer` is a Dreamer **adaptor** (§5.3), so it still lives in
+`nora/language/` beside `portrait_synthesizer.py` — but as an adaptor it holds
+ports only: objective text, input selection, output schema, sink. The loop, the
+tool set and the budget belong to the Dreamer runtime, which the keystone places
+in `nora/agent/` for this same boundary test's reason — an agent needs `strands`,
+and `nora/language/` may not import it (nor `nora.config`). The debrief's
+extraction boundary above sits in `nora/agent/` under the same test and is
+otherwise unrelated to the Dreamer.
 
-### 8.2 What each tier reads
+### 8.2 What each tier reads — the fact adaptor's inputs and tool subset
 
-| | debrief | FactSynthesizer |
+Two of the keystone's five adaptor fields are settled here. The debrief is set
+beside them for contrast, and is **not** an adaptor: it is a pipeline stage on
+the tag path (§7, §8.1).
+
+| | debrief (tag path, a stage) | fact adaptor (Dreamer runtime) |
 |---|---|---|
 | window | narrow, recent, sliding | wide |
-| sources | this turn's `TagTrace` + `ctx.transcript` | the fact tier, Honcho conclusions, `tool_call_log`, the raw message record |
-| live tools | none | **`web_search` / `web_fetch`** |
+| **inputs** | this turn's `TagTrace` + `ctx.transcript` | the fact tier, Honcho conclusions, `tool_call_log`, the raw message record |
+| **tool subset** | none | **`web_search` / `web_fetch`** — read verbs, and read verbs only |
 | social pressure | full | none |
-| cost ceiling | the slot | a tick |
+| cost ceiling | the slot | a tick, under a per-adaptor budget (§5.3) |
 
-**Its job is sharper than "verify".** §1.1 is decisive here: Nora *had*
+The tool subset can only *narrow* what the runtime grants: the Dreamer holds no
+act verb at all (keystone §4), so this row takes away and never adds.
+
+**And the objective is sharper than "verify".** §1.1 is decisive here: Nora *had*
 `web_search` on every one of the three turns, and it made things worse twice. One
 search returned the truth and she relayed it; the next returned a **narrower**
 source and she read the omission as a denial; the third returned a source about
 something else entirely and she used it to repudiate everything. More searching
 is not the fix.
 
-The Synthesizer's actual task:
+The objective, stated as the work it has to do:
 
 1. **Distinguish contradiction from non-coverage.** A source that does not
    mention the black tower is `unavailable` on that question, not `nothing_found`
@@ -879,8 +944,12 @@ tower up.»*
 **Rejected on cadence, for `Standing` only.** 300s, sized for slang; a reasoning
 position one tick stale is one the next turn does not have. **Not** generalised
 to facts — §5.2 puts suppression on exactly that tick, because suppression is not
-time-critical. The Dreamer's implementation precedent stands throughout: bare
-lightweight client, no doctrine, no tools, **and its bounded timeout** (§7.2).
+time-critical. The precedent the debrief borrows from the Dreamer is **the
+bounded timeout** (§7.2), and that stands. The rest of the description this
+sentence used to carry — bare lightweight client, no doctrine, no tools — was the
+Dreamer at HEAD, and the keystone changes it: the runtime gets a tool set and its
+own doctrine. The debrief stays cheap and toolless for its own reasons (§9), not
+by inheriting the Dreamer's shape.
 
 ### 10.6 One tier
 **Rejected — this is §15's resolution.** A single revisable state cannot hold a
@@ -924,7 +993,11 @@ max_per_conversation = 0      # §6.5
 retention_days       = 0      # invalidated facts are kept this long (§6.3)
 ```
 
-`FactSynthesizer` rides `[language]`'s existing loop settings (§5.3).
+`FactSynthesizer` rides the Dreamer loop on `[language]`'s existing settings —
+**provisionally**. A fact adaptor is not sized like a slang extractor, and the
+keystone puts budgets per adaptor (its §6) while leaving adaptor scheduling open
+(its §9.2); both stay open here (§5.3). This line is what holds until they are
+settled, not a decision that they need not be.
 
 ## 13. Testing
 
@@ -964,8 +1037,13 @@ retention_days       = 0      # invalidated facts are kept this long (§6.3)
    `fire.py::_feed` covered either way.
 9. §7.6 decided: the four non-tag paths debrief, or are excluded with the
    exclusion tested.
-10. `FactSynthesizer` wired as a `RoomPortraitSynthesizer`-shaped participant,
-    with a named test that it — and only it — writes `invalid_at`.
+10. `FactSynthesizer` wired as a Dreamer **adaptor** — objective, inputs, output
+    schema, tool subset, sink (§5.3) — with a named test that it, and only it,
+    writes `invalid_at`, and with its sink screened before the write (keystone
+    §7) under a named test of its own. The screen is not optional here: this is
+    the one adaptor whose tool subset holds `web_fetch`, so it distils
+    attacker-influenceable pages into a store that renders into every later
+    turn.
 11. A decision-index entry and named tests in
     `tests/test_acceptance_rules.py::RULE_TESTS`. Candidate rule: *a `Standing`
     is never asserted as fact; it is situation-tier and contradictable.*
