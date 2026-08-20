@@ -22,22 +22,31 @@ import sqlalchemy as sa
 
 from nora.domain.models import DeliveryStatus, ExchangeCandidate, NormalizedMessage, TranscriptRow
 from nora.domain.ports import RoomExchangeReader
+from nora.domain.provenance import instruction_sha256
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.sql.schema import EXCHANGE_OBSERVATION
+from nora.infra.sql.schema import EXCHANGE_OBSERVATION, ROOM_EXCHANGE
 
 DAY_MS = 86_400_000
 NOW = int(time.time() * 1000)
+
+# Real digests, for the reason `tests/infra/test_language_store.py`'s own pair
+# gives: the column has a CHECK on the hex shape, and two revisions are needed
+# to prove the stamp actually distinguishes them.
+INSTRUCTION_A = instruction_sha256("stand-in exchange instruction, revision A")
+INSTRUCTION_B = instruction_sha256("stand-in exchange instruction, revision B")
 
 
 def candidate(
     *, message_ids: tuple[int, ...], participants: tuple[str, ...],
     act: str = "insult_trade", confidence: float = 0.9,
+    instruction: str = INSTRUCTION_A,
 ) -> ExchangeCandidate:
     return ExchangeCandidate(
         act=act, message_ids=message_ids, participants=participants, confidence=confidence,
+        instruction_sha256=instruction,
     )
 
 
@@ -235,3 +244,80 @@ async def test_room_exchange_never_raises_against_an_unreachable_engine():
     result = await store.room_exchange(scope_id="g1", limit=10)
     assert result.patterns == ()
     await unreachable.dispose()
+
+
+# ---------------------------------------------------------------------------
+# instruction provenance (2026-08-20 instruction-substrate spec §4.3) —
+# the exchange half of `tests/infra/test_language_store.py`'s own block.
+# ---------------------------------------------------------------------------
+
+
+async def _stamps(store) -> list:
+    async with store._engine.connect() as conn:
+        return list((await conn.execute(
+            sa.select(EXCHANGE_OBSERVATION.c.instruction_sha256)
+            .order_by(EXCHANGE_OBSERVATION.c.id)
+        )).scalars())
+
+
+async def test_an_appended_pattern_carries_its_instruction_stamp(store):
+    batch = [_row(1, "miles"), _row(2, "tyler")]
+    await store.append_observations(scope_id="g1", batch=batch, observations=[
+        candidate(
+            message_ids=(1, 2), participants=("miles", "tyler"),
+            instruction=INSTRUCTION_A,
+        ),
+    ])
+    assert await _stamps(store) == [INSTRUCTION_A]
+
+
+async def test_the_consolidated_pattern_inherits_the_newest_observations_stamp(store):
+    """`rescore` reaches no model — same inheritance rule, and the same
+    reason, as `SqlLanguageStore.rescore`'s: the row names the instruction
+    currently keeping the pattern alive."""
+    b1 = [_row(1, "miles", ts=NOW - DAY_MS), _row(2, "tyler", ts=NOW - DAY_MS)]
+    b2 = [_row(3, "miles"), _row(4, "tyler")]
+    await store.append_observations(scope_id="g1", batch=b1, observations=[
+        candidate(
+            message_ids=(1, 2), participants=("miles", "tyler"),
+            instruction=INSTRUCTION_A,
+        ),
+    ])
+    await store.append_observations(scope_id="g1", batch=b2, observations=[
+        candidate(
+            message_ids=(3, 4), participants=("miles", "tyler"),
+            instruction=INSTRUCTION_B,
+        ),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_EXCHANGE))).one()
+    assert row.occurrence_count == 2, "both observations consolidated into one row"
+    assert row.instruction_sha256 == INSTRUCTION_B
+
+
+async def test_a_rescored_pattern_never_loses_its_stamp(store):
+    batch = [_row(1, "miles"), _row(2, "tyler")]
+    await store.append_observations(scope_id="g1", batch=batch, observations=[
+        candidate(
+            message_ids=(1, 2), participants=("miles", "tyler"),
+            instruction=INSTRUCTION_A,
+        ),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    await store.rescore(scope_id="g1", now_ms=NOW + DAY_MS)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_EXCHANGE))).one()
+    assert row.instruction_sha256 == INSTRUCTION_A
+
+
+async def test_the_database_refuses_a_stamp_that_is_not_a_digest(store):
+    """The CHECK, which `alembic check` cannot see — 64 lowercase hex
+    characters or NULL, never a version string."""
+    batch = [_row(1, "miles"), _row(2, "tyler")]
+    with pytest.raises(sa.exc.IntegrityError):
+        await store.append_observations(scope_id="g1", batch=batch, observations=[
+            candidate(
+                message_ids=(1, 2), participants=("miles", "tyler"), instruction="v1",
+            ),
+        ])

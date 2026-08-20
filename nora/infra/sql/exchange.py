@@ -107,6 +107,10 @@ class SqlExchangeStore:
                 "participants": list(obs.participants),
                 "observed_at": observed_at,
                 "extractor_confidence": obs.confidence,
+                # PROVENANCE, carried by the candidate itself — see
+                # `nora.infra.sql.language.append_observations`'s own note and
+                # `ExchangePatternObserver.instruction_sha256`.
+                "instruction_sha256": obs.instruction_sha256,
             })
         if skipped and self._metrics is not None:
             self._metrics.inc(
@@ -134,11 +138,14 @@ class SqlExchangeStore:
         grouped by `(act, participants)` — mirrors
         `SqlLanguageStore.rescore` exactly, minus the `distinct_speakers`
         aggregate (`participants` is already fixed by the natural key, never
-        aggregated across rows)."""
+        aggregated across rows), and including its `instruction_sha256`
+        inheritance (the `rn = 1` observation's stamp, for the reasons that
+        method's own docstring gives)."""
         EO = EXCHANGE_OBSERVATION  # noqa: N806
         ranked = (
             sa.select(
                 EO.c.act, EO.c.participants, EO.c.message_ids, EO.c.observed_at,
+                EO.c.instruction_sha256,
                 sa.func.row_number()
                 .over(
                     partition_by=(EO.c.act, EO.c.participants),
@@ -159,6 +166,13 @@ class SqlExchangeStore:
             .where(EO.c.scope_id == scope_id)
             .group_by(EO.c.act, EO.c.participants)
             .cte("aggregated")
+        )
+        # The newest observation per group — the sibling of
+        # `SqlLanguageStore.rescore`'s own `latest` CTE.
+        latest = (
+            sa.select(ranked.c.act, ranked.c.participants, ranked.c.instruction_sha256)
+            .where(ranked.c.rn == 1)
+            .cte("latest")
         )
         # No per-example `person_id`/`text` on `exchange_observation` (unlike
         # `language_observation`, there is no verbatim quote column here —
@@ -183,12 +197,19 @@ class SqlExchangeStore:
         select_stmt = sa.select(
             aggregated.c.act, aggregated.c.participants, aggregated.c.occurrence_count,
             aggregated.c.first_seen_at, aggregated.c.last_seen_at, examples_cte.c.examples,
+            latest.c.instruction_sha256,
         ).select_from(
             aggregated.join(
                 examples_cte,
                 sa.and_(
                     aggregated.c.act == examples_cte.c.act,
                     aggregated.c.participants == examples_cte.c.participants,
+                ),
+            ).join(
+                latest,
+                sa.and_(
+                    aggregated.c.act == latest.c.act,
+                    aggregated.c.participants == latest.c.participants,
                 ),
             )
         )
@@ -214,6 +235,7 @@ class SqlExchangeStore:
                     "recognition_score": recognition_score,
                     "state": state,
                     "examples": r.examples,
+                    "instruction_sha256": r.instruction_sha256,
                 })
             upsert_stmt = pg.insert(ROOM_EXCHANGE).values(upsert_rows)
             upsert_stmt = upsert_stmt.on_conflict_do_update(
@@ -227,6 +249,7 @@ class SqlExchangeStore:
                     "recognition_score": upsert_stmt.excluded.recognition_score,
                     "state": upsert_stmt.excluded.state,
                     "examples": upsert_stmt.excluded.examples,
+                    "instruction_sha256": upsert_stmt.excluded.instruction_sha256,
                 },
             )
             await conn.execute(upsert_stmt)

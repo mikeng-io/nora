@@ -12,7 +12,10 @@ import json
 import pytest
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.provenance import instruction_sha256
+from nora.language import exchange_observer
 from nora.language.exchange_observer import ExchangePatternObserver
+from nora.language.observer import LexemeObserver
 from nora.obs.metrics import Metrics
 
 pytestmark = pytest.mark.asyncio
@@ -137,3 +140,56 @@ async def test_a_single_participant_drop_is_counted_distinctly():
     assert metrics.get(
         "nora_exchange_candidates_dropped_total", reason="single_participant",
     ) == 1
+
+
+# ── instruction provenance (2026-08-20 instruction-substrate spec §4.3) ──────
+#
+# The lexeme sibling of these tests carries the argument
+# (`tests/unit/test_language_observer.py`). `act` here is drawn from a closed
+# set, which bounds what a row can SAY but not which instruction chose it.
+
+async def test_every_candidate_carries_the_instruction_that_produced_it():
+    observer = ExchangePatternObserver(FakeModel(
+        responses=[_pattern("insult_trade", [1, 2])]))
+    result = await observer.observe(
+        batch=rows((1, "miles", "you idiot"), (2, "tyler", "you're worse")))
+    [c] = result.candidates
+    assert c.instruction_sha256 == observer.instruction_sha256
+    assert len(c.instruction_sha256) == 64, "a real digest, not a placeholder"
+
+
+async def test_the_stamp_is_the_digest_of_the_instruction_actually_sent():
+    observer = ExchangePatternObserver(FakeModel(responses=[]))
+    assert observer.instruction_sha256 == instruction_sha256(
+        exchange_observer._PROMPT_PREAMBLE
+    )
+
+
+async def test_the_two_adaptors_stamp_different_digests():
+    """Two adaptors, two instruction sets — a shared digest would make a row
+    unattributable to the adaptor that wrote it, which is half the question
+    «which instruction produced this»."""
+    assert (
+        ExchangePatternObserver(FakeModel(responses=[])).instruction_sha256
+        != LexemeObserver(FakeModel(responses=[])).instruction_sha256
+    )
+
+
+async def test_editing_the_instruction_text_changes_every_row_it_writes(monkeypatch):
+    before = ExchangePatternObserver(FakeModel(
+        responses=[_pattern("insult_trade", [1, 2])]))
+    result_before = await before.observe(
+        batch=rows((1, "miles", "you idiot"), (2, "tyler", "you're worse")))
+    monkeypatch.setattr(
+        exchange_observer, "_PROMPT_PREAMBLE",
+        exchange_observer._PROMPT_PREAMBLE + "\nOne exchange per pair, at most.\n",
+    )
+    after = ExchangePatternObserver(FakeModel(
+        responses=[_pattern("insult_trade", [1, 2])]))
+    result_after = await after.observe(
+        batch=rows((1, "miles", "you idiot"), (2, "tyler", "you're worse")))
+
+    assert before.instruction_sha256 != after.instruction_sha256
+    [c_before] = result_before.candidates
+    [c_after] = result_after.candidates
+    assert c_before.instruction_sha256 != c_after.instruction_sha256
