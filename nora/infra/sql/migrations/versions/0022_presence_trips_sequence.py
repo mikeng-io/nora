@@ -20,9 +20,12 @@ is correct for either starting state:
     unclusterable: its address sequence was never recorded and cannot be
     reconstructed, so fail-closed (never clustered) beats guessing.
 
-Revision ID: 0020_presence_trips_sequence
-Revises: 0019_presence_routes
+Revision ID: 0022_presence_trips_sequence
+Revises: 0021_presence_routes
 Create Date: 2026-08-20
+
+Renumbered at merge time from 0020_presence_trips_sequence — see
+0021_presence_routes's own docstring for why.
 """
 
 from __future__ import annotations
@@ -31,8 +34,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0020_presence_trips_sequence"
-down_revision = "0019_presence_routes"
+revision = "0022_presence_trips_sequence"
+down_revision = "0021_presence_routes"
 branch_labels = None
 depends_on = None
 

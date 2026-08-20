@@ -336,13 +336,19 @@ async def test_the_dream_loop_is_spawned_when_the_flag_is_on(env, monkeypatch):
 async def test_build_app_wires_the_language_consolidator_when_enabled(env):
     """The composition half of Task 11: with `[language] enabled = true`,
     `build_dependencies` must build a real store and a real consolidator,
-    not just leave the flag readable on `cfg`."""
+    not just leave the flag readable on `cfg`.
+
+    Two consolidators, not one, since the 2026-08-20 exchange-patterns
+    design (Dreamer Plan 2): `ExchangeConsolidator` is gated by the SAME
+    `[language].enabled` flag as `LanguageConsolidator`, both riding the one
+    shared watermark `nora.app.runtime._dream_once` reads per scope."""
     import tomllib
 
     import tomli_w
 
     from nora.infra.sql.language import SqlLanguageStore
     from nora.language.consolidator import LanguageConsolidator
+    from nora.language.exchange_consolidator import ExchangeConsolidator
 
     cfg = tomllib.loads(env.read_text())
     cfg["language"] = {"enabled": True}
@@ -351,8 +357,9 @@ async def test_build_app_wires_the_language_consolidator_when_enabled(env):
     app = await build_app(env)
     try:
         assert isinstance(app.deps.language_store, SqlLanguageStore)
-        assert len(app.deps.language_consolidators) == 1
+        assert len(app.deps.language_consolidators) == 2
         assert isinstance(app.deps.language_consolidators[0], LanguageConsolidator)
+        assert isinstance(app.deps.language_consolidators[1], ExchangeConsolidator)
     finally:
         await app.shutdown()
 
@@ -366,6 +373,56 @@ async def test_build_app_leaves_the_language_consolidator_unwired_when_disabled(
     try:
         assert app.deps.language_store is None
         assert app.deps.language_consolidators == ()
+    finally:
+        await app.shutdown()
+
+
+async def test_build_app_wires_search_into_the_observer_when_verification_is_on(
+    env, monkeypatch,
+):
+    """The third gate (2026-08-20 design doc,
+    docs/superpowers/specs/2026-08-20-dreamer-known-entity-check-design.md):
+    `[language].verify_known_entities = true` must actually reach
+    `LexemeObserver` as a real `search` collaborator when `[search]` is ALSO
+    enabled and keyed — not just sit readable on `cfg`, the same composition
+    gap the sibling test above closes for `language_consolidators` itself."""
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    cfg = tomllib.loads(env.read_text())
+    cfg["language"] = {"enabled": True, "verify_known_entities": True}
+    cfg["search"] = {"enabled": True}
+    env.write_text(tomli_w.dumps(cfg))
+
+    app = await build_app(env)
+    try:
+        # Index [0], not a single-element unpack: Dreamer Plan 2's
+        # `ExchangeConsolidator` rides the same `[language].enabled` gate
+        # (see `test_build_app_wires_the_language_consolidator_when_enabled`
+        # above), so this tuple has two entries whenever `[language].enabled`
+        # is true.
+        consolidator = app.deps.language_consolidators[0]
+        assert consolidator._observer._search is not None
+    finally:
+        await app.shutdown()
+
+
+async def test_build_app_leaves_search_unwired_when_verification_is_off(env, monkeypatch):
+    """The control for the test above: `[search]` enabled and keyed alone
+    must NOT be enough — `verify_known_entities` defaults `false`, so turning
+    search on for the chat agent must not silently also spend it on the
+    Dreamer."""
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    cfg = tomllib.loads(env.read_text())
+    cfg["language"] = {"enabled": True}
+    cfg["search"] = {"enabled": True}
+    env.write_text(tomli_w.dumps(cfg))
+
+    app = await build_app(env)
+    try:
+        # Index [0] — see the sibling test above for why this tuple has two
+        # entries (Dreamer Plan 2's `ExchangeConsolidator` rides the same
+        # `[language].enabled` gate).
+        consolidator = app.deps.language_consolidators[0]
+        assert consolidator._observer._search is None
     finally:
         await app.shutdown()
 

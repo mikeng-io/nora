@@ -474,6 +474,32 @@ model = "ollamacloud/deepseek-v4-flash"
 # here gets skipped tick after tick instead of ever raising, so the backoff
 # non-negotiable 4 exists for never engages without this).
 timeout_seconds = 120.0
+# A THIRD gate (alongside this section's own `enabled` and [search]'s), off
+# by default even when both of those are on: checks a candidate against
+# [search] before recording it, to catch a real-world thing (e.g. an actual
+# game) getting flagged as room-coined slang. Costs an extra search credit
+# and an extra model completion per candidate, which is why it needs its own
+# opt-in rather than riding [search].enabled.
+verify_known_entities = false
+# Caps how many of one cycle's candidates get the extra (search + classify)
+# round trip — bounds worst-case tail latency without touching the common
+# case (live traffic sees 0-3 candidates per fired batch). Candidates past
+# the cap are kept unverified, not dropped.
+verify_max_candidates = 10
+# Dreamer Plan 2 (2026-08-20 exchange-patterns design) — gated by the SAME
+# `enabled` flag above, not a second one. Classifies recurring interaction
+# patterns (e.g. "these two trade insults, back and forth") from a CLOSED
+# set of acts only — no free-text gloss field exists for this feature at
+# any layer, and no row can describe fewer than two people (DB CHECK) — the
+# two structural guarantees behind DEC-120's withhold rule.
+#
+# Unset (commented) defaults to `model` above.
+# exchange_model = "ollamacloud/deepseek-v4-flash"
+# The RENDER cap for the room-exchange block — deliberately smaller than
+# max_rendered_lexemes: same uncached tier, but a pattern is a claim about
+# TWO people rather than one word. Nora refuses to start if this is raised
+# to or past the (not configurable) store limit of 10.
+max_rendered_exchanges = 4
 
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version

@@ -47,6 +47,7 @@ from nora.domain.ports import (
     RecordStore,
     ReverseGeocoder,
     RoomConsolidator,
+    RoomPortraitSynthesizer,
     RosterSource,
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
@@ -62,10 +63,12 @@ from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.events import SqlEventStore
+from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.room_portrait import SqlRoomPortraitStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
@@ -79,7 +82,10 @@ from nora.ingest.policy import (
 )
 from nora.ingest.stickers import StickerReader
 from nora.language.consolidator import LanguageConsolidator
+from nora.language.exchange_consolidator import ExchangeConsolidator
+from nora.language.exchange_observer import ExchangePatternObserver
 from nora.language.observer import LexemeObserver
+from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -379,6 +385,12 @@ class Dependencies:
     language_store: SqlLanguageStore | None
     language_consolidators: tuple[RoomConsolidator, ...]
     language_scopes: Callable[[], Sequence[str]]
+    # Dreamer Plan 3 (2026-08-20 room-portrait design) — `None` under the same
+    # `[language].enabled` gate as `language_store`/`language_consolidators`
+    # above. Deliberately NOT a `RoomConsolidator`; `nora.app.runtime
+    # .dream_loop` takes it as its own `portrait=` keyword, not a member of
+    # `language_consolidators` — see that module's docstring for why.
+    portrait_synthesizer: RoomPortraitSynthesizer | None
     # The SAME `EventService` built above alongside `event_store`/
     # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
     # exposed here too so `nora.web.api.register_web_routes`'s read-only
@@ -482,6 +494,21 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # gets `language=None` — the exact "not yet wired" state Task 9 shipped.
     language_store: SqlLanguageStore | None = (
         SqlLanguageStore(engine, metrics=metrics) if cfg.language.enabled else None
+    )
+    # Dreamer Plan 2's store (2026-08-20 exchange-patterns design) — same
+    # gate, same reasoning as `language_store` immediately above: exactly one
+    # consumer (this same tag/fire prefill), and `[language].enabled` is its
+    # off switch too (`LanguageConfig`'s own docstring on why Plan 2 has no
+    # independent flag).
+    exchange_store: SqlExchangeStore | None = (
+        SqlExchangeStore(engine, metrics=metrics) if cfg.language.enabled else None
+    )
+    # Dreamer Plan 3's store (2026-08-20 room-portrait design) — same gate,
+    # same reasoning: exactly one consumer (this same tag/fire prefill), and
+    # `[language].enabled` is its off switch too (no independent flag, same
+    # as Plan 2).
+    portrait_store: SqlRoomPortraitStore | None = (
+        SqlRoomPortraitStore(engine, metrics=metrics) if cfg.language.enabled else None
     )
 
     # Resolved here, not inside AdapterRegistry — the same convention every
@@ -618,6 +645,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # staying wider than render is what the store limit not moving here
         # depends on.
         language=language_store,
+        exchange=exchange_store,
+        portrait=portrait_store,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -632,27 +661,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     tier = cfg.llm
     api_key = os.environ.get(cfg.llm.api_key_env, "")  # presence already checked by config.load
     client = factory.create_client(base_url=cfg.llm.base_url, api_key=api_key)
-    # The Dreamer's own consolidator (Task 11) — built ONLY when
-    # `[language] enabled`, mirroring `language_store` above (there is no
-    # second consumer to leave stranded by gating it, unlike `reminders`/
-    # `compute_jobs`). `LexemeObserver` gets its OWN `_LanguageModelClient`
-    # over the SAME process-wide `client` — one connection, `[language]
-    # .model` rather than `[llm].model`, because the Dreamer is a background
-    # job nobody is waiting on and may reasonably run a different tier.
-    language_consolidators: tuple[RoomConsolidator, ...] = ()
-    if cfg.language.enabled and language_store is not None:
-        language_consolidators = (
-            LanguageConsolidator(
-                observer=LexemeObserver(
-                    _LanguageModelClient(
-                        client=client, model=cfg.language.model,
-                        timeout_seconds=cfg.language.timeout_seconds,
-                    ),
-                    metrics=metrics,
-                ),
-                store=language_store,
-            ),
-        )
     # `dream_loop`'s `scopes` callable — the SAME policy.toml conversations
     # `VersionAnnouncer`'s `targets` reads below, re-evaluated fresh each
     # tick (cheap: `allowlist` is loaded once at startup and immutable) so a
@@ -844,6 +852,87 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "search enabled but %s is unset — web_search stays unavailable",
                 cfg.search.api_key_env,
             )
+    # The Dreamer's own consolidator (Task 11) — built ONLY when
+    # `[language] enabled`, mirroring `language_store` above (there is no
+    # second consumer to leave stranded by gating it, unlike `reminders`/
+    # `compute_jobs`). `LexemeObserver` gets its OWN `_LanguageModelClient`
+    # over the SAME process-wide `client` — one connection, `[language]
+    # .model` rather than `[llm].model`, because the Dreamer is a background
+    # job nobody is waiting on and may reasonably run a different tier.
+    #
+    # `search=search_client` is wired ONLY behind a THIRD gate,
+    # `[language].verify_known_entities` (2026-08-20 design doc) — moved to
+    # live AFTER `search_client` is built (it used to sit right after `client`
+    # above) because it now depends on it. `search_client` staying `None`
+    # (search off, or on but keyless) leaves `LexemeObserver`'s known-entity
+    # check unwired exactly like every other optional collaborator here —
+    # `verify_known_entities=true` with no working search client is silently
+    # a no-op, not a startup error, matching `[search]`'s own "unavailable,
+    # never a hard failure" shape.
+    language_consolidators: tuple[RoomConsolidator, ...] = ()
+    if cfg.language.enabled and language_store is not None:
+        language_consolidators = (
+            LanguageConsolidator(
+                observer=LexemeObserver(
+                    _LanguageModelClient(
+                        client=client, model=cfg.language.model,
+                        timeout_seconds=cfg.language.timeout_seconds,
+                    ),
+                    metrics=metrics,
+                    search=(
+                        search_client
+                        if cfg.language.verify_known_entities else None
+                    ),
+                    verify_max_candidates=cfg.language.verify_max_candidates,
+                ),
+                store=language_store,
+            ),
+        )
+        # Dreamer Plan 2 (DEC-120) — `nora.app.runtime._dream_once` hands
+        # every `RoomConsolidator` in this tuple the SAME batch over the ONE
+        # shared watermark, so this needs no cursor of its own (see
+        # `nora.infra.sql.exchange`'s module docstring). Gated on
+        # `exchange_store is not None` too, since that store is itself built
+        # only under `cfg.language.enabled` (see its own construction
+        # above) — the check is redundant today but documents the real
+        # dependency rather than assuming the two flags can never diverge.
+        # `exchange_model` defaults to `[language].model` one level down,
+        # the same way that field itself defaults to `[llm].model`.
+        if exchange_store is not None:
+            language_consolidators = (
+                *language_consolidators,
+                ExchangeConsolidator(
+                    observer=ExchangePatternObserver(
+                        _LanguageModelClient(
+                            client=client,
+                            model=cfg.language.exchange_model or cfg.language.model,
+                            timeout_seconds=cfg.language.timeout_seconds,
+                        ),
+                        metrics=metrics,
+                    ),
+                    store=exchange_store,
+                ),
+            )
+    # Dreamer Plan 3 (2026-08-20 room-portrait design, DEC-121) — built only
+    # when its THREE inputs are ready (language/exchange READERS, portrait
+    # WRITER), same gate as `language_consolidators` above. Deliberately not
+    # added to `language_consolidators`: `nora.app.runtime.dream_loop` takes
+    # it as its own `portrait=` keyword (see that module's docstring for why
+    # this is not a `RoomConsolidator`). No new model client — no model call
+    # in this module at all (see `nora.language.portrait_synthesizer`'s own
+    # docstring). Reuses `[language].max_rendered_lexemes`/
+    # `max_rendered_exchanges` — the SAME limits the live prefill already
+    # uses for `<room_language>`/`<room_exchange>` — rather than a new knob.
+    portrait_synthesizer: RoomPortraitSynthesizer | None = None
+    if (
+        cfg.language.enabled and language_store is not None
+        and exchange_store is not None and portrait_store is not None
+    ):
+        portrait_synthesizer = PortraitSynthesizer(
+            language=language_store, exchange=exchange_store, store=portrait_store,
+            max_rendered_lexemes=cfg.language.max_rendered_lexemes,
+            max_rendered_exchanges=cfg.language.max_rendered_exchanges,
+        )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
     # off leaves the registry without a provider and `weather` answers
@@ -1222,6 +1311,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # `TranscriptInjection` never produces a non-empty `RoomLanguage` for
         # this cap to bound in the first place.
         room_language_max_entries=cfg.language.max_rendered_lexemes,
+        room_exchange_max_entries=cfg.language.max_rendered_exchanges,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
 
@@ -1307,6 +1397,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             llm_state=llm_state,
             tool_call_log_store=tool_call_log_store,
             room_language_max_entries=cfg.language.max_rendered_lexemes,
+            room_exchange_max_entries=cfg.language.max_rendered_exchanges,
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and
@@ -1418,6 +1509,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         skills_dir=cfg.doctrine.dir.parent / "skills",
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
+        portrait_synthesizer=portrait_synthesizer,
         events=events,
     )
 

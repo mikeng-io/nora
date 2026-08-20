@@ -1,9 +1,17 @@
 """presence_trips + presence_corridors + presence_corridor_speed — Tier 5
 routes (design/27 §4, issue #6).
 
-Revision ID: 0019_presence_routes
-Revises: 0018_presence_rhythm
+Revision ID: 0021_presence_routes
+Revises: 0020_room_portrait
 Create Date: 2026-08-20
+
+Renumbered at merge time from 0019_presence_routes: this branch forked
+before origin/master's Dreamer Plan 2/3 work landed and independently
+claimed 0019/0020 for unrelated migrations (exchange_patterns,
+room_portrait). Re-chained onto master's actual head rather than the
+fork point, per this repo's own established renumber-at-merge precedent
+(the same DEC-117 collision lesson, applied to a migration chain instead
+of a decision index).
 """
 
 from __future__ import annotations
@@ -12,8 +20,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0019_presence_routes"
-down_revision = "0018_presence_rhythm"
+revision = "0021_presence_routes"
+down_revision = "0020_room_portrait"
 branch_labels = None
 depends_on = None
 

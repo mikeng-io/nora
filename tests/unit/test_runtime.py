@@ -466,6 +466,157 @@ async def test_the_watermark_advances_only_after_observations_are_committed():
     assert metrics.get("nora_errors_total", stage="dream") >= 1
 
 
+# ---------------------------------------------------------------------------
+# dream_loop portrait trigger (Dreamer Plan 3, 2026-08-20 room-portrait design)
+# ---------------------------------------------------------------------------
+
+
+class _CountingConsolidator:
+    """Returns a FIXED `appended` count every cycle — the portrait trigger
+    (`sum(appended) > 0`) is what these tests exercise, not consolidator
+    behaviour itself."""
+
+    name = "language"
+
+    def __init__(self, appended: int) -> None:
+        self._appended = appended
+
+    async def consolidate(self, *, scope_id: str, batch: list[TranscriptRow]) -> int:
+        return self._appended
+
+
+class _RecordingPortrait:
+    def __init__(self, *, raises: bool = False) -> None:
+        self.calls: list[str] = []
+        self._raises = raises
+
+    async def synthesize(self, *, scope_id: str) -> None:
+        self.calls.append(scope_id)
+        if self._raises:
+            raise RuntimeError("synthesis backend down")
+
+
+async def test_portrait_is_not_called_when_nothing_was_appended():
+    record = _FakeRecord({"g1": [_row(1)]})
+    language = _FakeLanguage(lag=1000)  # fires every tick
+    portrait = _RecordingPortrait()
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [_CountingConsolidator(appended=0)], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+        portrait=portrait,
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert portrait.calls == [], (
+        "a tick where every consolidator appended zero must not trigger "
+        "synthesis — the raw-message lag/quiet/age proxy fired, but the "
+        "REAL property (did Plan 1/2 learn something) did not"
+    )
+
+
+async def test_portrait_is_called_when_a_consolidator_appended_something():
+    record = _FakeRecord({"g1": [_row(1)]})
+    language = _FakeLanguage(lag=1000)
+    portrait = _RecordingPortrait()
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [_CountingConsolidator(appended=1)], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+        portrait=portrait,
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert portrait.calls == ["g1"], (
+        "exactly one synthesis for the one tick that appended real material "
+        "(the fake language's lag drops to 0 once the watermark advances, "
+        "so later ticks in this window do not fire again)"
+    )
+
+
+async def test_portrait_is_called_when_only_one_of_several_consolidators_appends():
+    """Sums ACROSS consolidators — a room where Plan 1 found nothing but
+    Plan 2 found a pattern still has new material worth narrating."""
+    record = _FakeRecord({"g1": [_row(1)]})
+    language = _FakeLanguage(lag=1000)
+    portrait = _RecordingPortrait()
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language,
+        [_CountingConsolidator(appended=0), _CountingConsolidator(appended=1)],
+        metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+        portrait=portrait,
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert portrait.calls, "one appending consolidator among several must still trigger synthesis"
+
+
+async def test_a_portrait_failure_does_not_raise_or_block_the_watermark_advance():
+    """Independent concerns: a portrait synthesis failure must not look like
+    a Plan 1/2 failure to `_run_one` (which would trip THEIR backoff), and
+    must not have blocked the watermark advance that already happened before
+    this step runs."""
+    record = _FakeRecord({"g1": [_row(1), _row(2)]})
+    language = _FakeLanguage(lag=1000)
+    portrait = _RecordingPortrait(raises=True)
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [_CountingConsolidator(appended=1)], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+        portrait=portrait,
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert portrait.calls, "synthesis must have been attempted"
+    assert language.advance_calls, "the watermark advance must not be blocked by a portrait failure"
+    assert metrics.get("nora_errors_total", stage="portrait") >= 1
+    assert metrics.get("nora_errors_total", stage="dream") == 0, (
+        "a portrait failure must not be counted as a Plan 1/2 dream-cycle failure"
+    )
+
+
+async def test_dream_loop_with_no_portrait_collaborator_behaves_exactly_as_before():
+    """`portrait=None` (the default) — every EXISTING call site in this file
+    omits the keyword entirely; this proves that omission still works."""
+    record = _FakeRecord({"g1": [_row(1)]})
+    language = _FakeLanguage(lag=1000)
+    metrics = Metrics()
+
+    task = asyncio.create_task(dream_loop(
+        record, language, [_CountingConsolidator(appended=1)], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert language.advance_calls, "the loop must still tick and advance normally"
+
+
 class _FakeModel:
     """The `LexemeObserver` model collaborator for the two tests below —
     same shape `tests/unit/test_language_observer.py::FakeModel` uses."""

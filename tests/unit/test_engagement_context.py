@@ -18,6 +18,7 @@ from nora.domain.models import (
     PersonRef,
     RoomLanguage,
     RoomLexeme,
+    RoomPortrait,
 )
 from nora.domain.ports import (
     ContextAssembler,
@@ -373,3 +374,77 @@ async def test_the_language_reader_is_called_with_the_conversation_as_scope_and_
 
     assert ctx.room_language == language
     assert reader.calls == [("g1", 20)]
+
+
+# ---- <room_portrait>: Dreamer Plan 3's own `gather` branch -----------------
+#
+# Same reasoning as `<room_language>` above: `RoomPortraitReader.room_portrait`
+# is documented never to raise, so this is a belt-and-braces guard, not a
+# reachable path in production. No `limit`/store-limit parameter, unlike its
+# two siblings — a portrait is one row per scope, not a top-N read.
+
+
+class RaisingPortraitReader:
+    async def room_portrait(self, *, scope_id: str) -> RoomPortrait:
+        raise RuntimeError("portrait store is down")
+
+
+class FakePortraitReader:
+    def __init__(self, portrait: RoomPortrait) -> None:
+        self._portrait = portrait
+        self.calls: list[str] = []
+
+    async def room_portrait(self, *, scope_id: str) -> RoomPortrait:
+        self.calls.append(scope_id)
+        return self._portrait
+
+
+async def test_a_failing_portrait_read_yields_an_empty_block_not_a_dead_turn():
+    store = FakeRecordStore()
+    await store.append(message=_msg())
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=Metrics(), portrait=RaisingPortraitReader(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.room_portrait == RoomPortrait(scope_id="g1")
+    assert ctx.transcript, "the other reads must still have completed"
+
+
+async def test_a_failing_portrait_read_counts_nora_errors_total_stage_room_portrait():
+    metrics = Metrics()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=metrics, portrait=RaisingPortraitReader(),
+    )
+
+    await assembler.assemble(request=_request())
+
+    assert metrics.get("nora_errors_total", stage="room_portrait", platform="signal") == 1
+
+
+async def test_room_portrait_is_empty_when_no_reader_is_configured():
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=Metrics(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.room_portrait == RoomPortrait(scope_id="g1")
+
+
+async def test_the_portrait_reader_is_called_with_the_conversation_as_scope():
+    portrait = RoomPortrait(scope_id="g1", narrative="This room has its own vocabulary.")
+    reader = FakePortraitReader(portrait)
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=Metrics(), portrait=reader,
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.room_portrait == portrait
+    assert reader.calls == ["g1"]

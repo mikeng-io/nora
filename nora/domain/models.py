@@ -294,6 +294,18 @@ class TagContext:
     # safe here for the same reason it is safe there: advisory only, never the
     # ground for a claim.
     room_language: RoomLanguage = field(default_factory=lambda: RoomLanguage(scope_id=""))
+    # Dreamer Plan 2 (2026-08-20 exchange-patterns design) — the room's own
+    # sibling block, same shape as `room_language` above: distilled by the
+    # background consolidator, defaulted empty so existing construction sites
+    # keep working, never the ground for a claim about any one person (see
+    # `RoomExchange`'s own docstring for why that is a structural guarantee,
+    # not a convention).
+    room_exchange: RoomExchange = field(default_factory=lambda: RoomExchange(scope_id=""))
+    # Dreamer Plan 3 (2026-08-20 room-portrait design) — the room's synthesis
+    # of `room_language`/`room_exchange` above, same defaulted-empty shape.
+    # `RoomPortraitReader.room_portrait` is documented never to raise, same
+    # reason as its two siblings.
+    room_portrait: RoomPortrait = field(default_factory=lambda: RoomPortrait(scope_id=""))
 
 
 @dataclass(frozen=True)
@@ -370,6 +382,91 @@ class RoomLanguage:
 
     def __bool__(self) -> bool:
         return bool(self.lexemes)
+
+
+@dataclass(frozen=True)
+class ExchangeCandidate:
+    """One observation `ExchangePatternObserver`
+    (`nora.language.exchange_observer`, Dreamer Plan 2) extracted from a
+    batch, joined back to its evidence — the exchange-pattern sibling of
+    `LexemeCandidate`, with the same evidence-grounding rule (`message_ids`
+    are real batch rows, `participants` are the JOINED rows' own `person_id`s,
+    never the model's own claim).
+
+    **`act` is the withhold rule's first structural guarantee.** It is drawn
+    from a closed, repo-authored set (`nora.infra.sql.schema.EXCHANGE_ACTS`)
+    — there is no free-text gloss field anywhere on this type for a model to
+    write a claim like "X is dumb" into. `message_ids`/`participants` both
+    hold at least two entries by construction (`ExchangePatternObserver`
+    drops anything shorter, mirroring the DB's own `array_length(...) >= 2`
+    CHECK) — the second guarantee: a candidate describing one person cannot
+    exist.
+    """
+
+    act: str
+    message_ids: tuple[int, ...]
+    participants: tuple[str, ...]
+    confidence: float
+
+
+@dataclass(frozen=True)
+class ExchangeExample:
+    """One verbatim usage backing a `RoomExchangePattern` — the exchange
+    sibling of `LexemeExample`. `text` is a real message body, never
+    model-authored, for the same reason `LexemeExample.text` is."""
+
+    message_id: int
+    person_id: str | None
+    text: str
+
+
+@dataclass(frozen=True)
+class RoomExchangePattern:
+    """One consolidated exchange pattern for a scope: a closed-set `act`
+    traded among `participants` (always >= 2, sorted). Carries no field a
+    model could have used to make a claim ABOUT any one of `participants` —
+    `act` is the only classification, and it is drawn from
+    `nora.infra.sql.schema.EXCHANGE_ACTS`, never free text."""
+
+    act: str
+    participants: tuple[str, ...]
+    occurrence_count: int
+    first_seen_ms: int
+    last_seen_ms: int
+    state: str          # 'live' | 'fading' | 'stale'
+    examples: tuple[ExchangeExample, ...] = ()
+
+
+@dataclass(frozen=True)
+class RoomExchange:
+    """What the Dreamer's Plan 2 knows about one scope's exchange patterns,
+    as of `generated_ms` — the exchange sibling of `RoomLanguage`. Empty is
+    the correct state for a room with no evidence yet."""
+
+    scope_id: str
+    patterns: tuple[RoomExchangePattern, ...] = ()
+    generated_ms: int = 0
+
+    def __bool__(self) -> bool:
+        return bool(self.patterns)
+
+
+@dataclass(frozen=True)
+class RoomPortrait:
+    """What the Dreamer's Plan 3 knows about one scope, as of `generated_ms`
+    — a single synthesized narrative, the portrait sibling of `RoomLanguage`/
+    `RoomExchange`. One row per scope by construction (UPSERT, not an
+    append-only evidence log — see `nora.language.portrait_synthesizer`'s
+    module docstring for why this has no evidence layer of its own). Empty is
+    the correct state for a room with no `room_lexeme`/`room_exchange`
+    material yet."""
+
+    scope_id: str
+    narrative: str = ""
+    generated_ms: int = 0
+
+    def __bool__(self) -> bool:
+        return bool(self.narrative)
 
 
 @dataclass(frozen=True)

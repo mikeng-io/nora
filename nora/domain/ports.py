@@ -213,7 +213,9 @@ from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
     NormalizedMessage,
+    RoomExchange,
     RoomLanguage,
+    RoomPortrait,
     TagContext,
     TranscriptRow,
     UnattributedRow,
@@ -715,6 +717,50 @@ class RoomLanguageReader(Protocol):
         unavailable store yields an EMPTY `RoomLanguage`, because this block is
         background she may draw on and never the ground for a claim."""
         ...
+
+
+@runtime_checkable
+class RoomExchangeReader(Protocol):
+    """The READ half of Dreamer Plan 2 (2026-08-20 exchange-patterns design) —
+    the exchange sibling of `RoomLanguageReader`, same reasoning: separated so
+    `TranscriptInjection` keeps taking only Protocol-typed collaborators, and
+    read from the turn's critical path so it must never raise."""
+
+    async def room_exchange(self, *, scope_id: str, limit: int) -> RoomExchange:
+        """Top `limit` rendered-state exchange patterns by score. Never
+        raises: an unavailable store yields an EMPTY `RoomExchange` — this
+        block is background she may draw on, never the ground for a claim
+        about any one person."""
+        ...
+
+
+@runtime_checkable
+class RoomPortraitReader(Protocol):
+    """The READ half of Dreamer Plan 3 (2026-08-20 room-portrait design) —
+    the portrait sibling of `RoomLanguageReader`/`RoomExchangeReader`, same
+    reasoning: separated so `TranscriptInjection` keeps taking only
+    Protocol-typed collaborators, and read from the turn's critical path so
+    it must never raise."""
+
+    async def room_portrait(self, *, scope_id: str) -> RoomPortrait:
+        """The one current narrative for `scope_id`. Never raises: an
+        unavailable store yields an EMPTY `RoomPortrait`."""
+        ...
+
+
+@runtime_checkable
+class RoomPortraitSynthesizer(Protocol):
+    """The WRITE/trigger side of Dreamer Plan 3 — deliberately NOT
+    `RoomConsolidator`. A portrait's real input is Plan 1/2's already-
+    consolidated state (`room_lexeme`/`room_exchange`), not a batch of raw
+    messages, so this Protocol carries no `batch` parameter and no
+    "observations appended" return — nothing downstream needs to count a
+    portrait synthesis the way `_dream_once`'s watermark advance needs to
+    count consolidator appends. `scope_id` is a parameter, not instance
+    state, for the same reason it is on `RoomConsolidator.consolidate`: one
+    instance serves every scope the deployment has."""
+
+    async def synthesize(self, *, scope_id: str) -> None: ...
 
 
 @runtime_checkable

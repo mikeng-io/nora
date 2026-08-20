@@ -71,6 +71,7 @@ from typing import Any
 from nora.agent.guards import ReplyGuard
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
+    DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
     DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
     build_prefill,
     build_tag_message,
@@ -364,6 +365,7 @@ class FirePath:
         llm_state: Any = None,
         tool_call_log_store: ToolCallLogStore | None = None,
         room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
+        room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
     ) -> None:
         self._persons = persons
         self._records = records
@@ -421,6 +423,8 @@ class FirePath:
         # what threads a configured value through in production
         # (`[language].max_rendered_lexemes`).
         self._room_language_max_entries = room_language_max_entries
+        # Dreamer Plan 2's own sibling of the above.
+        self._room_exchange_max_entries = room_exchange_max_entries
 
     async def build_context(self, occasion: Occasion) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -728,6 +732,7 @@ class FirePath:
                 context_window=self._context_window,
                 now=now, header=occasion.header(tagger, now),
                 room_language_max_entries=self._room_language_max_entries,
+                room_exchange_max_entries=self._room_exchange_max_entries,
             )
             # `tagger.name`, NOT `Persons.display_name(ctx.message)` — that reads
             # `sender_id`, which is blank here, and would attribute the request to

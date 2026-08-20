@@ -1143,6 +1143,28 @@ class LanguageConfig(BaseModel):
     raised, so the exponential backoff non-negotiable 4 exists for — which
     only triggers on an exception — never engages. See
     `_LanguageModelClient`'s own docstring for the full argument.
+
+    `verify_known_entities = False`: a THIRD gate, alongside `enabled` and
+    `[search].enabled`, before `LexemeObserver` gets a `SearchProvider`
+    collaborator at all (the 2026-08-20 dreamer-known-entity-check design
+    doc under `docs/superpowers/specs`). Confirmed false
+    positives from live traffic — "Big Walk" (an actual game Pulse already
+    tracks) recorded as room-coined slang — are what this exists to catch:
+    a well-formed candidate whose `canonical_form` turns up an established
+    public meaning on `web_search` is dropped rather than stored. Off by
+    default even when both other gates are on: verifying spends an extra
+    Tavily credit AND an extra model completion per candidate, and turning
+    search on for the chat agent is not the same decision as spending that
+    budget on the Dreamer too.
+
+    `verify_max_candidates = 10`: bounds how many of one cycle's candidates
+    get the (search + classify) round trip — live traffic sees 0-3 candidates
+    per fired batch, so this caps the WORST-CASE tail latency
+    (`verify_max_candidates * (search_timeout + model_timeout)`) without
+    touching the common case. Candidates beyond the cap are kept unverified,
+    the same fail-open direction the whole step takes on any failure (see the
+    design doc) — "did not get to check" is never treated as "assume the
+    worst."
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1156,6 +1178,27 @@ class LanguageConfig(BaseModel):
     max_rendered_lexemes: int = Field(default=6, ge=1)
     model: str = "ollamacloud/deepseek-v4-flash"
     timeout_seconds: float = Field(default=120.0, gt=0)
+    verify_known_entities: bool = False
+    verify_max_candidates: int = Field(default=10, ge=1)
+
+    # Dreamer Plan 2 (2026-08-20 exchange-patterns design) — gated by this
+    # SAME `enabled` flag, not a second one: both consolidators are the one
+    # Dreamer's work over the one shared watermark (`nora.app.runtime
+    # ._dream_once`), and splitting them onto independent on/off switches is
+    # an operator decision this design does not make unasked.
+    #
+    # `exchange_model`: `None` defaults to `model` above (one level down from
+    # how `model` itself defaults to `[llm].model`) — a separate knob exists
+    # because an operator may reasonably want a different tier for
+    # closed-set act classification than for open-vocabulary lexeme glossing.
+    exchange_model: str | None = None
+    # `max_rendered_exchanges = 4`, deliberately smaller than
+    # `max_rendered_lexemes = 6`: this block sits in the SAME uncached
+    # volatile tier (`nora.language.render`'s own cost argument), and an
+    # exchange-pattern line is a claim about TWO people rather than one word
+    # — reason enough to be more conservative about how many ride on every
+    # turn's token cost, not less.
+    max_rendered_exchanges: int = Field(default=4, ge=1)
 
 
 class DoctrineConfig(BaseModel):
@@ -1470,6 +1513,33 @@ class Config(BaseModel):
                 f"than the room-language STORE limit "
                 f"({DEFAULT_ROOM_LANGUAGE_STORE_LIMIT}, "
                 "nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT): "
+                "the renderer drops exampleless entries and cannot reach "
+                "further down the ranked list than the store limit fetched, "
+                "so a render cap at or above it silently under-fills the "
+                "block."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _exchange_render_cap_stays_below_the_store_limit(self) -> Config:
+        """`[language].max_rendered_exchanges` must stay strictly below
+        `nora.engagement.context.DEFAULT_ROOM_EXCHANGE_STORE_LIMIT` — the
+        exact same relation `_render_cap_stays_below_the_store_limit` above
+        enforces for lexemes, applied to Plan 2's own render/store pair for
+        the identical reason: `SqlExchangeStore.room_exchange` filters only
+        on `recognition_score`, and `render_room_exchange` drops any entry
+        with no quotable example without being able to backfill past the
+        store limit it was handed.
+        """
+        from nora.engagement.context import DEFAULT_ROOM_EXCHANGE_STORE_LIMIT
+
+        if self.language.max_rendered_exchanges >= DEFAULT_ROOM_EXCHANGE_STORE_LIMIT:
+            raise ValueError(
+                f"[language] max_rendered_exchanges = "
+                f"{self.language.max_rendered_exchanges} must be strictly "
+                f"less than the room-exchange STORE limit "
+                f"({DEFAULT_ROOM_EXCHANGE_STORE_LIMIT}, "
+                "nora.engagement.context.DEFAULT_ROOM_EXCHANGE_STORE_LIMIT): "
                 "the renderer drops exampleless entries and cannot reach "
                 "further down the ranked list than the store limit fetched, "
                 "so a render cap at or above it silently under-fills the "

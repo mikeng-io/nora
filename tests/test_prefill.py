@@ -6,16 +6,21 @@ from nora.domain.models import (
     PersonRef,
     RoomLanguage,
     RoomLexeme,
+    RoomPortrait,
     TagContext,
     TranscriptRow,
 )
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
-         quote=None, platform="signal", room_language=None) -> TagContext:
+         quote=None, platform="signal", room_language=None, room_portrait=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
-    kwargs = {} if room_language is None else {"room_language": room_language}
+    kwargs = {}
+    if room_language is not None:
+        kwargs["room_language"] = room_language
+    if room_portrait is not None:
+        kwargs["room_portrait"] = room_portrait
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card), **kwargs)
 
@@ -28,6 +33,10 @@ def _room_language(scope_id="g1") -> RoomLanguage:
         examples=(LexemeExample(message_id=1, person_id="miles", text="on9 咁做"),),
     )
     return RoomLanguage(scope_id=scope_id, lexemes=(lexeme,))
+
+
+def _room_portrait(scope_id="g1") -> RoomPortrait:
+    return RoomPortrait(scope_id=scope_id, narrative="This room has its own vocabulary.")
 
 
 def _row(row_id, name, body, ts, *, quoted_ts=None, is_nora=False, person_name=None):
@@ -728,3 +737,50 @@ def test_the_room_language_block_is_absent_for_a_room_with_no_lexicon():
     body = "\n".join(m["content"][0]["text"] for m in prefill)
 
     assert "<room_language>" not in body
+
+
+# ---- <room_portrait>: Dreamer Plan 3's own block ---------------------------
+
+
+def test_the_room_portrait_block_is_after_the_context_header():
+    prefill = build_prefill(
+        _ctx(room_portrait=_room_portrait()), display_name="Nora", context_window=40
+    )
+    body = "\n".join(m["content"][0]["text"] for m in prefill)
+
+    assert body.index("<room_portrait>") > body.index("</context_header>")
+    assert body.index("<room_portrait>") < body.index("<group_transcript")
+
+
+def test_the_room_portrait_block_is_not_in_the_static_header():
+    prefill = build_prefill(
+        _ctx(room_portrait=_room_portrait()), display_name="Nora", context_window=40
+    )
+
+    assert "<room_portrait>" not in prefill[0]["content"][0]["text"]
+    assert "<room_portrait>" in prefill[1]["content"][0]["text"]
+
+
+def test_the_room_portrait_block_is_absent_for_a_room_with_no_narrative():
+    """`ctx.room_portrait` defaults empty, and an empty `RoomPortrait` must
+    render no block at all — not an empty `<room_portrait>` tag."""
+    prefill = build_prefill(_ctx(), display_name="Nora", context_window=40)
+    body = "\n".join(m["content"][0]["text"] for m in prefill)
+
+    assert "<room_portrait>" not in body
+
+
+def test_the_room_portrait_block_comes_after_room_language_and_room_exchange():
+    """Widening scope, in order: her own past, then theirs, then the room's
+    own slang and exchange patterns, then the synthesis of those two, then
+    the room. `room_portrait` is the newest and narrowest-audience block, so
+    it sits last among the three Dreamer blocks, immediately before the
+    transcript."""
+    prefill = build_prefill(
+        _ctx(room_language=_room_language(), room_portrait=_room_portrait()),
+        display_name="Nora", context_window=40,
+    )
+    body = "\n".join(m["content"][0]["text"] for m in prefill)
+
+    assert body.index("<room_language>") < body.index("<room_portrait>")
+    assert body.index("<room_portrait>") < body.index("<group_transcript")

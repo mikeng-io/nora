@@ -848,6 +848,98 @@ ROOM_LEXEME = sa.Table(
     sa.CheckConstraint("state IN ('live','fading','stale')"),
 )
 
+# Dreamer Plan 2 (2026-08-20 exchange-patterns design). Evidence for the
+# exchange-pattern consolidator — shares `consolidation_watermark` with Plan 1
+# under `consolidator_name="exchange"`, same table, different key.
+#
+# `act` is CHECK-constrained to the closed set below rather than free text —
+# this is the withhold-rule's first structural guarantee: there is no column
+# anywhere in this feature for a model to author a claim ABOUT a person into,
+# only a fixed vocabulary of acts plus pointers to real evidence. The render
+# gloss for each `act` is repo-authored text, never stored (see
+# `nora.language.exchange_render`).
+#
+# `message_ids`/`participants` both carry `array_length(...) >= 2` — the
+# second structural guarantee: a row naming fewer than two people cannot be
+# constructed, so "attribute a disposition to a person" (a one-person row) is
+# not a rule to remember, it is a shape the database refuses.
+_EXCHANGE_ACTS = (
+    "insult_trade", "banter", "tease", "callback_joke",
+    "agreement_ritual", "disagreement_ritual", "compliment_exchange",
+)
+EXCHANGE_ACTS = _EXCHANGE_ACTS
+
+EXCHANGE_OBSERVATION = sa.Table(
+    "exchange_observation",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column("scope_id", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("act", sa.Text, nullable=False),
+    sa.Column("message_ids", pg.ARRAY(sa.Integer), nullable=False),
+    sa.Column("participants", pg.ARRAY(sa.Text), nullable=False),
+    sa.Column("observed_at", sa.BigInteger, nullable=False),
+    sa.Column("extractor_confidence", sa.Float, nullable=False),
+    sa.UniqueConstraint("scope_id", "act", "message_ids"),
+    sa.CheckConstraint(
+        "act IN " + str(_EXCHANGE_ACTS), name="exchange_observation_act_check"
+    ),
+    sa.CheckConstraint(
+        "array_length(message_ids, 1) >= 2", name="exchange_observation_message_ids_check"
+    ),
+    sa.CheckConstraint(
+        "array_length(participants, 1) >= 2", name="exchange_observation_participants_check"
+    ),
+)
+
+IDX_EXCHANGE_OBSERVATION_SCOPE = sa.Index(
+    "idx_exchange_observation_scope", EXCHANGE_OBSERVATION.c.scope_id,
+)
+
+# The consolidated table. `participants` is IN the primary key (sorted, so the
+# same pair always keys the same row regardless of extraction order) — a pair
+# trading a SECOND act gets a second row, exactly `room_lexeme`'s own
+# `(scope_id, canonical_form, sense)` argument for why `sense` is in ITS key.
+ROOM_EXCHANGE = sa.Table(
+    "room_exchange",
+    METADATA,
+    sa.Column("scope_id", sa.Text, primary_key=True),
+    sa.Column("act", sa.Text, primary_key=True),
+    sa.Column("participants", pg.ARRAY(sa.Text), primary_key=True),
+    sa.Column("first_seen_at", sa.BigInteger, nullable=False),
+    sa.Column("last_seen_at", sa.BigInteger, nullable=False),
+    sa.Column("occurrence_count", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("recognition_score", sa.Float, nullable=False, server_default=sa.text("0")),
+    sa.Column("state", sa.Text, nullable=False, server_default=sa.text("'live'")),
+    sa.Column("examples", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    sa.CheckConstraint(
+        "act IN " + str(_EXCHANGE_ACTS), name="room_exchange_act_check"
+    ),
+    sa.CheckConstraint("state IN ('live','fading','stale')", name="room_exchange_state_check"),
+    sa.CheckConstraint(
+        "array_length(participants, 1) >= 2", name="room_exchange_participants_check"
+    ),
+)
+
+# Dreamer Plan 3 (2026-08-20 room-portrait design). One row per scope, UPSERT
+# — not append-only like the evidence/consolidated pairs above: a portrait has
+# no evidence layer of its own, it is entirely re-derived from Plan 1/2's
+# already-durable state on every trigger, so there is nothing to accumulate
+# and no watermark row (no `consolidator_name` key here at all — see the
+# design doc's "Trigger shape" for why this is not a `RoomConsolidator`).
+# `lexeme_basis`/`exchange_basis` store `canonical_form`/`act` only — the same
+# non-identifying vocabulary Plan 1/2 already proved safe — kept purely for
+# operator audit of what a narrative was built from, never rendered to her.
+ROOM_PORTRAIT = sa.Table(
+    "room_portrait",
+    METADATA,
+    sa.Column("scope_id", sa.Text, primary_key=True),
+    sa.Column("narrative", sa.Text, nullable=False),
+    sa.Column("lexeme_basis", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
+    sa.Column("exchange_basis", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'")),
+    sa.Column("synthesized_at", sa.BigInteger, nullable=False),
+)
+
 # Serves the dream cycle's lag query EXACTLY:
 #   count(*) where conversation_id = :c and id > :watermark and is_nora = 0
 # `idx_messages_conv_ts` is (conversation_id, ts DESC) and carries neither `id`
