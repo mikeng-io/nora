@@ -1,15 +1,23 @@
 """`nora.instructions.dreamer.DreamerInstructions` — the Dreamer's own store.
 
-Over `tmp_path`: assembly order, what the digest covers, what an unknown name
-does, hot-reload, last-good. Tests over the real `nora/dreamer/` tree arrive with
-that tree.
+Two halves. The first works over `tmp_path` and pins the mechanism: assembly
+order, what the digest covers, what an unknown name does, hot-reload, last-good.
+The second (`test_the_shipped_*`) reads the real `nora/dreamer/` tree, the way
+`tests/test_doctrine_content.py` reads the real doctrine — structure only, never
+wording: this is prose, and a test that pins a sentence is a test that has to be
+edited every time the sentence improves.
 """
+
+from pathlib import Path
 
 import pytest
 
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.obs.metrics import Metrics
+
+ROOT = Path(__file__).resolve().parents[2]
+SHIPPED = ROOT / "nora" / "dreamer"
 
 DOCTRINE_FM = """\
 ---
@@ -292,3 +300,29 @@ def test_lenient_mode_skips_a_broken_objective_and_the_adaptor_still_fails_loudl
     assert store.objective_names() == ("room-exchange",)
     with pytest.raises(InstructionError, match="unknown Dreamer objective"):
         store.for_objective("room-language")
+
+
+# --- the shipped tree -----------------------------------------------------
+
+
+def test_the_shipped_doctrine_parses_in_strict_mode():
+    """The bind mount is a deploy: `nora/dreamer/` on master is what the running
+    container reads, and a file that does not parse there costs a Dreamer tick
+    rather than a test run. This is the check that keeps that from reaching it."""
+    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
+    # `objective_names()` is what forces the scan: strict mode raises on any
+    # malformed file in either subdirectory, including the doctrine itself.
+    assert isinstance(store.objective_names(), tuple)
+
+
+def test_there_is_exactly_one_shipped_dreamer_doctrine_and_it_is_operator_only():
+    """One doctrine, and not an agent-editable one: this text steers a component
+    that will hold `web_fetch`."""
+    from nora.instructions.frontmatter import parse_document
+
+    files = sorted((SHIPPED / "doctrine").glob("*.md"))
+    assert len(files) == 1
+    doc = parse_document(files[0], required=("name", "kind", "change_policy", "version"))
+    assert doc.meta["kind"] == "dreamer-doctrine"
+    assert doc.meta["change_policy"] == "operator-only"
+    assert doc.body.strip()
