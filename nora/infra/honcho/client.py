@@ -35,6 +35,27 @@ log = logging.getLogger("nora.honcho")
 # It is dropped for the reason it always was: provenance for a human reading
 # the store, not something to read out in a group chat — in front of every line
 # it invites the model to quote it back as a fact about the conversation.
+#
+# THE STRIP STAYS — this is A2 of the 2026-08-20 prompt-architecture audit,
+# decided rather than inherited. F2 found the real cost of it: `[2026-08-19
+# 10:17:08] nora agreed to speak all Chinese after miles_novak requested.` reaches
+# the model undated inside `<self_card>` and reads as a standing directive, a
+# one-time in-conversation request made permanent in under three minutes. The
+# audit offered two fixes and this is the second of them.
+#
+# Restoring the date was rejected on the paragraph above: 77 of one peer's 102
+# documents share ONE stamp, so a per-line date is precision that does not
+# exist, and a hedged form («recorded around …») is read as per-fact anyway
+# because a date next to a sentence is a date about that sentence. It would
+# also mean widening the port — `Recollection.conclusions` is `tuple[str, ...]`
+# and the batch identity is already gone by the time the prefill sees a line —
+# to carry a number nothing downstream is allowed to sort or age by. Inventing
+# the precision is the worse failure of the two.
+#
+# So the honest statement is «undated», and it is made where the line is
+# rendered: `nora.agent.prefill._self_card_block` / `._peer_history_block` say
+# so in the block note. Anyone re-litigating the strip must read those two
+# first — dropping the note is what re-opens F2, not touching this regex.
 _STAMP = re.compile(r"^\[[^\]]*\]\s*")
 # `[id:abc123] ` — only emitted for `include_ids=True`, which this client never
 # asks for. Stripped anyway: it costs one regex and the alternative, if the

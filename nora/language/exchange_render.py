@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 
 from ..domain.models import RoomExchange, RoomExchangePattern
 from ..domain.prompt import escape
+from .render import ROOM_BLOCK_NOTE
 
 _CLOSING_FRAME = (
     "This describes patterns of interaction between these people — not a "
@@ -64,7 +65,7 @@ def render_room_exchange(exchange: RoomExchange, *, max_entries: int) -> str:
 
     body = "\n".join(lines)
     return (
-        "<room_exchange>\n"
+        f'<room_exchange untrusted="true" note="{ROOM_BLOCK_NOTE}">\n'
         "Patterns this room's people fall into:\n"
         f"{body}\n"
         f"{_CLOSING_FRAME}\n"

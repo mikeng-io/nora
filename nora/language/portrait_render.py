@@ -20,11 +20,23 @@ from __future__ import annotations
 
 from ..domain.models import RoomPortrait
 from ..domain.prompt import escape
+from .render import ROOM_BLOCK_NOTE
 
 
 def render_room_portrait(portrait: RoomPortrait) -> str:
     """`""` when there is nothing to say — mirrors `render_room_language`/
-    `render_room_exchange`."""
+    `render_room_exchange`.
+
+    `untrusted="true"` and `ROOM_BLOCK_NOTE` are the SAME marker and the SAME
+    repo sentence its two siblings carry — see `nora.language.render` for the
+    argument. It belongs here rather than in `portrait_synthesizer`, unlike the
+    withhold-rule closing frame that IS baked into the stored narrative: this
+    one is a property of the tag, so a portrait synthesized before this change
+    gains it on its next render instead of needing a re-synthesis.
+    """
     if not portrait:
         return ""
-    return f"<room_portrait>\n{escape(portrait.narrative)}\n</room_portrait>"
+    return (
+        f'<room_portrait untrusted="true" note="{ROOM_BLOCK_NOTE}">\n'
+        f"{escape(portrait.narrative)}\n</room_portrait>"
+    )
