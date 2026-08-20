@@ -128,80 +128,39 @@ prose from them would reintroduce exactly the [risk]."* It is an adaptor whose
 tool subset is empty and whose objective is executed in code. Making everything
 an agent is not the goal; making everything *the same interface* is.
 
-### 3.1 The sink is Postgres, not Graphiti
+### 3.1 The sink is a port; what backs it is decided elsewhere
 
-The room adaptors already write to Postgres (`room_lexeme`, `room_exchange`,
-`room_portrait`). **The fact adaptor writes there too.**
+**This document does not choose the fact tier's store.** That question — graph
+versus relational, Graphiti, Apache AGE, retrieval and traversal — is owned by a
+separate workstream, and the research behind it is handed over in
+`2026-08-20-fact-store-research-handoff.md`.
 
-Graphiti (`github.com/getzep/graphiti`) was researched as the alternative and
-rejected — and this architecture makes the rejection stronger rather than
-weaker, because **its two real value-adds are exactly the two things we have
-replaced**:
+What this document *does* fix is the interface, because the runtime depends on
+it and it constrains whatever store wins:
 
-| Graphiti provides | what we do instead |
-|---|---|
-| LLM **extraction** of triples from prose | edges are **declared** by the adaptor |
-| **automatic contradiction detection** (one small-model judge) | a **research loop** with `fetch` adjudicates |
+- **The sink is a port**, one of the adaptor's five fields. The runtime writes
+  through it and does not know what is behind it — the same relationship the
+  Dreamer already has to `SearchProvider`, and the reason a store decision can
+  land later without touching the runtime.
+- **The runtime writes, not the model** (§3.2). Whatever the store is, it is
+  reached by code holding a schema-validated value, never by a tool the model
+  calls.
+- **Screening happens at the sink** (§7), so the port's write path is where the
+  identifier and coordinate rules apply — not inside the store.
+- **`invalidate, never delete`.** The fact adaptor supersedes rather than
+  removes, so the store must be able to retain a superseded row with the time it
+  stopped being true. This is a requirement on the store, not a choice of one.
 
-Both replacements are the point of this document, and both are better on the
-motivating case:
+An earlier draft of this section decided the store outright (Postgres, not
+Graphiti) and, worse, conflated **storage** with **retrieval** — "an edge table
+is a table" answers the storage half and says nothing about traversal, which is
+where a graph engine actually differs. It also presented a false binary that
+skipped Apache AGE (openCypher as a Postgres extension, no second database).
+That reasoning is preserved in the handoff document rather than discarded, and
+the decision belongs to the workstream that owns it.
 
-- Graphiti's extractor emits positive triples between two **distinct entities**.
-  *"There is no black tower"* is a negative existential over one entity and has
-  no triple form — so the retraction most likely produces **no edge at all**, and
-  the fabrication survives untouched.
-- Its contradiction judge measured **1/3 on a clear two-fact contradiction** and
-  0/3 on the cross-list shape that is ours ([issue #1666]), behind a rule that
-  **silently discards** the verdict when either `valid_at` is null or the two
-  timestamps tie — no warning, no counter. An ERROR reading as a PASS is the
-  R-27 anti-pattern.
-- Even `add_triplet`, the skip-extraction path, still runs that same judge. So
-  adopting it for declared edges drags back in the one component this design
-  replaces.
-
-Two practical arguments on top. **There is no Postgres driver** — only an
-unmerged RFC — so it means operating Neo4j or FalkorDB. And splitting one
-subsystem across two stores means no shared transaction, no shared backup, and
-the Dreamer reasoning across a boundary for no gain at this scale.
-
-**What survives is the shape, and it is free in Postgres**: bi-temporal columns
-(`valid_from`/`valid_to` for event time, `created_at`/`superseded_at` for
-transaction time), `superseded_by` as an explicit link — *invalidate, never
-delete* — and per-fact provenance.
-
-**This settles STORAGE. It does not settle RETRIEVAL, and an earlier draft of
-this section conflated the two.** "An edge table is a table" is true and answers
-the wrong half: traversal — multi-hop, *what connects to X*, path queries — is
-precisely where a graph engine differs from a table, and storing edges does not
-provide it. The earlier framing also presented a false binary (a Postgres table
-*or* Graphiti) that skipped a real option:
-
-| option | traversal | new database? |
-|---|---|---|
-| edge table + `WITH RECURSIVE` | bounded depth, hand-written SQL | no |
-| **Apache AGE** — openCypher *as a Postgres extension* | real graph queries | no |
-| Graphiti | full, plus extraction and a contradiction judge | **yes** — Neo4j/FalkorDB |
-| no engine — load the live set | the model reads it | no |
-
-**At today's scale the last row is the honest answer.** At tens of facts you do
-not retrieve, you load the topic's live set into the prompt and the model
-traverses it by reading. The Graphiti research reached the same conclusion about
-this cardinality: *"At that cardinality you don't retrieve — you paste the whole
-set into the prompt. Retrieval sophistication is solving a problem you do not
-have."* Hybrid search, RRF, reranking and node-distance are all inert at n≈30.
-
-**So retrieval goes behind a port and the decision is deferred with the option
-preserved.** The Dreamer is an agent, so retrieval is a tool it calls
-(`related_facts(subject)` or similar). Its first implementation is a `WHERE`
-clause returning the live set; if the tier grows to where multi-hop pays rent
-the implementation swaps to a recursive CTE, or AGE, or a graph database — **and
-the agent does not change.** That is the `SearchProvider` pattern exactly: one
-port, a contract suite, `TavilySearchProvider` as today's implementation.
-
-**Revisit** if the fact tier reaches the 10⁴ range. Apache AGE's maturity and
-packaging need verifying before it is recommended rather than merely named —
-this document names it as the option the earlier draft overlooked, not as a
-choice already made.
+The room adaptors' sinks are already Postgres (`room_lexeme`, `room_exchange`,
+`room_portrait`) and this document does not move them.
 
 ### 3.2 How an adaptor writes — the return value is the write
 
@@ -364,10 +323,9 @@ fields. Nothing in `Standing`, the debrief, or the propose/dispose split changes
    not there today.
 5. **Does the Dreamer get its own doctrine files, or a single objective file per
    adaptor?** Settled in the substrate spec once revised.
-6. **Does the fact tier ever need graph traversal, and if so by what engine?**
-   §3.1 defers this behind a retrieval port. Reopen when the tier's size makes
-   multi-hop worth paying for; Apache AGE is the first candidate to evaluate,
-   and its maturity is unverified.
+6. **The fact tier's store and its retrieval** — NOT open here. Owned by the
+   fact-store workstream; see `2026-08-20-fact-store-research-handoff.md`. The
+   only constraint this document places on it is §3.1's interface.
 
 ## 10. Status
 
