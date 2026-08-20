@@ -220,7 +220,10 @@ class RawFix:
     # input for deciding whether a trailing movement group is still
     # ongoing. `None` only when the store's own filter admits a row
     # with no reading; `extract_trips` falls back to a time-based check
-    # in that case, never guesses `True`/`False`.
+    # in that case, never guesses `True`/`False` — and for that same
+    # `None` case, its caller (`nora.analytics.rollup.run_once`) may
+    # separately apply a dwell-based judgment (DEC-125's gate 2,
+    # `tail_dwelled`), resolved before `extract_trips` is ever called.
     is_driving: bool | None = None
 
 
@@ -325,12 +328,23 @@ def trailing_fix_is_settled(
     because it isn't `True`: that is the original fragmentation bug with
     the signal simply absent.
 
-    ONE predicate, shared on purpose, by the two decisions that must
-    agree about the same fix: `extract_trips` below (finalize this group,
-    or hold it back?) and `nora.analytics.rollup.run_once` (is this
-    trailing group a stay-in-progress at all, or undecided movement?).
-    Two copies of this would drift, and the two callers disagreeing means
-    the same fixes finalized as a trip AND written as a stay."""
+    Covers **gate 1 only** — the `is_driving`/`settled_seconds` check — of
+    the two gates `run_once` combines to decide whether a trailing group
+    is genuinely undecided (DEC-125). Shared on purpose between the two
+    callers that must agree on THIS check specifically: `extract_trips`
+    below (finalize this group, or hold it back?) and
+    `nora.analytics.rollup.run_once` (is this trailing group a
+    stay-in-progress at all, or undecided movement?) — two copies of gate
+    1 would drift, and the two callers disagreeing on it means the same
+    fixes finalized as a trip AND written as a stay. Gate 2 — the dwell
+    check for the `is_driving is None` case — is a separate, NOT-shared
+    computation that lives only in `run_once` (its `tail_dwelled`); this
+    function has no knowledge of it, and `extract_trips` never calls gate
+    2 either — it only ever sees the already-RESOLVED
+    `open_stay_started_ts` that `run_once` hands it after combining both
+    gates itself. That resolved boundary, not a second shared function,
+    is what keeps the two callers from disagreeing on the final outcome
+    even though gate 2 is not shared code."""
     if last.is_driving is True:
         return False
     if last.is_driving is None:
@@ -408,7 +422,20 @@ def extract_trips(
             if not forced:
                 settled = trailing_fix_is_settled(
                     buffer[-1], now_ms=now_ms,
-                    settled_seconds=settled_seconds or 0.0,
+                    # Fail CLOSED, not open: `settled_seconds or 0.0` would
+                    # make an unsupplied `settled_seconds` settle an
+                    # `is_driving=None` tail INSTANTLY (elapsed since
+                    # basically anything is `>= 0`), silently reintroducing
+                    # the original fragmentation bug for exactly the fixes
+                    # this fallback exists to protect. `inf` means "never
+                    # sufficient" instead. No current caller actually omits
+                    # `settled_seconds` while supplying `now_ms` (both real
+                    # call sites always pass both together), so this is
+                    # belt-and-braces, not a behavior change.
+                    settled_seconds=(
+                        settled_seconds if settled_seconds is not None
+                        else float("inf")
+                    ),
                 )
         if settled:
             if len(buffer) >= min_trip_fixes:

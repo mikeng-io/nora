@@ -119,12 +119,12 @@ existing `RollupConfig.settled_seconds` — no new config knob needed here
 specifically, since this is the same physical signal Tier 1 already
 measures).
 
-Before the final unconditional flush, and before any mid-loop flush that
-currently happens when a buffer's run ends at a detected stay boundary,
-the function checks whether the trailing group is settled:
+Before the final chunk's trailing buffer is unconditionally flushed, the
+function checks whether the trailing group is settled:
 
-    def _is_settled(group: list[RawFix], now_ms: int, settled_seconds: float) -> bool:
-        last = group[-1]
+    def trailing_fix_is_settled(
+        last: RawFix, *, now_ms: int, settled_seconds: float,
+    ) -> bool:
         if last.is_driving is True:
             return False
         if last.is_driving is None:
@@ -187,14 +187,19 @@ trailing fix and a longer span, so it settles on the clock or trips
 `max_trip_duration_seconds`, and the backlog drains. The stall therefore
 lasts roughly `backfill_threshold × fix_cadence` in the worst case —
 at a ~10 s cadence during continuous driving, **on the order of 11
-hours** before the widening kicks in. Two things keep this off the
+hours** before the widening kicks in. This whole bound presupposes fixes
+keep arriving throughout — the backlog can only grow while new fixes are
+landing; a batch with zero new fixes never touches it at all (`run_once`'s
+own `if fixes:` guard skips it entirely). Two things keep this off the
 critical path in practice rather than in principle: `is_driving` flipping
 `False` at the end of any real drive settles the group immediately, and
 `max_trip_duration_seconds` (§2.4) caps the group's span at 3 hours
 regardless. It is nonetheless the sharp edge of this mechanism, and the
 reason `max_trip_duration_seconds` is a safety valve rather than a
 nicety. If the cap were ever raised much above 3 hours, this bound is
-what would have to be re-derived.
+what would have to be re-derived. **A device that goes dark instead —
+genuinely no fixes arriving — is a different, unbounded stall, closed a
+different way; see §2.4.**
 
 A second, subtler stall was found during implementation and is closed in
 the design rather than left to the reader: the `is_driving is None`
@@ -222,11 +227,24 @@ here so it isn't silently forgotten, not because it's known broken.
 
 ### 2.4 Safety valve — a maximum trip duration
 
-If `is_driving` were ever stuck `True` (a stale flag on Life360's side, a
-bug, a phone that stopped reporting mid-drive), a trip could in principle
-never settle and grow forever, holding the watermark back indefinitely.
-A max-duration cap forces finalization regardless of the settlement check
-once a trailing group's span exceeds it.
+If `is_driving` were ever stuck reporting `True` continuously (a stale or
+stuck flag on Life360's side, a bug) while the device keeps actively
+sending fixes, a trip could in principle never settle and grow forever,
+holding the watermark back indefinitely. A max-duration cap forces
+finalization regardless of the settlement check once a trailing group's
+span exceeds it.
+
+**This is not protection against a device that stops reporting
+entirely.** The cap is computed from the held-back group's own
+fix-to-fix span (`buffer[-1].ts - buffer[0].ts`), which freezes the
+instant new fixes stop arriving — a device that goes dark mid-drive
+causes a genuinely unbounded stall, not a 3-hour-bounded one, and the
+cap cannot fire against it because there is no new fix to grow the span
+with. That case self-heals a different way: once fixes resume, the gap
+since the last one exceeds `DWELL_CAP_MS`, the existing chunk-gap split
+(`_chunk_by_gap`) treats it as a new chunk, and the stale held-back
+group flushes correctly as its own trip — a real, already-existing
+safety property of the code, just not the one this cap provides.
 
 **No real trip-duration data exists yet to measure this against** — the
 9 trips in production today are exactly the fragments this fix corrects,
