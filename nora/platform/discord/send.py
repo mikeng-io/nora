@@ -5,14 +5,20 @@ construction, same status handling, same "log and return, never raise"
 contract — for the same reason that module gives: a reader who has read one
 should not have to re-read the other.
 
-`mentions`/`styles`/`preview` are the port's DECORATION
-parameters (`nora.domain.ports.PlatformAdapter.send`'s own docstring: "a
-platform with no mention concept ignores them"). Discord expresses mentions
-and rich text inline in `content` itself (`<@id>`, markdown) — a different
-mechanism from Signal's parallel-array approach — and wiring that up is not
-in v1 scope (design/discord-integration/00-overview.md). This sends plain
-text only; those three decoration parameters exist so this satisfies the
-port's signature and are otherwise unused.
+`styles`/`preview` are the port's DECORATION parameters
+(`nora.domain.ports.PlatformAdapter.send`'s own docstring: "a platform with
+no mention concept ignores them") and remain unused here — Discord expresses
+rich text inline in `content` itself (markdown), a different mechanism from
+Signal's out-of-band style ranges, and wiring that up is not in v1 scope
+(design/discord-integration/00-overview.md).
+
+`mentions` (the structured port parameter) is ALSO unused — the model never
+populates it; `send_reply(text: str)` has no mention parameter for it to fill
+(`nora/agent/tools.py`). What the model actually does is write plaintext
+`@Name` in its reply. `nora.platform.discord.mention_resolve` is what turns
+that into a real `<@id>` ping: it looks up the target guild's live member
+list and splices the id in, server-side, right here, before the POST. See
+that module's docstring for the full reasoning and the fail-closed contract.
 
 **`attachments` is NOT among them, and is REFUSED rather than ignored.** It
 carries the message's payload, not its ornament — a GIF, a rendered map, a
@@ -30,6 +36,7 @@ import aiohttp
 
 from ...domain.models import ConversationTarget
 from ...domain.ports import LinkPreview, Mention, OutboundAttachment, SendResult, TextStyle
+from .mention_resolve import fetch_named_members, resolve_outbound_mentions
 from .snowflake import timestamp_ms
 
 log = logging.getLogger("nora.discord.send")
@@ -81,16 +88,37 @@ class DiscordSender:
             )
             return SendResult(ok=False)
         # conversation_id is "<guild_id>/<channel_id>" (policy.example.toml);
-        # the REST endpoint below addresses the channel alone.
-        channel_id = target.conversation_id.rsplit("/", 1)[-1]
+        # the REST endpoint below addresses the channel alone. The guild half
+        # is only needed below, for the member lookup a '@Name' in the text
+        # requires.
+        guild_id, _, channel_id = target.conversation_id.partition("/")
+
+        resolved_text = text
+        allowed_users: tuple[str, ...] = ()
+        if "@" in text:
+            named_members = await fetch_named_members(
+                self._token, base_url=self._base_url, guild_id=guild_id,
+                client_timeout=self._timeout,
+            )
+            resolved_text, allowed_users = resolve_outbound_mentions(text, named_members)
+
         headers = {"Authorization": f"Bot {self._token}"}
+        # `allowed_mentions` is set on EVERY send, resolved or not: without it
+        # Discord parses @everyone/@here/roles out of raw `content` and pings
+        # them for real. Restricting to exactly the ids this module spliced
+        # is what makes a literal "@everyone" in a reply inert instead of a
+        # mass ping nobody asked for.
+        payload = {
+            "content": resolved_text,
+            "allowed_mentions": {"parse": [], "users": list(allowed_users)},
+        }
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.post(
                     f"{self._base_url}/channels/{channel_id}/messages",
                     headers=headers,
-                    json={"content": text},
+                    json=payload,
                 ) as resp,
             ):
                 if resp.status == 429:
