@@ -121,7 +121,10 @@ async def test_an_unreachable_api_never_raises():
 
 
 async def test_a_member_row_with_no_usable_id_is_skipped(api):
-    api.state["members"] = [{"user": {"username": "no-id"}}, {"user": {"id": "1", "username": "ok"}}]
+    api.state["members"] = [
+        {"user": {"username": "no-id"}},
+        {"user": {"id": "1", "username": "ok"}},
+    ]
 
     named = await _fetch(api)
 
