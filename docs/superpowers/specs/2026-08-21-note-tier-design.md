@@ -1042,6 +1042,46 @@ returning a valid `Proposal` for that store, with per-field values the caller ca
 vary — and the shared suite asserts *behaviour* over whatever it is handed. Per-
 tier validity rules stay with the tier; the suite stays about the port.
 
+### 15.4.2 Where the factories live, and the one rule they must keep
+
+**`nora/testing/`**, beside `InMemoryFactStore` and the other fakes. That is
+where all 23 existing contract suites already get their fakes from
+(`tests/contract/test_artifact_ingest_contract.py` is the canonical shape: fake
+from `nora.testing`, real implementation from `nora.infra`), so this needs no new
+convention.
+
+**The rule, and it is enforced rather than remembered.** `pyproject.toml`'s
+layered contract puts `nora.infra | nora.testing` on **one layer**, which makes
+them independent: `nora.testing` may not import `nora.infra`. So a factory may
+build only **domain** values — `Proposal` from `nora.domain.ports`, a
+`FactVerdict` from `nora.domain.facts`, a note revision from
+`nora.domain.notes` — and may never reach for `SqlFactStore` or the note store
+to construct one. A factory that did would fail `uv run lint-imports`, which is
+the desired outcome: the boundary is checked, not trusted.
+
+**The cross-serving property this buys** (the fact-tier session's idea, and it
+falls out of the rule above): each factory's `Proposal` carries a payload that is
+**valid for its own store and foreign to the other**. So assertion 1 — a foreign
+payload is refused, not duck-typed — is tested by handing each store the *other*
+factory's output. It needs no synthetic "wrong type" fixture invented for the
+purpose, and it stays honest as both payload types evolve. It works only because
+both factories are domain-only and therefore both importable by the suite without
+either reaching across the layer.
+
+Agreed shape from the fact side:
+
+```python
+def fact_proposal_factory(
+    *, instruction_sha256: str | None = None,
+    model: str | None = None,
+    established_by: str | None = None,
+) -> Proposal
+```
+
+Each `None` fills with a **distinct valid default** — different digests per call,
+never one string three times, so a field swap is visible. The note tier supplies
+`note_proposal_factory` with the same shape and the same guarantee.
+
 **Not shared, and deliberately so: successor cardinality.** With `replaced_by`
 nullable at the port, `fact`'s biconditional stops being a universal rule and
 becomes a **fact-tier** rule, enforced by `SqlFactStore` and its DB CHECK rather
