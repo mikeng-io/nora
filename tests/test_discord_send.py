@@ -33,7 +33,10 @@ async def test_send_posts_content_to_the_channel_from_the_conversation_id(rest_s
     result = await sender.send(TARGET, "hello")
 
     assert result.ok is True
-    assert rest_server.calls[0] == {"content": "hello", "allowed_mentions": {"parse": [], "users": []}}
+    assert rest_server.calls[0] == {
+        "content": "hello",
+        "allowed_mentions": {"parse": [], "users": []},
+    }
 
 
 async def test_send_authenticates_with_the_bot_token(rest_server):

@@ -177,7 +177,10 @@ def test_inbound_mention_syntax_handles_the_nickname_variant():
 def test_multiple_inbound_mentions_are_each_rewritten():
     msg = _message(
         content="<@7> <@8>",
-        mentions=[FakeUser(id=7, display_name="Miles Novak"), FakeUser(id=8, display_name="Tyler Cortez")],
+        mentions=[
+            FakeUser(id=7, display_name="Miles Novak"),
+            FakeUser(id=8, display_name="Tyler Cortez"),
+        ],
     )
 
     result = parse_discord_message(msg, own_id=OWN_ID)
