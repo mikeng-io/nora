@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Design spec for the fact tier — workspace-scoped triples with warrants, three-state adjudication.",
+  "details": [],
+  "limitations": [],
+  "reason": "Design document only. No code, no schema, no user-observable change; the tier ships OFF behind [facts] enabled when it is built."
+}
