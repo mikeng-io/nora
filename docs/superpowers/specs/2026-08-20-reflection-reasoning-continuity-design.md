@@ -557,6 +557,24 @@ The first draft put the per-turn verdict fields on the per-conversation row, so
 §16.4's re-derivation trigger would have read a flag already overwritten by the
 next turn. Split.
 
+> **SUPERSEDED 2026-08-21 — the `Fact` sketch above is not what shipped.**
+> Three changes, and the first is the one a plan reading this section would get
+> wrong: **`statement: str` does not exist.** A fact is a **triple** —
+> `subject_id`, `predicate`, and exactly one of `object_entity_id` /
+> `object_literal` (DB CHECK enforces the XOR) — against a canonical
+> `fact_entity` with aliases. What forecloses a graph later is not
+> relational-vs-graph, it is **prose-vs-triple**: no engine can traverse a
+> sentence. §6.4 already argued facts are relations; the implementation took
+> that literally and the schema followed.
+> **`conversation_id` does not exist either** — facts key on `workspace`
+> (`Conversation.workspace`, DEC-105), which closes §16.2 in favour of the
+> wider scope and inherits R-49's disclosure argument rather than needing a new
+> one. And supersession is a **biconditional**, `(superseded_by is null) =
+> (superseded_at is null)`, not the implication implied here — an implication
+> permits `superseded_at` set with `superseded_by` NULL, which is a fact hidden
+> from every read with no record of its successor.
+> `Standing` and `TurnVerdict` above are **untouched** by any of this.
+
 `Fact` carries `invalid_at`/`superseded_by` rather than being deleted, so the
 question *"what did I used to believe, and when did that change?"* stays
 answerable — the capability the Hermes audit found missing from a flat
@@ -660,9 +678,23 @@ records a 95–99% prefix-cache hit on a ~13–17k static head — while warning
 once, and is not *"to be trusted without re-measuring `cache_read_input_tokens`
 on the live route."* Dated 2026-08-08; §14.7 requires re-measuring.
 
-### 6.8 The fact store's shape — OPEN
+### 6.8 The fact store's shape — CLOSED (2026-08-21)
 
-Three candidates, unresolved (§16.1):
+**Resolved: Postgres relational. Shipped as `fact` / `fact_candidate` /
+`fact_entity`, migration `0025`, `idx_fact_standing` partial on
+`superseded_at IS NULL`. Authority is `2026-08-20-fact-tier-design.md` §1.2 and
+DEC-129, not this section.**
+
+Graphiti was rejected after re-verification at source — it is *more* capable
+than earlier summaries credited (`EntityEdge` is a true bi-temporal triple with
+`episodes` provenance and a `group_id` mapping 1:1 onto the workspace key), but
+`resolve_edge_contradictions` fires only when both `valid_at` are non-`None` and
+strictly ordered, so ties and nulls fall through **with no log, counter or
+metric** — a flagged contradiction discarded without trace. Apache AGE, which
+this section never listed, was deferred on packaging rather than maturity: no
+musl build against `postgres:18-alpine`.
+
+The original three candidates, left for the record:
 
 - **Postgres table**, as §6.3 sketches. No new dependency; the repo already runs
   it. `invalid_at`/`superseded_by` give the supersession chain without a graph.
@@ -1021,10 +1053,20 @@ settled, not a decision that they need not be.
 
 ## 14. What must be true before it ships
 
-1. `reasoningContent` confirmed readable from `agent.messages` post-
-   `invoke_async` on the live route. *Never read an instrument's output as
-   evidence without first checking it can measure the thing.*
-2. §6.8 decided — the fact store's shape.
+1. ~~`reasoningContent` confirmed readable from `agent.messages` post-
+   `invoke_async` on the live route.~~ **RESOLVED 2026-08-21 — PASS.**
+   `strands/models/openai.py:386` `_format_regular_messages` builds a NEW
+   `formatted_messages` list and `continue`s past `reasoningContent` when
+   assembling the request; it never mutates `messages`. So the block is
+   dropped from what is **sent** and retained in `agent.messages`.
+   Confirmed live, not only by source-reading: the warning at `:401` fires
+   **844 times** in the deployed log (most recent `2026-08-20T15:16:43Z`),
+   and it can only fire if `reasoningContent` IS present in `agent.messages`.
+   **The warning is the positive evidence, not the symptom** — §1.5's "the
+   reasoning is produced every turn, then destroyed" is right about the API
+   call and wrong about the store. The substrate this design needs exists.
+2. ~~§6.8 decided — the fact store's shape.~~ **RESOLVED — Postgres
+   relational, shipped (DEC-129).** See §6.8.
 3. Debrief latency measured on `nora_debrief_seconds`, second-queued-tag case
    explicit, against the p95 ≤ 5s SLO (`design/05-evaluation.md:79`).
 4. §7.3's containment tests green; §7.2's timeout wired.
@@ -1082,8 +1124,13 @@ evidence supports; the relation "X unlocks Y" states exactly what a source said,
 and survives being wrong about what counts as a tower.
 ## 16. Open questions
 
-1. **The fact store's shape** (§6.8) — Postgres table, Graphiti, or flat text.
-2. **Fact scope.** Conversation-scoped as specified. "Four towers" is a world
+1. ~~**The fact store's shape** (§6.8)~~ — **CLOSED**: Postgres relational,
+   DEC-129.
+2. ~~**Fact scope.**~~ — **CLOSED**: workspace-scoped, not conversation-scoped.
+   The operator chose the wider scope; it inherits R-49's disclosure argument.
+   The original reasoning, which leaned the other way, is kept below because the
+   contamination risk it names is real and is now the fact adaptor's problem.
+   **Fact scope.** Conversation-scoped as specified. "Four towers" is a world
    fact that would help every room — but a *wrong* global fact is §1.1's
    contamination shape one tier up. The evidence favours conversation-scope: the
    fabrication and both retractions were in one conversation, so it would have
