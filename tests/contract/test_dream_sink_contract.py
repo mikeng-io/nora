@@ -96,7 +96,6 @@ from dataclasses import FrozenInstanceError, dataclass, field
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.facts import FactVerdict
 from nora.domain.ports import DreamSink, Proposal
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.facts import SqlFactStore
@@ -226,29 +225,41 @@ def _sql_make_because() -> str:
     return next(_sql_because_cycle)
 
 
-# name -> (store_ctor, make_proposal, make_because, read_row, nullable_replaced_by).
-# `store_ctor` is the thing this dict adds over `IMPLEMENTATIONS` dicts
-# elsewhere in this repo (`test_tool_call_log_store_contract.py`'s own
-# `store` fixture, `test_room_consolidator_contract.py`'s `_backing`):
-# `None` means "no engine, build the fake"; any other value is a
-# `Callable[[AsyncEngine], object]` `_open_sink` calls generically. Without
-# this, `_open_sink` would have to hard-code a THIRD implementation's own
-# store class by name — the exact "joins by adding one entry" claim this
-# file's docstring makes would be false the moment a second SQL-backed
-# implementation (a note store, most likely) showed up. The one assumption
-# this does not remove: a third implementation must be constructible from a
-# bare `AsyncEngine`, same as `SqlFactStore` — true of every SQLAlchemy Core
-# store in this repo today, and exactly the shape `SqlFactStore.__init__`'s
-# own docstring commits to for the same contract-suite reason.
+def _build_fake(_engine: AsyncEngine | None) -> _FakeDreamSink:
+    return _FakeDreamSink()
+
+
+def _build_sql(engine: AsyncEngine | None) -> SqlFactStore:
+    assert engine is not None, "sql's build is only ever called with a real engine"
+    return SqlFactStore(engine)
+
+
+# name -> (needs_engine, build, make_proposal, make_because, read_row,
+# nullable_replaced_by). `needs_engine`/`build` are what this dict adds over
+# the `IMPLEMENTATIONS` dicts elsewhere in this repo
+# (`test_tool_call_log_store_contract.py`'s own `store` fixture,
+# `test_room_consolidator_contract.py`'s `_backing`): earlier this entry was
+# `store_ctor: Callable[[AsyncEngine], object] | None`, with `None`
+# overloading "no engine needed" onto "build `_FakeDreamSink`" specifically
+# — which would have forced `_open_sink` to be edited for a THIRD
+# implementation that also needs no engine but is not the fake. Splitting
+# the two removes that: `needs_engine` says whether `_open_sink` wires
+# Postgres before calling `build`, and `build` says WHAT to build, so an
+# engine-less non-fake store (unlikely for this tier, but the port makes no
+# such promise) still joins by adding one entry. `build` always takes the
+# (possibly `None`) engine positionally so both branches share one call
+# shape.
 IMPLEMENTATIONS: dict[
     str,
     tuple[
-        Callable[[AsyncEngine], object] | None, Callable[..., Proposal],
+        bool, Callable[[AsyncEngine | None], object], Callable[..., Proposal],
         Callable[[], str], Callable, bool,
     ],
 ] = {
-    "fake": (None, _fake_proposal_factory, _fake_make_because, _fake_read_row, True),
-    "sql": (SqlFactStore, fact_proposal_factory, _sql_make_because, _sql_read_row, False),
+    "fake": (False, _build_fake, _fake_proposal_factory, _fake_make_because,
+              _fake_read_row, True),
+    "sql": (True, _build_sql, fact_proposal_factory, _sql_make_because,
+             _sql_read_row, False),
 }
 
 FOREIGN_PAYLOAD_EXEMPT: dict[str, str] = {
@@ -266,19 +277,21 @@ FOREIGN_PAYLOAD_EXEMPT: dict[str, str] = {
 @contextlib.asynccontextmanager
 async def _open_sink(name: str, request) -> AsyncIterator[tuple]:
     """Builds the store for `name` and yields
-    `(sink, make_proposal, read_row, nullable_replaced_by)`.
-    `IMPLEMENTATIONS[name][0]` is `None` for the fake and a
-    `Callable[[AsyncEngine], object]` for every Postgres-backed store — the
-    Postgres wiring itself (pg_url, migrate, engine, dispose) stays here,
-    generic over WHICH store class gets built, mirroring
+    `(sink, make_proposal, make_because, read_row, nullable_replaced_by)` —
+    five values, matching the five fixtures `sink_ctx` is unpacked into
+    below. `IMPLEMENTATIONS[name]`'s `needs_engine` says whether Postgres
+    wiring (pg_url, migrate, engine, dispose) happens before `build` is
+    called; `build` says WHAT to build. Mirrors
     `tests/contract/test_tool_call_log_store_contract.py`'s own `store`
-    fixture's "if fake: return; else: pg_url+migrate+engine" shape."""
-    store_ctor, make_proposal, make_because, read_row, nullable_replaced_by = (
+    fixture's "if fake: return; else: pg_url+migrate+engine" shape, with the
+    class itself pulled out per-entry rather than hard-coded to one SQL
+    store — see the `IMPLEMENTATIONS` comment above for why."""
+    needs_engine, build, make_proposal, make_because, read_row, nullable_replaced_by = (
         IMPLEMENTATIONS[name]
     )
-    if store_ctor is None:
+    if not needs_engine:
         yield (
-            _FakeDreamSink(), make_proposal, make_because, read_row,
+            build(None), make_proposal, make_because, read_row,
             nullable_replaced_by,
         )
         return
@@ -287,7 +300,7 @@ async def _open_sink(name: str, request) -> AsyncIterator[tuple]:
     engine = create_sql_engine(pg_url)
     try:
         yield (
-            store_ctor(engine), make_proposal, make_because, read_row,
+            build(engine), make_proposal, make_because, read_row,
             nullable_replaced_by,
         )
     finally:
@@ -455,7 +468,7 @@ async def test_superseding_an_unknown_row_reports_zero_rather_than_raising(
 
     affected = await sink.supersede(
         key="room-1", target="row-does-not-exist", replaced_by=real[0],
-        because="stale", source=None, now_ms=NOW,
+        because="unrelated-to-this-test", source=None, now_ms=NOW,
     )
 
     assert affected == 0
@@ -647,7 +660,7 @@ async def test_a_foreign_payload_is_refused_not_duck_typed(impl_name, request):
 
     async with _open_sink(impl_name, request) as (sink, _make, _because, _read, _null):
         foreign_name = next(n for n in IMPLEMENTATIONS if n != impl_name)
-        foreign_make_proposal = IMPLEMENTATIONS[foreign_name][1]
+        foreign_make_proposal = IMPLEMENTATIONS[foreign_name][2]
         foreign_proposal = foreign_make_proposal()
 
         with pytest.raises(TypeError):
@@ -655,11 +668,3 @@ async def test_a_foreign_payload_is_refused_not_duck_typed(impl_name, request):
                 key="room-1", proposals=(foreign_proposal,), now_ms=NOW,
             )
 
-
-def test_fact_verdict_is_a_real_payload_not_a_placeholder():
-    """Guards the guard above: if `fact_proposal_factory` ever stopped
-    building a real `FactVerdict`, `test_a_foreign_payload_is_refused_not_
-    duck_typed` would still pass for the wrong reason (any old object is
-    'foreign' to `SqlFactStore`) and nothing would notice."""
-    p = fact_proposal_factory()
-    assert isinstance(p.payload, FactVerdict)

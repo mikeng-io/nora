@@ -48,6 +48,14 @@ never `object_entity_id` — a fact written by this store always has
 design doc's warrant table) and always lands `fidelity = 'tentative'` (the
 column's own server default, and the correct value for a freshly-adjudicated
 claim nobody has confirmed independently yet).
+
+**`propose` ignores `FactVerdict.supersedes`.** A `contradicted` verdict
+names the fact it supersedes (`FactVerdict.__post_init__` requires it), but
+this store does not read that field to retire anything — retirement is a
+separate, explicit `supersede` call, made by whatever runtime logic decides
+to make it (spec §4.1). Reading only this module could reasonably suggest a
+`contradicted` verdict retires its target as a side effect of `propose`; it
+does not.
 """
 
 from __future__ import annotations
@@ -145,13 +153,26 @@ class SqlFactStore:
     ) -> int:
         """See the module docstring's (3): refuses a null `replaced_by`.
 
-        `target`/`key` that do not name a real, standing row report 0 rather
+        `target` that does not name a real, standing row reports 0 rather
         than raising — including a `target` that is not even UUID-shaped.
         `fact.id` is `pg.UUID`, so a non-UUID string would otherwise reach
         asyncpg as a raw type error instead of the ordinary "unknown row"
         outcome `test_superseding_an_unknown_row_reports_zero_rather_than_
         raising` requires: a background pass that raises on a row it does
         not recognise takes the whole tick down with it.
+
+        `replaced_by`, by contrast, is NOT given the same treatment when it
+        is malformed (non-null but not UUID-shaped): that is a caller BUG,
+        not an absent row, and reporting 0 would make it indistinguishable
+        from "already superseded" or "no such row" — an ERROR silently
+        surfacing as `nothing_found`, the exact shape R-27 forbids one layer
+        up. It is also the one case this store CAN tell apart from a
+        genuinely unknown row: a well-formed but nonexistent `replaced_by`
+        already raises `IntegrityError` via `fact_superseded_by_fkey`, so
+        treating the malformed case identically keeps both mistakes in the
+        same class — raise — rather than one raising and the other
+        vanishing into a `0` depending only on whether the string happens to
+        parse as a UUID.
         """
         if replaced_by is None:
             raise ValueError(
@@ -163,8 +184,17 @@ class SqlFactStore:
                 "DreamSink.supersede's own docstring)"
             )
         try:
-            UUID(target)
             UUID(replaced_by)
+        except ValueError:
+            raise ValueError(
+                f"SqlFactStore.supersede got a malformed replaced_by "
+                f"{replaced_by!r}: not a UUID. A caller bug, not an absent "
+                f"row — reporting 0 here would be indistinguishable from "
+                f"target not existing, which is exactly the ERROR-as-"
+                f"nothing_found shape R-27 forbids."
+            ) from None
+        try:
+            UUID(target)
         except ValueError:
             return 0
         stmt = (
@@ -192,8 +222,16 @@ class SqlFactStore:
         unavailable store yields `()` — the same shape `SqlLanguageStore.
         room_language` degrades to for the same reason (this can run inside a
         turn's `asyncio.gather` beside other reads, where one uncaught
-        exception cancels every sibling and silences the whole turn)."""
-        if not subject_ids:
+        exception cancels every sibling and silences the whole turn).
+
+        A negative `limit` clamps to 0 rather than raising or reaching the
+        database — Postgres itself errors on `LIMIT` with a negative value,
+        which the broad `except Exception` below would otherwise turn into
+        an indistinguishable `()`, and `InMemoryFactStore.standing_facts`
+        must degrade the SAME way rather than silently dropping trailing
+        facts the way `list[:-1]` does for `limit=-1` (2026-08-21 review).
+        """
+        if not subject_ids or limit <= 0:
             return ()
         try:
             stmt = (

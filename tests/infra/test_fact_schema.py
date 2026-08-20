@@ -256,9 +256,14 @@ async def test_supersede_source_requires_superseded_at(pg_engine):
     the biconditional `fact_supersede_reason_is_timed_check` uses above — but
     it must still never be set on a STANDING row: a citation for a
     supersession that never happened is exactly the same unreconstructable
-    hole `supersede_reason` closes."""
+    hole `supersede_reason` closes.
+
+    Asserts the CONSTRAINT NAME, not just `IntegrityError` — this table has
+    eight other CHECKs, several sharing columns (`superseded_at`,
+    `supersede_reason`), so a malformed insert can trip the WRONG one and
+    still make the assertion pass for the wrong reason."""
     async with pg_engine.begin() as conn:
-        with pytest.raises(sa.exc.IntegrityError):
+        with pytest.raises(sa.exc.IntegrityError) as ei:
             await conn.execute(sa.text(
                 "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
                 "object_literal, source_url, source_excerpt, valid_from, "
@@ -268,6 +273,7 @@ async def test_supersede_source_requires_superseded_at(pg_engine):
                 f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1', "
                 "'https://x.test/correction')"
             ))
+    assert "fact_supersede_source_is_timed_check" in str(ei.value.orig)
 
 
 async def test_supersede_reason_is_constrained(pg_engine):

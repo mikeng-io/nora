@@ -22,7 +22,7 @@ from nora.domain.ports import Proposal
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.testing import InMemoryFactStore
+from nora.testing import InMemoryFactStore, fact_proposal_factory
 
 NOW = 1_755_100_000_000
 
@@ -115,6 +115,41 @@ async def test_supersede_refuses_a_null_successor(store):
             key="workspace-a", target=ids[0], replaced_by=None, because="stale",
             source=None, now_ms=NOW + 1,
         )
+
+
+async def test_supersede_refuses_a_malformed_replaced_by(request):
+    """`nora.infra.sql.facts.SqlFactStore`-specific (2026-08-21 review
+    fix): a `replaced_by` that is non-null but not UUID-shaped is a CALLER
+    BUG, not an absent row — before this fix it was swallowed by the same
+    `except ValueError: return 0` guard that legitimately covers an unknown
+    `target`, making a caller mistake indistinguishable from "already
+    superseded" or "no such row" (an ERROR silently surfacing as
+    `nothing_found`, R-27's forbidden shape). A well-formed but nonexistent
+    `replaced_by` already raises `IntegrityError` via the `superseded_by`
+    FK; this proves the malformed case raises too, rather than returning 0
+    depending only on whether the string happens to parse as a UUID.
+
+    Not parametrized over `InMemoryFactStore`: UUID-shape is a `pg.UUID`
+    column concern (`fact.id`/`fact.superseded_by`), and the in-memory store
+    has no analogous column type to violate — its ids are plain strings by
+    construction, so "malformed" has no meaning there.
+    """
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    store = SqlFactStore(engine)
+    try:
+        ids = await store.propose(
+            key="workspace-a", proposals=(_proposal(_verdict()),), now_ms=NOW,
+        )
+
+        with pytest.raises(ValueError):
+            await store.supersede(
+                key="workspace-a", target=ids[0], replaced_by="not-a-uuid",
+                because="wrong", source=None, now_ms=NOW + 1,
+            )
+    finally:
+        await engine.dispose()
 
 
 # ---------------------------------------------------------------------------
@@ -237,3 +272,39 @@ async def test_standing_facts_excludes_a_superseded_row(store):
     )
 
     assert [f.id for f in standing] == [new[0]]
+
+
+async def test_standing_facts_with_a_negative_limit_clamps_to_empty(store):
+    """2026-08-21 review: a negative `limit` diverged between
+    implementations — Postgres errors on `LIMIT -1` (caught by
+    `SqlFactStore`'s own broad `except Exception` and degraded to `()`),
+    while `InMemoryFactStore.standing_facts` used to compute
+    `matches[:limit]`, and Python's `list[:-1]` silently keeps every fact
+    but the last rather than returning nothing. Both now clamp a negative
+    (or zero) `limit` to `()` before doing any work, so the two
+    implementations agree instead of one raising-then-degrading and the
+    other quietly answering a different question."""
+    await store.propose(
+        key="workspace-a", proposals=(_proposal(_verdict(subject="e1")),), now_ms=NOW,
+    )
+
+    assert await store.standing_facts(
+        workspace="workspace-a", subject_ids=["e1"], limit=-1,
+    ) == ()
+
+
+# ---------------------------------------------------------------------------
+# fact_proposal_factory — moved from tests/contract/test_dream_sink_contract.py
+# (2026-08-21 review): a fact-tier assertion about fact_proposal_factory's
+# own output has no business living in the shared DreamSink suite.
+# ---------------------------------------------------------------------------
+
+
+def test_fact_verdict_is_a_real_payload_not_a_placeholder():
+    """Guards `test_a_foreign_payload_is_refused_not_duck_typed` in the
+    shared contract suite: if `fact_proposal_factory` ever stopped building
+    a real `FactVerdict`, that test would still pass for the wrong reason
+    (any old object is 'foreign' to `SqlFactStore`) and nothing would
+    notice."""
+    p = fact_proposal_factory()
+    assert isinstance(p.payload, FactVerdict)

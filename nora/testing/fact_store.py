@@ -166,6 +166,13 @@ class InMemoryFactStore:
     async def standing_facts(
         self, *, workspace: str, subject_ids: Sequence[str], limit: int,
     ) -> tuple[Fact, ...]:
+        # A negative limit clamps to 0, matching SqlFactStore's own
+        # degradation (2026-08-21 review) — `list[:limit]` with a negative
+        # limit silently drops trailing entries instead (`[:-1]` keeps all
+        # but the last), which is a different, wrong answer for the same
+        # input.
+        if limit <= 0:
+            return ()
         wanted = set(subject_ids)
         matches = [
             f for (ws, _fid), f in self._facts.items()
