@@ -214,6 +214,13 @@ class RawFix:
     # address (rare; `extract_trips`, Task 4, drops it from the corridor
     # sequence rather than guessing).
     address: str | None = None
+    # Trip settlement (design/27 §4, 2026-08-20 trip-settlement design):
+    # Life360's own per-fix device signal, 100% filled — the PRIMARY
+    # input for deciding whether a trailing movement group is still
+    # ongoing. `None` only when the store's own filter admits a row
+    # with no reading; `extract_trips` falls back to a time-based check
+    # in that case, never guesses `True`/`False`.
+    is_driving: bool | None = None
 
 
 @dataclass(frozen=True)
