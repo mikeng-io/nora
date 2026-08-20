@@ -1000,10 +1000,42 @@ somebody else's.
 Two items, both for the implementation plan rather than this document, and
 neither blocking:
 
-1. **What `supersede`'s `source` parameter carries** for a *merge*. The fact
-   tier's supersession names a warrant; a merge's "source" is the surviving
-   note. Same field, plausibly two meanings — to be settled against the fact
-   store's own use before the note store implements it, not guessed at.
+1. **`supersede` has no field for the successor** — raised as an ambiguity in
+   `source` and escalated by the fact-tier session the same night into the
+   sharper finding: the agreed signature says which row dies and why, and has
+   nowhere to name what replaced it. `fact`'s own
+   `fact_supersession_is_timed_check` biconditional *requires* a successor, so
+   that sink can satisfy the port or its own constraint, not both.
+
+   **The note tier reaches the same defect from the other side**, which is what
+   makes it a port defect rather than a fact-tier quirk: a merge (§7.1) that
+   does not name the survivor is precisely the unauditable supersession `0025`'s
+   docstring cites Graphiti's issue #1771 for — a merge computed and then thrown
+   away.
+
+   **And this tier is why the field must be nullable.** Fact supersessions
+   always have a successor; note supersessions do not:
+
+   | note action | successor |
+   |---|---|
+   | **merge** — two notes on one anchor become one | the survivor |
+   | **retire** — the anchor passed, or the closing condition was met (§7.4) | **none.** A dinner that happened is replaced by nothing |
+
+   So the shape argued for is `replaced_by: str | None` at the port, with each
+   implementation tightening it — the fact store keeping its biconditional, the
+   note store requiring an id for a merge and permitting null for a retirement.
+   **Permissive at the port, strict at the sink**, the same direction as the
+   `isinstance` convention in §15.4: a port that hard-codes one tier's
+   cardinality is the same mistake as a `payload` typed to one tier's value. A
+   non-nullable `replaced_by` would force this tier to either invent a third
+   verb or mint a placeholder id to satisfy a signature — the
+   "invent a value to satisfy a schema" move §7.3 already forbids.
+
+   **If it is declined** and `source` remains the only spare field: `source`
+   means *warrant* for facts, and this tier carries the survivor in `because`.
+   Recorded here rather than left implicit, because at that point one field
+   genuinely means two things across two tiers and the only defence is that both
+   wrote it down.
 2. **Whether promotion to an `Event` (§7.3) goes through a sink at all.**
    `DreamSink` writes into the tier that owns `key`; an event is a different
    store with a different scope (`conversation_id`, not workspace). Most likely
@@ -1011,5 +1043,10 @@ neither blocking:
    but that is an interface question the plan should answer explicitly rather
    than discover.
 
-**With §15.4 answered, this document is final on behaviour and on interface.**
-The two items above change how the curator is wired, never what it decides.
+**With §15.4 answered, this document is final on behaviour.** It is final on
+*interface* except for item 1, which the fact-tier session is settling tonight
+with the substrate session before the declaration lands — and which changes how
+the curator is wired, never what it decides.  takes
+ and nothing else, stated by that session as a
+contract-suite affordance so the shared suite in Part 1b does not have to
+reverse-engineer it.
