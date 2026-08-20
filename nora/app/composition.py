@@ -578,16 +578,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         raise StartupError(f"doctrine error: {exc}") from exc
 
     # The Dreamer's own instruction corpus — its doctrine plus one objective
-    # per adaptor (instruction-substrate spec §4.1). Sibling of the doctrine
-    # directory, the same derivation `skills_dir` already uses below, and
-    # bind-mounted read-only for the same reason: an operator edit is live on
-    # the next Dreamer tick with no rebuild. Built unconditionally rather than
-    # under `[language].enabled` so a malformed objective is a STARTUP failure
-    # with a filename in the message, not a silent Dreamer that stops writing
-    # rows three hours later.
+    # per adaptor (instruction-substrate spec §4.1). Bind-mounted read-only the
+    # way `nora/doctrine` is, so an operator edit is live on the next Dreamer
+    # tick with no rebuild. Built unconditionally rather than under
+    # `[language].enabled` so a malformed objective is a STARTUP failure with a
+    # filename in the message, not a silent Dreamer that stops writing rows
+    # three hours later.
     dreamer_instructions = DreamerInstructions(
-        cfg.doctrine.dir.parent / "dreamer",
-        reload=cfg.doctrine.reload, strict=cfg.doctrine.strict, metrics=metrics,
+        cfg.dreamer.dir,
+        reload=cfg.dreamer.reload, strict=cfg.dreamer.strict, metrics=metrics,
     )
     try:
         dreamer_instructions.objective_names()

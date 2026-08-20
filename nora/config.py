@@ -1223,6 +1223,38 @@ class DoctrineConfig(BaseModel):
         return self
 
 
+class DreamerConfig(BaseModel):
+    """Where the Dreamer's instruction corpus lives and how it reloads.
+
+    Modelled field-for-field on `DoctrineConfig` above, minus the four fields
+    that are about NORA's prompt rather than about reading a directory
+    (`canary`, `display_name`, `language_hint` are runtime context she is told;
+    there is no equivalent here because nothing in `nora/dreamer/` is rendered
+    into a `<runtime_context>` block).
+
+    **Whole section optional, every field defaulted**, the `[route]`/
+    `[presence]`/`[language]` shape — so a `config.toml` written before this
+    section existed keeps loading under `extra="forbid"`, and a deployment that
+    never touches it gets the bind-mounted tree and mtime reload.
+
+    **No `enabled` field.** Phase 1 has nothing to enable: the corpus is read by
+    the two existing adaptors whether or not anything else is switched on, and a
+    flag that gates nothing is a flag an operator will eventually set expecting
+    it to gate something. It arrives with the Dreamer RUNTIME, shipping `false`.
+
+    `dir` is resolved relative to the config file, not the working directory,
+    by `Config._resolve_paths` — NOT by a validator here, because a defaulted
+    sub-model is constructed once at class-definition time with no validation
+    context to resolve against.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    dir: Path = Path("nora/dreamer")
+    reload: Literal["mtime", "startup"] = "mtime"
+    strict: bool = True
+
+
 class LoggingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1431,6 +1463,11 @@ class Config(BaseModel):
     tools: ToolsConfig = ToolsConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
+    # Optional and defaulted — see `DreamerConfig`. A config.toml with no
+    # `[dreamer]` section keeps loading and reads the bind-mounted tree with
+    # mtime reload, which is what every deployment wants; the section exists so
+    # a deployment can pin `reload = "startup"` or point `dir` elsewhere.
+    dreamer: DreamerConfig = DreamerConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig
@@ -1440,6 +1477,11 @@ class Config(BaseModel):
     def _resolve_paths(self, info: ValidationInfo) -> Config:
         _resolve_context_field(self, "identity_file", info)
         _resolve_context_field(self, "policy_file", info)
+        # `[dreamer]` is a DEFAULTED section, so it cannot resolve its own path
+        # the way `DoctrineConfig` does: its default instance is built once at
+        # class-definition time, with no validation context to resolve against.
+        # Resolved here instead, where the context is.
+        _resolve_context_field(self.dreamer, "dir", info)
         return self
 
     @model_validator(mode="after")

@@ -43,6 +43,12 @@ include = ["nora*"]
 [tool.setuptools.package-data]
 nora = [
     "doctrine/*.md",
+    # `nora/dreamer/` has no `__init__.py` and must not get one — it is data,
+    # not a package — so `packages.find` will not install it. Same failure mode
+    # the migrations below are declared for: without these lines a WHEEL ships
+    # without the Dreamer's instructions and every adaptor fails at startup.
+    "dreamer/doctrine/*.md",
+    "dreamer/objectives/*.md",
     "py.typed",
     # The build-time version stamp (DEC-79). Generated, gitignored, and absent
     # from a source checkout — declared here so a WHEEL built from a stamped

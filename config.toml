@@ -277,6 +277,17 @@ language_hint = "yue-Hant-HK"          # BCP 47 (RFC 5646): Cantonese, Tradition
 canary = "NORA-CANARY-00000000"
 display_name = "Nora"
 
+[dreamer]
+# The Dreamer's own instruction corpus: `doctrine/` (one file — who the Dreamer
+# is on every run) and `objectives/` (one per adaptor). Bind-mounted read-only
+# into the container, so an operator edit is live on the NEXT TICK with no
+# rebuild — which matters more here than for the doctrine, because this is the
+# slowest loop in the system and an objective that steers it wants revisions.
+# An edit on master is therefore a deploy, exactly as it is for nora/doctrine.
+dir = "nora/dreamer"
+reload = "mtime"
+strict = true
+
 [obs.logging]
 level = "INFO"
 path = "data/nora.log"

@@ -640,3 +640,66 @@ def test_an_explicit_image_model_wins_over_the_legacy_alias(toml_path):
         toml_path.read_text(), count=1, flags=re.MULTILINE,
     ).replace('model = "ollamacloud/minimax-m3"', 'model = "new/image-model"'))
     assert load(toml_path).media.describer_for("image").model == "new/image-model"
+
+
+# --- [dreamer] (instruction-substrate spec §4.1) ---------------------------
+
+
+def test_the_dreamer_directory_resolves_against_the_config_file(toml_path):
+    """The same rule `[doctrine] dir` follows, and for the same reason: the
+    process's working directory is not the deployment's, so a path resolved
+    against `cwd` finds the corpus in a dev shell and nothing in the
+    container."""
+    cfg = load(toml_path)
+    assert cfg.dreamer.dir.is_absolute()
+    assert cfg.dreamer.dir == (toml_path.parent / "nora" / "dreamer").resolve()
+
+
+def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_path):
+    """`extra="forbid"` cuts both ways: a NEW required section breaks every
+    config file that predates it. The whole section is optional and every field
+    defaulted for exactly that reason — the `[route]`/`[presence]`/`[language]`
+    shape."""
+    text = toml_path.read_text()
+    start = text.index("\n[dreamer]")
+    end = text.index("\n[obs.logging]")
+    toml_path.write_text(text[:start] + text[end:])
+    cfg = load(toml_path)
+    assert cfg.dreamer.reload == "mtime"
+    assert cfg.dreamer.strict is True
+    assert cfg.dreamer.dir == (toml_path.parent / "nora" / "dreamer").resolve()
+
+
+def test_two_configs_do_not_share_one_defaulted_dreamer_section(tmp_path, monkeypatch):
+    """A defaulted sub-model is constructed ONCE, at class-definition time, and
+    `Config._resolve_paths` mutates it in place through `object.__setattr__`. If
+    pydantic handed every `Config` the same instance, the second deployment
+    loaded in one process would silently inherit the first one's absolute path
+    — and in the eval harness, which loads several configs, that is a corpus
+    read from the wrong tree with nothing to notice."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    first = tmp_path / "a" / "config.toml"
+    second = tmp_path / "b" / "config.toml"
+    for dst in (first, second):
+        dst.parent.mkdir(parents=True)
+        shutil.copy(ROOT / "config.example.toml", dst)
+    a, b = load(first), load(second)
+    assert a.dreamer.dir != b.dreamer.dir
+    assert a.dreamer.dir == (first.parent / "nora" / "dreamer").resolve()
+
+
+def test_an_invalid_dreamer_reload_mode_is_a_startup_failure(toml_path):
+    toml_path.write_text(toml_path.read_text().replace(
+        'dir = "nora/dreamer"\nreload = "mtime"',
+        'dir = "nora/dreamer"\nreload = "inotify"'))
+    with pytest.raises(ConfigError, match="reload"):
+        load(toml_path)
+
+
+def test_an_unknown_dreamer_key_is_a_startup_failure(toml_path):
+    """`extra="forbid"`: a typo'd key is a silent no-op everywhere it is
+    tolerated, and this section's whole job is to be edited by hand."""
+    toml_path.write_text(toml_path.read_text().replace(
+        '[dreamer]\n', '[dreamer]\nenabled = true\n'))
+    with pytest.raises(ConfigError):
+        load(toml_path)
