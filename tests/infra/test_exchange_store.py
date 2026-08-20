@@ -38,15 +38,20 @@ NOW = int(time.time() * 1000)
 INSTRUCTION_A = instruction_sha256("stand-in exchange instruction, revision A")
 INSTRUCTION_B = instruction_sha256("stand-in exchange instruction, revision B")
 
+# Two model names, varying independently of the two instruction revisions —
+# see `tests/infra/test_language_store.py`'s own pair.
+MODEL_A = "stand-in-exchange-model-a"
+MODEL_B = "stand-in-exchange-model-b"
+
 
 def candidate(
     *, message_ids: tuple[int, ...], participants: tuple[str, ...],
     act: str = "insult_trade", confidence: float = 0.9,
-    instruction: str = INSTRUCTION_A,
+    instruction: str = INSTRUCTION_A, model: str = MODEL_A,
 ) -> ExchangeCandidate:
     return ExchangeCandidate(
         act=act, message_ids=message_ids, participants=participants, confidence=confidence,
-        instruction_sha256=instruction,
+        instruction_sha256=instruction, model=model,
     )
 
 
@@ -321,3 +326,100 @@ async def test_the_database_refuses_a_stamp_that_is_not_a_digest(store):
                 message_ids=(1, 2), participants=("miles", "tyler"), instruction="v1",
             ),
         ])
+
+
+# ---------------------------------------------------------------------------
+# model provenance — the exchange half of `tests/infra/test_language_store.py`'s
+# own `model` block (2026-08-20 substrate spec §6.2 question 2).
+# ---------------------------------------------------------------------------
+
+
+async def _models(store) -> list:
+    async with store._engine.connect() as conn:
+        return list((await conn.execute(
+            sa.select(EXCHANGE_OBSERVATION.c.model)
+            .order_by(EXCHANGE_OBSERVATION.c.id)
+        )).scalars())
+
+
+async def test_an_appended_pattern_carries_the_model_that_produced_it(store):
+    batch = [_row(1, "miles"), _row(2, "tyler")]
+    await store.append_observations(scope_id="g1", batch=batch, observations=[
+        candidate(message_ids=(1, 2), participants=("miles", "tyler"), model=MODEL_A),
+    ])
+    assert await _models(store) == [MODEL_A]
+
+
+async def test_the_consolidated_pattern_inherits_the_newest_observations_model(store):
+    b1 = [_row(1, "miles", ts=NOW - DAY_MS), _row(2, "tyler", ts=NOW - DAY_MS)]
+    b2 = [_row(3, "miles"), _row(4, "tyler")]
+    await store.append_observations(scope_id="g1", batch=b1, observations=[
+        candidate(message_ids=(1, 2), participants=("miles", "tyler"), model=MODEL_A),
+    ])
+    await store.append_observations(scope_id="g1", batch=b2, observations=[
+        candidate(message_ids=(3, 4), participants=("miles", "tyler"), model=MODEL_B),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_EXCHANGE))).one()
+    assert row.occurrence_count == 2, "both observations consolidated into one row"
+    assert row.model == MODEL_B
+
+
+async def test_the_consolidated_patterns_two_provenance_fields_name_one_row(store):
+    """The exchange sibling of
+    `test_language_store.py::test_the_consolidated_lexemes_two_provenance_fields_name_one_row`
+    — three observations arranged so the newest instruction and the newest
+    model live on the same row and nowhere else, so a pair assembled from two
+    separate lookups reads differently from the pair that was actually run."""
+    batches = [
+        ([_row(1, "miles", ts=NOW - 2 * DAY_MS), _row(2, "tyler", ts=NOW - 2 * DAY_MS)],
+         (1, 2), INSTRUCTION_B, MODEL_A),
+        ([_row(3, "miles", ts=NOW - DAY_MS), _row(4, "tyler", ts=NOW - DAY_MS)],
+         (3, 4), INSTRUCTION_B, MODEL_B),
+        ([_row(5, "miles"), _row(6, "tyler")], (5, 6), INSTRUCTION_A, MODEL_B),
+    ]
+    for batch, mids, instruction, model in batches:
+        await store.append_observations(scope_id="g1", batch=batch, observations=[
+            candidate(
+                message_ids=mids, participants=("miles", "tyler"),
+                instruction=instruction, model=model,
+            ),
+        ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_EXCHANGE))).one()
+        newest = (await conn.execute(
+            sa.select(EXCHANGE_OBSERVATION.c.instruction_sha256, EXCHANGE_OBSERVATION.c.model)
+            .order_by(EXCHANGE_OBSERVATION.c.observed_at.desc())
+            .limit(1)
+        )).one()
+    assert row.occurrence_count == 3
+    assert (row.instruction_sha256, row.model) == (newest.instruction_sha256, newest.model)
+    assert (row.instruction_sha256, row.model) == (INSTRUCTION_A, MODEL_B)
+
+
+async def test_a_rescored_pattern_never_loses_its_model(store):
+    batch = [_row(1, "miles"), _row(2, "tyler")]
+    await store.append_observations(scope_id="g1", batch=batch, observations=[
+        candidate(message_ids=(1, 2), participants=("miles", "tyler"), model=MODEL_A),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    await store.rescore(scope_id="g1", now_ms=NOW + DAY_MS)
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(ROOM_EXCHANGE))).one()
+    assert row.model == MODEL_A
+
+
+async def test_the_database_refuses_a_model_that_names_nothing(store):
+    """See the language store's own note: no shape check (a model name has
+    none), but emptiness is refused, because `''` reads as recorded and names
+    nothing."""
+    batch = [_row(1, "miles"), _row(2, "tyler")]
+    for empty in ("", "   "):
+        with pytest.raises(sa.exc.IntegrityError):
+            await store.append_observations(scope_id="g1", batch=batch, observations=[
+                candidate(
+                    message_ids=(1, 2), participants=("miles", "tyler"), model=empty,
+                ),
+            ])

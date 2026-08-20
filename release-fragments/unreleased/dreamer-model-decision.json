@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design decision recorded only (docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md §9.1). The Dreamer runs deepseek-v4-flash, the same model Nora runs — operator's call. LanguageConfig.model already defaults to it, so no config or behaviour changes. Recorded because running the same model makes the design's central claim falsifiable: §2 argues the motivating failure was situational rather than a capability limit, so if a Flash research loop still cannot distinguish a contradicting source from a non-covering one, that claim was wrong. The implementation plan's model task changes from 'measure and choose' to 'verify Flash holds under a research loop'.",
+  "details": [],
+  "limitations": []
+}

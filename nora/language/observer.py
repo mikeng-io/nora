@@ -77,9 +77,25 @@ _MAX_FIELD_CHARS = {
 
 class _ModelClient(Protocol):
     """The structural shape `LexemeObserver`'s `model` collaborator must
-    satisfy — one method, one call per `observe()`. See module docstring for
-    why this stays a documented duck-type instead of a declared Protocol on
-    `nora.domain.ports`."""
+    satisfy — one call per `observe()`, plus the NAME of the model it makes
+    that call against. See module docstring for why this stays a documented
+    duck-type instead of a declared Protocol on `nora.domain.ports`.
+
+    **Why `model` is on the collaborator and not a separate `__init__`
+    argument.** `LexemeCandidate.model` is provenance, and provenance binds
+    to the property it names or it is worthless: the only object that knows
+    which model a completion actually went to is the one that sends it.
+    Passing the name in beside the client would create two sources for one
+    fact, wired at the same call site and free to drift the moment one is
+    edited and the other is not — a row would then claim a model it was never
+    produced by, which is the exact defect the column exists to remove.
+    `nora.language` may not read config (module docstring), so the honest
+    minimum is to ask the client. It is a READ-ONLY property in the protocol,
+    so a fake satisfies it with a plain attribute.
+    """
+
+    @property
+    def model(self) -> str: ...
 
     async def complete(self, *, prompt: str) -> str: ...
 
@@ -287,6 +303,27 @@ class LexemeObserver:
             (_PROMPT_PREAMBLE, _VERIFICATION_PROMPT_TEMPLATE)
             if search is not None else (_PROMPT_PREAMBLE,)
         ))
+        # Read from the CLIENT, once, for the same reason the digest is
+        # computed once: constant per instance, so every row one Dreamer
+        # cycle writes names the same model. See `_ModelClient.model` for why
+        # it is asked of the client rather than passed in beside it.
+        self._model_name = model.model
+
+    @property
+    def model(self) -> str:
+        """The model name stamped onto every candidate this instance produces
+        — the one the injected client reports it calls.
+
+        The sibling of `instruction_sha256` below, and neither answers the
+        other's question: the instructions are one input to a row, the model
+        that read them is another. `[language].model` has changed before, and
+        the same instruction text run against a different model produces
+        different glosses — so a corpus split by instruction revision alone
+        would silently mix two writers. A row already in the database when
+        this landed carries NULL rather than today's configured model, which
+        would be a guess about a row nobody recorded (R-27).
+        """
+        return self._model_name
 
     @property
     def instruction_sha256(self) -> str:
@@ -457,8 +494,10 @@ class LexemeObserver:
                 person_id=row.person_id,
                 confidence=parsed["confidence"],
                 # Provenance, stamped at the ONE place a model's answer
-                # becomes a candidate — see the `instruction_sha256`
-                # property.
+                # becomes a candidate — see the `instruction_sha256` and
+                # `model` properties. Both ride the SAME construction, so a
+                # candidate can never carry one without the other.
                 instruction_sha256=self._instruction_sha256,
+                model=self._model_name,
             ))
         return ObservationResult(candidates=tuple(candidates), parsed=True)

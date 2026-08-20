@@ -33,7 +33,10 @@ async def test_send_posts_content_to_the_channel_from_the_conversation_id(rest_s
     result = await sender.send(TARGET, "hello")
 
     assert result.ok is True
-    assert rest_server.calls[0] == {"content": "hello"}
+    assert rest_server.calls[0] == {
+        "content": "hello",
+        "allowed_mentions": {"parse": [], "users": []},
+    }
 
 
 async def test_send_authenticates_with_the_bot_token(rest_server):
@@ -99,6 +102,102 @@ async def test_send_never_raises_on_a_connection_failure():
     result = await sender.send(TARGET, "hello")
 
     assert result.ok is False
+
+
+# ---------------------------------------------------------------------------
+# mention resolution — the model writes '@Name', Discord needs '<@id>'
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def rest_server_with_members(aiohttp_server):
+    calls: list[dict] = []
+    member_calls: list[str] = []
+    state: dict = {"members": [], "status": 200}
+
+    async def send_handler(request: web.Request) -> web.Response:
+        body = await request.json()
+        calls.append(body)
+        return web.json_response({"id": "999999999999999999"}, status=200)
+
+    async def members_handler(request: web.Request) -> web.Response:
+        member_calls.append(request.match_info["guild"])
+        if state["status"] != 200:
+            return web.json_response({"message": "no"}, status=state["status"])
+        return web.json_response(state["members"])
+
+    app = web.Application()
+    app.router.add_post("/channels/2/messages", send_handler)
+    app.router.add_get("/guilds/{guild}/members", members_handler)
+    server = await aiohttp_server(app)
+    server.calls = calls
+    server.member_calls = member_calls
+    server.state = state
+    return server
+
+
+async def test_a_known_name_is_spliced_into_a_real_mention_before_sending(rest_server_with_members):
+    rest_server_with_members.state["members"] = [
+        {"user": {"id": "111", "username": "mike123"}, "nick": "Miles Novak"},
+    ]
+    sender = DiscordSender("tok", base_url=str(rest_server_with_members.make_url("")).rstrip("/"))
+
+    result = await sender.send(TARGET, "@Miles Novak 快撚啲")
+
+    assert result.ok is True
+    assert rest_server_with_members.calls[0] == {
+        "content": "<@111> 快撚啲",
+        "allowed_mentions": {"parse": [], "users": ["111"]},
+    }
+
+
+async def test_the_guild_half_of_the_conversation_id_is_what_is_queried(rest_server_with_members):
+    """`target.conversation_id` is `<guild_id>/<channel_id>`; the member
+    lookup needs the guild half, same as `DiscordRoster`."""
+    sender = DiscordSender("tok", base_url=str(rest_server_with_members.make_url("")).rstrip("/"))
+
+    await sender.send(TARGET, "@Miles Novak hi")
+
+    assert rest_server_with_members.member_calls == ["1"]
+
+
+async def test_text_with_no_at_sign_never_triggers_a_member_lookup(rest_server_with_members):
+    """The common case — most replies mention nobody — must not pay for a
+    guild member fetch on every single send."""
+    sender = DiscordSender("tok", base_url=str(rest_server_with_members.make_url("")).rstrip("/"))
+
+    await sender.send(TARGET, "no mentions here")
+
+    assert rest_server_with_members.member_calls == []
+
+
+async def test_an_unrecognized_name_is_sent_as_plain_text(rest_server_with_members):
+    rest_server_with_members.state["members"] = [
+        {"user": {"id": "111", "username": "mike123"}, "nick": "Miles Novak"},
+    ]
+    sender = DiscordSender("tok", base_url=str(rest_server_with_members.make_url("")).rstrip("/"))
+
+    await sender.send(TARGET, "@Someone Else hi")
+
+    assert rest_server_with_members.calls[0] == {
+        "content": "@Someone Else hi",
+        "allowed_mentions": {"parse": [], "users": []},
+    }
+
+
+async def test_a_failed_member_lookup_falls_back_to_the_original_text(rest_server_with_members):
+    """Fail-closed: never guess, never raise mid-send — the same degraded
+    behaviour as before this feature existed, an inert '@Name'."""
+    rest_server_with_members.state["status"] = 403
+    sender = DiscordSender("tok", base_url=str(rest_server_with_members.make_url("")).rstrip("/"))
+
+    result = await sender.send(TARGET, "@Miles Novak hi")
+
+    assert result.ok is True
+    assert rest_server_with_members.calls[0] == {
+        "content": "@Miles Novak hi",
+        "allowed_mentions": {"parse": [], "users": []},
+    }
 
 
 async def test_an_attachment_is_refused_rather_than_silently_dropped(rest_server):

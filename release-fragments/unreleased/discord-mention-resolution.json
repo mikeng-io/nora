@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "Discord @-mentions now actually ping. Nora's replies used to write a literal '@Name' — inert text, since Discord only notifies on its own `<@id>` syntax, which nothing produced. The model still just writes '@Name'; the send path now resolves it against the guild's live member list and splices in a real ping, restricted via `allowed_mentions` to exactly the id(s) resolved (so literal '@everyone' text can no longer trigger a mass ping). Inbound mentions get the same fix in the other direction: a Discord message's `<@id>` is rewritten to the person's display name when it's parsed, so both the model's own transcript and the Honcho memory feed see a name instead of a bare, unreadable snowflake.",
+  "details": [
+    "New `nora.platform.discord.mention_resolve`: fetches `{display_name: id}` for a guild (nick > global_name > username), never raises, and two members sharing one display name are both skipped rather than guessed at.",
+    "`DiscordSender.send` only pays for the member lookup when the reply text actually contains '@', and falls back to sending the original unresolved text (today's prior behaviour) if the lookup fails for any reason.",
+    "`parse_discord_message` rewrites `<@id>`/`<@!id>` to `@display_name` using discord.py's own already-resolved `message.mentions` — no extra network call on the inbound side."
+  ],
+  "limitations": [
+    "Outbound resolution only recognizes members currently in the guild's member list at send time; a name matching nobody there is left as plain, unpinged text rather than guessed at."
+  ]
+}
