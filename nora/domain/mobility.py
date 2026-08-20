@@ -311,7 +311,10 @@ def extract_trips(
     fixes: list[RawFix], closed_stays: list[Stay], *, subject_id: str,
     person_id: str, circle_id: str, min_trip_fixes: int,
     open_stay_started_ts: int | None,
-) -> list[Trip]:
+    now_ms: int | None = None,
+    settled_seconds: float | None = None,
+    max_trip_duration_seconds: float | None = None,
+) -> tuple[list[Trip], list[RawFix]]:
     """The movement fixes NOT covered by any CLOSED stay, grouped into
     trips — Tier 5's segmentation counterpart to `segment_stays` (design/27
     §4, issue #6).
@@ -320,14 +323,28 @@ def extract_trips(
     already processed this cycle (`nora.analytics.rollup`'s Speed 1) —
     `closed_stays` marks the ranges to EXCLUDE, not re-derive.
     `open_stay_started_ts`, when not `None`, excludes every fix from that
-    point onward too: the trailing group is still undetermined (open
-    stay or a trip that has not yet ended), and Global Constraints
-    forbids guessing which. A short run below `min_trip_fixes` is
-    dropped as noise (a stray fix between two stays), the same
-    fail-closed posture `_close`'s own `min_dwell_ms` gate uses for
-    stays."""
+    point onward too: a real stay boundary was found, so the trip
+    preceding it is already definite and needs no further check. A short
+    run below `min_trip_fixes` is dropped as noise (a stray fix between
+    two stays), the same fail-closed posture `_close`'s own `min_dwell_ms`
+    gate uses for stays.
+
+    When `open_stay_started_ts` is `None` — no stay boundary was found
+    at all this cycle, meaning the trailing group's fate is genuinely
+    undetermined — the trailing group is held back rather than finalized
+    unless `now_ms` says otherwise (2026-08-20 trip-settlement design,
+    §2.2/§2.3): settled when its last fix's `is_driving` is `False`, or
+    (when `is_driving is None`) once `settled_seconds` has elapsed since
+    that fix, or unconditionally once `max_trip_duration_seconds` is
+    exceeded (the stuck-signal safety valve). Returns `(trips,
+    held_back)` — `held_back` carries the undecided tail's own fixes so
+    the caller can hold the watermark back rather than losing them.
+    `now_ms=None` (the default, what a non-final chunk passes) skips the
+    settlement check entirely and reproduces the ORIGINAL always-flush
+    behavior byte-for-byte — this is what keeps non-final chunks and
+    every existing caller unaffected."""
     if not fixes:
-        return []
+        return [], []
     in_stay_ranges = [(s.started_ts, s.ended_ts) for s in closed_stays]
 
     def _in_a_stay(ts: int) -> bool:
@@ -347,12 +364,33 @@ def extract_trips(
             buffer = []
             continue
         buffer.append(f)
-    if len(buffer) >= min_trip_fixes:
-        trips.append(_trip_from_group(
-            buffer, subject_id=subject_id, person_id=person_id,
-            circle_id=circle_id,
-        ))
-    return trips
+
+    held_back: list[RawFix] = []
+    if buffer:
+        settled = True
+        if open_stay_started_ts is None and now_ms is not None:
+            span_s = (buffer[-1].ts - buffer[0].ts) / 1000
+            forced = (
+                max_trip_duration_seconds is not None
+                and span_s >= max_trip_duration_seconds
+            )
+            if not forced:
+                last = buffer[-1]
+                if last.is_driving is True:
+                    settled = False
+                elif last.is_driving is None:
+                    elapsed_s = (now_ms - last.ts) / 1000
+                    settled = elapsed_s >= (settled_seconds or 0.0)
+                # is_driving is False -> settled stays True
+        if settled:
+            if len(buffer) >= min_trip_fixes:
+                trips.append(_trip_from_group(
+                    buffer, subject_id=subject_id, person_id=person_id,
+                    circle_id=circle_id,
+                ))
+        else:
+            held_back = buffer
+    return trips, held_back
 
 
 def _trip_neighbors(i: int, trips: list[Trip], max_edit_distance: int) -> list[int]:
