@@ -8,6 +8,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from nora.agent.tools import NATIVE_TOOLS
+from nora.domain.facts import FactVerdict
 from nora.domain.media import MediaRef
 from nora.domain.models import (
     ExchangeExample,
@@ -252,6 +253,15 @@ RULE_TESTS = {
     # read as a denial and overturned a correct sourced answer (audit F7,
     # 2026-08-17 02:16 UTC). Next free number after R-52.
     "R-53": "test_r53_is_covered_by_the_source_scope_corpus",
+    # R-54 (fact-tier spec, DEC-78's move applied to inference over sources):
+    # R-53 states this rule for the model, in prose, in conduct.md — and its
+    # own corpus (`evals/adversarial/source_scope.yaml`) is deliberately held
+    # out of `SUITES`, so the prose cannot be shown to hold as a passing gate.
+    # R-54 is the same rule moved into a SHAPE instead: `FactVerdict.not_covered`
+    # has no reachable `supersedes`, and `contradicted` requires both a source
+    # and `addresses_claim` — «the source did not cover it, therefore drop the
+    # fact» is unrepresentable rather than merely discouraged.
+    "R-54": "test_a_source_that_does_not_cover_a_claim_never_removes_a_fact",
     # R-52 (DEC-117): `create_event` fail-closes on ambiguity — spec §3.1's
     # "more than one open event" case — refusing rather than guessing which
     # of two-or-more already-open events is meant.
@@ -327,6 +337,30 @@ def test_r53_is_covered_by_the_source_scope_corpus():
     not that the rule holds.
     """
     assert (ROOT / "evals" / "adversarial" / "source_scope.yaml").exists()
+
+
+def test_a_source_that_does_not_cover_a_claim_never_removes_a_fact():
+    """R-54. R-53 states this in doctrine, for a model, in prose; the corpus
+    that would show the prose works cannot (fact-tier spec §9.0), and both
+    judge models tested commit the error while grading for it. This is the
+    same rule where it can be enforced instead of asked for: `not_covered`
+    has no reachable `supersedes`, so removal-on-silence is unrepresentable."""
+    with pytest.raises(ValueError):
+        FactVerdict(
+            subject="deepmoor", predicate="has", object="black_key",
+            status="not_covered", addresses_claim=False,
+            supersedes="0191f2c4-0000-7000-8000-000000000001",
+        )
+    # And the positive half: a contradiction needs a source that took up the
+    # question, which is what the 02:27:58 off-topic repudiation lacked.
+    with pytest.raises(ValueError):
+        FactVerdict(
+            subject="deepmoor", predicate="has", object="black_key",
+            status="contradicted", addresses_claim=False,
+            source_url="https://wikipedia.test/release-date",
+            source_excerpt="released 4 August 2026",
+            supersedes="0191f2c4-0000-7000-8000-000000000001",
+        )
 
 
 def _message(*, platform: str, body: str, media: tuple[MediaRef, ...]) -> NormalizedMessage:
