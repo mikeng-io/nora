@@ -20,12 +20,22 @@ import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage, RoomExchange, TranscriptRow
 from nora.domain.ports import RoomConsolidator, RoomExchangeReader
+from nora.domain.provenance import instruction_sha256
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
+from tests.objectives import append_to_objective, editable_objectives, shipped_objectives
+
+# The `objective` collaborator, wired the way production wires it: the REAL
+# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. The
+# bodies it serves are byte-identical to the constants these tests were written
+# against (`tests/unit/test_dreamer_instructions.py` proves it), so nothing
+# below changed meaning — and a broken objective file now fails here rather
+# than on the next Dreamer tick.
+OBJECTIVES = shipped_objectives()
 
 
 def _now_ms() -> int:
@@ -68,7 +78,10 @@ async def backing(pg_url):
 
 @pytest.fixture
 def consolidator(backing: SqlExchangeStore) -> ExchangeConsolidator:
-    return ExchangeConsolidator(observer=ExchangePatternObserver(_FakeModelClient()), store=backing)
+    return ExchangeConsolidator(observer=ExchangePatternObserver(
+        _FakeModelClient(),
+        objective=OBJECTIVES,
+    ), store=backing)
 
 
 @pytest.fixture
@@ -104,7 +117,10 @@ def test_both_pieces_satisfy_their_ports():
     store = SqlExchangeStore(create_sql_engine("postgresql+asyncpg://x/x"))
     assert isinstance(store, RoomExchangeReader)
     assert isinstance(
-        ExchangeConsolidator(observer=ExchangePatternObserver(_FakeModelClient()), store=store),
+        ExchangeConsolidator(observer=ExchangePatternObserver(
+            _FakeModelClient(),
+            objective=OBJECTIVES,
+        ), store=store),
         RoomConsolidator,
     )
 
@@ -142,5 +158,66 @@ async def test_an_unavailable_backend_degrades_to_an_empty_room_exchange():
         result = await store.room_exchange(scope_id="g1", limit=10)
         assert result == RoomExchange(scope_id="g1")
         assert not result
+    finally:
+        await engine.dispose()
+
+
+# --- instruction provenance, end to end (substrate spec §7.2) --------------
+#
+# The exchange sibling of `test_room_consolidator_contract.py`'s own block, and
+# it exists for the same reason: the observer's suite proves the digest is
+# right and the store's suite proves the column round-trips, and nothing joined
+# them, so a consolidator dropping the field on the way through would pass
+# both.
+
+
+async def _stamps(engine) -> list[str]:
+    import sqlalchemy as sa
+
+    from nora.infra.sql.schema import EXCHANGE_OBSERVATION
+
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(EXCHANGE_OBSERVATION.c.instruction_sha256)
+            .order_by(EXCHANGE_OBSERVATION.c.id)
+        )).all()
+    return [r.instruction_sha256 for r in rows]
+
+
+async def test_every_row_carries_the_stamp_the_instruction_store_reports(
+    pg_url, backing, batch_with_one_pattern, tmp_path,
+):
+    objectives, _ = editable_objectives(tmp_path)
+    consolidator = ExchangeConsolidator(
+        observer=ExchangePatternObserver(_FakeModelClient(), objective=objectives),
+        store=backing,
+    )
+    assert await consolidator.consolidate(scope_id="g1", batch=batch_with_one_pattern) > 0
+    engine = create_sql_engine(pg_url)
+    try:
+        expected = instruction_sha256(objectives.objective_body("room-exchange"))
+        stamps = await _stamps(engine)
+        assert stamps and all(s == expected for s in stamps)
+    finally:
+        await engine.dispose()
+
+
+async def test_editing_the_objective_makes_later_rows_distinguishable(
+    pg_url, backing, batch_with_one_pattern, tmp_path,
+):
+    objectives, root = editable_objectives(tmp_path)
+    consolidator = ExchangeConsolidator(
+        observer=ExchangePatternObserver(_FakeModelClient(), objective=objectives),
+        store=backing,
+    )
+    await consolidator.consolidate(scope_id="g1", batch=batch_with_one_pattern)
+    engine = create_sql_engine(pg_url)
+    try:
+        before = await _stamps(engine)
+        append_to_objective(root, "room-exchange", "One exchange per pair, at most.\n")
+        await consolidator.consolidate(scope_id="g2", batch=batch_with_one_pattern)
+        after = [s for s in await _stamps(engine) if s not in before]
+        assert before and after
+        assert set(before).isdisjoint(after)
     finally:
         await engine.dispose()

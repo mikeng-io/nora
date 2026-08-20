@@ -786,6 +786,23 @@ class AnalyticsConfig(BaseModel):
     # one would feed a fabricated zero-speed sample into
     # `presence_corridor_speed`'s percentiles.
     min_trip_fixes: int = Field(default=3, ge=2)
+    # Trip settlement (design/27 §4, 2026-08-20 trip-settlement design
+    # §2.4): the safety valve against a stuck `is_driving` signal — if
+    # Life360 ever keeps reporting `True` continuously (a stale/stuck
+    # flag, a bug) while the device is still actively sending fixes, a
+    # trip could otherwise never settle and hold the watermark back
+    # forever. This is NOT protection against a device that stops
+    # reporting entirely: the cap is computed from the held-back group's
+    # OWN fix-to-fix span, which freezes the instant new fixes stop
+    # arriving, so a genuinely dark device causes an unbounded stall this
+    # cap cannot fire against — that case self-heals a different way,
+    # once fixes resume, via the existing chunk-gap split. This default
+    # is a JUDGMENT CALL, not a measured value — no genuine multi-hour
+    # trip data exists yet to derive a percentile from (the trips in
+    # production today are exactly the fragments this fix corrects).
+    # 3 hours is generous enough to cover a real long drive without
+    # leaving a stuck signal unbounded.
+    max_trip_duration_seconds: float = Field(default=10800.0, gt=0)
     tz_name: str = "Asia/Hong_Kong"
     # The substrate's own metrics/health endpoint. 9100 is Nora's own
     # (`[obs.metrics]`), 9101 is the presence collector's
@@ -1223,6 +1240,38 @@ class DoctrineConfig(BaseModel):
         return self
 
 
+class DreamerConfig(BaseModel):
+    """Where the Dreamer's instruction corpus lives and how it reloads.
+
+    Modelled field-for-field on `DoctrineConfig` above, minus the four fields
+    that are about NORA's prompt rather than about reading a directory
+    (`canary`, `display_name`, `language_hint` are runtime context she is told;
+    there is no equivalent here because nothing in `nora/dreamer/` is rendered
+    into a `<runtime_context>` block).
+
+    **Whole section optional, every field defaulted**, the `[route]`/
+    `[presence]`/`[language]` shape — so a `config.toml` written before this
+    section existed keeps loading under `extra="forbid"`, and a deployment that
+    never touches it gets the bind-mounted tree and mtime reload.
+
+    **No `enabled` field.** Phase 1 has nothing to enable: the corpus is read by
+    the two existing adaptors whether or not anything else is switched on, and a
+    flag that gates nothing is a flag an operator will eventually set expecting
+    it to gate something. It arrives with the Dreamer RUNTIME, shipping `false`.
+
+    `dir` is resolved relative to the config file, not the working directory,
+    by `Config._resolve_paths` — NOT by a validator here, because a defaulted
+    sub-model is constructed once at class-definition time with no validation
+    context to resolve against.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    dir: Path = Path("nora/dreamer")
+    reload: Literal["mtime", "startup"] = "mtime"
+    strict: bool = True
+
+
 class LoggingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1431,6 +1480,11 @@ class Config(BaseModel):
     tools: ToolsConfig = ToolsConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
+    # Optional and defaulted — see `DreamerConfig`. A config.toml with no
+    # `[dreamer]` section keeps loading and reads the bind-mounted tree with
+    # mtime reload, which is what every deployment wants; the section exists so
+    # a deployment can pin `reload = "startup"` or point `dir` elsewhere.
+    dreamer: DreamerConfig = DreamerConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig
@@ -1440,6 +1494,11 @@ class Config(BaseModel):
     def _resolve_paths(self, info: ValidationInfo) -> Config:
         _resolve_context_field(self, "identity_file", info)
         _resolve_context_field(self, "policy_file", info)
+        # `[dreamer]` is a DEFAULTED section, so it cannot resolve its own path
+        # the way `DoctrineConfig` does: its default instance is built once at
+        # class-definition time, with no validation context to resolve against.
+        # Resolved here instead, where the context is.
+        _resolve_context_field(self.dreamer, "dir", info)
         return self
 
     @model_validator(mode="after")

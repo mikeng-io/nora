@@ -262,6 +262,9 @@ def _build_config(
     changes: dict[str, object] = {
         "store.data_dir": tmp_path,
         "doctrine.dir": doctrine_dir,
+        # The Dreamer's corpus is validated at startup, so it has to point at a
+        # real tree; the integration harness has no reason to fork it.
+        "dreamer.dir": REPO_ROOT / "nora" / "dreamer",
         "identity_file": persons_path,
         "policy_file": policy_path,
     }

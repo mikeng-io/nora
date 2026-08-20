@@ -30,7 +30,6 @@ the file, and the prompt pays for nothing it does not use.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import logging
 import re
@@ -40,15 +39,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from ..domain.prompt import escape_attr
+from ..instructions.frontmatter import parse_document
+from ..instructions.reload import DirectoryWatcher
 from ..obs.metrics import Metrics
 
 log = logging.getLogger("nora.doctrine")
 
-_NAME_RE = re.compile(r"^[a-z0-9-]{1,64}$")
-_FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?(.*)\Z", re.DOTALL)
+RELOAD_FAILURES_COUNTER = "nora_doctrine_reload_failures_total"
+
 _REQUIRED = (
     "name", "description", "order", "applies_to", "version",
     "kind", "authority_above", "authority_below", "not_here", "change_policy",
@@ -137,23 +136,22 @@ class DoctrineSection:
 
 
 def parse_section(path: Path) -> DoctrineSection:
-    text = Path(path).read_text(encoding="utf-8")
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        raise DoctrineError(f"{path.name}: missing YAML frontmatter")
-    try:
-        meta = yaml.safe_load(match.group(1)) or {}
-    except yaml.YAMLError as exc:
-        raise DoctrineError(f"{path.name}: unparseable frontmatter: {exc}") from exc
-    if not isinstance(meta, dict):
-        raise DoctrineError(f"{path.name}: frontmatter must be a mapping")
-    missing = [key for key in _REQUIRED if key not in meta]
-    if missing:
-        keys = ", ".join(repr(k) for k in missing)
-        raise DoctrineError(f"{path.name}: missing required frontmatter key(s): {keys}")
-    name = str(meta.pop("name"))
-    if not _NAME_RE.match(name):
-        raise DoctrineError(f"{path.name}: name {name!r} must match ^[a-z0-9-]{{1,64}}$")
+    """One doctrine file -> one `DoctrineSection`.
+
+    The skeleton — frontmatter split, YAML load, mapping check, required-key
+    check, name charset, body `sha256`, leftovers into `metadata` — is
+    `nora.instructions.frontmatter.parse_document`, shared with the Dreamer's
+    instruction store. What stays HERE is everything doctrine-specific: `kind`
+    against the taxonomy, `change_policy` against the policy list, a non-empty
+    `not_here`, and `authority_*` as name lists. Those encode design/17's rules,
+    which do not transfer to an objective (substrate spec §5).
+
+    `error=DoctrineError` rather than a re-wrap: `_scan` below catches
+    `DoctrineError` to decide skip-vs-abort in lenient mode, and the composition
+    root names it too.
+    """
+    doc = parse_document(path, required=_REQUIRED, error=DoctrineError)
+    meta = doc.meta
     applies = meta.pop("applies_to")
     if isinstance(applies, str):
         applies = [applies]
@@ -174,9 +172,8 @@ def parse_section(path: Path) -> DoctrineSection:
             f"{path.name}: not_here is empty — say what this file must NOT contain "
             "and where that lives instead"
         )
-    body = match.group(2)
     return DoctrineSection(
-        name=name,
+        name=doc.name,
         description=str(meta.pop("description")),
         order=int(meta.pop("order")),
         applies_to=tuple(str(a) for a in applies),
@@ -186,9 +183,9 @@ def parse_section(path: Path) -> DoctrineSection:
         authority_below=_name_list(path, "authority_below", meta.pop("authority_below")),
         not_here=not_here,
         change_policy=change_policy,
-        body=body,
-        path=Path(path),
-        sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
+        body=doc.body,
+        path=doc.path,
+        sha256=doc.sha256,
         metadata=dict(meta),
     )
 
@@ -504,7 +501,6 @@ class DoctrineStore:
         # own names — see `nora.app.composition`.
         self._dir = Path(dir)
         self._strict = strict
-        self._reload = reload
         self._canary = canary
         self._display_name = display_name
         self._trigger = trigger
@@ -517,18 +513,26 @@ class DoctrineStore:
         # capability section at all, which is what every test that is not about
         # capability wants.
         self._capability = capability
-        self._metrics = metrics
-        self._sections: tuple[DoctrineSection, ...] = ()
-        self._fingerprint: tuple | None = None
         self._cache: dict[str, Doctrine] = {}
-        self._last_good: dict[str, Doctrine] = {}
-        self.reload_failures = 0
+        self._generation = 0
+        # The mtime/last-good machine is `nora.instructions.reload`, shared with
+        # the Dreamer's instruction store. The counter name and the log subject
+        # are passed in so `nora_doctrine_reload_failures_total` keeps counting
+        # exactly what it always counted, and so a Dreamer failure can never be
+        # attributed to the doctrine.
+        self._watcher: DirectoryWatcher[tuple[DoctrineSection, ...]] = DirectoryWatcher(
+            self._dir, scan=self._scan, metrics=metrics, subject="doctrine",
+            failure_counter=RELOAD_FAILURES_COUNTER, error=DoctrineError,
+            log=log, reload=reload,
+        )
 
-    def _fingerprint_dir(self) -> tuple:
-        return tuple(sorted((p.name, p.stat().st_mtime_ns, p.stat().st_size)
-                            for p in self._dir.glob("*.md")))
+    @property
+    def reload_failures(self) -> int:
+        """How many live edits have been refused since startup, each of which
+        left the previous good doctrine in place. Read by `/health`."""
+        return self._watcher.failures
 
-    def _scan(self) -> None:
+    def _scan(self) -> tuple[DoctrineSection, ...]:
         files = sorted(self._dir.glob("*.md"), key=lambda p: p.name)
         if not files:
             raise DoctrineError(f"no doctrine files (*.md) in {self._dir}")
@@ -566,36 +570,30 @@ class DoctrineStore:
             by_name[s.name], by_order[s.order] = s.path, s.path
         check_authority_graph(sections)
         # `order` is authoritative; filenames break ties.
-        self._sections = tuple(sorted(sections, key=lambda s: (s.order, s.path.name)))
-        self._cache.clear()
+        return tuple(sorted(sections, key=lambda s: (s.order, s.path.name)))
 
-    def _maybe_rescan(self) -> None:
-        if self._sections and self._reload == "startup":
-            return
-        try:
-            fingerprint = self._fingerprint_dir()
-        except OSError as exc:                       # directory vanished mid-run
-            self._on_reload_failure(exc)
-            return
-        if fingerprint == self._fingerprint:
-            return
-        try:
-            self._scan()
-        except DoctrineError as exc:
-            self._on_reload_failure(exc)
-            return
-        self._fingerprint = fingerprint
+    def _current_sections(self) -> tuple[DoctrineSection, ...]:
+        """The freshest good scan, dropping the assembled cache when it moves.
 
-    def _on_reload_failure(self, exc: Exception) -> None:
-        if not self._last_good:
-            raise exc if isinstance(exc, DoctrineError) else DoctrineError(str(exc))
-        self.reload_failures += 1
-        self._metrics.inc("nora_doctrine_reload_failures_total")
-        # Advance the fingerprint so a broken file is not re-parsed on every tag.
-        with contextlib.suppress(OSError):
-            self._fingerprint = self._fingerprint_dir()
-        self._cache = dict(self._last_good)
-        log.error("doctrine_reload_failed: %s (keeping the last good doctrine)", exc)
+        Invalidation rides `generation` rather than a callback: the sections
+        changed iff a scan SUCCEEDED, and a failed reload deliberately keeps the
+        previous good sections, so it must not clear anything.
+
+        **One behaviour the extraction deliberately drops.** The old failure
+        path re-seeded the assembled cache from a parallel `_last_good` dict.
+        With more than one audience in play that put back an assembly built from
+        sections TWO reloads ago — `get("tag")` after a good reload refreshed
+        only `"tag"`, so a later failure restored a stale `"heartbeat"` — which
+        is the opposite of what "keep the last good doctrine" means. Nothing
+        pinned it, and the sections themselves have always been last-good, so
+        the cache is now simply left alone: a miss reassembles from the sections
+        actually in force.
+        """
+        sections = self._watcher.current()
+        if self._watcher.generation != self._generation:
+            self._generation = self._watcher.generation
+            self._cache.clear()
+        return sections
 
     def _runtime_context(self) -> str:
         return (
@@ -608,12 +606,12 @@ class DoctrineStore:
         )
 
     def get(self, *, applies_to: str = "tag") -> Doctrine:
-        self._maybe_rescan()
+        sections = self._current_sections()
         cached = self._cache.get(applies_to)
         if cached is not None:
             return cached
         selected = tuple(
-            s for s in self._sections
+            s for s in sections
             if applies_to in s.applies_to or "always" in s.applies_to
         )
         doctrine_text = _assemble(selected)
@@ -627,5 +625,4 @@ class DoctrineStore:
             loaded_at=time.time(),
         )
         self._cache[applies_to] = doctrine
-        self._last_good[applies_to] = doctrine
         return doctrine

@@ -13,6 +13,14 @@ applies to oversized fields — so there is no path by which a model-authored
 claim about a PERSON (rather than a selected ACT two-or-more people performed)
 can reach `ExchangeCandidate` at all.
 
+**The instruction text is not in this file any more** — it is
+`nora/dreamer/objectives/room-exchange.md`, lifted VERBATIM (substrate spec
+§7.1 step a) and arriving through the injected `objective` collaborator, read
+per call because the file hot-reloads on the bind mount. The act vocabulary in
+that body is `EXCHANGE_ACTS`, and the parse-time rejection of anything outside
+it stays HERE, in Python: the withhold rule's structural half is not something
+an operator can soften by editing prose.
+
 Same layering constraints as `nora.language.observer`: no `strands`, no
 `nora.agent.factory`, no `nora.config` — the model client is an injected
 `__init__` collaborator, structurally typed rather than a
@@ -55,46 +63,24 @@ class _ModelClient(Protocol):
     async def complete(self, *, prompt: str) -> str: ...
 
 
-_PROMPT_PREAMBLE = (
-    "You are reading a batch of messages from one Signal group chat. Your "
-    "only job is to spot a RECURRING EXCHANGE PATTERN between two or more "
-    "people — a kind of interaction they trade back and forth, not any one "
-    "message's content.\n\n"
-    "For each genuine pattern you find, classify it using ONLY one of these "
-    "exact act names — do not invent a new one, and do not describe what was "
-    "said:\n"
-    "- insult_trade: they trade insults, back and forth\n"
-    "- banter: light jabs, not meant seriously\n"
-    "- tease: they tease each other\n"
-    "- callback_joke: they run a callback joke between them\n"
-    "- agreement_ritual: they back each other up, reliably\n"
-    "- disagreement_ritual: they argue a point out, repeatedly\n"
-    "- compliment_exchange: they trade compliments\n\n"
-    "Do NOT report:\n"
-    "- a single message with no exchange (one person alone cannot trade "
-    "anything);\n"
-    "- what any specific claim IN the exchange means or whether it is true "
-    "(never report content, only the ACT being performed);\n"
-    "- anything you are not confident is a genuine, repeated pattern between "
-    "these specific people.\n\n"
-    "It is completely correct — and expected most of the time — to find "
-    "NOTHING.\n\n"
-    "For each pattern you MUST point at every message id it draws on (at "
-    "least two, by the numeric id from the list below) — a pattern whose "
-    "message_ids are not from the list, or fewer than two, is worthless and "
-    "will be discarded.\n\n"
-    "Respond with ONLY a JSON object of this exact shape, nothing else — no "
-    "prose, no markdown fence:\n"
-    '{"patterns": [{"act": "<one of the exact names above>", '
-    '"message_ids": [<int, ...>, at least 2, each one of the ids below], '
-    '"confidence": <0.0-1.0 float>}]}\n'
-    'If nothing qualifies, respond with exactly: {"patterns": []}\n\n'
-    "Messages:\n"
-)
+# The objective file this adaptor sends, by name. A name, not a body: the body
+# is on disk and reloads without a restart.
+ROOM_EXCHANGE_OBJECTIVE = "room-exchange"
 
 
-def _build_prompt(batch: Sequence[TranscriptRow]) -> str:
-    lines = [_PROMPT_PREAMBLE]
+class _ObjectiveSource(Protocol):
+    """`nora.language.observer._ObjectiveSource`, duplicated here for the
+    reason that module documents for `_ModelClient`: a documented duck-type
+    with one consumer, not a shared `nora.domain.ports` Protocol. A SOURCE
+    rather than a string because the objective hot-reloads — an observer handed
+    the text at construction would keep sending whatever was on disk when the
+    process started."""
+
+    def objective_body(self, name: str) -> str: ...
+
+
+def _build_prompt(preamble: str, batch: Sequence[TranscriptRow]) -> str:
+    lines = [preamble]
     for row in batch:
         speaker = row.person_name or row.sender_name or row.sender_id
         lines.append(f"[{row.id}] {speaker}: {row.body or ''}")
@@ -164,14 +150,18 @@ class ExchangePatternObserver:
     the exchange sibling of `nora.language.observer.LexemeObserver`. Same
     collaborator shape, same optional `metrics`."""
 
-    def __init__(self, model: _ModelClient, *, metrics: Metrics | None = None) -> None:
+    def __init__(
+        self, model: _ModelClient, *, objective: _ObjectiveSource,
+        metrics: Metrics | None = None,
+    ) -> None:
         self._model = model
+        self._objective = objective
         self._metrics = metrics
-        # Computed once, over the one instruction this adaptor sends — see
-        # the property below.
-        self._instruction_sha256 = instruction_sha256(_PROMPT_PREAMBLE)
         # The other half of the provenance pair, read from the client itself
-        # — see `model` below and `LexemeObserver`'s own note.
+        # — see `model` below and `LexemeObserver`'s own note. The instruction
+        # digest is NOT computed here: the objective hot-reloads, so it is read
+        # per run (`observe`) and a value captured at construction would name
+        # the corpus as it was at process start.
         self._model_name = model.model
 
     @property
@@ -185,30 +175,41 @@ class ExchangePatternObserver:
 
     @property
     def instruction_sha256(self) -> str:
-        """The digest stamped onto every candidate this instance produces
-        (`nora.domain.provenance`), over `_PROMPT_PREAMBLE` — the whole of
+        """The digest this instance stamps onto every candidate right now
+        (`nora.domain.provenance`), over `room-exchange`'s body — the whole of
         the instruction text this adaptor sends. There is no verification
-        sibling here (`nora.language.observer.LexemeObserver` has one, and
-        folds it in only when it is wired), so the set is one part and the
-        digest necessarily differs from that adaptor's even where the
-        vocabulary overlaps.
+        sibling here (`nora.language.observer.LexemeObserver` has one, and folds
+        it in only when it is wired), so the set is one part and the digest
+        necessarily differs from that adaptor's even where the vocabulary
+        overlaps.
 
-        Read by nothing yet; §4.4 of the instruction-substrate spec wants a
-        Dreamer tick to log it beside the lexeme adaptor's.
+        Re-read on every access rather than cached, because the objective file
+        hot-reloads: a cached value would keep naming the corpus as it was at
+        process start.
+
+        The Dreamer doctrine is deliberately NOT in this digest yet — Phase 1 is
+        the verbatim lift and no adaptor sends the doctrine, so hashing it would
+        bind the stamp to text that never reached the model. The re-partition
+        adds it to the prompt and to the digest in one change.
         """
-        return self._instruction_sha256
+        return instruction_sha256(
+            self._objective.objective_body(ROOM_EXCHANGE_OBJECTIVE)
+        )
 
     async def observe(
         self, *, batch: Sequence[TranscriptRow]
     ) -> ExchangeObservationResult:
         if not batch:
             return ExchangeObservationResult(candidates=(), parsed=True)
-        prompt = _build_prompt(batch)
+        # Read ONCE, before the call: every row this run writes carries the
+        # digest of the text this run actually sent.
+        preamble = self._objective.objective_body(ROOM_EXCHANGE_OBJECTIVE)
+        prompt = _build_prompt(preamble, batch)
         raw = await self._model.complete(prompt=prompt)
-        return self._extract(raw, batch)
+        return self._extract(raw, batch, instruction_sha256(preamble))
 
     def _extract(
-        self, raw: str, batch: Sequence[TranscriptRow]
+        self, raw: str, batch: Sequence[TranscriptRow], stamp: str,
     ) -> ExchangeObservationResult:
         patterns = _parse_patterns(raw)
         if patterns is None:
@@ -260,7 +261,7 @@ class ExchangePatternObserver:
                 # Provenance, stamped where the model's answer becomes a
                 # candidate — the sibling of `LexemeObserver`'s own stamp,
                 # both fields on the one construction.
-                instruction_sha256=self._instruction_sha256,
+                instruction_sha256=stamp,
                 model=self._model_name,
             ))
         return ExchangeObservationResult(candidates=tuple(candidates), parsed=True)

@@ -24,6 +24,14 @@ def test_doctrine_read_boundary():
     The boundary this test protects (doctrine files have a single reader) is
     untouched by that.
 
+    `instructions/frontmatter.py` is exempt for a third reason: it is the
+    GENERIC reader the doctrine's own loader now delegates to (the parse/hash
+    skeleton, extracted so the Dreamer's instruction store does not fork it). It
+    knows nothing about doctrine — no kinds, no authority graph, no `<section>`
+    rendering — and it is deliberately the ONLY `.md` reader in that package, so
+    the boundary this test protects (doctrine files have a single reader) is
+    unchanged: `nora/doctrine/` is still reached through `DoctrineStore` alone.
+
     `compute/smith/agent.py` is exempt too, for the same shape of reason:
     `nora/compute/smith/doctrine.md` is SMITH's doctrine, not Nora's (Nora
     Compute spec §3 — Smith is "a separate, neutral agent, not Nora in a
@@ -35,6 +43,7 @@ def test_doctrine_read_boundary():
     allowed = {
         PKG / "doctrine" / "loader.py",
         PKG / "skills" / "loader.py",
+        PKG / "instructions" / "frontmatter.py",
         PKG / "compute" / "smith" / "agent.py",
     }
     offenders = []

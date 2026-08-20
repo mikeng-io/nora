@@ -1,0 +1,365 @@
+"""`nora.instructions.dreamer.DreamerInstructions` — the Dreamer's own store.
+
+Two halves. The first works over `tmp_path` and pins the mechanism: assembly
+order, what the digest covers, what an unknown name does, hot-reload, last-good.
+The second (`test_the_shipped_*`) reads the real `nora/dreamer/` tree, the way
+`tests/test_doctrine_content.py` reads the real doctrine — structure only, never
+wording: this is prose, and a test that pins a sentence is a test that has to be
+edited every time the sentence improves.
+"""
+
+import pytest
+
+from nora.instructions.dreamer import DreamerInstructions
+from nora.instructions.frontmatter import InstructionError
+from nora.obs.metrics import Metrics
+from tests.objectives import PRE_MOVE
+from tests.objectives import SHIPPED_DREAMER as SHIPPED
+
+DOCTRINE_FM = """\
+---
+name: {name}
+kind: dreamer-doctrine
+version: {version}
+applies_to: [dreamer]
+description: {desc}
+change_policy: operator-only
+---
+{body}"""
+
+OBJECTIVE_FM = """\
+---
+name: {name}
+kind: {kind}
+version: {version}
+applies_to: [{applies}]
+description: {desc}
+change_policy: {change_policy}
+---
+{body}"""
+
+
+def _touch_newer(path, text):
+    import os
+    import time
+
+    path.write_text(text, encoding="utf-8")
+    future = time.time() + 2
+    os.utime(path, (future, future))
+
+
+def write_doctrine(root, *, name="dreamer", version=1, body="Doctrine body.\n",
+                   desc="d", filename="dreamer.md"):
+    d = root / "doctrine"
+    d.mkdir(exist_ok=True)
+    path = d / filename
+    path.write_text(
+        DOCTRINE_FM.format(name=name, version=version, desc=desc, body=body),
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_objective(root, *, name="room-language", version=1, body="Objective body.\n",
+                    desc="d", kind="objective", applies="room_language_adaptor",
+                    change_policy="operator-only", filename=None):
+    d = root / "objectives"
+    d.mkdir(exist_ok=True)
+    path = d / (filename or f"{name}.md")
+    path.write_text(
+        OBJECTIVE_FM.format(name=name, kind=kind, version=version, applies=applies,
+                            desc=desc, change_policy=change_policy, body=body),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
+def tree(tmp_path):
+    root = tmp_path / "dreamer"
+    root.mkdir()
+    write_doctrine(root)
+    write_objective(root)
+    write_objective(root, name="room-exchange", body="Second objective.\n")
+    return root
+
+
+def _store(root, **kw) -> DreamerInstructions:
+    return DreamerInstructions(root, metrics=Metrics(), **kw)
+
+
+# --- assembly -------------------------------------------------------------
+
+
+def test_the_assembly_is_the_doctrine_then_the_objective(tree):
+    text = _store(tree).for_objective("room-language").text
+    assert text.index("Doctrine body.") < text.index("Objective body.")
+    assert "Second objective." not in text
+
+
+def test_the_digest_is_over_the_text_that_is_actually_assembled(tree):
+    """Assembling one way and hashing another is how a digest stops naming what
+    was sent. Pinned so the two can never drift apart."""
+    import hashlib
+
+    instructions = _store(tree).for_objective("room-language")
+    assert instructions.sha256 == hashlib.sha256(
+        instructions.text.encode("utf-8")
+    ).hexdigest()
+
+
+def test_editing_the_objective_changes_the_digest(tree):
+    before = _store(tree).for_objective("room-language").sha256
+    _touch_newer(
+        tree / "objectives" / "room-language.md",
+        OBJECTIVE_FM.format(name="room-language", kind="objective", version=2,
+                            applies="room_language_adaptor", desc="d",
+                            change_policy="operator-only", body="Retuned.\n"),
+    )
+    assert _store(tree).for_objective("room-language").sha256 != before
+
+
+def test_editing_the_doctrine_changes_every_adaptors_digest(tree):
+    """The design's own argument, asserted rather than described (spec §4.3).
+    `objective_sha256` was rejected because it names half the input: a doctrine
+    edit changes the behaviour of EVERY adaptor at once — the largest blast
+    radius in the subsystem — and under a half-input hash would leave no trace
+    on any row anywhere."""
+    store = _store(tree)
+    before = {name: store.for_objective(name).sha256
+              for name in ("room-language", "room-exchange")}
+    _touch_newer(
+        tree / "doctrine" / "dreamer.md",
+        DOCTRINE_FM.format(name="dreamer", version=2, desc="d",
+                           body="A different doctrine.\n"),
+    )
+    after = {name: store.for_objective(name).sha256
+             for name in ("room-language", "room-exchange")}
+    assert after["room-language"] != before["room-language"]
+    assert after["room-exchange"] != before["room-exchange"]
+
+
+def test_two_objectives_under_one_doctrine_get_different_digests(tree):
+    store = _store(tree)
+    assert store.for_objective("room-language").sha256 != \
+        store.for_objective("room-exchange").sha256
+
+
+def test_versions_carries_both_parts(tree):
+    write_doctrine(tree, version=7)
+    write_objective(tree, name="room-language", version=3)
+    assert _store(tree).for_objective("room-language").versions == \
+        {"dreamer": 7, "room-language": 3}
+
+
+def test_an_unknown_objective_raises_rather_than_assembling_the_doctrine_alone(tree):
+    """A run against the doctrine and no objective has no research goal at all:
+    it would produce output that looks ordinary and answers nothing, and stamp
+    those rows with a digest naming an instruction set no adaptor asked for."""
+    with pytest.raises(InstructionError, match="unknown Dreamer objective 'facts'"):
+        _store(tree).for_objective("facts")
+
+
+def test_the_refusal_names_the_objectives_that_do_exist(tree):
+    with pytest.raises(InstructionError, match="room-exchange, room-language"):
+        _store(tree).for_objective("facts")
+
+
+def test_objective_body_is_the_file_body_untouched(tree):
+    assert _store(tree).objective_body("room-language") == "Objective body.\n"
+
+
+# --- corpus rules ---------------------------------------------------------
+
+
+def test_a_second_doctrine_file_is_a_startup_failure(tree):
+    """Not a merge and not first-one-wins: the digest is over doctrine +
+    objective, so a second file would make the assembly order — and therefore
+    the hash — depend on a filename nobody chose deliberately."""
+    write_doctrine(tree, name="other", filename="other.md")
+    with pytest.raises(InstructionError, match="expected exactly one Dreamer doctrine"):
+        _store(tree).for_objective("room-language")
+
+
+def test_no_doctrine_file_at_all_is_a_startup_failure(tmp_path):
+    root = tmp_path / "dreamer"
+    root.mkdir()
+    write_objective(root)
+    with pytest.raises(InstructionError, match="no Dreamer doctrine file"):
+        _store(root).for_objective("room-language")
+
+
+def test_an_objective_in_the_doctrine_directory_is_refused(tmp_path):
+    root = tmp_path / "dreamer"
+    root.mkdir()
+    (root / "doctrine").mkdir()
+    (root / "doctrine" / "oops.md").write_text(
+        OBJECTIVE_FM.format(name="oops", kind="objective", version=1, applies="x",
+                            desc="d", change_policy="operator-only", body="b\n"),
+        encoding="utf-8",
+    )
+    write_objective(root)
+    with pytest.raises(InstructionError, match="does not belong in doctrine/"):
+        _store(root).for_objective("room-language")
+
+
+def test_an_unknown_kind_is_refused(tree):
+    write_objective(tree, name="room-language", kind="constraint")
+    with pytest.raises(InstructionError, match="kind 'constraint' is not one of"):
+        _store(tree).for_objective("room-language")
+
+
+def test_an_unknown_change_policy_is_refused(tree):
+    write_objective(tree, name="room-language", change_policy="anyone-may-edit")
+    with pytest.raises(InstructionError, match="change_policy 'anyone-may-edit'"):
+        _store(tree).for_objective("room-language")
+
+
+def test_a_missing_required_key_names_it(tree):
+    (tree / "objectives" / "room-language.md").write_text(
+        "---\nname: room-language\nkind: objective\nversion: 1\n---\nBody.\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(InstructionError, match=r"key\(s\): 'applies_to'"):
+        _store(tree).for_objective("room-language")
+
+
+def test_the_doctrines_own_frontmatter_keys_are_not_required(tree):
+    """`order`, `authority_above`/`authority_below` and `not_here` are read by
+    the doctrine's gates, and those gates do not run here (spec §5). Requiring a
+    field no gate reads and no assembly renders is how frontmatter becomes
+    ceremony."""
+    assert _store(tree).for_objective("room-language").versions
+
+
+def test_two_objectives_claiming_one_name_is_a_startup_failure(tree):
+    write_objective(tree, name="room-language", filename="duplicate.md")
+    with pytest.raises(InstructionError, match="duplicate objective name"):
+        _store(tree).for_objective("room-language")
+
+
+# --- reload ---------------------------------------------------------------
+
+
+def test_an_edit_is_picked_up_without_reconstruction(tree):
+    store = _store(tree)
+    assert "Objective body." in store.for_objective("room-language").text
+    _touch_newer(
+        tree / "objectives" / "room-language.md",
+        OBJECTIVE_FM.format(name="room-language", kind="objective", version=2,
+                            applies="x", desc="d", change_policy="operator-only",
+                            body="Edited on the bind mount.\n"),
+    )
+    assert "Edited on the bind mount." in store.for_objective("room-language").text
+
+
+def test_startup_mode_ignores_later_edits(tree):
+    store = _store(tree, reload="startup")
+    store.for_objective("room-language")
+    _touch_newer(
+        tree / "objectives" / "room-language.md",
+        OBJECTIVE_FM.format(name="room-language", kind="objective", version=2,
+                            applies="x", desc="d", change_policy="operator-only",
+                            body="Edited.\n"),
+    )
+    assert "Objective body." in store.for_objective("room-language").text
+
+
+def test_a_broken_edit_keeps_the_last_good_set_and_counts_it(tree):
+    metrics = Metrics()
+    store = DreamerInstructions(tree, metrics=metrics)
+    good = store.for_objective("room-language")
+
+    _touch_newer(tree / "objectives" / "room-language.md", "totally broken")
+    after = store.for_objective("room-language")
+
+    assert after.sha256 == good.sha256
+    assert store.reload_failures == 1
+    assert metrics.get("nora_dreamer_instruction_reload_failures_total") == 1
+
+
+def test_a_broken_corpus_at_startup_raises_instead_of_running_on_nothing(tmp_path):
+    root = tmp_path / "dreamer"
+    root.mkdir()
+    write_doctrine(root)
+    (root / "objectives").mkdir()
+    (root / "objectives" / "room-language.md").write_text("broken", encoding="utf-8")
+    with pytest.raises(InstructionError):
+        _store(root).for_objective("room-language")
+
+
+def test_lenient_mode_skips_a_broken_objective_and_the_adaptor_still_fails_loudly(tree):
+    """Skipping is not silent tolerance. A skipped objective is simply absent,
+    and `for_objective` refuses to assemble the doctrine alone — so the adaptor
+    that wanted it fails, rather than running against half its instructions."""
+    (tree / "objectives" / "room-language.md").write_text("broken", encoding="utf-8")
+    store = _store(tree, strict=False)
+    assert store.objective_names() == ("room-exchange",)
+    with pytest.raises(InstructionError, match="unknown Dreamer objective"):
+        store.for_objective("room-language")
+
+
+# --- the shipped tree -----------------------------------------------------
+
+
+def test_the_shipped_doctrine_parses_in_strict_mode():
+    """The bind mount is a deploy: `nora/dreamer/` on master is what the running
+    container reads, and a file that does not parse there costs a Dreamer tick
+    rather than a test run. This is the check that keeps that from reaching it."""
+    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
+    # `objective_names()` is what forces the scan: strict mode raises on any
+    # malformed file in either subdirectory, including the doctrine itself.
+    assert isinstance(store.objective_names(), tuple)
+
+
+def test_there_is_exactly_one_shipped_dreamer_doctrine_and_it_is_operator_only():
+    """One doctrine, and not an agent-editable one: this text steers a component
+    that will hold `web_fetch`."""
+    from nora.instructions.frontmatter import parse_document
+
+    files = sorted((SHIPPED / "doctrine").glob("*.md"))
+    assert len(files) == 1
+    doc = parse_document(files[0], required=("name", "kind", "change_policy", "version"))
+    assert doc.meta["kind"] == "dreamer-doctrine"
+    assert doc.meta["change_policy"] == "operator-only"
+    assert doc.body.strip()
+
+
+# --- 7.1 step (a): the lift is verbatim -----------------------------------
+#
+# The re-partition (step b) is Tasks 3.2/3.4 - Dreamer-general text into the
+# doctrine, return-shape prose into the adaptor's output-schema field, the
+# remainder into the objective - and it DELETES the fixtures below as its own
+# visible act. Until then, ANY edit to these bodies is a substrate bug,
+# including an improving one: a change that both moves and improves the text
+# cannot be told apart from a loader that mangled it.
+
+
+@pytest.mark.parametrize("objective", [
+    "room-language", "room-language-verification", "room-exchange",
+])
+def test_the_objective_file_is_the_pre_move_constant_byte_for_byte(objective):
+    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
+    before = (PRE_MOVE / f"{objective}.txt").read_text(encoding="utf-8")
+    assert store.objective_body(objective) == before
+
+
+def test_the_shipped_objectives_are_exactly_the_three_that_were_lifted():
+    """A fourth objective appearing here without a pre-move fixture would slip
+    past the parametrised test above, which only checks the three it names."""
+    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
+    assert set(store.objective_names()) == {p.stem for p in PRE_MOVE.glob("*.txt")}
+
+
+def test_the_verification_objective_is_still_a_format_template():
+    """The escaping decision, pinned. The body stores the `str.format` TEMPLATE
+    - placeholders live, JSON braces doubled - and `_build_verification_prompt`
+    does the substitution. Storing the post-format text instead would break
+    `.format` at the first candidate, in the background, on live traffic."""
+    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
+    body = store.objective_body("room-language-verification")
+    assert "{surface_form}" in body and "{sense}" in body and "{results}" in body
+    assert '{{"known_entity"' in body
+    rendered = body.format(surface_form="big walk", sense="a stroll", results="(none)")
+    assert '{"known_entity"' in rendered
+    assert "{surface_form}" not in rendered

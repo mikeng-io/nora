@@ -105,6 +105,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("kind",),
     ),
     _CounterSpec("nora_doctrine_reload_failures_total", "Doctrine hot-reload failures."),
+    # The Dreamer's own instruction corpus (nora/dreamer/), counted separately
+    # from the doctrine's on purpose: they are different files with different
+    # editors and different blast radii, and one number covering both would make
+    # "did my objective edit load" unanswerable from the metric.
+    _CounterSpec(
+        "nora_dreamer_instruction_reload_failures_total",
+        "Dreamer instruction (doctrine + objectives) hot-reload failures.",
+    ),
     # RETAINED frozen at 0 by the append-only metric-name policy
     # (PRESERVED_METRIC_NAMES), not deleted — a dropped name breaks any dashboard
     # summing it. It counted SQLite WAL SQLITE_BUSY, which MVCC cannot produce,

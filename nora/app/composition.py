@@ -81,6 +81,8 @@ from nora.ingest.policy import (
     TriggerTextPolicy,
 )
 from nora.ingest.stickers import StickerReader
+from nora.instructions.dreamer import DreamerInstructions
+from nora.instructions.frontmatter import InstructionError
 from nora.language.consolidator import LanguageConsolidator
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
@@ -402,6 +404,11 @@ class Dependencies:
     # .dream_loop` takes it as its own `portrait=` keyword, not a member of
     # `language_consolidators` — see that module's docstring for why.
     portrait_synthesizer: RoomPortraitSynthesizer | None
+    # The Dreamer's instruction corpus. Built unconditionally (see its
+    # construction below), so unlike its neighbours here it is never None —
+    # `dream_loop` reads it for the per-tick `instruction_versions=` line, and
+    # both observers hold it as their objective source.
+    dreamer_instructions: DreamerInstructions
     # The SAME `EventService` built above alongside `event_store`/
     # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
     # exposed here too so `nora.web.api.register_web_routes`'s read-only
@@ -574,6 +581,22 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         doctrine = doctrine_store.get(applies_to="tag")
     except DoctrineError as exc:
         raise StartupError(f"doctrine error: {exc}") from exc
+
+    # The Dreamer's own instruction corpus — its doctrine plus one objective
+    # per adaptor (instruction-substrate spec §4.1). Bind-mounted read-only the
+    # way `nora/doctrine` is, so an operator edit is live on the next Dreamer
+    # tick with no rebuild. Built unconditionally rather than under
+    # `[language].enabled` so a malformed objective is a STARTUP failure with a
+    # filename in the message, not a silent Dreamer that stops writing rows
+    # three hours later.
+    dreamer_instructions = DreamerInstructions(
+        cfg.dreamer.dir,
+        reload=cfg.dreamer.reload, strict=cfg.dreamer.strict, metrics=metrics,
+    )
+    try:
+        dreamer_instructions.objective_names()
+    except InstructionError as exc:
+        raise StartupError(f"Dreamer instruction error: {exc}") from exc
 
     # Two machine ids for one agent: `[agent].name` (trace lineage) and
     # `[memory].ai_peer` (the Honcho observer peer). A clone ("delia") must set
@@ -889,6 +912,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         client=client, model=cfg.language.model,
                         timeout_seconds=cfg.language.timeout_seconds,
                     ),
+                    objective=dreamer_instructions,
                     metrics=metrics,
                     search=(
                         search_client
@@ -919,6 +943,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                             model=cfg.language.exchange_model or cfg.language.model,
                             timeout_seconds=cfg.language.timeout_seconds,
                         ),
+                        objective=dreamer_instructions,
                         metrics=metrics,
                     ),
                     store=exchange_store,
@@ -1521,6 +1546,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
         portrait_synthesizer=portrait_synthesizer,
+        dreamer_instructions=dreamer_instructions,
         events=events,
     )
 

@@ -154,6 +154,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         corridor_min_samples=analytics.corridor_min_samples,
         corridor_cluster_batch_limit=analytics.corridor_cluster_batch_limit,
         min_trip_fixes=analytics.min_trip_fixes,
+        max_trip_duration_seconds=analytics.max_trip_duration_seconds,
     )
     rollup = MobilityRollup(
         store=store, config=rollup_config, metrics=metrics, geocode_cache=geocode_cache,

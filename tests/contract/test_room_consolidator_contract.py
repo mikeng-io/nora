@@ -65,12 +65,22 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.ports import RoomConsolidator, RoomLanguageReader
+from nora.domain.provenance import instruction_sha256
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.language.consolidator import LanguageConsolidator
 from nora.language.observer import LexemeObserver
+from tests.objectives import append_to_objective, editable_objectives, shipped_objectives
+
+# The `objective` collaborator, wired the way production wires it: the REAL
+# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. The
+# bodies it serves are byte-identical to the constants these tests were written
+# against (`tests/unit/test_dreamer_instructions.py` proves it), so nothing
+# below changed meaning — and a broken objective file now fails here rather
+# than on the next Dreamer tick.
+OBJECTIVES = shipped_objectives()
 
 
 class _FakeRoomConsolidator:
@@ -253,7 +263,10 @@ def consolidator(_backing):
     Task 8's own class to pair it with a `LexemeObserver`."""
     if isinstance(_backing, SqlLanguageStore):
         return LanguageConsolidator(
-            observer=LexemeObserver(_FakeModelClient()), store=_backing)
+            observer=LexemeObserver(
+                _FakeModelClient(),
+                objective=OBJECTIVES,
+            ), store=_backing)
     return _backing
 
 
@@ -317,7 +330,10 @@ def test_both_implementations_satisfy_the_ports():
     store = SqlLanguageStore(create_sql_engine("postgresql+asyncpg://x/x"))
     assert isinstance(store, RoomLanguageReader)
     assert isinstance(
-        LanguageConsolidator(observer=LexemeObserver(_FakeModelClient()), store=store),
+        LanguageConsolidator(observer=LexemeObserver(
+            _FakeModelClient(),
+            objective=OBJECTIVES,
+        ), store=store),
         RoomConsolidator,
     )
 
@@ -417,3 +433,96 @@ async def test_an_unavailable_backend_degrades_to_an_empty_room_language(unavail
     result = await unavailable_reader.room_language(scope_id="g1", limit=10)
     assert result == RoomLanguage(scope_id="g1")
     assert not result, "__bool__ is what a caller actually branches on"
+
+
+# --- instruction provenance, end to end (substrate spec §7.2) --------------
+#
+# The observer's own suite proves it stamps the digest of the objective it
+# sent; `tests/infra/test_language_store.py` proves a candidate's stamp reaches
+# the column. NOTHING joined the two: a consolidator that dropped the field on
+# the way through would pass both. These tests run the real chain — real
+# objective files on disk, real `LexemeObserver`, real `LanguageConsolidator`,
+# real Postgres — and read the stamp back off the rows.
+#
+# `"sql"` only, and not parametrised over the fake: `_FakeRoomConsolidator`
+# writes its own in-memory rows and has no column to carry provenance into, so
+# a parametrised version would be asserting the fake's own bookkeeping. What is
+# under test here is the WIRE, and only one implementation has one.
+
+
+async def _stamps(engine) -> list[str]:
+    """Every `language_observation.instruction_sha256`, in insertion order."""
+    import sqlalchemy as sa
+
+    from nora.infra.sql.schema import LANGUAGE_OBSERVATION
+
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(LANGUAGE_OBSERVATION.c.instruction_sha256)
+            .order_by(LANGUAGE_OBSERVATION.c.id)
+        )).all()
+    return [r.instruction_sha256 for r in rows]
+
+
+async def _seed(pg_url, body: str) -> list[TranscriptRow]:
+    record = SqlRecordStore(create_sql_engine(pg_url))
+    try:
+        message_id = await record.append(message=NormalizedMessage(
+            platform="signal", conversation_id="g1", conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=_now_ms(),
+            body=body, raw={},
+        ))
+    finally:
+        await record.aclose()
+    return [_row(message_id, body)]
+
+
+async def test_every_row_carries_the_stamp_the_instruction_store_reports(pg_url, tmp_path):
+    objectives, _ = editable_objectives(tmp_path)
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        consolidator = LanguageConsolidator(
+            observer=LexemeObserver(_FakeModelClient(), objective=objectives),
+            store=SqlLanguageStore(engine),
+        )
+        appended = await consolidator.consolidate(
+            scope_id="g1", batch=await _seed(pg_url, "yyds:so good it needs no improving"),
+        )
+        assert appended > 0
+        expected = instruction_sha256(objectives.objective_body("room-language"))
+        stamps = await _stamps(engine)
+        assert stamps and all(s == expected for s in stamps)
+    finally:
+        await engine.dispose()
+
+
+async def test_editing_the_objective_makes_later_rows_distinguishable(pg_url, tmp_path):
+    """The property the column exists for, measured on real rows: a test that
+    only checked non-emptiness would pass against a hardcoded constant."""
+    objectives, root = editable_objectives(tmp_path)
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        consolidator = LanguageConsolidator(
+            observer=LexemeObserver(_FakeModelClient(), objective=objectives),
+            store=SqlLanguageStore(engine),
+        )
+        await consolidator.consolidate(
+            scope_id="g1", batch=await _seed(pg_url, "yyds:so good it needs no improving"),
+        )
+        before = await _stamps(engine)
+
+        append_to_objective(
+            root, "room-language", "Also: a name with a public meaning is NOT slang.\n",
+        )
+
+        await consolidator.consolidate(
+            scope_id="g1", batch=await _seed(pg_url, "kam:awkward, in the cringe sense"),
+        )
+        after = [s for s in await _stamps(engine) if s not in before]
+
+        assert before and after
+        assert set(before).isdisjoint(after)
+    finally:
+        await engine.dispose()

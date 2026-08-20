@@ -235,6 +235,12 @@ services:
       # Read-only so edits on the host (doctrine hot-reload, mtime-based) are visible
       # inside the container without a rebuild or restart.
       - ./nora/doctrine:/app/nora/doctrine:ro
+      # Read-only so edits on the host (Dreamer instruction hot-reload,
+      # mtime-based) are visible inside the container without a rebuild or
+      # restart. A DIRECTORY mount, not a file mount, so an editor's atomic
+      # save — which replaces the inode — keeps working, the same reason the
+      # doctrine mount above survives one.
+      - ./nora/dreamer:/app/nora/dreamer:ro
       # The host Docker socket, so `LocalDockerBackend` (Nora Compute spec
       # §2/§3, `[compute] enabled`) can call `docker.from_env()` to launch
       # Smith's per-job sandbox containers. Named explicitly, not glossed

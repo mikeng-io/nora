@@ -153,6 +153,7 @@ class App:
                 max_age_seconds=self.cfg.language.max_age_seconds,
                 batch_limit=self.cfg.language.batch_limit,
                 portrait=deps.portrait_synthesizer,
+                instructions=deps.dreamer_instructions,
             ))
         else:
             log.info("dream loop disabled (language.enabled = false)")

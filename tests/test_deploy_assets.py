@@ -71,6 +71,37 @@ def test_migrations_are_declared_as_package_data():
     assert "infra/sql/migrations/versions/*" in text
 
 
+def test_the_dreamer_instructions_are_declared_as_package_data():
+    """`nora/dreamer/` has no `__init__.py` — it is data, not a package — so
+    `packages.find` will not install it, exactly like `migrations/versions/`
+    above. Without these two lines a wheel built from this tree ships without
+    the Dreamer's doctrine and objectives, and every adaptor fails at startup
+    with a missing-file error nobody would trace back to packaging."""
+    text = (ROOT / "pyproject.toml").read_text()
+    assert "dreamer/doctrine/*.md" in text
+    assert "dreamer/objectives/*.md" in text
+
+
+def test_the_dreamer_tree_is_bind_mounted_read_only():
+    """The hot-reload half of the same fact: the package data covers a WHEEL,
+    the bind mount covers the running container. Without the mount an operator
+    edits an objective on the host, sees nothing change, and concludes the
+    reload does not work — when what actually happened is that the container is
+    reading the copy baked into the image."""
+    text = (ROOT / "docker-compose.yml").read_text()
+    assert "./nora/dreamer:/app/nora/dreamer:ro" in text
+
+
+def test_the_dreamer_tree_is_data_and_never_a_package():
+    """An `__init__.py` here would make `nora.dreamer` importable and invite
+    code into a directory the keystone's §5 puts neither in `nora/agent/` nor
+    `nora/language/`. It is also what makes the bind mount safe: replacing a
+    Python package under a running process is not the same as replacing text
+    it re-reads."""
+    assert not list((ROOT / "nora" / "dreamer").rglob("*.py"))
+    assert not (ROOT / "nora" / "dreamer" / "__init__.py").exists()
+
+
 def test_the_baseline_revision_is_on_disk_where_alembic_looks():
     from nora.infra.sql.migrations_runner import head_revision
 

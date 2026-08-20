@@ -533,6 +533,11 @@ enabled = false
 #                                  #   n=1000 costs 7.6s. Must be >= corridor_min_samples
 #                                  #   or no corridor could ever form (startup refuses).
 # min_trip_fixes = 3               # Tier 5 — shorter runs between stays are noise, not trips
+# max_trip_duration_seconds = 10800 # Tier 5 — safety valve: force-settle a trip
+#                                  #   even mid-drive once its span exceeds this
+#                                  #   (a stuck is_driving signal shouldn't hold
+#                                  #   the watermark back forever). A judgment
+#                                  #   call, not a measured value.
 # tz_name = "Asia/Hong_Kong"
 # metrics_port = 9103
 
@@ -743,6 +748,17 @@ strict = true
 language_hint = "yue-Hant-HK"         # BCP 47 (RFC 5646): Cantonese, Traditional Han, Hong Kong
 canary = "CHANGE-ME-PER-DEPLOYMENT"   # fixed string; R-6 leak sentinel
 display_name = "Nora"
+
+[dreamer]
+# The Dreamer's own instruction corpus: `doctrine/` (one file — who the Dreamer
+# is on every run) and `objectives/` (one per adaptor). Bind-mounted read-only
+# into the container, so an operator edit is live on the NEXT TICK with no
+# rebuild — which matters more here than for the doctrine, because this is the
+# slowest loop in the system and an objective that steers it wants revisions.
+# An edit on master is therefore a deploy, exactly as it is for nora/doctrine.
+dir = "nora/dreamer"
+reload = "mtime"
+strict = true
 
 [obs.logging]
 level = "INFO"
