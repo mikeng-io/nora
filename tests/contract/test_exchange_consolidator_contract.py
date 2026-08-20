@@ -26,6 +26,15 @@ from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
+from tests.objectives import shipped_objectives
+
+# The `objective` collaborator, wired the way production wires it: the REAL
+# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. The
+# bodies it serves are byte-identical to the constants these tests were written
+# against (`tests/unit/test_dreamer_instructions.py` proves it), so nothing
+# below changed meaning — and a broken objective file now fails here rather
+# than on the next Dreamer tick.
+OBJECTIVES = shipped_objectives()
 
 
 def _now_ms() -> int:
@@ -68,7 +77,10 @@ async def backing(pg_url):
 
 @pytest.fixture
 def consolidator(backing: SqlExchangeStore) -> ExchangeConsolidator:
-    return ExchangeConsolidator(observer=ExchangePatternObserver(_FakeModelClient()), store=backing)
+    return ExchangeConsolidator(observer=ExchangePatternObserver(
+        _FakeModelClient(),
+        objective=OBJECTIVES,
+    ), store=backing)
 
 
 @pytest.fixture
@@ -104,7 +116,10 @@ def test_both_pieces_satisfy_their_ports():
     store = SqlExchangeStore(create_sql_engine("postgresql+asyncpg://x/x"))
     assert isinstance(store, RoomExchangeReader)
     assert isinstance(
-        ExchangeConsolidator(observer=ExchangePatternObserver(_FakeModelClient()), store=store),
+        ExchangeConsolidator(observer=ExchangePatternObserver(
+            _FakeModelClient(),
+            objective=OBJECTIVES,
+        ), store=store),
         RoomConsolidator,
     )
 

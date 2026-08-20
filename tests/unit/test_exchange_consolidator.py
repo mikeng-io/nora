@@ -16,6 +16,15 @@ from nora.language.exchange_consolidator import (
     ExtractionUnparseableError,
 )
 from nora.language.exchange_observer import ExchangePatternObserver
+from tests.objectives import shipped_objectives
+
+# The `objective` collaborator, wired the way production wires it: the REAL
+# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. The
+# bodies it serves are byte-identical to the constants these tests were written
+# against (`tests/unit/test_dreamer_instructions.py` proves it), so nothing
+# below changed meaning — and a broken objective file now fails here rather
+# than on the next Dreamer tick.
+OBJECTIVES = shipped_objectives()
 
 pytestmark = pytest.mark.asyncio
 
@@ -68,7 +77,10 @@ def _pattern_response(message_ids: list[int], act: str = "banter") -> str:
 async def test_an_empty_batch_appends_nothing_makes_no_model_call_but_still_rescores():
     store = _FakeStore()
     consolidator = ExchangeConsolidator(
-        observer=ExchangePatternObserver(_FakeModel(responses=[])), store=store)
+        observer=ExchangePatternObserver(
+            _FakeModel(responses=[]),
+            objective=OBJECTIVES,
+        ), store=store)
     assert await consolidator.consolidate(scope_id="g1", batch=[]) == 0
     assert store.rescore_calls == ["g1"]
 
@@ -78,7 +90,9 @@ async def test_a_batch_yielding_a_pattern_appends_it_and_then_rescores():
     batch = [_row(1, "miles", "you idiot"), _row(2, "tyler", "you're worse")]
     consolidator = ExchangeConsolidator(
         observer=ExchangePatternObserver(
-            _FakeModel(responses=[_pattern_response([1, 2])])),
+            _FakeModel(responses=[_pattern_response([1, 2])]),
+            objective=OBJECTIVES,
+        ),
         store=store,
     )
     appended = await consolidator.consolidate(scope_id="g1", batch=batch)
@@ -91,7 +105,9 @@ async def test_rescore_runs_even_when_nothing_was_appended():
     batch = [_row(1, "miles", "食咩好"), _row(2, "tyler", "隨便啦")]
     consolidator = ExchangeConsolidator(
         observer=ExchangePatternObserver(
-            _FakeModel(responses=['{"patterns": []}'])),
+            _FakeModel(responses=['{"patterns": []}']),
+            objective=OBJECTIVES,
+        ),
         store=store,
     )
     appended = await consolidator.consolidate(scope_id="g1", batch=batch)
@@ -104,7 +120,9 @@ async def test_replaying_a_batch_does_not_inflate_the_rendered_count():
     batch = [_row(1, "miles", "you idiot"), _row(2, "tyler", "you're worse")]
     consolidator = ExchangeConsolidator(
         observer=ExchangePatternObserver(_FakeModel(
-            responses=[_pattern_response([1, 2]), _pattern_response([1, 2])])),
+            responses=[_pattern_response([1, 2]), _pattern_response([1, 2])]),
+            objective=OBJECTIVES,
+        ),
         store=store,
     )
     first = await consolidator.consolidate(scope_id="g1", batch=batch)
@@ -117,7 +135,10 @@ async def test_an_unparseable_response_raises_and_never_appends_or_rescores():
     store = _FakeStore()
     batch = [_row(1, "miles", "x"), _row(2, "tyler", "y")]
     consolidator = ExchangeConsolidator(
-        observer=ExchangePatternObserver(_FakeModel(responses=["prose"])),
+        observer=ExchangePatternObserver(
+            _FakeModel(responses=["prose"]),
+            objective=OBJECTIVES,
+        ),
         store=store,
     )
     with pytest.raises(ExtractionUnparseableError):

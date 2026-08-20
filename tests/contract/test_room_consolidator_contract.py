@@ -71,6 +71,15 @@ from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.language.consolidator import LanguageConsolidator
 from nora.language.observer import LexemeObserver
+from tests.objectives import shipped_objectives
+
+# The `objective` collaborator, wired the way production wires it: the REAL
+# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. The
+# bodies it serves are byte-identical to the constants these tests were written
+# against (`tests/unit/test_dreamer_instructions.py` proves it), so nothing
+# below changed meaning — and a broken objective file now fails here rather
+# than on the next Dreamer tick.
+OBJECTIVES = shipped_objectives()
 
 
 class _FakeRoomConsolidator:
@@ -253,7 +262,10 @@ def consolidator(_backing):
     Task 8's own class to pair it with a `LexemeObserver`."""
     if isinstance(_backing, SqlLanguageStore):
         return LanguageConsolidator(
-            observer=LexemeObserver(_FakeModelClient()), store=_backing)
+            observer=LexemeObserver(
+                _FakeModelClient(),
+                objective=OBJECTIVES,
+            ), store=_backing)
     return _backing
 
 
@@ -317,7 +329,10 @@ def test_both_implementations_satisfy_the_ports():
     store = SqlLanguageStore(create_sql_engine("postgresql+asyncpg://x/x"))
     assert isinstance(store, RoomLanguageReader)
     assert isinstance(
-        LanguageConsolidator(observer=LexemeObserver(_FakeModelClient()), store=store),
+        LanguageConsolidator(observer=LexemeObserver(
+            _FakeModelClient(),
+            objective=OBJECTIVES,
+        ), store=store),
         RoomConsolidator,
     )
 

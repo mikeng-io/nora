@@ -1,0 +1,10 @@
+A room-language extractor flagged the phrase below as slang a Signal group chat has made its own. Your ONLY job is to check whether it is actually already a KNOWN PUBLIC thing — a real game, place, brand, meme, or other name with an established meaning OUTSIDE this specific group — rather than something this group coined.
+
+Phrase: {surface_form}
+Claimed local sense: {sense}
+
+Web search results for the phrase:
+{results}
+
+Respond with ONLY a JSON object of this exact shape, nothing else — no prose, no markdown fence:
+{{"known_entity": <true if the results show this is an established public thing whose own meaning the room's use matches or refers to; false if the results are irrelevant, sparse, or establish no public meaning>}}

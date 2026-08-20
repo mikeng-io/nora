@@ -18,6 +18,15 @@ import pytest
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.language.consolidator import ExtractionUnparseableError, LanguageConsolidator
 from nora.language.observer import LexemeObserver
+from tests.objectives import shipped_objectives
+
+# The `objective` collaborator, wired the way production wires it: the REAL
+# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. The
+# bodies it serves are byte-identical to the constants these tests were written
+# against (`tests/unit/test_dreamer_instructions.py` proves it), so nothing
+# below changed meaning — and a broken objective file now fails here rather
+# than on the next Dreamer tick.
+OBJECTIVES = shipped_objectives()
 
 pytestmark = pytest.mark.asyncio
 
@@ -92,7 +101,10 @@ async def test_an_empty_batch_appends_nothing_makes_no_model_call_but_still_resc
     early-out) must turn this red."""
     store = _FakeStore()
     consolidator = LanguageConsolidator(
-        observer=LexemeObserver(_FakeModel(responses=[])), store=store)
+        observer=LexemeObserver(
+            _FakeModel(responses=[]),
+            objective=OBJECTIVES,
+        ), store=store)
     assert await consolidator.consolidate(scope_id="g1", batch=[]) == 0
     assert store.rescore_calls == ["g1"]
 
@@ -100,7 +112,10 @@ async def test_an_empty_batch_appends_nothing_makes_no_model_call_but_still_resc
 async def test_a_batch_yielding_a_candidate_appends_it_and_then_rescores():
     store = _FakeStore()
     consolidator = LanguageConsolidator(
-        observer=LexemeObserver(_FakeModel(responses=[_observation_response(1)])),
+        observer=LexemeObserver(
+            _FakeModel(responses=[_observation_response(1)]),
+            objective=OBJECTIVES,
+        ),
         store=store)
     appended = await consolidator.consolidate(scope_id="g1", batch=[_row(1, "好撚kam")])
     assert appended == 1
@@ -114,7 +129,10 @@ async def test_rescore_runs_even_when_nothing_was_appended():
     `dream_loop`'s 24h firing condition depends on."""
     store = _FakeStore()
     consolidator = LanguageConsolidator(
-        observer=LexemeObserver(_FakeModel(responses=['{"observations": []}'])),
+        observer=LexemeObserver(
+            _FakeModel(responses=['{"observations": []}']),
+            objective=OBJECTIVES,
+        ),
         store=store)
     appended = await consolidator.consolidate(scope_id="g1", batch=[_row(1, "普通話")])
     assert appended == 0
@@ -127,7 +145,9 @@ async def test_replaying_a_batch_does_not_inflate_the_rendered_count():
     store = _FakeStore()
     consolidator = LanguageConsolidator(
         observer=LexemeObserver(_FakeModel(
-            responses=[_observation_response(1), _observation_response(1)])),
+            responses=[_observation_response(1), _observation_response(1)]),
+            objective=OBJECTIVES,
+        ),
         store=store)
     batch = [_row(1, "好撚kam")]
     first = await consolidator.consolidate(scope_id="g1", batch=batch)
@@ -156,7 +176,10 @@ async def test_an_unparseable_response_raises_and_never_appends_or_rescores():
     red: no exception, and `rescore` would run."""
     store = _FakeStore()
     consolidator = LanguageConsolidator(
-        observer=LexemeObserver(_FakeModel(responses=["sorry, can't help with that"])),
+        observer=LexemeObserver(
+            _FakeModel(responses=["sorry, can't help with that"]),
+            objective=OBJECTIVES,
+        ),
         store=store)
     with pytest.raises(ExtractionUnparseableError):
         await consolidator.consolidate(scope_id="g1", batch=[_row(1, "好撚kam")])

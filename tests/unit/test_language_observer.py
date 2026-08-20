@@ -19,9 +19,22 @@ import pytest
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.provenance import instruction_sha256
-from nora.language import observer as observer_module
 from nora.language.observer import LexemeObserver
 from nora.obs.metrics import Metrics
+from tests.objectives import (
+    PRE_MOVE,
+    append_to_objective,
+    editable_objectives,
+    shipped_objectives,
+)
+
+# The `objective` collaborator, wired the way production wires it: the REAL
+# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. The
+# bodies it serves are byte-identical to the constants these tests were written
+# against (`tests/unit/test_dreamer_instructions.py` proves it), so nothing
+# below changed meaning — and a broken objective file now fails here rather
+# than on the next Dreamer tick.
+OBJECTIVES = shipped_objectives()
 
 pytestmark = pytest.mark.asyncio
 
@@ -103,7 +116,10 @@ async def test_a_batch_of_ordinary_cantonese_yields_no_candidates():
     """The extractor must not treat normal speech as novel. A model that
     returns something for every batch would fill the lexicon with 係/唔係
     and the block would be worthless."""
-    observer = LexemeObserver(FakeModel(responses=['{"observations": []}']))
+    observer = LexemeObserver(
+        FakeModel(responses=['{"observations": []}']),
+        objective=OBJECTIVES,
+    )
     result = await observer.observe(batch=rows("今日食咩好", "隨便啦"))
     assert result.candidates == ()
     assert result.parsed is True, "a well-formed, genuinely empty response DID parse"
@@ -116,7 +132,10 @@ async def test_malformed_json_yields_nothing_rather_than_raising():
     story: `parsed=False` is the signal that distinguishes THIS case from a
     model that genuinely found nothing (see the sibling test above), which is
     what lets `LanguageConsolidator` refuse to treat the batch as read."""
-    observer = LexemeObserver(FakeModel(responses=["sorry, I can't help with that"]))
+    observer = LexemeObserver(
+        FakeModel(responses=["sorry, I can't help with that"]),
+        objective=OBJECTIVES,
+    )
     result = await observer.observe(batch=rows("好撚kam"))
     assert result.candidates == ()
     assert result.parsed is False
@@ -128,7 +147,9 @@ async def test_a_candidate_carries_its_own_message_and_speaker():
     observer = LexemeObserver(FakeModel(responses=[json.dumps({"observations": [
         {"surface_form": "kam", "canonical_form": "kam", "sense": "尷",
          "part_of_speech": "adjective", "message_id": 7, "confidence": 0.9},
-    ]})]))
+    ]})]),
+        objective=OBJECTIVES,
+    )
     result = await observer.observe(batch=rows_with_id(7, "好撚kam", person_id="tyler"))
     assert result.parsed is True
     [c] = result.candidates
@@ -142,7 +163,9 @@ async def test_a_candidate_naming_a_message_not_in_the_batch_is_dropped():
     observer = LexemeObserver(FakeModel(responses=[json.dumps({"observations": [
         {"surface_form": "kam", "canonical_form": "kam", "sense": "尷",
          "part_of_speech": "adjective", "message_id": 999, "confidence": 0.9},
-    ]})]))
+    ]})]),
+        objective=OBJECTIVES,
+    )
     result = await observer.observe(batch=rows_with_id(7, "好撚kam"))
     assert result.candidates == ()
     assert result.parsed is True, "the response DID parse — the item was dropped, not the batch"
@@ -159,7 +182,9 @@ async def test_a_candidate_with_an_implausibly_long_field_is_dropped():
     observer = LexemeObserver(FakeModel(responses=[json.dumps({"observations": [
         {"surface_form": "kam", "canonical_form": "k" * 101, "sense": "尷",
          "part_of_speech": "adjective", "message_id": 7, "confidence": 0.9},
-    ]})]))
+    ]})]),
+        objective=OBJECTIVES,
+    )
     result = await observer.observe(batch=rows_with_id(7, "好撚kam"))
     assert result.candidates == ()
     assert result.parsed is True, "the response parsed fine — one item was rejected, not the batch"
@@ -172,7 +197,10 @@ async def test_an_empty_batch_makes_no_model_call():
     `FakeModel` with an EMPTY `responses` list makes this mechanically
     enforced — any call to `complete` raises `IndexError` (`list.pop` on
     empty), not just an assertion after the fact."""
-    observer = LexemeObserver(FakeModel(responses=[]))
+    observer = LexemeObserver(
+        FakeModel(responses=[]),
+        objective=OBJECTIVES,
+    )
     result = await observer.observe(batch=[])
     assert result.candidates == ()
     assert result.parsed is True, "nothing to fail to parse — an empty batch is not a parse failure"
@@ -191,12 +219,14 @@ async def test_a_parse_failure_is_counted_distinctly_from_an_empty_extraction():
     metrics = Metrics()
     prose_observer = LexemeObserver(
         FakeModel(responses=["sorry, I can't help with that"]), metrics=metrics,
+        objective=OBJECTIVES,
     )
     await prose_observer.observe(batch=rows("好撚kam"))
     assert metrics.get("nora_language_parse_failures_total") == 1
 
     empty_observer = LexemeObserver(
         FakeModel(responses=['{"observations": []}']), metrics=metrics,
+        objective=OBJECTIVES,
     )
     await empty_observer.observe(batch=rows("好撚kam"))
     assert metrics.get("nora_language_parse_failures_total") == 1, (
@@ -216,6 +246,7 @@ async def test_a_dropped_candidate_is_counted_on_the_no_evidence_reason():
              "part_of_speech": "adjective", "message_id": 999, "confidence": 0.9},
         ]})]),
         metrics=metrics,
+        objective=OBJECTIVES,
     )
     await observer.observe(batch=rows_with_id(7, "好撚kam"))
     assert metrics.get("nora_language_candidates_dropped_total", reason="no_evidence") == 1
@@ -244,6 +275,7 @@ async def test_a_known_entity_is_dropped_after_verification():
             _one_candidate_response(), json.dumps({"known_entity": True}),
         ]),
         search=FakeSearch(by_query={"big walk": _SEARCH_HIT}),
+        objective=OBJECTIVES,
     )
     result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
     assert result.candidates == ()
@@ -259,6 +291,7 @@ async def test_a_room_coined_candidate_survives_a_negative_verification():
             _one_candidate_response("kam"), json.dumps({"known_entity": False}),
         ]),
         search=FakeSearch(by_query={"kam": _SEARCH_HIT}),
+        objective=OBJECTIVES,
     )
     result = await observer.observe(batch=rows_with_id(7, "好撚kam"))
     [c] = result.candidates
@@ -274,6 +307,7 @@ async def test_search_unavailable_keeps_the_candidate_and_never_classifies():
     observer = LexemeObserver(
         FakeModel(responses=[_one_candidate_response()]),
         search=FakeSearch(by_query={"big walk": {"status": "unavailable"}}),
+        objective=OBJECTIVES,
     )
     result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
     [c] = result.candidates
@@ -287,6 +321,7 @@ async def test_search_nothing_found_keeps_the_candidate_and_never_classifies():
     observer = LexemeObserver(
         FakeModel(responses=[_one_candidate_response()]),
         search=FakeSearch(by_query={"big walk": {"status": "nothing_found"}}),
+        objective=OBJECTIVES,
     )
     result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
     [c] = result.candidates
@@ -300,6 +335,7 @@ async def test_an_unparseable_verification_response_keeps_the_candidate():
     observer = LexemeObserver(
         FakeModel(responses=[_one_candidate_response(), "sorry, I can't help with that"]),
         search=FakeSearch(by_query={"big walk": _SEARCH_HIT}),
+        objective=OBJECTIVES,
     )
     result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
     [c] = result.candidates
@@ -312,7 +348,10 @@ async def test_verification_is_off_when_no_search_collaborator_is_wired():
     runs, matching `[language].verify_known_entities = false`'s shipped-inert
     default. A single-item `FakeModel` response list proves no second call
     happens."""
-    observer = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
+    observer = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response()]),
+        objective=OBJECTIVES,
+    )
     result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
     [c] = result.candidates
     assert c.canonical_form == "big walk"
@@ -333,6 +372,7 @@ async def test_verification_respects_the_candidate_cap():
     observer = LexemeObserver(
         FakeModel(responses=[two_candidates, json.dumps({"known_entity": False})]),
         search=search, verify_max_candidates=1,
+        objective=OBJECTIVES,
     )
     batch = rows_with_id(7, "?? Big walk ??") + rows_with_id(8, "好撚kam")
     result = await observer.observe(batch=batch)
@@ -349,6 +389,7 @@ async def test_the_search_outcome_is_counted_by_status():
     observer = LexemeObserver(
         FakeModel(responses=[_one_candidate_response(), json.dumps({"known_entity": True})]),
         metrics=metrics, search=FakeSearch(by_query={"big walk": _SEARCH_HIT}),
+        objective=OBJECTIVES,
     )
     await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
     assert metrics.get("nora_language_verification_total", status="ok") == 1
@@ -365,7 +406,10 @@ async def test_the_search_outcome_is_counted_by_status():
 # is the row half.
 
 async def test_every_candidate_carries_the_instruction_that_produced_it():
-    observer = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
+    observer = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response()]),
+        objective=OBJECTIVES,
+    )
     result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
     [c] = result.candidates
     assert c.instruction_sha256 == observer.instruction_sha256
@@ -373,31 +417,46 @@ async def test_every_candidate_carries_the_instruction_that_produced_it():
 
 
 async def test_the_stamp_is_the_digest_of_the_instruction_actually_sent():
-    """Bound to the real property, not a proxy: the digest is over
-    `_PROMPT_PREAMBLE` itself, so a row's stamp is reproducible by hand from
-    the constant with `sha256sum`. An observer that hashed a version number,
-    or the assembled per-batch prompt (which varies with the transcript and
-    would give every batch its own digest), would pass a weaker assertion and
-    fail this one."""
-    observer = LexemeObserver(FakeModel(responses=['{"observations": []}']))
-    assert observer.instruction_sha256 == instruction_sha256(observer_module._PROMPT_PREAMBLE)
-
-
-async def test_editing_the_instruction_text_changes_every_row_it_writes(monkeypatch):
-    """The whole point of the column: two corpora written either side of an
-    instruction edit must be distinguishable. Patching the constant is the
-    only way to simulate the edit in-process — production changes it by
-    editing the file."""
-    before = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
-    result_before = await before.observe(batch=rows_with_id(7, "?? Big walk ??"))
-    monkeypatch.setattr(
-        observer_module, "_PROMPT_PREAMBLE",
-        observer_module._PROMPT_PREAMBLE + "\nAlso: a name with a public meaning is NOT slang.\n",
+    """Bound to the real property, not a proxy: the digest is over the
+    `room-language` objective BODY itself, so a row's stamp is reproducible by
+    hand from the file with `sha256sum` on everything after the frontmatter.
+    An observer that hashed a version number, or the assembled per-batch prompt
+    (which varies with the transcript and would give every batch its own
+    digest), would pass a weaker assertion and fail this one."""
+    observer = LexemeObserver(
+        FakeModel(responses=['{"observations": []}']),
+        objective=OBJECTIVES,
     )
-    after = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
+    assert observer.instruction_sha256 == instruction_sha256(
+        OBJECTIVES.objective_body("room-language")
+    )
+
+
+async def test_editing_the_instruction_text_changes_every_row_it_writes(tmp_path):
+    """The whole point of the column: two corpora written either side of an
+    instruction edit must be distinguishable. The edit here is a REAL one — an
+    objective file on disk, rewritten and re-read through the real reload
+    machine, which is what an operator does on the bind mount. ONE observer
+    across both edits, because the hot-reload half is the half that could
+    regress: an observer that captured the text at construction would keep the
+    old digest forever, and every row written after the edit would name the
+    revision that did not write it."""
+    objectives, root = editable_objectives(tmp_path)
+    before = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response(), _one_candidate_response()]),
+        objective=objectives,
+    )
+    result_before = await before.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    digest_before = before.instruction_sha256
+
+    append_to_objective(
+        root, "room-language", "Also: a name with a public meaning is NOT slang.\n",
+    )
+
+    after = before
     result_after = await after.observe(batch=rows_with_id(7, "?? Big walk ??"))
 
-    assert before.instruction_sha256 != after.instruction_sha256
+    assert digest_before != after.instruction_sha256
     [c_before] = result_before.candidates
     [c_after] = result_after.candidates
     assert c_before.instruction_sha256 != c_after.instruction_sha256
@@ -409,13 +468,18 @@ async def test_wiring_the_known_entity_check_changes_the_stamp():
     different POPULATIONS. A stamp that could not tell them apart would be
     bound to half its input — §4.3's own reason for rejecting
     `objective_sha256`."""
-    unverified = LexemeObserver(FakeModel(responses=[]))
+    unverified = LexemeObserver(
+        FakeModel(responses=[]),
+        objective=OBJECTIVES,
+    )
     verified = LexemeObserver(
         FakeModel(responses=[]), search=FakeSearch(by_query={}),
+        objective=OBJECTIVES,
     )
     assert unverified.instruction_sha256 != verified.instruction_sha256
     assert verified.instruction_sha256 == instruction_sha256(
-        observer_module._PROMPT_PREAMBLE, observer_module._VERIFICATION_PROMPT_TEMPLATE,
+        OBJECTIVES.objective_body("room-language"),
+        OBJECTIVES.objective_body("room-language-verification"),
     )
 
 
@@ -428,7 +492,10 @@ async def test_wiring_the_known_entity_check_changes_the_stamp():
 # either side of that change distinguishable.
 
 async def test_every_candidate_carries_the_model_that_produced_it():
-    observer = LexemeObserver(FakeModel(responses=[_one_candidate_response()]))
+    observer = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response()]),
+        objective=OBJECTIVES,
+    )
     result = await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
     [c] = result.candidates
     assert c.model == observer.model
@@ -443,6 +510,7 @@ async def test_the_stamped_model_is_the_one_the_client_reports():
     assertion and fail this one."""
     other = LexemeObserver(
         FakeModel(responses=[_one_candidate_response()], model="some-other-model"),
+        objective=OBJECTIVES,
     )
     result = await other.observe(batch=rows_with_id(7, "?? Big walk ??"))
     [c] = result.candidates
@@ -455,9 +523,63 @@ async def test_changing_the_model_leaves_the_instruction_digest_alone():
     other. Two observers over identical instruction text and different models
     must agree on the digest and disagree on the model — if `model` moved with
     the digest it would be recording nothing new."""
-    a = LexemeObserver(FakeModel(responses=[_one_candidate_response()], model="m-a"))
-    b = LexemeObserver(FakeModel(responses=[_one_candidate_response()], model="m-b"))
+    a = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response()], model="m-a"),
+        objective=OBJECTIVES,
+    )
+    b = LexemeObserver(
+        FakeModel(responses=[_one_candidate_response()], model="m-b"),
+        objective=OBJECTIVES,
+    )
     [c_a] = (await a.observe(batch=rows_with_id(7, "?? Big walk ??"))).candidates
     [c_b] = (await b.observe(batch=rows_with_id(7, "?? Big walk ??"))).candidates
     assert c_a.instruction_sha256 == c_b.instruction_sha256
     assert c_a.model != c_b.model
+
+
+# --- 7.1 step (a): the prompt did not move --------------------------------
+
+
+class _RecordingModel:
+    """`FakeModel` that keeps every prompt it was handed."""
+
+    model = FAKE_MODEL
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.prompts = []
+
+    async def complete(self, *, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self._responses.pop(0)
+
+
+async def test_the_extraction_prompt_still_starts_with_the_pre_move_text():
+    """The lift moved WHERE the text comes from and nothing else. This is the
+    end-to-end half of the byte-identity gate in
+    `tests/unit/test_dreamer_instructions.py`: that one compares the file to
+    the fixture, this one compares what reaches the MODEL to the fixture, so a
+    loader that silently stripped a trailing newline on the way out would be
+    caught here even though the file on disk was fine."""
+    model = _RecordingModel(['{"observations": []}'])
+    observer = LexemeObserver(model, objective=OBJECTIVES)
+    await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    before = (PRE_MOVE / "room-language.txt").read_text(encoding="utf-8")
+    assert model.prompts[0].startswith(before)
+
+
+async def test_the_verification_prompt_still_starts_with_the_pre_move_text():
+    """Same check for the second call, and it also proves the brace escaping
+    survived the move: the file stores a `str.format` template with doubled
+    JSON braces, and what reaches the model has single ones."""
+    model = _RecordingModel([_one_candidate_response(), '{"known_entity": false}'])
+    observer = LexemeObserver(
+        model, objective=OBJECTIVES,
+        search=FakeSearch(by_query={"big walk": _SEARCH_HIT}),
+    )
+    await observer.observe(batch=rows_with_id(7, "?? Big walk ??"))
+    template = (PRE_MOVE / "room-language-verification.txt").read_text(encoding="utf-8")
+    head = template.split("{surface_form}")[0]
+    assert model.prompts[1].startswith(head)
+    assert '{"known_entity"' in model.prompts[1]
+    assert "{{" not in model.prompts[1]

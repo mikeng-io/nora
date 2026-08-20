@@ -81,6 +81,8 @@ from nora.ingest.policy import (
     TriggerTextPolicy,
 )
 from nora.ingest.stickers import StickerReader
+from nora.instructions.dreamer import DreamerInstructions
+from nora.instructions.frontmatter import InstructionError
 from nora.language.consolidator import LanguageConsolidator
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
@@ -575,6 +577,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     except DoctrineError as exc:
         raise StartupError(f"doctrine error: {exc}") from exc
 
+    # The Dreamer's own instruction corpus — its doctrine plus one objective
+    # per adaptor (instruction-substrate spec §4.1). Sibling of the doctrine
+    # directory, the same derivation `skills_dir` already uses below, and
+    # bind-mounted read-only for the same reason: an operator edit is live on
+    # the next Dreamer tick with no rebuild. Built unconditionally rather than
+    # under `[language].enabled` so a malformed objective is a STARTUP failure
+    # with a filename in the message, not a silent Dreamer that stops writing
+    # rows three hours later.
+    dreamer_instructions = DreamerInstructions(
+        cfg.doctrine.dir.parent / "dreamer",
+        reload=cfg.doctrine.reload, strict=cfg.doctrine.strict, metrics=metrics,
+    )
+    try:
+        dreamer_instructions.objective_names()
+    except InstructionError as exc:
+        raise StartupError(f"Dreamer instruction error: {exc}") from exc
+
     # Two machine ids for one agent: `[agent].name` (trace lineage) and
     # `[memory].ai_peer` (the Honcho observer peer). A clone ("delia") must set
     # BOTH; if they diverge, the agent traces under one name but builds its
@@ -889,6 +908,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         client=client, model=cfg.language.model,
                         timeout_seconds=cfg.language.timeout_seconds,
                     ),
+                    objective=dreamer_instructions,
                     metrics=metrics,
                     search=(
                         search_client
@@ -919,6 +939,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                             model=cfg.language.exchange_model or cfg.language.model,
                             timeout_seconds=cfg.language.timeout_seconds,
                         ),
+                        objective=dreamer_instructions,
                         metrics=metrics,
                     ),
                     store=exchange_store,

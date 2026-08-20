@@ -8,16 +8,13 @@ wording: this is prose, and a test that pins a sentence is a test that has to be
 edited every time the sentence improves.
 """
 
-from pathlib import Path
-
 import pytest
 
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.obs.metrics import Metrics
-
-ROOT = Path(__file__).resolve().parents[2]
-SHIPPED = ROOT / "nora" / "dreamer"
+from tests.objectives import PRE_MOVE
+from tests.objectives import SHIPPED_DREAMER as SHIPPED
 
 DOCTRINE_FM = """\
 ---
@@ -326,3 +323,43 @@ def test_there_is_exactly_one_shipped_dreamer_doctrine_and_it_is_operator_only()
     assert doc.meta["kind"] == "dreamer-doctrine"
     assert doc.meta["change_policy"] == "operator-only"
     assert doc.body.strip()
+
+
+# --- 7.1 step (a): the lift is verbatim -----------------------------------
+#
+# The re-partition (step b) is Tasks 3.2/3.4 - Dreamer-general text into the
+# doctrine, return-shape prose into the adaptor's output-schema field, the
+# remainder into the objective - and it DELETES the fixtures below as its own
+# visible act. Until then, ANY edit to these bodies is a substrate bug,
+# including an improving one: a change that both moves and improves the text
+# cannot be told apart from a loader that mangled it.
+
+
+@pytest.mark.parametrize("objective", [
+    "room-language", "room-language-verification", "room-exchange",
+])
+def test_the_objective_file_is_the_pre_move_constant_byte_for_byte(objective):
+    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
+    before = (PRE_MOVE / f"{objective}.txt").read_text(encoding="utf-8")
+    assert store.objective_body(objective) == before
+
+
+def test_the_shipped_objectives_are_exactly_the_three_that_were_lifted():
+    """A fourth objective appearing here without a pre-move fixture would slip
+    past the parametrised test above, which only checks the three it names."""
+    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
+    assert set(store.objective_names()) == {p.stem for p in PRE_MOVE.glob("*.txt")}
+
+
+def test_the_verification_objective_is_still_a_format_template():
+    """The escaping decision, pinned. The body stores the `str.format` TEMPLATE
+    - placeholders live, JSON braces doubled - and `_build_verification_prompt`
+    does the substitution. Storing the post-format text instead would break
+    `.format` at the first candidate, in the background, on live traffic."""
+    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
+    body = store.objective_body("room-language-verification")
+    assert "{surface_form}" in body and "{sense}" in body and "{results}" in body
+    assert '{{"known_entity"' in body
+    rendered = body.format(surface_form="big walk", sense="a stroll", results="(none)")
+    assert '{"known_entity"' in rendered
+    assert "{surface_form}" not in rendered

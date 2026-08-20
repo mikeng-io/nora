@@ -17,6 +17,17 @@ takes its model client as an **injected `__init__` collaborator** rather than
 building one itself — a later task's composition root constructs the real
 one.
 
+**The instruction text is not in this file any more.** It lives in
+`nora/dreamer/objectives/`, versioned, hashed and hot-reloading, and arrives
+through the injected `objective` collaborator — see the instruction-substrate
+spec. The text was lifted VERBATIM (spec §7.1 step a) and
+`tests/unit/test_dreamer_instructions.py` compares it byte-for-byte against
+`tests/fixtures/dreamer_objectives_pre_move/`: until the re-partition (step b)
+ANY edit to those bodies is a substrate bug, including an improving one. The
+source is read PER CALL rather than captured at construction, because the files
+hot-reload on the bind mount and an observer that cached the text at startup
+would be serving whatever was on disk when the process began.
+
 **Collaborator shape: structural typing (`_ModelClient` below), not a
 `nora.domain.ports.Protocol`.** This call is a single `prompt -> str`
 completion used from exactly one place; promoting it to the shared port
@@ -100,41 +111,50 @@ class _ModelClient(Protocol):
     async def complete(self, *, prompt: str) -> str: ...
 
 
-_PROMPT_PREAMBLE = (
-    "You are reading a batch of messages from one Signal group chat. Your "
-    "only job is to spot SLANG THIS ROOM HAS MADE ITS OWN — a word, "
-    "abbreviation, or phrase used with a specific local meaning that an "
-    "outsider would not get from a dictionary. This is NOT a transcription "
-    "or translation task.\n\n"
-    "Do NOT report:\n"
-    "- ordinary Cantonese or English words used in their ordinary sense "
-    "(係, 唔係, 好, OK, lor, la, thanks, ...);\n"
-    "- standard internet slang already in general use everywhere "
-    "(lol, 笑死, yyds meaning its dictionary sense);\n"
-    "- anything you are not confident is genuinely used with a LOCAL, "
-    "room-specific sense.\n\n"
-    "It is completely correct — and expected most of the time — to find "
-    "NOTHING. Reporting an ordinary word just because a batch was given to "
-    "you makes the output worse than empty.\n\n"
-    "For each genuine candidate you MUST point at the exact message it came "
-    "from, by its numeric id from the list below. A candidate whose "
-    "message_id is not one of the ids given is worthless and will be "
-    "discarded.\n\n"
-    "Respond with ONLY a JSON object of this exact shape, nothing else — no "
-    "prose, no markdown fence:\n"
-    '{"observations": [{"surface_form": "<as written>", '
-    '"canonical_form": "<normalised form>", "sense": "<what it means here, '
-    'in Cantonese or English>", "part_of_speech": "<noun/verb/adjective/'
-    'interjection/...>", "message_id": <int, must be one of the ids below>, '
-    '"confidence": <0.0-1.0 float>}]}\n'
-    "If nothing qualifies, respond with exactly: "
-    '{"observations": []}\n\n'
-    "Messages:\n"
-)
+# The two objective files this adaptor sends, by name. Names, not bodies: the
+# bodies are on disk and reload without a restart, and a constant holding one
+# would be the second copy this whole substrate exists to remove.
+ROOM_LANGUAGE_OBJECTIVE = "room-language"
+KNOWN_ENTITY_OBJECTIVE = "room-language-verification"
 
 
-def _build_prompt(batch: Sequence[TranscriptRow]) -> str:
-    lines = [_PROMPT_PREAMBLE]
+class _ObjectiveSource(Protocol):
+    """The structural shape `LexemeObserver`'s `objective` collaborator must
+    satisfy: one objective body by name, read fresh every time.
+
+    A SOURCE, not a string, and that is the whole point — the objective files
+    are bind-mounted and hot-reload on mtime, so an observer handed the text at
+    construction would keep sending whatever was on disk when the process
+    started, and an operator's edit would look like it did nothing.
+
+    Documented duck-type rather than a declared `nora.domain.ports` Protocol,
+    following `_ModelClient` above and its stated reason: `nora.language` may
+    not import `nora.doctrine`/`nora.instructions`' concrete store, and a shape
+    with one consumer does not earn a shared-port contract suite. The production
+    implementation is `nora.instructions.dreamer.DreamerInstructions`.
+    """
+
+    def objective_body(self, name: str) -> str: ...
+
+
+@dataclass(frozen=True)
+class _RunInstructions:
+    """The instruction text for ONE `observe()` call, read once and carried.
+
+    Both bodies are read up front, before the first model call, rather than at
+    the point each is used. A reload landing between the extraction call and the
+    verification call would otherwise split one batch's rows across two digests,
+    and the question the column answers — «which instruction revision wrote this
+    row» — would have two answers for one run.
+    """
+
+    extraction: str
+    verification: str | None
+    sha256: str
+
+
+def _build_prompt(preamble: str, batch: Sequence[TranscriptRow]) -> str:
+    lines = [preamble]
     for row in batch:
         speaker = row.person_name or row.sender_name or row.sender_id
         lines.append(f"[{row.id}] {speaker}: {row.body or ''}")
@@ -143,36 +163,24 @@ def _build_prompt(batch: Sequence[TranscriptRow]) -> str:
 
 # The Dreamer's known-entity check (2026-08-20 design doc,
 # docs/superpowers/specs/2026-08-20-dreamer-known-entity-check-design.md):
-# a SECOND, narrow question over `web_search` results, kept separate from
-# `_PROMPT_PREAMBLE`'s extraction question rather than folded into one call —
-# the module docstring's own "an LLM glosses, arithmetic decides" split,
-# applied a second time to keep this one call's job to exactly one question.
-_VERIFICATION_PROMPT_TEMPLATE = (
-    "A room-language extractor flagged the phrase below as slang a Signal "
-    "group chat has made its own. Your ONLY job is to check whether it is "
-    "actually already a KNOWN PUBLIC thing — a real game, place, brand, "
-    "meme, or other name with an established meaning OUTSIDE this specific "
-    "group — rather than something this group coined.\n\n"
-    "Phrase: {surface_form}\n"
-    "Claimed local sense: {sense}\n\n"
-    "Web search results for the phrase:\n{results}\n\n"
-    "Respond with ONLY a JSON object of this exact shape, nothing else — no "
-    "prose, no markdown fence:\n"
-    '{{"known_entity": <true if the results show this is an established '
-    "public thing whose own meaning the room's use matches or refers to; "
-    'false if the results are irrelevant, sparse, or establish no public '
-    'meaning>}}\n'
-)
-
-
+# a SECOND, narrow question over `web_search` results, kept in its own
+# objective file rather than folded into the extraction one — the module
+# docstring's own "an LLM glosses, arithmetic decides" split, applied a second
+# time to keep this one call's job to exactly one question.
 def _build_verification_prompt(
-    candidate: LexemeCandidate, results: Sequence[Any],
+    template: str, candidate: LexemeCandidate, results: Sequence[Any],
 ) -> str:
+    """`template` is a `str.format` TEMPLATE, exactly as the objective file
+    stores it: `{surface_form}`/`{sense}`/`{results}` are substituted here, and
+    the JSON example's literal braces are doubled in the file because that is
+    what `str.format` requires. The escaping lives in the file and the
+    formatting lives here — one decision, made once, stated in the objective's
+    own frontmatter `description`."""
     lines = [
         str(item["content"]) for item in results
         if isinstance(item, dict) and item.get("content")
     ]
-    return _VERIFICATION_PROMPT_TEMPLATE.format(
+    return template.format(
         surface_form=candidate.surface_form,
         sense=candidate.sense,
         results="\n".join(lines) if lines else "(no results)",
@@ -286,28 +294,54 @@ class LexemeObserver:
     """
 
     def __init__(
-        self, model: _ModelClient, *, metrics: Metrics | None = None,
+        self, model: _ModelClient, *, objective: _ObjectiveSource,
+        metrics: Metrics | None = None,
         search: SearchProvider | None = None, verify_max_candidates: int = 10,
     ) -> None:
         self._model = model
+        self._objective = objective
         self._metrics = metrics
         self._search = search
         self._verify_max_candidates = verify_max_candidates
-        # Computed ONCE, from the instruction text this instance is
-        # CONFIGURED to send — see the property below for what that set is
-        # and why the verification template is in it only when `search` is
-        # wired. Constant per instance, so every row one Dreamer cycle
-        # writes carries the same stamp and a corpus can be split by
-        # revision.
-        self._instruction_sha256 = instruction_sha256(*(
-            (_PROMPT_PREAMBLE, _VERIFICATION_PROMPT_TEMPLATE)
-            if search is not None else (_PROMPT_PREAMBLE,)
-        ))
-        # Read from the CLIENT, once, for the same reason the digest is
-        # computed once: constant per instance, so every row one Dreamer
-        # cycle writes names the same model. See `_ModelClient.model` for why
-        # it is asked of the client rather than passed in beside it.
+        # Read from the CLIENT, once: constant per instance, so every row one
+        # Dreamer cycle writes names the same model. See `_ModelClient.model`
+        # for why it is asked of the client rather than passed in beside it.
+        # The instruction digest is NOT computed here — see
+        # `_instructions_for_run`; the text hot-reloads and a value captured at
+        # construction would name the corpus as it was at process start.
         self._model_name = model.model
+
+    def _instructions_for_run(self) -> _RunInstructions:
+        """The objective bodies this instance sends, read fresh, hashed once.
+
+        The set is a property of the CONFIGURED instance: the verification
+        objective is in it when — and only when — a `search` collaborator is
+        wired. **Why it is in the set at all**, given that it authors no field:
+        it decides whether a candidate becomes a row, so two corpora written
+        either side of an edit to it differ in POPULATION, and a stamp that
+        could not tell them apart would be bound to half its input — the defect
+        substrate §4.3 rejects `objective_sha256` for. **Why it drops out when
+        `search is None`**: it is then never sent, and stamping text that did
+        not reach a model is provenance bound to the wrong property.
+
+        **What is NOT in the digest yet, deliberately: the Dreamer doctrine.**
+        Phase 1 is the verbatim lift (spec §7.1 step a) — the doctrine exists as
+        an artifact but no adaptor sends it, and hashing text that did not reach
+        the model is the same defect as hashing a proxy. The re-partition adds
+        the doctrine to the prompt AND to this digest in one change, which is
+        exactly the rule: the stamp names what was sent.
+        """
+        extraction = self._objective.objective_body(ROOM_LANGUAGE_OBJECTIVE)
+        if self._search is None:
+            return _RunInstructions(
+                extraction=extraction, verification=None,
+                sha256=instruction_sha256(extraction),
+            )
+        verification = self._objective.objective_body(KNOWN_ENTITY_OBJECTIVE)
+        return _RunInstructions(
+            extraction=extraction, verification=verification,
+            sha256=instruction_sha256(extraction, verification),
+        )
 
     @property
     def model(self) -> str:
@@ -327,20 +361,14 @@ class LexemeObserver:
 
     @property
     def instruction_sha256(self) -> str:
-        """The digest stamped onto every candidate this instance produces
-        (`nora.domain.provenance`), over the instruction text that actually
-        governs a row here: `_PROMPT_PREAMBLE`, plus
-        `_VERIFICATION_PROMPT_TEMPLATE` when — and only when — a `search`
-        collaborator is wired.
+        """The digest this instance stamps onto every candidate right now
+        (`nora.domain.provenance`), over the objective bodies currently on
+        disk — see `_instructions_for_run` for what is in the set and why.
 
-        **Why the verification template is in the set at all**, given that it
-        authors no field: it decides whether a candidate becomes a row. Two
-        corpora written either side of an edit to it differ in POPULATION,
-        and a stamp that could not tell them apart would be bound to half its
-        input — the same defect §4.3 rejects `objective_sha256` for. **Why it
-        drops out when `search is None`**: it is then never sent, and
-        stamping text that did not reach a model is provenance bound to the
-        wrong property, which is the defect this column exists to remove.
+        Re-read on every access rather than cached, because the objective files
+        hot-reload: a cached value would keep naming the corpus as it was at
+        process start, and the whole point of the column is that a row names
+        the revision that wrote it.
 
         The set is a property of the CONFIGURED instance, not of each
         candidate's control flow: a candidate kept because verification was
@@ -355,10 +383,9 @@ class LexemeObserver:
 
         Exposed rather than private because §4.4 wants a Dreamer tick to LOG
         its instruction versions the way a tag start logs
-        `doctrine_versions={…}`; that is a later change, and this is the value
-        it will read.
+        `doctrine_versions={…}`.
         """
-        return self._instruction_sha256
+        return self._instructions_for_run().sha256
 
     async def observe(self, *, batch: Sequence[TranscriptRow]) -> ObservationResult:
         """One model call over `batch`, or nothing for an empty batch (no
@@ -378,16 +405,22 @@ class LexemeObserver:
         either way."""
         if not batch:
             return ObservationResult(candidates=(), parsed=True)
-        prompt = _build_prompt(batch)
+        # Read ONCE, up front, and carried through both model calls: a reload
+        # landing mid-run must not split one batch's rows across two digests.
+        instructions = self._instructions_for_run()
+        prompt = _build_prompt(instructions.extraction, batch)
         raw = await self._model.complete(prompt=prompt)
-        result = self._extract(raw, batch)
+        result = self._extract(raw, batch, instructions.sha256)
         if self._search is None or not result.parsed or not result.candidates:
             return result
-        verified = await self._verify_known_entities(self._search, result.candidates)
+        verified = await self._verify_known_entities(
+            self._search, result.candidates, instructions.verification or "",
+        )
         return ObservationResult(candidates=verified, parsed=True)
 
     async def _verify_known_entities(
         self, search: SearchProvider, candidates: tuple[LexemeCandidate, ...],
+        template: str,
     ) -> tuple[LexemeCandidate, ...]:
         """Check up to `verify_max_candidates` of `candidates` against
         `search` before they can reach the store (2026-08-20 design doc) —
@@ -420,7 +453,8 @@ class LexemeObserver:
             results = outcome.get("results")
             verdict_raw = await self._model.complete(
                 prompt=_build_verification_prompt(
-                    candidate, results if isinstance(results, list) else [],
+                    template, candidate,
+                    results if isinstance(results, list) else [],
                 ),
             )
             if _parse_verification(verdict_raw) is True:
@@ -439,7 +473,7 @@ class LexemeObserver:
         return tuple(kept)
 
     def _extract(
-        self, raw: str, batch: Sequence[TranscriptRow]
+        self, raw: str, batch: Sequence[TranscriptRow], stamp: str,
     ) -> ObservationResult:
         observations = _parse_observations(raw)
         if observations is None:
@@ -497,7 +531,7 @@ class LexemeObserver:
                 # becomes a candidate — see the `instruction_sha256` and
                 # `model` properties. Both ride the SAME construction, so a
                 # candidate can never carry one without the other.
-                instruction_sha256=self._instruction_sha256,
+                instruction_sha256=stamp,
                 model=self._model_name,
             ))
         return ObservationResult(candidates=tuple(candidates), parsed=True)

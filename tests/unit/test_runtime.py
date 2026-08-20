@@ -29,6 +29,15 @@ from nora.language.consolidator import LanguageConsolidator
 from nora.language.observer import LexemeObserver
 from nora.obs.metrics import Metrics
 from nora.tag import Debounce
+from tests.objectives import shipped_objectives
+
+# The `objective` collaborator, wired the way production wires it: the REAL
+# `DreamerInstructions` over the REAL `nora/dreamer/` tree, not a double. The
+# bodies it serves are byte-identical to the constants these tests were written
+# against (`tests/unit/test_dreamer_instructions.py` proves it), so nothing
+# below changed meaning — and a broken objective file now fails here rather
+# than on the next Dreamer tick.
+OBJECTIVES = shipped_objectives()
 
 # ---------------------------------------------------------------------------
 # BackgroundTasks
@@ -666,6 +675,7 @@ async def test_an_unparseable_model_response_leaves_the_watermark_unmoved():
     consolidator = LanguageConsolidator(
         observer=LexemeObserver(
             _FakeModel(responses=["sorry, can't help with that"]), metrics=metrics,
+            objective=OBJECTIVES,
         ),
         store=store,
     )
@@ -699,7 +709,10 @@ async def test_a_batch_that_parses_to_zero_candidates_still_advances():
     language = _FakeLanguage(lag=1000)
     store = _FakeConsolidatorStore()
     consolidator = LanguageConsolidator(
-        observer=LexemeObserver(_FakeModel(responses=['{"observations": []}'])),
+        observer=LexemeObserver(
+            _FakeModel(responses=['{"observations": []}']),
+            objective=OBJECTIVES,
+        ),
         store=store,
     )
     metrics = Metrics()
