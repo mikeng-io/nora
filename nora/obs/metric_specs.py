@@ -915,6 +915,41 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "consolidator ever read them, by scope.",
         ("scope",),
     ),
+    # The three-state verdict, visible. A high `not_covered` rate is the
+    # HONEST read — most sources do not address most claims — and reading it
+    # as a failure is the same mistake R-27 exists to prevent one layer down.
+    _CounterSpec(
+        "nora_fact_verdicts_total",
+        "Fact adjudications by verdict: supported, contradicted, not_covered.",
+        ("status",),
+    ),
+    _CounterSpec(
+        "nora_facts_proposed_total",
+        "Facts written from a supported or contradicted verdict.",
+    ),
+    _CounterSpec(
+        "nora_facts_superseded_total",
+        "Facts stamped superseded_at by the one verb that may do so.",
+    ),
+    # Candidate selection is a COST decision, so what it dropped is the thing
+    # an operator needs to see; a silent drop reads as "nothing was there".
+    _CounterSpec(
+        "nora_fact_candidates_total",
+        "Fact candidates by what selection did with them: adjudicated, "
+        "already_known, noise, deferred.",
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_fact_adjudications_skipped_total",
+        "Candidates not adjudicated this tick because the per-tick cap was "
+        "reached. A silent cap reads as 'we checked everything'.",
+        ("reason",),
+    ),
+    _CounterSpec(
+        "nora_fact_entity_unresolved_total",
+        "Candidate subjects that resolved to no fact_entity — the alias "
+        "problem, observed rather than assumed.",
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
