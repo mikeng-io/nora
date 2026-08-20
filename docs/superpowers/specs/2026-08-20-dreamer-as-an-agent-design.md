@@ -211,7 +211,9 @@ configured — it is a property of the runtime.
 - `about` / `ask_memory` / `lookup_person` — *the user profile*
 - `search_memory`, `group_members`
 - `web_search`, `web_fetch`
-- `pulse_*` (the game-state family — directly relevant to the motivating case)
+- ~~`pulse_*`~~ — **excluded, see §9.6.** MCP-sourced, so nothing carries its
+  classification. Named here because it is what the Dreamer *wants*; the
+  mechanism cannot grant it yet.
 - `now`, `calculate`
 
 **Out** — every act verb, **and any write verb.** A tool that persists an
@@ -257,8 +259,10 @@ carries `budget`, `terminal`, `time_shiftable`, `disclose_failure` and
 the new field belongs.
 
 **`pulse_*` is not in `NATIVE_TOOLS` at all** — it arrives over MCP, which has no
-row to carry the flag. The tool set in this section names it; the mechanism
-cannot classify it. Unresolved, and §9.7.
+row to carry the flag, so it cannot be classified. **Resolved 2026-08-20: MCP
+tools are excluded from the Dreamer until they have a classification surface**
+(§9.6). Fail-closed, at the cost of the game-state family the motivating case
+most wants.
 
 `ToolSpec` (`nora/agent/ports.py:74-83`) already carries `budget`, `terminal`,
 `time_shiftable`, `cacheable`, `disclose_failure`, `timeout_seconds`, and the
@@ -404,16 +408,44 @@ fields. Nothing in `Standing`, the debrief, or the propose/dispose split changes
    `_dream_once` hardcodes a single watermark named `"language"` and `exchange`
    rides it. An adaptor renamed during migration gets `watermark_for → 0` and
    **re-reads every room from the beginning.**
-4. **Failure isolation.** `dream_loop`'s try/except is already per-scope so one
-   scope cannot starve another. Per *adaptor* isolation is a second axis and is
-   not there today.
+4. ~~**Failure isolation.**~~ **DECIDED 2026-08-20 (operator): isolate PER
+   ADAPTOR.** `dream_loop`'s try/except is already per-scope so one scope cannot
+   starve another; adaptor isolation is a second axis and is added.
+
+   A throwing adaptor must not cost the tick for the others. The asymmetry that
+   settles it: the adaptors have different *value densities* — a fact adaptor
+   researching the open web has far more ways to fail than a lexeme extractor
+   reading its own message batch, and letting the riskiest one silence the
+   cheapest is backwards. `RoomPortraitSynthesizer`'s branch already behaves this
+   way, so this generalises existing behaviour rather than inventing it.
+
+   **Implementation consequence the plan flagged:** `_run_one`'s backoff key has
+   to move with the isolation boundary. A per-adaptor try/except with a
+   per-*scope* backoff key would let one failing adaptor back off every adaptor
+   in that scope — the bug this decision exists to prevent, reintroduced one
+   layer down.
 5. **Does the Dreamer get its own doctrine files, or a single objective file per
    adaptor?** Settled in the substrate spec once revised.
-6. **How is an MCP-sourced tool classified read-or-act?** `pulse_*` is named in
-   §4's tool set but is not in `NATIVE_TOOLS` — it arrives over MCP, which has no
-   row to carry the field the split is derived from. Either MCP tools get a
-   classification surface, or they are excluded from the Dreamer until they do;
-   defaulting them either way is the failure §4 exists to prevent.
+6. ~~**How is an MCP-sourced tool classified read-or-act?**~~ **DECIDED
+   2026-08-20 (operator): MCP tools are EXCLUDED from the Dreamer until they have
+   a classification surface.** `pulse_*` arrives over MCP, which has no row to
+   carry the field the read/act split derives from, so it cannot be classified —
+   and an unclassifiable tool must not be granted by default.
+
+   **This is fail-closed, and it costs something real.** The Dreamer loses
+   `pulse_*` — the game-state family, which is directly relevant to the
+   motivating case: the save file is what actually settles a Big Walk progress
+   claim. A fact adaptor without it can research the open web but cannot read the
+   group's own game state.
+
+   That cost is accepted rather than hidden. The alternative — defaulting
+   unclassified MCP tools to "read" — would mean an MCP server added later could
+   silently hand a background agent a write verb, which is precisely the failure
+   §4's derived-not-hand-listed rule exists to prevent, and which §4's own
+   four-verb omission already demonstrated is not hypothetical.
+
+   **Reopen** by giving MCP tools a classification surface; the tool set in §4
+   stops naming `pulse_*` until then.
 7. **The fact tier's store and its retrieval** — NOT open here. Owned by the
    fact-store workstream; see `2026-08-20-fact-store-research-handoff.md`. The
    only constraint this document places on it is §3.1's interface.
