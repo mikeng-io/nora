@@ -1046,7 +1046,9 @@ neither blocking:
 **With §15.4 answered, this document is final on behaviour.** It is final on
 *interface* except for item 1, which the fact-tier session is settling tonight
 with the substrate session before the declaration lands — and which changes how
-the curator is wired, never what it decides.  takes
- and nothing else, stated by that session as a
-contract-suite affordance so the shared suite in Part 1b does not have to
-reverse-engineer it.
+the curator is wired, never what it decides.
+
+`SqlFactStore.__init__` takes `(engine: AsyncEngine)` and nothing else — no
+config object, no clock, no metrics collaborator, because `now_ms` arrives on the
+verbs. Stated by that session as a **contract-suite affordance**, so the shared
+suite in Part 1b does not have to reverse-engineer a constructor.
