@@ -36,6 +36,9 @@
 );
 );
 );
+);
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -47,6 +50,11 @@ ADD CONSTRAINT event_rsvps_pkey PRIMARY KEY (event_id, person_id);
 ADD CONSTRAINT events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_scope_id_act_message_ids_key UNIQUE (scope_id, act, message_ids);
+ADD CONSTRAINT fact_candidate_pkey PRIMARY KEY (id);
+ADD CONSTRAINT fact_candidate_triple_key UNIQUE (workspace, subject_id, predicate, object);
+ADD CONSTRAINT fact_entity_pkey PRIMARY KEY (id);
+ADD CONSTRAINT fact_entity_workspace_name_key UNIQUE (workspace, canonical_name);
+ADD CONSTRAINT fact_pkey PRIMARY KEY (id);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
@@ -80,6 +88,11 @@ ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.events
 ALTER TABLE ONLY public.exchange_observation
 ALTER TABLE ONLY public.exchange_observation
+ALTER TABLE ONLY public.fact
+ALTER TABLE ONLY public.fact_candidate
+ALTER TABLE ONLY public.fact_candidate
+ALTER TABLE ONLY public.fact_entity
+ALTER TABLE ONLY public.fact_entity
 ALTER TABLE ONLY public.geocode_cache
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
@@ -135,6 +148,11 @@ CONSTRAINT exchange_observation_instruction_sha256_check CHECK (((instruction_sh
 CONSTRAINT exchange_observation_message_ids_check CHECK ((array_length(message_ids, 1) >= 2)),
 CONSTRAINT exchange_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
 CONSTRAINT exchange_observation_participants_check CHECK ((array_length(participants, 1) >= 2))
+CONSTRAINT fact_candidate_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'adjudicated'::text, 'not_covered'::text])))
+CONSTRAINT fact_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
+CONSTRAINT fact_model_is_named_check CHECK ((length(btrim(model)) > 0)),
+CONSTRAINT fact_one_object_check CHECK (((object_entity_id IS NULL) <> (object_literal IS NULL))),
+CONSTRAINT fact_supersession_is_timed_check CHECK (((superseded_by IS NULL) OR (superseded_at IS NOT NULL)))
 CONSTRAINT language_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT language_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0)))
 CONSTRAINT messages_conversation_type_check CHECK ((conversation_type = ANY (ARRAY['group'::text, 'dm'::text])))
@@ -149,6 +167,7 @@ CONSTRAINT room_lexeme_state_check CHECK ((state = ANY (ARRAY['live'::text, 'fad
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
+CREATE INDEX idx_fact_standing ON public.fact USING btree (workspace, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
 CREATE INDEX idx_messages_dream_lag ON public.messages USING btree (conversation_id, id) WHERE (is_nora = 0);
@@ -168,6 +187,9 @@ CREATE TABLE public.consolidation_watermark (
 CREATE TABLE public.event_rsvps (
 CREATE TABLE public.events (
 CREATE TABLE public.exchange_observation (
+CREATE TABLE public.fact (
+CREATE TABLE public.fact_candidate (
+CREATE TABLE public.fact_entity (
 CREATE TABLE public.geocode_cache (
 CREATE TABLE public.language_observation (
 CREATE TABLE public.media_descriptions (
@@ -238,14 +260,17 @@ act text NOT NULL,
 act text NOT NULL,
 address text NOT NULL,
 address text,
+aliases text[] DEFAULT '{}'::text[] NOT NULL,
 announced_at timestamp with time zone NOT NULL,
 artifact_id text,
+attempts integer DEFAULT 0 NOT NULL,
 avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
 battery double precision,
 body text,
 canonical_form text NOT NULL,
 canonical_form text NOT NULL,
+canonical_name text NOT NULL,
 circle_id text NOT NULL,
 circle_id text NOT NULL,
 circle_id text NOT NULL,
@@ -270,6 +295,8 @@ conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 corridor_id integer NOT NULL,
 corridor_id integer,
+created_at bigint NOT NULL
+created_at bigint NOT NULL,
 created_at text DEFAULT (now())::text NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
@@ -290,6 +317,8 @@ dwell_ms bigint DEFAULT 0 NOT NULL,
 ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
 error text,
+established_by text NOT NULL,
+established_by text NOT NULL,
 event_id uuid NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -300,6 +329,7 @@ extractor_confidence double precision NOT NULL,
 fetch_token text NOT NULL,
 fired_at timestamp with time zone,
 first_seen timestamp with time zone DEFAULT now() NOT NULL,
+first_seen_at bigint NOT NULL,
 first_seen_at bigint NOT NULL,
 first_seen_at bigint NOT NULL,
 first_seen_ts bigint NOT NULL,
@@ -319,10 +349,14 @@ id integer NOT NULL,
 id integer NOT NULL,
 id integer NOT NULL,
 id text NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+instruction_sha256 text NOT NULL,
 instruction_sha256 text,
 instruction_sha256 text,
 instruction_sha256 text,
@@ -331,10 +365,12 @@ is_driving integer,
 is_nora integer DEFAULT 0 NOT NULL,
 kind text NOT NULL,
 label text,
+last_adjudicated_at bigint,
 last_cluster_id integer DEFAULT 0 NOT NULL,
 last_fix_id integer DEFAULT 0 NOT NULL,
 last_message_id integer DEFAULT 0 NOT NULL,
 last_seen timestamp with time zone DEFAULT now() NOT NULL,
+last_seen_at bigint NOT NULL,
 last_seen_at bigint NOT NULL,
 last_seen_at bigint NOT NULL,
 last_seen_ts bigint NOT NULL
@@ -358,17 +394,23 @@ media_type text NOT NULL,
 message_id integer NOT NULL,
 message_ids integer[] NOT NULL,
 model text NOT NULL,
+model text NOT NULL,
 model text,
 model text,
 model text,
 model text,
 name text NOT NULL,
 narrative text NOT NULL,
+object text NOT NULL,
+object_entity_id text,
+object_literal text,
 observed_at bigint NOT NULL,
 observed_at bigint NOT NULL,
+observed_in text[] DEFAULT '{}'::text[] NOT NULL,
 occurrence integer DEFAULT 0 NOT NULL,
 occurrence_count integer DEFAULT 0 NOT NULL,
 occurrence_count integer DEFAULT 0 NOT NULL,
+occurrence_count integer DEFAULT 1 NOT NULL,
 outcome text,
 outcome text,
 p50_kmh double precision NOT NULL,
@@ -391,6 +433,8 @@ platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
+predicate text NOT NULL,
+predicate text NOT NULL,
 quoted_ts bigint,
 radius_m double precision NOT NULL,
 radius_m double precision NOT NULL,
@@ -434,6 +478,8 @@ sha256 text NOT NULL,
 size integer DEFAULT 0 NOT NULL,
 size_bytes bigint NOT NULL,
 slug text NOT NULL,
+source_excerpt text NOT NULL,
+source_url text NOT NULL,
 speed_kmh double precision
 started_ts bigint NOT NULL,
 started_ts bigint NOT NULL,
@@ -443,6 +489,7 @@ state text DEFAULT 'pending'::text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 status text NOT NULL,
+status text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
@@ -451,6 +498,10 @@ subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
+subject_id text NOT NULL,
+subject_id text NOT NULL,
+superseded_at bigint,
+superseded_by uuid,
 surface_form text NOT NULL,
 synthesized_at bigint NOT NULL
 tag_id text NOT NULL,
@@ -470,6 +521,8 @@ updated_ms bigint NOT NULL
 updated_ts bigint NOT NULL
 updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,
+valid_from bigint NOT NULL,
+valid_to bigint,
 venue_address text,
 venue_maps_url text,
 venue_name text,
@@ -481,3 +534,6 @@ venue_text text,
 version text NOT NULL,
 version_num character varying(32) NOT NULL
 wire_state text NOT NULL,
+workspace text NOT NULL,
+workspace text NOT NULL,
+workspace text NOT NULL,
