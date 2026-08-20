@@ -19,7 +19,21 @@ It still asserts, from the catalogue and independent of the baseline:
   - `idx_messages_conv_ts` is `(conversation_id, ts DESC)`, the descending flag
     read from the per-column `indoption` DESC **bit** (`indoption[i] & 1`), NOT
     equality to 1 (a `DESC NULLS FIRST` column is `1|2 = 3`, so `== 1` false-
-    fails), and NOT `information_schema` (which does not expose index ordering).
+    fails), and NOT `information_schema` (which does not expose index ordering);
+  - **every** `sa.CheckConstraint` in `schema.py` is on the migrated table with
+    the same predicate, and the table carries no CHECK `schema.py` is silent
+    about — see `test_the_metadata_check_constraints_match_the_migrated_database`
+    and the honesty note below.
+
+**The CHECK constraints were documentation until 2026-08-20.** The bullet above
+covered exactly one constraint by name; nothing covered the other twenty-five.
+`compare_metadata` is blind to CHECKs (this file's opening paragraph says so),
+and the dump/baseline test compares the migrated database against a file
+regenerated from that same database — `schema.py` is in neither loop. Deleting
+all four `model` CHECKs from `schema.py` alone, migrations untouched, left the
+entire suite green: 3569 passed. Found while verifying red-on-revert for
+`0024_dreamer_model_provenance`, i.e. by somebody checking whether the gate
+could measure the thing before reading its output as evidence.
 
 Parameterised over every table in `nora`'s metadata, so when `presence_fixes`
 (design/19) joins the same database its identically alembic-check-blind
@@ -80,6 +94,148 @@ def _check_constraint_defs(sync_url: str, table: str) -> list[str]:
             ), {"t": table}).scalars())
     finally:
         engine.dispose()
+
+
+# The constraint name the metadata-side probe borrows for the length of one
+# rolled-back SAVEPOINT. Nothing is ever committed under it.
+_PROBE_CONSTRAINT = "zz_schema_parity_probe"
+
+
+def _actual_check_defs(conn: sa.Connection, table: str) -> dict[str, str]:
+    """Postgres's own text for every CHECK on `table`, keyed by constraint name."""
+    return dict(conn.execute(sa.text(
+        "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+        "WHERE conrelid = CAST(:t AS regclass) AND contype = 'c'"
+    ), {"t": table}).all())
+
+
+def _declared_checks(table: str) -> list[sa.CheckConstraint]:
+    """`schema.py`'s CHECKs for `table`, named ones first.
+
+    The order is load-bearing. An UNNAMED `CheckConstraint` has no name to match
+    on and can only claim a database constraint by predicate; doing the named
+    ones first means every constraint that has a name has already claimed its
+    own row, so the unnamed one cannot accidentally claim a namesake's.
+    """
+    return sorted(
+        (c for c in METADATA.tables[table].constraints
+         if isinstance(c, sa.CheckConstraint)),
+        key=lambda c: (c.name is None, str(c.name)),
+    )
+
+
+def _as_postgres_renders_it(
+    conn: sa.Connection, table: str, constraint: sa.CheckConstraint
+) -> str:
+    """What the database would store for a CHECK that `schema.py` declares.
+
+    **Why a round-trip and not a string compare.** Postgres does not keep the
+    predicate you wrote; it keeps a parsed one and prints it back its own way —
+    `model IS NULL OR length(btrim(model)) > 0` returns as
+    `CHECK (((model IS NULL) OR (length(btrim(model)) > 0)))`, and an `IN` list
+    returns as `= ANY (ARRAY[...::text])`. Diffing `schema.py`'s spelling
+    against that compares two renderings of the same predicate and calls them
+    drift. Hand-normalising one side is worse: it is a small SQL parser written
+    in a test, and every expression it gets wrong is a false failure that
+    eventually gets the test deleted.
+
+    So both sides are rendered by the same renderer. The declared constraint is
+    added to the REAL table under a probe name inside a SAVEPOINT that is always
+    rolled back, and read back with `pg_get_constraintdef` — the identical call
+    the database side uses. What remains after that is a difference in the
+    predicate, not in how it was typed.
+
+    `exec_driver_sql`, not `sa.text`: a declared expression may legitimately
+    contain a `::text` cast, which `sa.text` would parse as a `:text`
+    bindparam and refuse to execute. No parameters are passed, so psycopg
+    performs no `%` interpolation either.
+    """
+    savepoint = conn.begin_nested()
+    try:
+        conn.exec_driver_sql(
+            f'ALTER TABLE "{table}" ADD CONSTRAINT "{_PROBE_CONSTRAINT}" '
+            f"CHECK ({constraint.sqltext})"
+        )
+        return conn.execute(sa.text(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE conrelid = CAST(:t AS regclass) AND conname = :n"
+        ), {"t": table, "n": _PROBE_CONSTRAINT}).scalar_one()
+    finally:
+        savepoint.rollback()
+
+
+def _check_constraint_problems(
+    conn: sa.Connection, table: str, declared: list[sa.CheckConstraint]
+) -> list[str]:
+    """Every way `declared` and `table`'s live CHECKs disagree, in plain words.
+
+    A list rather than an assertion so the gate can report all of them at once,
+    and so `test_the_check_constraint_comparison_reports_drift_in_both_directions`
+    can run the comparison against a `declared` it doctors — proving the
+    comparison fails when it should without editing `schema.py`.
+
+    **The rule, both directions, no allow-list.** A declared CHECK the database
+    does not have is drift: the ORM's model of the table claims an invariant
+    nothing enforces. A CHECK the database has and `schema.py` does not declare
+    is *also* drift, for the mirror reason — `schema.py` calls itself "the
+    single source of truth for Nora's tables", so an invariant absent from it is
+    one a contributor reading it cannot know they are writing against. There is
+    no allow-list because there is nothing to allow: all 26 CHECKs matched on
+    both name and predicate the day this was written. A future constraint that
+    genuinely belongs in a migration and not in the metadata should argue for
+    itself in review, not slip past a list.
+
+    Names are compared **as well as** predicates, for every constraint that
+    declares one: migrations drop constraints BY NAME
+    (`op.drop_constraint(f"{table}_model_check", ...)`), so a name that agrees
+    nowhere is a downgrade that fails. The two CHECKs `schema.py` leaves unnamed
+    are matched on predicate alone — Postgres generates their names, and
+    asserting the generated form would encode a naming rule SQLAlchemy never
+    applied.
+    """
+    actual = _actual_check_defs(conn, table)
+    unclaimed = dict(actual)
+    problems: list[str] = []
+
+    for constraint in declared:
+        rendered = _as_postgres_renders_it(conn, table, constraint)
+        if constraint.name is None:
+            claimed = next(
+                (n for n, d in sorted(unclaimed.items()) if d == rendered), None
+            )
+            if claimed is None:
+                problems.append(
+                    f"{table}: schema.py declares an unnamed {rendered}, and no "
+                    f"CHECK on the migrated table has that predicate — the "
+                    f"migration never built it."
+                )
+            else:
+                del unclaimed[claimed]
+            continue
+        if constraint.name not in actual:
+            problems.append(
+                f"{table}: schema.py declares CHECK {constraint.name!r}, but the "
+                f"migrated table has no constraint of that name — nothing "
+                f"enforces {rendered}. Add it in a migration, or delete the "
+                f"declaration."
+            )
+            continue
+        del unclaimed[constraint.name]
+        if actual[constraint.name] != rendered:
+            problems.append(
+                f"{table}: CHECK {constraint.name!r} means something different "
+                f"in each place.\n"
+                f"        schema.py: {rendered}\n"
+                f"        database : {actual[constraint.name]}"
+            )
+
+    problems.extend(
+        f"{table}: the migrated table has CHECK {name!r} {definition}, which "
+        f"schema.py does not declare — declare it in nora/infra/sql/schema.py, "
+        f"or drop it in a migration."
+        for name, definition in sorted(unclaimed.items())
+    )
+    return problems
 
 
 def _index_column_orders(sync_url: str, index: str) -> dict[str, bool]:
@@ -200,6 +356,102 @@ def test_the_conversation_type_check_constraint_is_present(migrated):
     Postgres one asserts it from pg_constraint directly."""
     defs = _check_constraint_defs(sync_url_for(migrated), "messages")
     assert any("conversation_type" in d for d in defs), defs
+
+
+def test_the_metadata_check_constraints_match_the_migrated_database(migrated):
+    """`schema.py`'s CHECKs are enforced, not annotated.
+
+    THE GAP THIS CLOSES. `test_the_conversation_type_check_constraint_is_present`
+    covers one CHECK by name. The other twenty-five were covered by nothing:
+    `compare_metadata` cannot see a CHECK, and the dump/baseline test compares
+    the migrated database against a file regenerated from it, so `schema.py` is
+    on neither side. Deleting all four `model` CHECKs from `schema.py` alone —
+    migrations untouched — left the whole suite green at 3569 passed.
+
+    Which meant the declarations were documentation of what the migrations
+    built. A contributor who added a CHECK only to `schema.py` was told nothing
+    when it never reached the database; one who deleted a CHECK from
+    `schema.py`, likewise. `METADATA` is what the ORM issues queries through,
+    and an invariant it claims that the store does not hold is a premise, not a
+    nit — the same reason `test_the_metadata_matches_the_migrated_database`
+    exists for columns.
+
+    Compares NAME and PREDICATE, in both directions, over every table in the
+    metadata. See `_as_postgres_renders_it` for why the predicates are
+    comparable at all, and `_check_constraint_problems` for the exact rule.
+    """
+    engine = sa.create_engine(sync_url_for(migrated))
+    try:
+        with engine.connect() as conn:
+            problems = [
+                problem
+                for table in sorted(METADATA.tables)
+                for problem in _check_constraint_problems(
+                    conn, table, _declared_checks(table)
+                )
+            ]
+    finally:
+        engine.dispose()
+
+    assert problems == [], (
+        "nora/infra/sql/schema.py's CHECK constraints and the migrated database "
+        "disagree. Fix the migration or the declaration; do NOT regenerate the "
+        "baseline, which cannot see this.\n      - "
+        + "\n      - ".join(problems)
+    )
+
+
+def test_the_check_constraint_comparison_reports_drift_in_both_directions(migrated):
+    """The instrument check for the test above — a gate never shown to fail is
+    not evidence, and this one has three ways to fail.
+
+    The drift the gate guards against lives in a Python file, so it cannot be
+    injected into a scratch database the way `test_a_deliberate_drift_is_caught`
+    injects its own. It is injected into the DECLARED side instead: the same
+    comparison, run against a `declared` list doctored three ways, must report
+    each one.
+    """
+    engine = sa.create_engine(sync_url_for(migrated))
+    try:
+        with engine.connect() as conn:
+            # Precondition: undrifted, `messages` is silent. Without this the
+            # test could pass on a table that was never in agreement.
+            assert _check_constraint_problems(
+                conn, "messages", _declared_checks("messages")
+            ) == []
+
+            # 1. A CHECK deleted from `schema.py` — the reproduction that
+            #    started this. The database keeps it; nothing declares it.
+            deleted = _check_constraint_problems(conn, "messages", [])
+            assert len(deleted) == 1, deleted
+            assert "schema.py does not declare" in deleted[0], deleted
+
+            # 2. A CHECK added to `schema.py` that no migration ever built.
+            invented = _check_constraint_problems(
+                conn,
+                "messages",
+                [*_declared_checks("messages"),
+                 sa.CheckConstraint("body IS NULL OR length(body) > 0",
+                                    name="messages_invented_check")],
+            )
+            assert len(invented) == 1, invented
+            assert "no constraint of that name" in invented[0], invented
+
+            # 3. The subtle one: the right NAME over a different PREDICATE.
+            #    Only the round-trip rendering can see this, and it is the case
+            #    a names-only comparison would wave through.
+            narrowed = _check_constraint_problems(
+                conn,
+                "room_lexeme",
+                [c for c in _declared_checks("room_lexeme")
+                 if c.name != "room_lexeme_model_check"]
+                + [sa.CheckConstraint("model IS NULL OR length(model) > 2",
+                                      name="room_lexeme_model_check")],
+            )
+            assert len(narrowed) == 1, narrowed
+            assert "means something different in each place" in narrowed[0], narrowed
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("index,expected", sorted(EXPECTED_DESC_INDEXES.items()))
