@@ -1,6 +1,6 @@
 {
   "type": "none",
-  "reason": "Design document only (docs/superpowers/specs/2026-08-20-dreamer-prompt-substrate-design.md). Specifies giving the Dreamer's two model-calling instances the versioned/hashed/hot-reloading prompt substrate the doctrine already has, plus a prompt_sha256 provenance column on the tables they write. Status is proposed, no code exists, nothing added to design/09-decision-index.md. No schema, config or behaviour changes. Prerequisite for the FactSynthesizer work; the feature will carry its own fragment when implemented.",
+  "reason": "Design document only (docs/superpowers/specs/2026-08-20-dreamer-prompt-substrate-design.md). Rescoped against the keystone (docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md): the unit to version is no longer three inline prompt constants but the Dreamer's own doctrine as a read-only research agent plus one objective per adaptor, and every row an adaptor writes carries an instruction_sha256 (renamed from prompt_sha256 because a tool loop has no single prompt). Status is proposed, no code exists, nothing added to design/09-decision-index.md. No schema, config or behaviour changes. Prerequisite for the fact adaptor; the feature will carry its own fragment when implemented.",
   "details": [],
   "limitations": []
 }
