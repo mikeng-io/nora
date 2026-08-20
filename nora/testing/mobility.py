@@ -26,6 +26,7 @@ class _SeededFix:
     wire_state: str
     recorded_at: int
     address: str | None = None
+    is_driving: bool | None = None
 
 
 class FakeMobilityStore:
@@ -62,7 +63,10 @@ class FakeMobilityStore:
         ]
         matches.sort(key=lambda f: f.id)
         return [
-            RawFix(id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address)
+            RawFix(
+                id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address,
+                is_driving=f.is_driving,
+            )
             for f in matches[:limit]
         ]
 

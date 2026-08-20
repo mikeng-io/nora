@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Schema gate compares schema.py's CHECK constraints against the migrated database.",
+  "reason": "Test-only. Closes a gap in tests/infra/test_schema_parity.py: no assertion compared schema.py's CheckConstraint declarations to the database (compare_metadata is blind to CHECKs; the dump/baseline test has schema.py on neither side), so deleting all four `model` CHECKs from schema.py alone left the whole suite green at 3569 passed. The new test compares name and predicate in both directions over every table, with both predicates rendered by Postgres itself so the comparison is of meaning, not spelling. No pre-existing drift was found — all 26 CHECKs matched. No runtime behaviour changes.",
+  "details": [],
+  "limitations": []
+}

@@ -525,6 +525,20 @@ def test_corridor_cluster_batch_limit_defaults_to_the_measured_bound():
         AnalyticsConfig(corridor_cluster_batch_limit=0)
 
 
+def test_max_trip_duration_seconds_defaults_to_three_hours():
+    """Tier 5. Trip settlement (design/27 §4, 2026-08-20 trip-settlement design
+    §2.4): the safety valve against a stuck `is_driving` signal — if Life360
+    ever reports `True` indefinitely (a stale flag, a phone that stopped
+    updating mid-drive), a trip could otherwise never settle and hold the
+    watermark back forever. This default is a JUDGMENT CALL, not a measured
+    value — no genuine multi-hour trip data exists yet to derive a percentile
+    from (the trips in production today are exactly the fragments this fix
+    corrects). 3 hours is generous enough to cover a real long drive without
+    leaving a stuck signal unbounded."""
+    assert AnalyticsConfig().max_trip_duration_seconds == 10800.0
+    assert AnalyticsConfig(max_trip_duration_seconds=7200.0).max_trip_duration_seconds == 7200.0
+
+
 def test_a_cluster_batch_limit_below_corridor_min_samples_is_refused():
     """Fail-closed on a config that could never mint a corridor. A pool
     smaller than `corridor_min_samples` cannot arithmetically hold enough

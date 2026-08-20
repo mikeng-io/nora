@@ -44,6 +44,7 @@ __all__ = [
     "label_place",
     "robust_z_score",
     "segment_stays",
+    "trailing_fix_is_settled",
 ]
 
 # The observed 1800s still-ceiling (config.toml's cadence_still_seconds)
@@ -214,6 +215,16 @@ class RawFix:
     # address (rare; `extract_trips`, Task 4, drops it from the corridor
     # sequence rather than guessing).
     address: str | None = None
+    # Trip settlement (design/27 §4, 2026-08-20 trip-settlement design):
+    # Life360's own per-fix device signal, 100% filled — the PRIMARY
+    # input for deciding whether a trailing movement group is still
+    # ongoing. `None` only when the store's own filter admits a row
+    # with no reading; `extract_trips` falls back to a time-based check
+    # in that case, never guesses `True`/`False` — and for that same
+    # `None` case, its caller (`nora.analytics.rollup.run_once`) may
+    # separately apply a dwell-based judgment (DEC-125's gate 2,
+    # `tail_dwelled`), resolved before `extract_trips` is ever called.
+    is_driving: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -300,11 +311,55 @@ def _trip_from_group(
     )
 
 
+def trailing_fix_is_settled(
+    last: RawFix, *, now_ms: int, settled_seconds: float
+) -> bool:
+    """Does `last` — the newest fix of a trailing, still-undecided group —
+    say that group has stopped moving? (The 2026-08-20 trip-settlement
+    design's `_is_settled`, §2.2.)
+
+    `is_driving is True` is Life360 saying movement is ongoing, so no
+    amount of elapsed wall-clock settles it. `False` is Life360 saying it
+    stopped, which settles immediately. `None` is **no reading at all** —
+    a nullable column, and the real state of every historical fix and
+    anything Life360 omits the flag on — and the only honest fallback
+    there is the same quiet-boundary clock Tier 1 already uses for a
+    stay's arrival. A `None` fix must never be treated as settled just
+    because it isn't `True`: that is the original fragmentation bug with
+    the signal simply absent.
+
+    Covers **gate 1 only** — the `is_driving`/`settled_seconds` check — of
+    the two gates `run_once` combines to decide whether a trailing group
+    is genuinely undecided (DEC-125). Shared on purpose between the two
+    callers that must agree on THIS check specifically: `extract_trips`
+    below (finalize this group, or hold it back?) and
+    `nora.analytics.rollup.run_once` (is this trailing group a
+    stay-in-progress at all, or undecided movement?) — two copies of gate
+    1 would drift, and the two callers disagreeing on it means the same
+    fixes finalized as a trip AND written as a stay. Gate 2 — the dwell
+    check for the `is_driving is None` case — is a separate, NOT-shared
+    computation that lives only in `run_once` (its `tail_dwelled`); this
+    function has no knowledge of it, and `extract_trips` never calls gate
+    2 either — it only ever sees the already-RESOLVED
+    `open_stay_started_ts` that `run_once` hands it after combining both
+    gates itself. That resolved boundary, not a second shared function,
+    is what keeps the two callers from disagreeing on the final outcome
+    even though gate 2 is not shared code."""
+    if last.is_driving is True:
+        return False
+    if last.is_driving is None:
+        return (now_ms - last.ts) / 1000 >= settled_seconds
+    return True
+
+
 def extract_trips(
     fixes: list[RawFix], closed_stays: list[Stay], *, subject_id: str,
     person_id: str, circle_id: str, min_trip_fixes: int,
     open_stay_started_ts: int | None,
-) -> list[Trip]:
+    now_ms: int | None = None,
+    settled_seconds: float | None = None,
+    max_trip_duration_seconds: float | None = None,
+) -> tuple[list[Trip], list[RawFix]]:
     """The movement fixes NOT covered by any CLOSED stay, grouped into
     trips — Tier 5's segmentation counterpart to `segment_stays` (design/27
     §4, issue #6).
@@ -313,14 +368,28 @@ def extract_trips(
     already processed this cycle (`nora.analytics.rollup`'s Speed 1) —
     `closed_stays` marks the ranges to EXCLUDE, not re-derive.
     `open_stay_started_ts`, when not `None`, excludes every fix from that
-    point onward too: the trailing group is still undetermined (open
-    stay or a trip that has not yet ended), and Global Constraints
-    forbids guessing which. A short run below `min_trip_fixes` is
-    dropped as noise (a stray fix between two stays), the same
-    fail-closed posture `_close`'s own `min_dwell_ms` gate uses for
-    stays."""
+    point onward too: a real stay boundary was found, so the trip
+    preceding it is already definite and needs no further check. A short
+    run below `min_trip_fixes` is dropped as noise (a stray fix between
+    two stays), the same fail-closed posture `_close`'s own `min_dwell_ms`
+    gate uses for stays.
+
+    When `open_stay_started_ts` is `None` — no stay boundary was found
+    at all this cycle, meaning the trailing group's fate is genuinely
+    undetermined — the trailing group is held back rather than finalized
+    unless `now_ms` says otherwise (2026-08-20 trip-settlement design,
+    §2.2/§2.3): settled when its last fix's `is_driving` is `False`, or
+    (when `is_driving is None`) once `settled_seconds` has elapsed since
+    that fix, or unconditionally once `max_trip_duration_seconds` is
+    exceeded (the stuck-signal safety valve). Returns `(trips,
+    held_back)` — `held_back` carries the undecided tail's own fixes so
+    the caller can hold the watermark back rather than losing them.
+    `now_ms=None` (the default, what a non-final chunk passes) skips the
+    settlement check entirely and reproduces the ORIGINAL always-flush
+    behavior byte-for-byte — this is what keeps non-final chunks and
+    every existing caller unaffected."""
     if not fixes:
-        return []
+        return [], []
     in_stay_ranges = [(s.started_ts, s.ended_ts) for s in closed_stays]
 
     def _in_a_stay(ts: int) -> bool:
@@ -340,12 +409,43 @@ def extract_trips(
             buffer = []
             continue
         buffer.append(f)
-    if len(buffer) >= min_trip_fixes:
-        trips.append(_trip_from_group(
-            buffer, subject_id=subject_id, person_id=person_id,
-            circle_id=circle_id,
-        ))
-    return trips
+
+    held_back: list[RawFix] = []
+    if buffer:
+        settled = True
+        if open_stay_started_ts is None and now_ms is not None:
+            span_s = (buffer[-1].ts - buffer[0].ts) / 1000
+            forced = (
+                max_trip_duration_seconds is not None
+                and span_s >= max_trip_duration_seconds
+            )
+            if not forced:
+                settled = trailing_fix_is_settled(
+                    buffer[-1], now_ms=now_ms,
+                    # Fail CLOSED, not open: `settled_seconds or 0.0` would
+                    # make an unsupplied `settled_seconds` settle an
+                    # `is_driving=None` tail INSTANTLY (elapsed since
+                    # basically anything is `>= 0`), silently reintroducing
+                    # the original fragmentation bug for exactly the fixes
+                    # this fallback exists to protect. `inf` means "never
+                    # sufficient" instead. No current caller actually omits
+                    # `settled_seconds` while supplying `now_ms` (both real
+                    # call sites always pass both together), so this is
+                    # belt-and-braces, not a behavior change.
+                    settled_seconds=(
+                        settled_seconds if settled_seconds is not None
+                        else float("inf")
+                    ),
+                )
+        if settled:
+            if len(buffer) >= min_trip_fixes:
+                trips.append(_trip_from_group(
+                    buffer, subject_id=subject_id, person_id=person_id,
+                    circle_id=circle_id,
+                ))
+        else:
+            held_back = buffer
+    return trips, held_back
 
 
 def _trip_neighbors(i: int, trips: list[Trip], max_edit_distance: int) -> list[int]:

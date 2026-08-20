@@ -82,7 +82,7 @@ class SqlMobilityStore:
             sa.select(
                 PRESENCE_FIXES.c.id, PRESENCE_FIXES.c.ts,
                 PRESENCE_FIXES.c.lat, PRESENCE_FIXES.c.lng,
-                PRESENCE_FIXES.c.address,
+                PRESENCE_FIXES.c.address, PRESENCE_FIXES.c.is_driving,
             )
             .where(
                 PRESENCE_FIXES.c.person_id.in_(person_ids),
@@ -97,7 +97,12 @@ class SqlMobilityStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [
-            RawFix(id=r.id, ts=r.ts, lat=r.lat, lng=r.lng, address=r.address)
+            RawFix(
+                id=r.id, ts=r.ts, lat=r.lat, lng=r.lng, address=r.address,
+                is_driving=(
+                    bool(r.is_driving) if r.is_driving is not None else None
+                ),
+            )
             for r in rows
         ]
 
