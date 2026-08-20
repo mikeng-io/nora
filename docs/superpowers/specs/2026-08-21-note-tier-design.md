@@ -54,10 +54,15 @@ earlier drafts are recorded there as **wrong** rather than quietly dropped.
 6. **The tag path may only touch a note it can see the whole of this turn; the
    Dreamer is the only thing that may act across notes** (§8). That one line is
    the whole boundary.
-7. **Nothing on the background clock speaks** (§9). A revisit reaches a person
-   only by scheduling a `deliver` reminder, which fires on the delivery path
-   under the existing guards.
-8. **One revisit adaptor serves every note** (§10). The note supplies the
+7. **Two Dreamer-side passes, not one** (§9): `NoteCurator` is cursor-shaped
+   over new revisions and needs no tool loop; `NoteRevisitor` works one note at
+   a time, is woken by that note's own due time, and **is blocked on the Dreamer
+   runtime** (§15). Only the second one is blocked.
+8. **Nothing on the background clock speaks** (§9.7). Either pass reaches a
+   person only by scheduling a reminder, which fires on the delivery path under
+   the existing guards. Four verbs — research, revise, schedule, tidy — and none
+   of them is *speak*.
+9. **One revisit adaptor serves every note** (§10). The note supplies the
    objective; the sequence of tool calls is the model's, not the code's.
 
 ## 2. Why a fourth tier, and what the other three cannot hold
@@ -430,15 +435,15 @@ no retained input cannot be re-derived when it goes wrong.
 > **The tag path may only touch a note it can see the whole of this turn. The
 > Dreamer is the only thing that may act across notes.**
 
-| | tag path (debrief, in-slot) | Dreamer (tick / revisit) |
-|---|---|---|
-| create an anchored note | yes, budget-capped | yes, from candidates |
-| revise a note **read this turn** | yes — append-only, CAS on head | yes |
-| merge two notes | **no** | yes |
-| retire a note | **no** | yes |
-| rewrite for coherence with the fact tier | **no** | yes |
-| compact revision history | **no** | yes |
-| sees | this turn; one note's body | the whole notebook, the corpus, the fact tier |
+| | tag path (debrief, in-slot) | `NoteCurator` (§9.1) | `NoteRevisitor` (§9.5) |
+|---|---|---|---|
+| create an anchored note | yes, budget-capped | yes, from candidates | yes |
+| revise a note **read this turn** | yes — append-only, CAS on head | yes | yes |
+| merge two notes | **no** | yes | **no** — it holds one note |
+| retire a note | **no** | yes | **no** |
+| rewrite for coherence with the fact tier | **no** | yes | yes, for its own note |
+| compact revision history | **no** | yes | **no** |
+| sees | this turn; one note's body | the whole notebook, cheaply (§9.2) | one note, plus what it researches |
 
 Merging *cannot* be in-slot, and this is a statement about what she can see
 rather than a policy choice: it needs every note's full body, which is neither
@@ -447,59 +452,184 @@ in the prompt nor affordable to load mid-turn.
 This is the propose/dispose split (reflection-continuity §5.2) applied to prose:
 the fast path can add noise, never destroy.
 
-## 9. The Dreamer's outward verb is a reminder, and only that
+## 9. The two Dreamer-side passes, and what triggers each
 
-### 9.1 Schedule, do not speak
+### 9.0 Why two, not one
 
-The Dreamer thinks at midnight. People read at 08:00. A reminder is exactly the
-object that spans that gap, and it already ships with a fire path, recurrence
-and per-requester caps.
+An earlier draft described a single "curator" and was vague about its trigger,
+because it was two different things wearing one name. They have different
+trigger axes, different read costs, different loop-breaker needs, and — the part
+that matters for sequencing — **different dependencies**:
 
-> **Nothing the Dreamer concludes reaches a person directly. It reaches a
+| | `NoteCurator` | `NoteRevisitor` |
+|---|---|---|
+| unit of work | the whole notebook of one workspace | **one note** |
+| trigger axis | a watermark over new revisions, plus the clock | that note's own due time |
+| reads | a cheap projection; bodies only for what SQL already selected | one note, plus whatever it researches |
+| tools | none — SQL plus at most one small completion | **a tool loop** |
+| loop breaker | inherits the cursor's (§9.4) | needs its own (§9.6) |
+| **depends on the Dreamer runtime** | **no** | **yes — blocked** (§15) |
+
+### 9.1 `NoteCurator` — the trigger
+
+The live loop's shape, with `consolidator_name="notes"` in the same watermark
+table (`nora/app/runtime.py:497`):
+
+```python
+lag   = revisions in this workspace since the curator watermark
+quiet = seconds since the last revision in this workspace
+age   = seconds since the curator watermark last moved
+
+fires = (
+    lag > safety_lag                        # enough new revisions to be worth a pass
+    or (lag > 0 and quiet >= quiet_seconds) # something changed, and the room settled
+    or age >= max_age_seconds               # fires at lag == 0 ON PURPOSE
+)
+```
+
+**The third condition carries more weight here than it does for language.** A
+note whose anchor date has passed needs retiring even if nobody has touched the
+notebook in a month — **retirement is time-driven, not evidence-driven.** That is
+the same argument `LanguageConsolidator` already makes for decay (*"Decay is
+TIME-driven ... without this a dormant room never fades a word"*). Expiry is the
+note tier's decay, and the age condition is what performs it.
+
+**A scope seam this needs and the repo does not have.** `dream_loop`'s `scopes()`
+returns `policy.toml` **conversations**; the notebook is keyed on **workspace**,
+so both `friends` rooms would tick the same notebook. It needs a
+`workspace_scopes()` — `scopes()` deduplicated by workspace — or the pass does
+duplicate work behind a lock. Small, but it does not exist today and the plan
+must carry it.
+
+### 9.2 What the pass reads
+
+Not the notebook in a prompt. Two tiers of read, and the cheap one selects:
+
+| step | reads | cost |
+|---|---|---|
+| merge **detection** | `(id, anchor_date, entity_ids)` for every note in the workspace | **SQL only — zero tokens** |
+| merge **execution** | the full bodies of one colliding group (typically two) | bounded by collision size |
+| retire, dated | `(id, anchor_date, closing_condition)` | **SQL only** |
+| retire, dateless | `(id, strikes, head_revision_id)` | **SQL only** |
+| promote | one body plus its revision history | one note |
+| fact-coherence rewrite | one body plus the facts joined through `note_entity` | one note |
+
+This is the payoff of anchoring merge on `(anchor_date, entity_set)` (§7.1):
+candidate detection is a `GROUP BY … HAVING count(*) > 1`, not a judgement.
+
+Bodies read per tick are **capped in config and counted when the cap bites**. A
+silent truncation here reads as "nothing to do", which is the
+`unavailable`-as-`nothing_found` failure at the pass level.
+
+### 9.3 Criteria — what decides each action
+
+| action | criterion | decided by |
+|---|---|---|
+| merge | identical `anchor_date` **and** identical entity set | **SQL. The model never decides eligibility.** |
+| retire, dated | anchor passed **and** the closing condition met or moot | SQL for the date; the model for "met", one body |
+| retire, dateless | `strikes >= K` **and** no tag-path revision since | **SQL** |
+| promote to an `Event` | `when` resolves to an instant, `venue_text` present, **both traceable to a real message** (§7.3) | the model proposes a schema-validated object; **code verifies the trace and writes** |
+| fact-coherence rewrite | a standing fact on this note's entities contradicts the head body | the model, one body plus the joined facts |
+
+The discipline is the keystone's own: **the model proposes and code disposes.**
+The model never writes and never decides merge eligibility.
+
+### 9.4 The curator's loop breaker — inherited, not invented
+
+`NoteCurator` is **cursor-shaped**: revisions are an append-only log with a
+watermark, so every fire path ends in a watermark write and lag can only be
+created by new revisions. That is the same structural property that makes the
+live loop need no strike.
+
+It therefore inherits both halves verbatim, and **must copy the second rather
+than re-derive it**:
+
+- batch present → advance the watermark to the last revision consumed;
+- **batch empty → advance the watermark at its CURRENT value**, purely to reset
+  the clock `age` reads.
+
+Without the second, the `age >= max_age_seconds` condition — the one that fires
+at `lag == 0` — is a **latch with no reset**: `updated_at` stays pinned, `age`
+never falls back under the threshold, and a once-a-day pass reruns on every tick
+forever. This is not hypothetical. `_dream_once` shipped exactly that bug and
+its fix is labelled *"PLAN DEFECT found and fixed"* — **found during
+implementation, not design.** It is written here so this implementer does not
+have to rediscover it.
+
+The re-entry lock (`running`, `nora_dream_skipped_total{reason="in_flight"}`) and
+the capped-exponential failure backoff come free by living inside `dream_loop`.
+
+### 9.5 `NoteRevisitor` — content-addressed, not scope-addressed
+
+One note, woken by its own due time. `revisit_at <= now` for a note in this
+workspace is a **fourth fire condition inside the curator's pass**, not a new
+kind of reminder.
+
+An earlier draft introduced a `revisit` reminder kind for this. That was
+reaching for new machinery where existing machinery already fits: riding the
+curator's pass reuses the clock, the per-scope lock, the backoff and the
+per-scope `try/except`, and leaves `reminder` meaning exactly what it means
+today — *tell a human something*. Nothing in the reminder tier changes.
+
+### 9.6 The strike, and the reset that makes it real
+
+`NoteRevisitor` is the first thing in this design that genuinely needs a
+no-progress breaker, and the reason is structural rather than stylistic: **its
+unit of work is one note that may never change.** Nothing is consumed by working
+on it — no cursor advances, no backlog drains — so a note can be "due" forever.
+The strike is the substitute for the cursor the other passes have.
+
+State per note: `last_wake_revision_id`, `strikes`.
+
+| on wake | |
+|---|---|
+| head == `last_wake_revision_id` | `strikes += 1`, **do not set a new `revisit_at`** |
+| head moved | `strikes = 0`, `last_wake_revision_id = head`, set the next `revisit_at` |
+| `strikes >= K` | the note stops waking; eligible for dateless retirement (§7.4) |
+
+**The trap, and it is the whole point of this subsection: the reset must be
+«head moved BY THE TAG PATH», not «head moved».** If the revisitor's own writes
+counted, a note that the revisitor keeps rewriting would reset its own strike
+forever and the breaker would be decorative — a self-referential reset is not a
+reset. Every revision carries its writer (`established_by`, the column the fact
+tier already has), and **strikes reset only on a tag-path revision** — an
+external event, a human actually engaging with the uncertainty.
+
+Stated plainly because the mechanism reads correct without the qualifier and
+loops forever with it missing, which is precisely how the latch in §9.4 got in.
+
+### 9.7 Nothing on the background clock speaks
+
+> **Nothing either pass concludes reaches a person directly. It reaches a
 > `reminder`, and the reminder fires on the delivery path**, under R-18's egress
 > scan and the normal guards, at a time a human is actually there.
 
+The Dreamer thinks at midnight; people read at 08:00. A reminder is the object
+that spans that gap and it already ships with a fire path, recurrence and
+per-requester caps.
+
 An earlier draft had the Dreamer "mark a note ready" and wait for the next tag.
-That is weaker and is superseded: it accepts latency to buy a property the
-reminder already provides.
+Superseded: that accepts latency to buy a property the reminder already provides.
 
 Two consequences worth naming:
 
 - `ReminderCaps.max_pending_per_requester` (20) becomes the **budget on how much
-  the curator may nudge any one person** — a runaway is capped by machinery that
+  either pass may nudge any one person** — a runaway is capped by machinery that
   exists rather than by a new counter.
 - The requester question is `Event.created_by`'s, with the same grounded answer:
   the person whose message established the anchor. Never `nora`. Their quota is
   what a Dreamer-scheduled nudge spends, which is the correct incentive.
 
-### 9.2 Two reminder kinds
+So the background passes have four verbs — **research, revise, schedule, tidy**
+— and none of them is *speak*.
 
-| kind | fires into | may |
-|---|---|---|
-| **`deliver`** | a room, on the delivery path, R-18 egress scan | speak — existing behaviour, unchanged |
-| **`revisit`** | the **Dreamer**, no room | research, revise the note, schedule, tidy. **Cannot speak.** |
+### 9.8 Two cadences
 
-A `revisit` that concludes something needs saying does not say it — it schedules
-a `deliver`. The invariant in §9.1 survives: the loop exists, the mouth is still
-only on the tag path.
-
-### 9.3 The loop is bounded structurally
-
-**A `revisit` may not schedule another `revisit` for the same note unless the
-head revision changed since the last wake.**
-
-Same head-revision id as §6.3's CAS. No judgement, no counter to tune. A
-stagnant uncertainty wakes once, finds nothing changed, and stops waking; one
-that keeps moving keeps getting attention. This is the anti-runaway property,
-and §7.4 reuses it for retirement.
-
-### 9.4 Two cadences
-
-The **sweep** (the existing 300s tick) discovers uncertainties nobody scheduled.
-**Revisits** are targeted and self-scheduled. Over time most work should move to
-the second, which is the cheaper one — the notebook tells the Dreamer when to
-think about what, instead of every scope being swept whether or not anything
-moved.
+The **sweep** (the curator, on `dream_loop`'s clock) discovers what nobody
+scheduled. **Revisits** are targeted and self-scheduled. Over time most work
+should move to the second, which is the cheaper one: the notebook tells the
+Dreamer when to think about what, instead of every scope being swept whether or
+not anything moved.
 
 ## 10. One adaptor, and why there must never be a second
 
@@ -538,14 +668,30 @@ because a note body is bounded and a fetched page is not.
 
 ## 11. Scope
 
-### 11.1 In
+### 11.1 In, and in what order
 
-Domain types; migration `0026`, including the `tsvector` + GIN index on the head
-revision (§5.3); the `<notes>` block; `note_read` / `note_search` /
-`note_create` / `note_update` with R-7 budgets and the §6.2 latch; the debrief's
-fourth output; the `note_candidate` miss cache; the curator adaptor (merge /
-retire / rewrite / compact); the revisit adaptor (§10); the `revisit` reminder
-kind.
+The tier splits cleanly at the runtime dependency (§15), so it ships in two
+parts rather than waiting on the slower one.
+
+**Part 1a — nothing blocked.** Domain types; migration `0026`, including the
+`tsvector` + GIN index on the head revision (§5.3); the `<notes>` block;
+`note_read` / `note_search` / `note_create` / `note_update` with R-7 budgets and
+the §6.2 latch; the debrief's fourth output; the `note_candidate` miss cache.
+
+**Part 1b — `NoteCurator`** (§9.1–§9.4) plus `workspace_scopes()`. It needs no
+tool loop — SQL plus at most one small `complete(prompt) -> str`, the port that
+exists today — but it does need a decided **sink interface**; see §15.2 for why
+writing one before `DreamSink` exists is guessing at somebody else's port.
+
+**Part 2 — blocked on the Dreamer runtime.** `NoteRevisitor` (§9.5, §10) and its
+strike state (§9.6).
+
+**1a is a complete, useful tier on its own**: she writes and revises notes on the
+tag path, and the always-injected index makes her aware of them. 1b adds
+housekeeping; Part 2 adds the notebook thinking about itself.
+
+**No reminder-tier change in either part.** An earlier draft added a `revisit`
+reminder kind; §9.5 replaced it with a fire condition inside the curator's pass.
 
 ### 11.2 Deferred, with the evidence that would justify it
 
@@ -565,7 +711,9 @@ notes exist.
 
 Any second revisit adaptor (§10). Per-room gating (§3). A polymorphic link
 table: the relations are explicit nullable columns, following `Event.reminder_id`,
-which is this exact relationship already spelled out as one column.
+which is this exact relationship already spelled out as one column. A new
+reminder kind (§9.5). Building the Dreamer runtime — this document **depends on**
+that work and does not do it (§15).
 
 ## 12. Corrections this design absorbed
 
@@ -595,6 +743,23 @@ Recorded because each inverted something a draft asserted.
     senses of "index" apart and settled what search is for: **bodies, never
     titles**, since the injected index already carries every title. §5.3, which
     closes what was §14's third open question.
+11. *"is the current Dreamer runtime already implemented?"* — checked rather than
+    assumed, and the answer changed the plan. The **clock** is live
+    (`dream_loop`), the **instruction substrate** is live, and the **agent
+    runtime is not** — the keystone's §10 says *"Design only. No code"*, and the
+    port today is `async def complete(self, *, prompt: str) -> str`
+    (`nora/language/observer.py:111`): one shot, no tools. The draft assumed a
+    tool subset with nowhere to plug in. §9.0 and §15 now state the dependency,
+    and §11.1 splits the work so only the revisitor waits on it.
+12. *"what is the trigger event / how much content / criteria / loop breaker?"* —
+    §9 was intent rather than mechanism. Rewritten as §9.1–§9.6, in the live
+    loop's own terms. The rewrite is what surfaced the strike's reset trap
+    (§9.6) and retired the `revisit` reminder kind in favour of a fire condition
+    (§9.5).
+13. *"does the original Dreamer runtime also have the loop breaker?"* — it has
+    **three protections and only one is a loop breaker** (§9.4), and it needs no
+    strike because its unit of work is a cursor that always advances. That is the
+    argument for why `NoteRevisitor` needs one and `NoteCurator` does not.
 
 Two of this document's own earlier claims are recorded as **disproved** rather
 than dropped: that an event "asserts a commitment nobody made" (§2.2 —
@@ -608,7 +773,9 @@ DM leak (§3 — `policy.toml` already separates them at the workspace key).
 `nora_note_reads_total{result}` · `nora_note_searches_total{result}` ·
 `nora_note_index_entries` · `nora_note_curator_total{action}` ·
 `nora_note_revisit_total{outcome}` ·
-`nora_note_update_refused_total{reason="not_read"|"stale_head"}`
+`nora_note_update_refused_total{reason="not_read"|"stale_head"}` ·
+`nora_note_curator_bodies_read` (against its §9.2 cap) ·
+`nora_note_strikes_total{result="struck"|"reset"}`
 
 Chosen so the two opposite failures are distinguishable from outside, per
 no-self-attestation:
@@ -617,6 +784,11 @@ no-self-attestation:
   costing prompt budget and buying nothing;
 - a climbing `candidates_total` with a flat `writes_total` → she recognises and
   does not act. **That is the inert-skill failure (§4.1), made visible.**
+- `curator_total{action="none"}` climbing on every tick → **the §9.4 latch**,
+  which is the one failure this pass has already shipped once elsewhere;
+- `strikes_total{result="struck"}` climbing with `{result="reset"}` at zero →
+  every revisit is finding nothing changed. Either the revisitor is not earning
+  its cost, or the reset is mis-attributed to its own writes (§9.6);
 - a `writes_total{kind="create"}` climbing while `{kind="update"}` stays flat →
   she is making new notes instead of revising the ones she has, which is the
   duplicate-notebook failure §6.5 splits the tools to prevent. Under a single
@@ -636,8 +808,51 @@ no-self-attestation:
    second column. Not a blocker for §5.3's shape; it is a blocker for claiming
    search works.
 
-## 15. Status
+## 15. Status, and what this depends on
 
 **Proposed.** No code. Design agreed with the operator across the exchanges in
 §12 on 2026-08-21; the implementation plan is the next artifact and is not part
 of this document.
+
+### 15.1 The dependency, read back from the code on 2026-08-21
+
+| piece | state | evidence |
+|---|---|---|
+| the Dreamer's **clock** | **live** | `nora/app/runtime.py::dream_loop`, spawned at `nora/__main__.py:146` |
+| three hand-written extractors | **live** | `LanguageConsolidator`, `ExchangeConsolidator`, `PortraitSynthesizer` |
+| the **instruction substrate** | **live** | `nora/dreamer/objectives/*.md`, hot-reloaded, hashed into `instruction_sha256` |
+| the **agent runtime** — tool loop, tool subset, schema-validated return | **not built** | the keystone's §10: *"Design only. No code."* The port today is `async def complete(self, *, prompt: str) -> str` (`nora/language/observer.py:111`) |
+| `DreamSink` / `Proposal` in `nora.domain.ports` | **not declared** | absent from the file; the fact-tier plan's Task 3 is explicitly waiting on it |
+| the **fact tier** | schema shipped, **dormant** | migration `0025` created `fact_entity` / `fact_candidate` / `fact`; there is no writer, `standing_facts` (Task 3) is unbuilt, and `TagContext.facts` defaults to `()` |
+
+### 15.2 What that means for sequencing
+
+**`fact_entity` exists, so the anchor has what it needs.** Notes do **not** wait
+on the fact tier finishing: entity resolution and aliasing — the mechanism §7.1's
+merge rule is built on — is already in the database. The only note behaviour that
+needs *standing facts* is the fact-coherence rewrite (§9.3), one row in a table
+of curator actions, deferrable on its own without touching anything else.
+
+**The runtime is the real blocker, and it is now blocking three things at once**
+— the fact tier's Task 3, `NoteRevisitor`, and any note pass written as a Dreamer
+*adaptor* rather than a plain store writer.
+
+That last clause is the trap this section exists to flag. `NoteCurator` (§9.1) is
+described here as needing no tool loop, which is true — but if it writes through
+a bespoke path while `DreamSink` is unbuilt, it becomes **a second
+implementation of a port that does not exist yet**, which the fact-tier plan
+already refused for exactly this reason: *"writing it before then would be
+guessing at an interface someone else owns."* CLAUDE.md's own rule — no second
+implementation of a port without a shared contract suite — points the same way.
+
+So the safe decomposition is finer than §11.1's two parts:
+
+| part | needs | blocked? |
+|---|---|---|
+| **1a** — tag-path notes: domain types, `0026`, the `<notes>` block, the four tools, the debrief output, the miss cache | nothing | **no** |
+| **1b** — `NoteCurator` | `DreamSink` / `Proposal`, or an explicit decision that it is a plain store writer and not an adaptor | **yes, on the interface** |
+| **2** — `NoteRevisitor` | the agent runtime | **yes** |
+
+**1a is a complete, useful tier on its own**: she writes and revises notes on the
+tag path, and the always-injected index makes her aware of them. What 1b adds is
+housekeeping; what 2 adds is the notebook thinking about itself.
