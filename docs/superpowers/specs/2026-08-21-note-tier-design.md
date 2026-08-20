@@ -700,9 +700,9 @@ parts rather than waiting on the slower one.
 the §6.2 latch; the debrief's fourth output; the `note_candidate` miss cache.
 
 **Part 1b — `NoteCurator`** (§9.1–§9.4), plus `workspace_scopes()` (this tier's
-to build, §15.4), plus **`tests/contract/test_dream_sink_contract.py`** covering
-the fact store and the note store both — the note store is the *second*
-`DreamSink` implementation, so CLAUDE.md's contract-suite rule lands here. Its
+to build, §15.4), plus **joining `tests/contract/test_dream_sink_contract.py`**
+— which already exists with 15 parametrised tests, so this is an
+`IMPLEMENTATIONS` entry and the two fixes in §15.4.3, not a suite to write. Its
 sink refuses any payload that is not a note revision by `isinstance`, never
 duck-typing (§15.4).
 
@@ -1094,15 +1094,83 @@ implementation's own tests.
 successor and that store refuses one** — so nobody infers the port's shape from
 its table. A DB CHECK reads as a universal rule by default, and this one is not.
 
+### 15.4.3 What actually landed, and the two gaps in it
+
+`tests/contract/test_dream_sink_contract.py` **already exists** — 15 tests,
+`IMPLEMENTATIONS = {"fake": _FakeDreamSink}`, everything parametrised — so the
+suite is this tier's to **extend**, not to write, and Part 1b's scope shrinks
+accordingly (§11.1). That is also the right order: the shared assertions were
+fixed before either real store existed, so neither store's shape could bias them.
+
+Thirteen of the fifteen are assertions neither session had listed. Both of this
+tier's proposals were taken seriously, and one of them landed
+(`test_provenance_survives_the_write`), **with distinct values per field** —
+`"a" * 64`, a model string, `"run-42"` — so the swap-invisibility problem
+§15.4.1 raised is genuinely handled.
+
+Two gaps remain, raised with the fact-tier session on 2026-08-21 while it was
+still editing the file:
+
+**Gap 1 — the shared fixture is the fact tier's.** The helper is
+
+```python
+def _proposal(payload: str, *, established_by: str = "run-1") -> Proposal
+```
+
+`payload` is typed `str` and `instruction_sha256` is `"a" * 64`. Both are valid
+for `SqlFactStore`; **neither is valid for the note store**, whose payload is a
+note revision and whose sink refuses a `str` by `isinstance` (§15.4). So *every
+one* of the fifteen parametrised tests fails the moment `"note"` joins
+`IMPLEMENTATIONS` — not because the store is wrong, but because the fixture
+belongs to one tier. This is §15.4.2's trap arriving one layer below the
+assertions, exactly where it was predicted. The fix is the fixture factory
+already agreed: `IMPLEMENTATIONS` carries `(store, proposal_factory)` pairs.
+
+**Gap 2 — assertion 1 is not in the suite, and could not have been.** The only
+`isinstance` is the protocol check. **A fake has no payload type to refuse**, so
+"a foreign payload is refused, not duck-typed" is unwritable until a real store
+joins. It therefore lands with the *first real implementation* or not at all —
+and if it does not, the `isinstance`-at-the-sink rule stays a convention, which
+is the one thing §15.4 says it must not be.
+
+Neither gap is a defect in the port. Both are the suite not yet being general,
+which is the specific failure a shared contract suite is most prone to and least
+able to announce.
+
+
 ### 15.5 What is still genuinely open
 
 Two items, both for the implementation plan rather than this document, and
 neither blocking:
 
-1. **`supersede` has no field for the successor** — raised as an ambiguity in
-   `source` and escalated by the fact-tier session the same night into the
-   sharper finding: the agreed signature says which row dies and why, and has
-   nowhere to name what replaced it. `fact`'s own
+1. **CLOSED 2026-08-21** — landed on `master` as **DEC-130**, merge `e62b2c4`,
+   verified from the file rather than from the relay:
+
+   ```python
+   async def supersede(
+       self, *, key: str, target: str, replaced_by: str | None,
+       because: str, source: str | None, now_ms: int,
+   ) -> int: ...
+   ```
+
+   `replaced_by: str | None` — **nullable at the port, strict at each
+   implementation**, which is what this tier argued for. Note retirement passes
+   `None` legally; `SqlFactStore` refuses it and keeps its biconditional
+   locally. `source` is documented as a **warrant** — a pointer to evidence,
+   never a row id — so survivors go in `replaced_by`, citations in `source`, and
+   `because` stays narrow enough to be a constrained enum on both sides. **There
+   is no overload to document**, which was the fallback this item was holding
+   open.
+
+   Two tests in the landed suite guard the split specifically —
+   `test_a_supersession_can_name_its_successor` and
+   `test_a_supersession_with_no_successor_is_legal_at_the_port` — so it cannot be
+   quietly collapsed back into one rule.
+
+   **The history, kept because the port has two fields it would not otherwise
+   have.** It was raised here as an ambiguity in `source` and escalated by the
+   fact-tier session into the sharper finding: the agreed signature said which
+   row dies and why, and had nowhere to name what replaced it. `fact`'s own
    `fact_supersession_is_timed_check` biconditional *requires* a successor, so
    that sink can satisfy the port or its own constraint, not both.
 
@@ -1130,11 +1198,8 @@ neither blocking:
    verb or mint a placeholder id to satisfy a signature — the
    "invent a value to satisfy a schema" move §7.3 already forbids.
 
-   **If it is declined** and `source` remains the only spare field: `source`
-   means *warrant* for facts, and this tier carries the survivor in `because`.
-   Recorded here rather than left implicit, because at that point one field
-   genuinely means two things across two tiers and the only defence is that both
-   wrote it down.
+   The declined branch — `source` overloaded to carry a row id — did not
+   happen, and is left here only as the alternative that was weighed.
 2. **Whether promotion to an `Event` (§7.3) goes through a sink at all.**
    `DreamSink` writes into the tier that owns `key`; an event is a different
    store with a different scope (`conversation_id`, not workspace). Most likely
