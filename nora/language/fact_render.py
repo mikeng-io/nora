@@ -12,14 +12,15 @@ no block at all when there is nothing standing to say.
 This is the first injected block whose content was not derived from the room
 it renders into. Within one workspace that crosses no boundary R-31 guards —
 DEC-105/R-49's own argument, that rooms sharing a workspace are one social
-unit — and what keeps that honest is structural, not a checked guard:
-`standing_facts` is read `WHERE workspace = <this room's workspace>`
+unit — and what is meant to keep that honest is structural, not a checked
+guard: the store's read (`standing_facts`, Task 3 of the fact-tier plan, not
+yet built) is specified to scope `WHERE workspace = <this room's workspace>`
 (`nora.config.FactsConfig`'s own note — a startup check was argued for and
-then cut, because the SQL scope already makes a cross-workspace fact
-unreachable), and `policy.toml` states each room's workspace explicitly.
-Nothing writes this tier yet (`TagContext.facts` defaults to `()`), so in
-production today this module always renders nothing; that is the intended,
-dormant shape of this task.
+then cut, on the reasoning that the SQL scope will already make a
+cross-workspace fact unreachable once the store exists), and `policy.toml`
+states each room's workspace explicitly. Nothing writes this tier yet
+(`TagContext.facts` defaults to `()`), so in production today this module
+always renders nothing; that is the intended, dormant shape of this task.
 """
 
 from __future__ import annotations

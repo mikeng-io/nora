@@ -382,8 +382,9 @@ def test_the_facts_section_is_optional_and_ships_inert(toml_path):
     changes.
 
     The workspace startup check the design doc's §7 argued for was cut
-    (operator, 2026-08-20): `standing_facts` already scopes by workspace in
-    SQL, so there is no second refusal-shaped property to test here — see
+    (operator, 2026-08-20): the store's read (`standing_facts`, Task 3, not
+    yet built) is specified to scope by workspace in SQL, so once it exists
+    there will be no second refusal-shaped property to test here — see
     `docs/superpowers/plans/2026-08-20-fact-tier.md`'s Task 6 note."""
     text = toml_path.read_text()
     head, _, tail = text.partition("[facts]\n")

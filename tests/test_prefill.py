@@ -159,7 +159,7 @@ def _opening_tag(body: str, name: str) -> str:
 
 
 def test_every_injected_block_is_labelled_untrusted():
-    """F3/F4: the marker, on all seven, not on one."""
+    """F3/F4: the marker, on all eight, not on one."""
     body = _full_prefill_body()
     for name in _ALL_BLOCKS:
         assert 'untrusted="true"' in _opening_tag(body, name), name

@@ -311,8 +311,9 @@ class TagContext:
     # on the WORKSPACE, not this room, unlike every block above. Defaulted
     # empty for the same reason `room_language`/`room_exchange`/
     # `room_portrait` are: the existing construction sites keep working, and
-    # nothing writes this tier yet (`nora.dreamer.fact_synthesizer` is a later
-    # task) so every deployed `TagContext` holds `()` until then —
+    # nothing writes this tier yet — the store behind the generic `DreamSink`
+    # (that plan's Task 3) is blocked on a protocol another workstream owns,
+    # so every deployed `TagContext` holds `()` until then —
     # `nora.language.fact_render.render_facts` renders no block for that,
     # same as its siblings' empty state.
     facts: tuple[Fact, ...] = ()
