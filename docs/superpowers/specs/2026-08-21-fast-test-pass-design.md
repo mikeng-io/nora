@@ -143,6 +143,17 @@ decision, not a free consequence of this one.
    to 8 concurrent Postgres instances**, not 1 — this is why `-n 8` rather than
    `-n auto` on a 16-core box matters doubly (CPU **and** one Postgres per
    active worker).
+
+   **Correction on the `-n 8` reasoning (not the number — the argument for
+   it):** §2 justified `-n 8` against *core count* (half of 16). This
+   measurement shows the binding constraint observed in practice is one
+   Postgres+Ryuk pair per worker, i.e. **memory**, not CPU — a dimension the
+   core-count argument never spoke to. `-n 8` is still the right number
+   tonight (measured working, zero failures, twice), but the reasoning behind
+   it was incomplete, not re-derived from the constraint that actually showed
+   up. Before raising the worker count, measure **peak RSS** across the
+   Postgres+Ryuk containers plus the pytest workers during a run — that is the
+   number that would tell you whether `-n 16` fits the box, not core count.
 4. `affected_tests.py` has tests of its own (`tests/test_affected_tests.py`),
    including: a docs-only change selects nothing; a `nora/doctrine/*.md` change
    selects `ALL` (and outranks the docs-only rule even when mixed with real
@@ -152,4 +163,19 @@ decision, not a free consequence of this one.
    selects nothing. Verified by deliberately breaking the doctrine-precedence
    rule (letting it fall through to the generic docs-only rule) and confirming
    exactly the three tests guarding that ordering went red, then restoring it.
+
+   A second version of the same mistake was caught in review: the tests-only
+   rule originally ran any changed path under `tests/` verbatim, including
+   non-collectible helpers (`conftest.py`, `builders.py`, `fakes.py`,
+   `objectives.py`) that dozens of test modules import but that pytest
+   collects zero tests from — a change to one of those would have selected a
+   target that runs nothing and exits green, a *silent* confident-wrong-subset,
+   worse than the doctrine miss (which at least runs the wrong tests rather
+   than none). Fixed: the tests-only rule now additionally requires every
+   changed path to look collectible by pytest's own default convention
+   (basename matches `test_*.py`, not a hand-maintained filename list), and
+   one non-collectible path anywhere in the diff sends the whole selection to
+   `ALL`. Verified the same way: reverted the fix, confirmed
+   `test_a_non_collectible_helper_alone_selects_all` (and its two siblings)
+   went red with `assert ['tests/conftest.py'] == 'ALL'`, restored it.
 5. `make gate` still runs the whole suite.

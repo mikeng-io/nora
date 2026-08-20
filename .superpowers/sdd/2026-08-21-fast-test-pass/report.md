@@ -78,3 +78,47 @@ migrations, `nora/domain/**`, etc.) correctly printed `ALL`.
 nora/infra nora/presence`, `lint-imports`, `check_release_fragments.py --base
 origin/master` - all green. Full parallel suite green (`-n 8`, zero failures,
 run twice this session with matching pass/skip/xfail shape both times).
+
+## Review follow-up (round 2): tests-only rule silent-gap fix
+
+**Critical, fixed.** The tests-only rule ran any changed path under `tests/`
+verbatim, including non-collectible helpers (`conftest.py`, `builders.py`,
+`fakes.py`, `objectives.py`) — pytest collects zero tests from those, so a
+fixture-breaking edit selected a target that runs nothing and exits green.
+Silent confident-wrong-subset, worse than the doctrine case (which at least
+runs the wrong tests).
+
+Fix: added `_is_collectible_test_file()` — basename matches `test_*.py` by
+pytest's own default collection convention, not a hand-maintained filename
+list (a list goes stale; a convention doesn't). The tests-only rule now
+requires every changed path in the diff to satisfy it; one helper anywhere
+sends the whole selection to `ALL`.
+
+Four new tests added (19 total, all green): `tests/conftest.py` alone -> `ALL`;
+`tests/builders.py` alone -> `ALL`; a real `test_*.py` mixed with a helper ->
+`ALL` (helper dominates); a real `test_*.py` alone -> still narrowly selected.
+
+**Verified the fix bites** by reverting it and rerunning:
+
+```
+FAILED tests/test_affected_tests.py::test_a_non_collectible_helper_alone_selects_all
+  AssertionError: assert ['tests/conftest.py'] == 'ALL'
+   +  where ['tests/conftest.py'] = select(['tests/conftest.py'])
+FAILED tests/test_affected_tests.py::test_a_shared_test_helper_alone_selects_all
+FAILED tests/test_affected_tests.py::test_a_real_test_file_mixed_with_a_helper_selects_all
+3 failed, 16 passed
+```
+
+Restored (diff against saved copy clean); 19/19 green again.
+
+**Important (not blocking):** spec's §2 justified `-n 8` against core count;
+this session's own container measurement shows the binding constraint
+observed in practice is one Postgres+Ryuk pair per worker — memory, not CPU.
+Recorded in spec §6 item 3: the reasoning was incomplete (not wrong for
+tonight — `-n 8` stays, measured working twice), and peak RSS across the
+Postgres+Ryuk containers plus pytest workers is named as the number to
+measure before ever raising the worker count.
+
+Gates rerun in the foreground after the fix: ruff, mypy, lint-imports,
+check_release_fragments — all green. `uv run pytest -n 8 -q`: 3738 passed,
+1 skipped, 1 xfailed, zero failures, 100.34s.

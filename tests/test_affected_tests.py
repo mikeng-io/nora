@@ -55,6 +55,30 @@ def test_tests_only_change_selects_exactly_those_files():
     assert select(changed) == changed
 
 
+def test_a_non_collectible_helper_alone_selects_all():
+    """conftest.py is imported by every test module but contains no tests of
+    its own — running it verbatim would collect and run nothing, and exit
+    green. That is worse than the doctrine miss: silent, not just wrong."""
+    assert select(["tests/conftest.py"]) == ALL
+
+
+def test_a_shared_test_helper_alone_selects_all():
+    assert select(["tests/builders.py"]) == ALL
+
+
+def test_a_real_test_file_mixed_with_a_helper_selects_all():
+    """The helper must dominate: one non-collectible path anywhere in an
+    otherwise-tests-only diff sends the whole selection to ALL."""
+    changed = ["tests/test_whereis.py", "tests/builders.py"]
+    assert select(changed) == ALL
+
+
+def test_a_real_test_file_alone_still_selects_narrowly():
+    """The fix above must not blunt the feature: a genuine test-only change
+    still gets the narrow selection."""
+    assert select(["tests/test_whereis.py"]) == ["tests/test_whereis.py"]
+
+
 def test_unrecognised_path_selects_all():
     assert select(["some/new/top-level-thing.txt"]) == ALL
 

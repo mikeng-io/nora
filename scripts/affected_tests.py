@@ -16,6 +16,17 @@ markdown, but the running application LOADS and HASHES them at startup/reload
 — they are not documentation for selection purposes. That check runs first,
 before the generic "changed paths are all markdown" rule, so a doctrine edit
 can never be mistaken for a docs-only change and skip the doctrine tests.
+
+A second, quieter version of the same mistake lives in the tests-only rule:
+not every path under `tests/` is a file pytest collects tests from —
+`conftest.py`, `builders.py`, `fakes.py`, `objectives.py` are imported by
+dozens of test modules but contain none themselves. Running the changed path
+verbatim for a shared fixture edit would select a target that collects zero
+tests and exits green — a SILENT confident-wrong-subset, worse than the
+doctrine case, which at least runs the wrong tests rather than none. So the
+tests-only rule additionally requires every changed path to look like a file
+pytest would actually collect from; one helper in the diff sends the whole
+selection to `ALL`.
 """
 
 from __future__ import annotations
@@ -79,6 +90,25 @@ def _is_test_path(path: str) -> bool:
     return path.startswith("tests/")
 
 
+def _is_collectible_test_file(path: str) -> bool:
+    """Would pytest actually collect tests out of this file?
+
+    Decided by pytest's own default collection convention — basename starts
+    with `test_` and ends in `.py` — rather than a hand-maintained list of
+    known helper filenames. A filename list goes stale the moment someone adds
+    a new helper (that is the failure this rule exists to avoid repeating).
+
+    This assumes the repo never overrides `python_files` in
+    `[tool.pytest.ini_options]` (it doesn't, as of this writing — testpaths is
+    set, python_files is not, so pytest's default applies). It will MISS a
+    collectible module named outside that convention if such an override is
+    ever added; the fix then is to update this rule, not to special-case
+    filenames here.
+    """
+    name = Path(path).name
+    return name.startswith("test_") and name.endswith(".py")
+
+
 def select(changed: list[str]) -> list[str] | str:
     """Decide the pytest targets for a changed-path list.
 
@@ -103,7 +133,12 @@ def select(changed: list[str]) -> list[str] | str:
         return _CONFIG_TARGETS
 
     if all(_is_test_path(p) for p in changed):
-        return changed
+        # Not every path under tests/ is collectible (conftest.py, builders.py,
+        # fakes.py, ...) — a shared-helper edit must not narrow to a target
+        # that silently collects and runs nothing. See module docstring.
+        if all(_is_collectible_test_file(p) for p in changed):
+            return changed
+        return ALL
 
     return ALL
 
