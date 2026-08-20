@@ -600,6 +600,62 @@ undeclared name raises `KeyError`.
    with its warrant in the prompt is a different prompt from the one that failed.
    Worth measuring after this lands, and it is a hypothesis, not a claim.
 
+## 13.5 The three inference modes, and the one this tier cannot hold
+
+Raised by the operator, 2026-08-21, pointing at Honcho: *abduction, deduction,
+induction*. It is not a decoration on this design — it names a gap in it.
+
+Honcho's own dreamer decomposes reasoning into specialists (Deduction and
+Induction) over the `(observer, observed)` axis: inferences about **people**.
+This tier is the same decomposition on the **world** axis — the axis §4 of the
+Standing/Facts spec argues Honcho structurally cannot hold, because a fact about
+the world has no `observed` peer. Read that way, the Dreamer's tiers already
+implement two of the three modes, each with its own kind of warrant:
+
+| mode | what it does | warrant | where it lives today |
+|---|---|---|---|
+| **Induction** | generalise from repeated observation — `big walk` said 12 times by 4 people becomes a room lexeme | `occurrence_count`, `distinct_speakers`, `recognition_score` | `room_lexeme` (Dreamer Plan 1) |
+| **Abduction** | inference to the best explanation — a claim was made; find a source that actually addresses it | `source_url` + `source_excerpt`, plus §4.1's `addresses_claim` | **this tier**, as built |
+| **Deduction** | necessary consequence of stored premises — `black_tower --unlocked_by--> {4 colours}` together with `blue_tower --incomplete--> true` yields that the black tower is not yet reachable | **the premise fact ids** | **nowhere** |
+
+**The gap, stated plainly: `fact.source_url` and `fact.source_excerpt` are NOT
+NULL, so a fact whose warrant is *other facts* cannot be written at all.** A
+deduced fact has no page behind it and never will; demanding a URL for it is
+demanding evidence of the wrong kind. This tier can currently hold only abduced
+facts.
+
+That is an uncomfortable result for a design whose whole principle is that the
+honest case must be representable — §4.1 makes «this source omitted it, therefore
+drop the fact» unrepresentable *on purpose*, and then the same NOT NULL makes «this
+follows from what I already know» unrepresentable *by accident*.
+
+**Deliberately not fixed here**, because the fix is a schema change and this tier
+ships dormant with no writer; there is nothing to migrate and no urgency, and
+getting the warrant model right matters more than getting it early. When it is
+fixed, the shape is a **discriminated warrant** rather than a nullable URL:
+
+- `warrant_kind`: `source` | `premises` | `observation`
+- `source` ⇒ url + excerpt required (today's rule, unchanged)
+- `premises` ⇒ a non-empty set of premise `fact.id`s, and a CHECK that they exist
+  and are themselves standing
+- Nullable-URL alone would be wrong: it permits a fact with *no* warrant of any
+  kind, which is exactly the unattributable claim §3 exists to prevent.
+
+Two consequences worth recording now, while they are cheap:
+
+1. **Deduction makes supersession transitive, and nothing here handles that.** If
+   a premise is superseded, every fact deduced from it is now standing on a
+   retracted foundation. Neither the schema nor `FactVerdict` models that. A
+   `premises` warrant makes the dependency *visible*, which is the precondition
+   for ever handling it — a URL warrant hides it entirely.
+2. **Only deduction can be checked without a network call.** It is the one mode
+   whose verification is a pure function of the store, so it is the cheapest
+   adaptor to run and the only one that could sensibly run on every tick rather
+   than under a per-tick cap (§5.7).
+
+Filed as a design gap, not a defect: the tier does what it was specified to do,
+and what it was specified to do turns out to be one of three things.
+
 ## 14. Status
 
 Design only. No code. No `design/09-decision-index.md` entry — a candidate.
