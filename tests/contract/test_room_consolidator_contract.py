@@ -186,7 +186,8 @@ def _row(id: int, body: str, ts: int = 1, person_id: str | None = "miles") -> Tr
 class _FakeModelClient:
     """The `LexemeObserver` collaborator for the `"sql"` branch below —
     same structural shape `nora.language.observer._ModelClient` documents
-    (one `complete(prompt=...) -> str` call). It re-derives, from the
+    (one `complete(prompt=...) -> str` call, plus the `model` name every
+    stamped row records). It re-derives, from the
     rendered prompt text alone, the identical `"<form>:<sense>"` rule
     `_FakeRoomConsolidator._extract` applies directly to a row's body — so a
     batch yields the SAME observed lexeme whether it is run through the fake
@@ -195,6 +196,8 @@ class _FakeModelClient:
     `"[<id>] <speaker>: <body>"`; the speakers this suite uses (`"Miles"`)
     never contain a colon, so splitting on the first `": "` recovers the body
     exactly."""
+
+    model = "fake-contract-lexeme-model"
 
     async def complete(self, *, prompt: str) -> str:
         observations = []

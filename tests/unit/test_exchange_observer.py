@@ -21,9 +21,17 @@ from nora.obs.metrics import Metrics
 pytestmark = pytest.mark.asyncio
 
 
+# See `tests/unit/test_language_observer.py::FAKE_MODEL`. Deliberately a
+# DIFFERENT name from the lexeme suite's: `[language].exchange_model` lets
+# this adaptor run its own model, and a shared constant would hide a stamp
+# that read the wrong client.
+FAKE_MODEL = "fake-exchange-model-v1"
+
+
 class FakeModel:
-    def __init__(self, responses: list[str]) -> None:
+    def __init__(self, responses: list[str], *, model: str = FAKE_MODEL) -> None:
         self._responses = list(responses)
+        self.model = model
 
     async def complete(self, *, prompt: str) -> str:
         return self._responses.pop(0)
@@ -193,3 +201,37 @@ async def test_editing_the_instruction_text_changes_every_row_it_writes(monkeypa
     [c_before] = result_before.candidates
     [c_after] = result_after.candidates
     assert c_before.instruction_sha256 != c_after.instruction_sha256
+
+
+# ── model provenance (2026-08-20 substrate spec §6.2 question 2) ─────────────
+
+async def test_every_candidate_carries_the_model_that_produced_it():
+    observer = ExchangePatternObserver(FakeModel(
+        responses=[_pattern("insult_trade", [1, 2])]))
+    result = await observer.observe(
+        batch=rows((1, "miles", "you idiot"), (2, "tyler", "you're worse")))
+    [c] = result.candidates
+    assert c.model == observer.model
+    assert c.model == FAKE_MODEL
+
+
+async def test_the_stamped_model_is_the_one_the_client_reports():
+    observer = ExchangePatternObserver(
+        FakeModel(responses=[_pattern("insult_trade", [1, 2])], model="m-exchange"),
+    )
+    result = await observer.observe(
+        batch=rows((1, "miles", "you idiot"), (2, "tyler", "you're worse")))
+    [c] = result.candidates
+    assert observer.model == "m-exchange"
+    assert c.model == "m-exchange"
+
+
+async def test_the_two_adaptors_can_stamp_different_models():
+    """`[language].exchange_model` lets this adaptor run its own model, so two
+    rows written on the SAME tick for the same room may honestly name
+    different models — an observer reading a single shared config value could
+    not express that."""
+    assert (
+        ExchangePatternObserver(FakeModel(responses=[], model="m-exchange")).model
+        != LexemeObserver(FakeModel(responses=[], model="m-lexeme")).model
+    )

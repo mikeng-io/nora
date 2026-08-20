@@ -821,6 +821,18 @@ LANGUAGE_OBSERVATION = sa.Table(
     # the column exists to remove. NULL reads as «I could not check», never
     # «there was nothing» (R-27).
     sa.Column("instruction_sha256", sa.Text),
+    # PROVENANCE, second half — WHICH MODEL read that instruction text
+    # (2026-08-20 substrate spec §6.2, decided in favour on the same day).
+    # The instructions are one input to this row and the model is another:
+    # the same text run against a different model produces a different
+    # `sense`, so `instruction_sha256` alone does not answer "what produced
+    # this row". `[language].model` has changed before and is a config value,
+    # not a guarantee — which is exactly why it is recorded rather than
+    # assumed. Nullable/no-default/no-backfill for the identical reason as
+    # the digest above: the rows already here were written by a model nothing
+    # recorded, and stamping them with today's configured model would be a
+    # fabricated attribution. NULL is «I could not check» (R-27).
+    sa.Column("model", sa.Text),
     sa.UniqueConstraint("message_id", "canonical_form", "sense"),
     # The digest is 64 lowercase hex chars or it is nothing — a CHECK, not a
     # convention, because `alembic check` is blind to CHECK constraints and a
@@ -830,6 +842,22 @@ LANGUAGE_OBSERVATION = sa.Table(
     sa.CheckConstraint(
         "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="language_observation_instruction_sha256_check",
+    ),
+    # A model NAME has no provable shape — no width, no alphabet, no
+    # registry this process can check against — so there is deliberately no
+    # pattern here to mirror the digest's. What the CHECK still buys is the
+    # ONE thing that is provable and that matters: a stamp is either a real
+    # name or honestly absent, never a value that LOOKS recorded and names
+    # nothing. Without it `''` (or `'   '`) reads as non-NULL to every query
+    # that asks "which rows are attributable", turning R-27's `unavailable`
+    # into a false `ok` — the same failure `instruction_sha256()` refuses by
+    # raising on an empty part list. Anything else about the name is the
+    # config's business, not the database's; over-constraining it would
+    # reject a legitimate provider rename and lose the row's provenance to
+    # keep a guess about naming conventions.
+    sa.CheckConstraint(
+        "model IS NULL OR length(btrim(model)) > 0",
+        name="language_observation_model_check",
     ),
 )
 
@@ -880,10 +908,22 @@ ROOM_LEXEME = sa.Table(
     # interrogate first; the full mixture is always recoverable from the
     # evidence table, which is where a per-row history belongs.
     sa.Column("instruction_sha256", sa.Text),
+    # INHERITED with the digest, from the SAME `rn = 1` evidence row — see
+    # `nora.infra.sql.language.SqlLanguageStore.rescore`. Riding one row is
+    # the point: two provenance fields taken from two different observations
+    # would name a pairing that never existed, an instruction that was never
+    # run against that model.
+    sa.Column("model", sa.Text),
     sa.CheckConstraint("state IN ('live','fading','stale')"),
     sa.CheckConstraint(
         "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="room_lexeme_instruction_sha256_check",
+    ),
+    # See `LANGUAGE_OBSERVATION`'s own `model` CHECK for why this refuses
+    # only emptiness and nothing about the name's shape.
+    sa.CheckConstraint(
+        "model IS NULL OR length(btrim(model)) > 0",
+        name="room_lexeme_model_check",
     ),
 )
 
@@ -922,6 +962,11 @@ EXCHANGE_OBSERVATION = sa.Table(
     # PROVENANCE — see `LANGUAGE_OBSERVATION.instruction_sha256` for the
     # nullable/default argument; identical here.
     sa.Column("instruction_sha256", sa.Text),
+    # PROVENANCE, second half — see `LANGUAGE_OBSERVATION.model`. Not
+    # redundant with that column even on the same tick:
+    # `[language].exchange_model` may name a different model from the lexeme
+    # adaptor's, so the two evidence tables can honestly disagree.
+    sa.Column("model", sa.Text),
     sa.UniqueConstraint("scope_id", "act", "message_ids"),
     sa.CheckConstraint(
         "act IN " + str(_EXCHANGE_ACTS), name="exchange_observation_act_check"
@@ -935,6 +980,10 @@ EXCHANGE_OBSERVATION = sa.Table(
     sa.CheckConstraint(
         "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="exchange_observation_instruction_sha256_check",
+    ),
+    sa.CheckConstraint(
+        "model IS NULL OR length(btrim(model)) > 0",
+        name="exchange_observation_model_check",
     ),
 )
 
@@ -961,6 +1010,9 @@ ROOM_EXCHANGE = sa.Table(
     # PROVENANCE, INHERITED from the newest `exchange_observation` in the
     # group — see `ROOM_LEXEME.instruction_sha256` for the argument.
     sa.Column("instruction_sha256", sa.Text),
+    # INHERITED from the same newest observation the digest comes from — see
+    # `ROOM_LEXEME.model`.
+    sa.Column("model", sa.Text),
     sa.CheckConstraint(
         "act IN " + str(_EXCHANGE_ACTS), name="room_exchange_act_check"
     ),
@@ -971,6 +1023,10 @@ ROOM_EXCHANGE = sa.Table(
     sa.CheckConstraint(
         "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="room_exchange_instruction_sha256_check",
+    ),
+    sa.CheckConstraint(
+        "model IS NULL OR length(btrim(model)) > 0",
+        name="room_exchange_model_check",
     ),
 )
 

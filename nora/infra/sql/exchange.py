@@ -111,6 +111,10 @@ class SqlExchangeStore:
                 # `nora.infra.sql.language.append_observations`'s own note and
                 # `ExchangePatternObserver.instruction_sha256`.
                 "instruction_sha256": obs.instruction_sha256,
+                # And the model that read that instruction — the same
+                # candidate, the same construction. See
+                # `nora.infra.sql.language.append_observations`.
+                "model": obs.model,
             })
         if skipped and self._metrics is not None:
             self._metrics.inc(
@@ -145,7 +149,7 @@ class SqlExchangeStore:
         ranked = (
             sa.select(
                 EO.c.act, EO.c.participants, EO.c.message_ids, EO.c.observed_at,
-                EO.c.instruction_sha256,
+                EO.c.instruction_sha256, EO.c.model,
                 sa.func.row_number()
                 .over(
                     partition_by=(EO.c.act, EO.c.participants),
@@ -170,7 +174,10 @@ class SqlExchangeStore:
         # The newest observation per group — the sibling of
         # `SqlLanguageStore.rescore`'s own `latest` CTE.
         latest = (
-            sa.select(ranked.c.act, ranked.c.participants, ranked.c.instruction_sha256)
+            sa.select(
+                ranked.c.act, ranked.c.participants, ranked.c.instruction_sha256,
+                ranked.c.model,
+            )
             .where(ranked.c.rn == 1)
             .cte("latest")
         )
@@ -197,7 +204,7 @@ class SqlExchangeStore:
         select_stmt = sa.select(
             aggregated.c.act, aggregated.c.participants, aggregated.c.occurrence_count,
             aggregated.c.first_seen_at, aggregated.c.last_seen_at, examples_cte.c.examples,
-            latest.c.instruction_sha256,
+            latest.c.instruction_sha256, latest.c.model,
         ).select_from(
             aggregated.join(
                 examples_cte,
@@ -236,6 +243,7 @@ class SqlExchangeStore:
                     "state": state,
                     "examples": r.examples,
                     "instruction_sha256": r.instruction_sha256,
+                    "model": r.model,
                 })
             upsert_stmt = pg.insert(ROOM_EXCHANGE).values(upsert_rows)
             upsert_stmt = upsert_stmt.on_conflict_do_update(
@@ -250,6 +258,7 @@ class SqlExchangeStore:
                     "state": upsert_stmt.excluded.state,
                     "examples": upsert_stmt.excluded.examples,
                     "instruction_sha256": upsert_stmt.excluded.instruction_sha256,
+                    "model": upsert_stmt.excluded.model,
                 },
             )
             await conn.execute(upsert_stmt)
