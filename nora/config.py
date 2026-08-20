@@ -786,6 +786,23 @@ class AnalyticsConfig(BaseModel):
     # one would feed a fabricated zero-speed sample into
     # `presence_corridor_speed`'s percentiles.
     min_trip_fixes: int = Field(default=3, ge=2)
+    # Trip settlement (design/27 §4, 2026-08-20 trip-settlement design
+    # §2.4): the safety valve against a stuck `is_driving` signal — if
+    # Life360 ever keeps reporting `True` continuously (a stale/stuck
+    # flag, a bug) while the device is still actively sending fixes, a
+    # trip could otherwise never settle and hold the watermark back
+    # forever. This is NOT protection against a device that stops
+    # reporting entirely: the cap is computed from the held-back group's
+    # OWN fix-to-fix span, which freezes the instant new fixes stop
+    # arriving, so a genuinely dark device causes an unbounded stall this
+    # cap cannot fire against — that case self-heals a different way,
+    # once fixes resume, via the existing chunk-gap split. This default
+    # is a JUDGMENT CALL, not a measured value — no genuine multi-hour
+    # trip data exists yet to derive a percentile from (the trips in
+    # production today are exactly the fragments this fix corrects).
+    # 3 hours is generous enough to cover a real long drive without
+    # leaving a stuck signal unbounded.
+    max_trip_duration_seconds: float = Field(default=10800.0, gt=0)
     tz_name: str = "Asia/Hong_Kong"
     # The substrate's own metrics/health endpoint. 9100 is Nora's own
     # (`[obs.metrics]`), 9101 is the presence collector's

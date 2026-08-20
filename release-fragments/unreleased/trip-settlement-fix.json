@@ -1,0 +1,15 @@
+{
+  "type": "fix",
+  "summary": "Presence analytics no longer fragments a continuous drive into one trip per ~2-minute polling tick. A trip's trailing edge now gets the same quiet-boundary protection a stay's arrival already had, using Life360's own is_driving signal.",
+  "details": [
+    "RawFix gains is_driving (Life360's own per-fix motion signal, 100% filled) as the primary settlement signal, with a settled_seconds time-based fallback and a max_trip_duration_seconds safety valve against a signal stuck reporting is_driving=True on an otherwise-live device (not a device that stops reporting entirely, which self-heals separately once fixes resume).",
+    "The fix watermark now holds back an undecided trailing group of fixes rather than consuming them, so a drive spanning many polling ticks correctly settles into one trip once it actually ends.",
+    "A stationary subject's trailing fixes are recognized as a stay-in-progress once they've dwelled past the existing stay-arrival threshold, rather than waiting on a settlement clock that Life360's resting cadence never lets elapse — closing a second fragmentation path found while fixing the first."
+  ],
+  "limitations": [
+    "The 9 trip rows already written in production before this fix remain fragmented as they are — new drives from deploy onward extract correctly, but nothing backfills or re-derives the earlier ones.",
+    "A related, unconfirmed question was surfaced but not addressed here: whether the existing open-stay mechanism has an analogous cross-tick timing property for a stay's own arrival time. Flagged for separate investigation, not fixed in this change.",
+    "The watermark-holdback mechanism has a real, bounded stall, and it presupposes fixes keep arriving throughout (a batch with genuinely zero new fixes never touches it at all): a subject who keeps driving but whose trailing group keeps re-qualifying as undecided holds the watermark frozen until the backlog crosses the backfill threshold (on the order of 11 hours at a realistic ~10s driving cadence with default settings) before a wider batch drains it. Self-healing, but not instantaneous. A device that goes dark instead (no fixes arriving at all) is a different, genuinely unbounded stall not described by this bound; it self-heals once fixes resume via the existing chunk-gap split, not via this mechanism.",
+    "last_cluster_id -- DEC-115's place-clustering dirty-set marker (cluster_places's own gate; unrelated to corridor clustering, which has no watermark column and instead uses presence_trips.corridor_id IS NULL) -- is not held back alongside this fix's watermark. Assessed as benign: its gate (fixes[-1].id > last_cluster_id) opens on any new fix arriving this cycle regardless of trip-settlement holdback, so place clustering never runs less often after this change than it did before."
+  ]
+}
