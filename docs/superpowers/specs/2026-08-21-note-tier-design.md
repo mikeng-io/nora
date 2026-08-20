@@ -4,7 +4,7 @@ title: "The note tier: tracked uncertainty, anchored, with a closing condition"
 description: "Three tiers hold what Nora knows and none of them holds what she is UNSURE about. A fact is certainty with a warrant; Standing is a per-conversation reasoning position rewritten every turn and lossy by design; Honcho holds socially-inferred disposition about PEOPLE on an (observer, observed) axis that re-infers forever, which is why a wedding venue put there is at the mercy of a process built to keep changing its mind. The open plan — dinner on the 9th, three restaurants, nobody decided — has no home, so it is reconstructed from scratch or lost. This proposes a fourth tier: a note is (anchor, uncertainty, closing condition, body), workspace-scoped, its title and description injected on EVERY tag so awareness costs no tool call, its body read on demand. The tag path may only touch a note it read this turn, append-only with a CAS on the head revision; the Dreamer is the only thing that may act ACROSS notes — merge, retire, compact — and merge is keyed on the ANCHOR, never on topical similarity, so two weddings stay two notes. Nothing on the background clock speaks: a revisit reaches a person only by scheduling a reminder, which fires on the delivery path. One revisit adaptor serves every note; the note supplies the objective, never the procedure."
 tags: [nora, spec, notes, uncertainty, dreamer, adaptor, reminders, events, workspace, postgres]
 timestamp: '2026-08-21'
-status: proposed
+status: accepted
 derives_from:
   - docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md
   - docs/superpowers/specs/2026-08-20-fact-tier-design.md
@@ -699,10 +699,12 @@ parts rather than waiting on the slower one.
 `note_read` / `note_search` / `note_create` / `note_update` with R-7 budgets and
 the §6.2 latch; the debrief's fourth output; the `note_candidate` miss cache.
 
-**Part 1b — `NoteCurator`** (§9.1–§9.4) plus `workspace_scopes()`. It needs no
-tool loop — SQL plus at most one small `complete(prompt) -> str`, the port that
-exists today — but it does need a decided **sink interface**; see §15.2 for why
-writing one before `DreamSink` exists is guessing at somebody else's port.
+**Part 1b — `NoteCurator`** (§9.1–§9.4), plus `workspace_scopes()` (this tier's
+to build, §15.4), plus **`tests/contract/test_dream_sink_contract.py`** covering
+the fact store and the note store both — the note store is the *second*
+`DreamSink` implementation, so CLAUDE.md's contract-suite rule lands here. Its
+sink refuses any payload that is not a note revision by `isinstance`, never
+duck-typing (§15.4).
 
 **Part 2 — blocked on the Dreamer runtime.** `NoteRevisitor` (§9.5, §10) and its
 strike state (§9.6).
@@ -710,33 +712,6 @@ strike state (§9.6).
 **1a is a complete, useful tier on its own**: she writes and revises notes on the
 tag path, and the always-injected index makes her aware of them. 1b adds
 housekeeping; Part 2 adds the notebook thinking about itself.
-
-### 15.3 Both passes land on the Dreamer runtime — not a fourth extractor
-
-**Operator decision, 2026-08-21.** `NoteCurator` and `NoteRevisitor` are
-**adaptors on the Dreamer runtime**. Neither is written as a fourth
-hand-written extractor beside `LanguageConsolidator` / `ExchangeConsolidator` /
-`PortraitSynthesizer`.
-
-This is a real constraint, not a preference, and it costs something: §15.2 shows
-`NoteCurator` *could* be built today on the existing `complete(prompt) -> str`
-port. Building it that way would ship housekeeping sooner and then require
-rewriting it onto the runtime — and it would put a fourth bespoke extractor into
-the exact shape the keystone exists to replace. **So 1b waits.** Only Part 1a is
-genuinely unblocked.
-
-**What needs aligning with the fact-tier session** before this document is final:
-
-| question | why it is theirs to answer |
-|---|---|
-| `DreamSink` / `Proposal` — final signature | the fact store implements it; the note store must implement the same port, and CLAUDE.md forbids a second implementation without a shared contract suite (`tests/contract/`) |
-| does `Proposal` carry a payload general enough for a **note revision**, or is it verdict-shaped? | if it is verdict-shaped, either it generalises or the note tier needs its own sink and the "one runtime, many adaptors" claim weakens |
-| migration ordering | `0026` is claimed by whichever lands first; the note tier will renumber rather than contend |
-| `workspace_scopes()` (§9.1) | the fact tier is workspace-keyed too and has the same conversation-vs-workspace mismatch; it should be built once, by whoever needs it first |
-
-Until those are answered, the note tier's Dreamer-side design is **provisional in
-its interface and settled in its behaviour** — §9's triggers, criteria and loop
-breakers do not change with the sink's shape.
 
 **No reminder-tier change in either part.** An earlier draft added a `revisit`
 reminder kind; §9.5 replaced it with a fire condition inside the curator's pass.
@@ -871,15 +846,16 @@ which does not exist yet (§15.1), and every adaptor on that runtime will need t
 same treatment `web_fetch`'s `fetch_max_chars` got. It belongs to the runtime's
 design, and the note tier inherits whatever that decides.
 
-**Cross-tier alignment with the fact-tier session** (§15.3) — the sink interface
-and the migration ordering. Raised with that session on 2026-08-21; this document
-is not final until it answers.
+**Cross-tier alignment with the fact-tier session** — raised on 2026-08-21 and
+**answered the same night**; see §15.4. Two follow-ups remain, neither blocking:
+§15.5.
 
 ## 15. Status, and what this depends on
 
-**Proposed.** No code. Design agreed with the operator across the exchanges in
-§12 on 2026-08-21; the implementation plan is the next artifact and is not part
-of this document.
+**Accepted, no code.** Design agreed with the operator across the exchanges in
+§12 on 2026-08-21, and the cross-tier interface confirmed by the fact-tier
+session the same night (§15.4). The implementation plan is the next artifact and
+is not part of this document.
 
 ### 15.1 The dependency, read back from the code on 2026-08-21
 
@@ -923,3 +899,117 @@ So the safe decomposition is finer than §11.1's two parts:
 **1a is a complete, useful tier on its own**: she writes and revises notes on the
 tag path, and the always-injected index makes her aware of them. What 1b adds is
 housekeeping; what 2 adds is the notebook thinking about itself.
+
+### 15.3 Both passes land on the Dreamer runtime — not a fourth extractor
+
+**Operator decision, 2026-08-21.** `NoteCurator` and `NoteRevisitor` are
+**adaptors on the Dreamer runtime**. Neither is written as a fourth hand-written
+extractor beside `LanguageConsolidator` / `ExchangeConsolidator` /
+`PortraitSynthesizer`.
+
+This is a real constraint, not a preference, and it costs something: §15.2 shows
+`NoteCurator` *could* be built today on the existing `complete(prompt) -> str`
+port. Building it that way would ship housekeeping sooner and then require
+rewriting it onto the runtime — and it would put a fourth bespoke extractor into
+the exact shape the keystone exists to replace. **So 1b waits.** Only Part 1a is
+genuinely unblocked.
+
+### 15.4 Cross-tier alignment — ANSWERED by the fact-tier session (2026-08-21)
+
+Four questions were put to the session finishing the fact tier. All four came
+back the same night; this subsection records the answers, because §14.3 made the
+document's finality conditional on them.
+
+**1. `DreamSink` / `Proposal` — declared, and this is the shape.**
+
+```python
+async def propose(*, key: str, proposals: Sequence[Proposal], now_ms: int) -> Sequence[str]
+async def supersede(*, key: str, target: str, because: str, source: str | None, now_ms: int) -> int
+#   no delete verb — on the port or on any implementation
+
+@dataclass(frozen=True)
+class Proposal:
+    payload: object          # the adaptor's own validated value
+    instruction_sha256: str
+    model: str
+    established_by: str
+```
+
+Three properties the note tier depends on and does not re-decide:
+
+- `propose` returns **ids, not a count**, so `supersede` can name what `propose`
+  produced. Merge (§7.1) and retirement (§7.4) both need that.
+- `now_ms` is on the **verb**, not on `Proposal`: one tick writes many proposals
+  at a single instant, and a per-proposal timestamp would invite them to
+  disagree.
+- `propose(key, ())` → `()` is a **legal call meaning "nothing to write"**,
+  distinct from not calling it at all, which is `unavailable`. That is R-27 at
+  the port, and it is what lets `NoteCurator`'s no-op pass (§9.4) be
+  *distinguishable* from a curator that failed to run.
+
+**No delete verb, anywhere.** This confirms §7.4 independently: retirement is a
+status change, never a delete, and the port makes the alternative unreachable
+rather than discouraged.
+
+**2. `payload` is `object`, and the runtime never introspects it.** The note
+tier's payload — a revision body plus the head-revision id for §6.3's CAS — fits
+with no change to the port. Provenance (`instruction_sha256`, `model`,
+`established_by`) rides on `Proposal` rather than inside `payload` precisely
+because those three are true of every adaptor and specific to none, which is what
+keeps `nora/domain/ports.py` from ever naming `FactVerdict`.
+
+> **Standing objection, recorded here so it survives this session.** If anyone
+> narrows `payload` to a verdict type, the keystone's "one runtime, many
+> adaptors" claim becomes false — and **this tier is the proof case that it must
+> stay `object`.** Cite this paragraph.
+
+**The cost of an opaque field, and the rule that pays it.** An `object` payload
+means the type is known again only at the *sink*. So **the note sink
+`isinstance`-checks its payload and refuses anything else — it never duck-types
+it.** An opaque field is exactly where a wrong value travels a long way quietly,
+and a sink that accepts whatever arrives is the `unavailable`-reported-as-`ok`
+failure at the storage boundary. The fact sink does the same; this is a shared
+convention, not a local preference.
+
+**3. Migration `0026` is the note tier's.** The fact tier needs **zero** further
+migrations — `0025` was amended in place (it has never been applied; the live DB
+is still at `0024`) and its remaining tasks are store code against existing
+tables.
+
+`0025` did grow that night — `fact` gained `warrant_kind`
+(`source|premises|observation|stated`), `fidelity`
+(`tentative|proven|deprecated`), `supersede_reason`, an FK on `superseded_by`,
+and a `fact_premise` junction table arrived. **`fact_entity` is unchanged**, so
+this tier's anchor target (§2.3, §7.1) is stable and none of that reaches the
+note tier.
+
+**4. `workspace_scopes()` (§9.1) is this tier's to build.** The fact adaptor
+needs the Dreamer runtime, which is unowned and unstarted, so nothing on that
+side reaches `dream_loop` yet. Notes will need it first; the fact tier will use
+this one when it gets there.
+
+**And a fifth thing, unasked: the contract suite.** CLAUDE.md's rule — no second
+implementation of a port without a shared contract suite — lands on whoever
+writes the *second* `DreamSink` implementation. On current sequencing that is
+**this tier**, so `tests/contract/test_dream_sink_contract.py`, covering the fact
+store and the note store both, is **in Part 1b's scope** (§11.1) rather than
+somebody else's.
+
+### 15.5 What is still genuinely open
+
+Two items, both for the implementation plan rather than this document, and
+neither blocking:
+
+1. **What `supersede`'s `source` parameter carries** for a *merge*. The fact
+   tier's supersession names a warrant; a merge's "source" is the surviving
+   note. Same field, plausibly two meanings — to be settled against the fact
+   store's own use before the note store implements it, not guessed at.
+2. **Whether promotion to an `Event` (§7.3) goes through a sink at all.**
+   `DreamSink` writes into the tier that owns `key`; an event is a different
+   store with a different scope (`conversation_id`, not workspace). Most likely
+   promotion is not a `propose` and the curator holds a second collaborator —
+   but that is an interface question the plan should answer explicitly rather
+   than discover.
+
+**With §15.4 answered, this document is final on behaviour and on interface.**
+The two items above change how the curator is wired, never what it decides.
