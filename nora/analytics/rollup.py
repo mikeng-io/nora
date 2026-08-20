@@ -39,6 +39,7 @@ from nora.domain.mobility import (
     label_place,
     robust_z_score,
     segment_stays,
+    trailing_fix_is_settled,
 )
 from nora.domain.ports import GeocodeCacheStore
 from nora.domain.presence import haversine_distance_m
@@ -126,6 +127,7 @@ class RollupConfig:
     corridor_min_samples: int = 3
     corridor_cluster_batch_limit: int = 500
     min_trip_fixes: int = 3
+    max_trip_duration_seconds: float = 10800.0
 
 
 class MobilityRollup:
@@ -183,8 +185,21 @@ class MobilityRollup:
             # ONLY input `extract_trips` has for a trip's corridor
             # sequence, and dropping it here silently produced empty
             # corridors that cluster with each other and nothing real.
+            # `is_driving=` is load-bearing the same way (2026-08-20
+            # trip-settlement design §2.2): it is the PRIMARY settlement
+            # signal, and this projection is the only place between the
+            # store and `extract_trips` that can drop it. It was dropped
+            # here when the field was added (Task 1 threaded it through both
+            # stores, and every fix arrived at segmentation as
+            # `is_driving=None` anyway), which silently reduced the whole
+            # settlement mechanism below to its `settled_seconds` fallback —
+            # a wiring gap that no test in `tests/unit/test_mobility.py`
+            # could see, because those call `extract_trips` directly.
             raw = [
-                RawFix(id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address)
+                RawFix(
+                    id=f.id, ts=f.ts, lat=f.lat, lng=f.lng, address=f.address,
+                    is_driving=f.is_driving,
+                )
                 for f in fixes
             ]
             min_dwell_ms = int(self._cfg.stay_min_dwell_seconds * 1000)
@@ -209,6 +224,11 @@ class MobilityRollup:
             # directly rather than deriving them from a raw fix stream).
             new_stays: list[Stay] = []
             new_trips: list[Trip] = []
+            # The lowest fix id `extract_trips` refused to finalize this
+            # cycle — the watermark stops one short of it below so the
+            # undecided group is re-read whole next cycle instead of being
+            # consumed as a fragment.
+            trip_hold_id: int | None = None
             chunks = _chunk_by_gap(raw, DWELL_CAP_MS)
             last_open_stay: Stay | None = None
             for i, chunk in enumerate(chunks):
@@ -227,8 +247,93 @@ class MobilityRollup:
                 # never a better one.
                 chunk_closed = list(seg.closed)
                 open_started: int | None = None
-                if seg.open_stay is not None:
-                    if i == len(chunks) - 1:
+                is_final_chunk = i == len(chunks) - 1
+                # THE trip-settlement fix (2026-08-20 design §2.2/§2.3).
+                #
+                # `segment_stays` ALWAYS returns a trailing `open_stay` for a
+                # non-empty window — read its own final paragraph: whatever
+                # remains in `group` is the open stay, unconditionally, even
+                # when that "group" is one fix taken at 90 km/h. So the
+                # branch below used to fire on EVERY final chunk, handing
+                # `extract_trips` a cut point that, mid-drive, sits at the
+                # newest fix. Every tick therefore flushed "everything except
+                # the newest fix" as a finished trip, and a continuous drive
+                # came out as one trip per tick — the live fragmentation the
+                # design's §0 evidence is made of. Task 2's settlement check
+                # is gated on `open_stay_started_ts is None`, so without this
+                # guard it could never have fired from here at all.
+                #
+                # The discriminator is `trailing_fix_is_settled` — the SAME
+                # predicate, on the SAME fix (`chunk[-1]` is `extract_trips`'
+                # own `buffer[-1]` for the final chunk), that `extract_trips`
+                # uses to decide whether to finalize. Sharing it is not
+                # tidiness: if these two ever disagreed, the same fixes would
+                # be held back as candidate TRIP fixes here and written as a
+                # STAY below, landing in both tables.
+                #
+                # Unsettled means there is no stay-in-progress to cut at and
+                # the trailing group's fate is genuinely undetermined — which
+                # is precisely the state `open_stay_started_ts=None` means.
+                # `last_open_stay` is deliberately left unset in that case
+                # too, for the same reason: a group being held back must not
+                # also be closable as a stay by the `settled_seconds` block
+                # below (`test_a_gridlocked_drive_never_writes_a_stay_while_
+                # the_tail_is_still_movement`).
+                #
+                # All three readings matter, and `None` is NOT a synonym for
+                # `False` here. `True` (still driving) never settles. `False`
+                # is a real arrival — the parked tail IS a stay-in-progress,
+                # and calling it movement would swallow every stay this
+                # substrate exists to find
+                # (`test_a_parked_tail_with_is_driving_false_is_still_an_
+                # open_stay`). `None` is no reading at all — the real state
+                # of every historical fix and anything Life360 omits the flag
+                # on — and falls back to `settled_seconds`, the same
+                # quiet-boundary clock Tier 1 already uses for a stay's
+                # arrival (design §2, bullet 2). Treating `None` as settled
+                # left the original fragmentation bug fully intact for
+                # exactly the fixes that have no signal to fix it with.
+                tail_settled = trailing_fix_is_settled(
+                    chunk[-1], now_ms=now_ms,
+                    settled_seconds=self._cfg.settled_seconds,
+                )
+                # `tail_dwelled` is the SECOND gate, and it exists only for
+                # the `None` case. The clock alone is not enough there: at a
+                # RESTING cadence (Life360 emits every ~10 min when still)
+                # the trailing fix is never older than `settled_seconds`, so
+                # a subject sitting at home all day would have their whole
+                # day held back as "undecided movement" — and when it finally
+                # flushed, their stationary fixes came out as 0 km/h, 0 m
+                # trips instead of a stay. Measured on
+                # `test_a_repeating_commute_actually_grows_corridors_over_
+                # days`: 41 such phantom trips, and 7 stays where the fixture
+                # documents zero.
+                #
+                # The discriminator is the trailing group's own DWELL. A
+                # resting tail is one spatially-coherent group whose span
+                # passes `min_dwell_ms` — the same bar `_close` uses to call
+                # something a stay. A driving tail is a fix that just broke
+                # the radius, so its group's span is ~0. So: no signal, but
+                # the tail has already dwelled like a stay -> treat it as the
+                # stay-in-progress it looks like.
+                #
+                # Only for `None`. When Life360 actually says `is_driving`,
+                # that reading wins over the spatial proxy — gridlock is
+                # precisely a real drive whose tail looks spatially like a
+                # stay, and the signal is the thing bound to the real
+                # property (`test_a_gridlocked_drive_never_writes_a_stay_
+                # while_the_tail_is_still_movement`).
+                tail_dwelled = (
+                    chunk[-1].is_driving is None
+                    and seg.open_stay is not None
+                    and seg.open_stay.ended_ts - seg.open_stay.started_ts
+                    >= min_dwell_ms
+                )
+                tail_is_movement = (
+                    is_final_chunk and not tail_settled and not tail_dwelled
+                )
+                if seg.open_stay is not None and not tail_is_movement:
+                    if is_final_chunk:
                         # Only the FINAL chunk's trailing group is genuinely
                         # open — nothing has been observed yet to say the
                         # subject left; that is `settled_seconds`' job below.
@@ -251,12 +356,29 @@ class MobilityRollup:
                         # bug; the sub-min-dwell case correctly stays out,
                         # since `segment_stays` discarded that group too.
                         chunk_closed.append(seg.open_stay)
-                new_trips.extend(extract_trips(
+                # Only the FINAL chunk gets the settlement args. A non-final
+                # chunk's trailing group ended because an OBSERVED gap
+                # followed it, so its fate is already decided and there is
+                # nothing to settle; `now_ms=None` is what reproduces the
+                # original always-flush behaviour for it (extract_trips'
+                # own docstring).
+                chunk_trips, held_back = extract_trips(
                     chunk, chunk_closed, subject_id=subject_id,
                     person_id=person_ids[-1], circle_id=circle_id,
                     min_trip_fixes=self._cfg.min_trip_fixes,
                     open_stay_started_ts=open_started,
-                ))
+                    now_ms=now_ms if is_final_chunk else None,
+                    settled_seconds=(
+                        self._cfg.settled_seconds if is_final_chunk else None
+                    ),
+                    max_trip_duration_seconds=(
+                        self._cfg.max_trip_duration_seconds
+                        if is_final_chunk else None
+                    ),
+                )
+                new_trips.extend(chunk_trips)
+                if held_back:
+                    trip_hold_id = min(f.id for f in held_back)
             # An open stay closes THIS cycle only once settled_seconds has
             # elapsed since its last fix (spec §3.2/§4) — a wall-clock
             # decision run_once makes, not segment_stays itself.
@@ -354,8 +476,29 @@ class MobilityRollup:
                             "still advances; they keep corridor_id NULL and "
                             "are re-clustered on a later cycle"
                         )
+            # The watermark stops one short of anything `extract_trips`
+            # refused to finalize, so the undecided group is re-read WHOLE
+            # next cycle rather than consumed as a fragment. This is the
+            # half of the settlement fix that makes the other half safe:
+            # holding a group back is only not a data loss if its fixes stay
+            # readable.
+            #
+            # Only a TRIP hold ever reduces this below `fixes[-1].id`. An
+            # unsettled open STAY still advances the watermark past its own
+            # fixes exactly as it always has — a real but separate question
+            # about the stay-side mechanism, deliberately out of scope here
+            # (design §2.3).
+            #
+            # Never moves backwards: every held-back fix came from `fixes`,
+            # which `fixes_since` already filtered to `id > last_fix_id`, so
+            # `trip_hold_id - 1 >= last_fix_id`. The degenerate case — the
+            # WHOLE batch is one undecided group, so the target equals the
+            # current watermark — is a no-op write, not a special case.
+            watermark_target = fixes[-1].id
+            if trip_hold_id is not None:
+                watermark_target = min(watermark_target, trip_hold_id - 1)
             await self._store.advance_fix_watermark(
-                subject_id=subject_id, fix_id=fixes[-1].id
+                subject_id=subject_id, fix_id=watermark_target
             )
             if self._metrics is not None:
                 self._metrics.inc(
