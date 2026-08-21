@@ -64,8 +64,9 @@ depends on.
 
 ## 3. Selection — change-aware, fail-closed
 
-`scripts/affected_tests.py`, taking a base ref (default `origin/master`) and
-emitting either a pytest path list or the string `ALL`.
+`scripts/affected_tests.py`, taking a base ref (default `HEAD~1` — see the
+2026-08-21 addendum below; originally `origin/master`) and emitting either a
+pytest path list or the string `ALL`.
 
 The rules, in order, first match wins:
 
@@ -154,7 +155,7 @@ decision, not a free consequence of this one.
    up. Before raising the worker count, measure **peak RSS** across the
    Postgres+Ryuk containers plus the pytest workers during a run — that is the
    number that would tell you whether `-n 16` fits the box, not core count.
-4. `affected_tests.py` has tests of its own (`tests/test_affected_tests.py`),
+5. `affected_tests.py` has tests of its own (`tests/test_affected_tests.py`),
    including: a docs-only change selects nothing; a `nora/doctrine/*.md` change
    selects `ALL` (and outranks the docs-only rule even when mixed with real
    docs changes in the same diff — the ordering §3 calls out as the one to get
@@ -178,4 +179,27 @@ decision, not a free consequence of this one.
    `ALL`. Verified the same way: reverted the fix, confirmed
    `test_a_non_collectible_helper_alone_selects_all` (and its two siblings)
    went red with `assert ['tests/conftest.py'] == 'ALL'`, restored it.
-5. `make gate` still runs the whole suite.
+6. `make gate` still runs the whole suite.
+
+## 7. Addendum, 2026-08-21 (same day) — the default base was `origin/master`
+
+The rule that mattered most turned out to have a scope bug, not a logic bug.
+`--base` defaulted to `origin/master`, so `select()` saw the *whole branch's*
+diff, not the latest change. Rule 0 (§3: loaded markdown anywhere in the diff
+forces `ALL`) is correct on the diff it's handed — but because that diff is
+cumulative since the branch point, a branch that touches `nora/dreamer/**` or
+`nora/doctrine/**` once stays pinned to `ALL` for every commit after it, for
+the rest of the branch's life. A bare `config.toml` commit on top still gets
+`ALL`. Three sessions hit this independently the same afternoon, on the
+`dreamer-runtime` and `note-tier` branches — both necessarily touch
+`nora/dreamer/**`, so both were permanently degraded to the full suite for
+every later commit.
+
+**Fixed by defaulting `--base` to `HEAD~1`** — only the latest commit is
+judged. This does not weaken §1's guarantee: `make gate` (unconditional, full
+suite, run before every commit) is what actually gates correctness, not this
+selector. A commit that already passed the gate does not need re-flagging on
+every later diff; only the new commit needs judging. Covered by
+`test_default_base_does_not_re_flag_an_earlier_dreamer_commit` (the miss) and
+`test_default_base_still_selects_all_when_the_latest_commit_is_dreamer` (the
+rule still fires when it should) in `tests/test_affected_tests.py`.
