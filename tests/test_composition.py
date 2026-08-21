@@ -693,3 +693,115 @@ def test_only_app_and_main_import_config():
             if resolved == "nora.config" or resolved.startswith("nora.config."):
                 offenders.append(str(rel))
     assert not offenders, f"config imported outside app/ and __main__: {offenders}"
+
+
+# ---- the Dreamer runtime (substrate plan Phase 2) -------------------------
+
+
+async def test_the_dreamer_runtime_is_not_built_when_it_is_off(cfg):
+    """The shipped default. A subsystem that is off builds NOTHING, so a wiring
+    mistake in it cannot cost a deployment that never turned it on — the shape
+    `language_store` and `portrait_synthesizer` already use."""
+    deps = await build_dependencies(cfg)
+
+    assert deps.dreamer_runtime is None
+    assert deps.dream_adaptors == ()
+
+
+async def test_the_dreamer_runtime_is_built_when_it_is_on(cfg):
+    deps = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True})
+    )
+
+    assert deps.dreamer_runtime is not None
+
+
+async def test_the_dreamer_runs_on_a_model_that_can_stop(cfg):
+    """The gap between the factory's `tool_choice` parameter and the runtime
+    actually getting one: `ModelSource` builds the provider, and it built every
+    one from the tag path's spec.
+
+    Under `"required"` the model must call something on every pass, and the
+    only thing that ends a turn is a guard observing a TERMINAL call — which
+    the Dreamer has none of. So this asserts the property the whole phase
+    depends on, at the one place it is decided."""
+    deps = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True})
+    )
+    assert deps.dreamer_runtime is not None
+
+    model = deps.dreamer_runtime._models.create()
+    assert model.config["params"]["tool_choice"] == "auto"
+
+
+async def test_the_fact_adaptors_need_both_gates_on(cfg):
+    """`[dreamer]` decides whether the runtime EXISTS; `[facts]` decides
+    whether this tier is one of the things it runs. Two questions — an operator
+    turning on the research loop has not thereby asked for a fact store to
+    start filling — so neither flag alone produces an adaptor."""
+    dreamer_only = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True})
+    )
+    facts_only = await build_dependencies(
+        override_config(cfg, {"facts.enabled": True})
+    )
+
+    assert dreamer_only.dream_adaptors == ()
+    assert facts_only.dream_adaptors == ()
+    assert facts_only.dreamer_runtime is None
+
+
+async def test_both_gates_on_builds_the_extractor_and_the_adjudicator(cfg):
+    deps = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True, "facts.enabled": True})
+    )
+
+    names = [a.name for a in deps.dream_adaptors]
+    assert names == ["fact-candidates", "fact-adjudication"]
+    # The two halves are keyed DIFFERENTLY, which is the whole reason
+    # `dream_loop` had to learn to schedule per adaptor: the extractor reads one
+    # room's messages, the adjudicator settles claims for a workspace.
+    assert [a.key_kind for a in deps.dream_adaptors] == ["scope", "workspace"]
+    assert [a.uses_watermark for a in deps.dream_adaptors] == [True, False]
+
+
+async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg):
+    """`verify_tool_subsets` runs at startup in R-5's refuse-to-start shape, so
+    reaching this line at all is the assertion — a subset naming an act verb
+    would have raised inside `build_dependencies`. Restated here against the
+    registry so the property is checked rather than merely implied by the
+    absence of an exception."""
+    from nora.agent.registry import ToolRegistry
+
+    deps = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True, "facts.enabled": True})
+    )
+
+    ceiling = ToolRegistry().read_only_tools()
+    for adaptor in deps.dream_adaptors:
+        assert adaptor.tools <= ceiling, adaptor.name
+
+
+async def test_workspace_scopes_are_the_allowlists_workspaces_deduplicated(cfg):
+    """Two rooms of one workspace are ONE unit of work, not two — which is the
+    whole reason a workspace-keyed adaptor could not ride the per-scope
+    schedule, and the reason this closure exists beside `language_scopes`.
+
+    Sorted, so the tick order is stable between runs of the same build; a set
+    would make «did adaptor X run for workspace Y this tick» unanswerable from
+    a log.
+
+    Asserted against the loaded allowlist rather than a hand-built one, so it
+    fails if `Conversation.workspace`'s default ever stops being honoured."""
+    deps = await build_dependencies(cfg)
+
+    workspaces = deps.workspace_scopes()
+
+    assert workspaces == tuple(sorted(set(workspaces)))
+    assert workspaces, "a deployment with allowed conversations has a workspace"
+    # NARROWER than the per-scope population, or the distinction this closure
+    # exists for would be untestable here: DEC-105 defaults every conversation
+    # to one workspace, so several rooms collapse to one key.
+    assert len(workspaces) <= len(deps.language_scopes())
+
+

@@ -25,6 +25,7 @@ from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessag
 from ..domain.ports import OutboundAttachment, SendResult, Styled
 from ..obs.metrics import Metrics
 from . import tool_choice
+from .call_ledger import CallLedger
 from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
@@ -630,12 +631,12 @@ class ReplyGuard(HookProvider):
         self._terminal = frozenset(terminal)
         self._deliverer = deliverer
         self._metrics = metrics
-        self.counts: dict[str, int] = dict.fromkeys(self._budgets, 0)
-        # Calls ADMITTED but not yet finished — see `reserve`. Separate from
-        # `counts` because a call that never runs must consume no budget
-        # (DEC-33) while still holding the ceiling closed while it is in
-        # flight.
-        self._in_flight: dict[str, int] = {}
+        # Completed calls AND admitted-but-unfinished ones, in one object
+        # (`nora.agent.call_ledger`) — the whole of DEC-33's reservation, held
+        # rather than re-derived so `DreamGuard` enforces the identical ceiling
+        # with the identical code. That module's docstring carries the live
+        # trace this shape exists because of.
+        self._ledger = CallLedger(self._budgets)
         # Set by `_after_tool` when a terminal verb has actually RUN — not
         # when one was merely attempted. See `_before_model`.
         self._spoke = False
@@ -709,40 +710,24 @@ class ReplyGuard(HookProvider):
         log.warning("guard veto %s: %s", rule, message)
         return message
 
+    @property
+    def counts(self) -> dict[str, int]:
+        """Calls that COMPLETED this tag, per tool. The ledger's own dict, read
+        by R-45's nudge here and by the guard test files."""
+        return self._ledger.counts
+
     def record(self, tool_name: str) -> None:
-        if tool_name in self.counts:
-            self.counts[tool_name] += 1
+        self._ledger.record(tool_name)
 
-    def reserve(self, tool_name: str) -> None:
+    def reserve(self, tool_name: str, *, ref: str = "") -> None:
         """Mark a call ADMITTED BUT NOT YET FINISHED, so it counts against the
-        ceiling while it runs.
+        ceiling while it runs — `nora.agent.call_ledger` holds the mechanism
+        and the reasoning."""
+        self._ledger.reserve(tool_name, ref=ref)
 
-        R-7's budget check reads `counts`, which `record` only increments in
-        `AfterToolCallEvent`. A model that emits its tool calls as a PARALLEL
-        BATCH is therefore asked about every call in the batch before any of
-        them completes — so all of them see the pre-batch count, all pass, and
-        the ceiling holds only BETWEEN model turns, not within one.
-
-        Found in a live Langfuse trace (2026-08-13): nine `place_info` calls
-        against a budget of four, in two batches, which carried the turn to
-        148k input tokens against a 128k ceiling. It ended
-        `limit_total_tokens` with an empty message — so the group heard
-        nothing, which is R-23's shape and the worst way for a budget to fail.
-
-        Separate from `counts` rather than folded into it because the two mean
-        different things and DEC-33 depends on the difference: a call that is
-        vetoed or never runs must consume no budget, so a reservation is
-        RELEASED on those paths while `counts` is only ever incremented by a
-        call that genuinely completed.
-        """
-        if tool_name in self.counts:
-            self._in_flight[tool_name] = self._in_flight.get(tool_name, 0) + 1
-
-    def release(self, tool_name: str) -> None:
-        """Drop a reservation, whatever the call's outcome. Idempotent below
-        zero because a hook that fires twice must not lend budget back."""
-        if self._in_flight.get(tool_name):
-            self._in_flight[tool_name] -= 1
+    def release(self, tool_name: str, *, ref: str = "") -> None:
+        """Drop a reservation, whatever the call's outcome."""
+        self._ledger.release(tool_name, ref=ref)
 
     def evaluate(self, tool_name: str, tool_input: dict) -> str | None:
         if tool_name not in self._budgets:
@@ -801,10 +786,10 @@ class ReplyGuard(HookProvider):
         # and the latch below is what refuses the second message once it is
         # raised. Both halves are pinned in `tests/test_guards_replyguard.py`,
         # under "the message cap lives in the budget, not in R-2's latch".
-        # `counts` (finished) PLUS `_in_flight` (admitted, still running). The
-        # second term is what makes the ceiling hold inside one model turn's
-        # parallel batch — see `reserve`.
-        if self.counts[tool_name] + self._in_flight.get(tool_name, 0) >= self._budgets[tool_name]:
+        # Finished PLUS admitted-and-still-running. The second term is what
+        # makes the ceiling hold inside one model turn's parallel batch — see
+        # `nora.agent.call_ledger`.
+        if self._ledger.at_ceiling(tool_name):
             if tool_name == "send_reply":
                 # Labelled R-2 although the BUDGET is what refused it: the
                 # model-facing sentence is the same either way, and the rule an
@@ -832,7 +817,7 @@ class ReplyGuard(HookProvider):
             # `counts` alone. Vetoing the fifth call of a parallel batch while
             # saying "you already called it 0 time(s)" is a sentence that
             # contradicts itself, and the model reads it as a reason to retry.
-            spent = self.counts[tool_name] + self._in_flight.get(tool_name, 0)
+            spent = self._ledger.spent(tool_name)
             return self._veto(
                 "R-7", f"You already called {tool_name} "
                        f"{spent} time(s) and have that context. "
@@ -1100,12 +1085,49 @@ class ReplyGuard(HookProvider):
             # on purpose: `evaluate` is pure and SDK-free so every rule stays
             # testable without strands, and this hook is the thin translation
             # layer that owns lifecycle.
-            self.reserve(name)
+            self.reserve(name, ref=str(tool_use.get("toolUseId") or ""))
         except Exception:
             log.exception("ReplyGuard._before_tool raised; allowing the call")
 
     def _after_tool(self, event) -> None:
+        """Two early returns, and TWO kinds of per-call state with opposite
+        correct placements. Getting the pair the wrong way round is how the
+        2026-08-21 leak below happened, so the distinction is stated here
+        rather than left to be re-derived:
+
+        - **«this call FINISHED»** — the in-flight reservation. True on every
+          path, including the ones that raised or were vetoed, so it belongs
+          ABOVE both returns.
+        - **«this call SUCCEEDED»** — `record`, the terminal latch, and
+          `_recall_found_something`. True on ONE path, so each belongs BELOW
+          both returns, and `_recall_found_something` additionally reads the
+          result's own status.
+
+        Only the second kind is visible through `counts`, which is why a
+        mistake in the first kind survives a suite that looks thorough.
+        """
         try:
+            # The RESERVATION comes back first, on every path, because it is
+            # not budget — it is "this call is still running". Releasing it
+            # after the early return below is a LEAK that was live until
+            # 2026-08-21: a tool call that RAISED held its reservation for the
+            # rest of the tag, so `spent` stayed one too high and R-7 refused a
+            # later call the model was entitled to. Invisible, because `counts`
+            # — the thing every existing test asserts on — was correct the
+            # whole time; only the in-flight half was wrong, and nothing read
+            # it directly. Found while extracting `CallLedger` for `DreamGuard`,
+            # by someone reading a comment that already claimed "the
+            # reservation goes back on EVERY path" and checking whether it did.
+            tool_use = getattr(event, "tool_use", None) or {}
+            name = tool_use.get("name", "")
+            # Keyed on the SDK's `toolUseId`, so this drops THIS call's
+            # reservation and not whichever one happens to be outstanding. A
+            # vetoed call reaches this hook too and never reserved: a
+            # name-keyed release let it decrement a SIBLING's reservation in
+            # the same parallel batch, reopening the ceiling by one and with it
+            # the 2026-08-13 trace `call_ledger` exists to prevent (2026-08-21
+            # review, measured on both guards).
+            self.release(name, ref=str(tool_use.get("toolUseId") or ""))
             if getattr(event, "exception", None) is not None:
                 return                       # a failed call does not consume budget
             # A CANCELLED CALL DID NOT RUN, so it consumes no budget and cannot
@@ -1124,10 +1146,6 @@ class ReplyGuard(HookProvider):
             # budget check with "you already sent your reply". One recoverable
             # mistake, and the RECOVERY was what got blocked — silently, since
             # under R-5 the group just hears nothing.
-            name = (getattr(event, "tool_use", None) or {}).get("name", "")
-            # The reservation goes back on EVERY path — vetoed, failed, or
-            # done. It is not budget; it is "this call is still running".
-            self.release(name)
             if getattr(event, "cancel_message", None) is not None:
                 return
             self.record(name)

@@ -23,6 +23,7 @@ import logging
 import time
 from typing import Any, Protocol
 
+from nora.domain.facts import Fact
 from nora.domain.models import (
     NormalizedMessage,
     PersonRef,
@@ -35,6 +36,7 @@ from nora.domain.models import (
 from nora.domain.notes import Note
 from nora.domain.ports import (
     EngagementRequest,
+    FactReader,
     MemoryStore,
     RecordStore,
     RoomExchangeReader,
@@ -88,6 +90,28 @@ class StandingNotesReader(Protocol):
         ...
 
 
+def _workspace_of(policy: Policy | None, msg: NormalizedMessage) -> str:
+    """The workspace a room belongs to (`Conversation.workspace`, DEC-105).
+
+    ONE resolver for both workspace-keyed tiers. The note tier and the fact
+    tier are keyed on the same thing, and two tiers each carrying their own
+    idea of what a room's workspace is would disagree the first time a
+    deployment ran two social units — which is precisely the case the key
+    exists for.
+
+    Falls back to DEC-105's own default rather than refusing: neither tier is
+    an admission gate, and by the time a tag reaches the assembler ingest has
+    already applied the allowlist (DEC-18), so a room absent here is one the
+    ingest path already let through under the default.
+    """
+    convo = (
+        policy.conversation(msg.platform, msg.conversation_id)
+        if policy is not None
+        else None
+    )
+    return convo.workspace if convo is not None else "nora"
+
+
 class TranscriptInjection:
     """Satisfies `nora.domain.ports.ContextAssembler`."""
 
@@ -109,6 +133,8 @@ class TranscriptInjection:
         portrait: RoomPortraitReader | None = None,
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
+        facts: FactReader | None = None,
+        max_rendered_facts: int = 8,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -140,6 +166,14 @@ class TranscriptInjection:
         # is what keeps this correct once a deployment runs two social units:
         # the workspace is a property of the ROOM, resolved per message.
         self._policy = policy
+        # The fact tier (2026-08-20 fact-tier design). `None` while
+        # `[facts] enabled = false`, the same "not yet wired" shape its four
+        # neighbours use. It resolves its workspace through `self._policy`, the
+        # SAME mechanism the note tier uses — two tiers keyed on
+        # `Conversation.workspace` must not each carry their own idea of what a
+        # room's workspace is.
+        self._facts_reader = facts
+        self._max_rendered_facts = max_rendered_facts
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -180,7 +214,7 @@ class TranscriptInjection:
         # read is scheduled says nothing about what it is keyed on.
         (
             (transcript, card, self_card, tagger_card),
-            (room_language, room_exchange, room_portrait, notes),
+            (room_language, room_exchange, room_portrait, notes, facts),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._recent(msg),
@@ -193,6 +227,7 @@ class TranscriptInjection:
                 self._room_exchange(msg),
                 self._room_portrait(msg),
                 self._notes(msg),
+                self._facts(msg),
             ),
         )
 
@@ -212,6 +247,7 @@ class TranscriptInjection:
             room_exchange=room_exchange,
             room_portrait=room_portrait,
             notes=notes,
+            facts=facts,
         )
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
@@ -397,6 +433,39 @@ class TranscriptInjection:
             self._metrics.inc(
                 "nora_errors_total", stage="room_exchange", platform=msg.platform)
             return RoomExchange(scope_id=msg.conversation_id)
+
+    async def _facts(self, msg: NormalizedMessage) -> tuple[Fact, ...]:
+        """The workspace's standing facts, or none — the fourth sibling of
+        `_room_language`/`_room_exchange`/`_room_portrait`, with the same
+        never-raises guard for the same reason: this runs inside the turn's
+        `asyncio.gather`, where one uncaught exception cancels its siblings and
+        silences the whole turn.
+
+        **The one block whose content is not derived from the room it renders
+        into**, which is why the workspace lookup is here rather than a
+        conversation id passed straight through. §1.1's argument is that within
+        one workspace this crosses no boundary R-31 guards — DEC-105/R-49's
+        own reasoning, that rooms sharing a workspace are one social unit
+        reachable in more than one place. That argument is borrowed, and it is
+        only as strong as the workspace configuration is honest.
+
+        No subject filter (`recent_facts`, not `standing_facts`), and that port
+        method's docstring carries the argument: §13.1 leaves entity resolution
+        open, and inventing a resolution rule at the render site would put a
+        second definition of "subject" in the codebase for the writer to
+        disagree with."""
+        if self._facts_reader is None:
+            return ()
+        try:
+            return await self._facts_reader.recent_facts(
+                workspace=_workspace_of(self._policy, msg),
+                limit=self._max_rendered_facts,
+            )
+        except Exception:
+            log.exception("fact read failed; continuing without the block")
+            self._metrics.inc(
+                "nora_errors_total", stage="facts", platform=msg.platform)
+            return ()
 
     async def _room_portrait(self, msg: NormalizedMessage) -> RoomPortrait:
         """Dreamer Plan 3's own sibling of `_room_language`/`_room_exchange`

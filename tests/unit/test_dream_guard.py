@@ -1,0 +1,316 @@
+"""`DreamGuard`: R-7 default-deny and a call ceiling for a loop with no terminal verb.
+
+Two of these tests are STRUCTURAL rather than behavioural, and deliberately so.
+The property that matters most about this guard is a NEGATIVE one — it never
+ends a turn — and a negative cannot be observed by driving it: a guard that
+simply happened not to cancel today would pass any behavioural probe while
+still holding the power to. So the absence is asserted where it actually lives:
+in what `register_hooks` subscribes to, and in the object's own attribute set.
+"""
+
+from __future__ import annotations
+
+import inspect
+
+from strands.hooks import (
+    AfterModelCallEvent,
+    AfterToolCallEvent,
+    BeforeModelCallEvent,
+    BeforeToolCallEvent,
+    HookProvider,
+)
+
+from nora.agent.dream_guard import DreamGuard
+from nora.obs.metrics import Metrics
+
+#: One tool with room for a batch, one with a single call — enough to tell a
+#: ceiling from a default-deny without a second fixture.
+BUDGETS = {"place_info": 3, "now": 1}
+
+
+def _guard(metrics: Metrics | None = None, budgets: dict[str, int] | None = None) -> DreamGuard:
+    return DreamGuard(
+        adaptor="room_language",
+        budgets=BUDGETS if budgets is None else budgets,
+        metrics=metrics or Metrics(),
+    )
+
+
+class _FakeRegistry:
+    """Records what a `HookProvider` subscribed to, and nothing else.
+
+    `HookRegistry.add_callback` is the whole surface `register_hooks` touches,
+    so a double that captures the event types IS the observation — no strands
+    loop needed to see which powers a guard took.
+    """
+
+    def __init__(self) -> None:
+        self.registered: list[type] = []
+
+    def add_callback(self, event_type: type, callback: object) -> None:
+        self.registered.append(event_type)
+
+
+class _BeforeToolCall:
+    def __init__(self, name: str, tool_input: dict | None = None) -> None:
+        self.tool_use = {"name": name, "input": tool_input or {}, "toolUseId": "t1"}
+        self.cancel_tool: str | None = None
+
+
+class _AfterToolCall:
+    """The shape Strands really passes.
+
+    `exception` is None for a call that RAN and for one `_before_tool`
+    cancelled alike — `cancel_tool` produces an error `ToolResult`, not a
+    raised exception (`strands.tools.executors._executor`, verified against
+    1.50.2; `tests/test_strands_api_contract.py` pins it against the real SDK).
+    `cancel_message` is the only field that tells them apart, which is why this
+    double carries all three and defaults to "the call ran".
+    """
+
+    def __init__(self, name: str, *, cancel_message: str | None = None,
+                 exception: Exception | None = None) -> None:
+        self.tool_use = {"name": name, "input": {}, "toolUseId": "t1"}
+        self.exception = exception
+        self.cancel_message = cancel_message
+        self.result = (
+            {"toolUseId": "t1", "status": "error", "content": [{"text": cancel_message}]}
+            if cancel_message is not None
+            else {"toolUseId": "t1", "status": "success", "content": [{"text": "True"}]}
+        )
+
+
+# ---- R-7: default-deny, and the ceiling ------------------------------------
+
+
+def test_a_tool_outside_the_budgets_is_vetoed():
+    """R-7's default-deny half — the one that stops the model inventing a tool.
+
+    The adaptor grants a tool subset; anything else was never granted, and in a
+    background loop there is no human to notice the difference between a tool
+    that failed and a tool that never existed.
+    """
+    m = Metrics()
+    message = _guard(m).evaluate("write_fact", {})
+    assert message is not None
+    assert "write_fact" in message
+    assert "does not exist" in message
+    assert m.get("nora_dream_guard_vetoes_total", rule="R-7") == 1
+
+
+def test_the_unknown_tool_message_names_the_tools_that_do_exist():
+    message = _guard().evaluate("write_fact", {})
+    assert "now or place_info" in message
+
+
+def test_a_tool_at_its_ceiling_is_vetoed():
+    g = _guard()
+    for _ in range(BUDGETS["place_info"]):
+        assert g.evaluate("place_info", {"name": "x"}) is None
+        g._ledger.record("place_info")
+    message = g.evaluate("place_info", {"name": "x"})
+    assert message is not None
+    assert "already called place_info" in message
+    assert f"{BUDGETS['place_info']} time(s)" in message
+
+
+def test_a_tool_below_its_ceiling_is_admitted():
+    """The control for the test above: same guard, same tool, one fewer call."""
+    g = _guard()
+    for _ in range(BUDGETS["place_info"] - 1):
+        g._ledger.record("place_info")
+    assert g.evaluate("place_info", {"name": "x"}) is None
+
+
+# ---- DEC-33: budget is spent by a call that RAN ----------------------------
+
+
+def test_a_vetoed_call_consumes_no_budget():
+    """DEC-33 through the hooks the SDK actually calls, in the arrangement
+    where getting it wrong actually costs something.
+
+    Strands fires `AfterToolCallEvent` for a call `_before_tool` VETOED as well,
+    with `exception=None` — so a guard that recorded on `exception is None`
+    alone charges for a call that never ran. One admitted `place_info` against
+    a budget of 1, and a second refused by the ceiling the first is holding;
+    the admitted one then FAILS. Both calls are over, neither ran, and the
+    model's retry must therefore still be allowed. A guard that charged for the
+    refused one has silently spent the budget on its own correction.
+    """
+    g = _guard(budgets={"place_info": 1})
+
+    admitted = _BeforeToolCall("place_info", {"name": "x"})
+    g._before_tool(admitted)
+    assert admitted.cancel_tool is None
+    refused = _BeforeToolCall("place_info", {"name": "y"})
+    g._before_tool(refused)
+    assert refused.cancel_tool is not None, "the first call holds the ceiling"
+
+    g._after_tool(_AfterToolCall("place_info", exception=RuntimeError("boom")))
+    g._after_tool(_AfterToolCall("place_info", cancel_message=refused.cancel_tool))
+
+    assert g.evaluate("place_info", {"name": "x"}) is None, (
+        "a vetoed call must leave the budget intact"
+    )
+
+
+def test_a_call_that_raised_consumes_no_budget():
+    """The other never-ran path. `now` has exactly one call: if a failed
+    attempt spent it, the model's retry would be refused with «you already
+    called it», which is the correction being blocked rather than the mistake.
+    """
+    g = _guard()
+    event = _BeforeToolCall("now")
+    g._before_tool(event)
+    g._after_tool(_AfterToolCall("now", exception=RuntimeError("boom")))
+    assert g.evaluate("now", {}) is None, "a failed call must leave the budget intact"
+
+
+def test_a_call_that_ran_does_consume_its_budget():
+    """The control for both tests above — otherwise they would pass against a
+    guard that simply never charges anything."""
+    g = _guard()
+    event = _BeforeToolCall("now")
+    g._before_tool(event)
+    g._after_tool(_AfterToolCall("now"))
+    assert g.evaluate("now", {}) is not None
+
+
+# ---- the reason the ledger exists: a batch measured against itself ---------
+
+
+def test_a_parallel_batch_is_measured_against_itself():
+    """The ceiling must hold WITHIN one model turn, not only between turns.
+
+    Every sequential test above loops evaluate -> record -> evaluate. A model
+    emitting its tool calls as a PARALLEL BATCH produces a different shape: the
+    guard is asked about every call before any of them completes, so with the
+    count only advancing in `AfterToolCallEvent` all of them see the pre-batch
+    number and all pass. That is the live 2026-08-13 failure recorded in
+    `nora.agent.call_ledger` — nine calls against a budget of four, 148k input
+    tokens against a 128k ceiling, ending with an empty message.
+
+    PROBE: this is why `evaluate` asks `at_ceiling` (finished PLUS in-flight)
+    rather than reading completed counts alone. Two `reserve`s before either
+    `record` is the minimum arrangement that can fail; one call at a time
+    cannot.
+    """
+    g = _guard(budgets={"place_info": 2})
+
+    admitted = 0
+    for _ in range(6):                       # one batch, nothing completes yet
+        event = _BeforeToolCall("place_info", {"name": "x"})
+        g._before_tool(event)                # admits AND reserves, or cancels
+        if event.cancel_tool is None:
+            admitted += 1
+
+    assert admitted == 2, f"a parallel batch admitted {admitted} calls against a budget of 2"
+
+
+def test_the_second_of_two_reservations_sees_the_ceiling():
+    """The same property at its minimum size, without the hook layer: two
+    `reserve`s and no `record` at all.
+
+    The message must name the number it is actually counting — spent, not
+    completed. «You already called place_info 0 time(s)» while refusing it is a
+    sentence that contradicts itself, and a model reads that as a reason to
+    retry rather than as a ceiling.
+    """
+    g = _guard(budgets={"place_info": 1})
+    assert g.evaluate("place_info", {"name": "x"}) is None
+    g._ledger.reserve("place_info")
+    message = g.evaluate("place_info", {"name": "x"})
+    assert message is not None
+    assert "1 time(s)" in message
+
+
+# ---- the metric --------------------------------------------------------
+
+
+def test_vetoes_are_counted_with_the_adaptor_label():
+    """`nora_dream_guard_vetoes_total{adaptor, rule}`. The adaptor label is the
+    point: a veto means an objective asked for a tool its own subset never
+    granted, and an unlabelled series cannot say which objective."""
+    m = Metrics()
+    DreamGuard(adaptor="room_language", budgets=BUDGETS, metrics=m).evaluate("rm_rf", {})
+    DreamGuard(adaptor="peer_facts", budgets=BUDGETS, metrics=m).evaluate("rm_rf", {})
+    DreamGuard(adaptor="peer_facts", budgets=BUDGETS, metrics=m).evaluate("rm_rf", {})
+    assert m.get("nora_dream_guard_vetoes_total", adaptor="room_language") == 1
+    assert m.get("nora_dream_guard_vetoes_total", adaptor="peer_facts", rule="R-7") == 2
+
+
+def test_an_admitted_call_is_not_a_veto():
+    m = Metrics()
+    _guard(m).evaluate("now", {})
+    assert m.get("nora_dream_guard_vetoes_total", adaptor="room_language") == 0
+
+
+# ---- the critical property: this guard cannot end a turn -------------------
+
+
+def test_the_guard_registers_no_before_model_callback():
+    """THE STRUCTURAL ASSERTION. `BeforeModelCallEvent.cancel` is how
+    `ReplyGuard` ends a turn; a guard that never subscribes to that event
+    cannot end one, whatever its code says.
+
+    Asserted over what `register_hooks` actually subscribed to — not by reading
+    the source, and not by driving a loop and observing that nothing was
+    cancelled, which a guard that merely chose not to cancel today would also
+    survive.
+    """
+    registry = _FakeRegistry()
+    _guard().register_hooks(registry)
+    assert BeforeToolCallEvent in registry.registered
+    assert AfterToolCallEvent in registry.registered
+    assert BeforeModelCallEvent not in registry.registered
+    assert AfterModelCallEvent not in registry.registered
+    assert len(registry.registered) == 2, "no other power was taken either"
+
+
+def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
+    """The same negative at the object level: the machinery is ABSENT, not
+    merely unused.
+
+    `terminal` has no default on `ReplyGuard` on purpose — a guard that ends no
+    turn under `tool_choice="required"` is the runaway DEC-21 fixed — and that
+    argument does not transfer to a loop that ends when the model stops calling
+    tools. The way to be sure this guard is not a weakened `ReplyGuard` is that
+    it cannot be handed the parts.
+    """
+    params = inspect.signature(DreamGuard.__init__).parameters
+    assert set(params) == {"self", "adaptor", "budgets", "metrics"}
+    assert all(
+        p.kind is inspect.Parameter.KEYWORD_ONLY
+        for name, p in params.items() if name != "self"
+    )
+
+    names = set(dir(_guard()))
+    for absent in (
+        "terminal", "_terminal", "_terminal_budget_spent",   # terminality
+        "_spoke", "_turn_is_over",                           # the turn-ending latch
+        "deliverer", "_deliverer",                           # nothing is delivered
+        "_before_model", "_after_model",                     # the model-call hooks
+        "_forced_first_tool", "_model_calls",                # the tool_choice pin
+        "cancelled_model_call",                              # DEC-93's recovery
+    ):
+        assert absent not in names, f"DreamGuard must not have {absent!r}"
+
+
+def test_the_guard_satisfies_the_hook_provider_protocol():
+    assert isinstance(_guard(), HookProvider)
+
+
+def test_a_hook_failure_never_escapes_the_loop():
+    """A guard bug must not kill an unattended run — worst case it fails open,
+    logged. Same posture as `ReplyGuard`, and it matters more here: there is no
+    human waiting on a reply to notice."""
+    g = _guard()
+
+    class _Malformed:
+        tool_use = None
+        cancel_tool = None
+
+    event = _Malformed()
+    g._before_tool(event)                    # must not raise
+    g._after_tool(_Malformed())              # must not raise
+    assert event.cancel_tool is None

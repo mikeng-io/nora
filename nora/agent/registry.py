@@ -355,6 +355,28 @@ class ToolRegistry:
         """
         return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.cacheable)
 
+    def read_only_tools(self) -> frozenset[str]:
+        """The tools that only LOOK — the Dreamer's ceiling (keystone §4).
+
+        The hard line the Dreamer-as-an-agent design draws is that a background
+        research loop **may look and may not act**: a process that can speak to
+        the group unprompted, set a reminder, or write to the events store with
+        nobody waiting on it is a categorically different and more dangerous
+        thing than one that can only read. That is a property of the runtime,
+        not a setting, so it is DERIVED here and hand-listed nowhere.
+
+        **This is a ceiling, not a grant.** Each Dreamer adaptor declares its
+        own, narrower subset by tool name (`DreamAdaptor.tools`) — proving a
+        fact wants `web_search`/`web_fetch`, glossing a word does not — and the
+        runtime refuses any name outside this set. So a tool being read-only
+        never by itself puts it in front of a model; it only makes it
+        *grantable*.
+
+        A `frozenset`, the same shape `terminal_tools()` and `cacheable_tools()`
+        return and for the same reason: membership is the whole question.
+        """
+        return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.read_only)
+
     def live_only_tools(self) -> tuple[str, ...]:
         """The tools whose answer describes THIS instant and nothing else (design/14 §5.1).
 

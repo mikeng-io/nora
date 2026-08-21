@@ -26,6 +26,13 @@ single client. `tests/test_model_per_tag.py` is the probe.
 `models` is typed `Any`, not `nora.agent.factory.ModelSource`, so that this
 module does not need to import strands either — only `nora.app.composition`,
 which builds the source, ever names the SDK type.
+
+**`_final_text` used to live at the bottom of this file and is now
+`nora.agent.factory.final_text`.** It reads the SDK's `AgentResult.message`
+content blocks, which is a Strands shape, in a module that must not import
+Strands — and the Dreamer needs the identical extraction while `nora.agent` may
+not import `nora.app`. Promoting it was the alternative to a second copy of a
+defensive parser; see that function's docstring for the full argument.
 """
 
 from __future__ import annotations
@@ -110,33 +117,5 @@ class LiveAgentRunner:
         stop_reason = getattr(result, "stop_reason", None)
         return (
             stop_reason if isinstance(stop_reason, str) else None,
-            _final_text(result),
+            factory.final_text(result),
         )
-
-
-def _final_text(result: Any) -> str:
-    """The model's last PROSE, or "" — the words it wrote instead of calling
-    `send_reply` (DEC-93).
-
-    Empty on every healthy turn: a turn that used the tool has already said
-    what it had to say, and its final message carries a `toolUse` block rather
-    than text. This exists for the turn that ends `end_turn` with a complete,
-    group-addressed reply sitting in a `text` block that strict-silence then
-    discards — measured live at 2 of 4 tags.
-
-    Defensive throughout (`getattr`, `isinstance`) because this reads a
-    third-party result shape on the reply path: a Strands version that renames
-    `message` must degrade to "" — the pre-DEC-93 behaviour — never raise into
-    a turn that otherwise succeeded.
-    """
-    message = getattr(result, "message", None)
-    if not isinstance(message, dict):
-        return ""
-    content = message.get("content")
-    if not isinstance(content, list):
-        return ""
-    parts = [
-        block["text"] for block in content
-        if isinstance(block, dict) and isinstance(block.get("text"), str)
-    ]
-    return "\n".join(p for p in parts if p.strip()).strip()

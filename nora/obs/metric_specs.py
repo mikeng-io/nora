@@ -920,8 +920,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the only value today.
     _CounterSpec(
         "nora_dream_skipped_total",
-        "Dream-loop scope ticks skipped, by reason. reason=\"in_flight\": "
-        "the previous cycle for this scope had not finished yet.",
+        "Dream-loop ticks skipped, by reason. reason=\"in_flight\": the "
+        "previous cycle for this SCOPE had not finished yet. "
+        "reason=\"in_flight_adaptor\": the previous cycle for this "
+        "(adaptor, key) had not — kept apart because one adaptor wedged and "
+        "one scope wedged are different diagnoses on the one series that "
+        "answers «is the Dreamer stuck?».",
         ("reason",),
     ),
     # `SqlLanguageStore.watermark_is_behind_the_record`'s tell, read by
@@ -961,16 +965,80 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "already_known, noise, deferred.",
         ("outcome",),
     ),
+    # HELP TEXT widened 2026-08-21, name unchanged (names are append-only;
+    # help text is not). It was written for one `reason` — the per-tick cap —
+    # and the adjudicator legitimately counts seven more: a verdict dropped as
+    # malformed, one that broke `FactVerdict`'s own invariants, one naming a
+    # fact the model was never shown, an id correspondence that did not line
+    # up, a supersession that failed or matched no row, a verdict matching no
+    # candidate, and a retirement that failed. All are "a candidate this tick
+    # did not settle", which is what the series measures; a help text naming
+    # only the cap would make the other seven read as a mislabelled cap.
     _CounterSpec(
         "nora_fact_adjudications_skipped_total",
-        "Candidates not adjudicated this tick because the per-tick cap was "
-        "reached. A silent cap reads as 'we checked everything'.",
+        "Candidates a tick did not settle, by reason: cap (the per-tick "
+        "ceiling), or a verdict dropped before it could be written "
+        "(malformed, invariant, unknown_supersedes, id_mismatch, "
+        "supersede_failed, supersede_missed, unmatched_candidate, "
+        "retire_failed). A silent drop reads as 'we checked everything'.",
         ("reason",),
     ),
     _CounterSpec(
         "nora_fact_entity_unresolved_total",
         "Candidate subjects that resolved to no fact_entity — the alias "
         "problem, observed rather than assumed.",
+    ),
+    # ---- the Dreamer runtime (substrate plan Task 2.7) --------------------
+    #
+    # R-27's three states, at the run. A run that FAILED is `unavailable` and
+    # is counted — never silently absent — because the Dreamer has nobody
+    # waiting on it: an absent metric and a healthy-but-idle loop look
+    # identical from outside, and that is precisely how a hung provider went
+    # unnoticed long enough to need `composition.py:145-164` written about it.
+    _CounterSpec(
+        "nora_dream_run_total",
+        "Dreamer adaptor runs by outcome: ok (wrote something), "
+        "nothing_found (looked, found nothing), unavailable (could not "
+        "check — an ERROR is never a PASS).",
+        ("adaptor", "status"),
+    ),
+    _CounterSpec(
+        "nora_dream_written_total",
+        "Rows written through an adaptor's sink, by adaptor.",
+        ("adaptor",),
+    ),
+    # Screening is the second path into the prompt, and it must never be
+    # silent: a proposal dropped for carrying a phone number or a coordinate
+    # is a real event about a model reading attacker-influenceable pages, and
+    # a drop nobody counts is indistinguishable from a model that never
+    # produced one.
+    _CounterSpec(
+        "nora_dream_screened_total",
+        "Envelope items dropped before reaching a sink, by adaptor and "
+        "reason: identifier or coordinate (the R-18/R-28 screen), or cap "
+        "(the per-run item ceiling — a silent cap reads as 'we wrote "
+        "everything it found').",
+        ("adaptor", "reason"),
+    ),
+    # Strands raises nothing and logs nothing when a budget cap binds — the
+    # `AgentResult.stop_reason` string is the only channel there is — so a
+    # runaway loop spending its full ceiling every tick is invisible without
+    # this. Four scopes every 300s with nobody watching is exactly the shape
+    # that stays invisible longest.
+    _CounterSpec(
+        "nora_dream_stop_reason_total",
+        "How a Dreamer loop ended, by adaptor: end_turn, limit_turns, "
+        "limit_total_tokens, limit_output_tokens, timeout.",
+        ("adaptor", "reason"),
+    ),
+    # R-7 default-deny in the background loop. A veto here means the model
+    # asked for a tool its adaptor never granted — which under a read-only
+    # ceiling is not a leak, but IS the tell that an objective and its tool
+    # subset disagree about what the job needs.
+    _CounterSpec(
+        "nora_dream_guard_vetoes_total",
+        "Tool calls refused by DreamGuard, by adaptor and rule.",
+        ("adaptor", "rule"),
     ),
 )
 
@@ -1142,6 +1210,16 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     # the model's own latency with near-zero cache hits and hide a slow
     # interpreter behind a fast ladder. The default buckets already top out at
     # 30s, past any sane sticker timeout, so they are used as-is.
+    # The Dreamer's wall clock, per adaptor. The default buckets top out at
+    # 30s and a research loop is budgeted in minutes, so this carries its own
+    # set — a histogram whose every observation lands in the last bucket
+    # measures nothing.
+    _HistogramSpec(
+        "nora_dream_run_seconds",
+        "Wall-clock duration of one Dreamer adaptor run, by adaptor.",
+        (1, 5, 15, 30, 60, 120, 300),
+        ("adaptor",),
+    ),
     _HistogramSpec(
         "nora_sticker_describe_seconds",
         "Sticker interpreter (vision model) call latency, measured around "

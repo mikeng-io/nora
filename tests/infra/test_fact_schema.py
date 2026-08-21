@@ -433,16 +433,96 @@ async def test_a_well_formed_fact_premise_edge_is_accepted_and_reverse_looked_up
         assert dependents == [fact_id]
 
 
+def _candidate_insert(
+    *, status: str = "'pending'", instruction: str = f"'{'a' * 64}'",
+    model: str = "'gpt'",
+) -> str:
+    """One well-formed `fact_candidate` INSERT with exactly one field varied.
+
+    Written as a builder rather than five hand-copied literals because
+    migration 0027 added two NOT NULL columns to this table and the old
+    hand-copied INSERT — which omitted them — would have gone on raising
+    `IntegrityError` for a NOT-NULL violation while its test claimed to be
+    measuring `fact_candidate_status_check`. That is the decorative-green
+    shape `test_a_well_formed_fact_is_accepted` exists to rule out, so the
+    positive control below is what proves each variation reaches the CHECK it
+    names.
+    """
+    return (
+        "insert into fact_candidate (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+        "object, first_seen_at, last_seen_at, occurrence_count, status, "
+        "established_by, instruction_sha256, model) values "
+        f"(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', 1, 1, 1, {status}, "
+        f"'tag-1', {instruction}, {model})"
+    )
+
+
 async def test_candidate_status_is_constrained(pg_engine):
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(_candidate_insert(status="'refuted'")))
+
+
+async def test_a_candidate_cannot_be_written_without_an_instruction_digest(pg_engine):
+    """Migration 0027 chose NOT NULL over nullable because this table had no
+    rows written before the columns existed (unlike the four Dreamer tables).
+    A candidate with no digest is refused outright rather than recorded as
+    provenance-unknown."""
     async with pg_engine.begin() as conn:
         with pytest.raises(sa.exc.IntegrityError):
             await conn.execute(sa.text(
                 "insert into fact_candidate (id, workspace, subject_id, "
                 "predicate, object, first_seen_at, last_seen_at, "
-                "occurrence_count, status, established_by) values "
+                "occurrence_count, status, established_by, model) values "
                 "(gen_random_uuid(), 'nora', 'e1', 'has', 'bt', 1, 1, 1, "
-                "'refuted', 'tag-1')"
+                "'pending', 'tag-1', 'gpt')"
             ))
+
+
+async def test_a_candidate_cannot_be_written_with_a_partial_instruction_digest(
+    pg_engine,
+):
+    """`fact_candidate_instruction_sha256_check` — the same predicate `fact`
+    carries, and with no `IS NULL` arm because the column is NOT NULL."""
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                _candidate_insert(instruction="'deadbeef'")
+            ))
+
+
+async def test_a_candidate_cannot_be_written_with_a_non_hex_instruction_digest(
+    pg_engine,
+):
+    """Right length, wrong alphabet: the case a `length() = 64` CHECK would
+    admit."""
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                _candidate_insert(instruction=f"'{'z' * 64}'")
+            ))
+
+
+async def test_a_candidate_cannot_be_written_with_a_blank_model(pg_engine):
+    """`fact_candidate_model_is_named_check` — `length(btrim(model)) > 0`.
+    `'   '` is non-NULL to every query asking which rows are attributable, so
+    the CHECK asserts the one thing a model name provably is: not empty."""
+    async with pg_engine.begin() as conn:
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(_candidate_insert(model="'   '")))
+
+
+async def test_a_well_formed_candidate_is_accepted(pg_engine):
+    """The positive control for the four candidate refusals above, for the
+    reason `test_a_well_formed_fact_is_accepted` states one table over: each
+    of them must be failing on the constraint it names, not on the two NOT
+    NULL columns 0027 added."""
+    async with pg_engine.begin() as conn:
+        await conn.execute(sa.text(_candidate_insert()))
+        count = (await conn.execute(
+            sa.text("select count(*) from fact_candidate")
+        )).scalar_one()
+        assert count == 1
 
 
 async def test_a_well_formed_fact_is_accepted(pg_engine):

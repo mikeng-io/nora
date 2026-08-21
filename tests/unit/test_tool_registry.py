@@ -507,3 +507,93 @@ def test_cacheable_tools_matches_the_declared_set():
 def test_cacheable_tools_is_a_frozenset_not_a_list():
     from nora.agent.registry import ToolRegistry
     assert isinstance(ToolRegistry().cacheable_tools(), frozenset)
+
+
+# ---- read/act: the Dreamer's ceiling (keystone §4) -------------------------
+
+
+# Hand-listed HERE, in the test, and DERIVED in the code — deliberately the
+# opposite way round from the pre-DEC-29 catalogue. The spec's own list of act
+# verbs was four short (the whole events family, added by DEC-117 after the
+# mental model behind the list was formed), which is the strongest available
+# argument for deriving the set: a plan that copied the six would have handed a
+# background agent four write verbs.
+ACT_VERBS = frozenset({
+    "remind", "cancel_reminder",
+    "create_event", "update_event", "rsvp_event", "cancel_event",
+    "make_artifact",
+    "send_reply", "send_to", "send_gif",
+    # The note tier's two write verbs (landed on master 2026-08-21). A read
+    # verb that forgets the flag fails the classification test by name; these
+    # two are acts and belong here.
+    "note_create", "note_update",
+})
+
+# The full read-only set as declared today. Pinned so that ADDING a tool is a
+# decision rather than an omission: a new read tool that forgets the flag turns
+# this red as MISSING, and a new act verb that wrongly carries it turns the
+# test above red as a LEAK. The two directions are what make a fail-closed
+# default safe.
+READ_ONLY = frozenset({
+    "now", "calculate", "transit", "route", "where_is", "place_info",
+    "saved_places", "load_transcript", "group_members", "lookup_person",
+    "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
+    "web_search", "web_fetch", "weather", "list_reminders", "list_events",
+    "suggest_venue", "version", "search_gifs",
+    "note_read", "note_search",
+})
+
+
+def test_no_act_verb_is_ever_read_only():
+    """The hard line (keystone §4): the Dreamer may look and may not act.
+
+    A background process that can speak to the group unprompted — or set a
+    reminder, or write to the events store — with nobody waiting on it is a
+    categorically different thing from one that can only read. This is the test
+    that makes that a property of the runtime rather than a convention."""
+    assert ACT_VERBS & ToolRegistry().read_only_tools() == frozenset()
+
+
+def test_every_registered_tool_declares_whether_it_only_reads():
+    """A tool that neither reads nor acts does not exist.
+
+    `skills` is the one exception and it is not a hole: `plugin=True` marks a
+    tool this table gives a BUDGET but does not build or describe (DEC-50) —
+    the activation is registered by Strands' own plugin, so there is nothing
+    here to classify. It is excluded from the Dreamer by the fail-closed
+    default, which is the correct answer for a tool nobody here builds."""
+    from nora.agent.tools import NATIVE_TOOLS
+
+    unclassified = {
+        name for name, spec in NATIVE_TOOLS.items()
+        if not spec.plugin and not spec.read_only and name not in ACT_VERBS
+    }
+    assert unclassified == set(), (
+        "every native tool must be a read or an act: " + ", ".join(sorted(unclassified))
+    )
+    assert {n for n, s in NATIVE_TOOLS.items() if s.plugin} == {"skills"}
+
+
+def test_read_only_tools_is_the_declared_set():
+    """The ceiling, pinned. `read_only_tools()` is not a grant — every adaptor
+    declares its own narrower subset by name and the runtime refuses anything
+    outside this set — so this test asserts what is GRANTABLE, not what any
+    Dreamer run actually holds."""
+    assert ToolRegistry().read_only_tools() == READ_ONLY
+
+
+def test_read_only_tools_is_a_frozenset_not_a_list():
+    assert isinstance(ToolRegistry().read_only_tools(), frozenset)
+
+
+def test_the_read_and_act_halves_partition_the_table():
+    """Read plus act plus the one plugin is the whole table, with no overlap.
+
+    Stated as a partition rather than as two separate memberships because the
+    failure this guards is a tool added to one list and forgotten in the other
+    — the exact failure `NativeTool`'s own docstring says the table exists to
+    prevent."""
+    from nora.agent.tools import NATIVE_TOOLS
+
+    assert READ_ONLY | ACT_VERBS | {"skills"} == set(NATIVE_TOOLS)
+    assert not READ_ONLY & ACT_VERBS

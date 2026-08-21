@@ -7,7 +7,9 @@ from strands.vended_plugins.skills import AgentSkills
 
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
+from nora.agent.ports import ToolSpec, adapt
 from nora.agent.registry import ToolRegistry
+from nora.agent.tool_choice import AFTER_SPEAKING, FIRST_CALL
 from nora.obs.metrics import Metrics
 
 BASE_URL = "http://localhost:20128/v1"
@@ -56,6 +58,47 @@ def test_model_provider_carries_the_tier_params():
         model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
     )
     assert model.config["model_id"] == "deepseek-v4-flash"
+
+
+def test_the_default_tool_choice_is_still_required_after_it_became_a_parameter():
+    """THE thing that must not move (DEC-21, and `tool_choice`'s own module).
+
+    `tool_choice` is a parameter now, because the Dreamer's loop ends by the
+    model declining to call anything and under `"required"` that is unreachable.
+    Every TAG-path call site takes the default, and the default is the measured
+    one: under `"auto"` on a first call the model answers in prose 5/6 —
+    not a tool call, not a message, Nora silent while the turn looks
+    successful (design/16 §2.1). A default that drifted to `"auto"` would ship
+    exactly that, and no other test in this repo asserts on the value a
+    default-argument call produces.
+
+    Pinned against `FIRST_CALL` AND against the literal, because `FIRST_CALL`
+    changing value is one of the ways this regresses.
+    """
+    params = factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
+    ).config["params"]
+    assert params["tool_choice"] == FIRST_CALL == "required"
+
+
+def test_a_loop_with_no_terminal_verb_can_ask_for_auto():
+    """The Dreamer's half. Its model is built with `AFTER_SPEAKING` from the
+    start: it has no terminal verb by construction (every act verb is excluded,
+    and the terminal ones ARE act verbs), so nothing can ever observe the
+    terminal call that ends one of Nora's turns. Under `"required"` the model
+    must call something on every pass and the loop could only end by hitting a
+    limit — a budget spent in full rather than a research task finishing.
+
+    The rest of the params must survive the parameter, too: the same
+    read-copy-write-whole hazard `nora.agent.tool_choice._set` documents.
+    """
+    params = factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client(),
+        tool_choice=AFTER_SPEAKING,
+    ).config["params"]
+    assert params["tool_choice"] == AFTER_SPEAKING == "auto"
+    assert params["max_tokens"] == MAX_TOKENS
+    assert params["temperature"] == TEMPERATURE
 
 
 def test_build_limits_matches_r8():
@@ -243,6 +286,140 @@ def test_the_agent_is_named_so_a_trace_can_be_found():
     assert agent.trace_attributes["tag_id"] == "t1"
 
 
+# ---- the SECOND agent: a loop that may look and may not act ------------------
+#
+# `create_dream_agent` is a sibling of `create_agent` in the same module because
+# this is the only module allowed to construct Strands objects (spec C.7). What
+# is ABSENT from it is the specification — no pre_fill, no skills_dir, no
+# tool_call_log — and the tool ceiling is derived, never hand-listed.
+
+
+async def _look() -> str:
+    """A read-only stand-in.
+
+    Returns: a fixed string.
+    """
+    return "seen"
+
+
+def _read_only_tools() -> list:
+    """Strands tool objects named for the registry's DERIVED read-only set.
+
+    Named from `read_only_tools()` rather than hand-listed, which is the whole
+    mechanism (the spec's own act-verb list was four short). Stand-ins rather
+    than the registry's real objects because `ToolRegistry.build` wants a tag's
+    worth of collaborators and this file is about the constructor, not the
+    table."""
+    return [
+        adapt(ToolSpec(name=name, description="", schema={}, call=_look,
+                       when="the dream loop needs to look something up", budget=1))
+        for name in sorted(ToolRegistry().read_only_tools())
+    ]
+
+
+def _dream_agent(*, tools=None, guard=None):
+    return factory.create_dream_agent(
+        model=_model(), system_prompt="OBJECTIVE",
+        tools=_read_only_tools() if tools is None else tools,
+        guard=_guard() if guard is None else guard,
+        trace_attributes={"adaptor": "facts"}, retry=RETRY,
+    )
+
+
+def test_the_dream_agent_carries_no_terminal_verb():
+    """The hard line: the Dreamer may look and may not act, and every terminal
+    verb IS an act verb (`send_reply`, `send_gif`). A terminal verb in front of
+    this model would give a loop with nobody waiting on it a way to speak to the
+    group unprompted.
+
+    The ceiling is asserted first and both halves are asserted non-empty: a
+    `read_only_tools()` that returned nothing, or a `terminal_tools()` that did,
+    would make the disjointness below trivially true and this test decorative."""
+    registry = ToolRegistry()
+    read_only, terminal = registry.read_only_tools(), registry.terminal_tools()
+    assert read_only and terminal
+    assert read_only.isdisjoint(terminal)
+
+    agent = _dream_agent()
+    assert set(agent.tool_names) >= read_only          # it got what it was given
+    assert set(agent.tool_names).isdisjoint(terminal)  # and nothing that ends a turn
+
+
+def test_the_dream_agent_has_no_skill_layer():
+    """DEC-50's `AgentSkills` injects `<available_skills>` and registers the
+    `skills` activation tool for a model composing a REPLY. A research loop has
+    an objective, not a repertoire — and a tool the guard would have to admit is
+    a tool the Dreamer would have to budget.
+
+    Both halves: no plugin installed, and no tool the plugin would have
+    registered. `create_agent(skills_dir=...)` is what would put either there,
+    and this constructor has no such parameter to pass — see the signature test
+    below, which is what makes the regression unspellable rather than merely
+    absent."""
+    agent = _dream_agent()
+    assert "skills" not in agent.tool_names
+    plugins = agent._plugin_registry._plugins.values()
+    assert not any(isinstance(plugin, AgentSkills) for plugin in plugins)
+
+
+def test_the_dream_agent_takes_none_of_the_tag_paths_welded_parameters():
+    """Unspellable, not merely unused — the shape
+    `test_build_limits_takes_the_loop_budget_and_never_the_per_call_ceiling`
+    already uses.
+
+    `pre_fill` is a tag's transcript/peer-card/room reconstruction and there is
+    no conversation here; `skills_dir` is the reply-composition layer above;
+    `tool_call_log` exists so `recall_lookups` can replay one CONVERSATION's
+    earlier lookups. Each would type-check if it were added and each would be
+    wrong, so the assertion is on the signature."""
+    import inspect
+
+    params = set(inspect.signature(factory.create_dream_agent).parameters)
+    assert params.isdisjoint({"pre_fill", "skills_dir", "tool_call_log"})
+    assert params == {"model", "system_prompt", "tools", "guard",
+                      "trace_attributes", "retry", "agent_name"}
+
+
+def test_the_dream_agent_is_named_apart_from_her_turns():
+    """It runs with nobody waiting on it. Sharing her span name would make every
+    saved Langfuse view a mixture of background research and real turns."""
+    agent = _dream_agent()
+    assert agent.name == agent.agent_id == "dreamer"
+    assert agent.name != factory.DEFAULT_AGENT_NAME
+    assert _dream_agent_named("facts").name == "facts"
+
+
+def _dream_agent_named(name: str):
+    return factory.create_dream_agent(
+        model=_model(), system_prompt="OBJECTIVE", tools=[], guard=_guard(),
+        trace_attributes={}, retry=RETRY, agent_name=name,
+    )
+
+
+def test_the_dream_agent_is_stateless_by_construction():
+    """The same posture `create_agent` holds, asserted separately because a
+    second constructor is a second place it can be lost: D4 — no agent memory,
+    ever; continuity is the store."""
+    from strands.agent.conversation_manager import NullConversationManager
+
+    agent = _dream_agent()
+    assert isinstance(agent.conversation_manager, NullConversationManager)
+    assert agent._session_manager is None
+    assert agent.system_prompt == "OBJECTIVE"
+    assert len(agent.messages) == 0
+
+
+def test_two_dream_agents_share_no_state():
+    """D4 again, at the second constructor: fresh agent per dream run. Two runs
+    overlap the same way two tags do, so the per-run objects that carry mutable
+    state — the message list and the retry strategy — must not be shared."""
+    a, b = _dream_agent(), _dream_agent()
+    assert a is not b
+    assert a.messages is not b.messages
+    assert a._retry_strategy is not b._retry_strategy
+    assert len(a.messages) == len(b.messages) == 0
+
+
 def test_two_agents_share_no_state():
     """D4: fresh agent per tag; continuity is the record store + Honcho, never agent memory."""
     model = factory.create_model_provider(
@@ -359,3 +536,35 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
     # Nothing a message named changed the loaded set; only navigation activated.
     assert [s.name for s in plugin.get_available_skills(agent)] == ["navigation"]
     assert plugin.get_activated_skills(agent) == ["navigation"]
+
+
+def test_the_model_spec_still_defaults_to_required():
+    """The tag path's turn MUST end in `send_reply`, and `tool_choice=
+    "required"` is what makes the model call it at all. This default is the
+    thing that must not move; the Dreamer gets its own spec instead."""
+    from nora.agent.factory import FIRST_CALL, ModelSpec
+
+    assert ModelSpec(model="m", max_tokens=1, temperature=0.0).tool_choice == FIRST_CALL
+
+
+def test_a_model_source_hands_out_the_tool_choice_its_spec_declares():
+    """The gap between Task 2.4 and Task 2.5, closed: giving
+    `create_model_provider` a parameter was not enough, because `ModelSource`
+    is what actually builds the provider and it was hard-coded to the tag
+    path's value. A Dreamer built off the tag path's source would run its
+    read-only loop under `"required"` — and a loop with no terminal verb can
+    never stop under `"required"`, which is the entire reason `DreamGuard`
+    exists."""
+    from nora.agent.factory import ModelSource, ModelSpec
+
+    class _Client:
+        pass
+
+    source = ModelSource(
+        client=_Client(),                       # type: ignore[arg-type]
+        spec=ModelSpec(
+            model="m", max_tokens=1, temperature=0.0, tool_choice="auto",
+        ),
+    )
+
+    assert source.create().config["params"]["tool_choice"] == "auto"

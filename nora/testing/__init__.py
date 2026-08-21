@@ -45,6 +45,21 @@ to `nora.infra.sql.facts.SqlFactStore` by
 contract suite hands to *its own* store to prove a foreign payload is
 refused, which only stays usable there if it is domain-only.
 
+`InMemoryFactCandidateStore` (`DreamSink` + `FactCandidateReader`) is the same
+arrangement one table over, bound to
+`nora.infra.sql.fact_candidates.SqlFactCandidateStore` by
+`tests/infra/test_fact_candidate_store.py`, which is parametrized over both
+and asserts every refusal and the whole of §5's selection filter against
+each. It ships with `fact_candidate_proposal_factory` for the same reason its
+fact-tier sibling does. It is NOT in
+`tests/contract/test_dream_sink_contract.py`'s `IMPLEMENTATIONS` — neither
+implementation of this tier is, and that is a reported gap rather than an
+oversight: three of that suite's shared assertions read back columns
+`fact_candidate` does not have (`instruction_sha256`/`model`, a successor, a
+supersession warrant), so joining could not be the "genuinely one entry" that
+file's docstring promises without a schema change this branch is not
+permitted to make.
+
 `InMemoryNoteStore` is the same rule for the note tier, bound to
 `nora.infra.sql.notes.SqlNoteStore` by
 `tests/contract/test_note_store_contract.py`. It lives in its own module
@@ -80,6 +95,10 @@ from nora.testing.eval_backends import (
     CannedSearchProvider,
     CannedTransitSource,
     CannedWeatherProvider,
+)
+from nora.testing.fact_candidate_store import (
+    InMemoryFactCandidateStore,
+    fact_candidate_proposal_factory,
 )
 from nora.testing.fact_store import InMemoryFactStore, fact_proposal_factory
 from nora.testing.fakes import (
@@ -134,11 +153,13 @@ __all__ = [
     "FakeRosterSource",
     "FakeToolCallLogStore",
     "FakeTranscriber",
+    "InMemoryFactCandidateStore",
     "InMemoryFactStore",
     "InMemoryNoteStore",
     "NoteCandidate",
     "ScriptedModel",
     "ScriptedTurn",
+    "fact_candidate_proposal_factory",
     "fact_proposal_factory",
     "group_event",
     "limit_stop_reason",

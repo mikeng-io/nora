@@ -90,6 +90,25 @@ class FactVerdict:
                     "a not_covered verdict may not supersede a fact: a source that "
                     "does not reach the question has not denied it (R-53)"
                 )
+            # FORBIDDEN, not merely optional — and the asymmetry with the two
+            # findings above is the point. `not_covered` writes nothing, so a
+            # source attached to one has no destination; what it does have is a
+            # reader. «Here is the page, and it did not cover the claim» is one
+            # careless sentence away from «here is the page, and it says no»,
+            # which is R-53's failure wearing evidence it never earned. Silence
+            # stays structurally silent.
+            #
+            # `nora/dreamer/objectives/fact-adjudication.md` already tells the
+            # model these fields are forbidden here; until 2026-08-21 nothing
+            # enforced it, so the instruction and the type disagreed — a
+            # promise no shape held, in the one tier whose whole thesis is that
+            # the rule belongs in a shape (found in review).
+            if self.source_url is not None or self.source_excerpt is not None:
+                raise ValueError(
+                    "a not_covered verdict may not carry a source: it reports "
+                    "that nothing reached the question, and a source attached "
+                    "to that reads as evidence for a denial nobody made"
+                )
             return
         if not self.source_url or not self.source_excerpt:
             raise ValueError(
@@ -135,12 +154,52 @@ class FactEntity:
 
 
 @dataclass(frozen=True)
+class CandidateClaim:
+    """What the extraction adaptor produces: one claim somebody asserted, and
+    the message it was asserted in.
+
+    **NOT a `FactCandidate`** — that is the ROW, with an id, timestamps, an
+    occurrence count and a status, none of which an adaptor can know. This is
+    the half the model actually returns. An adaptor handed the row type would
+    have to invent a uuid and two timestamps it has no clock for, purely to
+    satisfy fields the store then discards, which is the
+    "invent-a-value-to-satisfy-a-schema" move this codebase refuses everywhere
+    else — and it would make the payload lie about where those values came
+    from.
+
+    So the candidate tier is deliberately ASYMMETRIC: a narrow claim goes in
+    through `DreamSink.propose`, and the full `FactCandidate` row comes back
+    out of `FactCandidateReader.pending`. The next person will reach for the
+    row type on both sides; the two are genuinely different things.
+    """
+
+    subject: str
+    predicate: str
+    object: str
+    message_id: int
+
+
+@dataclass(frozen=True)
 class FactCandidate:
     """An extracted claim awaiting — or having failed — adjudication.
 
     `status="not_covered"` is the NEGATIVE CACHE: without it the same
     unprovable claim is re-extracted and re-adjudicated every tick forever,
-    which is the difference between a bounded cost and an unbounded one."""
+    which is the difference between a bounded cost and an unbounded one.
+
+    `instruction_sha256` and `model` are both NOT NULL here for the same
+    reason they are on `Fact` and unlike the four Dreamer tables (migrations
+    0023/0024): those hold rows written before the columns existed and this
+    table never did (migration 0027 landed the pair on an empty table). Every
+    `Proposal` that reaches `DreamSink.propose` carries both as non-optional
+    `str`, so a candidate whose instruction or model is unknown cannot be
+    written at all — and there is no unreachable "provenance unknown" state
+    for a reader to branch on.
+
+    Both are established ONCE, by the run that first sighted the claim, and a
+    re-sighting deliberately leaves them where they are — the same rule
+    `established_by` and `first_seen_at` follow (`SqlFactCandidateStore.
+    propose`'s upsert)."""
 
     id: str
     workspace: str
@@ -153,6 +212,8 @@ class FactCandidate:
     observed_in: tuple[str, ...]
     status: CandidateStatus
     established_by: str
+    instruction_sha256: str
+    model: str
     last_adjudicated_at: int | None = None
     attempts: int = 0
 
@@ -161,6 +222,29 @@ class FactCandidate:
             raise ValueError(
                 f"status must be one of {sorted(_CANDIDATE_STATUSES)}, "
                 f"got {self.status!r}"
+            )
+        # Mirrors `fact_candidate_instruction_sha256_check`, the way `Fact`
+        # mirrors `fact_instruction_sha256_check` — the domain type refuses
+        # what the column would already refuse, which is what lets
+        # `InMemoryFactCandidateStore` behave like the SQL store instead of
+        # accepting rows Postgres would reject.
+        if not _INSTRUCTION_SHA256_RE.fullmatch(self.instruction_sha256):
+            raise ValueError(
+                "instruction_sha256 must be a full 64-character lowercase hex "
+                "digest; a candidate whose instruction is unknown is not "
+                "attributable and is refused"
+            )
+        # Mirrors `fact_candidate_model_is_named_check`. `''`/`'   '` are
+        # non-NULL to every query asking "which rows are attributable", so an
+        # unnamed model is the false `ok` R-27 refuses, not a missing value.
+        # (`Fact` carries the same CHECK in the database and does NOT mirror
+        # it here — a gap noted rather than widened; this type is not the
+        # place to change that one.)
+        if not self.model.strip():
+            raise ValueError(
+                "model must be a non-empty name: a blank stamp is not a "
+                "missing model, it is an unattributable row that reads as an "
+                "attributable one"
             )
 
 

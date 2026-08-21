@@ -28,7 +28,13 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from nora.agent import factory
+from nora.agent import factory, tool_choice
+from nora.agent.dreamer import (
+    AdaptorBudget,
+    DreamerRuntime,
+    RegistryToolSource,
+    verify_tool_subsets,
+)
 from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
@@ -41,6 +47,7 @@ from nora.domain.ports import (
     BlobStore,
     ComputeBackend,
     ContextAssembler,
+    DreamAdaptor,
     EngagePolicy,
     MemoryStore,
     PlatformAdapter,
@@ -64,6 +71,8 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.events import SqlEventStore
 from nora.infra.sql.exchange import SqlExchangeStore
+from nora.infra.sql.fact_candidates import SqlFactCandidateStore
+from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.notes import SqlNoteStore
@@ -87,6 +96,7 @@ from nora.instructions.frontmatter import InstructionError
 from nora.language.consolidator import LanguageConsolidator
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
+from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
 from nora.language.observer import LexemeObserver
 from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.health import LLMState
@@ -410,6 +420,19 @@ class Dependencies:
     # `dream_loop` reads it for the per-tick `instruction_versions=` line, and
     # both observers hold it as their objective source.
     dreamer_instructions: DreamerInstructions
+    # The Dreamer RUNTIME and what it schedules — `None`/empty under
+    # `[dreamer] enabled = false`, the shipped default. Separate from the
+    # `[language]` gate above on purpose: `[language]` decides whether the
+    # CLOCK runs at all, `[dreamer]` decides whether the clock has a second,
+    # adaptor-shaped schedule on it. A deployment can run today's consolidators
+    # with no runtime, which is exactly what every deployment does today.
+    dreamer_runtime: DreamerRuntime | None
+    dream_adaptors: tuple[DreamAdaptor, ...]
+    # `language_scopes`' workspace-keyed sibling. `Conversation.workspace`
+    # (DEC-105) — several rooms of one workspace are ONE unit of work here, not
+    # several, which is the whole reason a workspace-keyed adaptor could not
+    # ride the per-scope schedule.
+    workspace_scopes: Callable[[], Sequence[str]]
     # The SAME `EventService` built above alongside `event_store`/
     # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
     # exposed here too so `nora.web.api.register_web_routes`'s read-only
@@ -519,6 +542,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # consumer (this same tag/fire prefill), and `[language].enabled` is its
     # off switch too (`LanguageConfig`'s own docstring on why Plan 2 has no
     # independent flag).
+    # The fact tier's read half (2026-08-20 fact-tier design §6). Its OWN
+    # gate, unlike the three room stores above: `[facts] enabled` is a
+    # different question from `[language] enabled`, because the fact tier
+    # renders a block whose content is not derived from the room it renders
+    # into — the only one — and that is a decision an operator makes
+    # separately from whether the room-language tier runs.
+    #
+    # Ships OFF, and flipping it before an adaptor writes anything would make
+    # `config.toml` assert a subsystem is running when none is — the defect
+    # class this tier exists to prevent, committed by its own switch.
+    fact_store: SqlFactStore | None = (
+        SqlFactStore(engine) if cfg.facts.enabled else None
+    )
     exchange_store: SqlExchangeStore | None = (
         SqlExchangeStore(engine, metrics=metrics) if cfg.language.enabled else None
     )
@@ -707,6 +743,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # Policy would scope the read to a workspace ingest never admitted.
         notes=note_store,
         policy=allowlist,
+        # The fact tier reads its workspace through the SAME `policy=allowlist`
+        # the note tier above uses — two tiers keyed on `Conversation.workspace`
+        # must not each carry their own idea of what a room's workspace is.
+        facts=fact_store,
+        max_rendered_facts=cfg.facts.max_rendered_facts,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -730,6 +771,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     language_scopes: Callable[[], Sequence[str]] = lambda: tuple(  # noqa: E731
         conv.primary_id for conv in allowlist.conversations if conv.primary_id
     )
+    # The same closure over the OTHER key. Sorted and de-duplicated: two rooms
+    # of one workspace are one unit of work, and a set would reorder the tick
+    # between runs of the same build — which turns "did adaptor X run for
+    # workspace Y this tick" into a question you cannot answer from a log.
+    workspace_scopes: Callable[[], Sequence[str]] = lambda: tuple(sorted(  # noqa: E731
+        {conv.workspace for conv in allowlist.conversations if conv.workspace}
+    ))
     # One CLIENT (audit T2, DEC-13), MANY MODELS — one per tag, built by this
     # source. The model carries `tool_choice`, which `ReplyGuard` flips
     # mid-turn from `required` to `auto` (design/16 §2), so it is per-turn
@@ -1591,6 +1639,120 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # loop, and `BackgroundTasks` holds the strong reference.
         background.spawn(compute_poller.run())
 
+    # ---- the Dreamer runtime (substrate plan Phase 2) --------------------
+    #
+    # Constructed only when `[dreamer] enabled` is true, the shape
+    # `language_store` and `portrait_synthesizer` above already use: a
+    # subsystem that is off builds NOTHING, so a wiring mistake in it cannot
+    # cost a deployment that never turned it on.
+    #
+    # `dream_adaptors` is EMPTY today and that is the honest state: the runtime
+    # exists, is bounded, screens, and has a sink contract — and nothing has
+    # been migrated onto it yet (Phase 3) and the fact adaptors are not built
+    # (Phase 4). `dream_loop` with an empty tuple is byte-for-byte the loop
+    # that has been carrying live traffic, which is what makes the cutover
+    # per-adaptor rather than a big-bang switch.
+    dream_adaptors: tuple[DreamAdaptor, ...] = ()
+    dreamer_runtime: DreamerRuntime | None = None
+    if cfg.dreamer.enabled:
+        # The fact tier's two adaptors, built only when BOTH gates are on.
+        # `[dreamer]` decides whether the runtime exists; `[facts]` decides
+        # whether this tier is one of the things it runs — two questions, and
+        # an operator turning on the research loop has not thereby asked for a
+        # fact store to start filling.
+        if cfg.facts.enabled and fact_store is not None:
+            fact_candidates = SqlFactCandidateStore(engine)
+            dream_adaptors = (
+                # PHASE A, scope-keyed: it reads one room's message batch.
+                # `workspace_for` is not a convenience — the extractor's KEY is
+                # a scope and the candidate table's key is a WORKSPACE, so
+                # without the translation every room's candidates would land
+                # under a workspace named after the room and the adjudicator
+                # would never see one. The tier would be wired end to end and
+                # silently inert. An unresolvable scope RAISES rather than
+                # guessing: within one workspace a fact crosses rooms by design
+                # (R-49/DEC-105), so a guessed workspace is one social unit's
+                # claims entering another's.
+                FactCandidateAdaptor(
+                    candidates=fact_candidates,
+                    workspace_for={
+                        conv.primary_id: conv.workspace
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.workspace
+                    }.get,
+                ),
+                # PHASE B, workspace-keyed and watermark-free: its input is the
+                # candidate table, not a message batch.
+                FactAdaptor(
+                    facts=fact_store,
+                    candidates=fact_candidates,
+                    max_adjudications_per_tick=cfg.facts.max_adjudications_per_tick,
+                    metrics=metrics,
+                ),
+            )
+        # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
+        # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
+        # model must call something on every pass, and the only thing that ends
+        # a turn is a guard observing a TERMINAL call (DEC-21/DEC-32) — which
+        # the Dreamer has none of by construction. Its loop ends when the model
+        # declines to call anything, inside a wall clock.
+        dream_model = cfg.dreamer_model()
+        dream_models = factory.ModelSource(
+            client=client,
+            spec=factory.ModelSpec(
+                model=dream_model, max_tokens=tier.max_tokens,
+                temperature=tier.temperature,
+                reasoning_effort=tier.reasoning_effort,
+                tool_choice=tool_choice.AFTER_SPEAKING,
+            ),
+        )
+        # ONE tool source, shared by the runtime and the startup check below —
+        # two would be two ceilings, and the check would be measuring something
+        # other than what the runtime enforces.
+        dream_tools = RegistryToolSource(
+            registry=tool_registry, store=audit, persons=persons,
+            honcho=memory, metrics=metrics, ai_peer=cfg.memory.ai_peer,
+        )
+        # `DreamBudgetConfig` -> `AdaptorBudget`: the same four numbers, across
+        # the `nora.agent` may-not-import-`nora.config` boundary. This file is
+        # one of only two allowed to read config, so THIS is the conversion
+        # point — a field added to one and not the other is a `TypeError` here,
+        # at startup, which is the failure worth having.
+        dream_budgets = {
+            name: AdaptorBudget(
+                turns=b.turns, total_tokens=b.total_tokens,
+                output_tokens=b.output_tokens, timeout_seconds=b.timeout_seconds,
+            )
+            for name, b in cfg.dreamer.budgets.items()
+        }
+        # An adaptor with no block of its own. `budget_for` returns a freshly
+        # constructed default rather than a shared constant (DEC-13 forbids a
+        # module-level instance), so an adaptor added later is BOUNDED by
+        # omission rather than unbounded by it.
+        fallback = cfg.dreamer.budget_for("")
+        dreamer_runtime = DreamerRuntime(
+            models=dream_models,
+            instructions=dreamer_instructions,
+            tools=dream_tools,
+            budgets=dream_budgets,
+            default_budget=AdaptorBudget(
+                turns=fallback.turns, total_tokens=fallback.total_tokens,
+                output_tokens=fallback.output_tokens,
+                timeout_seconds=fallback.timeout_seconds,
+            ),
+            # The SAME derivation the tag path uses, so a throttle can never be
+            # misreported as a timeout (`factory.build_retry_policy`).
+            retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+            metrics=metrics,
+            model_name=dream_model,
+        )
+        # R-5's refuse-to-start shape, and the one check that must run at
+        # STARTUP rather than at the first tick: an adaptor holding an act verb
+        # is not a condition to discover at 3am from a metric. Empty today, so
+        # it refuses nothing — which is exactly why it has to be wired now,
+        # while adding the first adaptor is the moment it starts mattering.
+        verify_tool_subsets(dream_adaptors, tools=dream_tools)
+
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
@@ -1605,6 +1767,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         language_scopes=language_scopes,
         portrait_synthesizer=portrait_synthesizer,
         dreamer_instructions=dreamer_instructions,
+        dreamer_runtime=dreamer_runtime,
+        dream_adaptors=dream_adaptors,
+        workspace_scopes=workspace_scopes,
         events=events,
     )
 

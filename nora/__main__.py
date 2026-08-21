@@ -143,6 +143,21 @@ class App:
         # loop could tick even if spawned; the flag is what decides whether
         # it starts, not a widened interval.
         if self.cfg.language.enabled and deps.language_store is not None:
+            # BEFORE the loop starts, and awaited rather than spawned. An
+            # adaptor with a new name has no watermark row, `watermark_for`
+            # returns 0 for an unknown pair, and it would re-read every room
+            # from the beginning — `batch_limit` rows at a time, a model call
+            # per batch, re-deriving evidence that already exists. Safe (the
+            # natural key makes the append idempotent), slow, expensive, and it
+            # looks exactly like a bug. Racing the loop against its own seeding
+            # would leave which one won up to the scheduler.
+            await runtime.seed_watermarks(
+                deps.language_store, deps.dream_adaptors,
+                keys=lambda a: (
+                    deps.workspace_scopes() if a.key_kind == "workspace"
+                    else deps.language_scopes()
+                ),
+            )
             deps.background.spawn(runtime.dream_loop(
                 deps.audit, deps.language_store, deps.language_consolidators,
                 deps.metrics,
@@ -154,7 +169,29 @@ class App:
                 batch_limit=self.cfg.language.batch_limit,
                 portrait=deps.portrait_synthesizer,
                 instructions=deps.dreamer_instructions,
+                # The second, adaptor-shaped schedule (substrate plan Task
+                # 2.8). Empty under `[dreamer] enabled = false`, in which case
+                # `dream_loop` is byte-for-byte the loop that has been carrying
+                # live traffic — which is what makes the cutover per-adaptor
+                # rather than a big-bang switch.
+                adaptors=deps.dream_adaptors,
+                runtime=deps.dreamer_runtime,
+                workspaces=deps.workspace_scopes,
             ))
+        elif self.cfg.dreamer.enabled:
+            # The one combination that is a WIRING MISTAKE rather than a
+            # choice, and it was silent (2026-08-21 review). `[dreamer]`
+            # decides whether the runtime exists; `[language]` decides whether
+            # the CLOCK runs at all — so an operator who turned the Dreamer on
+            # and left `[language]` off has a fully built runtime, adaptors,
+            # budgets and instructions, and nothing ever ticks them. The line
+            # below is the difference between «I turned it on and it isn't
+            # working» taking five minutes or an afternoon.
+            log.error(
+                "dreamer.enabled = true but language.enabled = false: the "
+                "Dreamer's CLOCK is the language loop, so nothing will tick "
+                "and no adaptor will ever run"
+            )
         else:
             log.info("dream loop disabled (language.enabled = false)")
         deps.background.spawn(runtime.debounce_sweep_loop(

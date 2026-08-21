@@ -595,3 +595,111 @@ async def test_a_room_the_policy_does_not_know_reads_no_notes_and_is_counted():
     assert ctx.notes == ()
     assert store.calls == [], "no workspace means no read at all, not a guess"
     assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1
+
+
+# ---- the fact tier's read half (2026-08-20 fact-tier design §6) -----------
+#
+# The SECOND read in this assembler that is not room-keyed. It resolves its
+# workspace through the SAME `_workspace_of(self._policy, msg)` the note tier
+# uses — two tiers keyed on `Conversation.workspace` must not each carry their
+# own idea of what a room's workspace is, or they disagree the first time a
+# deployment runs two social units, which is the case the key exists for.
+
+
+def _fact(fact_id: str = "f1", *, workspace: str = "ridgeline"):
+    from nora.domain.facts import Fact
+
+    return Fact(
+        id=fact_id, workspace=workspace, subject_id="big walk",
+        predicate="unlocked_by", object_entity_id=None,
+        object_literal="the four coloured towers",
+        valid_from=1_000, created_at=1_000,
+        instruction_sha256="a" * 64, model="deepseek-v4-flash",
+        established_by="dream:fact-adjudication:ridgeline:1000",
+        source_url="https://example.com/guide",
+        source_excerpt="The black tower opens once all four are complete.",
+    )
+
+
+class _FakeFactReader:
+    def __init__(self, facts=(), *, raises: bool = False) -> None:
+        self._facts = tuple(facts)
+        self._raises = raises
+        self.calls: list[tuple[str, int]] = []
+
+    async def recent_facts(self, *, workspace: str, limit: int):
+        self.calls.append((workspace, limit))
+        if self._raises:
+            raise RuntimeError("the store is down")
+        return self._facts[:limit]
+
+    async def standing_facts(self, *, workspace, subject_ids, limit):
+        return ()
+
+    async def fact_by_id(self, *, workspace, fact_id):
+        return None
+
+
+async def test_no_fact_reader_leaves_the_block_empty_and_asks_nothing():
+    """`[facts] enabled = false` is the shipped default's neighbour, so this is
+    the branch a deployment without the tier takes. An empty tier renders NO
+    BLOCK, not an empty one."""
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), policy=_policy(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.facts == ()
+
+
+async def test_the_facts_are_read_for_this_conversations_workspace():
+    """The workspace comes from `policy.toml`, resolved per message — not from
+    the room id, and not from a second map this class carries."""
+    reader = _FakeFactReader([_fact()])
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(),
+        facts=reader, policy=_policy(workspace="friends"),
+        max_rendered_facts=5,
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert reader.calls == [("friends", 5)]
+    assert len(ctx.facts) == 1
+
+
+async def test_an_unmapped_conversation_falls_back_to_the_default_workspace():
+    """DEC-105's own default. Refusing would make the fact tier an admission
+    gate, which it is not — by the time a tag reaches the assembler, ingest has
+    already applied the allowlist (DEC-18)."""
+    reader = _FakeFactReader([_fact()])
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), facts=reader,
+        policy=_policy(conversation_id="another-room"),
+    )
+
+    await assembler.assemble(request=_request())
+
+    assert reader.calls[0][0] == "nora"
+
+
+async def test_a_fact_read_failure_never_cancels_its_siblings():
+    """This runs inside the turn's `asyncio.gather`, where one uncaught
+    exception cancels its siblings and silences the whole turn — the property
+    every helper in this class holds."""
+    metrics = Metrics()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=metrics,
+        facts=_FakeFactReader(raises=True), policy=_policy(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.facts == ()
+    assert metrics.get("nora_errors_total", stage="facts", platform="signal") == 1
+    assert ctx.room_language is not None

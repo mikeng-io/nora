@@ -293,6 +293,88 @@ display_name = "Nora"
 dir = "nora/dreamer"
 reload = "mtime"
 strict = true
+# The Dreamer RUNTIME's own switch, added with the runtime it gates. This
+# section shipped with NO `enabled` flag while it described only a corpus
+# (DEC-128: "a flag that gates nothing is a flag an operator will eventually
+# set expecting it to gate something"); it describes a subsystem now, and a
+# new subsystem does not switch itself on — [presence]/[search]/[compute]/
+# [language]/[analytics]/[facts] all shipped inert too. Off, no DreamerRuntime
+# is constructed and the existing consolidators run exactly as they do today.
+enabled = true
+# The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
+# — and the distinction is stated because the earlier version of this comment
+# claimed the opposite while carrying a value nobody had measured.
+#
+# Plan gate D2 asked "which model should the Dreamer run" and answered
+# "measure it against the motivating corpus". That gate is CLOSED as
+# unanswerable in its own terms right now: nothing is deployed, the fact tier
+# holds zero rows, and a research loop's quality cannot be graded against an
+# empty store. Measuring before there is anything to measure produces a number
+# that looks like evidence and is not.
+#
+# Running Nora's own model is also the honest test of the architecture's
+# central claim — that the Dreamer does better because it is DIFFERENTLY
+# SITUATED (no social pressure, a loop, a fetch) rather than because it is
+# smarter. If a flash research loop still cannot tell a source that
+# contradicts from one that merely does not cover, the design is wrong and
+# swapping the model quietly would hide that.
+#
+# Reopen with evidence from real runs, not before.
+model = "ollamacloud/deepseek-v4-flash"
+
+# One budget block per adaptor — NOT one global ceiling: proving a fact is
+# worth more calls than glossing a word, and a single number would starve the
+# first or overpay for the second. An adaptor with no block here runs under
+# DreamBudgetConfig's own field defaults (the same four numbers), never
+# unbounded and never a KeyError; a PARTIAL block fills its missing fields from
+# those same defaults rather than zeroing them.
+#
+# All four numbers are UNMEASURED STARTING POINTS, not measurements — the same
+# honesty [analytics]'s stay_radius_m carries ("INHERITED, not measured").
+# turns/output_tokens are [llm.limits]'s shipped 20/12000 scaled down for a
+# background job nobody waits on; total_tokens is that section's 128000/3.
+#
+# timeout_seconds is NOT OPTIONAL. Unlike a tag turn's timeout a hung Dreamer
+# call is QUIET: dream_loop marks the scope `running` and skips it every
+# subsequent tick (nora_dream_skipped_total{reason="in_flight"}) without ever
+# raising, so the exponential backoff — which only fires on an EXCEPTION —
+# never engages and a hung provider is skipped FOREVER rather than backed off.
+# 120 matches [llm].timeout_seconds and [language].timeout_seconds rather than
+# inventing a third number; it wraps the WHOLE run, not one call.
+[dreamer.budgets.room_language]
+turns = 6
+total_tokens = 40000
+output_tokens = 4000
+timeout_seconds = 120
+
+[dreamer.budgets.room_exchange]
+turns = 6
+total_tokens = 40000
+output_tokens = 4000
+timeout_seconds = 120
+
+# The two adaptors that EXIST today (`nora/language/fact_adaptor.py`). The two
+# above are for Phase 3's migration of the room consolidators and name nothing
+# yet — `budget_for` falls back to the defaults for an unknown key, silently,
+# so a section naming only future adaptors would leave the real ones on
+# defaults nobody chose (2026-08-21 review).
+#
+# UNMEASURED starting points, like their neighbours. The adjudicator's are
+# deliberately LARGER: proving a claim against the open web is search, read,
+# notice the page does not cover the question, search differently — several
+# fetches, each a page of tokens — while the extractor makes ONE tool-free
+# call over a message batch and is sized well under the shared default.
+[dreamer.budgets.fact-candidates]
+turns = 2
+total_tokens = 20000
+output_tokens = 4000
+timeout_seconds = 60
+
+[dreamer.budgets.fact-adjudication]
+turns = 10
+total_tokens = 120000
+output_tokens = 8000
+timeout_seconds = 300
 
 [obs.logging]
 level = "INFO"
@@ -681,7 +763,7 @@ verify_known_entities = true
 # so this section is a flag and three bounds for a future adaptor, not a
 # running subsystem today. Stays off with this first deployment of the
 # schema, the same "off at first" period [language] shipped in.
-enabled = false
+enabled = true
 # max_adjudications_per_tick = 10
 # max_rendered_facts = 8
 # retention_days = 180

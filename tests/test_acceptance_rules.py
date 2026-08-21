@@ -265,6 +265,25 @@ RULE_TESTS = {
     # both halves — `test_not_covered_cannot_supersede_anything` and
     # `test_contradicted_requires_a_source_that_addresses_the_claim`.
     "R-54": "test_not_covered_cannot_supersede_anything",
+    # R-56 (DEC-133, the Dreamer runtime). R-55 was taken by the note tier's
+    # read-before-write latch, which landed first — re-read the index at MERGE
+    # time, not at claim time.: the Dreamer may LOOK and may not
+    # ACT. A background process that can speak to the group unprompted — or set
+    # a reminder, or write to the events store — with nobody waiting on it is a
+    # categorically different and more dangerous thing than one that can only
+    # read, so this is a property of the runtime rather than a setting an
+    # operator could get wrong.
+    #
+    # Points at the DERIVED set's own pin rather than a second copy of the
+    # assertion, the same way R-54 points at `tests/domain/test_facts.py`.
+    # `read_only_tools()` is computed from a field on each tool, and the test
+    # named here measures the computed set against the act verbs — so a tool
+    # added tomorrow is classified by whoever adds it and cannot silently join
+    # the Dreamer's ceiling. The specification's own hand-written list of act
+    # verbs was four short when it was checked, which is the best available
+    # argument for the mechanism and the reason the hand-list lives in the TEST
+    # while the code derives.
+    "R-56": "test_no_act_verb_is_ever_read_only",
     # R-52 (DEC-117): `create_event` fail-closes on ambiguity — spec §3.1's
     # "more than one open event" case — refusing rather than guessing which
     # of two-or-more already-open events is meant.

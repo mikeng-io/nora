@@ -188,11 +188,19 @@ async def test_a_turn_cap_stops_the_loop_before_the_token_cap_does():
     assert model.calls == 1
 
 
-# ── DEC-93: what `_final_text` reads, against the REAL SDK shape ─────────────
+# ── DEC-93: what `final_text` reads, against the REAL SDK shape ──────────────
+#
+# It was `nora.app.agent_runner._final_text` until the Dreamer needed the same
+# extraction and could not import `nora.app`; it is now
+# `nora.agent.factory.final_text`, imported back by this module's runner. The
+# tests below moved with it UNCHANGED except for that import — the point of a
+# promotion rather than a reimplementation is that the behaviour is the same
+# behaviour, so a test that had to be rewritten to keep passing would have been
+# evidence against the move.
 
 
 def test_final_text_reads_only_authored_text_blocks():
-    """`_final_text` is production code on the reply path and had NO coverage of
+    """`final_text` is production code on the reply path and had NO coverage of
     the shape it reads (pre-deploy review 2026-08-10).
 
     The blocks it must SKIP are the point. `reasoningContent` is the model's
@@ -200,26 +208,50 @@ def test_final_text_reads_only_authored_text_blocks():
     `{"reasoningContent": {"reasoningText": {"text": ...}}}`, so a naive
     recursive text-scrape would ship her internal monologue to the group — and
     `toolUse` is a call, not speech."""
-    from nora.app.agent_runner import _final_text
-
     result = SimpleNamespace(message={"role": "assistant", "content": [
         {"reasoningContent": {"reasoningText": {"text": "let me think…"}}},
         {"toolUse": {"name": "weather", "input": {}}},
         {"text": "37 度，酷熱警告生效"},
     ]})
 
-    assert _final_text(result) == "37 度，酷熱警告生效"
+    assert factory.final_text(result) == "37 度，酷熱警告生效"
 
 
 def test_final_text_degrades_to_empty_on_an_unexpected_result_shape():
     """It reads a third-party shape on the reply path. A Strands version that
     renames or restructures `message` must produce the pre-DEC-93 behaviour —
     no recovery — never an exception into a turn that otherwise succeeded."""
-    from nora.app.agent_runner import _final_text
+    assert factory.final_text(SimpleNamespace()) == ""                # no `message`
+    assert factory.final_text(SimpleNamespace(message="not a dict")) == ""
+    assert factory.final_text(SimpleNamespace(message={"role": "assistant"})) == ""
 
-    assert _final_text(SimpleNamespace()) == ""                       # no `message`
-    assert _final_text(SimpleNamespace(message="not a dict")) == ""
-    assert _final_text(SimpleNamespace(message={"role": "assistant"})) == ""
+
+async def test_the_live_runner_still_returns_the_promoted_final_text():
+    """The promotion's own regression: `LiveAgentRunner.invoke` returns
+    `(stop_reason, final_text)`, and the second element is now produced by a
+    function in another package. An import that resolved but was never CALLED —
+    or a runner that went back to returning "" — would leave every other test in
+    this file green, because they all discard the second element.
+
+    The stub model ends its last cycle with a `text` block ("ok"), which is
+    exactly DEC-93's shape: prose the model wrote instead of calling a tool."""
+    stop_reason, text = await _run_returning_text(
+        tokens_per_call=10,
+        limits={"turns": 8, "output_tokens": 12_000, "total_tokens": 64_000},
+    )
+    assert stop_reason == "end_turn"
+    assert text == "ok"
+
+
+async def _run_returning_text(*, tokens_per_call: int, limits: dict) -> tuple[str | None, str]:
+    model = _StubModel(tokens_per_call=tokens_per_call, tool_use_calls=1)
+    runner = LiveAgentRunner(models=FixedModelSource(model), retry=RETRY)
+    return await runner.invoke(
+        doctrine=_doctrine(), tools=[_tool()], pre_fill=[],
+        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+                         metrics=Metrics()),
+        tag_message="<tag_message/>", limits=limits, ctx=_ctx(), trace_attributes={},
+    )
 
 
 def test_a_guard_cancelled_model_call_is_not_treated_as_her_words():

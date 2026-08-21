@@ -82,16 +82,29 @@ def test_alembic_check_detects_a_missing_column(pg_url, monkeypatch):
         command.check(alembic_config(pg_url))
 
 
-def test_the_x_db_override_redirects_the_target(pg_url, pg_admin):
+def test_the_x_db_override_redirects_the_target(pg_admin):
     """`-x db=` overrides the target with a full URL, so a command meant for a
-    scratch database never runs against the one the Config carries. Build a
-    second, empty database, upgrade THAT via the override, and confirm the
-    Config's own database was left untouched."""
+    scratch database never runs against the one the Config carries. Build TWO
+    empty databases, upgrade one via the override, and confirm the Config's own
+    was left untouched.
+
+    **Both databases are created here rather than taking `pg_url`**, and that
+    is a requirement rather than a style choice: since 2026-08-21 `pg_url`
+    hands out a CLONE of an already-migrated template, so "untouched" could no
+    longer be expressed as `current_revision(...) is None` — the fixture's
+    database arrives at head. This test is the one place in the suite that
+    genuinely needs an EMPTY database, so it makes its own."""
     import psycopg
 
     scratch = "t_" + uuid.uuid4().hex
+    target = "t_" + uuid.uuid4().hex
     with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
         conn.execute(f'CREATE DATABASE "{scratch}"')
+        conn.execute(f'CREATE DATABASE "{target}"')
+    pg_url = (
+        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{target}"
+    )
     scratch_sync = (
         f"postgresql+psycopg://{pg_admin.user}:{pg_admin.password}"
         f"@{pg_admin.host}:{pg_admin.port}/{scratch}"
@@ -108,12 +121,13 @@ def test_the_x_db_override_redirects_the_target(pg_url, pg_admin):
         with psycopg.connect(
             pg_admin.dsn(pg_admin.maintenance_db), autocommit=True
         ) as conn:
-            conn.execute(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = %s AND pid <> pg_backend_pid()",
-                (scratch,),
-            )
-            conn.execute(f'DROP DATABASE IF EXISTS "{scratch}"')
+            for dbname in (scratch, target):
+                conn.execute(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = %s AND pid <> pg_backend_pid()",
+                    (dbname,),
+                )
+                conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
 
 
 def test_alembic_ini_does_not_point_at_the_production_database():
