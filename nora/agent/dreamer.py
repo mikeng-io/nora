@@ -165,6 +165,32 @@ class DreamToolSource(Protocol):
     def build(self, *, key: str, names: frozenset[str]) -> list[Any]: ...
 
 
+# The read-only tools a WORKSPACE-keyed adaptor may hold, and the reason the
+# set is this small.
+#
+# Every other read tool is bound to a CONVERSATION — `load_transcript` reads one
+# room's record, `group_members`/`lookup_person`/`about`/`ask_memory`/
+# `search_memory` all answer against one room's live roster, and
+# `recall_lookups`/`media_fetch` replay one room's own calls. A workspace has no
+# single room to bind them to, and binding one to an arbitrary room of that
+# workspace would be a disclosure decision (R-31) nobody has made.
+#
+# So they are refused rather than guessed at. The cost is real and named: the
+# fact adaptor researches the open web and cannot read the group's own
+# transcript. That is the right side to fail on — the candidate EXTRACTOR is
+# scope-keyed and reads the room; the adjudicator checks the world.
+#
+# Hand-listed HERE and pinned by a test that measures it against
+# `read_only_tools()`, so a read tool added tomorrow is UNCLASSIFIED and turns
+# that test red rather than silently joining or silently missing. That is the
+# same structure `ACT_VERBS` uses in `tests/unit/test_tool_registry.py`, and it
+# is what keeps a hand-list from going stale the way the pre-DEC-29 catalogue
+# did.
+WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
+    "web_search", "web_fetch", "now", "calculate", "weather", "version",
+})
+
+
 class _InstructionSource(Protocol):
     """`DreamerInstructions`, seen from the runtime: one objective name in, the
     assembled text and its digest out. Narrowed to the one method used so a
@@ -243,6 +269,72 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
     if not all(isinstance(item, Mapping) for item in items):
         return None
     return tuple(items)
+
+
+class RegistryToolSource:
+    """`DreamToolSource` over the real `ToolRegistry` — the only place that
+    turns an adaptor's tool NAMES into tool objects.
+
+    Two guards, and they are independent on purpose:
+
+    1. **The read-only ceiling.** Only a name in `read_only_tools()` is ever
+       built, so an act verb cannot reach a background loop even if an adaptor
+       asks for one and even if `verify_tool_subsets` was skipped.
+    2. **An empty room.** The `Room` handed to `ToolRegistry.build` has NO
+       roster source, so its view is `available=False` — «I could not look» —
+       and any room-scoped tool that did slip through discloses nothing rather
+       than answering from a room the Dreamer was never given. That is a
+       DATA-level fail-closed guard behind the name-level one, because the
+       name-level one is a list and lists are the thing that go stale.
+
+    A workspace-keyed adaptor is additionally restricted to
+    `WORKSPACE_SAFE_TOOLS` (see that constant), because a workspace has no room
+    at all — `key` is not a conversation id there, and passing it as one would
+    quietly ask a room-scoped tool about a conversation that does not exist.
+    """
+
+    def __init__(
+        self, *, registry: Any, store: Any, persons: Any, honcho: Any,
+        metrics: Metrics, ai_peer: str = "nora",
+    ) -> None:
+        self._registry = registry
+        self._store = store
+        self._persons = persons
+        self._honcho = honcho
+        self._metrics = metrics
+        self._ai_peer = ai_peer
+
+    def read_only(self) -> frozenset[str]:
+        return self._registry.read_only_tools()
+
+    def build(self, *, key: str, names: frozenset[str]) -> list[Any]:
+        from .room import Room
+
+        wanted = frozenset(names) & self.read_only()
+        if not wanted:
+            return []
+        built = self._registry.build(
+            store=self._store,
+            conversation_id=key,
+            conversation_type="group",
+            persons=self._persons,
+            honcho=self._honcho,
+            # No deliverer, ever. Nothing the Dreamer holds speaks to anybody,
+            # and the filter below cannot admit a tool that would — but the
+            # absence is stated here too, because a `None` that was once a
+            # deliverer is how one gets passed back in.
+            deliverer=None,
+            metrics=self._metrics,
+            room=Room(
+                platform="", conversation_id=key, roster_source=None,
+                persons=self._persons,
+            ),
+        )
+        return [
+            tool for tool in built
+            if (getattr(tool, "tool_name", None) or getattr(tool, "__name__", ""))
+            in wanted
+        ]
 
 
 class DreamerRuntime:

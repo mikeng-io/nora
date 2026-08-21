@@ -31,9 +31,11 @@ import pytest
 from nora.agent import factory
 from nora.agent.dreamer import (
     MAX_ITEMS,
+    WORKSPACE_SAFE_TOOLS,
     AdaptorBudget,
     AdaptorToolError,
     DreamerRuntime,
+    RegistryToolSource,
     parse_envelope,
     verify_tool_subsets,
 )
@@ -493,3 +495,89 @@ async def test_the_adaptors_declared_names_are_what_gets_built(monkeypatch):
     await runtime.run(adaptor=adaptor, key="g1", batch=())
 
     assert tools.built == [("g1", frozenset({"now", "web_search"}))]
+
+
+# ---------------------------------------------------------------------------
+# the tool source — two independent guards, and a hand-list that cannot rot
+# ---------------------------------------------------------------------------
+
+
+def test_the_workspace_safe_set_is_a_subset_of_the_read_only_ceiling():
+    """A workspace-safe tool that is not read-only would be an act verb granted
+    to a background loop through the back door."""
+    from nora.agent.registry import ToolRegistry
+
+    assert ToolRegistry().read_only_tools() >= WORKSPACE_SAFE_TOOLS
+
+
+def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
+    """The test that keeps the hand-list from going stale, and it is the whole
+    reason a hand-list is acceptable here.
+
+    A read tool added tomorrow appears in neither set and turns this red BY
+    NAME, so somebody decides whether it can answer without a room. The
+    alternative — deriving it — would need a third field on `NativeTool` for a
+    distinction exactly one consumer makes.
+
+    The room-scoped half is listed rather than computed as a complement, so
+    that a tool moving between the two is a two-line diff a reviewer can see
+    rather than a silent set-difference."""
+    from nora.agent.registry import ToolRegistry
+
+    room_scoped = {
+        "transit", "route", "where_is", "place_info", "saved_places",
+        "load_transcript", "group_members", "lookup_person", "about",
+        "ask_memory", "search_memory", "recall_lookups", "media_fetch",
+        "list_reminders", "list_events", "suggest_venue", "search_gifs",
+    }
+    unclassified = ToolRegistry().read_only_tools() - WORKSPACE_SAFE_TOOLS - room_scoped
+    assert unclassified == set(), (
+        "read-only tool(s) classified neither workspace-safe nor room-scoped: "
+        + ", ".join(sorted(unclassified))
+    )
+
+
+def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
+    """The name-level guard. Asserted against the REAL registry rather than a
+    stub, because the thing under test is the intersection with a set the
+    registry derives."""
+    from nora.agent.registry import ToolRegistry
+
+    source = RegistryToolSource(
+        registry=ToolRegistry(), store=None, persons=None, honcho=None,
+        metrics=Metrics(),
+    )
+
+    built = source.build(key="g1", names=frozenset({"send_reply", "make_artifact"}))
+
+    assert built == []
+
+
+def test_the_tool_source_builds_the_workspace_safe_tools():
+    from nora.agent.registry import ToolRegistry
+
+    source = RegistryToolSource(
+        registry=ToolRegistry(), store=None, persons=None, honcho=None,
+        metrics=Metrics(),
+    )
+
+    built = source.build(key="nora", names=frozenset({"now", "calculate"}))
+
+    names = {
+        getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
+    }
+    assert names == {"now", "calculate"}
+
+
+def test_asking_for_nothing_builds_nothing_and_touches_no_collaborator():
+    """The extraction adaptor's case: a cheap tool-free pass. Building the whole
+    registry to then filter it all away would drag every collaborator into a
+    run that needs none of them."""
+    from nora.agent.registry import ToolRegistry
+
+    source = RegistryToolSource(
+        registry=ToolRegistry(), store=None, persons=None, honcho=None,
+        metrics=Metrics(),
+    )
+
+    assert source.build(key="nora", names=frozenset()) == []
