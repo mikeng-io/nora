@@ -1040,6 +1040,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Tool calls refused by DreamGuard, by adaptor and rule.",
         ("adaptor", "rule"),
     ),
+    _CounterSpec(
+        "nora_tagtrace_truncations_total",
+        "TagTrace content dropped or cut before retention, by reason.",
+        ("what",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
