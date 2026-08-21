@@ -665,9 +665,19 @@ output schema, tool subset, sink — and nothing more:
 | **objective** | the uncertainty |
 | **success criterion** | the closing condition |
 | **inputs** | the anchor: the Honcho peers, the standing facts reached through `note_entity → fact_entity`, the note's body and history, the room |
-| **tool subset** | `ask_memory`, `search_memory`, `web_search`, `web_fetch`, `note_read`, `note_search`, `note_create`, `note_update`, `remind` |
+| **tool subset** | `ask_memory`, `search_memory`, `web_search`, `web_fetch`, `note_read`, `note_search`, `remind` — **read verbs only** (see below) |
 | **output schema** | a revision, optionally a reminder |
 | **sink** | the note store |
+
+**The revisitor calls no write verb, and that is not a restriction — it is the
+propose/dispose split one layer down.** An earlier draft listed `note_create`
+and `note_update` in the subset above. That was wrong on the keystone's own
+terms: *"the runtime writes the schema-validated return, so the model proposes
+and code disposes."* The revisitor **reads**, and its writes leave as a
+schema-validated `Proposal` that the runtime hands to the note sink. The Dreamer
+runtime enforces this structurally — `NativeTool.read_only` derives the
+background loop's ceiling, so a write verb is unreachable from an adaptor rather
+than merely discouraged — and the corrected subset needs no exception to it.
 
 **No sequence appears anywhere in code.** The worked example — *what are we
 playing next* — would have it consult Honcho for what each person tends to
