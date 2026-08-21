@@ -73,6 +73,37 @@ red-on-revert test that deletes the reasoning blocks and fails.
 | 2.7 | `<standing>` injection | §6.7. `escape()`d, `untrusted="true"`, **volatile tail only** — never `_context_header`'s cached prefix. |
 | 2.8 | latency separation | §7.5. Observed in the `finally` **after** the debrief; must be excluded from `nora_tag_latency_seconds` or §14.3's SLO gate measures against a series this change broke. |
 | 2.9 | overflow as a model-resolvable error | §6.6. Refuse the write, return the inventory, "consolidate now". Silent eviction is the failure mode. |
+| 2.10 | `NoteProposal` — the debrief's fourth output | Not in the spec's §6.3 schema (`Standing`/`TurnVerdict`/`Fact` only) — added here 2026-08-21, operator decision. See below. |
+
+**2.10, stated plainly.** `note_create`/`note_update` are Nora's own tools,
+callable only inside her turn — `ReplyGuard._before_model` cancels the next
+model call once `send_reply`'s terminal budget is spent (`nora/agent/guards.py`
+~line 1006), so nothing in her own loop runs after the reply. `Standing`
+already has an after-the-reply path because it was designed to be a SEPARATE
+model reviewing the finished exchange (§9 — impartiality, not just cost). Notes
+do not have that path yet. This task gives them one, on the same debrief call
+that produces `Standing`/`TurnVerdict`/`Fact` — not a new stage.
+
+- **Sink**: the note tier's `DreamSink`-shaped port (`propose`/`supersede`),
+  the same interface `NoteCurator`/`NoteRevisitor` will use — never
+  `note_create`/`note_update`, whose R-55 read-before-write latch is an
+  in-turn rule with no meaning against a transcript reviewed after the fact.
+  **Dependency**: this needs the note store joined to
+  `tests/contract/test_dream_sink_contract.py`'s `IMPLEMENTATIONS` — not yet
+  done as of 2026-08-21 (only `fake`/`sql`/`candidate` are joined). That join
+  is nora-cc's Part 1b scope (`docs/superpowers/specs/2026-08-21-note-tier-design.md`
+  §15.2); sync with them before wiring the sink rather than duplicating it.
+- **Open sub-decision, to resolve when this task is actually built, not
+  guessed here**: `Proposal.payload` for a note covers two shapes the fact
+  tier's single-shape payload does not — a brand-new note (title,
+  description, uncertainty, closing_condition, anchor) vs. a revision to one
+  read this turn (body, parent_revision_id). Whether that is one payload type
+  with an optional discriminant or two, and how `note_read`'s in-turn miss
+  cache (§4.5) avoids the debrief re-proposing a note the tag path already
+  considered and rejected, are both undecided.
+- **Budget discipline carries over unchanged**: the debrief proposes,
+  append-only; it never adjudicates (§9's argument against in-slot judgment
+  under social pressure applies here exactly as it does to facts).
 
 **Gate:** §14.3 — debrief latency on `nora_debrief_seconds`, with the
 **second-queued-tag** case explicit, against p95 ≤ 5s
