@@ -152,6 +152,7 @@ def _runtime(
     monkeypatch, *, raw: str | None = None, invoke=None,
     instructions: _InstructionStore | None = None,
     tools: _ToolSource | None = None, metrics: Metrics | None = None,
+    budgets: dict[str, AdaptorBudget] | None = None,
 ) -> tuple[DreamerRuntime, Metrics]:
     """Wires the runtime with the Strands boundary replaced.
 
@@ -170,7 +171,7 @@ def _runtime(
         models=_Models(),
         instructions=instructions or _InstructionStore(),
         tools=tools or _ToolSource(),
-        budgets={},
+        budgets=budgets or {},
         default_budget=BUDGET,
         retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
         metrics=metrics,
@@ -394,9 +395,11 @@ async def test_a_hung_model_call_is_bounded_and_reported_unavailable(monkeypatch
         await asyncio.sleep(10)
 
     sink = _Sink()
-    runtime, metrics = _runtime(monkeypatch, invoke=_hang)
-    runtime._budgets["test-adaptor"] = AdaptorBudget(   # noqa: SLF001
-        turns=1, total_tokens=10, output_tokens=10, timeout_seconds=0.05,
+    runtime, _metrics = _runtime(
+        monkeypatch, invoke=_hang,
+        budgets={"test-adaptor": AdaptorBudget(
+            turns=1, total_tokens=10, output_tokens=10, timeout_seconds=0.05,
+        )},
     )
 
     outcome = await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=())
