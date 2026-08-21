@@ -11,6 +11,16 @@ derives_from:
   - docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md
 ---
 
+> **PARTLY SUPERSEDED (2026-08-22) — check `design/dreamer-agent-loop/14-roadmap.md` §3 and §7.**
+>
+> Its task-level guidance stands. Its **state** claims do not: it calls the
+> curator and revisitor "UNBLOCKED", which is true at code level and false at
+> deploy level — `[dreamer] enabled` is `false`, so an adaptor landed today
+> would be inert. It is also the origin of a claim the debrief's own design
+> never made (that notes get a fourth debrief output); that gap was real and is
+> now owned by the Standing workstream, but the two documents did disagree.
+
+
 # Note tier — handoff
 
 ## 1. What is live right now

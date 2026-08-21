@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Docs only. Consolidates the roadmap for all five tiers (fact, note, language, Dreamer runtime, Standing/debrief) into design/dreamer-agent-loop/14-roadmap.md, and marks the three transfer documents plus the note-tier handoff superseded in-file so the next reader is not led by a stale snapshot. No code, no behaviour change."
+}

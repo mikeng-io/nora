@@ -4,8 +4,23 @@ title: "Transfer: the Dreamer runtime is LIVE — what runs, what is broken, wha
 description: "The fact tier and the Dreamer runtime are implemented, merged, deployed and enabled. This hands over the rest. It carries what the specs do not: the verified live state, one defect visible in production right now, the three pieces of the design that were never built and who they belong to, and the cross-session conventions that cost four collisions to learn — including two learned today, after the previous transfer was written."
 tags: [nora, transfer, dreamer, facts, standing, handoff]
 timestamp: '2026-08-21'
-status: accepted
+superseded_by: design/dreamer-agent-loop/14-roadmap.md
+status: superseded
 ---
+
+> **SUPERSEDED (2026-08-22) — read `design/dreamer-agent-loop/` first.**
+>
+> This document was a session-boundary snapshot and parts of it are now false.
+> Most importantly it describes a **running** Dreamer; `[dreamer] enabled` is
+> `false` as of `5ef8ddc`, so any "unblocked" statement below means *unblocked
+> at code level and inert at deploy level*.
+>
+> The consolidated, maintained picture — all five tiers, what is built, inert,
+> unmerged, unbuilt, owned and orphaned — is
+> `design/dreamer-agent-loop/14-roadmap.md`, whose §7 lists exactly what in this
+> file has gone stale. Kept for its reasoning and its war-stories, which remain
+> good; do not read it for current state.
+
 
 # Transfer: the Dreamer is live
 

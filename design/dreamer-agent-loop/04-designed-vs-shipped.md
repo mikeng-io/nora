@@ -120,7 +120,37 @@ That is the mechanism by which seven tools went missing without anyone
 noticing, and it is why this bundle is a **revision layer** that supersedes
 framing explicitly rather than another document beside them.
 
-## 6. One thing that is faithful, and should be said plainly
+## 6. The pattern, and four more instances
+
+The mechanism above is not a fact-tier accident. **A spec owns a decision, a
+handoff or a docstring restates it, and nothing detects the drift.** Four
+further instances, three found by investigations that were not looking for this:
+
+1. **The debrief's outputs.** Its own design defines exactly three. The claim
+   that notes get a fourth existed *only* in a handoff document, never in the
+   design that owns the decision. Caught by the session building it, who added
+   the output rather than let two documents silently disagree.
+   *(Credit: the Standing/debrief session.)*
+2. **The fact renderer's docstring** asserts that the store read is "not yet
+   built" and that "nothing writes this tier yet, so this module always renders
+   nothing". Both false. **The same stale claim is duplicated in the config
+   module, where it is load-bearing for the argument that cut a startup check** —
+   a decision now resting on a stale restatement.
+3. **A spec says joining the shared sink contract suite is "one entry".** The
+   suite's own docstring records that same assumption, measured on the previous
+   attempt, as **four passed and nine failed**. The spec was never annotated.
+4. **The three transfer documents**, at a larger grain — each written because
+   the last did not survive a session boundary, each now partly false. See
+   [14-roadmap.md](14-roadmap.md) §6.
+
+The common shape is that the **restatement is the artefact people read**, and
+nothing binds it to the decision it restates. That is why this bundle is a
+revision layer with an explicit supersedes field, and why
+[14-roadmap.md](14-roadmap.md) carries a staleness register instead of claiming
+to be permanently true.
+
+
+## 7. One thing that is faithful, and should be said plainly
 
 `FactCandidateAdaptor` holding no tools is **not** a regression. The fact-tier
 spec says *"Phase A is one cheap call per tick, no tools, bounded output"*, the

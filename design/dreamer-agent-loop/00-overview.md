@@ -106,6 +106,7 @@ Proposed, not yet ratified. Each is argued in the node named.
 | [11-doctrine.md](11-doctrine.md) | The doctrine/objective seam and shape-awareness |
 | [12-migration-and-governance.md](12-migration-and-governance.md) | Phase 3, DEC/R numbers, tests to replace, landmines |
 | [13-open-items.md](13-open-items.md) | Unresolved, starting with the gateway probe |
+| [14-roadmap.md](14-roadmap.md) | All four workstreams consolidated: built, inert, unmerged, unbuilt, owned, orphaned |
 
 ## 6. Grounding
 
@@ -126,9 +127,9 @@ source, not recalled. Provenance is cited per claim inside each node.
 ## 7. What this bundle does not decide
 
 - **The fact tier's store.** Owned elsewhere; unchanged here.
-- **Standing / the debrief.** Tag-path work, separately owned. This bundle's
-  input-vs-tool rule ([05](05-input-or-tool.md)) applies to it, and that is the
-  whole of the overlap.
+- **Standing / the debrief.** Tag-path work, owned by another session. Its
+  roadmap is consolidated here ([14](14-roadmap.md) §5) with that session's
+  agreement; this bundle records it, it does not own it.
 - **Entity resolution.** Named as a dependency in
   [09-self-correction.md](09-self-correction.md); its mechanism stays open.
 - **Whether the Dreamer's model changes.** The keystone's falsifiability

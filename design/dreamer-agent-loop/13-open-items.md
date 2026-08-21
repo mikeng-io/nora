@@ -24,9 +24,21 @@ measures something other than one completion. It matters directly: if the
 ceiling is ignored, the loop's output budget is the **only** cap in play and a
 single call spends all of it — which is exactly the failure observed.
 
-**A direct probe against the gateway settles it.** Nothing in
-[10-orchestration.md](10-orchestration.md) should be sized until it is run.
-This is the cheapest open item and the one most other numbers depend on.
+**Do not write a standalone probe.** A hand-rolled single-completion probe
+measures a shape production does not have — the Standing/debrief session built
+two of them before getting this right, and both scored "did not finish in one
+shot" as a failure when the real path is a multi-turn loop that keeps trying.
+
+**The correct instrument already exists and is unwired.** `evals/harness.py`
+can drive the *real* pipeline — real doctrine, real tool registry, real
+multi-turn loop — but no flag connects it to the eval runner. Extending that is
+the answer to this item, and to the `tool_choice` reliability question that is
+still open beside it. *(Credit: the Standing/debrief session, who learned it the
+expensive way.)*
+
+Nothing in [10-orchestration.md](10-orchestration.md) should be sized until it
+is run. This is the cheapest open item and the one most other numbers depend
+on.
 
 **2. R-49's second condition on the fact path.**
 

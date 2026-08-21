@@ -1,14 +1,14 @@
 ---
 type: analysis
-title: "Instrument Blindness — Five Layers That Cannot Measure Themselves"
-description: "Independently, at five layers, the Dreamer carries an instrument that cannot observe the thing it exists to observe. This is one missing discipline, not five bugs, and it is why the subsystem's failures were invisible for weeks."
+title: "Instrument Blindness — Six Layers That Cannot Measure Themselves"
+description: "Independently, at six layers — one of them in another tier entirely — an instrument cannot observe the thing it exists to observe. This is one missing discipline, not six bugs, and it is why these failures stayed invisible for weeks."
 tags: [nora, dreamer, observability, metrics, evidence, r-27]
 timestamp: '2026-08-22'
 edges:
   - {dst: 01-live-state, rel: motivated_by, provenance: asserted}
 ---
 
-# Instrument Blindness — Five Layers That Cannot Measure Themselves
+# Instrument Blindness — Six Layers That Cannot Measure Themselves
 
 CLAUDE.md carries this rule:
 
@@ -16,9 +16,10 @@ CLAUDE.md carries this rule:
 > measure the thing** — state what a positive result would look like before
 > concluding from a null one.
 
-It is violated at five independent layers of the Dreamer. They were found by
-five separate investigations that were not looking for the same thing, which is
-what makes this a class and not a coincidence.
+It is violated at six independent layers. They were found by six separate
+investigations that were not looking for the same thing — and Layer 6 is not in
+the Dreamer at all, which is what settles this as a repo-wide discipline gap
+rather than one subsystem's bug.
 
 The common cause is structural: **a background loop has nobody waiting on it.**
 On the tag path a broken instrument is discovered within one turn, because a
@@ -101,6 +102,33 @@ because the failure mode is identical to the other four: a real instrument,
 correctly implemented, measuring a narrower property than the one it is
 credited with.
 
+## Layer 6 — A tier declares ten metrics and ships none of them
+
+Not the Dreamer. The **note tier**, found by an independent investigation
+looking for something else.
+
+Its design declares ten counters by name — candidates by trigger, writes by
+kind, reads and searches by result, index size, curator and revisit outcomes,
+refusals by reason. **Not one of them is declared in the metrics module**, so
+none can ever be incremented. Note tool calls fall through to the generic
+per-tool counter.
+
+What that costs is written in the tier's own spec, which describes the
+diagnostic it believes it has:
+
+> *"a climbing `candidates_total` with a flat `writes_total` → she recognises
+> and does not act. **That is the inert-skill failure, made visible.**"*
+
+It is not visible. The single most important failure mode the tier names for
+itself is the one it cannot observe — and the tier is presently sitting at zero
+notes with one miss-cache row, which is exactly the state that diagnostic exists
+to disambiguate.
+
+It also blocks something concrete: the note tier's re-derivation sweep is
+deferred **behind an evidence gate naming two of these ten metrics**. The gate
+cannot be satisfied, because the instruments it requires do not exist.
+
+
 ## What follows from this
 
 **Every fix in this bundle ships its own measurement, or it is not done**
@@ -119,4 +147,6 @@ positive reading looks like *and* produce it:
   that a quote is present would have passed on both wrong rows.
 
 This is the negative half of the repo's own `measure` verb, applied to the
-subsystem that most needs it and currently has it least.
+subsystems that most need it and currently have it least. Layer 6 is the reason
+to state it as a repo-wide discipline rather than a Dreamer fix: a tier written
+by a different session, at a different time, reproduced it exactly.
