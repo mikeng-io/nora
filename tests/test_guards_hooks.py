@@ -151,3 +151,45 @@ def test_a_hook_failure_never_escapes_to_the_agent_loop():
     event = types.SimpleNamespace(tool_use=None, invocation_state={}, cancel_tool=None)
     g._before_tool(event)     # must not raise
     assert event.cancel_tool is None or isinstance(event.cancel_tool, str)
+
+
+def test_a_call_that_raised_gives_its_reservation_back():
+    """DEC-33's reservation is NOT budget — it is «this call is still running»
+    — so it comes back on every path, including the one where the tool raised.
+
+    **This was live until 2026-08-21, and the reason it hid is the interesting
+    part.** `_after_tool`'s early return on `exception` sat ABOVE `release`, so
+    a raised call held its reservation for the rest of the tag. `counts` — the
+    thing `test_after_tool_does_not_count_a_failed_call` above asserts, and the
+    only half any test read — stayed correct throughout. Only `spent` was
+    wrong, and `spent` is what R-7's ceiling reads. The symptom was a model
+    refused a call it was entitled to, on exactly the turns that had already
+    gone wrong once.
+
+    Asserted through `evaluate`'s veto rather than through the ledger, because
+    the veto is where the leak actually costs the model something."""
+    g = _guard()
+    before = FakeBeforeEvent("load_transcript", {})
+    failed = FakeAfterEvent("load_transcript")
+    failed.exception = RuntimeError("boom")
+
+    for _ in range(BUDGETS["load_transcript"]):
+        g._before_tool(before)
+        g._after_tool(failed)
+
+    # Every one of those calls raised, so none of them spent anything and the
+    # next is still admitted. With the leak, the ceiling was already reached.
+    assert g.counts["load_transcript"] == 0
+    assert g.evaluate("load_transcript", {}) is None
+
+
+def test_a_cancelled_call_also_gives_its_reservation_back():
+    """The sibling path, which was already correct — pinned so the fix above
+    cannot be undone by someone restoring the old ordering for one branch."""
+    g = _guard()
+
+    for _ in range(BUDGETS["load_transcript"]):
+        g._before_tool(FakeBeforeEvent("load_transcript", {}))
+        g._after_tool(FakeAfterEvent("load_transcript", cancel_message="no"))
+
+    assert g.evaluate("load_transcript", {}) is None

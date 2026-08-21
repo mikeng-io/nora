@@ -1037,6 +1037,19 @@ class ReplyGuard(HookProvider):
 
     def _after_tool(self, event) -> None:
         try:
+            # The RESERVATION comes back first, on every path, because it is
+            # not budget — it is "this call is still running". Releasing it
+            # after the early return below is a LEAK that was live until
+            # 2026-08-21: a tool call that RAISED held its reservation for the
+            # rest of the tag, so `spent` stayed one too high and R-7 refused a
+            # later call the model was entitled to. Invisible, because `counts`
+            # — the thing every existing test asserts on — was correct the
+            # whole time; only the in-flight half was wrong, and nothing read
+            # it directly. Found while extracting `CallLedger` for `DreamGuard`,
+            # by someone reading a comment that already claimed "the
+            # reservation goes back on EVERY path" and checking whether it did.
+            name = (getattr(event, "tool_use", None) or {}).get("name", "")
+            self.release(name)
             if getattr(event, "exception", None) is not None:
                 return                       # a failed call does not consume budget
             # A CANCELLED CALL DID NOT RUN, so it consumes no budget and cannot
@@ -1055,10 +1068,6 @@ class ReplyGuard(HookProvider):
             # budget check with "you already sent your reply". One recoverable
             # mistake, and the RECOVERY was what got blocked — silently, since
             # under R-5 the group just hears nothing.
-            name = (getattr(event, "tool_use", None) or {}).get("name", "")
-            # The reservation goes back on EVERY path — vetoed, failed, or
-            # done. It is not budget; it is "this call is still running".
-            self.release(name)
             if getattr(event, "cancel_message", None) is not None:
                 return
             self.record(name)
