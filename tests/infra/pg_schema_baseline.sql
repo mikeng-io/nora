@@ -40,6 +40,10 @@
 );
 );
 );
+);
+);
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -65,6 +69,15 @@ ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT media_descriptions_pkey PRIMARY KEY (sha256);
 ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
+ADD CONSTRAINT note_candidate_pkey PRIMARY KEY (id);
+ADD CONSTRAINT note_candidate_probe_key UNIQUE (workspace, probe);
+ADD CONSTRAINT note_entity_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES public.fact_entity(id);
+ADD CONSTRAINT note_entity_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
+ADD CONSTRAINT note_entity_pkey PRIMARY KEY (note_id, entity_id);
+ADD CONSTRAINT note_pkey PRIMARY KEY (id);
+ADD CONSTRAINT note_replaced_by_fkey FOREIGN KEY (replaced_by) REFERENCES public.note(id);
+ADD CONSTRAINT note_revision_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
+ADD CONSTRAINT note_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_corridor_speed_pkey PRIMARY KEY (subject_id, corridor_id, hour_of_week);
 ADD CONSTRAINT presence_corridors_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_derived_places_pkey PRIMARY KEY (id);
@@ -107,6 +120,15 @@ ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.media_descriptions
 ALTER TABLE ONLY public.messages
+ALTER TABLE ONLY public.note
+ALTER TABLE ONLY public.note
+ALTER TABLE ONLY public.note_candidate
+ALTER TABLE ONLY public.note_candidate
+ALTER TABLE ONLY public.note_entity
+ALTER TABLE ONLY public.note_entity
+ALTER TABLE ONLY public.note_entity
+ALTER TABLE ONLY public.note_revision
+ALTER TABLE ONLY public.note_revision
 ALTER TABLE ONLY public.presence_corridor_speed
 ALTER TABLE ONLY public.presence_corridors
 ALTER TABLE ONLY public.presence_derived_places
@@ -142,6 +164,7 @@ CACHE 1
 CACHE 1
 CACHE 1
 CACHE 1
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
@@ -175,6 +198,14 @@ CONSTRAINT fact_warrant_kind_check CHECK ((warrant_kind = ANY (ARRAY['source'::t
 CONSTRAINT language_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT language_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0)))
 CONSTRAINT messages_conversation_type_check CHECK ((conversation_type = ANY (ARRAY['group'::text, 'dm'::text])))
+CONSTRAINT note_description_fits_the_index_check CHECK (((length(btrim(description)) > 0) AND (length(description) <= 200))),
+CONSTRAINT note_has_a_closing_condition_check CHECK ((length(btrim(closing_condition)) > 0)),
+CONSTRAINT note_has_an_anchor_check CHECK (((anchor_date IS NOT NULL) OR (cardinality(anchor_entity_ids) > 0))),
+CONSTRAINT note_replacement_implies_retirement_check CHECK (((replaced_by IS NULL) OR (retired_at IS NOT NULL))),
+CONSTRAINT note_revision_has_a_body_check CHECK ((length(btrim(body)) > 0)),
+CONSTRAINT note_revision_names_its_writer_check CHECK ((length(btrim(established_by)) > 0))
+CONSTRAINT note_strikes_are_not_negative_check CHECK ((strikes >= 0)),
+CONSTRAINT note_title_fits_the_index_check CHECK (((length(btrim(title)) > 0) AND (length(title) <= 60)))
 CONSTRAINT room_exchange_act_check CHECK ((act = ANY (ARRAY['insult_trade'::text, 'banter'::text, 'tease'::text, 'callback_joke'::text, 'agreement_ritual'::text, 'disagreement_ritual'::text, 'compliment_exchange'::text]))),
 CONSTRAINT room_exchange_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT room_exchange_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
@@ -183,6 +214,7 @@ CONSTRAINT room_exchange_state_check CHECK ((state = ANY (ARRAY['live'::text, 'f
 CONSTRAINT room_lexeme_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT room_lexeme_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
 CONSTRAINT room_lexeme_state_check CHECK ((state = ANY (ARRAY['live'::text, 'fading'::text, 'stale'::text])))
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
@@ -192,6 +224,10 @@ CREATE INDEX idx_language_observation_scope ON public.language_observation USING
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
 CREATE INDEX idx_messages_dream_lag ON public.messages USING btree (conversation_id, id) WHERE (is_nora = 0);
 CREATE INDEX idx_messages_is_nora ON public.messages USING btree (is_nora);
+CREATE INDEX idx_note_anchor ON public.note USING btree (workspace, anchor_date) WHERE (retired_at IS NULL);
+CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body public.gin_trgm_ops);
+CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
+CREATE INDEX idx_note_standing ON public.note USING btree (workspace) WHERE (retired_at IS NULL);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
 CREATE INDEX idx_presence_derived_places_subject_kind ON public.presence_derived_places USING btree (subject_id, kind);
 CREATE INDEX idx_presence_member_ts ON public.presence_fixes USING btree (circle_id, person_id, ts DESC);
@@ -215,6 +251,10 @@ CREATE TABLE public.geocode_cache (
 CREATE TABLE public.language_observation (
 CREATE TABLE public.media_descriptions (
 CREATE TABLE public.messages (
+CREATE TABLE public.note (
+CREATE TABLE public.note_candidate (
+CREATE TABLE public.note_entity (
+CREATE TABLE public.note_revision (
 CREATE TABLE public.presence_corridor_speed (
 CREATE TABLE public.presence_corridors (
 CREATE TABLE public.presence_derived_places (
@@ -282,12 +322,15 @@ act text NOT NULL,
 address text NOT NULL,
 address text,
 aliases text[] DEFAULT '{}'::text[] NOT NULL,
+anchor_date integer,
+anchor_entity_ids text[] DEFAULT '{}'::text[] NOT NULL,
 announced_at timestamp with time zone NOT NULL,
 artifact_id text,
 attempts integer DEFAULT 0 NOT NULL,
 avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
 battery double precision,
+body text NOT NULL,
 body text,
 canonical_form text NOT NULL,
 canonical_form text NOT NULL,
@@ -297,6 +340,7 @@ circle_id text NOT NULL,
 circle_id text NOT NULL,
 circle_id text NOT NULL,
 circle_id text NOT NULL,
+closing_condition text NOT NULL,
 completed_at timestamp with time zone,
 confidence double precision NOT NULL,
 consolidator_name text NOT NULL,
@@ -318,6 +362,7 @@ corridor_id integer NOT NULL,
 corridor_id integer,
 created_at bigint NOT NULL
 created_at bigint NOT NULL,
+created_at bigint NOT NULL,
 created_at text DEFAULT (now())::text NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
@@ -329,6 +374,7 @@ created_by text NOT NULL,
 delivery_status text DEFAULT 'pending'::text NOT NULL,
 deriver_name text NOT NULL,
 description text NOT NULL,
+description text NOT NULL,
 distance_m double precision NOT NULL,
 distinct_speakers integer DEFAULT 0 NOT NULL,
 due_at timestamp with time zone NOT NULL,
@@ -337,10 +383,14 @@ duration_median_ms bigint,
 dwell_ms bigint DEFAULT 0 NOT NULL,
 ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
+entity_id uuid NOT NULL
 error text,
 established_by text NOT NULL,
 established_by text NOT NULL,
+established_by text NOT NULL,
+established_in text NOT NULL,
 event_id uuid NOT NULL,
+event_id uuid,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 examples jsonb DEFAULT '[]'::jsonb NOT NULL,
 exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
@@ -355,10 +405,12 @@ first_seen timestamp with time zone DEFAULT now() NOT NULL,
 first_seen_at bigint NOT NULL,
 first_seen_at bigint NOT NULL,
 first_seen_at bigint NOT NULL,
+first_seen_at bigint NOT NULL,
 first_seen_ts bigint NOT NULL,
 first_seen_ts bigint NOT NULL,
 fix_count integer NOT NULL,
 fix_count integer NOT NULL,
+head_revision_id uuid NOT NULL,
 hits integer DEFAULT 0 NOT NULL
 hour_of_week integer NOT NULL,
 hour_of_week integer NOT NULL,
@@ -372,6 +424,9 @@ id integer NOT NULL,
 id integer NOT NULL,
 id integer NOT NULL,
 id text NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -397,8 +452,10 @@ last_seen timestamp with time zone DEFAULT now() NOT NULL,
 last_seen_at bigint NOT NULL,
 last_seen_at bigint NOT NULL,
 last_seen_at bigint NOT NULL,
+last_seen_at bigint NOT NULL,
 last_seen_ts bigint NOT NULL
 last_seen_ts bigint NOT NULL,
+last_wake_revision_id uuid,
 lat double precision NOT NULL,
 lat double precision NOT NULL,
 lat double precision NOT NULL,
@@ -426,20 +483,25 @@ model text,
 model text,
 name text NOT NULL,
 narrative text NOT NULL,
+note_id uuid NOT NULL,
+note_id uuid NOT NULL,
 object text NOT NULL,
 object_entity_id text,
 object_literal text,
 observed_at bigint NOT NULL,
 observed_at bigint NOT NULL,
+observed_in text[] DEFAULT '{}'::text[] NOT NULL
 observed_in text[] DEFAULT '{}'::text[] NOT NULL,
 occurrence integer DEFAULT 0 NOT NULL,
 occurrence_count integer DEFAULT 0 NOT NULL,
 occurrence_count integer DEFAULT 0 NOT NULL,
 occurrence_count integer DEFAULT 1 NOT NULL,
+occurrence_count integer DEFAULT 1 NOT NULL,
 outcome text,
 outcome text,
 p50_kmh double precision NOT NULL,
 p90_kmh double precision NOT NULL,
+parent_revision_id uuid,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
@@ -461,6 +523,7 @@ platform text NOT NULL,
 predicate text NOT NULL,
 predicate text NOT NULL,
 premise_fact_id uuid NOT NULL,
+probe text NOT NULL,
 quoted_ts bigint,
 radius_m double precision NOT NULL,
 radius_m double precision NOT NULL,
@@ -474,6 +537,8 @@ recurrence_count integer,
 recurrence_tz text,
 recurrence_until timestamp with time zone,
 reminder_id uuid,
+reminder_id uuid,
+replaced_by uuid,
 requester_person_id text NOT NULL,
 requester_person_id text NOT NULL,
 resolved_at timestamp with time zone DEFAULT now() NOT NULL
@@ -481,6 +546,9 @@ responded_at timestamp with time zone NOT NULL,
 response text NOT NULL,
 result_summary text,
 result_url text,
+retire_reason text,
+retired_at bigint,
+revisit_at bigint,
 sample_count integer DEFAULT 0 NOT NULL,
 sample_count integer DEFAULT 0 NOT NULL,
 sample_count integer NOT NULL,
@@ -516,6 +584,7 @@ state text NOT NULL,
 state text NOT NULL,
 status text NOT NULL,
 status text NOT NULL,
+strikes integer DEFAULT 0 NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
@@ -538,11 +607,13 @@ task_sha256 text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
+title text NOT NULL,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
 tool_result jsonb NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
+uncertainty text NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_ms bigint NOT NULL
@@ -566,3 +637,6 @@ wire_state text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
+workspace text NOT NULL,
+workspace text NOT NULL,
+written_at bigint NOT NULL,

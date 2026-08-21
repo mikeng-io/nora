@@ -76,18 +76,22 @@ the reason the columns are safe to make total: they are established once, with
 a later sighting of the same triple bumps counts without rewriting who
 established the row.
 
-**Numbering.** `0026_note_tier` is claimed by the note tier, on the unmerged
-`note-tier` branch; this revision is `0027` to leave it its number, but its
-`down_revision` is `0025_fact_tier` because `0026` does not exist in this
-tree and a `down_revision` naming an absent revision is an immediate
-`ScriptDirectory` failure. **Whoever merges SECOND re-points their
-`down_revision` at the other's revision id.** `run_migrations` calls
-`command.upgrade(cfg, "head")` — singular — so two heads descending from
-`0025` is not a conflict git will show anyone, it is a runtime failure at the
-next startup.
+**Numbering, and the hazard it was written under.** This was authored against
+`0025_fact_tier` because `0026_note_tier` was on an unmerged branch at the
+time, and a `down_revision` naming an absent revision is an immediate
+`ScriptDirectory` failure. The note tier landed first (2026-08-21), so this
+re-points at `0026` — the agreed rule was that whoever merges SECOND moves.
+
+**Why that agreement existed at all**, because the failure it avoids is
+invisible: two revisions both naming `0025` as parent give `0025` two children,
+git merges the two files without a conflict, every test that does not actually
+migrate stays green, and `run_migrations` calls `command.upgrade(cfg, "head")`
+— singular — which refuses a multi-head chain. The container fails to start.
+`uv run alembic heads` printing exactly ONE line is the check; `alembic check`
+does not catch it.
 
 Revision ID: 0027_fact_candidate_provenance
-Revises: 0025_fact_tier
+Revises: 0026_note_tier
 Create Date: 2026-08-21
 """
 
@@ -97,7 +101,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0027_fact_candidate_provenance"
-down_revision = "0025_fact_tier"
+down_revision = "0026_note_tier"
 branch_labels = None
 depends_on = None
 
