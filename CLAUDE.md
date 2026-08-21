@@ -110,6 +110,10 @@ uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence   # typ
 uv run lint-imports                                      # import boundaries clean
 ```
 
+A fresh worktree needs `uv sync --extra evals` once, or pytest dies at
+COLLECTION on the eval modules — `strands-agents-evals` is a declared optional
+extra and each worktree has its own venv.
+
 The gate is the FINAL check, not the iteration check. It takes ~8 minutes; running
 it after every edit instead of `make test-affected` costs an hour a day and buys
 nothing — this file previously named only the serial form, and that is exactly the
@@ -169,11 +173,26 @@ summary — update-in-place, separate from the Dreamer and Honcho).
   reaches `master` by merge. `master` here is a bind-mount source for the
   running container (`nora/doctrine`, `config.toml`), so an edit on `master` is
   a deploy: the doctrine hot-reloads on mtime and reaches the group with no gate
-  between the edit and production.
+  between the edit and production. **Landing a merge does not move you back
+  in** — the next change starts in a new worktree too. 2026-08-21: a session
+  merged, kept editing in place, and another session was seconds from building
+  an image out of a mid-refactor tree with 16 tests red in it.
 - **Never run two agents against this checkout at once** — sequence them, or give
   each a worktree.
 - **Never trust `alembic revision --autogenerate` for `idx_messages_conv_ts`** —
   it is excluded on purpose; a revision touching it is hand-written.
+- **Never assume your migration's parent is unclaimed** — two branches cut from
+  the same head each write `down_revision = <that head>`, git merges both files
+  without a conflict, every test that does not actually migrate stays green, and
+  the container fails at boot because `upgrade "head"` refuses two heads.
+  **`uv run alembic heads` must print exactly ONE line after every merge.**
+- **Never take a DEC or R number from a chat agreement** — re-read
+  `design/09-decision-index.md` at MERGE time, not at claim time. 2026-08-21:
+  two sessions coordinated numbers carefully and a third took DEC-131 anyway;
+  it conflicted only because the rows landed on the same line. Check with
+  `grep -oE '^\| DEC-[0-9]+' design/09-decision-index.md | grep -oE '[0-9]+' |
+  sort -n | uniq -d` — and note `uniq -d` exits 0 with no output, so test the
+  string, not the exit code.
 
 ## The five operational constraints (one line each — full text in `docs/CONVENTIONS.md`)
 
@@ -198,5 +217,12 @@ summary — update-in-place, separate from the Dreamer and Honcho).
   — no `*_fn` hooks, no `_for_test` params, no module-level mutable singletons.
 - A port never gains a second implementation — including a test fake — without a
   shared contract suite both pass (`tests/contract/`).
+- **A contract suite scopes its database to the MODULE, not the test.** The
+  shared `pg_url` fixture is function-scoped: `CREATE DATABASE` + the full
+  migration chain + `DROP`, every test. At ~30 database-backed tests that
+  degrades the container enough to fail an unrelated wall-clock test in another
+  directory — the cost lands nowhere near its cause. Build once per file and
+  `TRUNCATE` between tests; the isolation these suites need is "no rows from
+  the last test", not "no schema from the last test".
 - A new behavioural rule gets an entry in `design/09-decision-index.md` and a
   named test in `tests/test_acceptance_rules.py::RULE_TESTS`.
