@@ -77,6 +77,7 @@ from ..obs.metrics import Metrics
 from . import factory
 from .dream_guard import DreamGuard
 from .dream_screen import screen
+from .registry import ToolRegistry
 
 log = logging.getLogger("nora.dreamer")
 
@@ -294,7 +295,7 @@ class RegistryToolSource:
     """
 
     def __init__(
-        self, *, registry: Any, store: Any, persons: Any, honcho: Any,
+        self, *, registry: ToolRegistry, store: Any, persons: Any, honcho: Any,
         metrics: Metrics, ai_peer: str = "nora",
     ) -> None:
         self._registry = registry
