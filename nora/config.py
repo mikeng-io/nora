@@ -1218,6 +1218,58 @@ class LanguageConfig(BaseModel):
     max_rendered_exchanges: int = Field(default=4, ge=1)
 
 
+class FactsConfig(BaseModel):
+    """The fact tier's gate (the `2026-08-20-fact-tier-design` spec under
+    `docs/superpowers/specs/`).
+
+    Nothing writes a fact yet (the schema and the `<facts>` block ship dormant,
+    Tasks 1/2/5 of that plan); this section is the flag the future adaptor
+    checks and the three bounds it stays inside once it runs.
+
+    **The whole section is optional and every field defaults**, the
+    `[route]`/`[language]` shape: a `config.toml` written before this section
+    existed must keep loading, which `extra="forbid"` makes a real constraint
+    rather than a courtesy.
+
+    `enabled` defaults to **False** — a new subsystem does not switch itself
+    on, and this one in particular writes claims into a block every tagged
+    turn reads.
+
+    **The workspace startup check the design doc's §7 argued for was CUT**
+    (operator, 2026-08-20): the store's read (`standing_facts`, Task 3 of the
+    fact-tier plan, not yet built) is specified to scope `WHERE workspace =
+    ...` in SQL, so once it exists a fact will not be able to reach a room
+    outside its own workspace regardless of what a startup refusal would add
+    on top — the property is meant to be structural, not something this
+    section asserts. Until that store lands there is no `standing_facts` to
+    read at all, so this only holds when the deferred reader is finally
+    built matching the spec.
+
+    `max_adjudications_per_tick = 10`: the Phase B cap — one research loop
+    (search + classify) per surviving candidate is the expensive step, same
+    shape and same default as `LanguageConfig.verify_max_candidates`, which
+    bounds the analogous (search + classify) round trip for slang.
+
+    `max_rendered_facts = 8`: the RENDER cap on the `<facts>` block, the same
+    per-turn-cost argument as `LanguageConfig.max_rendered_lexemes` (6) and
+    `max_rendered_exchanges` (4) — this block sits in the same uncached
+    volatile tail, and a fact line additionally carries a source URL and an
+    excerpt, so raise it only against a measured per-turn token cost.
+
+    `retention_days = 180`: how long a resolved `fact_candidate` (a
+    `not_covered` verdict, or a superseded fact) is kept before a future prune
+    sweep drops it — matching the tool-recall-log's own `retention_days = 180`
+    for the same shape of durable-but-not-forever row.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    max_adjudications_per_tick: int = Field(default=10, ge=1)
+    max_rendered_facts: int = Field(default=8, ge=1)
+    retention_days: int = Field(default=180, ge=1)
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1468,6 +1520,10 @@ class Config(BaseModel):
     # composition wires `language=None` into `TranscriptInjection`, the
     # "not yet wired" state Task 9 shipped it in.
     language: LanguageConfig = LanguageConfig()
+    # Optional and defaulted — see `FactsConfig`. Ships INERT
+    # (`enabled = false`); nothing writes a fact yet, so this is a flag and
+    # three bounds for a future adaptor, not a running subsystem.
+    facts: FactsConfig = FactsConfig()
     # Optional and defaulted — see `ComputeConfig`. Ships INERT
     # (`enabled = false`); the `ComputeJobStore` is built unconditionally
     # regardless (the `reminders` shape), only the poller's tick loop is gated.

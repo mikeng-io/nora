@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Declaration only, no implementation. Adds DreamSink and Proposal to nora/domain/ports.py (Task 2.2 of the Dreamer substrate plan) plus tests/contract/test_dream_sink_contract.py. Brought forward ahead of the rest of Phase 2 because the fact tier's store and contract suite are blocked on the port and nothing else in Phase 2 is. The port has exactly two verbs, propose and supersede, and no delete on the interface or on any implementation, so 'invalidate, never delete' is enforced structurally; a named test asserts that on the Protocol itself. An empty propose is nothing_found and reaches the sink (where the language adaptor's time-driven rescore lives); not calling propose is unavailable. Ships with one fake implementation inside the contract suite so the shape is exercised rather than declared into a vacuum. supersede carries replaced_by: str | None - nullable at the port because two tiers (facts, notes) derived the need for a successor field from different specs and one of them, note retirement, legitimately has no successor; each sink is strict where its own rows require one. source is a warrant, never a row id. Recorded as DEC-130. No runtime, no adaptor, no tool registry, no budgets, no screening, no schema change, no behaviour change - nothing constructs a DreamSink yet.",
+  "details": [],
+  "limitations": []
+}

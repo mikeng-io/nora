@@ -204,6 +204,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
+from nora.domain.facts import Fact as Fact
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
@@ -1200,3 +1201,162 @@ class EngagePolicy(Protocol):
 @runtime_checkable
 class ContextAssembler(Protocol):
     async def assemble(self, *, request: EngagementRequest) -> TagContext: ...
+
+
+@dataclass(frozen=True)
+class Proposal:
+    """One validated result an adaptor wants written, with the provenance that
+    says what produced it.
+
+    `payload` is deliberately `object`: the runtime never names an adaptor's own
+    value type. A `DreamSink` implementation knows what it stores; the loop that
+    hands it a `Proposal` does not, and typing this as anything narrower would
+    put `FactVerdict` (or `Lexeme`, or an exchange pattern) in the runtime's
+    imports and make every new adaptor a change to the runtime.
+
+    Provenance rides HERE rather than inside `payload` for the same reason. Both
+    fields are the columns DEC-125/DEC-126 added to every adaptor-written table,
+    and DEC-128 fixes what `instruction_sha256` must be: the digest of what was
+    ACTUALLY SENT to the model, read per run, never cached at construction and
+    never covering text the model did not see.
+
+    `established_by` is the run that produced it — the handle a later
+    `supersede` names when it retires this row.
+    """
+
+    payload: object
+    instruction_sha256: str
+    model: str
+    established_by: str
+
+
+@runtime_checkable
+class DreamSink(Protocol):
+    """Where a Dreamer adaptor's validated result is written.
+
+    Two verbs, and deliberately no third. **There is no delete — not on this
+    port, and not on any implementation of it.** That is the enforcement, not a
+    convention: «invalidate, never delete» written as a type cannot be forgotten
+    by either side, whereas the same rule written in a docstring is remembered
+    until the night someone is tired. A single opaque `write(result)` is also
+    rejected — it cannot express supersede at all, so the distinction between
+    "this is new" and "this replaces that" would be lost at the boundary.
+
+    **The key is the adaptor's own.** Every existing adaptor's unit of work is a
+    `scope_id`; the fact adaptor's is a workspace (`Conversation.workspace`,
+    DEC-105). The port takes `key: str` and does not care which, because
+    `_dream_once`'s shared per-scope watermark cannot host a workspace-keyed
+    adaptor unchanged and the port must not bake in the assumption that it can.
+
+    **An empty `propose` is R-27's three states expressed in the port:**
+
+    - `propose(key, ())` — the adaptor ran and found nothing. `nothing_found`,
+      «I looked and there was nothing». It is a LEGAL call and the sink may act
+      on it: `LanguageConsolidator` rescores even for an empty batch, because
+      decay is time-driven and the 24h fire condition exists exactly to fade a
+      dormant room's lexicon. None of the five adaptor fields has a slot for
+      that, so this is where it lives.
+    - not calling `propose` at all — the adaptor could not check. `unavailable`,
+      «I could not check». An ERROR is never a PASS.
+
+    Collapsing those two, or treating an empty tuple as "nothing to do, skip the
+    call", silently drops decay and turns a wiring gap into a false negative.
+    """
+
+    async def propose(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> Sequence[str]:
+        """Write `proposals` under `key`; return the id of each row written, in
+        order.
+
+        Ids, not a count: `supersede` has to be able to NAME what a previous
+        `propose` produced, and a count cannot. An empty return is correct for
+        an empty `proposals`.
+
+        `now_ms` is on the verb rather than on `Proposal` because one tick
+        writes many proposals at a single instant — putting the clock on each
+        proposal invites a batch whose rows disagree about when the batch
+        happened.
+        """
+        ...
+
+    async def supersede(
+        self,
+        *,
+        key: str,
+        target: str,
+        replaced_by: str | None,
+        because: str,
+        source: str | None,
+        now_ms: int,
+    ) -> int:
+        """Retire `target`, naming WHAT replaced it and WHY. Returns rows
+        affected.
+
+        **`replaced_by` is the successor IN THIS TIER, and it is nullable at the
+        port on purpose.** Two tiers derived the need for it from different
+        specs — the fact tier, whose supersessions always have a successor
+        because a contradicted fact is replaced by the corrected one, and the
+        note tier, whose `retire` case has none (an anchor date passed; a dinner
+        that happened is not replaced by anything). A non-nullable field would
+        force the second tier to mint a placeholder id to satisfy the signature,
+        which is the "invent a value to satisfy a schema" move this codebase
+        forbids everywhere else.
+
+        So: **permissive at the port, strict at each implementation.** A sink
+        whose rows require a successor refuses the null itself — the fact
+        store's `(superseded_by is null) = (superseded_at is null)` biconditional
+        is a FACT-TIER rule enforced in its own CHECK, not a universal one. A
+        port that hard-codes one tier's cardinality is the same mistake as a
+        `payload` typed to one tier's value: the port stays general, and the sink
+        is where the type AND the cardinality are known again.
+
+        **`source` is a WARRANT** — a URL or equivalent pointer to evidence —
+        and never the id of a row in the tier. That separation is why
+        `replaced_by` exists rather than being smuggled through `source`: the
+        same field meaning "a citation" to one tier and "the surviving row" to
+        another is a collision where whoever writes first fixes it wrong for the
+        other.
+
+        `because` is required and stays narrow enough to be a constrained enum
+        on the implementing side (`stale|wrong|merged` in the fact tier) — which
+        it could not be if it had to carry a successor id as free text.
+        """
+        ...
+
+
+@runtime_checkable
+class FactReader(Protocol):
+    """The fact tier's own read half — never on `DreamSink`, which the
+    module's own three-word rule ("two verbs, deliberately no third") makes
+    load-bearing rather than negotiable. A read verb belongs to each tier's
+    own interface, not to the shared write boundary; this is the fact tier's,
+    the way `RoomLanguageReader` is the language tier's.
+
+    `standing_facts` is the one read on a tag's critical path — the facts a
+    turn actually renders — so it carries `RoomLanguageReader.room_language`'s
+    own guarantee: **NEVER raises.** An unavailable store degrades to `()`,
+    the same "silence beats a wrong answer" shape every other critical-path
+    read in this module uses; a caller on that path cannot afford one failed
+    read to cancel its siblings in a `asyncio.gather`.
+
+    `fact_by_id` is a history read — retrieving one fact by id, including a
+    superseded one, for whatever wants to show "what did we used to believe"
+    rather than "what do we believe now". It carries no such promise: it is
+    not on the hot path this module's other never-raises reads protect, and a
+    caller that asks for a specific id by name can be trusted to handle not
+    getting an answer.
+    """
+
+    async def standing_facts(
+        self, *, workspace: str, subject_ids: Sequence[str], limit: int,
+    ) -> tuple[Fact, ...]:
+        """The standing (non-superseded) facts for `subject_ids` in
+        `workspace`, most recent first, capped at `limit`. Never raises."""
+        ...
+
+    async def fact_by_id(self, *, workspace: str, fact_id: str) -> Fact | None:
+        """One fact by id, standing or superseded. `None` if it does not
+        exist in `workspace` — never a proxy for "the store could not be
+        reached"."""
+        ...

@@ -312,9 +312,42 @@ headers_env = "LANGFUSE_OTLP_HEADERS"                      # env var NAME holdin
 # flash" was confounded single-sample noise. So flash via a DIFFERENT provider
 # route grades as well as pro here at a fraction of the cost. Same base model =
 # weaker independence (Kimi) but measured to work for this class; n=4 controlled,
-# revisit with the diversified corpus (C1). Revert to deepseek-v4-pro if a larger
-# run shows a gap.
-judge_model = "deepseek/deepseek-v4-flash"
+# revisit with the diversified corpus (C1).
+#
+# 2026-08-20 (operator: "use ollama cloud"): moved off the `deepseek/` direct
+# route, which returns HTTP 402 «Insufficient Balance» through OmniRoute — so
+# `--suite adversarial` was failing as a BILLING ERROR rather than as a verdict,
+# which is an ERROR reading as a not-run, not as a PASS, but is equally not a
+# measurement. `ollamacloud/deepseek-v4-pro:0813` was verified reachable and
+# grading on the same gateway the same day. It still clears the runner's guard
+# (llm.model is `ollamacloud/deepseek-v4-flash`; the ids do not string-match) and
+# it matches `evals.judge.JUDGE_MODEL_TIER`'s documented intent ("deep" =
+# deepseek-v4-pro). Note `ollamacloud/kimi-k3` is NOT a candidate: it is
+# extra-usage-only on this plan and 402s too.
+#
+# What this does NOT fix, measured the same day and recorded so it is not
+# mistaken for a fix: the judge's blindness to R-53 (a source that does not
+# mention something has not denied it) is a property of the RUBRIC, not of the
+# judge tier. Both flash and pro pass a reply that reads a scoped source's
+# silence as a denial — pro at confidence 0.95, quoting "the search result says
+# four coloured keys and no black one" of a search result that says no such
+# thing. See `docs/superpowers/specs/2026-08-20-fact-tier-design.md` §9.0.
+#
+# USAGE DISCIPLINE (operator, 2026-08-20: "do NOT blast it, since the ollama
+# cloud is subscription - usage base"). Cold cost per suite, measured:
+#   --suite adversarial : 10 replies (flash) + 30 judge calls (THIS model) = 40
+#                         — and 0 on an unchanged re-run, because B1's verdict
+#                         cache makes a case's verdict a pure function of its
+#                         content + doctrine + models + samples. Do not reach for
+#                         `--force`/`--no-cache` out of habit; that is the whole
+#                         saving.
+#   --suite journeys    : 8 journeys x 9 samples = 72 calls, NO cache by design
+#                         (routing is stochastic and the point is what the CURRENT
+#                         model does). This is the expensive suite — but it runs on
+#                         llm.model, never on this one.
+# So this model is only ever the judge half. Raising judge_samples multiplies it
+# directly.
+judge_model = "ollamacloud/deepseek-v4-pro:0813"
 # Majority-of-k judging (A2): single-sample detection is noisy (caught 1/3 vs
 # 3/3 across runs), so the gate binds the MAJORITY of 3 grades. Odd so a majority
 # always exists.
@@ -625,6 +658,17 @@ verify_known_entities = true
 # verify_max_candidates = 10
 # exchange_model = "ollamacloud/deepseek-v4-flash"
 # max_rendered_exchanges = 4
+
+[facts]
+# The fact tier's gate (docs/superpowers/specs/2026-08-20-fact-tier-design.md).
+# Nothing writes a fact yet — the schema and the <facts> block ship dormant —
+# so this section is a flag and three bounds for a future adaptor, not a
+# running subsystem today. Stays off with this first deployment of the
+# schema, the same "off at first" period [language] shipped in.
+enabled = false
+# max_adjudications_per_tick = 10
+# max_rendered_facts = 8
+# retention_days = 180
 
 [tools.mcp.pulse]
 enabled = true

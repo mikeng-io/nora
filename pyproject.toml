@@ -232,6 +232,7 @@ dev = [
     "pytest-aiohttp>=1.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.6",
     "testcontainers[postgres]>=4.15.0",
     "tomli-w>=1.0",
