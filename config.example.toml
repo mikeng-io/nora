@@ -154,7 +154,9 @@ temperature = 0.7
 # The failure mode to watch is the one that table names: at `high`, 1/5 auto
 # tool-choice and 15 no_send_call journeys — her ending a turn without calling
 # `send_reply` at all. Revert to `low` if silent turns show up in the traces.
-reasoning_effort = "high"
+#
+# `high` → `low` (operator, 2026-08-21).
+reasoning_effort = "low"
 # 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container,
 # and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
 # so every real image timed out while the tiny probe PNG passed.
@@ -227,6 +229,10 @@ enabled = true
 max_depth = 16
 
 [engagement.trigger]
+# Set false to disable the trigger PHRASE only — a real @mention or a reply to
+# one of her own messages still engage her either way (MentionPolicy/
+# ReplyToNoraPolicy, unaffected by this flag).
+enabled = true
 text = "nora.000"
 min_interval_seconds = 5
 
@@ -610,8 +616,8 @@ provider = "hko"           # the WeatherProvider adapter; "hko" is the only one 
 # (present-but-inert; nothing reads it yet).
 [speech.stt]
 enabled = false
-# endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
-# language = "yue"               # FunASR/SenseVoice's own LID code, not BCP-47
+endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
+language = "yue"               # FunASR/SenseVoice's own LID code, not BCP-47
 [speech.tts]
 enabled = false
 # provider = ""
