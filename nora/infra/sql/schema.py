@@ -1530,3 +1530,35 @@ IDX_NOTE_REVISION_BODY_TRGM = sa.Index(
     "idx_note_revision_body_trgm", NOTE_REVISION.c.body,
     postgresql_using="gin", postgresql_ops={"body": "gin_trgm_ops"},
 )
+
+# `tag_trace` — one row per completed tag turn, captured whole (spec §6.1,
+# §14.6). Write-once and archival: `messages`/`transcript` are JSONB rather
+# than normalised into child tables, matching `fact_candidate.observed_in`'s
+# own JSONB-array precedent — this table is read back whole by
+# `SqlTagTraceStore.recent`, never queried by a field inside either blob.
+TAG_TRACE = sa.Table(
+    "tag_trace",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("tag_id", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("messages", pg.JSONB, nullable=False),
+    sa.Column("transcript", pg.JSONB, nullable=False),
+    sa.Column("outcome", sa.Text, nullable=False),
+    sa.Column("created_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        "outcome in ('send_reply','recovered','silent','vetoed','timeout',"
+        "'llm_error')",
+        name="tag_trace_outcome_check",
+    ),
+)
+
+#: The one read this table exists to serve: `SqlTagTraceStore.recent`'s
+#: newest-first scan within one conversation — the same
+#: `(scope_column, created_at)` shape `idx_note_revision_note_id`'s siblings
+#: use for their own bounded per-scope reads.
+IDX_TAG_TRACE_CONVERSATION_CREATED = sa.Index(
+    "idx_tag_trace_conversation_created",
+    TAG_TRACE.c.conversation_id, TAG_TRACE.c.created_at,
+)
