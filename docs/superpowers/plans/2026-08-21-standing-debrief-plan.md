@@ -60,6 +60,75 @@ succeeded.
 **Gate:** a turn's reasoning is demonstrably captured and stored, with a
 red-on-revert test that deletes the reasoning blocks and fails.
 
+## Phase 1 status (2026-08-22): COMPLETE
+
+All 7 tasks done, reviewed clean, `make gate` green (4309 passed), single
+migration head (`0028_tag_trace`). Branch `standing-debrief`, worktree
+`/tmp/wt-standing-debrief`, head `c1bc2f4`. Not yet merged.
+
+## Phase 2 blockers, found 2026-08-22 — read before writing any Phase 2 code
+
+Two findings from live investigation (probes + a real Langfuse trace +
+cross-session sync with nora-cc, who was independently debugging the
+Dreamer's stuck `fact-candidates` adaptor at the same time) change how Phase
+2 must be built. Neither is closed on trust — see the evidence cited.
+
+**1. `tool_choice="required"` is not reliably enforced by the current
+OmniRoute/Ollama Cloud route.** A live probe against the real doctrine and
+`send_reply` schema (not a hand-rolled stand-in) got 2/6 (33%) compliance
+under `"required"`, contradicting `nora/agent/factory.py`'s
+`create_model_provider` docstring claim ("produces the call every time").
+**Caveat, stated plainly**: that probe made a single completion call, not
+the real multi-turn Strands `Agent` loop — it is not conclusive on its own,
+and production's observed reliability (Nora replies essentially every turn)
+is the stronger, longer-running signal. Before drawing any conclusion,
+re-test properly using `evals.harness.run_case(case, live=True)`, which
+already drives the REAL pipeline end to end (real doctrine, real tool
+registry, real multi-turn loop) — not another single-shot probe. This
+matters for Phase 2 because the debrief's own reliability will face the same
+question and deserves the same properly-instrumented answer, not an assumed
+one.
+
+**2. The debrief must NOT be built as a tools-less Strands `Agent`
+(`create_dream_agent`-style construction) — build it as a plain
+`chat.completions.create` call instead.** Grounded in a real production
+incident: the Dreamer's `fact-candidates` adaptor (`tools=frozenset()`) got
+stuck in a `MaxTokensReachedException` loop on one scope
+(`docs/superpowers/specs` cross-session trail; trace
+`b782c5afba571f7ec47cf706eb6ebe18`, 2026-08-21, verified via the real
+Langfuse API: input 3201 tokens / output 4096 tokens, mid-generation cut).
+Root cause, confirmed with nora-cc: a Strands `Agent` built with `tools=[]`
+has no way to reach its own stopping condition — the Dreamer's loop ends
+when "the model declines to call anything," which is unreachable when there
+is nothing it could call — so it deliberates into the void until the output
+budget runs out. §9's debrief design is *also* toolless ("producing all
+three outputs from one call"), so building it the same way
+(`create_dream_agent`) would inherit the identical structural defect.
+
+The fix, three parts, all before Phase 2 ships:
+- Build the debrief as a raw `chat.completions.create` call, matching the
+  OLD one-shot `_LanguageModelClient` pattern
+  (`nora/app/composition.py:150-204`) — not a Strands `Agent` construction.
+- Set `response_format={"type":"json_object"}` on that call — the wire-level
+  lever `_LanguageModelClient` already uses (added because prompt-only JSON
+  enforcement was proven insufficient once before) and that the Dreamer's
+  agentic path never sets at all.
+- Check `finish_reason` explicitly; map `"length"` (the raw-completion
+  equivalent of `MaxTokensReachedException` — it doesn't raise, it silently
+  truncates) to `unavailable`. Never let a truncated body reach the JSON
+  parser, which could partially or wrongly succeed — the R-27 substitution
+  this whole architecture exists to prevent, one layer down.
+
+**Why Standing/debrief is structurally safer than the Dreamer's failure, and
+how to keep it that way**: the Dreamer's bug is a *ratchet* — a persistent
+watermark held on failure, so a stuck batch only grows and never recovers.
+The debrief is per-turn (one `TagTrace` in, one debrief out), which has no
+such accumulating cursor. **This safety only holds if Phase 2 stays
+per-turn.** If any later refinement makes the debrief read "all traces since
+X" and hold X on a failure, the same ratchet reappears. Keep it per-turn, or
+add an explicit skip-with-a-counter so a permanently-too-large input cannot
+block forward progress forever.
+
 ## Phase 2 — the `debrief` stage and `Standing`
 
 | # | task | notes |
