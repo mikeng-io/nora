@@ -25,6 +25,7 @@ from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessag
 from ..domain.ports import OutboundAttachment, SendResult, Styled
 from ..obs.metrics import Metrics
 from . import tool_choice
+from .call_ledger import CallLedger
 from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
@@ -630,12 +631,12 @@ class ReplyGuard(HookProvider):
         self._terminal = frozenset(terminal)
         self._deliverer = deliverer
         self._metrics = metrics
-        self.counts: dict[str, int] = dict.fromkeys(self._budgets, 0)
-        # Calls ADMITTED but not yet finished — see `reserve`. Separate from
-        # `counts` because a call that never runs must consume no budget
-        # (DEC-33) while still holding the ceiling closed while it is in
-        # flight.
-        self._in_flight: dict[str, int] = {}
+        # Completed calls AND admitted-but-unfinished ones, in one object
+        # (`nora.agent.call_ledger`) — the whole of DEC-33's reservation, held
+        # rather than re-derived so `DreamGuard` enforces the identical ceiling
+        # with the identical code. That module's docstring carries the live
+        # trace this shape exists because of.
+        self._ledger = CallLedger(self._budgets)
         # Set by `_after_tool` when a terminal verb has actually RUN — not
         # when one was merely attempted. See `_before_model`.
         self._spoke = False
@@ -691,40 +692,24 @@ class ReplyGuard(HookProvider):
         log.warning("guard veto %s: %s", rule, message)
         return message
 
+    @property
+    def counts(self) -> dict[str, int]:
+        """Calls that COMPLETED this tag, per tool. The ledger's own dict, read
+        by R-45's nudge here and by the guard test files."""
+        return self._ledger.counts
+
     def record(self, tool_name: str) -> None:
-        if tool_name in self.counts:
-            self.counts[tool_name] += 1
+        self._ledger.record(tool_name)
 
     def reserve(self, tool_name: str) -> None:
         """Mark a call ADMITTED BUT NOT YET FINISHED, so it counts against the
-        ceiling while it runs.
-
-        R-7's budget check reads `counts`, which `record` only increments in
-        `AfterToolCallEvent`. A model that emits its tool calls as a PARALLEL
-        BATCH is therefore asked about every call in the batch before any of
-        them completes — so all of them see the pre-batch count, all pass, and
-        the ceiling holds only BETWEEN model turns, not within one.
-
-        Found in a live Langfuse trace (2026-08-13): nine `place_info` calls
-        against a budget of four, in two batches, which carried the turn to
-        148k input tokens against a 128k ceiling. It ended
-        `limit_total_tokens` with an empty message — so the group heard
-        nothing, which is R-23's shape and the worst way for a budget to fail.
-
-        Separate from `counts` rather than folded into it because the two mean
-        different things and DEC-33 depends on the difference: a call that is
-        vetoed or never runs must consume no budget, so a reservation is
-        RELEASED on those paths while `counts` is only ever incremented by a
-        call that genuinely completed.
-        """
-        if tool_name in self.counts:
-            self._in_flight[tool_name] = self._in_flight.get(tool_name, 0) + 1
+        ceiling while it runs — `nora.agent.call_ledger` holds the mechanism
+        and the reasoning."""
+        self._ledger.reserve(tool_name)
 
     def release(self, tool_name: str) -> None:
-        """Drop a reservation, whatever the call's outcome. Idempotent below
-        zero because a hook that fires twice must not lend budget back."""
-        if self._in_flight.get(tool_name):
-            self._in_flight[tool_name] -= 1
+        """Drop a reservation, whatever the call's outcome."""
+        self._ledger.release(tool_name)
 
     def evaluate(self, tool_name: str, tool_input: dict) -> str | None:
         if tool_name not in self._budgets:
@@ -783,10 +768,10 @@ class ReplyGuard(HookProvider):
         # and the latch below is what refuses the second message once it is
         # raised. Both halves are pinned in `tests/test_guards_replyguard.py`,
         # under "the message cap lives in the budget, not in R-2's latch".
-        # `counts` (finished) PLUS `_in_flight` (admitted, still running). The
-        # second term is what makes the ceiling hold inside one model turn's
-        # parallel batch — see `reserve`.
-        if self.counts[tool_name] + self._in_flight.get(tool_name, 0) >= self._budgets[tool_name]:
+        # Finished PLUS admitted-and-still-running. The second term is what
+        # makes the ceiling hold inside one model turn's parallel batch — see
+        # `nora.agent.call_ledger`.
+        if self._ledger.at_ceiling(tool_name):
             if tool_name == "send_reply":
                 # Labelled R-2 although the BUDGET is what refused it: the
                 # model-facing sentence is the same either way, and the rule an
@@ -814,7 +799,7 @@ class ReplyGuard(HookProvider):
             # `counts` alone. Vetoing the fifth call of a parallel batch while
             # saying "you already called it 0 time(s)" is a sentence that
             # contradicts itself, and the model reads it as a reason to retry.
-            spent = self.counts[tool_name] + self._in_flight.get(tool_name, 0)
+            spent = self._ledger.spent(tool_name)
             return self._veto(
                 "R-7", f"You already called {tool_name} "
                        f"{spent} time(s) and have that context. "
