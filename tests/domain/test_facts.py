@@ -331,13 +331,43 @@ def test_a_fact_premise_edge_names_two_distinct_facts():
     assert edge.fact_id != edge.premise_fact_id
 
 
+def _candidate(**overrides) -> FactCandidate:
+    kwargs = {
+        "id": "c1", "workspace": "nora", "subject_id": "e1", "predicate": "has",
+        "object": "black_tower", "first_seen_at": 1, "last_seen_at": 2,
+        "occurrence_count": 1, "observed_in": ("signal:abc",),
+        "status": "pending", "established_by": "tag-1",
+        "instruction_sha256": "a" * 64, "model": "ollamacloud/deepseek-v4-flash",
+    }
+    return FactCandidate(**{**kwargs, **overrides})
+
+
 def test_candidate_and_entity_carry_their_workspace():
-    c = FactCandidate(
-        id="c1", workspace="nora", subject_id="e1", predicate="has",
-        object="black_tower", first_seen_at=1, last_seen_at=2,
-        occurrence_count=1, observed_in=("signal:abc",), status="pending",
-        established_by="tag-1",
-    )
+    c = _candidate()
     assert c.workspace == "nora"
     assert FactEntity(id="e1", workspace="nora", canonical_name="Big Walk",
                       aliases=("big walk", "大步行"), created_at=1).workspace == "nora"
+
+
+def test_a_candidate_requires_a_full_instruction_digest():
+    """Migration 0027 made `fact_candidate.instruction_sha256` NOT NULL with
+    `fact_candidate_instruction_sha256_check`; this is the domain half, so
+    `InMemoryFactCandidateStore` refuses exactly what Postgres would rather
+    than accepting a row the SQL store cannot write."""
+    with pytest.raises(ValueError, match="instruction_sha256"):
+        _candidate(instruction_sha256="deadbeef")
+
+
+def test_a_candidate_requires_a_hex_instruction_digest():
+    """Right length, wrong alphabet — the case a `len(...) == 64` check would
+    wave through and `~ '^[0-9a-f]{64}$'` would then refuse at the column."""
+    with pytest.raises(ValueError, match="instruction_sha256"):
+        _candidate(instruction_sha256="z" * 64)
+
+
+def test_a_candidate_requires_a_named_model():
+    """`fact_candidate_model_is_named_check` is `length(btrim(model)) > 0`:
+    `'   '` is non-NULL to every query asking which rows are attributable, so
+    a blank stamp is a false `ok`, not a missing value."""
+    with pytest.raises(ValueError, match="model"):
+        _candidate(model="   ")

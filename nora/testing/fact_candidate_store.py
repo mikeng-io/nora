@@ -16,7 +16,9 @@ easy to get quietly wrong:
 - upsert on the triple `(workspace, subject_id, predicate, object)`, merging
   `observed_in` — the turns the claim was asserted in, from
   `CandidateClaim.message_id` — without duplicating, and leaving
-  `status`/`attempts`/`first_seen_at` alone;
+  `status`/`attempts`/`first_seen_at` alone, along with the provenance trio
+  (`established_by`/`instruction_sha256`/`model`, migration 0027) which names
+  the run that ESTABLISHED the row and which a later sighting did not;
 - `supersede`'s three refusals (`because` must be terminal, `replaced_by` and
   `source` must be `None`) and its `pending`-only, retain-the-row update;
 - `pending`'s two drops, its contradiction-first ordering, and its
@@ -154,6 +156,12 @@ class InMemoryFactCandidateStore:
                     observed_in=(seen_in,),
                     status="pending",
                     established_by=p.established_by,
+                    # The DEC-125/DEC-126 pair, from the `Proposal` — migration
+                    # 0027's columns. Established once and never moved by a
+                    # re-sighting, exactly as the SQL store's upsert leaves
+                    # them out of its `set_`.
+                    instruction_sha256=p.instruction_sha256,
+                    model=p.model,
                 )
                 self._by_triple[triple] = fresh
                 ids.append(fresh.id)

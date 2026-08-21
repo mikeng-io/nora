@@ -50,10 +50,14 @@ would disagree the first time the same claim was sighted twice),
 `first_seen_at`/`last_seen_at` come from `now_ms` (the verb's clock, so one
 tick's rows agree about when the tick happened), `occurrence_count` is what
 the upsert computes, `status` is always `pending` on a write, `attempts` and
-`last_adjudicated_at` are moved only by `supersede`, and `established_by`
-comes from the **`Proposal`** — the run that produced a row is provenance only
-the runtime knows, which is why it rides on `Proposal` rather than inside
-`payload` at all. See `CandidateClaim`'s own docstring.
+`last_adjudicated_at` are moved only by `supersede`, and `established_by`,
+`instruction_sha256` and `model` come from the **`Proposal`** — what produced
+a row is provenance only the runtime knows, which is why all three ride on
+`Proposal` rather than inside `payload` at all. See `CandidateClaim`'s own
+docstring. (The last two landed 2026-08-21 in migration `0027`, found by
+joining `tests/contract/test_dream_sink_contract.py`: this store was dropping
+the DEC-125/DEC-126 pair every `Proposal` already carried, which is provenance
+thrown away at the one place it is free to keep.)
 
 **`observed_in` holds the MESSAGE the claim was seen in, not the key** (flagged
 2026-08-21, and the one place this store departs from the instruction it was
@@ -134,6 +138,7 @@ def _row_to_candidate(r: Row[Any]) -> FactCandidate:
         last_seen_at=r.last_seen_at, occurrence_count=r.occurrence_count,
         observed_in=tuple(r.observed_in), status=r.status,
         established_by=r.established_by,
+        instruction_sha256=r.instruction_sha256, model=r.model,
         last_adjudicated_at=r.last_adjudicated_at, attempts=r.attempts,
     )
 
@@ -194,6 +199,8 @@ class SqlFactCandidateStore:
                 "status": "pending",
                 "attempts": 0,
                 "established_by": p.established_by,
+                "instruction_sha256": p.instruction_sha256,
+                "model": p.model,
             })
         if not rows:
             return ()
@@ -220,12 +227,15 @@ class SqlFactCandidateStore:
                             "except select unnest(fact_candidate.observed_in) "
                             "order by 1)"
                         ),
-                        # status / attempts / first_seen_at / established_by
-                        # are deliberately absent: a re-sighting is not an
-                        # adjudication, and resetting `status` here would
-                        # hand a settled candidate back to `pending()` every
-                        # time somebody said the same thing again — the
-                        # unbounded re-adjudication §5.1 exists to stop.
+                        # status / attempts / first_seen_at / established_by /
+                        # instruction_sha256 / model are deliberately absent:
+                        # a re-sighting is not an adjudication, and resetting
+                        # `status` here would hand a settled candidate back to
+                        # `pending()` every time somebody said the same thing
+                        # again — the unbounded re-adjudication §5.1 exists to
+                        # stop. The provenance trio is left alone for the
+                        # matching reason: it says which run ESTABLISHED this
+                        # row, and a later sighting did not establish it.
                     },
                 ).returning(FACT_CANDIDATE.c.id)
                 ids.append((await conn.execute(upsert)).scalar_one())
