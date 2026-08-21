@@ -135,6 +135,32 @@ class FactEntity:
 
 
 @dataclass(frozen=True)
+class CandidateClaim:
+    """What the extraction adaptor produces: one claim somebody asserted, and
+    the message it was asserted in.
+
+    **NOT a `FactCandidate`** — that is the ROW, with an id, timestamps, an
+    occurrence count and a status, none of which an adaptor can know. This is
+    the half the model actually returns. An adaptor handed the row type would
+    have to invent a uuid and two timestamps it has no clock for, purely to
+    satisfy fields the store then discards, which is the
+    "invent-a-value-to-satisfy-a-schema" move this codebase refuses everywhere
+    else — and it would make the payload lie about where those values came
+    from.
+
+    So the candidate tier is deliberately ASYMMETRIC: a narrow claim goes in
+    through `DreamSink.propose`, and the full `FactCandidate` row comes back
+    out of `FactCandidateReader.pending`. The next person will reach for the
+    row type on both sides; the two are genuinely different things.
+    """
+
+    subject: str
+    predicate: str
+    object: str
+    message_id: int
+
+
+@dataclass(frozen=True)
 class FactCandidate:
     """An extracted claim awaiting — or having failed — adjudication.
 
