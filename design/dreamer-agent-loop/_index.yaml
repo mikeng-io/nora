@@ -31,6 +31,7 @@ members:
   - 11-doctrine.md
   - 12-migration-and-governance.md
   - 13-open-items.md
+  - 14-roadmap.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -62,6 +63,8 @@ edges:
   - {src: 12-migration-and-governance, dst: 07-room-access, rel: sequences, provenance: asserted}
   - {src: 12-migration-and-governance, dst: 11-doctrine, rel: sequences, provenance: asserted}
   - {src: 13-open-items, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 14-roadmap, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 14-roadmap, dst: 13-open-items, rel: relates_to, provenance: asserted}
 scope:
   v1:
     - "The loop is the deliverable: an adaptor with no tools is a completion, not an agent"
