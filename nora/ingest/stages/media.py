@@ -61,7 +61,7 @@ from nora.domain.media import (
     sanitize_description,
 )
 from nora.domain.models import NormalizedMessage
-from nora.domain.ports import BlobStore, MediaSource
+from nora.domain.ports import BlobStore, MediaSource, Transcriber
 from nora.ingest.exif import strip_exif
 from nora.ingest.stickers import StickerReader
 from nora.platform.registry import MediaSourceRegistry
@@ -76,6 +76,8 @@ async def run(
     blobs: BlobStore | None,
     metrics: Any,
     stickers: StickerReader | None = None,
+    transcriber: Transcriber | None = None,
+    language: str = "",
     max_description_chars: int = 200,
 ) -> NormalizedMessage:
     """Return `message` with every attachment Nora could copy in her custody.
@@ -93,6 +95,15 @@ async def run(
     When custody IS wired but `sources` brought no fetcher for THIS message's
     platform, that is a different operator problem — `status="not_supported"`
     — and is resolved once, here, rather than re-derived per attachment.
+
+    `transcriber` is the `[speech.stt]` lane: when present AND a ref is a
+    voice note, the custody stage transcribes the bytes INLINE (before the
+    audit write) and the transcript rides in the body beside the handle —
+    `[voice note #hex: 喂你今日...]`. A voice note is conversation CONTENT,
+    not an attachment description; a song is an audio file and stays on the
+    bare-handle path. A failed transcription is recorded with the bare handle
+    (a note is still a note), never a dropped message and never a guessed
+    transcript (R-27).
     """
     if not message.media:
         return message
@@ -144,6 +155,40 @@ async def run(
             blob = await _take(ref=ref, source=source, blobs=blobs, metrics=metrics,
                                platform=message.platform)
             raw = ""
+            # VOICE NOTES ONLY. A voice note is conversation CONTENT — the
+            # custody stage transcribes it inline (before the audit write) so
+            # Nora sees the words, not a bare handle. A song is an audio file
+            # and stays on the pull-based path; this gate is the parser's
+            # `voiceNote` flag, NOT the MIME top-level type (spec §4.2, and
+            # `nora/domain/media.py` — voice note is a SEPARATE axis from
+            # audio/*). The transcript rides the same `descriptions` slot a
+            # sticker description would, so it inherits `sanitize_description`
+            # and the R-18 `scan_identifiers` egress guard below — a
+            # transcript is a member's words verbatim, with higher stakes than
+            # model-written prose.
+            if blob is not None and ref.voice_note and transcriber is not None:
+                data = await blobs.get(key=blob.sha256)
+                if data is None:
+                    metrics.inc(
+                        "nora_speech_transcriptions_total",
+                        platform=message.platform, status="blob_missing",
+                    )
+                else:
+                    stt_outcome = await transcriber.transcribe(
+                        data=data, media_type=blob.media_type, language=language,
+                    )
+                    if stt_outcome.available:
+                        raw = stt_outcome.text
+                        metrics.inc(
+                            "nora_speech_transcriptions_total",
+                            platform=message.platform, status="ok",
+                        )
+                    else:
+                        metrics.inc(
+                            "nora_speech_transcriptions_total",
+                            platform=message.platform,
+                            status=stt_outcome.reason or "unavailable",
+                        )
         # A gap is a real position, not a skipped one: handles are matched to
         # placeholders by INDEX, so a failed attachment must contribute an
         # empty handle rather than shifting every later one onto the wrong

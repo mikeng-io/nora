@@ -852,11 +852,27 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             model=cfg.media.vision_model,
             metrics=metrics,
         )
+    # `[speech.stt]`'s transcriber: wired ONLY when enabled — the same
+    # inert-ship rule as `stickers`. Off leaves the ingest stage without a
+    # transcriber and a voice note is recorded with a bare handle, exactly as
+    # before speech existed. On, the local `stt` service transcribes voice
+    # notes inline during custody (audio stays on the box — the endpoint is
+    # reachable only on the private `nora` network).
+    transcriber = None
+    if cfg.speech.stt.enabled:
+        from nora.infra.speech import SenseVoiceTranscriber
+        transcriber = SenseVoiceTranscriber(
+            endpoint=cfg.speech.stt.endpoint,
+            language=cfg.speech.stt.language,
+            timeout_seconds=cfg.speech.stt.timeout_seconds,
+        )
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
         policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
         media_sources=media_sources, blobs=blobs,
-        stickers=sticker_reader, max_description_chars=cfg.media.sticker_description_max_chars,
+        stickers=sticker_reader, transcriber=transcriber,
+        language=cfg.speech.stt.language,
+        max_description_chars=cfg.media.sticker_description_max_chars,
     )
     # `web_search`/`web_fetch` (Tavily, DEC-73/DEC-116) are wired ONLY when
     # `[search] enabled` AND a key is present — the `route`-keyless gate. Off (or

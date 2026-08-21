@@ -902,10 +902,65 @@ class WeatherConfig(BaseModel):
     timeout_seconds: float = Field(default=8.0, gt=0)
 
 
+class SpeechSttConfig(BaseModel):
+    """Local speech-to-text: which endpoint, which language, and a timeout.
+
+    `[speech.stt]` is a first-class `[speech]` child (not a reuse of
+    `[media.describe.audio]` — a voice note is conversation content, not an
+    attachment description; see the 2026-08-21 STT infrastructure spec §0).
+
+    Optional, defaulted, and INERT by default — the `[search]`/`[weather]`
+    shape: `enabled = false` means Nora never calls out, and a config.toml
+    written before this existed keeps loading (`extra="forbid"` makes that a
+    real constraint). When enabled, the voice-note ingest path calls
+    `endpoint` with the OpenAI-compatible `/v1/audio/transcriptions` contract;
+    `language` hints the model (BCP-47, e.g. `yue-HK`); `timeout_seconds`
+    bounds ONE call (the whole ingest path waits for it — see the stage
+    docstring).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    endpoint: str = "http://stt:8000"
+    language: str = "yue-HK"
+    timeout_seconds: float = Field(default=30.0, gt=0)
+
+
+class SpeechTtsConfig(BaseModel):
+    """`[speech.tts]` — outbound speech, deliberately deferred.
+
+    Present so the `[speech]` shape is stable and a later part lands without a
+    schema migration. Inert (`enabled = false`) — nothing reads this yet, and
+    the deploy/stt service does not do TTS. No provider is chosen or
+    committed here (MiniMax / edge-tts / xAI undecided; operator deferred the
+    TTS part as more complex).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    provider: str = ""
+    voice: str = ""
+
+
+class SpeechConfig(BaseModel):
+    """`[speech]` — Nora's voice capability, STT now and TTS later.
+
+    Optional, defaulted, and INERT by default — the same convention as
+    `[presence]`/`[search]`/`[weather]`/`[compute]`: a config.toml written
+    before speech existed keeps loading, and nothing turns itself on because a
+    section is missing.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    stt: SpeechSttConfig = SpeechSttConfig()
+    tts: SpeechTtsConfig = SpeechTtsConfig()
+
+
 class HeartbeatConfig(BaseModel):
     """The background tick that fires due reminders (`nora.app.heartbeat`).
-
-    Optional, defaulted, and INERT by default like `[presence]` and `[search]`:
     this is Nora's first unprompted-speech path, so it must never turn itself on
     because a section is missing from a config.toml written before it existed.
 
@@ -1510,6 +1565,11 @@ class Config(BaseModel):
     # Optional and defaulted — see `WeatherConfig`. Keyless (HK Observatory), so
     # safe to enable; ships off in the example, on in this deployment (DEC-70).
     weather: WeatherConfig = WeatherConfig()
+    # Optional and defaulted — see `SpeechConfig`. Ships INERT (`enabled =
+    # false`); off, Nora neither transcribes voice notes at ingest nor speaks
+    # outbound (TTS deferred). On, `[speech.stt]` calls the local SenseVoice
+    # endpoint (`stt:8000`) during the voice-note custody stage.
+    speech: SpeechConfig = SpeechConfig()
     # Optional and defaulted — see `HeartbeatConfig`/`RemindersConfig`. The tick
     # ships INERT (`enabled = false`); the caps apply the moment a reminder can
     # be created, whether or not anything is firing them.
