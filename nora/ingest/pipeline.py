@@ -38,6 +38,7 @@ from nora.domain.ports import (
     EngagePolicy,
     MemoryStore,
     RecordStore,
+    Transcriber,
 )
 from nora.ingest.stickers import StickerReader
 from nora.persons import Persons
@@ -74,6 +75,8 @@ class IngestPipeline:
         media_sources: MediaSourceRegistry | None = None,
         blobs: BlobStore | None = None,
         stickers: StickerReader | None = None,
+        transcriber: Transcriber | None = None,
+        language: str = "",
         max_description_chars: int = 200,
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
@@ -93,6 +96,13 @@ class IngestPipeline:
         behaves exactly like custody-without-interpretation (a handle, no
         description), never like a failure. Only stickers are ever read this
         way — see `nora/ingest/stages/media.py`'s docstring for why.
+
+        `transcriber` is `[speech.stt]`'s wiring state, the same shape as
+        `stickers`: `None` (deployment default) records a voice note with a
+        bare handle, exactly as before speech existed. When supplied, voice
+        notes are transcribed inline during custody and their transcript rides
+        the body beside the handle. `language` is the BCP-47 hint forwarded to
+        the transcriber.
         """
         self._audit = audit
         self._memory = memory
@@ -104,6 +114,8 @@ class IngestPipeline:
         self._media_sources = media_sources
         self._blobs = blobs
         self._stickers = stickers
+        self._transcriber = transcriber
+        self._language = language
         self._max_description_chars = max_description_chars
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
@@ -135,7 +147,8 @@ class IngestPipeline:
         # why it is inline rather than spawned like `memory_feed`.
         message = await media_stage.run(
             message=message, sources=self._media_sources, blobs=self._blobs, metrics=m,
-            stickers=self._stickers, max_description_chars=self._max_description_chars,
+            stickers=self._stickers, transcriber=self._transcriber,
+            language=self._language, max_description_chars=self._max_description_chars,
         )
         recorded = await audit_stage.run(
             message=message, audit=self._audit, metrics=m, person=person

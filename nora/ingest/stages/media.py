@@ -34,14 +34,17 @@ handle — and increments `nora_media_custody_total{status=...}` with the reason
 The message is still recorded, in full, with its envelope. Nothing is silent
 and nothing is claimed.
 
-**Bytes reach a prompt for STICKERS ONLY, and nothing else.** This stage still
-produces a type and a key for every attachment — Nora cannot read an arbitrary
-image, voice note or video, and this does not change that. A sticker is
-different: it is published pack art, identical for everyone who has the pack,
-not a photograph of somebody's life, so `stickers` (when wired) hands its bytes
-to one vision call and the description rides in the body beside the handle.
-See `nora/ingest/stickers.py` for the dedup ladder that makes that call cheap
-and the reasoning behind restricting it to stickers alone.
+**Bytes reach a prompt for STICKERS and VOICE NOTES ONLY, and nothing else.**
+This stage still produces a type and a key for every attachment — Nora cannot
+read an arbitrary image or video, and this does not change that. A sticker is
+published pack art, identical for everyone who has the pack, not a photograph
+of somebody's life, so `stickers` (when wired) hands its bytes to one vision
+call and the description rides in the body beside the handle. A voice note is
+conversation content, not an attachment description, so `transcriber` (when
+wired) hands its bytes to local STT the same way — see `[speech.stt]` and
+`nora/infra/speech.py`. See `nora/ingest/stickers.py` for the dedup ladder
+that makes the sticker call cheap and the reasoning behind restricting vision
+to stickers alone.
 """
 
 from __future__ import annotations
@@ -61,7 +64,7 @@ from nora.domain.media import (
     sanitize_description,
 )
 from nora.domain.models import NormalizedMessage
-from nora.domain.ports import BlobStore, MediaSource
+from nora.domain.ports import BlobStore, MediaSource, Transcriber
 from nora.ingest.exif import strip_exif
 from nora.ingest.stickers import StickerReader
 from nora.platform.registry import MediaSourceRegistry
@@ -76,6 +79,8 @@ async def run(
     blobs: BlobStore | None,
     metrics: Any,
     stickers: StickerReader | None = None,
+    transcriber: Transcriber | None = None,
+    language: str = "",
     max_description_chars: int = 200,
 ) -> NormalizedMessage:
     """Return `message` with every attachment Nora could copy in her custody.
@@ -93,6 +98,15 @@ async def run(
     When custody IS wired but `sources` brought no fetcher for THIS message's
     platform, that is a different operator problem — `status="not_supported"`
     — and is resolved once, here, rather than re-derived per attachment.
+
+    `transcriber` is the `[speech.stt]` lane: when present AND a ref is a
+    voice note, the custody stage transcribes the bytes INLINE (before the
+    audit write) and the transcript rides in the body beside the handle —
+    `[voice note #hex: 喂你今日...]`. A voice note is conversation CONTENT,
+    not an attachment description; a song is an audio file and stays on the
+    bare-handle path. A failed transcription is recorded with the bare handle
+    (a note is still a note), never a dropped message and never a guessed
+    transcript (R-27).
     """
     if not message.media:
         return message
@@ -141,9 +155,44 @@ async def run(
                 level=outcome.level,
             )
         else:
-            blob = await _take(ref=ref, source=source, blobs=blobs, metrics=metrics,
-                               platform=message.platform)
+            taken = await _take(ref=ref, source=source, blobs=blobs, metrics=metrics,
+                                platform=message.platform)
+            blob = taken[0] if taken is not None else None
             raw = ""
+            # VOICE NOTES ONLY. A voice note is conversation CONTENT — the
+            # custody stage transcribes it inline (before the audit write) so
+            # Nora sees the words, not a bare handle. A song is an audio file
+            # and stays on the pull-based path; this gate is the parser's
+            # `voiceNote` flag, NOT the MIME top-level type (spec §4.2, and
+            # `nora/domain/media.py` — voice note is a SEPARATE axis from
+            # audio/*). The transcript rides the same `descriptions` slot a
+            # sticker description would, so it inherits `sanitize_description`
+            # and the R-18 `scan_identifiers` egress guard below — a
+            # transcript is a member's words verbatim, with higher stakes than
+            # model-written prose.
+            if taken is not None and ref.voice_note and transcriber is not None:
+                # `plaintext` is the SAME bytes `_take` just held to compute
+                # `blob` — reusing them here (rather than a second
+                # `blobs.get` round trip through the just-written key) is both
+                # cheaper and safer: it cannot raise on a disk/decrypt error
+                # the way re-reading the store could, so a voice note that
+                # was JUST written always reaches the transcriber.
+                blob, plaintext = taken
+                stt_outcome = await transcriber.transcribe(
+                    data=plaintext, media_type=blob.media_type, language=language,
+                )
+                if stt_outcome.available:
+                    raw = stt_outcome.text
+                    metrics.inc(
+                        "nora_speech_transcriptions_total",
+                        platform=message.platform, status="ok",
+                    )
+                else:
+                    metrics.inc(
+                        "nora_speech_transcriptions_total",
+                        platform=message.platform,
+                        status=stt_outcome.reason or "unavailable",
+                    )
         # A gap is a real position, not a skipped one: handles are matched to
         # placeholders by INDEX, so a failed attachment must contribute an
         # empty handle rather than shifting every later one onto the wrong
@@ -196,9 +245,12 @@ async def _take(
     blobs: BlobStore,
     metrics: Any,
     platform: str,
-) -> MediaBlob | None:
-    """One attachment, from the platform's store into Nora's. None on any
-    failure, always counted with the reason."""
+) -> tuple[MediaBlob, bytes] | None:
+    """One attachment, from the platform's store into Nora's. `None` on any
+    failure, always counted with the reason. The plaintext bytes ride
+    alongside the blob so a caller that needs them (voice-note transcription)
+    is not forced into a second `blobs.get` round trip for what this
+    function already holds."""
     fetched = await source.fetch(ref=ref)
     if not fetched.available:
         _count(metrics, platform=platform, status=fetched.reason or "unavailable")
@@ -224,7 +276,7 @@ async def _take(
         _count(metrics, platform=platform, status="store_failed")
         return None
     _count(metrics, platform=platform, status="stored")
-    return MediaBlob(
+    blob = MediaBlob(
         sha256=key,
         media_type=media_type,
         # MEASURED from what is HELD — the stripped plaintext, the same bytes
@@ -232,6 +284,7 @@ async def _take(
         size=len(plaintext),
         filename=ref.filename,
     )
+    return blob, plaintext
 
 
 def _count(metrics: Any, *, platform: str, status: str, n: int = 1) -> None:

@@ -850,6 +850,45 @@ class BlobStore(Protocol):
 
 
 @runtime_checkable
+class Transcriber(Protocol):
+    """Local speech-to-text for voice notes (spec 2026-08-21 §4).
+
+    Bound to `[speech.stt]`: `enabled = false` (or an unset endpoint) leaves
+    the ingest stage with no transcriber, and a voice note is recorded with a
+    bare handle — exactly as before this capability existed. `language` is
+    one of the endpoint's own short LID codes (`yue`, not a BCP-47 tag like
+    `yue-HK`) the endpoint may use; it never overrides a detected language,
+    because the group mixes Cantonese and English.
+
+    Implementations NEVER raise into the ingest loop: any failure (network,
+    timeout, empty transcript) is returned as an unavailable `SttResult`, and
+    the caller records the message without a transcript — a voice note that
+    fails to transcribe is still a voice note, never a dropped message.
+    """
+
+    async def transcribe(
+        self, *, data: bytes, media_type: str, language: str = ""
+    ) -> SttResult: ...
+
+
+@dataclass(frozen=True)
+class SttResult:
+    """Outcome of one transcription call. `available` is the single truth a
+    caller reads: `False` means «could not transcribe», and `reason` names why
+    (`error`, `timeout`, `unsupported`, `empty` — an ERROR is never a PASS,
+    R-27). `empty` is a legitimate 200 with no words (a silent/wordless voice
+    note) and is kept distinct from `error` (a transport/server failure) —
+    conflating the two would make `nora_speech_transcriptions_total{status=
+    "error"}` unable to tell an outage from an ordinary silent note. `text` is
+    the Traditional-Chinese transcript (the endpoint already applies OpenCC
+    s2t, so the caller never sees Simplified)."""
+
+    available: bool
+    text: str = ""
+    reason: str = ""
+
+
+@runtime_checkable
 class MediaDescriptionStore(Protocol):
     """The durable half of media dedup (sticker spec §4.1). Never raises.
 
