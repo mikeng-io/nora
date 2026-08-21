@@ -344,11 +344,40 @@ def test_the_objective_file_is_the_pre_move_constant_byte_for_byte(objective):
     assert store.objective_body(objective) == before
 
 
-def test_the_shipped_objectives_are_exactly_the_three_that_were_lifted():
-    """A fourth objective appearing here without a pre-move fixture would slip
-    past the parametrised test above, which only checks the three it names."""
+# Objectives AUTHORED here rather than lifted from an inline constant. They
+# have no pre-move fixture because there was no pre-move text: nothing in
+# `nora/language/` ever held them, so byte-identity against a prior constant is
+# not a property they can have.
+#
+# The list is explicit rather than derived, and that is the whole guard. The
+# risk this test exists for is a LIFTED objective quietly losing its fixture —
+# which would drop it out of the parametrised byte-identity test above with
+# nothing to notice — and a set difference alone cannot tell that apart from an
+# honest new file. Naming each one here makes adding a natively-authored
+# objective a one-line, deliberate act, and leaves the lifted three pinned.
+NATIVELY_AUTHORED = {"fact-candidates", "fact-adjudication"}
+
+
+def test_every_lifted_objective_still_ships():
+    """A pre-move fixture with no objective beside it means a lifted body was
+    dropped, and the parametrised byte-identity test above would go quiet
+    rather than red — it only checks the objectives that ARE there."""
     store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
-    assert set(store.objective_names()) == {p.stem for p in PRE_MOVE.glob("*.txt")}
+    lifted = {p.stem for p in PRE_MOVE.glob("*.txt")}
+    assert lifted <= set(store.objective_names())
+
+
+def test_every_shipped_objective_is_either_lifted_or_declared_native():
+    """The other direction: a fourth objective appearing with no fixture and no
+    entry in `NATIVELY_AUTHORED` is either a lift that lost its fixture or a
+    file nobody meant to ship. Both are worth a red test."""
+    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
+    lifted = {p.stem for p in PRE_MOVE.glob("*.txt")}
+    unaccounted = set(store.objective_names()) - lifted - NATIVELY_AUTHORED
+    assert unaccounted == set(), (
+        "objective(s) with neither a pre-move fixture nor a NATIVELY_AUTHORED "
+        f"entry: {', '.join(sorted(unaccounted))}"
+    )
 
 
 def test_the_verification_objective_is_still_a_format_template():
