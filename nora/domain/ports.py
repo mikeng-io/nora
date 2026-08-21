@@ -205,6 +205,7 @@ from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 from nora.domain.facts import Fact as Fact
+from nora.domain.facts import FactCandidate as FactCandidate
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
@@ -1516,4 +1517,45 @@ class FactReader(Protocol):
         """One fact by id, standing or superseded. `None` if it does not
         exist in `workspace` — never a proxy for "the store could not be
         reached"."""
+        ...
+
+
+@runtime_checkable
+class FactCandidateReader(Protocol):
+    """The CANDIDATE tier's read half, and a separate port from `FactReader`
+    for the reason `FactReader`'s own docstring gives: a read verb belongs to
+    each tier's own interface, never to `DreamSink`, whose "two verbs and
+    deliberately no third" is the enforcement rather than a convention. It is
+    separate from `FactReader` as well because the two answer different
+    questions of different tables — «what do we believe» versus «what have we
+    not settled yet» — and a caller that renders facts into a turn has no
+    business being handed the unadjudicated pile.
+
+    **`pending` is the deterministic filter of the fact-tier design's §5, and
+    that filter is CODE, not a model.** One research loop per candidate is the
+    expensive step, so the order candidates come back in IS the cost decision:
+    contradictions of standing facts first (the tier's purpose), then
+    recurrence. An implementation that returns candidates in arbitrary order
+    still type-checks and still looks like it works — it just spends the
+    tick's budget on the wrong claims, silently.
+
+    **No never-raises promise, unlike `FactReader.standing_facts`.** That one
+    is on a tag's critical path, where silence beats a wrong answer and a
+    raised read cancels its siblings in a `asyncio.gather`. This one runs in
+    the Dreamer's background tick, where the caller is *waiting on the
+    answer to decide what to do*: degrading an unreachable store to `()` there
+    would say «there is nothing to adjudicate» when the truth is «I could not
+    check» — `unavailable` reported as `nothing_found`, the one substitution
+    R-27 exists to forbid. It raises, and the tick's own error handling
+    counts it.
+    """
+
+    async def pending(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[FactCandidate, ...]:
+        """The candidates worth adjudicating in `workspace`, most valuable
+        first, capped at `limit`. Only `status == "pending"` is ever
+        returned — `not_covered` is the negative cache (§5.1) and returning
+        it would re-spend a research loop on the claim the tier already
+        failed to settle. `limit <= 0` yields `()`."""
         ...
