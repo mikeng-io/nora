@@ -12,35 +12,51 @@ tier's own rules — §5's deterministic selection filter, §5.1's negative cach
 and the three `supersede` refusals `SqlFactCandidateStore`'s own docstring
 names.
 
-**Neither implementation joins that suite's `IMPLEMENTATIONS` table**, and
-that is a REPORTED FINDING rather than an omission. That file's docstring
-claims joining is "genuinely one entry" and says that if it stops being true
-it is a defect; it was measured here (2026-08-21) by adding the entry and
-running it — 4 passed, 9 failed — and the failures fall into two groups,
-neither fixable by an entry:
+**`SqlFactCandidateStore` now DOES join that suite's `IMPLEMENTATIONS` table**
+— it is the third entry — but it did not join for one entry, and the gap was
+a REPORTED FINDING first. That file's docstring claimed joining was
+"genuinely one entry" and said that if it stopped being true it was a defect;
+it was measured here (2026-08-21) by adding the entry and running it — 4
+passed, 9 failed — and then repaired on `fact-contract-repair`. What the nine
+cost, because the next tier should know before it starts:
 
-1. **Three assertions read back columns `fact_candidate` does not have**, and
-   no `read_row` can conjure them: `instruction_sha256`/`model`
-   (`test_provenance_survives_the_write`), a successor
-   (`test_a_supersession_can_name_its_successor`) and a supersession warrant
-   (`test_source_and_replaced_by_are_kept_apart`). Closing these needs a
-   migration, which this branch is not permitted to make.
-2. **Six pass a non-null `replaced_by` (and one a non-null `source`) into
-   calls this store refuses**, including three calls expected to affect ZERO
-   rows, where the successor is hard-coded solely to hold that axis constant.
-   `nullable_replaced_by` is a BOOL over an axis with three states —
-   null-legal, null-refused, and (here) **null-required** — so a store that
-   refuses the successor rather than dropping it silently cannot express
-   itself in the table at all.
+1. **Three assertions read back columns `fact_candidate` did not have.**
+   `instruction_sha256`/`model` (`test_provenance_survives_the_write`) were a
+   real gap and closed by **migration `0027_fact_candidate_provenance`** —
+   DEC-125/DEC-126 provenance on an adaptor-written table that predated its
+   adaptor, which this store had been discarding off every `Proposal`. A
+   successor (`test_a_supersession_can_name_its_successor`) and a supersession
+   warrant (`test_source_and_replaced_by_are_kept_apart`) were NOT: no
+   candidate ever succeeds another (an adjudicated one is succeeded by a
+   `fact`, a row in a different table) and a supersession's warrant belongs on
+   that `fact` row, so there is nothing for a column here to hold. Those two
+   became axis states, not columns.
+2. **Five passed a non-null `replaced_by` into calls this store refuses.**
+   `nullable_replaced_by` was a BOOL over an axis with three states —
+   null-legal, null-refused, and (here) **null-required** — replaced by
+   `NullableAxis`, which each entry names per field for both `replaced_by`
+   and `source`, and which is itself the factory every test now gets those
+   values from.
+3. **Two of those five, plus one more, also hard-coded `because`.** The suite
+   assumed a zero-row `supersede` never reaches a reason check, which holds
+   for a store that defers to a Postgres CHECK and NOT for this one, whose
+   terminal-status refusal is a `ValueError` raised before any row is
+   touched. Every `supersede` in that file now takes its reason from
+   `make_because()`.
 
-One of the nine is a plain defect independent of this tier, and the note tier
-will hit it next:
+One of the nine was a plain defect independent of this tier:
 `test_a_supersession_with_no_successor_is_legal_or_refused_by_the_store`'s
-nullable branch hard-codes `because="retired"` instead of calling
+nullable branch hard-coded `because="retired"` instead of calling
 `make_because()`, even though the call asserts `affected == 1` and the file's
 own rule is that `make_because` is used "everywhere a `supersede` call is
 expected to actually affect a row". `"retired"` is not a legal reason in the
-note tier either (`merged`/`retired-expired`/`retired-closed`).
+note tier either (`merged`/`retired-expired`/`retired-closed`), which would
+have hit it next.
+
+`InMemoryFactCandidateStore` still does not join that table, for the reason
+`InMemoryFactStore` does not: it is this tier's own double, tested here
+against the SQL store, and the suite's third entry exists to exercise the
+PORT against a real store.
 
 `test_the_port_has_no_delete_verb` and `isinstance(store, DreamSink)` are the
 properties of that suite this tier carries unaided; the second is asserted
@@ -334,6 +350,54 @@ async def test_a_repeat_sighting_merges_observed_in_without_duplicating(store):
     rows = await store.pending(workspace=WS, limit=10)
     assert sorted(rows[0].observed_in) == ["101", "102"]
     assert rows[0].occurrence_count == 3
+
+
+async def test_the_proposals_provenance_lands_on_the_row(store):
+    """Migration 0027's two columns plus `established_by` — the trio that says
+    what produced this row. All three ride on `Proposal` rather than inside
+    `payload` (`Proposal`'s own docstring), and a store that drops them writes
+    rows that look right and can never be traced back to what produced them.
+
+    Asserted against what the proposal itself carries: the factory mints a
+    different value for each of the three on every call, so a store that
+    swapped two of them would still be caught."""
+    p = fact_candidate_proposal_factory(
+        subject="e1", predicate="has", object="v1", message_id=1,
+    )
+
+    ids = await store.propose(key=WS, proposals=(p,), now_ms=NOW)
+
+    row = await store.candidate_by_id(workspace=WS, candidate_id=ids[0])
+    assert row is not None
+    assert row.instruction_sha256 == p.instruction_sha256
+    assert row.model == p.model
+    assert row.established_by == p.established_by
+
+
+async def test_a_repeat_sighting_does_not_rewrite_the_establishing_run(store):
+    """The provenance trio belongs to the run that ESTABLISHED the row, beside
+    `first_seen_at`, and a later sighting did not establish it. Rewriting it
+    would leave a row whose digest names an instruction that never produced
+    it — worse than no digest, because it reads as a real one."""
+    first = fact_candidate_proposal_factory(
+        subject="e1", predicate="has", object="v1", message_id=1,
+    )
+    later = fact_candidate_proposal_factory(
+        subject="e1", predicate="has", object="v1", message_id=2,
+    )
+    assert later.instruction_sha256 != first.instruction_sha256, (
+        "the factory must vary provenance per call or this test measures nothing"
+    )
+    ids = await store.propose(key=WS, proposals=(first,), now_ms=NOW)
+
+    await store.propose(key=WS, proposals=(later,), now_ms=NOW + 1)
+
+    row = await store.candidate_by_id(workspace=WS, candidate_id=ids[0])
+    assert row is not None
+    assert row.occurrence_count == 2, "the re-sighting really did land"
+    assert row.instruction_sha256 == first.instruction_sha256
+    assert row.model == first.model
+    assert row.established_by == first.established_by
 
 
 async def test_two_sightings_of_one_triple_in_one_batch_do_not_collide(store):

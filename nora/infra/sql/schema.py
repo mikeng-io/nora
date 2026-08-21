@@ -1154,9 +1154,25 @@ FACT_CANDIDATE = sa.Table(
     sa.Column("last_adjudicated_at", sa.BigInteger),
     sa.Column("attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("established_by", sa.Text, nullable=False),
+    # 2026-08-21 (migration 0027): the DEC-125/DEC-126 provenance pair, on the
+    # one adaptor-written table that predated the adaptor writing it. NOT NULL
+    # like `fact`'s and unlike the four Dreamer tables', because this table has
+    # no rows written before the columns existed (verified on the live database
+    # — see the migration) and every `Proposal` reaching `propose` carries
+    # both. A re-sighting does not move them: they belong to the run that
+    # ESTABLISHED the row, alongside `established_by` and `first_seen_at`.
+    sa.Column("instruction_sha256", sa.Text, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
     sa.CheckConstraint(
         "status in ('pending', 'adjudicated', 'not_covered')",
         name="fact_candidate_status_check",
+    ),
+    sa.CheckConstraint(
+        "instruction_sha256 ~ '^[0-9a-f]{64}$'",
+        name="fact_candidate_instruction_sha256_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(model)) > 0", name="fact_candidate_model_is_named_check",
     ),
     sa.UniqueConstraint("workspace", "subject_id", "predicate", "object",
                         name="fact_candidate_triple_key"),

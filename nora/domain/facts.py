@@ -166,7 +166,21 @@ class FactCandidate:
 
     `status="not_covered"` is the NEGATIVE CACHE: without it the same
     unprovable claim is re-extracted and re-adjudicated every tick forever,
-    which is the difference between a bounded cost and an unbounded one."""
+    which is the difference between a bounded cost and an unbounded one.
+
+    `instruction_sha256` and `model` are both NOT NULL here for the same
+    reason they are on `Fact` and unlike the four Dreamer tables (migrations
+    0023/0024): those hold rows written before the columns existed and this
+    table never did (migration 0027 landed the pair on an empty table). Every
+    `Proposal` that reaches `DreamSink.propose` carries both as non-optional
+    `str`, so a candidate whose instruction or model is unknown cannot be
+    written at all — and there is no unreachable "provenance unknown" state
+    for a reader to branch on.
+
+    Both are established ONCE, by the run that first sighted the claim, and a
+    re-sighting deliberately leaves them where they are — the same rule
+    `established_by` and `first_seen_at` follow (`SqlFactCandidateStore.
+    propose`'s upsert)."""
 
     id: str
     workspace: str
@@ -179,6 +193,8 @@ class FactCandidate:
     observed_in: tuple[str, ...]
     status: CandidateStatus
     established_by: str
+    instruction_sha256: str
+    model: str
     last_adjudicated_at: int | None = None
     attempts: int = 0
 
@@ -187,6 +203,29 @@ class FactCandidate:
             raise ValueError(
                 f"status must be one of {sorted(_CANDIDATE_STATUSES)}, "
                 f"got {self.status!r}"
+            )
+        # Mirrors `fact_candidate_instruction_sha256_check`, the way `Fact`
+        # mirrors `fact_instruction_sha256_check` — the domain type refuses
+        # what the column would already refuse, which is what lets
+        # `InMemoryFactCandidateStore` behave like the SQL store instead of
+        # accepting rows Postgres would reject.
+        if not _INSTRUCTION_SHA256_RE.fullmatch(self.instruction_sha256):
+            raise ValueError(
+                "instruction_sha256 must be a full 64-character lowercase hex "
+                "digest; a candidate whose instruction is unknown is not "
+                "attributable and is refused"
+            )
+        # Mirrors `fact_candidate_model_is_named_check`. `''`/`'   '` are
+        # non-NULL to every query asking "which rows are attributable", so an
+        # unnamed model is the false `ok` R-27 refuses, not a missing value.
+        # (`Fact` carries the same CHECK in the database and does NOT mirror
+        # it here — a gap noted rather than widened; this type is not the
+        # place to change that one.)
+        if not self.model.strip():
+            raise ValueError(
+                "model must be a non-empty name: a blank stamp is not a "
+                "missing model, it is an unattributable row that reads as an "
+                "attributable one"
             )
 
 
