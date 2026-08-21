@@ -199,7 +199,7 @@ change at every call site; keyword-only buys free extensibility forever.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
@@ -1228,6 +1228,163 @@ class Proposal:
     instruction_sha256: str
     model: str
     established_by: str
+
+
+@runtime_checkable
+class DreamAdaptor(Protocol):
+    """One Dreamer objective: what to research, over what, with which tools,
+    and how to turn the answer into rows.
+
+    The Dreamer runtime owns the loop, the tool ceiling, the budget and its own
+    doctrine, and knows nothing about lexemes, exchanges or facts. Everything
+    that IS tier-specific arrives through this port. It is `RoomConsolidator`
+    generalised: that port's `consolidate(scope_id, batch) -> int` is
+    append-shaped — "extract, append, rescore, and nothing else" — which is why
+    a fact adaptor did not fit it (a fact adaptor invalidates as well as
+    appends, and is keyed on a workspace rather than a scope) and why
+    `RoomPortraitSynthesizer` had to be a separate parameter on `dream_loop`.
+
+    **The runtime never names a tier's value type.** It hands the model's
+    already-envelope-validated items to `accept`, which returns whatever that
+    tier's typed values are as `object`, wraps each in a `Proposal` carrying the
+    provenance only the runtime knows, and hands them back to `commit`. A
+    `FactVerdict` never appears in an import in `nora/agent/`.
+
+    **Two deviations from the plan's sketch, both found by building it** —
+    recorded here because each looks like an arbitrary difference until the
+    reason is stated:
+
+    1. **`accept` returns payloads, not `Proposal`s.** A `Proposal` carries
+       `instruction_sha256`, `model` and `established_by`, none of which an
+       adaptor can know: the runtime read the instructions, built the model
+       provider and named the run. An adaptor returning `Proposal`s would have
+       to be handed all three to fill in, which is provenance travelling one
+       layer further than it needs to and one more place it can be filled in
+       wrongly.
+    2. **`commit` drives the sink; the runtime does not call it directly.** The
+       runtime cannot: a contradicted fact is TWO verbs in order — `propose`
+       the correction, then `supersede` the old row naming the new id as
+       `replaced_by` — and knowing that sequence means knowing `FactVerdict`.
+       So the sink is the adaptor's own collaborator (constructor-injected,
+       never a port attribute the runtime reads and never uses) and `commit` is
+       where a tier sequences its own writes.
+
+       This does not weaken the keystone §3.2 asymmetry, which is about the
+       MODEL not writing: there is still no write tool, the model still only
+       returns a structured value, and code still disposes. `commit` is code.
+
+    **Screening happens before `accept`, not after it** (keystone §7, and this
+    is the other deviation from the plan, which screened parsed proposals).
+    The runtime screens the model's raw envelope ITEMS — every string value in
+    every item — against R-18/R-28 before any tier type exists. Screening a
+    parsed `object` would need the adaptor to expose its own text for
+    inspection, which is a second place a tier can forget something; screening
+    the item is generic, is strictly more conservative (it sees fields a parse
+    drops), and still drops at item granularity so one poisoned item never
+    costs its siblings.
+
+    `name` is the adaptor's identity in three places at once — the watermark
+    row, the metric label, and the trace span — which is why it is one field
+    rather than three that can disagree. **Renaming it re-reads the record from
+    the beginning**: an unknown `(name, scope)` has `watermark_for` return 0.
+    """
+
+    name: str
+    """The watermark identity, the metric label and the trace name. Changing it
+    is a data migration, not a rename."""
+
+    key_kind: str
+    """`"scope"` or `"workspace"` — which population the runtime ticks this
+    adaptor over. Every room adaptor's unit of work is a `scope_id`; the fact
+    adaptor's is a `Conversation.workspace` (DEC-105). Not a wider or narrower
+    batch — a DIFFERENT key, which is why `_dream_once`'s single shared
+    per-scope watermark cannot host one unchanged."""
+
+    uses_watermark: bool
+    """False for an adaptor that does not consume a message batch at all, and
+    which therefore gets no watermark, lag or quiet condition and must carry
+    its own fire condition. `RoomPortraitSynthesizer` is the standing
+    precedent; the fact adaptor is the second."""
+
+    objective: str
+    """The objective FILE NAME, resolved by the runtime against
+    `DreamerInstructions` — never the text. `nora.language` sits below
+    `nora.instructions` in the layer contract and must not read a file or hold
+    an instruction store, and the digest must be read per run rather than
+    captured at construction (DEC-128): an objective that hot-reloads and a
+    text captured once are indistinguishable from correct, forever."""
+
+    envelope_key: str
+    """The top-level JSON key holding this objective's items —
+    `{"observations": [...]}` for the room adaptors. Declared rather than fixed
+    at one shared literal because it is part of what the objective TELLS the
+    model to return, and the two must not be able to drift apart in different
+    files."""
+
+    tools: frozenset[str]
+    """Tool NAMES, resolved by the runtime against its registry.
+
+    Names rather than tools because `nora.language` may not import
+    `nora.agent` — the same inversion `ToolRegistry.tool_names()` already
+    performs for the doctrine loader. The runtime refuses any name outside
+    `ToolRegistry.read_only_tools()`, so this field is a narrowing of the
+    ceiling and can never widen it: an adaptor asking for an act verb fails to
+    build rather than quietly receiving one."""
+
+    async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
+        """The records this objective reasons over, rendered for the prompt.
+
+        `batch` is empty for an adaptor with `uses_watermark = False`, and may
+        be empty for one that has a watermark and no new messages — which is a
+        REAL state and not an error: see `DreamSink.propose`'s empty-tuple
+        contract, which is what preserves time-driven decay."""
+        ...
+
+    async def accept(
+        self, *, key: str, items: Sequence[Mapping[str, object]]
+    ) -> Sequence[object]:
+        """The typed parse of already-envelope-validated, already-screened
+        items — this tier's values, as `object` to the runtime.
+
+        The division of labour is the one the existing observers already draw:
+        the runtime validates the ENVELOPE (parses as JSON, is an object,
+        carries `envelope_key`, is a list, is under a size cap, every element
+        is a mapping) and `accept` does the typed parse, **dropping a malformed
+        item silently rather than raising** — `_parse_item`'s discipline, which
+        exists so one bad element does not discard a batch that was otherwise
+        fine.
+
+        Returning fewer values than it was given is therefore ordinary and
+        means «some items were malformed», not «the batch failed». Returning
+        NOTHING for a non-empty `items` is still ordinary; it is the RUNTIME's
+        envelope failure, not this, that means «nobody read this batch»."""
+        ...
+
+    async def commit(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> int:
+        """Write `proposals` through this adaptor's own sink, returning rows
+        written.
+
+        **`commit(key, ())` is a legal and meaningful call**, not a call to
+        skip: it is R-27's `nothing_found` — «I looked and there was nothing» —
+        and it is where time-driven decay lives. `LanguageConsolidator`
+        rescores even for an empty batch, because the 24h fire condition exists
+        precisely to fade a dormant room's lexicon, and none of the adaptor's
+        other fields has a slot for that. The runtime NOT calling `commit` is
+        the different, third state: `unavailable`, «I could not check».
+
+        Collapsing those two — treating an empty sequence as "nothing to do,
+        skip the call" — silently drops decay and turns a wiring gap into a
+        false negative. That is the ERROR-reads-as-PASS failure R-27 exists to
+        prevent, one layer up.
+
+        Returns rows WRITTEN, which is not `len(proposals)`: a fact store skips
+        a `not_covered` verdict by design (silence adds nothing and removes
+        nothing), so a legal commit of three proposals can write one row. The
+        count is what `_dream_once`'s existing `appended_total > 0` portrait
+        trigger reads."""
+        ...
 
 
 @runtime_checkable
