@@ -947,10 +947,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "already_known, noise, deferred.",
         ("outcome",),
     ),
+    # HELP TEXT widened 2026-08-21, name unchanged (names are append-only;
+    # help text is not). It was written for one `reason` — the per-tick cap —
+    # and the adjudicator legitimately counts seven more: a verdict dropped as
+    # malformed, one that broke `FactVerdict`'s own invariants, one naming a
+    # fact the model was never shown, an id correspondence that did not line
+    # up, a supersession that failed or matched no row, a verdict matching no
+    # candidate, and a retirement that failed. All are "a candidate this tick
+    # did not settle", which is what the series measures; a help text naming
+    # only the cap would make the other seven read as a mislabelled cap.
     _CounterSpec(
         "nora_fact_adjudications_skipped_total",
-        "Candidates not adjudicated this tick because the per-tick cap was "
-        "reached. A silent cap reads as 'we checked everything'.",
+        "Candidates a tick did not settle, by reason: cap (the per-tick "
+        "ceiling), or a verdict dropped before it could be written "
+        "(malformed, invariant, unknown_supersedes, id_mismatch, "
+        "supersede_failed, supersede_missed, unmatched_candidate, "
+        "retire_failed). A silent drop reads as 'we checked everything'.",
         ("reason",),
     ),
     _CounterSpec(

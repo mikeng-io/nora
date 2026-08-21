@@ -90,6 +90,25 @@ class FactVerdict:
                     "a not_covered verdict may not supersede a fact: a source that "
                     "does not reach the question has not denied it (R-53)"
                 )
+            # FORBIDDEN, not merely optional — and the asymmetry with the two
+            # findings above is the point. `not_covered` writes nothing, so a
+            # source attached to one has no destination; what it does have is a
+            # reader. «Here is the page, and it did not cover the claim» is one
+            # careless sentence away from «here is the page, and it says no»,
+            # which is R-53's failure wearing evidence it never earned. Silence
+            # stays structurally silent.
+            #
+            # `nora/dreamer/objectives/fact-adjudication.md` already tells the
+            # model these fields are forbidden here; until 2026-08-21 nothing
+            # enforced it, so the instruction and the type disagreed — a
+            # promise no shape held, in the one tier whose whole thesis is that
+            # the rule belongs in a shape (found in review).
+            if self.source_url is not None or self.source_excerpt is not None:
+                raise ValueError(
+                    "a not_covered verdict may not carry a source: it reports "
+                    "that nothing reached the question, and a source attached "
+                    "to that reads as evidence for a denial nobody made"
+                )
             return
         if not self.source_url or not self.source_excerpt:
             raise ValueError(

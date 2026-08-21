@@ -32,6 +32,29 @@ def test_not_covered_cannot_supersede_anything():
         _verdict(status="not_covered", supersedes="0191f2c4-0000-7000-8000-000000000001")
 
 
+def test_not_covered_may_not_carry_a_source():
+    """FORBIDDEN, not merely optional, and the asymmetry with the two findings
+    is the point.
+
+    A `not_covered` verdict writes nothing, so a source attached to one has no
+    destination — but it does have a reader. «Here is the page, and it did not
+    cover the claim» is one careless sentence away from «here is the page, and
+    it says no», which is R-53's failure wearing evidence it never earned.
+
+    `nora/dreamer/objectives/fact-adjudication.md` already tells the model
+    these fields are forbidden here. Until this test, nothing enforced it: the
+    instruction and the type disagreed, which is a promise no shape held in the
+    one tier whose whole thesis is that the rule belongs in a shape."""
+    with pytest.raises(ValueError, match="may not carry a source"):
+        _verdict(
+            status="not_covered", addresses_claim=False,
+            source_url="https://example.com/best-tower-order",
+            source_excerpt="The blue tower is the natural second.",
+        )
+    with pytest.raises(ValueError, match="may not carry a source"):
+        _verdict(status="not_covered", addresses_claim=False, source_excerpt="x")
+
+
 def test_not_covered_needs_no_source():
     """«I could not check» is a real, complete verdict. It carries no warrant
     because there is nothing to warrant."""
