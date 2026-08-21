@@ -79,6 +79,7 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.room_portrait import SqlRoomPortraitStore
+from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
@@ -525,6 +526,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # deliver.build); the THIRD — ToolRegistry(...) below, for
     # recall_lookups — is Task 7's own wiring.
     tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
+    # The reasoning-continuity retention store (Task 6, spec §6/§7.4),
+    # REUSING `engine` for the same reason `reminders`/`compute_jobs`/
+    # `tool_call_log_store` do above. UNCONDITIONAL, unlike the Dreamer's own
+    # stores just below: Phase 2's `[debrief]` flag gates the FOLD, not the
+    # raw retention write — retention must exist and be provably working
+    # BEFORE that flag has anything to gate (spec §7.4, task-6-brief.md).
+    tag_trace_store = SqlTagTraceStore(engine)
     # The Dreamer's store (Task 11), REUSING `engine` for the same reason
     # `reminders`/`compute_jobs`/`tool_call_log_store` do above. UNLIKE those,
     # this one IS gated on the feature flag — `[route]`/`[search]`-shaped,
@@ -1451,6 +1459,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         preview_source=preview_source,
         slots=slots,
         tool_call_log_store=tool_call_log_store,
+        tag_trace_store=tag_trace_store,
         # `[language].max_rendered_lexemes` — harmless to pass even when
         # `[language] enabled = false`: `language_store` is `None` there, so
         # `TranscriptInjection` never produces a non-empty `RoomLanguage` for

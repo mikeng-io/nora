@@ -40,6 +40,7 @@ from nora.engagement.slots import ConversationSlots
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeAgentRunner, ScriptedTurn
@@ -165,6 +166,11 @@ class Harness:
     # Port, not the concrete SqlRecordStore: under db_append_fails/context_read_fails
     # this is a _StoreProxy subclass instead (see the two subclasses above).
     store: RecordStore
+    # The reasoning-continuity retention store (Task 6) — sharing `store`'s own
+    # engine (see its construction in `build_handler`), so `store.aclose()`
+    # tears it down too. Exposed for the tests that assert a driven tag left a
+    # retrievable `TagTrace` row.
+    tag_trace_store: SqlTagTraceStore
     # Cumulative call log fed by every `FakeAgentRunner` this harness has ever used
     # (including ones `set_script` swaps in) — see `FakeAgentRunner`'s docstring for
     # why this outlives any single runner instance.
@@ -352,7 +358,12 @@ async def build_handler(
 
     database_url = os.environ[cfg.store.database_url_env]
     run_migrations(database_url)
-    store = SqlRecordStore(create_sql_engine(database_url))
+    # ONE engine shared by `store` and `tag_trace_store`, mirroring
+    # `nora.app.composition.build_dependencies`'s own "one engine, one pool"
+    # convention — `store.aclose()` below disposes it for both.
+    engine = create_sql_engine(database_url)
+    store = SqlRecordStore(engine)
+    tag_trace_store = SqlTagTraceStore(engine)
     persons = load_persons(persons_path)
     metrics = Metrics()
     doctrine_store = DoctrineStore(
@@ -442,6 +453,7 @@ async def build_handler(
         # which is the fail-closed behaviour rather than a broken test.
         roster_source=roster,
         tool_registry=tool_registry,
+        tag_trace_store=tag_trace_store,
     )
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
 
@@ -453,6 +465,7 @@ async def build_handler(
         own_account=getattr(adapter, "_account", own_account),
         doctrine_store=doctrine_store,
         store=store,
+        tag_trace_store=tag_trace_store,
         _calls=calls,
         _engagement=engagement,
         _background=background,

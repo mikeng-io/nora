@@ -41,6 +41,7 @@ from nora.domain.ports import (
     Recollection,
     SendResult,
 )
+from nora.domain.tag_trace import TagTrace
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
@@ -179,6 +180,19 @@ class _LLMState:
         self.last_success_at: float | None = None
 
 
+class _FakeTagTraceStore:
+    """Records every `TagTrace` `save` is called with, in call order — the
+    unit-level double for `nora.infra.sql.tag_traces.SqlTagTraceStore`
+    (Task 6). No `recent()`: nothing here reads it back through the pipeline,
+    that is the integration test's job against the real store."""
+
+    def __init__(self) -> None:
+        self.saved: list[TagTrace] = []
+
+    async def save(self, trace: TagTrace) -> None:
+        self.saved.append(trace)
+
+
 class ScriptedRunner(FakeAgentRunner):
     """`nora.testing.FakeAgentRunner`, plus this file's `calls` bookkeeping.
 
@@ -252,7 +266,13 @@ def _build_pipeline(
     queue_max: int = 16,
     policy=None,
     room_language_max_entries=None,
+    tag_trace_store=None,
 ):
+    # Always a real (fake) store, never `None`: every scenario below can read
+    # `pipeline._tag_trace_store.saved` (mirroring how `pipeline._slots` is
+    # already read directly elsewhere in this file) without every OTHER test
+    # in the suite having to pass one in just to keep the collaborator non-None.
+    tag_trace_store = tag_trace_store if tag_trace_store is not None else _FakeTagTraceStore()
     audit = audit if audit is not None else FakeRecordStore()
     memory = memory if memory is not None else _FakeMemory()
     metrics = metrics if metrics is not None else Metrics()
@@ -289,6 +309,7 @@ def _build_pipeline(
         rosters={"signal": roster_source} if roster_source else {},
         slots=ConversationSlots(maxlen=queue_max, spawn=background.spawn),
         policy=policy if policy is not None else permissive_policy(),
+        tag_trace_store=tag_trace_store,
         **extra,
     )
     return pipeline, metrics, audit, memory, background
@@ -677,6 +698,167 @@ async def test_the_fallback_reply_is_not_fed_to_honchos_self_model():
 
     assert len(adapter.sent) == 1        # delivered — the group saw the fallback
     assert memory.fed == []              # but nothing fed to her self-model
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — the placeholder `TagTrace.outcome` `invoke.run` hands back
+# (`LiveAgentRunner`/`FakeAgentRunner` both stamp `"send_reply"` unconditionally)
+# is CORRECTED here to the turn's real disposition, mirroring
+# `deliver.check_outcome`'s own delivered/called split, and the corrected trace
+# is unconditionally saved — on every completed turn, not gated on
+# `feedback.run`'s own `if sent and ctx.tagger is not None` (§7.4).
+# ---------------------------------------------------------------------------
+
+
+async def test_a_normal_send_reply_is_saved_with_outcome_send_reply():
+    adapter = _FakeAdapter()
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    saved = pipeline._tag_trace_store.saved
+    assert len(saved) == 1
+    assert saved[0].outcome == "send_reply"
+    assert saved[0].conversation_id == "g1"
+
+
+async def test_a_recovered_reply_is_saved_with_outcome_recovered():
+    adapter = _FakeAdapter()
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    saved = pipeline._tag_trace_store.saved
+    assert len(saved) == 1
+    assert saved[0].outcome == "recovered"
+
+
+async def test_a_silent_turn_is_saved_with_outcome_silent():
+    """A turn that produced neither a tool call nor text — genuinely nothing
+    to recover (`test_a_turn_that_wrote_nothing_at_all_is_still_a_silent_failure`
+    is the metrics-side sibling of this test)."""
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=ScriptedRunner([ScriptedTurn(final_text="")]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    saved = pipeline._tag_trace_store.saved
+    assert len(saved) == 1
+    assert saved[0].outcome == "silent"
+
+
+async def test_a_vetoed_turn_is_saved_with_outcome_vetoed():
+    """`called=True, delivered=False` with NO recovery possible — both the
+    tool call and the would-be recovery carry the same R-18-tripping text, so
+    the guard refuses both attempts (the same fixture shape
+    `test_a_refused_send_reply_followed_by_prose_is_still_recovered` uses,
+    except the recovery text ALSO leaks here, so nothing ever delivers)."""
+    leaking_text = "佢喺 +85298765432 嗰邊"
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=ScriptedRunner([ScriptedTurn(
+            tool_calls=[("send_reply", {"text": leaking_text})],
+            final_text=leaking_text,
+        )]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    saved = pipeline._tag_trace_store.saved
+    assert len(saved) == 1
+    assert saved[0].outcome == "vetoed"
+
+
+async def test_a_never_silent_fallback_delivery_is_saved_with_outcome_send_reply():
+    """The canned budget-exhausted fallback is DELIVERED (`deliverer.delivered`
+    is True) but is not `"recovered"` — `recovered_delivered` only flips for the
+    DEC-93 prose-recovery branch, never the fallback branch, so this lands on
+    `"send_reply"`, the same bucket a normal tool-routed reply does. (The
+    fallback text itself is never fed to Honcho or attributed to her as
+    authored words — see `test_the_fallback_reply_is_not_fed_to_honchos_self_model`
+    — but `TagTrace.outcome` only has six values to choose from and none of
+    them is "fallback"; this is the documented judgment call, not an oversight.)"""
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=ScriptedRunner(
+            [ScriptedTurn(tool_calls=[("now", {})], total_tokens=24_000)]
+        ),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    saved = pipeline._tag_trace_store.saved
+    assert len(saved) == 1
+    assert saved[0].outcome == "send_reply"
+
+
+async def test_a_timeout_is_saved_with_outcome_timeout():
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=ScriptedRunner(_reply_turns(), delay=5.0), timeout_seconds=0.05,
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    saved = pipeline._tag_trace_store.saved
+    assert len(saved) == 1
+    assert saved[0].outcome == "timeout"
+
+
+async def test_an_llm_error_is_saved_with_outcome_llm_error():
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=ScriptedRunner(raises=RuntimeError("omniroute down")),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    saved = pipeline._tag_trace_store.saved
+    assert len(saved) == 1
+    assert saved[0].outcome == "llm_error"
+
+
+async def test_a_fault_before_invoke_run_ever_returns_saves_nothing():
+    """The outer `except BaseException` case (a context-assembly fault): no
+    `agent.messages`, no transcript window, `invoke.run` never ran — nothing
+    to attribute a trace to, so `finally` must not try (`trace` stays `None`,
+    the guard clause at the save site skips it)."""
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        context_assembler=_FaultingContextAssembler(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert pipeline._tag_trace_store.saved == []
+
+
+async def test_a_tag_trace_save_failure_never_takes_down_an_otherwise_successful_turn():
+    """The failure-containment discipline the task brief calls for: a
+    `SqlTagTraceStore`-shaped save is SPAWNED (`self._spawn`, `BackgroundTasks`),
+    not awaited inline — so a raising store logs (`BackgroundTasks._on_done`)
+    and the turn's own delivery, metrics and lock release are all unaffected."""
+    class _RaisingTagTraceStore:
+        async def save(self, trace: TagTrace) -> None:
+            raise RuntimeError("db down")
+
+    adapter = _FakeAdapter()
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter, tag_trace_store=_RaisingTagTraceStore(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)   # must not raise
+
+    assert adapter.texts == ["今晚七點半得"]
+    assert _held(pipeline) is False
 
 
 async def test_latency_and_overhead_are_observed_on_every_path():

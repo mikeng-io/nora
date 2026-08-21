@@ -3,6 +3,7 @@ import logging
 
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus
+from nora.domain.tag_trace import VALID_OUTCOMES
 from nora.testing import ScriptedTurn, group_event
 
 # The conversation every `group_event` here lands in, as the slots key
@@ -35,6 +36,29 @@ async def test_happy_tag_produces_one_reply_one_row_one_feed(harness_factory, tm
                             ("nora", "今晚七點半得", "g1")]
     assert not any(peer == "miles" and "今晚七點半得" in text
                    for peer, text, _ in h.honcho.fed)
+
+
+async def test_a_completed_tag_leaves_a_retrievable_tag_trace(harness_factory):
+    """Task 6 (spec §7.4/§14.6): retention is real, end to end — a driven tag
+    through the FULL pipeline (real `SqlTagTraceStore`, real Postgres) leaves
+    exactly one row `recent()` can read back, and it carries a REAL outcome —
+    not `LiveAgentRunner`/`FakeAgentRunner`'s `"send_reply"` placeholder left
+    uncorrected. This turn actually calls `send_reply` and delivers, so
+    `"send_reply"` is also the CORRECT answer here — the placeholder and the
+    real value coincide on the happy path, which is exactly why the
+    outcome-mapping unit tests in `tests/unit/test_engagement_pipeline.py`
+    cover the paths where they diverge (recovered/silent/vetoed/timeout/
+    llm_error)."""
+    h = await harness_factory(script=_reply_script())
+    await h.handler.on_event(group_event(body="nora.000 幾點食飯"))
+    await h.drain()
+
+    assert h.sink.texts == ["今晚七點半得"]
+    got = await h.tag_trace_store.recent(conversation_id="g1", limit=10)
+    assert len(got) == 1
+    assert got[0].conversation_id == "g1"
+    assert got[0].outcome in VALID_OUTCOMES
+    assert got[0].outcome == "send_reply"
 
 
 async def test_context_is_collected_before_the_model_runs(harness_factory):
