@@ -4,9 +4,11 @@
 # live in the same repo (docs/superpowers/specs/2026-08-21-nora-stt-infrastructure-design.md).
 FROM python:3.12-slim
 
-# curl is needed for this Dockerfile's own HEALTHCHECK below.
+# curl is needed for this Dockerfile's own HEALTHCHECK below; ffmpeg gives
+# soundfile a universal decoder for signal voice notes (opus/ogg works without
+# it, but audio/mp4 — a common Signal voice-note container — fails to open).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir uv==0.11.18
 
