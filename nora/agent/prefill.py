@@ -15,6 +15,7 @@ from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
 from ..language.exchange_render import render_room_exchange
 from ..language.fact_render import render_facts
+from ..language.note_render import render_notes
 from ..language.portrait_render import render_room_portrait
 from ..language.render import render_room_language
 
@@ -526,6 +527,34 @@ def _facts_block(ctx: TagContext) -> str:
     return f"{block}\n" if block else ""
 
 
+def _notes_block(ctx: TagContext) -> str:
+    """The note tier's index — the same volatile-tier placement and trailing-
+    newline convention as `_facts_block` beside it, and the same workspace
+    rather than room keying, so `_facts_block`'s argument for staying out of
+    `_context_header`'s cached prefix applies here unchanged and is not
+    restated.
+
+    **What is true of this block and of no other one above it: it is a
+    POINTER, not the content.** Every other injected block is the whole of
+    what she is given on its axis — the transcript is the messages, the
+    portrait is the portrait. A `<notes>` line is a title and a summary of
+    something whose substance lives behind `note_read`, and that is the
+    tier's design rather than an economy (spec §5.1/§5.2): awareness in the
+    prompt, content on demand, with §6.2's read-before-write latch built on
+    exactly that gap. `NOTES_BLOCK_NOTE` says so in the opening tag, because a
+    model shown a summary and nothing else will act on the summary.
+
+    **And it is the one block with no cap on how many entries it may emit.**
+    Its siblings take `max_entries` or render a fixed single row; this renders
+    every standing note there is, because a note missing from the index is
+    invisible to her and invisible is indistinguishable from absent. The
+    budget is held in `nora.domain.notes`' per-entry caps and by the curator
+    retiring closed notes — see `render_notes`'s own docstring.
+    """
+    block = render_notes(ctx.notes)
+    return f"{block}\n" if block else ""
+
+
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
@@ -567,14 +596,15 @@ def build_prefill(
             # `self_card` before `peer_card`/`peer_history` before
             # `room_language` before `facts` before the transcript: her own
             # past, then theirs, then the room's own slang, then the
-            # workspace's standing facts, then the room — each block widening
-            # scope (facts widest of all — workspace, not room), and the
-            # transcript stays adjacent to the message it explains. The two
+            # workspace's standing facts, then its open questions, then the
+            # room — each block widening scope (facts and notes widest of all
+            # — workspace, not room; settled before open), and the transcript
+            # stays adjacent to the message it explains. The two
             # person blocks are adjacent because they are one person: who
             # they are, then what happened with them.
-            # `room_language`/`room_exchange`/`room_portrait`/`facts` all sit
-            # here — the VOLATILE tier, after `_peer_history_block` and before
-            # `_transcript_block` — and deliberately not inside
+            # `room_language`/`room_exchange`/`room_portrait`/`facts`/`notes`
+            # all sit here — the VOLATILE tier, after `_peer_history_block`
+            # and before `_transcript_block` — and deliberately not inside
             # `_context_header` above; see `_room_language_block`'s and
             # `_facts_block`'s own docstrings for why.
             _now_line(now) + _where_line(ctx.message.platform)
@@ -584,6 +614,7 @@ def build_prefill(
             + _room_exchange_block(ctx, max_entries=room_exchange_max_entries)
             + _room_portrait_block(ctx)
             + _facts_block(ctx)
+            + _notes_block(ctx)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),

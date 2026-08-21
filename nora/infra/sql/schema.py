@@ -1332,3 +1332,185 @@ FACT_PREMISE = sa.Table(
 IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
     "idx_fact_premise_premise_fact_id", FACT_PREMISE.c.premise_fact_id,
 )
+
+
+# ---------------------------------------------------------------------------
+# The note tier (2026-08-21 note-tier design). A note is TRACKED UNCERTAINTY —
+# workspace-keyed like `fact`, and for the same DEC-105/R-49 reason: rooms
+# sharing a workspace are one social unit, so a note established in one room
+# rendering into another crosses no boundary R-31 guards.
+#
+# Every CHECK below is required BY THE MIGRATION, not by this file alone —
+# `alembic check` is blind to CHECK constraints (CLAUDE.md; demonstrated on
+# this repo 2026-08-20). A CHECK declared only here is documentation.
+# ---------------------------------------------------------------------------
+
+NOTE = sa.Table(
+    "note",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("workspace", sa.Text, nullable=False),
+    # The injected index entry. Capped in `nora.domain.notes` AND here: the
+    # block goes into EVERY tag, so an over-long description is prompt budget
+    # spent forever. Truncating at render would be silent loss.
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("description", sa.Text, nullable=False),
+    sa.Column("uncertainty", sa.Text, nullable=False),
+    # The discriminator: a thing nothing would resolve is a fact or ignorance,
+    # never a tracked uncertainty. Retirement, promotion-readiness and a
+    # revisit's success criterion are all read off this one column.
+    sa.Column("closing_condition", sa.Text, nullable=False),
+    # The anchor. At least one of the two, enforced by
+    # `note_has_an_anchor_check` — without a referent there is nothing to look
+    # the note up by, nothing to compare for a merge, and no mechanical
+    # retirement. `anchor_date` is a YYYYMMDD calendar day, not epoch ms:
+    # merge compares it for EQUALITY and expiry compares it to today, and both
+    # are calendar-day questions a millisecond timestamp answers wrongly.
+    sa.Column("anchor_date", sa.Integer),
+    sa.Column("anchor_entity_ids", pg.ARRAY(sa.Text), nullable=False,
+              server_default=sa.text("'{}'")),
+    # A ROUTING key, never a filter (spec §3): the workspace is already the
+    # disclosure boundary. This decides where a promoted `Event` lands, since
+    # `Event` is conversation-scoped and a note is not.
+    sa.Column("established_in", sa.Text, nullable=False),
+    sa.Column("created_at", sa.BigInteger, nullable=False),
+    # What the compare-and-swap in the write path compares. On the note rather
+    # than derived by "latest revision" because a CAS needs one value both
+    # sides can name, and "whatever is newest right now" is the thing being
+    # guarded against.
+    sa.Column("head_revision_id", pg.UUID(as_uuid=False), nullable=False),
+    sa.Column("retired_at", sa.BigInteger),
+    # DELIBERATELY NOT `fact`'s biconditional. A note may retire with NO
+    # successor — a dinner that happened is replaced by nothing — so this is a
+    # one-directional implication: a replacement implies a retirement, never
+    # the converse. That asymmetry is why `DreamSink.supersede` takes
+    # `replaced_by: str | None` (DEC-130); collapsing it into the fact tier's
+    # shape would force this tier to mint a placeholder id.
+    sa.Column("replaced_by", pg.UUID(as_uuid=False),
+              sa.ForeignKey("note.id", name="note_replaced_by_fkey")),
+    sa.Column("retire_reason", sa.Text),
+    # The self-loop's state. `strikes` counts consecutive revisits that found
+    # the head unchanged; it resets ONLY on a tag-path revision, which is what
+    # keeps the breaker from resetting on the revisitor's own writes.
+    sa.Column("revisit_at", sa.BigInteger),
+    sa.Column("strikes", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("last_wake_revision_id", pg.UUID(as_uuid=False)),
+    # The correlation, as explicit nullable columns rather than a polymorphic
+    # link table — following `events.reminder_id`, which is this exact
+    # relationship already spelled out as one column.
+    sa.Column("event_id", pg.UUID(as_uuid=False)),
+    sa.Column("reminder_id", pg.UUID(as_uuid=False)),
+    sa.CheckConstraint(
+        "anchor_date is not null or cardinality(anchor_entity_ids) > 0",
+        name="note_has_an_anchor_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(closing_condition)) > 0",
+        name="note_has_a_closing_condition_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(title)) > 0 and length(title) <= 60",
+        name="note_title_fits_the_index_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(description)) > 0 and length(description) <= 200",
+        name="note_description_fits_the_index_check",
+    ),
+    sa.CheckConstraint(
+        "replaced_by is null or retired_at is not null",
+        name="note_replacement_implies_retirement_check",
+    ),
+    sa.CheckConstraint("strikes >= 0", name="note_strikes_are_not_negative_check"),
+)
+
+NOTE_REVISION = sa.Table(
+    "note_revision",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("note_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("note.id", name="note_revision_note_id_fkey"),
+              nullable=False),
+    sa.Column("body", sa.Text, nullable=False),
+    # The head this revision was written against — what makes the CAS
+    # possible. NULL is the first revision and nothing else.
+    sa.Column("parent_revision_id", pg.UUID(as_uuid=False)),
+    sa.Column("written_at", sa.BigInteger, nullable=False),
+    # Load-bearing beyond provenance: the strike reset distinguishes a
+    # TAG-PATH revision from the revisitor's own, and cannot without this.
+    sa.Column("established_by", sa.Text, nullable=False),
+    sa.CheckConstraint("length(btrim(body)) > 0", name="note_revision_has_a_body_check"),
+    sa.CheckConstraint(
+        "length(btrim(established_by)) > 0",
+        name="note_revision_names_its_writer_check",
+    ),
+)
+
+NOTE_ENTITY = sa.Table(
+    "note_entity",
+    METADATA,
+    sa.Column("note_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("note.id", name="note_entity_note_id_fkey"),
+              primary_key=True),
+    sa.Column("entity_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("fact_entity.id", name="note_entity_entity_id_fkey"),
+              primary_key=True),
+)
+
+NOTE_CANDIDATE = sa.Table(
+    "note_candidate",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("workspace", sa.Text, nullable=False),
+    # The miss cache, `fact_candidate`'s shape and for its reason: the SECOND
+    # miss on the same ground is evidence rather than a guess, and without the
+    # row the same gap is rediscovered forever with nothing accumulating.
+    sa.Column("probe", sa.Text, nullable=False),
+    sa.Column("first_seen_at", sa.BigInteger, nullable=False),
+    sa.Column("last_seen_at", sa.BigInteger, nullable=False),
+    sa.Column("occurrence_count", sa.Integer, nullable=False,
+              server_default=sa.text("1")),
+    sa.Column("observed_in", pg.ARRAY(sa.Text), nullable=False,
+              server_default=sa.text("'{}'")),
+    sa.UniqueConstraint("workspace", "probe", name="note_candidate_probe_key"),
+)
+
+#: The one read on the turn's critical path: every standing note for this
+#: workspace, for the injected index. PARTIAL on `retired_at is null` because a
+#: retired note is history and is never rendered — the same shape
+#: `idx_fact_standing` uses, and identically invisible to `alembic check`.
+IDX_NOTE_STANDING = sa.Index(
+    "idx_note_standing", NOTE.c.workspace,
+    postgresql_where=sa.text("retired_at is null"),
+)
+
+#: Merge detection (spec §7.1) is a GROUP BY over the anchor, so it reads this
+#: rather than every body — candidate detection costs zero tokens.
+IDX_NOTE_ANCHOR = sa.Index(
+    "idx_note_anchor", NOTE.c.workspace, NOTE.c.anchor_date,
+    postgresql_where=sa.text("retired_at is null"),
+)
+
+IDX_NOTE_REVISION_NOTE_ID = sa.Index(
+    "idx_note_revision_note_id", NOTE_REVISION.c.note_id,
+)
+
+#: The search index (spec §5.3). GIN + TRIGRAM rather than `tsvector`, decided
+#: against the live database: `pg_trgm` is available on `nora-db-1` and every
+#: CJK-segmenting alternative (`zhparser`, `pgroonga`, `pg_bigm`) is not. The
+#: corpus is mixed English and Cantonese and `to_tsvector('english', …)` does
+#: not segment Chinese at all, so a body reading 婚禮 would be unfindable while
+#: the search reported `nothing_found`. Trigrams need no segmentation; the cost
+#: is no stemming, which is a stated limitation rather than a surprise.
+#:
+#: Declared here rather than excluded from parity: `postgresql_ops` is exactly
+#: how an opclass is expressed to `compare_metadata`, so this index is visible
+#: to `test_the_metadata_matches_the_migrated_database` like any other. The
+#: `idx_messages_conv_ts` exclusion exists because autogenerate gets its DESC
+#: ordering wrong, which is not this index's problem.
+IDX_NOTE_REVISION_BODY_TRGM = sa.Index(
+    "idx_note_revision_body_trgm", NOTE_REVISION.c.body,
+    postgresql_using="gin", postgresql_ops={"body": "gin_trgm_ops"},
+)

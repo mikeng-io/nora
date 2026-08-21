@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design document only — the note tier spec (docs/superpowers/specs/2026-08-21-note-tier-design.md). No code, no schema, no behaviour change; nothing a user can observe until the implementation branch lands."
+}
