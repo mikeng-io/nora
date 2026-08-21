@@ -1036,6 +1036,22 @@ class ReplyGuard(HookProvider):
             log.exception("ReplyGuard._before_tool raised; allowing the call")
 
     def _after_tool(self, event) -> None:
+        """Two early returns, and TWO kinds of per-call state with opposite
+        correct placements. Getting the pair the wrong way round is how the
+        2026-08-21 leak below happened, so the distinction is stated here
+        rather than left to be re-derived:
+
+        - **«this call FINISHED»** — the in-flight reservation. True on every
+          path, including the ones that raised or were vetoed, so it belongs
+          ABOVE both returns.
+        - **«this call SUCCEEDED»** — `record`, the terminal latch, and
+          `_recall_found_something`. True on ONE path, so each belongs BELOW
+          both returns, and `_recall_found_something` additionally reads the
+          result's own status.
+
+        Only the second kind is visible through `counts`, which is why a
+        mistake in the first kind survives a suite that looks thorough.
+        """
         try:
             # The RESERVATION comes back first, on every path, because it is
             # not budget — it is "this call is still running". Releasing it

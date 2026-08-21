@@ -166,6 +166,17 @@ class ModelSpec:
     max_tokens: int
     temperature: float
     reasoning_effort: str = "none"
+    # DEFAULTED to the tag path's value, so every existing call site is
+    # unchanged and the turn that must end in `send_reply` still gets
+    # `"required"`. The Dreamer builds a SECOND source with
+    # `tool_choice=AFTER_SPEAKING`, because its loop has no terminal verb at
+    # all: under `"required"` the model must call something on every pass, and
+    # the only thing that ends a turn is a guard observing a terminal call
+    # (DEC-21/DEC-32) — so a read-only research loop could never stop by
+    # itself. The field lives here rather than on `create_dream_agent` because
+    # `tool_choice` is a property of the MODEL PROVIDER, and `ModelSource` is
+    # the only thing that builds one.
+    tool_choice: str = FIRST_CALL
 
 
 class ModelSource:
@@ -195,6 +206,7 @@ class ModelSource:
             model=self._spec.model, max_tokens=self._spec.max_tokens,
             temperature=self._spec.temperature, client=self._client,
             reasoning_effort=self._spec.reasoning_effort,
+            tool_choice=self._spec.tool_choice,
         )
 
 

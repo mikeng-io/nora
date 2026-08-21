@@ -536,3 +536,35 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
     # Nothing a message named changed the loaded set; only navigation activated.
     assert [s.name for s in plugin.get_available_skills(agent)] == ["navigation"]
     assert plugin.get_activated_skills(agent) == ["navigation"]
+
+
+def test_the_model_spec_still_defaults_to_required():
+    """The tag path's turn MUST end in `send_reply`, and `tool_choice=
+    "required"` is what makes the model call it at all. This default is the
+    thing that must not move; the Dreamer gets its own spec instead."""
+    from nora.agent.factory import FIRST_CALL, ModelSpec
+
+    assert ModelSpec(model="m", max_tokens=1, temperature=0.0).tool_choice == FIRST_CALL
+
+
+def test_a_model_source_hands_out_the_tool_choice_its_spec_declares():
+    """The gap between Task 2.4 and Task 2.5, closed: giving
+    `create_model_provider` a parameter was not enough, because `ModelSource`
+    is what actually builds the provider and it was hard-coded to the tag
+    path's value. A Dreamer built off the tag path's source would run its
+    read-only loop under `"required"` — and a loop with no terminal verb can
+    never stop under `"required"`, which is the entire reason `DreamGuard`
+    exists."""
+    from nora.agent.factory import ModelSource, ModelSpec
+
+    class _Client:
+        pass
+
+    source = ModelSource(
+        client=_Client(),                       # type: ignore[arg-type]
+        spec=ModelSpec(
+            model="m", max_tokens=1, temperature=0.0, tool_choice="auto",
+        ),
+    )
+
+    assert source.create().config["params"]["tool_choice"] == "auto"
