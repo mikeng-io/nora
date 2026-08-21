@@ -51,6 +51,9 @@ class CallLedger:
         self._budgets = dict(budgets)
         self._counts: dict[str, int] = dict.fromkeys(self._budgets, 0)
         self._in_flight: dict[str, int] = {}
+        # Which CALL each outstanding reservation belongs to, keyed by the
+        # SDK's `toolUseId`. See `release` for the bug this closes.
+        self._reserved: dict[str, str] = {}
 
     @property
     def counts(self) -> dict[str, int]:
@@ -80,16 +83,50 @@ class CallLedger:
         if tool_name in self._counts:
             self._counts[tool_name] += 1
 
-    def reserve(self, tool_name: str) -> None:
+    def reserve(self, tool_name: str, *, ref: str = "") -> None:
         """Mark a call ADMITTED BUT NOT YET FINISHED, so it counts against the
         ceiling while it runs — see this module's docstring for the parallel
-        batch that made this necessary and the trace that found it."""
-        if tool_name in self._counts:
-            self._in_flight[tool_name] = self._in_flight.get(tool_name, 0) + 1
+        batch that made this necessary and the trace that found it.
 
-    def release(self, tool_name: str) -> None:
-        """Drop a reservation, whatever the call's outcome. Idempotent below
-        zero because a hook that fires twice must not lend budget back."""
+        `ref` is the SDK's `toolUseId`, which is what makes `release` able to
+        drop THIS call's reservation rather than whichever one happens to be
+        outstanding. It defaults to empty only so a caller that has no id (a
+        test driving the ledger directly) still works; production always has
+        one.
+        """
+        if tool_name not in self._counts:
+            return
+        self._in_flight[tool_name] = self._in_flight.get(tool_name, 0) + 1
+        if ref:
+            self._reserved[ref] = tool_name
+
+    def release(self, tool_name: str, *, ref: str = "") -> None:
+        """Drop THIS call's reservation, whatever its outcome.
+
+        **Keyed on `ref` when there is one, and that is a fix rather than a
+        refinement** (2026-08-21 review, measured on both guards). `reserve` is
+        called only on the ADMITTED path, but the after-tool hook fires for a
+        VETOED call too — so a name-keyed release let a vetoed call decrement a
+        reservation belonging to a sibling in the same parallel batch:
+
+            A admitted, B admitted     -> in_flight = 2, ceiling closed
+            C VETOED (never reserved)
+            C's after-hook releases    -> in_flight = 1
+            D admitted                 -> a third call runs against a budget of 2
+
+        which is the 2026-08-13 nine-`place_info` trace this module exists to
+        prevent, needing only one veto in the batch to reopen. Unknown `ref`
+        releases nothing, which is the safe direction: a hook firing twice must
+        not lend budget back.
+
+        The name-only path is kept for callers with no id, and it keeps the old
+        behaviour for them — it cannot be made exact without one.
+        """
+        if ref:
+            name = self._reserved.pop(ref, None)
+            if name is None:
+                return
+            tool_name = name
         if self._in_flight.get(tool_name):
             self._in_flight[tool_name] -= 1
 

@@ -701,15 +701,15 @@ class ReplyGuard(HookProvider):
     def record(self, tool_name: str) -> None:
         self._ledger.record(tool_name)
 
-    def reserve(self, tool_name: str) -> None:
+    def reserve(self, tool_name: str, *, ref: str = "") -> None:
         """Mark a call ADMITTED BUT NOT YET FINISHED, so it counts against the
         ceiling while it runs — `nora.agent.call_ledger` holds the mechanism
         and the reasoning."""
-        self._ledger.reserve(tool_name)
+        self._ledger.reserve(tool_name, ref=ref)
 
-    def release(self, tool_name: str) -> None:
+    def release(self, tool_name: str, *, ref: str = "") -> None:
         """Drop a reservation, whatever the call's outcome."""
-        self._ledger.release(tool_name)
+        self._ledger.release(tool_name, ref=ref)
 
     def evaluate(self, tool_name: str, tool_input: dict) -> str | None:
         if tool_name not in self._budgets:
@@ -1031,7 +1031,7 @@ class ReplyGuard(HookProvider):
             # on purpose: `evaluate` is pure and SDK-free so every rule stays
             # testable without strands, and this hook is the thin translation
             # layer that owns lifecycle.
-            self.reserve(name)
+            self.reserve(name, ref=str(tool_use.get("toolUseId") or ""))
         except Exception:
             log.exception("ReplyGuard._before_tool raised; allowing the call")
 
@@ -1064,8 +1064,16 @@ class ReplyGuard(HookProvider):
             # it directly. Found while extracting `CallLedger` for `DreamGuard`,
             # by someone reading a comment that already claimed "the
             # reservation goes back on EVERY path" and checking whether it did.
-            name = (getattr(event, "tool_use", None) or {}).get("name", "")
-            self.release(name)
+            tool_use = getattr(event, "tool_use", None) or {}
+            name = tool_use.get("name", "")
+            # Keyed on the SDK's `toolUseId`, so this drops THIS call's
+            # reservation and not whichever one happens to be outstanding. A
+            # vetoed call reaches this hook too and never reserved: a
+            # name-keyed release let it decrement a SIBLING's reservation in
+            # the same parallel batch, reopening the ceiling by one and with it
+            # the 2026-08-13 trace `call_ledger` exists to prevent (2026-08-21
+            # review, measured on both guards).
+            self.release(name, ref=str(tool_use.get("toolUseId") or ""))
             if getattr(event, "exception", None) is not None:
                 return                       # a failed call does not consume budget
             # A CANCELLED CALL DID NOT RUN, so it consumes no budget and cannot

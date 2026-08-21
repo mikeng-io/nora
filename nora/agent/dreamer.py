@@ -229,14 +229,63 @@ def verify_tool_subsets(
     """
     ceiling = tools.read_only()
     for adaptor in adaptors:
-        escaped = frozenset(adaptor.tools) - ceiling
-        if escaped:
-            raise AdaptorToolError(
-                f"Dreamer adaptor {adaptor.name!r} declares tools outside the "
-                f"read-only ceiling: {', '.join(sorted(escaped))}. The Dreamer "
-                f"may look and may not act; a tool is grantable only if its "
-                f"NativeTool row says read_only=True."
+        for message in tool_subset_faults(adaptor, ceiling=ceiling):
+            raise AdaptorToolError(message)
+
+
+def tool_subset_faults(
+    adaptor: DreamAdaptor, *, ceiling: frozenset[str]
+) -> tuple[str, ...]:
+    """Every way this adaptor's declared subset is wrong, as messages.
+
+    Two axes, and they are independent — a tool can be read-only and still be
+    unusable by this adaptor:
+
+    1. **read vs act.** Outside `read_only_tools()` is an act verb, and no
+       background loop may hold one.
+    2. **room-scoped vs workspace-safe.** A WORKSPACE-keyed adaptor gets a
+       workspace name as its `key`, which is not a conversation id. Every
+       room-scoped read tool is bound to one — `load_transcript` reads one
+       room's record, `about`/`ask_memory`/`search_memory`/`group_members`
+       answer against one room's live roster — so handing it a workspace does
+       not fail loudly, it returns EMPTY. `load_transcript` on an unknown
+       conversation returns `{"messages": []}`, which is `unavailable`
+       reported as `nothing_found`: the one substitution R-27 forbids.
+
+    Split out of `verify_tool_subsets` so `DreamerRuntime.run` re-checks the
+    identical rule rather than a second copy of it — the startup check and the
+    per-run check disagreeing is worse than either being absent, because the
+    startup one is the one people trust.
+
+    **The second axis was documented and unenforced until 2026-08-21.** This
+    function's docstring, `RegistryToolSource`'s, DEC-133 and the release
+    fragment all asserted the restriction; nothing applied it, and a review
+    probe built `about`/`load_transcript`/`search_memory` for a workspace key
+    with no complaint. A protection three documents claim exists is worse than
+    one nobody claims, because the next reader trusts it.
+    """
+    faults: list[str] = []
+    declared = frozenset(adaptor.tools)
+    escaped = declared - ceiling
+    if escaped:
+        faults.append(
+            f"Dreamer adaptor {adaptor.name!r} declares tools outside the "
+            f"read-only ceiling: {', '.join(sorted(escaped))}. The Dreamer "
+            f"may look and may not act; a tool is grantable only if its "
+            f"NativeTool row says read_only=True."
+        )
+    if adaptor.key_kind == "workspace":
+        room_scoped = declared - WORKSPACE_SAFE_TOOLS
+        if room_scoped:
+            faults.append(
+                f"Dreamer adaptor {adaptor.name!r} is keyed on a WORKSPACE and "
+                f"declares room-scoped tools: {', '.join(sorted(room_scoped))}. "
+                f"A workspace is not a conversation, so these would answer "
+                f"EMPTY rather than fail — «I could not check» reported as "
+                f"«there was nothing». Workspace-safe tools are: "
+                f"{', '.join(sorted(WORKSPACE_SAFE_TOOLS))}."
             )
+    return tuple(faults)
 
 
 def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | None:
@@ -393,17 +442,18 @@ class DreamerRuntime:
             instructions = self._instructions.for_objective(adaptor.objective)
             sha = instructions.sha256
 
-            ceiling = self._tools.read_only()
-            escaped = frozenset(adaptor.tools) - ceiling
-            if escaped:
+            faults = tool_subset_faults(
+                adaptor, ceiling=self._tools.read_only()
+            )
+            if faults:
                 # Loud, and `unavailable` rather than a raise: a background loop
                 # must not take its own clock down, but this is a wiring fault
-                # and reads as one.
-                log.error(
-                    "dream run refused: adaptor %s declares tools outside the "
-                    "read-only ceiling: %s",
-                    adaptor.name, ", ".join(sorted(escaped)),
-                )
+                # and reads as one. The IDENTICAL rule the startup check runs —
+                # one function, two call sites — because a per-run check that
+                # had drifted from the startup one would be worse than none:
+                # the startup check is the one people trust.
+                for fault in faults:
+                    log.error("dream run refused: %s", fault)
                 return self._finish(
                     adaptor, "unavailable", 0, sha, None, started,
                 )
@@ -415,6 +465,35 @@ class DreamerRuntime:
                 metrics=self._metrics,
             )
             prompt = await adaptor.inputs(key=key, batch=batch)
+            if not prompt.strip():
+                # **THE FIRE CONDITION, and it is general rather than the fact
+                # tier's.** A blank `inputs` means the adaptor has nothing to
+                # reason about, and calling a model with nothing to reason
+                # about is a research loop spent on an empty prompt.
+                #
+                # It matters most for an adaptor with `uses_watermark = False`,
+                # which gets no lag/quiet/age conditions at all and would
+                # otherwise fire on EVERY tick: at the shipped 300s cadence
+                # that is 288 full `web_search`/`web_fetch` loops per workspace
+                # per day with nothing pending. `RoomPortraitSynthesizer`, the
+                # standing precedent for a watermark-free participant, has its
+                # own trigger (`appended_total > 0`); the port's own docstring
+                # says such an adaptor "must carry its own fire condition", and
+                # this is where the runtime lets it.
+                #
+                # `commit(key, ())` is still called, so the decay contract is
+                # untouched: a watermarked adaptor over a quiet room renders a
+                # blank prompt too, and that path is exactly where
+                # `LanguageConsolidator`'s time-driven rescore lives. Reported
+                # `nothing_found` — «I looked and there was nothing» — because
+                # that is what happened; `unavailable` would hold a watermark
+                # over a batch that was genuinely empty.
+                written = await adaptor.commit(
+                    key=key, proposals=(), now_ms=int(time.time() * 1000),
+                )
+                return self._finish(
+                    adaptor, "nothing_found", written, sha, None, started,
+                )
             agent = factory.create_dream_agent(
                 model=self._models.create(),
                 system_prompt=instructions.text,

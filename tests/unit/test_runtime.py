@@ -1485,3 +1485,59 @@ async def test_seeding_leaves_a_scope_the_source_has_never_read():
 
     assert seeded == 0
     assert language.advance_calls == []
+
+
+async def test_an_unavailable_outcome_backs_off_even_though_nothing_raised():
+    """The defect a review probe caught, and the reason it hid.
+
+    `DreamerRuntime.run` catches everything the model call can throw — a 429
+    after the retry policy is spent, a reset connection, its own wall clock —
+    and returns `unavailable` NORMALLY. So `_run_adaptor`'s `except` never sees
+    a provider outage, and the success path was running `failures.pop(unit)`,
+    which did not merely fail to back off: it CLEARED backoff accrued from an
+    unrelated failure.
+
+    Measured before the fix: 29 model attempts in ~25 ticks against an
+    always-unavailable runtime, versus 1 against one that raises. At the
+    shipped 300s tick that is a 429 answered at full cadence forever — exactly
+    what `dream_loop`'s own docstring says the backoff exists to prevent.
+
+    **The two tests above could not catch it** because their runner RAISES, and
+    the real runtime cannot. That is the shape worth remembering: a double that
+    fails in a way the real collaborator never does tests a path production
+    does not take."""
+    language = _KeyedLanguage(age=1e9)
+    runner = _RecordingRunner(unavailable_for="facts")
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=0.0, batch_limit=10,
+        adaptors=[_StubAdaptor("facts")], runtime=runner,
+    ), ticks=0.1)
+
+    assert len(runner.calls) == 1, (
+        f"an unavailable run was retried {len(runner.calls)} times with no "
+        "backoff — a provider outage answered at full cadence"
+    )
+
+
+async def test_a_nothing_found_run_is_a_success_and_does_not_back_off():
+    """The mirror of the test above, so the fix cannot degrade into «treat
+    every outcome as a failure».
+
+    `nothing_found` means the adaptor LOOKED and there was nothing — R-27's
+    middle state, and a perfectly healthy tick. Backing off on it would make a
+    quiet room progressively invisible: the quieter it got, the less often
+    anything would look at it."""
+    language = _KeyedLanguage(age=1e9)
+    runner = _RecordingRunner(status="nothing_found")
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=0.0, batch_limit=10,
+        adaptors=[_StubAdaptor("facts")], runtime=runner,
+    ), ticks=0.08)
+
+    assert len(runner.calls) > 1, "a healthy nothing_found run was backed off"

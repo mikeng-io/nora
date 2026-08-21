@@ -39,6 +39,7 @@ from nora.agent.dreamer import (
     parse_envelope,
     verify_tool_subsets,
 )
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.ports import Proposal
 from nora.obs.metrics import Metrics
 
@@ -581,3 +582,126 @@ def test_asking_for_nothing_builds_nothing_and_touches_no_collaborator():
     )
 
     assert source.build(key="nora", names=frozenset()) == []
+
+
+# ---- the second axis: room-scoped vs workspace-safe -----------------------
+
+
+def test_a_workspace_keyed_adaptor_is_refused_a_room_scoped_tool():
+    """The protection three documents claimed and nothing applied.
+
+    `RegistryToolSource`'s docstring, `verify_tool_subsets`' docstring, DEC-133
+    and the release fragment all asserted that a workspace-keyed adaptor is
+    restricted to `WORKSPACE_SAFE_TOOLS`. A review probe built
+    `about`/`load_transcript`/`search_memory` for a workspace key with no
+    complaint — nothing checked `key_kind` anywhere.
+
+    **The failure it would have caused is worse than a missing tool.** A
+    workspace name is not a conversation id, so `load_transcript` against one
+    does not raise — it returns `{"messages": []}`. That is «I could not
+    check» reported as «there was nothing», the one substitution R-27 exists to
+    forbid, arriving in the tier whose whole purpose is to keep those two
+    apart."""
+    adaptor = _Adaptor(
+        sink=_Sink(), tools=frozenset({"web_search", "load_transcript"}),
+    )
+    adaptor.key_kind = "workspace"
+
+    with pytest.raises(AdaptorToolError) as exc:
+        verify_tool_subsets([adaptor], tools=_ToolSource(
+            ceiling=frozenset({"web_search", "load_transcript", "now"})
+        ))
+
+    # The safe one is not BLAMED — it still appears further down, in the
+    # message's list of what IS allowed, which is the useful half of a refusal.
+    assert "declares room-scoped tools: load_transcript." in str(exc.value)
+    assert "Workspace-safe tools are:" in str(exc.value)
+
+
+def test_a_scope_keyed_adaptor_may_hold_a_room_scoped_tool():
+    """The other direction, and the reason the rule is on `key_kind` rather
+    than on the tool: a room-scoped tool is exactly right for an adaptor whose
+    key IS a room. The candidate extractor reads its room; only the
+    adjudicator, keyed on a workspace, has no room to bind one to."""
+    adaptor = _Adaptor(
+        sink=_Sink(), tools=frozenset({"load_transcript"}),
+    )
+    assert adaptor.key_kind == "scope"
+
+    verify_tool_subsets([adaptor], tools=_ToolSource(
+        ceiling=frozenset({"load_transcript", "now"})
+    ))
+
+
+async def test_the_per_run_check_refuses_the_same_thing_the_startup_check_does(
+    monkeypatch,
+):
+    """One rule, two call sites. A per-run check that had drifted from the
+    startup one would be worse than none: the startup check is the one people
+    trust, and the corpus it validates against hot-reloads."""
+    sink = _Sink()
+    adaptor = _Adaptor(sink=sink, tools=frozenset({"load_transcript"}))
+    adaptor.key_kind = "workspace"
+    runtime, _ = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "a"}]}',
+        tools=_ToolSource(ceiling=frozenset({"load_transcript", "now"})),
+    )
+
+    outcome = await runtime.run(adaptor=adaptor, key="nora", batch=())
+
+    assert outcome.status == "unavailable"
+    assert sink.commits == []
+
+
+async def test_a_blank_prompt_skips_the_model_and_still_commits(monkeypatch):
+    """The fire condition, and the reason it is general rather than the fact
+    tier's own.
+
+    An adaptor with `uses_watermark = False` gets no lag, quiet or age
+    condition — the loop dispatches it on EVERY tick. Without this, the fact
+    adjudicator would spend a full `web_search`/`web_fetch` research loop 288
+    times a day per workspace on a prompt that says «Claims to settle: (none)».
+
+    `commit(key, ())` is still called, so the decay contract survives: a
+    watermarked adaptor over a quiet room renders a blank prompt too, and that
+    is exactly where `LanguageConsolidator`'s time-driven rescore lives."""
+    invoked: list[int] = []
+    sink = _Sink()
+
+    class _Blank(_Adaptor):
+        async def inputs(self, *, key, batch):
+            return "   \n  "
+
+    runtime, metrics = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "a"}]}',
+        invoke=lambda *a, **kw: (invoked.append(1), _completed(_Result()))[1],
+    )
+
+    outcome = await runtime.run(adaptor=_Blank(sink=sink), key="g1", batch=())
+
+    assert outcome.status == "nothing_found"
+    assert invoked == [], "a model was called with nothing to reason about"
+    assert len(sink.commits) == 1 and sink.commits[0][1] == ()
+    assert metrics.get(
+        "nora_dream_run_total", adaptor="test-adaptor", status="nothing_found",
+    ) == 1
+
+
+async def test_a_real_prompt_still_reaches_the_model(monkeypatch):
+    """The control. A fire condition that never fires is the same subsystem
+    that does nothing, and this file would not otherwise notice."""
+    invoked: list[int] = []
+    sink = _Sink()
+    runtime, _ = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "a"}]}',
+        invoke=lambda *a, **kw: (invoked.append(1), _completed(_Result()))[1],
+    )
+
+    row = TranscriptRow(
+        id=7, sender_id="p1", sender_name="A", ts=1, body="big walk 今晚?",
+        is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+    outcome = await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=(row,))
+
+    assert invoked == [1]
+    assert outcome.status == "ok"

@@ -193,3 +193,47 @@ def test_a_cancelled_call_also_gives_its_reservation_back():
         g._after_tool(FakeAfterEvent("load_transcript", cancel_message="no"))
 
     assert g.evaluate("load_transcript", {}) is None
+
+
+def test_a_vetoed_call_does_not_release_a_siblings_reservation():
+    """The ceiling has to hold WITHIN one parallel batch, and a veto in that
+    batch was reopening it (2026-08-21 review, measured on both guards).
+
+    `reserve` runs only on the ADMITTED path, but the after-tool hook fires for
+    a VETOED call too. Releasing by NAME therefore let the vetoed call
+    decrement a sibling's reservation:
+
+        A admitted, B admitted     -> in_flight = 2, ceiling closed
+        C vetoed (never reserved)
+        C's after-hook releases    -> in_flight = 1
+        D admitted                 -> a third call runs against a budget of 2
+
+    which is the 2026-08-13 nine-`place_info` trace `call_ledger` exists to
+    prevent, needing only one veto in the batch to reopen. Asserted through
+    `evaluate` rather than through the ledger, because the veto is where the
+    leak costs the model something."""
+    budget = BUDGETS["load_transcript"]
+    g = _guard()
+
+    # Fill the ceiling with admitted, still-running calls — a parallel batch,
+    # which is the condition the reservation exists for.
+    for i in range(budget):
+        g._before_tool(_before("load_transcript", ref=f"a{i}"))
+
+    assert g.evaluate("load_transcript", {}) is not None, "ceiling should be closed"
+
+    # One more call in the same batch is VETOED, and its after-hook fires.
+    vetoed = FakeAfterEvent("load_transcript", cancel_message="over budget")
+    vetoed.tool_use["toolUseId"] = "vetoed-1"
+    g._after_tool(vetoed)
+
+    assert g.evaluate("load_transcript", {}) is not None, (
+        "a vetoed call gave back a reservation it never made, reopening the "
+        "ceiling for a sibling in the same batch"
+    )
+
+
+def _before(name: str, *, ref: str) -> FakeBeforeEvent:
+    event = FakeBeforeEvent(name, {})
+    event.tool_use["toolUseId"] = ref
+    return event

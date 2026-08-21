@@ -262,6 +262,25 @@ class _ConsolidationCursor(Protocol):
     ) -> None: ...
 
 
+class _DreamOutcome(Protocol):
+    """What one adaptor run reports, seen from the clock: the R-27 status and
+    nothing else.
+
+    A read-only PROPERTY rather than a bare attribute so the concrete
+    `DreamOutcome`'s `Literal["ok", "nothing_found", "unavailable"]` satisfies
+    it — a plain `status: str` on a Protocol is mutable and therefore
+    invariant, which a narrower literal type does not match.
+
+    The clock acts on exactly one value (`"unavailable"`, which drives the
+    backoff and holds the watermark), so narrowing to one property is what
+    keeps `nora.app` from naming a type that lives in `nora.agent` — which it
+    may not import, because that package imports `strands`.
+    """
+
+    @property
+    def status(self) -> str: ...
+
+
 class _AdaptorRunner(Protocol):
     """`nora.agent.dreamer.DreamerRuntime`, seen from the clock: run one
     adaptor for one key and say what happened.
@@ -277,7 +296,7 @@ class _AdaptorRunner(Protocol):
 
     async def run(
         self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
-    ) -> Any: ...
+    ) -> _DreamOutcome: ...
 
 
 # The capped-exponential SHAPE `supervise_adapter` uses above, reused rather
@@ -427,7 +446,7 @@ async def _dream_adaptor_once(
     record: _SinceReadable, language: _ConsolidationCursor, metrics: Metrics,
     key: str, safety_lag: int, quiet_seconds: float, max_age_seconds: float,
     batch_limit: int,
-) -> None:
+) -> str | None:
     """One adaptor, one key, one cycle — `_dream_once`'s shape generalised off
     the hardcoded `"language"` cursor and off `RoomConsolidator`.
 
@@ -436,10 +455,18 @@ async def _dream_adaptor_once(
     `RoomPortraitSynthesizer` is the standing precedent for a dream-loop
     participant with none of those, and the fact adaptor is the second — its
     input is the candidate table, not a raw-message proxy for it.
+
+    **Returns the run's STATUS, or `None` when the fire conditions did not
+    fire.** The caller needs it: `DreamerRuntime.run` absorbs every failure
+    into an `unavailable` outcome and RETURNS NORMALLY, so a provider outage
+    reaches `_run_adaptor` as a successful call. Without this return value the
+    exponential backoff could never engage on the one failure it exists for —
+    measured, 2026-08-21: 29 model attempts in 25 ticks against an
+    always-unavailable runtime, versus 1 against a runtime that raises. Worse,
+    the success path was CLEARING backoff accrued from an unrelated failure.
     """
     if not adaptor.uses_watermark:
-        await runtime.run(adaptor=adaptor, key=key, batch=())
-        return
+        return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
 
     watermark = await language.watermark_for(
         consolidator_name=adaptor.name, scope_id=key)
@@ -462,7 +489,7 @@ async def _dream_adaptor_once(
         or age >= max_age_seconds      # fires at lag == 0 ON PURPOSE
     )
     if not fires:
-        return
+        return None
 
     batch = await record.since(
         conversation_id=key, after_id=watermark, limit=batch_limit)
@@ -476,7 +503,7 @@ async def _dream_adaptor_once(
         # permanently with nothing left to retry, and
         # `nora_dream_evidence_lost_total` above is structurally blind to it
         # (it measures PRUNING). An ERROR is never a PASS.
-        return
+        return outcome.status
 
     if batch:
         # LAST, and after the write has committed. The unsafe direction is
@@ -497,6 +524,7 @@ async def _dream_adaptor_once(
             consolidator_name=adaptor.name, scope_id=key,
             last_message_id=watermark,
         )
+    return outcome.status
 
 
 async def dream_loop(
@@ -630,6 +658,12 @@ async def dream_loop(
         )
         return ()
 
+    def _count_failure(unit: str) -> None:
+        """One place both failure paths converge, so the exponential can never
+        be advanced by one and reset by the other."""
+        failures[unit] = failures.get(unit, 0) + 1
+        last_failure_at[unit] = time.monotonic()
+
     async def _run_adaptor(
         adaptor: DreamAdaptor, key: str, runner: _AdaptorRunner
     ) -> None:
@@ -642,23 +676,49 @@ async def dream_loop(
         """
         unit = f"{adaptor.name}:{key}"
         try:
-            await _dream_adaptor_once(
+            status = await _dream_adaptor_once(
                 adaptor=adaptor, runtime=runner, record=record,
                 language=language, metrics=metrics, key=key,
                 safety_lag=safety_lag, quiet_seconds=quiet_seconds,
                 max_age_seconds=max_age_seconds, batch_limit=batch_limit,
             )
-            failures.pop(unit, None)
-            last_failure_at.pop(unit, None)
+            if status == "unavailable":
+                # **A FAILURE, even though nothing raised.**
+                # `DreamerRuntime.run` catches everything the model call can
+                # throw — 429 after the retry policy is spent, a reset
+                # connection, its own wall clock — and returns
+                # `unavailable` NORMALLY. So the `except` below never sees a
+                # provider outage, and before 2026-08-21 the success path
+                # here ran `failures.pop(unit)`, which did not merely fail to
+                # back off: it actively CLEARED backoff accrued from an
+                # unrelated failure.
+                #
+                # Measured with a probe at `tick_seconds=0.01`: 29 model
+                # attempts in ~25 ticks against an always-unavailable runtime,
+                # versus 1 against one that raises. At the shipped 300s tick
+                # that is a 429 answered at full cadence forever — the exact
+                # thing this loop's own docstring says the backoff exists to
+                # prevent, with the two tests covering it passing over a path
+                # production does not take (their runner RAISES; the real one
+                # cannot).
+                #
+                # A content failure — the model returned prose — lands here
+                # too, and that is accepted rather than special-cased: asking
+                # a model that will not answer is also waste, and at a 300s
+                # tick the first three backoff steps (60/120/240s) cost
+                # nothing. The fourth is where it starts skipping ticks, which
+                # is the right point to stop trying.
+                _count_failure(unit)
+            else:
+                failures.pop(unit, None)
+                last_failure_at.pop(unit, None)
         except Exception:
-            # `DreamerRuntime.run` absorbs its own failures into an
-            # `unavailable` outcome, so reaching here means something OUTSIDE
-            # the model call broke — the cursor store, the record read. Counted
-            # against this adaptor's own backoff, never its siblings'.
+            # Something OUTSIDE the model call broke — the cursor store, the
+            # record read, an adaptor raising out of `inputs`. Counted against
+            # this adaptor's own backoff, never its siblings'.
             log.exception("dream cycle failed for %s", unit)
             metrics.inc("nora_errors_total", stage="dream")
-            failures[unit] = failures.get(unit, 0) + 1
-            last_failure_at[unit] = time.monotonic()
+            _count_failure(unit)
         finally:
             running.discard(unit)
 

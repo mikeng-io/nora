@@ -133,7 +133,7 @@ class DreamGuard(HookProvider):
             # this call too. The mutation lives HERE and not in `evaluate` on
             # purpose: `evaluate` is pure so every rule stays testable without
             # strands, and this hook is the layer that owns lifecycle.
-            self._ledger.reserve(name)
+            self._ledger.reserve(name, ref=str(tool_use.get("toolUseId") or ""))
         except Exception:
             # A guard bug must not kill an unattended run; worst case it fails
             # open, logged. Same posture as `ReplyGuard._before_tool`.
@@ -159,13 +159,19 @@ class DreamGuard(HookProvider):
 
         The reservation goes back on EVERY path — vetoed, failed, or done — and
         therefore BEFORE both returns. It is not budget; it is "this call is
-        still running". (`ReplyGuard._after_tool` returns on the exception path
-        before releasing, so a raised call there holds its reservation for the
-        rest of the tag; not changed under this task, and reported.)
+        still running".
+
+        **Keyed on the SDK's `toolUseId`**, so it drops THIS call's reservation
+        rather than whichever one is outstanding. A vetoed call reaches this
+        hook and never reserved, so a name-keyed release let it decrement a
+        SIBLING's reservation in the same parallel batch — reopening the
+        ceiling by one, and with it the trace `call_ledger` exists to prevent.
+        Measured on both guards, 2026-08-21 review.
         """
         try:
-            name = (getattr(event, "tool_use", None) or {}).get("name", "")
-            self._ledger.release(name)
+            tool_use = getattr(event, "tool_use", None) or {}
+            name = tool_use.get("name", "")
+            self._ledger.release(name, ref=str(tool_use.get("toolUseId") or ""))
             if getattr(event, "exception", None) is not None:
                 return                       # a failed call does not consume budget
             if getattr(event, "cancel_message", None) is not None:
