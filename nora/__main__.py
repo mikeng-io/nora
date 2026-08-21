@@ -178,6 +178,20 @@ class App:
                 runtime=deps.dreamer_runtime,
                 workspaces=deps.workspace_scopes,
             ))
+        elif self.cfg.dreamer.enabled:
+            # The one combination that is a WIRING MISTAKE rather than a
+            # choice, and it was silent (2026-08-21 review). `[dreamer]`
+            # decides whether the runtime exists; `[language]` decides whether
+            # the CLOCK runs at all — so an operator who turned the Dreamer on
+            # and left `[language]` off has a fully built runtime, adaptors,
+            # budgets and instructions, and nothing ever ticks them. The line
+            # below is the difference between «I turned it on and it isn't
+            # working» taking five minutes or an afternoon.
+            log.error(
+                "dreamer.enabled = true but language.enabled = false: the "
+                "Dreamer's CLOCK is the language loop, so nothing will tick "
+                "and no adaptor will ever run"
+            )
         else:
             log.info("dream loop disabled (language.enabled = false)")
         deps.background.spawn(runtime.debounce_sweep_loop(

@@ -563,10 +563,15 @@ class DreamerRuntime:
                 "dream run returned %d items, keeping %d (adaptor=%s key=%s)",
                 len(items), MAX_ITEMS, adaptor.name, key,
             )
-            for _ in range(dropped):
-                self._metrics.inc(
-                    "nora_dream_screened_total", adaptor=adaptor.name, reason="cap",
-                )
+            # ONE increment carrying the count, not one call per item: the
+            # envelope cap is 200k characters, so a pathological response can
+            # hold tens of thousands of items and a per-item loop would spend
+            # the tick inside prometheus rather than on the drop it is
+            # reporting (2026-08-21 review).
+            self._metrics.inc(
+                "nora_dream_screened_total", float(dropped),
+                adaptor=adaptor.name, reason="cap",
+            )
             items = items[:MAX_ITEMS]
 
         kept, _rejected = screen(

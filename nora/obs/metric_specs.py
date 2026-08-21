@@ -906,8 +906,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the only value today.
     _CounterSpec(
         "nora_dream_skipped_total",
-        "Dream-loop scope ticks skipped, by reason. reason=\"in_flight\": "
-        "the previous cycle for this scope had not finished yet.",
+        "Dream-loop ticks skipped, by reason. reason=\"in_flight\": the "
+        "previous cycle for this SCOPE had not finished yet. "
+        "reason=\"in_flight_adaptor\": the previous cycle for this "
+        "(adaptor, key) had not — kept apart because one adaptor wedged and "
+        "one scope wedged are different diagnoses on the one series that "
+        "answers «is the Dreamer stuck?».",
         ("reason",),
     ),
     # `SqlLanguageStore.watermark_is_behind_the_record`'s tell, read by
@@ -997,7 +1001,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_dream_screened_total",
         "Envelope items dropped before reaching a sink, by adaptor and "
-        "reason (identifier, coordinate).",
+        "reason: identifier or coordinate (the R-18/R-28 screen), or cap "
+        "(the per-run item ceiling — a silent cap reads as 'we wrote "
+        "everything it found').",
         ("adaptor", "reason"),
     ),
     # Strands raises nothing and logs nothing when a budget cap binds — the

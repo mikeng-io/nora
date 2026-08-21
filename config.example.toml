@@ -827,6 +827,29 @@ total_tokens = 40000
 output_tokens = 4000
 timeout_seconds = 120
 
+# The two adaptors that EXIST today (`nora/language/fact_adaptor.py`). The two
+# above are for Phase 3's migration of the room consolidators and name nothing
+# yet — `budget_for` falls back to the defaults for an unknown key, silently,
+# so a section naming only future adaptors would leave the real ones on
+# defaults nobody chose (2026-08-21 review).
+#
+# UNMEASURED starting points, like their neighbours. The adjudicator's are
+# deliberately LARGER: proving a claim against the open web is search, read,
+# notice the page does not cover the question, search differently — several
+# fetches, each a page of tokens — while the extractor makes ONE tool-free
+# call over a message batch and is sized well under the shared default.
+[dreamer.budgets.fact-candidates]
+turns = 2
+total_tokens = 20000
+output_tokens = 4000
+timeout_seconds = 60
+
+[dreamer.budgets.fact-adjudication]
+turns = 10
+total_tokens = 120000
+output_tokens = 8000
+timeout_seconds = 300
+
 [obs.logging]
 level = "INFO"
 path = "~/workspace/nora/data/nora.log"

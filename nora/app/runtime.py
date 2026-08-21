@@ -774,8 +774,16 @@ async def dream_loop(
                     # mattered, and nothing here can invent one.
                     unit = f"{adaptor.name}:{key}"
                     if unit in running:
+                        # A DISTINCT reason value rather than a new label:
+                        # `nora_dream_skipped_total` carries `("reason",)` and
+                        # nothing else, and adding a label to a live series
+                        # breaks whatever is summing it. Without this, an
+                        # adaptor stuck for hours and a consolidator stuck for
+                        # hours are the same number on the one series that
+                        # answers «is the Dreamer wedged?» (2026-08-21 review).
                         metrics.inc(
-                            "nora_dream_skipped_total", reason="in_flight")
+                            "nora_dream_skipped_total",
+                            reason="in_flight_adaptor")
                         continue
                     if failures.get(unit) and not _backoff_elapsed(
                         unit, failures[unit], last_failure_at,

@@ -224,6 +224,17 @@ class NativeTool:
     # Read by `ToolRegistry.read_only_tools()`, which is the CEILING and not
     # the grant: each Dreamer adaptor declares its own narrower subset by name
     # and the runtime refuses any name outside this set.
+    #
+    # **One entry is arguably a lie and is worth naming so the next classifier
+    # does not read it as precedent** (2026-08-21 review): `media_fetch` is
+    # `read_only=True` and writes a row — it persists the vision model's
+    # description into `media_descriptions` via `vision_cache.aput`. It is
+    # admitted because that write is an idempotent, content-addressed CACHE of
+    # a pure function of the bytes: replaying it changes no answer, discloses
+    # nothing new, and skipping it would only cost a second vision call. That
+    # is a narrow exemption for a cache keyed on a hash, NOT a general "writes
+    # are fine if they are cheap". A tool that records that something HAPPENED
+    # — a call, a decision, a message — is an act verb whatever it costs.
     read_only: bool = False
 
 

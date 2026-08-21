@@ -1374,7 +1374,12 @@ async def test_an_adaptor_still_in_flight_is_skipped_not_re_entered():
     ), ticks=0.08)
 
     assert runner.calls == 1
-    assert metrics.get("nora_dream_skipped_total", reason="in_flight") > 0
+    # `in_flight_adaptor`, not `in_flight`: one adaptor wedged and one scope
+    # wedged are different diagnoses, and this is the one series that answers
+    # «is the Dreamer stuck?».
+    assert metrics.get(
+        "nora_dream_skipped_total", reason="in_flight_adaptor") > 0
+    assert metrics.get("nora_dream_skipped_total", reason="in_flight") == 0
 
 
 # ---- the additive guarantee, and the wiring mistake that is otherwise silent
