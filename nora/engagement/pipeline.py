@@ -679,6 +679,25 @@ class EngagementPipeline:
                 "nora_silent_failures_total", reason="handler_error",
                 platform=msg.platform, audience="tag",
             )
+            # Task 6 fix (review finding 1): `trace` may already be bound here
+            # — a fault inside the never-silent-fallback delivery, the DEC-93
+            # recovery delivery, or `check_outcome` itself lands in THIS
+            # `except`, having reached `invoke.run`'s return but never the
+            # `dataclasses.replace` correction a few lines above. Left alone,
+            # the `finally`'s unconditional save would persist that trace with
+            # its STILL-PLACEHOLDER `"send_reply"` outcome — a turn that
+            # actually crashed and delivered nothing would be retained as if
+            # it succeeded normally, a false positive Phase 2's fold would
+            # read as fact. This branch cannot know for certain what (if
+            # anything) reached the group before the crash, and a WRONG label
+            # is worse than no label at all — the same argument
+            # `check_outcome`'s own docstring makes about a mislabelled
+            # `nora_silent_failures_total` reason aiming the next
+            # investigation at the wrong thing. So this crashed turn joins
+            # the "fault before `invoke.run` ever returned" case: no
+            # attributable trace, no save (the `finally`'s `trace is not
+            # None` guard skips it).
+            trace = None
         finally:
             # Resolved here, not after `check_outcome`, so that EVERY exit path
             # a tag has — timeout, llm_error, guard veto, no_send_call, and the

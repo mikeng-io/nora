@@ -418,6 +418,16 @@ async def test_an_unmapped_sender_delivers_with_no_honcho_feed():
 
     assert memory.fed == []
     assert _held(pipeline) is False
+    # Task 6 (review finding 2): `feedback.run`'s own gate — `if sent and
+    # ctx.tagger is not None` — is exactly what leaves `memory.fed == []`
+    # above for this UNMAPPED sender. The `TagTrace` save must NOT inherit
+    # that gate (§7.4); this is the one scenario in the suite that actually
+    # exercises `ctx.tagger is None` on a turn that still delivered, so it is
+    # the only place independence from the `ctx.tagger` half of the gate (as
+    # opposed to the `sent` half, which the silent/vetoed/timeout/llm_error
+    # tests already cover) can be proven.
+    assert len(pipeline._tag_trace_store.saved) == 1
+    assert pipeline._tag_trace_store.saved[0].outcome == "send_reply"
 
 
 # ---------------------------------------------------------------------------
@@ -859,6 +869,69 @@ async def test_a_tag_trace_save_failure_never_takes_down_an_otherwise_successful
 
     assert adapter.texts == ["今晚七點半得"]
     assert _held(pipeline) is False
+
+
+class _FaultingMetricsAfterInvoke:
+    """Wraps a real `Metrics`, forwarding every call, EXCEPT the first `inc`
+    of `fault_name` — which raises instead. Every existing fault double in
+    this file (`_FaultingContextAssembler`, `ScriptedRunner(raises=...)`)
+    only reaches BEFORE or DURING `invoke.run` — none can land a fault
+    strictly AFTER `invoke.run` returns but BEFORE the pipeline's Task 6
+    outcome correction (`dataclasses.replace`, review finding 1's window).
+    `"nora_loop_exhausted_fallbacks_total"` is incremented at exactly one
+    site in the whole codebase (`pipeline.py`, immediately after the
+    never-silent-fallback's `deliver()` call succeeds) — squarely inside that
+    window and nowhere else, so faulting only that name cannot also trip any
+    OTHER `metrics.inc`/`.observe` call this turn makes."""
+
+    def __init__(self, real: Metrics, *, fault_name: str) -> None:
+        self._real = real
+        self._fault_name = fault_name
+        self._fired = False
+
+    def inc(self, name: str, value: float = 1.0, **labels) -> None:
+        if name == self._fault_name and not self._fired:
+            self._fired = True
+            raise RuntimeError("metrics backend down")
+        self._real.inc(name, value, **labels)
+
+    def __getattr__(self, attr):
+        return getattr(self._real, attr)
+
+
+async def test_a_crash_after_invoke_run_never_saves_a_stale_placeholder_outcome():
+    """Review finding 1: a fault landing between `invoke.run` returning and
+    the outcome correction used to leave `trace` bound with its PLACEHOLDER
+    `"send_reply"` outcome — the `except BaseException` handler absorbed the
+    fault (as R-5 requires) but never reset `trace`, so the unconditional
+    `finally` save would persist a turn that actually crashed and delivered
+    nothing as if it had succeeded normally.
+
+    Reuses the never-silent-fallback fixture
+    (`test_the_never_silent_fallback_delivers_when_the_loop_is_cut_off`'s
+    shape: one tool call that spends the whole `total_tokens` budget, so the
+    next cycle trips `limit_total_tokens` before any reply) and faults the
+    ONE `metrics.inc` call that fires immediately after that fallback
+    delivers — after `invoke.run` has returned, before this turn's outcome is
+    ever corrected."""
+    metrics = _FaultingMetricsAfterInvoke(
+        Metrics(), fault_name="nora_loop_exhausted_fallbacks_total",
+    )
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        metrics=metrics,
+        runner=ScriptedRunner(
+            [ScriptedTurn(tool_calls=[("now", {})], total_tokens=24_000)]
+        ),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)   # must not raise
+
+    # R-5 held: the outer `except BaseException` absorbed the fault silently.
+    assert metrics.get("nora_silent_failures_total", reason="handler_error") == 1
+    assert _held(pipeline) is False
+    # The fix: nothing saved at all, rather than a stale "send_reply".
+    assert pipeline._tag_trace_store.saved == []
 
 
 async def test_latency_and_overhead_are_observed_on_every_path():
