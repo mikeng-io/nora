@@ -140,7 +140,9 @@ temperature = 0.7
 # no_send_call journeys — the failure mode to watch is her ending a turn without
 # calling `send_reply` at all, i.e. going mute in the group. Revert to `low` if
 # silent turns show up in the traces.
-reasoning_effort = "high"
+#
+# `high` → `low` (operator, 2026-08-21).
+reasoning_effort = "low"
 # 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container,
 # and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
 # so every real image timed out while the tiny probe PNG passed.
@@ -225,6 +227,10 @@ enabled = true
 max_depth = 16
 
 [engagement.trigger]
+# Off (operator, 2026-08-21): a real @mention or a reply to one of her own
+# messages still engage her (MentionPolicy/ReplyToNoraPolicy, unaffected by
+# this flag) — only the spoken/typed "nora.000" phrase stops matching.
+enabled = false
 text = "nora.000"
 min_interval_seconds = 5
 
@@ -565,6 +571,16 @@ enabled = true
 # nothing (no location egresses), so it ships ON here: there is nothing to gate.
 enabled = true
 provider = "hko"
+
+[speech]
+# Voice capability (spec 2026-08-21). STT = Cantonese voice-note transcription
+# at ingest via the LOCAL deploy/stt endpoint — audio never leaves the box.
+[speech.stt]
+enabled = true
+endpoint = "http://stt:8000"
+language = "yue"
+[speech.tts]
+enabled = false
 
 [heartbeat]
 # The background tick that fires due reminders — Nora's first unprompted-speech

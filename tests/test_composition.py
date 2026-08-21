@@ -15,6 +15,7 @@ from nora.app.composition import Dependencies, StartupError, build_dependencies
 from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.config import load
+from nora.domain.models import NormalizedMessage
 from nora.infra.blobs import FilesystemBlobStore
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.registry import MediaSourceRegistry
@@ -84,6 +85,43 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.ingest is not None
     assert deps.engagement is not None
     assert deps.dispatcher is not None
+
+
+async def test_the_trigger_phrase_engages_by_default(cfg):
+    """`[engagement.trigger].enabled` defaults to True — the trigger phrase
+    already engaged her on every deployment before this flag existed, so the
+    wired `CompositePolicy` must still include `TriggerTextPolicy` when the
+    key is left at its default."""
+    deps = await build_dependencies(cfg)
+    msg = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="Miles", timestamp=1,
+        body="nora.000 you around?", raw={},
+    )
+
+    decision = await deps.policy.should_engage(message=msg)
+
+    assert decision.engage is True
+    assert decision.reason == "trigger_text"
+
+
+async def test_disabling_the_trigger_removes_only_that_path(cfg):
+    """Turning the flag off narrows `CompositePolicy` down to `MentionPolicy` +
+    `ReplyToNoraPolicy` — the trigger PHRASE alone stops matching, which is
+    the only property this test needs to pin (the two structural policies
+    have their own coverage in `tests/unit/test_ingest_policy.py`)."""
+    disabled = override_config(cfg, {"engagement.trigger.enabled": False})
+    deps = await build_dependencies(disabled)
+    msg = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="Miles", timestamp=1,
+        body="nora.000 you around?", raw={},
+    )
+
+    decision = await deps.policy.should_engage(message=msg)
+
+    assert decision.engage is False
+    assert decision.reason == "no_trigger"
 
 
 async def test_dependencies_exposes_the_reminders_store(cfg):

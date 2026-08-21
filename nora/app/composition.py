@@ -671,11 +671,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # produced ingest, attribution and silence, which is the exact failure
     # `MentionPolicy` was written to end, reintroduced by a second platform.
     self_aliases = registry.self_aliases()
-    policy = CompositePolicy((
-        TriggerTextPolicy(cfg.engagement.trigger.text),
-        MentionPolicy(self_aliases),
-        ReplyToNoraPolicy(self_aliases),
-    ))
+    # `[engagement.trigger].enabled` (default True — see TriggerConfig) gates
+    # ONLY the spoken/typed trigger phrase out of the composite: a real
+    # `@mention` or a reply to one of her own messages still engage her when
+    # this is off, so turning it off narrows the ways IN, it does not silence
+    # her outright the way `policy.toml` denying a room does.
+    engage_policies: list[EngagePolicy] = []
+    if cfg.engagement.trigger.enabled:
+        engage_policies.append(TriggerTextPolicy(cfg.engagement.trigger.text))
+    engage_policies.append(MentionPolicy(self_aliases))
+    engage_policies.append(ReplyToNoraPolicy(self_aliases))
+    policy = CompositePolicy(tuple(engage_policies))
     assembler = TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
         context_window=cfg.store.context_window, metrics=metrics,

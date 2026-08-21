@@ -84,7 +84,13 @@ _MAY_DIFFER = {
     "heartbeat.enabled", "language.enabled", "language.verify_known_entities",
     "platforms.discord.enabled", "presence.enabled", "preview.enabled",
     "route.enabled", "search.enabled", "shortener.enabled",
-    "tools.mcp.pulse.enabled", "weather.enabled",
+    "tools.mcp.pulse.enabled", "weather.enabled", "speech.stt.enabled",
+    # The one flag that runs the OTHER direction: the template ships the
+    # trigger phrase ON (the code default, `TriggerConfig.enabled = True`,
+    # matching every deployment's behaviour before this flag existed); this
+    # deployment has opted OUT (operator, 2026-08-21) — `@mention` and
+    # reply-to-her still engage her either way.
+    "engagement.trigger.enabled",
     # Per-deployment policy/cost knobs.
     "doctrine.canary",            # deliberately CHANGE-ME in the template
     "presence.retention_days",    # disk and privacy, the operator's call
@@ -161,7 +167,7 @@ def test_config_example_still_loads_through_the_config_model(tmp_path, monkeypat
     # Spot-check the drifted values actually landed in the typed model, rather
     # than trusting that "it loaded" means "it loaded what we think".
     assert cfg.llm.model == "ollamacloud/deepseek-v4-flash"
-    assert cfg.llm.reasoning_effort == "high"
+    assert cfg.llm.reasoning_effort == "low"
     assert cfg.llm.timeout_seconds == 120
 
 

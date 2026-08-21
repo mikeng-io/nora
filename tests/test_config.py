@@ -112,6 +112,22 @@ def test_headers_env_defaults_to_empty_when_absent_from_the_toml():
     assert make_tracing_config().headers_env == ""
 
 
+def test_trigger_enabled_defaults_to_true_when_absent_from_the_toml(toml_path):
+    """A `config.toml` written before `TriggerConfig.enabled` existed must keep
+    matching its trigger phrase exactly as it always did — the trigger was
+    already live for every deployment, so defaulting this field OFF would be
+    the silent behaviour change, not defaulting it on (unlike `[speech]`/
+    `[weather]`'s INERT-by-default shape, where the capability never existed
+    before)."""
+    text = toml_path.read_text().replace("enabled = true\ntext = \"nora.000\"", 'text = "nora.000"')
+    assert "enabled" not in text.split("[engagement.trigger]")[1].split("[store]")[0]
+    toml_path.write_text(text)
+
+    cfg = load(toml_path)
+
+    assert cfg.engagement.trigger.enabled is True
+
+
 def test_config_is_immutable(toml_path):
     cfg = load(toml_path)
     with pytest.raises(ValidationError):
@@ -154,6 +170,7 @@ def test_config_uses_the_target_shape(toml_path):
     assert cfg.llm.max_tokens == 2000
     # engagement owns the trigger; policy is declared even though only one exists
     assert cfg.engagement.policy == "trigger_text"
+    assert cfg.engagement.trigger.enabled is True
     assert cfg.engagement.trigger.text == "nora.000"
     assert cfg.engagement.trigger.min_interval_seconds == 5
     # obs groups the three signals
