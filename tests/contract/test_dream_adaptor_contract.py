@@ -46,6 +46,9 @@ import pytest
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.ports import DreamAdaptor, Proposal
+from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
+from nora.testing.fact_candidate_store import InMemoryFactCandidateStore
+from nora.testing.fact_store import InMemoryFactStore
 
 DREAMER_DIR = Path(__file__).resolve().parents[2] / "nora" / "dreamer"
 
@@ -157,6 +160,129 @@ def _fake_empty_commits(_adaptor: object, sink: object) -> int:
     return sink.empty_commits
 
 
+# ---------------------------------------------------------------------------
+# the fact tier: two real adaptors over the two in-memory stores
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _CountsEmptyProposes:
+    """A thin spy over a real sink that counts `propose(key, ())` calls.
+
+    Not a third `DreamSink` implementation — it holds no rows and decides
+    nothing, it delegates every verb (`__getattr__` covers `supersede`,
+    `pending`, `standing_facts`) to the in-memory store behind it, which is
+    the implementation the sink contract suite already measures. It exists
+    only because `test_committing_nothing_is_a_legal_call_that_reaches_the_
+    sink` has to tell "reached the sink and wrote nothing" apart from "was
+    never called", and a return of 0 looks identical either way. `_CountingSink`
+    above counts the same thing for the fake, for the same reason.
+    """
+
+    inner: object
+    empty_commits: int = 0
+
+    async def propose(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> Sequence[str]:
+        if not proposals:
+            self.empty_commits += 1
+        return await self.inner.propose(  # type: ignore[attr-defined]
+            key=key, proposals=proposals, now_ms=now_ms,
+        )
+
+    def __getattr__(self, name: str) -> object:
+        if name == "inner":                       # pre-`__init__` recursion guard
+            raise AttributeError(name)
+        return getattr(self.inner, name)
+
+
+def _build_fact_candidates() -> tuple[object, object]:
+    sink = _CountsEmptyProposes(InMemoryFactCandidateStore())
+    return FactCandidateAdaptor(candidates=sink), sink
+
+
+def _fact_candidate_items() -> tuple[Mapping[str, object], ...]:
+    return (
+        {"subject": "big walk", "predicate": "unlocked_by",
+         "object": "the four coloured towers", "message_id": 41},
+        {"subject": "big walk", "predicate": "contains",
+         "object": "a black tower", "message_id": 42},
+    )
+
+
+def _fact_candidate_malformed_item() -> Mapping[str, object]:
+    # Wrong type for two triple fields and an unparseable message id. The
+    # triple is half of `fact_candidate_triple_key`, so a coerced `"7"`/`"None"`
+    # would be a durable key nobody can ever match back — see
+    # `nora.language.fact_adaptor._text`.
+    return {"subject": 7, "predicate": None, "object": "x", "message_id": "later"}
+
+
+def _build_fact_adjudication() -> tuple[object, object]:
+    facts = _CountsEmptyProposes(InMemoryFactStore())
+    adaptor = FactAdaptor(
+        facts=facts, candidates=InMemoryFactCandidateStore(),
+        max_adjudications_per_tick=10,
+    )
+    return adaptor, facts
+
+
+def _fact_verdict_items() -> tuple[Mapping[str, object], ...]:
+    """Two `supported` verdicts, and `supersedes` deliberately absent from
+    both.
+
+    A `contradicted` verdict must name a fact id THIS RUN SHOWED THE MODEL,
+    and the suite calls `accept` without first calling `inputs` — so a
+    contradiction here would be correctly dropped as `unknown_supersedes` and
+    `test_accept_parses_a_legal_batch` would fail on working code. The
+    contradiction path is `tests/unit/test_fact_adaptor.py`'s, where a run can
+    be given its inputs first.
+    """
+    return (
+        {"subject": "big walk", "predicate": "unlocked_by",
+         "object": "the four coloured towers", "status": "supported",
+         "addresses_claim": True,
+         "source_url": "https://example.test/guide",
+         "source_excerpt": "The black tower opens once all four are complete."},
+        {"subject": "big walk", "predicate": "gourds_required",
+         "object": "three", "status": "supported", "addresses_claim": True,
+         "source_url": "https://example.test/patch-2-4",
+         "source_excerpt": "Patch 2.4 reduced the gourd requirement to three."},
+    )
+
+
+def _fact_verdict_malformed_item() -> Mapping[str, object]:
+    # Well-typed and still illegal: a `supported` verdict with no source.
+    # `FactVerdict.__post_init__` refuses it by RAISING, which is right for a
+    # constructor and fatal for a background tick — so this item also fixes as
+    # a contract that `accept` catches that `ValueError` rather than letting it
+    # reach a runtime that would report the whole batch unread.
+    return {
+        "subject": "big walk", "predicate": "contains", "object": "a shop",
+        "status": "supported", "addresses_claim": True,
+    }
+
+
+def _fact_written(_adaptor: object, sink: object) -> int:
+    assert isinstance(sink, _CountsEmptyProposes)
+    store = sink.inner
+    assert isinstance(store, InMemoryFactStore)
+    return len(store._facts)
+
+
+def _candidate_written(_adaptor: object, sink: object) -> int:
+    assert isinstance(sink, _CountsEmptyProposes)
+    store = sink.inner
+    assert isinstance(store, InMemoryFactCandidateStore)
+    return len(store._by_triple)
+
+
+def _spy_empty_commits(_adaptor: object, sink: object) -> int:
+    assert isinstance(sink, _CountsEmptyProposes)
+    return sink.empty_commits
+
+
 @dataclass(frozen=True)
 class _Impl:
     """One implementation's entry.
@@ -181,6 +307,20 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         make_malformed_item=_fake_malformed_item,
         written=_fake_written,
         empty_commits=_fake_empty_commits,
+    ),
+    "fact-candidates": _Impl(
+        build=_build_fact_candidates,
+        make_items=_fact_candidate_items,
+        make_malformed_item=_fact_candidate_malformed_item,
+        written=_candidate_written,
+        empty_commits=_spy_empty_commits,
+    ),
+    "fact-adjudication": _Impl(
+        build=_build_fact_adjudication,
+        make_items=_fact_verdict_items,
+        make_malformed_item=_fact_verdict_malformed_item,
+        written=_fact_written,
+        empty_commits=_spy_empty_commits,
     ),
 }
 
