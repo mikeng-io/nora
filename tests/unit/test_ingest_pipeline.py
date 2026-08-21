@@ -352,3 +352,34 @@ async def test_a_failed_transcription_still_records_the_voice_note_with_a_bare_h
     digest = hashlib.sha256(AUDIO).hexdigest()
     assert store.rows[0]["body"] == f"[voice note {digest[:6]}]"
     assert metrics.get("nora_speech_transcriptions_total", status="error") == 1
+
+
+async def test_a_song_is_never_transcribed_even_when_a_transcriber_is_wired():
+    """The gate is the parser's `voiceNote` flag, NOT the audio/* MIME type.
+
+    A song is an audio file, not conversation content: its bytes must never
+    reach the STT endpoint even when a transcriber is present. This is the
+    negative half of `test_a_voice_note_is_transcribed...` — a future refactor
+    that relaxed the gate to `media_type.startswith("audio/")` must turn this
+    red.
+    """
+    store = FakeRecordStore()
+    blobs = FakeBlobStore()
+    metrics = Metrics()
+    transcriber = FakeTranscriber()
+    msg = dataclasses.replace(
+        _msg(body="[audio]"),
+        media=(MediaRef(platform_id="att1", media_type="audio/mpeg", voice_note=False),),
+    )
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=Persons(by_person={}, index={}),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        audit=store, media_sources=MediaSourceRegistry([FakeMediaSource({"att1": AUDIO})]),
+        blobs=blobs, metrics=metrics, transcriber=transcriber, language="yue-HK",
+    )
+
+    await pipeline.run(message=msg)
+
+    digest = hashlib.sha256(AUDIO).hexdigest()
+    assert transcriber.calls == [], "a song must never be sent to STT"
+    assert store.rows[0]["body"] == f"[audio {digest[:6]}]"

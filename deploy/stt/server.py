@@ -87,11 +87,12 @@ async def transcribe(
         raise HTTPException(status_code=400, detail=f"Model '{model}' not found.")
 
     suffix = Path(file.filename or "audio.wav").suffix or ".wav"
-    wav_path: str | None = None  # bound before the try so the finally can reference it
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
+    tmp_path: str | None = None  # bound before the try so the finally can reference it
+    wav_path: str | None = None
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
         # Normalize ANY upload (mp3, ogg/opus, m4a/AAC, wav) to 16kHz mono WAV
         # with ffmpeg before the model sees it. libsndfile cannot decode
         # audio/mp4 (measured 2026-08-21) and Signal voice notes commonly arrive
@@ -135,7 +136,8 @@ async def transcribe(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        Path(tmp_path).unlink(missing_ok=True)
+        if tmp_path is not None:
+            Path(tmp_path).unlink(missing_ok=True)
         if wav_path is not None:
             Path(wav_path).unlink(missing_ok=True)
 
