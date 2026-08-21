@@ -1312,3 +1312,83 @@ the curator is wired, never what it decides.
 config object, no clock, no metrics collaborator, because `now_ms` arrives on the
 verbs. Stated by that session as a **contract-suite affordance**, so the shared
 suite in Part 1b does not have to reverse-engineer a constructor.
+
+## 16. Corrections found in implementation (2026-08-21)
+
+Building Part 1a-i falsified four things this document asserted. They are
+recorded here rather than silently fixed in code, because three of them are
+decisions a reader would otherwise have to reverse-engineer from a diff.
+
+### 16.1 `note_read(note_id)` was unreachable — the TITLE is the handle
+
+**The hole:** §5.2 hands her `note_read(note_id)`; §5.1 and §6.2 fix the index at
+title + description with no id; §5.3 has `note_search` searching **bodies, never
+titles**. So there was no path from *"I can see a note called Dinner, 9 Sept"* to
+an argument `note_read` accepts. She could see every note and name none of them.
+
+**Decided: a note is addressed by its title, not by an id.** This is DEC-105's
+shape for `send_to`, which takes a room's operator-written **label** and refuses
+rather than guessing when two rooms answer to one name — *"an id is not something
+a person says in a chat."* The same holds here, and the index already puts every
+title in front of her at no extra cost.
+
+Consequences:
+
+- resolution happens in the **tool layer**, which already holds the standing set
+  to render the block — so no store method changes and no id in the prompt;
+- **two standing notes in one workspace may not share a title.** Backed by a
+  partial unique index on `(workspace, lower(title)) WHERE retired_at IS NULL`
+  rather than by a Python scan, so the refusal is the database's;
+- ambiguity **refuses**; it never picks one. Guessing which note was meant is how
+  a revision lands on the wrong body.
+
+### 16.2 The search operator, measured rather than assumed
+
+§5.3 said "trigram" and left the operator open. `EXPLAIN (ANALYZE)` on
+PostgreSQL 18.4, 3000 notes:
+
+| | result |
+|---|---|
+| `body % 'venue2999'` | **0 of 3000 rows** that all contain the string — `%` is whole-string *similarity*, not the question a search asks. **Rejected.** |
+| `ilike '%' || $1 || '%'` | index narrows a 3+ character pattern to `rows=1`, one heap block |
+| `酒店` (two CJK characters) | **no narrowing** — the bitmap scan returns all 3000 and the recheck discards 2999 |
+
+**So §5.3's CJK claim needs qualifying.** Trigram search returns *correct*
+results for Cantonese, which was the point and still holds — `to_tsvector` would
+have returned none. But `pg_trgm` cannot extract a complete trigram from two
+characters, so a two-character CJK query gets **no index acceleration**. Correct,
+not fast. At tens of notes per workspace the planner seq-scans regardless, so
+this costs nothing today and is a real ceiling later.
+
+### 16.3 The closing condition is not in the index, and why it cannot be yet
+
+§5.1 argued for capped entries; only `title` and `description` are actually
+capped. `closing_condition` is required non-empty and otherwise unbounded, so
+rendering it in the block means either unbounded model-authored text in every
+prompt, or a truncation in the renderer — and that truncation is exactly the
+silent loss §5.1 moved into the constructor to be rid of.
+
+**Precondition, not a refusal:** cap `closing_condition` on the domain type and
+this becomes a two-line change. Left out until then.
+
+What is lost is smaller than it looks: a retired note never renders, so an
+entry's *presence* already says the question is open, and §6.2 forces a
+`note_read` before any revision anyway.
+
+### 16.4 Four things the spec did not say, now decided
+
+- **`standing` is ordered** `(created_at, id)`, oldest first. An unordered read
+  makes the same notebook render differently turn to turn, which reads to the
+  model as the notebook having changed.
+- **`search` excludes retired notes.** A hit on one hands her a note whose title
+  she cannot see and whose question is closed — the same true-in-the-past error
+  as a superseded body.
+- **`note_entity` is not populated by the store.** Its `entity_id` is FK'd to
+  `fact_entity.id`, so writing it requires every anchor entity to be resolved
+  first, which is candidate selection the store does not do. `anchor_entity_ids`
+  goes to `note.anchor_entity_ids` — the column `note_has_an_anchor_check`
+  actually reads. The junction table stays empty until something resolves
+  entities.
+- **`StaleNoteHeadError.observed_head is None`** means "not there *from your
+  workspace*" — absent and someone else's are deliberately indistinguishable, so
+  a cross-workspace probe cannot confirm a note exists.
