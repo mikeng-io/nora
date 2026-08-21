@@ -129,6 +129,66 @@ X" and hold X on a failure, the same ratchet reappears. Keep it per-turn, or
 add an explicit skip-with-a-counter so a permanently-too-large input cannot
 block forward progress forever.
 
+**3. The fold MUST read the current `Standing` row before writing a new
+one, or it will reproduce the Dreamer's exact failure — confirmed live.**
+Cross-session finding (nora-cc, 2026-08-22), grounded in production data:
+across 963 processed messages, the Dreamer's entire output is 2 rows, both
+wrong, both calling `Big Walk` (a co-op puzzle video game) a real-world
+walking activity. The second run got *closer* to the truth — it knew about
+gourds, knew they "play" it — but had no way to read the first row, so it
+wrote a SECOND wrong gloss beside the first instead of correcting it. Both
+are `live` simultaneously. **The tier accretes contradictions instead of
+resolving them, specifically because nothing in the write path can see what
+is already written.**
+
+This is not a new requirement — §6.1 already scoped it: *"`prior` is not a
+[`TagTrace`] field — it is the fold's second argument."* The debrief was
+always meant to read the current `Standing.state` and hand it to the model
+alongside the new `TagTrace` before producing a revision. **What's missing
+is that `nora/domain/tag_trace_rederive.py`'s Phase-1 stub,
+`rebuild_state(traces: Sequence[TagTrace]) -> str`, does not yet take
+`prior` — Phase 2 must add it to the signature before implementing the fold,
+not discover the omission while implementing.**
+
+Two ways to deliver `prior`, and this plan's lean is the first:
+
+- **Read in code, inject as prompt text** — a plain `SELECT` against
+  `Standing` before the debrief's completion call, same shape as the fact
+  tier's "standing facts... an input, never a tool" (§4.2): *"selection
+  stays in code where it can be capped and counted."* Sufficient because
+  Standing's read is always exactly one row, known in advance — never a
+  search. Consistent with building the debrief as a plain
+  `chat.completions.create` call (blocker 2, above) rather than reopening a
+  tool loop.
+- **A callable read tool**, matching nora-cc's proposed general seam — "a
+  tier contributes its own read tools so its agent can consult its own
+  prior output," precedented by the note tier's
+  `ToolRegistry(notes=..., note_workspace=...)`. The right shape for an
+  adaptor that needs to *search/discover* prior state mid-reasoning
+  (`NoteRevisitor`, `FactAdaptor`) — not obviously needed for Standing's
+  single, known-in-advance lookup, and adopting it would mean reintroducing
+  a tool-bearing agent loop this plan otherwise avoids (blocker 2). Worth
+  revisiting if Standing's needs turn out to be less trivial than "read one
+  row" once Phase 2 is actually built — nora-cc is sharing the seam's shape
+  once their investigation lands, in case it's needed.
+
+Two smaller findings from the same investigation, carried forward:
+
+- **Provenance direction.** `Fact.established_by` (and by extension
+  anything Phase 4 writes) records which *Dreamer run* produced a row, not
+  which *human* asserted the claim — provenance about the machine, not the
+  belief. If `Standing` or the Phase 4 fact-proposal path records
+  provenance, record the turn **and** the people in it, not just the run.
+- **Input shape** (defensive note, not a Standing defect today): the fact
+  tier's `FactCandidateAdaptor.inputs()` renders `f"{row.id}: {row.body}"` —
+  no sender, no timestamp, no reply-threading — even though `TranscriptRow`
+  already carries `person_name`/`ts`/`quoted_ts`. When Phase 2 builds the
+  debrief's actual prompt from `ctx.transcript` (§6.2), use its already-
+  rehydrated sender/threading info (`MentionRenderer`, DEC-34) rather than a
+  stripped text dump — `ctx.transcript` already carries this, unlike the raw
+  batch the fact tier was handed, so this is a "don't regress it away"
+  check, not new work.
+
 ## Phase 2 — the `debrief` stage and `Standing`
 
 | # | task | notes |
