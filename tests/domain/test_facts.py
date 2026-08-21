@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from nora.domain.facts import Fact, FactCandidate, FactEntity, FactVerdict
+from nora.domain.facts import (
+    Fact,
+    FactCandidate,
+    FactEntity,
+    FactPremise,
+    FactVerdict,
+)
 
 
 def _verdict(**over):
@@ -153,6 +159,176 @@ def test_a_fact_cannot_name_a_successor_without_a_time():
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
             superseded_by="0191f2c4-0000-7000-8000-000000000002",
         )
+
+
+def test_an_unknown_warrant_kind_is_refused():
+    with pytest.raises(ValueError, match="warrant_kind"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url="https://example.test/a", source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+            warrant_kind="guess",
+        )
+
+
+def test_a_source_warrant_requires_a_source_url():
+    """Mirrors `fact_source_url_warrant_check`: `source_url` is required
+    exactly when `warrant_kind == 'source'` — the default."""
+    with pytest.raises(ValueError, match="source_url"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url=None, source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+        )
+
+
+def test_a_source_warrant_requires_a_source_excerpt():
+    with pytest.raises(ValueError, match="source_excerpt"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url="https://example.test/a", source_excerpt=None,
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+        )
+
+
+def test_a_non_source_warrant_forbids_a_source_url():
+    """"Forbidden otherwise", not merely optional: an observation-warranted
+    fact carrying a stray `source_url` would be undefined in meaning — is it
+    corroborating, decorative? — which is the exact ambiguity a discriminated
+    warrant exists to kill."""
+    with pytest.raises(ValueError, match="source_url"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            warrant_kind="observation",
+            source_url="https://example.test/a", source_excerpt=None,
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+        )
+
+
+def test_a_non_source_warrant_forbids_a_source_excerpt():
+    with pytest.raises(ValueError, match="source_excerpt"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            warrant_kind="stated",
+            source_url=None, source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+        )
+
+
+def test_a_premises_fact_needs_no_source_url_or_excerpt():
+    """The positive case for a warrant kind not backed by a page: satisfiable,
+    not just violable. Premises themselves are `FactPremise` rows, not a field
+    on `Fact` (2026-08-21) — this dataclass cannot check "at least one premise
+    exists" any more than the database can; see `FactPremise`'s docstring."""
+    f = Fact(
+        id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+        subject_id="e1", predicate="has", object_entity_id="e2",
+        object_literal=None,
+        warrant_kind="premises",
+        source_url=None, source_excerpt=None,
+        valid_from=1, created_at=1, instruction_sha256="a" * 64,
+        model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+        fidelity="tentative",
+    )
+    assert f.warrant_kind == "premises"
+
+
+def test_fidelity_defaults_to_tentative_not_proven():
+    """A default is what a value gets when nobody thought about it — in a
+    fail-closed codebase that value must underclaim, never overclaim. An
+    omitted `fidelity` must not silently read as verified."""
+    f = Fact(
+        id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+        subject_id="e1", predicate="has", object_entity_id="e2",
+        object_literal=None,
+        source_url="https://example.test/a", source_excerpt="x",
+        valid_from=1, created_at=1, instruction_sha256="a" * 64,
+        model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+    )
+    assert f.fidelity == "tentative"
+
+
+def test_an_unknown_fidelity_is_refused():
+    with pytest.raises(ValueError, match="fidelity"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url="https://example.test/a", source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+            fidelity="certain",
+        )
+
+
+def test_a_supersession_without_a_reason_is_refused():
+    """Same biconditional shape as `superseded_at`/`superseded_by`, and for
+    the same reason: the reason a fact was superseded cannot be
+    reconstructed from the row afterwards at any price."""
+    with pytest.raises(ValueError, match="supersede_reason"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url="https://example.test/a", source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+            superseded_at=2, superseded_by="0191f2c4-0000-7000-8000-000000000002",
+        )
+
+
+def test_a_reason_without_a_supersession_is_refused():
+    with pytest.raises(ValueError, match="supersede_reason"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url="https://example.test/a", source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+            supersede_reason="stale",
+        )
+
+
+def test_an_unknown_supersede_reason_is_refused():
+    with pytest.raises(ValueError, match="supersede_reason"):
+        Fact(
+            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
+            subject_id="e1", predicate="has", object_entity_id="e2",
+            object_literal=None,
+            source_url="https://example.test/a", source_excerpt="x",
+            valid_from=1, created_at=1, instruction_sha256="a" * 64,
+            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+            superseded_at=2, superseded_by="0191f2c4-0000-7000-8000-000000000002",
+            supersede_reason="lies",
+        )
+
+
+def test_a_fact_cannot_be_its_own_premise():
+    with pytest.raises(ValueError, match="premise"):
+        FactPremise(fact_id="0191f2c4-0000-7000-8000-000000000001",
+                    premise_fact_id="0191f2c4-0000-7000-8000-000000000001")
+
+
+def test_a_fact_premise_edge_names_two_distinct_facts():
+    edge = FactPremise(fact_id="0191f2c4-0000-7000-8000-000000000001",
+                       premise_fact_id="0191f2c4-0000-7000-8000-000000000002")
+    assert edge.fact_id != edge.premise_fact_id
 
 
 def test_candidate_and_entity_carry_their_workspace():
