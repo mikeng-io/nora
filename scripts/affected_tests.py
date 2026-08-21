@@ -6,6 +6,16 @@ targets are worth running for *that diff*. This backs `make test-affected`
 only — it never touches `make gate`, which always runs the whole serial suite
 (CLAUDE.md's four commands are unchanged by this feature).
 
+The default base is `HEAD~1` — the latest commit only, not `origin/master`.
+Diffing the whole branch was the original design and it has a real cost: a
+branch that touches `nora/dreamer/**` or `nora/doctrine/**` once stays pinned
+to `ALL` for every commit for the rest of its life, because that path never
+leaves the cumulative diff — even a bare `config.toml` commit on top gets
+`ALL`. Since `make gate` (not this script) is what guarantees every commit was
+actually tested before it landed, re-flagging an already-gated commit on every
+later diff buys nothing; only the latest commit needs judging here. Found and
+confirmed independently by three sessions on 2026-08-21.
+
 Fails closed by construction: any diff this script cannot map to a narrow rule
 with confidence gets the literal string `ALL`, meaning "run everything." A
 confident wrong subset is the one failure mode this script must never have
@@ -146,8 +156,11 @@ def select(changed: list[str]) -> list[str] | str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--base", default="origin/master",
-        help="ref to diff HEAD against (default: origin/master)",
+        "--base", default="HEAD~1",
+        help="ref to diff HEAD against (default: HEAD~1, the last commit only "
+             "— NOT origin/master, which would re-flag every commit for the "
+             "rest of the branch's life the first time it touches loaded "
+             "markdown; see module docstring)",
     )
     parser.add_argument("--repo", type=Path, default=ROOT)
     args = parser.parse_args(argv)

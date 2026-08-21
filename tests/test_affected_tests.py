@@ -166,3 +166,46 @@ def test_main_falls_back_to_all_when_the_base_ref_cannot_be_resolved(
 
     assert rc == 0
     assert capsys.readouterr().out.strip() == "ALL"
+
+
+# --- default --base: incremental, not branch-lifetime ----------------------
+#
+# A branch that touched nora/dreamer/** or nora/doctrine/** once must not stay
+# pinned to ALL for every later commit on that branch — only the commit that
+# actually touches those paths should. Confirmed independently by three
+# sessions on 2026-08-21 hitting `make test-affected` reporting "unmapped or
+# broad change" on a trivial config.toml-only commit, because the default base
+# (origin/master) diffed the WHOLE branch, not the latest commit.
+
+
+def test_default_base_does_not_re_flag_an_earlier_dreamer_commit(
+    tiny_repo, capsys,
+):
+    (tiny_repo / "nora" / "dreamer").mkdir(parents=True)
+    (tiny_repo / "nora" / "dreamer" / "doctrine.md").write_text("x\n")
+    _run_git(tiny_repo, "add", ".")
+    _run_git(tiny_repo, "commit", "-q", "-m", "touch dreamer doctrine")
+
+    (tiny_repo / "config.toml").write_text("a = 1\n")
+    _run_git(tiny_repo, "add", ".")
+    _run_git(tiny_repo, "commit", "-q", "-m", "trivial config change")
+
+    rc = main(["--repo", str(tiny_repo)])  # no --base: exercises the default
+
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == \
+        "tests/test_config.py tests/test_env_template.py"
+
+
+def test_default_base_still_selects_all_when_the_latest_commit_is_dreamer(
+    tiny_repo, capsys,
+):
+    (tiny_repo / "nora" / "dreamer").mkdir(parents=True)
+    (tiny_repo / "nora" / "dreamer" / "doctrine.md").write_text("x\n")
+    _run_git(tiny_repo, "add", ".")
+    _run_git(tiny_repo, "commit", "-q", "-m", "touch dreamer doctrine")
+
+    rc = main(["--repo", str(tiny_repo)])  # no --base: exercises the default
+
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "ALL"
