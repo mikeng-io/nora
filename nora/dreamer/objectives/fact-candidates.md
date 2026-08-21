@@ -1,7 +1,7 @@
 ---
 name: fact-candidates
 kind: objective
-version: 1
+version: 2
 applies_to: [fact_candidate_adaptor]
 description: >-
   Phase A of the fact tier. Read a batch of a room's messages and name the
@@ -50,14 +50,12 @@ Report each claim **once**, even if several people said it or one person said it
 
 Return JSON and nothing else — no prose before it, no explanation after it, no code fence.
 
-```json
 {"candidates": [
   {"subject": "big walk",
    "predicate": "unlocked_by",
    "object": "the four coloured towers",
    "message_id": 4812}
 ]}
-```
 
 - `subject`, `predicate`, `object` — strings, the triple, in the room's own words.
 - `message_id` — the integer id of the message the claim was asserted in, exactly as it appears
@@ -68,3 +66,13 @@ If nobody asserted a claim about the world in this batch, return `{"candidates":
 complete and correct answer, and it will be the right one most of the time. An empty list costs
 nothing; a list padded with plans and opinions sends a research loop after questions no source
 can answer.
+
+## Before you answer
+
+Your entire reply is one JSON object. **The first character you write is `{` and the last is
+`}`.** Nothing before it, nothing after it, no fence, no explanation — a reply that opens with a
+sentence is discarded whole, and this batch of messages is read again from scratch next time.
+
+If you found nothing, that is still JSON:
+
+{"candidates": []}

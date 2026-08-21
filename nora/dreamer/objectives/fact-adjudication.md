@@ -1,7 +1,7 @@
 ---
 name: fact-adjudication
 kind: objective
-version: 1
+version: 2
 applies_to: [fact_adaptor]
 description: >-
   Phase B of the fact tier. Given claims somebody asserted and the facts already
@@ -50,7 +50,6 @@ You may search and read pages. Stop as soon as another look would not change wha
 Return JSON and nothing else — no prose before it, no explanation after it, no code fence. One
 entry per claim you were given, in any order.
 
-```json
 {"verdicts": [
   {"subject": "big walk",
    "predicate": "unlocked_by",
@@ -75,7 +74,6 @@ entry per claim you were given, in any order.
    "source_excerpt": "Patch 2.4 reduced the gourd requirement from five to three.",
    "supersedes": "0f9c1b7e-3a44-4c0d-9d21-1e9b6f2a7c58"}
 ]}
-```
 
 Field by field:
 
@@ -96,3 +94,13 @@ If you could not check a claim at all — nothing loaded, nothing was about it �
 `not_covered`. Say so plainly rather than reaching for the most plausible answer. «I could not
 check» is a result, and it is one this system knows what to do with; a confident guess is
 written down and rendered into every conversation that follows.
+
+## Before you answer
+
+Your entire reply is one JSON object. **The first character you write is `{` and the last is
+`}`.** Nothing before it, nothing after it, no fence, no explanation, no apology — a reply that
+opens with a sentence is discarded whole, and the claims you were given go back unsettled.
+
+One entry per claim you were given. If you settled none of them, that is still JSON:
+
+{"verdicts": []}
