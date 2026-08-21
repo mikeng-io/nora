@@ -196,3 +196,37 @@ class NoteRevision:
                 "distinguishes a tag-path revision from the revisitor's own, "
                 "and cannot without it"
             )
+
+
+class StaleNoteHeadError(Exception):
+    """The compare-and-swap in §6.3 refused: the head this revision was written
+    against is not the head any more.
+
+    **Why a refusal and not a merge, an overwrite, or a silent no-op.** A note's
+    value is the *arrangement* — the writer read one body, reasoned over it, and
+    is now appending prose that only makes sense against that body. If the head
+    moved (the curator merged the note mid-turn, or a parallel turn in the other
+    room of the same workspace revised it), the text being appended is an answer
+    to a question that has changed. Writing it on top destroys the intervening
+    revision's arrangement with nothing recording that it happened; returning 0
+    and carrying on reports «nothing to do» for what was actually «I could not
+    do it» — R-27's `unavailable`-as-`nothing_found` failure, one layer down.
+    Raising is the only one of the three the caller cannot mistake for success.
+
+    `observed_head` is what the head actually is, so the tool layer's message can
+    be «this note changed under you, read it again» rather than a bare failure.
+    **`None` means the note is not there at all** *from the caller's workspace* —
+    absent, retired out of existence, or in someone else's workspace, which this
+    store deliberately cannot tell apart (a caller must not be able to confirm a
+    note exists in a workspace it may not read). Both cases have the same remedy,
+    which is why they are one exception rather than two: read it again.
+
+    A plain `Exception` rather than `nora.domain.errors.NoraError`: `NoraError`
+    carries a `FailureClass`, and how a refused write is *surfaced to the room*
+    is the tool layer's decision (`note_update` reports `unavailable`), not this
+    type's. Baking INFRASTRUCTURE in here would default the refusal to silence.
+    """
+
+    def __init__(self, message: str, *, observed_head: str | None) -> None:
+        super().__init__(message)
+        self.observed_head = observed_head

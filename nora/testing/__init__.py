@@ -45,6 +45,16 @@ to `nora.infra.sql.facts.SqlFactStore` by
 contract suite hands to *its own* store to prove a foreign payload is
 refused, which only stays usable there if it is domain-only.
 
+`InMemoryNoteStore` is the same rule for the note tier, bound to
+`nora.infra.sql.notes.SqlNoteStore` by
+`tests/contract/test_note_store_contract.py`. It lives in its own module
+(`nora.testing.note_store`) alongside `NoteCandidate`, the dataclass shape of a
+`note_candidate` row, which the suite reads back to check the miss cache
+accumulates. Like `InMemoryFactStore` it makes its production sibling's
+refusals rather than accepting everything — the compare-and-swap on a note's
+head is the one that matters: a fake that took a stale parent would turn a
+missing guarantee into a passing gate.
+
 `FakeAdapter` is exempt *as a whole*: it keeps
 `.parse()` public and `.listen()` a no-op rather than mirroring
 `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop (nothing
@@ -88,6 +98,7 @@ from nora.testing.fakes import (
     FakeRosterSource,
     FakeToolCallLogStore,
 )
+from nora.testing.note_store import InMemoryNoteStore, NoteCandidate
 from nora.testing.scripted_agent import (
     TOOL_CHOICE_FIRST_CALL,
     FakeAgentRunner,
@@ -122,6 +133,8 @@ __all__ = [
     "FakeRosterSource",
     "FakeToolCallLogStore",
     "InMemoryFactStore",
+    "InMemoryNoteStore",
+    "NoteCandidate",
     "ScriptedModel",
     "ScriptedTurn",
     "fact_proposal_factory",
