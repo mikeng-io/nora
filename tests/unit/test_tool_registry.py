@@ -78,6 +78,8 @@ def test_the_registry_exposes_every_declared_tool():
         "make_artifact",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
+        # The note tier's four verbs (note-tier spec §5.2/§6).
+        "note_read", "note_search", "note_create", "note_update",
     }
 
 
@@ -170,6 +172,19 @@ def test_budgets_match_todays_table():
         # 2 — one call answers "what version are you", a second covers the
         # follow-up about an earlier one (DEC-79).
         "version": 2,
+        # The four note verbs (note-tier spec §6.4). The RATIO is the
+        # decision, not the absolute numbers: a revision costs two calls —
+        # `note_read` then `note_update` — which is what makes the read
+        # mandatory rather than advisory (R-55 enforces it). `note_read` is
+        # one higher than `note_update` because comparing two notes before
+        # revising one is an ordinary turn and a read writes nothing.
+        # `note_search` is 2 like `web_fetch`: one query, one refinement —
+        # every title is already in `<notes>`, so a second phrasing is all a
+        # second call can buy. `note_create` is 1, the per-turn cap on note
+        # spam, and a cap the create/update split (§6.5) is what makes
+        # meaningful: under one `note_write` an accidental create would spend
+        # the revision budget instead.
+        "note_read": 3, "note_search": 2, "note_create": 1, "note_update": 2,
     }
 
 

@@ -113,6 +113,8 @@ def test_every_declared_tool_is_built(wiring):
         "make_artifact",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
+        # The note tier's four verbs (note-tier spec §5.2/§6).
+        "note_read", "note_search", "note_create", "note_update",
     }
 
 

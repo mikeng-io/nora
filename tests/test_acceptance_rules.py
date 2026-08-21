@@ -269,6 +269,17 @@ RULE_TESTS = {
     # "more than one open event" case — refusing rather than guessing which
     # of two-or-more already-open events is meant.
     "R-52": "test_r52_two_open_events_refuses_a_third_rather_than_guessing",
+    # R-55 (note-tier spec §6.2): a note revision is VETOED unless `note_read`
+    # succeeded for that note in the same turn. The injected index carries
+    # title + description only — enough to know a note exists, nowhere near
+    # enough to revise one — and `note_update` replaces the note's rendered
+    # body, so a revision written blind destroys the arrangement the tier
+    # exists to hold. Next free number after R-54. The named test asserts
+    # through `ReplyGuard.evaluate`'s refusal rather than by reading the
+    # latch set: the set is invisible to the model, the veto is where a miss
+    # costs something, and a test that reads the set goes green against a
+    # latch that never vetoes anything.
+    "R-55": "test_r55_a_revision_is_vetoed_when_this_turn_never_read_the_note",
     # DEC-111 (the Dreamer, room-language consolidator): her own words are
     # never evidence for the room lexicon. `RecordStore.since` — the
     # consolidation cursor `LanguageConsolidator` reads — excludes `is_nora`

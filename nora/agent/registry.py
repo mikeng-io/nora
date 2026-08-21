@@ -54,6 +54,7 @@ from .tools import (
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
     EventsCollaborator,
+    NoteCollaborator,
     build_tool_specs,
     utc_now,
 )
@@ -105,6 +106,8 @@ class ToolRegistry:
         reminders: ReminderStore | None = None,
         reminder_caps: ReminderCaps | None = None,
         events: EventsCollaborator | None = None,
+        notes: NoteCollaborator | None = None,
+        note_workspace: str = "",
         compute_backend: ComputeBackend | None = None,
         compute_jobs: ComputeJobStore | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
@@ -212,6 +215,18 @@ class ToolRegistry:
         # wired Events (offline, eval, and any test that does not care) leaves
         # this None and the six event tools answer `unavailable` (R-5).
         self._events = events
+        # The note tier's pair (note-tier spec §5.2/§6), wired the identical
+        # honest way `events` is — no store, no workspace, or neither, and the
+        # four note verbs answer `unavailable` (R-5) rather than crash or
+        # report an unconsulted notebook as an empty one.
+        #
+        # `note_workspace` is a registry field rather than a `specs()` argument
+        # for `ai_peer`'s reason: it is a PROCESS-lifetime value fixed by the
+        # deployment's conversation→workspace seam, not something a tag brings
+        # with it. The day that seam routes per-conversation it moves to
+        # `specs()` alongside `conversation_id`, and that is a deliberate edit.
+        self._notes = notes
+        self._note_workspace = note_workspace
         # `make_artifact`'s pair (Nora Compute spec §4), wired the same honest
         # way `reminders` is: NOT default-constructed — there is no backendless
         # or storeless default — so every composition that has not wired Nora
@@ -550,6 +565,7 @@ class ToolRegistry:
             ai_peer=self._ai_peer, fire_turn=fire_turn,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
+            notes=self._notes, note_workspace=self._note_workspace,
             links=links,
             relay=self._relay,
             versions=self._versions,

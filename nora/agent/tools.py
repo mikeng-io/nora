@@ -73,6 +73,7 @@ from ..domain.events import (
 )
 from ..domain.media import HANDLE_CHARS, GifCandidate
 from ..domain.models import WeatherObservation
+from ..domain.notes import Note, NoteRevision, StaleNoteHeadError
 from ..domain.ports import ComputeBackend, GifSource, JobStatus, MessageHits, Recollection
 from ..domain.reminders import (
     Recurrence,
@@ -516,6 +517,60 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "suggest_venue": NativeTool(4, "somebody wants a venue recommendation for an "
                                  "event already proposed here, drawn from what "
                                  "people have said they like"),
+    # THE FOUR NOTE VERBS (note-tier spec §6.4). Every budget here is sized by
+    # the same currency as its neighbours — a model round trip — but the RATIO
+    # between them is the load-bearing part, not the absolute numbers:
+    #
+    #   read 3 / update 2  — a revision costs TWO calls, and that is the design.
+    #     §6.2's read-before-write latch is enforced in `ReplyGuard` (R-55), so
+    #     the second call is what makes the first mandatory. Read is one higher
+    #     than update because comparing two notes before revising one is an
+    #     ordinary turn, and because a read is a plain lookup that writes nothing.
+    #   search 2 — one query, then one refinement. It reads BODIES (§5.3); the
+    #     titles are already in `<notes>` on every turn, so a second phrasing is
+    #     the only thing a second call can buy.
+    #   create 1 — the mechanical cap on note spam per turn, and a cap the
+    #     create/update SPLIT (§6.5) is what makes meaningful: under a single
+    #     `note_write` an accidental create would spend the REVISION budget and
+    #     be indistinguishable from one.
+    #
+    # `terminal=False` on all four, for `remind`'s reason and it matters more
+    # here: writing something down is the MIDDLE of a turn — she still owes the
+    # room 「記低咗」 — and a terminal note verb would commit the row and go
+    # silent, which is R-23's shape with a database write attached.
+    #
+    # `time_shiftable=None` on all four (like `calculate`): a note is not about
+    # a moment and cannot be asked about a later one. `anchor_date` is a field
+    # ON the thing being tracked, not a time the ANSWER is about.
+    #
+    # `source_tier` — `note_read`/`note_search` are "remembered": this
+    # household's own notebook, the same rank as `saved_places` and `about`, and
+    # closer than the open web for anything the room has already been chewing
+    # on. `note_create`/`note_update` are `None`: they are writes, not sources,
+    # exactly as `remind` is.
+    #
+    # `cacheable=False` on all four, by default and on purpose: a note is
+    # workspace-scoped state that the curator and a parallel turn in another
+    # room may both move, so a replayed answer would be a body that is no
+    # longer the head — the "true-in-the-past returned as current" error the
+    # whole tier is written to avoid.
+    "note_read": NativeTool(3, "what a note in <notes> actually SAYS — the index "
+                               "gives you its title and one line, never its "
+                               "contents, and you must read one before you can "
+                               "revise it",
+                            source_tier="remembered"),
+    "note_search": NativeTool(2, "something might be written down inside a note "
+                                 "whose title says nothing about it — searches "
+                                 "note contents, not the titles you can already "
+                                 "see in <notes>",
+                              source_tier="remembered"),
+    "note_create": NativeTool(1, "an open question worth carrying between "
+                                 "conversations that no note in <notes> already "
+                                 "covers — it needs what would settle it, and a "
+                                 "date or a person to hang it on"),
+    "note_update": NativeTool(2, "something new about a note you have JUST read — "
+                                 "it appends, so give the whole note back with the "
+                                 "change folded in"),
     "make_artifact": NativeTool(1, "someone wants you to build or research "
                                    "something and hand back a file — a report, "
                                    "a chart, a document — not just say it in "
@@ -717,6 +772,17 @@ RECALL_LOOKUPS_WINDOW_DAYS = 7
 # larger scale, since this is a WHOLE response re-sent on every subsequent
 # model call in the turn, not one search result.
 RECALL_LOOKUPS_MAX_CHARS = 8000
+
+# How many notes one `note_search` hands back, and it is NOT a model-supplied
+# parameter on purpose (DEC-24's rule: a parameter is a value the model must
+# invent on every call, so each one buys a way to get the call wrong). A
+# workspace holds tens of notes and the curator's retirement pass is what keeps
+# it that way, so a query matching more than five bodies is a query too vague
+# to act on — the answer to that is a better query, not a longer list. Each hit
+# carries a whole head body, and a tool result is re-sent on every subsequent
+# model call of the turn (the DEC-73 token lesson), so the cap is a context
+# budget as much as a relevance one.
+NOTE_SEARCH_LIMIT = 5
 
 # Honcho's dialectic reasoning levels (DialecticOptions.reasoning_level), from
 # the live schema. `ask_memory` lets the model pick; anything off-list falls back
@@ -1327,6 +1393,74 @@ class EventsCollaborator(Protocol):
     ) -> VenueSuggestions: ...
 
 
+class NoteCollaborator(Protocol):
+    """Structural type for the note store — `nora.infra.sql.notes.SqlNoteStore`
+    in production, `nora.testing.note_store.InMemoryNoteStore` in tests.
+
+    A local Protocol for `EventsCollaborator`'s reason, one layer further out:
+    `nora.agent` may not import `nora.infra` under the layered import contract,
+    and `nora.testing` is not a production dependency either — so this module
+    can only name the SHAPE. There is no port in `nora.domain.ports` to import
+    instead; the two implementations already share
+    `tests/contract/test_note_store_contract.py`, which is what actually holds
+    them to one behaviour. This declares the four verbs the tool layer calls
+    and no more: `standing` (title resolution, §16.1), `read`, `search`,
+    `create`, `append_revision`, `record_miss`.
+
+    `StaleNoteHeadError` lives in `nora.domain.notes` for the identical reason
+    `EventNotFoundError` lives in `nora.domain.events` — an exception TYPE has
+    to be importable from every layer that catches it.
+    """
+
+    async def standing(self, *, workspace: str) -> tuple[Note, ...]: ...
+
+    async def read(
+        self, *, workspace: str, note_id: str,
+    ) -> tuple[Note, NoteRevision] | None: ...
+
+    async def search(
+        self, *, workspace: str, query: str, limit: int,
+    ) -> tuple[tuple[Note, str], ...]: ...
+
+    async def create(
+        self, *, workspace: str, title: str, description: str, uncertainty: str,
+        closing_condition: str, established_in: str, body: str,
+        established_by: str, now_ms: int, anchor_date: int | None = None,
+        anchor_entity_ids: tuple[str, ...] = (),
+    ) -> Note: ...
+
+    async def append_revision(
+        self, *, workspace: str, note_id: str, body: str,
+        parent_revision_id: str, established_by: str, now_ms: int,
+    ) -> NoteRevision: ...
+
+    async def record_miss(
+        self, *, workspace: str, probe: str, conversation_id: str, now_ms: int,
+    ) -> int: ...
+
+
+def note_handle(title: str) -> str:
+    """The key a note is addressed BY, normalised — §16.1's decision made
+    mechanical.
+
+    A note has no model-reachable id: the injected index carries title and
+    description and nothing else, so the title is the handle (DEC-105's shape
+    for `send_to`, which takes a room's operator-written label for the same
+    reason — «an id is not something a person says in a chat»). This function
+    is what makes that handle comparable, and it lives HERE rather than in
+    either caller because there are two of them and they must agree exactly:
+    `note_read`/`note_update` resolve a title against the standing set, and
+    `ReplyGuard`'s R-55 latch keys on the very same string. Two copies of a
+    `casefold()` is how a latch silently stops matching the tool it guards.
+
+    `casefold`, not `lower`, and `strip` before it: the database's own
+    uniqueness is `(workspace, lower(title)) WHERE retired_at IS NULL`, so case
+    is already not part of a note's identity, and a model that types the index
+    line back with a trailing space has not named a different note.
+    """
+    return title.strip().casefold()
+
+
 def build_tool_specs(
     *,
     store,
@@ -1366,6 +1500,8 @@ def build_tool_specs(
     tool_call_log_store: ToolCallLogStore | None = None,
     relay: Relay | None = None,
     events: EventsCollaborator | None = None,
+    notes: NoteCollaborator | None = None,
+    note_workspace: str = "",
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -1403,6 +1539,14 @@ def build_tool_specs(
     spec §4), wired the identical way: `None` in the offline/eval compositions
     and any composition that has not wired the tool-recall log, which is what
     makes `recall_lookups` answer `unavailable` (R-5) rather than crash.
+
+    `notes`/`note_workspace` are the note tier's pair, and they are ONE piece of
+    wiring in two arguments rather than two independent ones: a note is keyed on
+    the workspace (spec §3), so a store with no workspace to read is as unusable
+    as no store, and both states answer `unavailable` — never `nothing_found`,
+    which would report an unconsulted notebook as an empty one. `note_workspace`
+    is a per-PROCESS value like `ai_peer`, resolved by the composition root's
+    conversation→workspace seam, not something a tag brings with it.
     """
     caps = reminder_caps or ReminderCaps()
     now_fn = clock or utc_now
@@ -1420,6 +1564,16 @@ def build_tool_specs(
     # shadowed by a same-named model-supplied parameter; deleting the parameter
     # removes the shadow along with the shape of that bug.
     bound_conversation_id = conversation_id
+
+    def _now_ms() -> int:
+        """Epoch milliseconds off the SAME clock every other tool here reads.
+
+        `now_fn` is `ToolRegistry`'s injected clock, so a test that freezes time
+        freezes the note tier with it. Never `time.time()` — a second clock in
+        one module is how a note's `written_at` ends up in a different era from
+        the reminder set in the same turn.
+        """
+        return int(now_fn().timestamp() * 1000)
 
     async def load_transcript(limit: int = LOAD_TRANSCRIPT_DEFAULT) -> dict:
         """Read older messages from this conversation.
@@ -3769,6 +3923,385 @@ def build_tool_specs(
             result["truncated"] = True
         return result
 
+    # ── the note tier (spec §5.2, §6, §16.1) ────────────────────────────────
+    #
+    # PER-TURN state, and it must stay per-turn: the head revision each note
+    # was last SEEN at by this turn. §6.3's compare-and-swap needs a value both
+    # sides can name, and `note_update(title, body)` deliberately does not ask
+    # the model for one — an id it can only have by copying a tool result back
+    # is a value it can copy WRONG, and a mistyped `revision_id` would refuse a
+    # write that should have gone through. So the read records the head here
+    # and the write reads it from here.
+    #
+    # It lives in the closure rather than on `ToolRegistry` for `LinkCarry`'s
+    # reason (DEC-89): one dict living for the life of the process would let a
+    # read in one conversation license a write in another, which is a
+    # disclosure rather than a cosmetic bug. `build_tool_specs` is called once
+    # per turn, so this is born and dies with the turn by construction.
+    note_heads: dict[str, str] = {}
+
+    notes_off = {
+        "status": "unavailable",
+        "note": "I can't reach my notes right now. Say so plainly — «there's "
+                "nothing written down» and «I couldn't look» are different "
+                "answers.",
+    }
+
+    def _notebook() -> NoteCollaborator | None:
+        """The wired store, or None — BOTH halves of the wiring checked as one.
+
+        A store with no workspace is as unusable as no store at all (a note is
+        workspace-keyed, §3), and answering «nothing found» from either state
+        is the `unavailable`-reported-as-`nothing_found` failure R-27 exists to
+        prevent. Returning the store rather than a bool is what lets each tool
+        bind a non-optional local, so the narrowing is the type checker's job
+        rather than an `assert` restating what this function already decided.
+        """
+        return notes if note_workspace else None
+
+    async def _resolve(book: NoteCollaborator, title: str) -> list[Note]:
+        """Title → the standing notes that answer to it (§16.1).
+
+        Resolution is in the TOOL layer, not the store, and that is the whole
+        decision: no store method changes and no id ever enters the prompt.
+        Returns every match rather than the first, because the caller's job on
+        two is to REFUSE — `standing()` is ordered, so "the first one" would be
+        a stable, plausible, wrong answer.
+        """
+        wanted = note_handle(title)
+        return [
+            n for n in await book.standing(workspace=note_workspace)
+            if note_handle(n.title) == wanted
+        ]
+
+    def _ambiguous(candidates: list[Note]) -> dict:
+        _record(metrics, "note_read", "refused", reason="ambiguous")
+        return {
+            "status": "refused",
+            "candidates": [n.title for n in candidates],
+            "note": "More than one note answers to that title. Ask which one is "
+                    "meant — do not pick.",
+        }
+
+    async def note_read(title: str) -> dict:
+        """Read what a note in <notes> actually says.
+
+        <notes> gives you every note's title and one line about it. That is
+        enough to know a note EXISTS; it is nowhere near enough to know what is
+        in it. This is the only way to reach the note itself, so pass the title
+        exactly as the index shows it.
+
+        Call this before note_update, always. A note's worth is how it is
+        arranged — appending to a body you have not read rewrites structure you
+        cannot see, and you will be stopped if you try.
+
+        Outcomes: `ok` with the note's contents; `nothing_found` when no note
+        answers to that title — the titles in <notes> are the only ones there
+        are, so check it rather than trying variations; `refused` when the
+        title matches more than one, and then ask which was meant rather than
+        picking; `unavailable` when I can't reach my notes at all.
+
+        Args:
+            title: The note's title, exactly as <notes> shows it.
+        """
+        book = _notebook()
+        if book is None:
+            _record(metrics, "note_read", "unavailable")
+            return dict(notes_off)
+        try:
+            candidates = await _resolve(book, title)
+            if len(candidates) > 1:
+                return _ambiguous(candidates)
+            if not candidates:
+                _record(metrics, "note_read", "nothing_found")
+                return {
+                    "status": "nothing_found",
+                    "note": "There's no note by that title. Only the ones in "
+                            "<notes> exist — don't describe one that isn't there.",
+                }
+            found = await book.read(workspace=note_workspace, note_id=candidates[0].id)
+        except Exception:
+            log.exception("note_read failed")
+            _record(metrics, "note_read", "unavailable")
+            return dict(notes_off)
+        if found is None:
+            # The note was standing a moment ago and is not readable now — the
+            # curator retired it out from under this call, or the workspace
+            # moved. «I could not read it», never «there is no such note»: the
+            # index she is looking at still says there is.
+            _record(metrics, "note_read", "unavailable", reason="vanished")
+            return dict(notes_off)
+        note, head = found
+        # The CAS anchor (§6.3), recorded HERE and not asked of the model.
+        note_heads[note.id] = head.id
+        _record(metrics, "note_read", "ok", chars=len(head.body))
+        return {
+            "status": "ok",
+            "title": note.title,
+            "uncertainty": note.uncertainty,
+            "closing_condition": note.closing_condition,
+            "body": head.body,
+            # Provenance the model can quote, and the one field the guard's
+            # latch has no use for: it is here so a revision can be discussed
+            # («this changed since I read it»), not so it can be passed back.
+            "revision_id": head.id,
+        }
+
+    async def note_search(query: str) -> dict:
+        """Look INSIDE notes for something their titles don't say.
+
+        <notes> already shows you every title, so there is nothing to gain from
+        searching those. This searches note CONTENTS — reach for it when
+        somebody mentions a detail that might already be written down under a
+        note whose title gives no hint of it: 「有冇人講過酒店」 against a note
+        called 「Grant 婚禮」.
+
+        It is a plain substring match, not a search engine. It does not stem
+        («wedding» will not find «weddings») and it does not translate, so give
+        it the word the way somebody here would have written it.
+
+        Outcomes: `ok` with the matching notes, each with its title and its
+        contents; `nothing_found` when nothing matches — a real answer, and I
+        keep a record that it was asked; `unavailable` when I can't reach my
+        notes at all.
+
+        Args:
+            query: The word or phrase to look for inside notes.
+        """
+        book = _notebook()
+        if book is None:
+            _record(metrics, "note_search", "unavailable")
+            return dict(notes_off)
+        probe = query.strip()
+        if not probe:
+            _record(metrics, "note_search", "refused", reason="empty")
+            return {
+                "status": "refused",
+                "note": "Give me a word or phrase to look for.",
+            }
+        try:
+            hits = await book.search(
+                workspace=note_workspace, query=probe, limit=NOTE_SEARCH_LIMIT,
+            )
+        except Exception:
+            log.exception("note_search failed")
+            _record(metrics, "note_search", "unavailable")
+            return dict(notes_off)
+        if not hits:
+            # THE NEGATIVE CACHE (§4.5), and the whole reason a miss is worth
+            # writing down: one room asking after something no note covers is
+            # noise; the third time is the signal the curator reads to decide
+            # a note should exist. Best-effort — a miss cache that cannot be
+            # written must not turn a real `nothing_found` into a failure.
+            try:
+                await book.record_miss(
+                    workspace=note_workspace, probe=probe,
+                    conversation_id=bound_conversation_id, now_ms=_now_ms(),
+                )
+            except Exception:
+                log.exception("note_search could not record the miss")
+            _record(metrics, "note_search", "nothing_found")
+            return {
+                "status": "nothing_found",
+                "note": "Nothing written down mentions that. That's a real "
+                        "answer — say so rather than inventing one.",
+            }
+        _record(metrics, "note_search", "ok", count=len(hits))
+        return {
+            "status": "ok",
+            "matches": [
+                {"title": note.title, "description": note.description, "body": body}
+                for note, body in hits
+            ],
+        }
+
+    async def note_create(
+        title: str, description: str, uncertainty: str, closing_condition: str,
+        body: str, anchor_date: int | None = None,
+        anchor_entities: list[str] | None = None,
+    ) -> dict:
+        """Start carrying an open question that nothing here settles yet.
+
+        A note is TRACKED UNCERTAINTY — a thing this group is still chewing on
+        that outlives the conversation it came up in: whose wedding is when and
+        where, what the trip is still missing, who has not paid. It is not a
+        settled fact and it is not a description of a person.
+
+        Check <notes> first. Every note that exists is listed there with its
+        title and a line about it, so whether one already covers this ground is
+        something you can answer from what is in front of you — if one does,
+        read it and update it instead.
+
+        Two of these fields are what make a note a note rather than a stray
+        thought, and I will refuse without them:
+
+          - `closing_condition` — what would SETTLE this. 「Grant 講咗個地點」.
+            A thing nothing could ever resolve is not an uncertainty being
+            tracked; it is either a fact or ignorance, and neither belongs here.
+          - an ANCHOR — `anchor_date`, `anchor_entities`, or both. It is what
+            the note can later be looked up by and compared on. 「我哋幾時去玩」
+            with no date and nobody named has no referent at all.
+
+        Outcomes: `ok` once it is written down; `refused` with the reason —
+        fix that and call again; `unavailable` when I can't reach my notes.
+
+        Args:
+            title: A short handle, at most 60 characters. This is what you will
+                see in <notes> and what note_read takes, so make it name the
+                thing: 「Grant 婚禮」, not 「婚禮」.
+            description: One line, at most 200 characters, saying what is open.
+                It rides in <notes> on every turn.
+            uncertainty: What exactly is not known yet, in a sentence.
+            closing_condition: What would settle it.
+            body: The contents — what is actually known so far, arranged so it
+                reads. This is what note_read hands back.
+            anchor_date: Optional. The calendar day it is about, as YYYYMMDD —
+                20261011 for 11 October 2026.
+            anchor_entities: Optional. The people or things it is about, named
+                the way this group names them.
+        """
+        book = _notebook()
+        if book is None:
+            _record(metrics, "note_create", "unavailable")
+            return dict(notes_off)
+        # WHO WROTE IT. `established_by` is not decoration: §9.6's strike reset
+        # fires only on a tag-path revision, and a revision written under
+        # nobody's name makes the curator's loop breaker reset itself forever.
+        # Same refusal `remind` makes, for the same class of reason.
+        tagger = room.tagger
+        if tagger is None:
+            _record(metrics, "note_create", "refused", reason="no_tagger")
+            return {
+                "status": "refused",
+                "note": "I don't know who you are well enough to write this down "
+                        "under anybody's name. Say you can't — don't guess.",
+            }
+        try:
+            note = await book.create(
+                workspace=note_workspace, title=title, description=description,
+                uncertainty=uncertainty, closing_condition=closing_condition,
+                established_in=bound_conversation_id, body=body,
+                established_by=f"tag:{tagger.person_id}", now_ms=_now_ms(),
+                anchor_date=anchor_date,
+                anchor_entity_ids=tuple(anchor_entities or ()),
+            )
+        except ValueError as exc:
+            # THE DOMAIN'S OWN SENTENCE, surfaced rather than swallowed.
+            # `nora.domain.notes` refuses a note with no anchor, no closing
+            # condition, or an over-long index entry, and each refusal says
+            # exactly what is wrong and why. Replacing that with a generic
+            # «I couldn't» would leave the model with no way to fix the call —
+            # which is the difference between a refusal and a failure.
+            _record(metrics, "note_create", "refused", reason="domain")
+            return {"status": "refused", "note": str(exc)}
+        except Exception:
+            log.exception("note_create failed")
+            _record(metrics, "note_create", "unavailable")
+            return dict(notes_off)
+        note_heads[note.id] = note.head_revision_id
+        _record(metrics, "note_create", "ok")
+        return {"status": "ok", "title": note.title}
+
+    async def note_update(title: str, body: str) -> dict:
+        """Revise a note you have JUST read this turn.
+
+        Give the WHOLE note back with your change folded in, not just the new
+        part — `body` replaces what note_read handed you as the note's current
+        contents. Nothing is destroyed: what was there is kept behind it, so a
+        bad revision can be undone.
+
+        You must call note_read on this note first, in this same turn. That is
+        enforced, not advice: <notes> tells you a note exists and nothing more,
+        and rewriting a body from a one-line description destroys the
+        arrangement that is the entire value of the note.
+
+        Outcomes: `ok` once the change is in; `refused` when you have not read
+        this note this turn — read it and try again; `unavailable` when the note
+        changed under you between your read and this write, and then read it
+        again and redo the change against what it says NOW, because what you
+        wrote answers a question that has moved.
+
+        Args:
+            title: The note's title, exactly as <notes> shows it.
+            body: The note's full contents after your change.
+        """
+        book = _notebook()
+        if book is None:
+            _record(metrics, "note_update", "unavailable")
+            return dict(notes_off)
+        tagger = room.tagger
+        if tagger is None:
+            _record(metrics, "note_update", "refused", reason="no_tagger")
+            return {
+                "status": "refused",
+                "note": "I don't know who you are well enough to write this down "
+                        "under anybody's name. Say you can't — don't guess.",
+            }
+        try:
+            candidates = await _resolve(book, title)
+        except Exception:
+            log.exception("note_update could not resolve the title")
+            _record(metrics, "note_update", "unavailable")
+            return dict(notes_off)
+        if len(candidates) > 1:
+            return _ambiguous(candidates)
+        if not candidates:
+            _record(metrics, "note_update", "nothing_found")
+            return {
+                "status": "nothing_found",
+                "note": "There's no note by that title to revise. Check <notes>.",
+            }
+        note = candidates[0]
+        parent = note_heads.get(note.id)
+        if parent is None:
+            # THE TOOL-LAYER BACKSTOP to R-55, and it is not redundant with the
+            # guard. `ReplyGuard` keys its latch on the TITLE, which is all a
+            # model-facing argument can carry; this keys on the resolved note
+            # ID. They differ in exactly one case, and it is the one that
+            # matters: the title resolved to a DIFFERENT note between the read
+            # and the write (the curator retired one and another now answers to
+            # the name). The guard would wave that through on a title it has
+            # seen; there is no head recorded for the note it actually reached,
+            # so this refuses.
+            _record(metrics, "note_update", "refused", reason="not_read")
+            return {
+                "status": "refused",
+                "note": "You haven't read that note this turn. Call note_read on "
+                        "it first — you cannot revise a body you have not seen.",
+            }
+        try:
+            revision = await book.append_revision(
+                workspace=note_workspace, note_id=note.id, body=body,
+                parent_revision_id=parent,
+                established_by=f"tag:{tagger.person_id}", now_ms=_now_ms(),
+            )
+        except StaleNoteHeadError:
+            # §6.3. `unavailable`, never `refused` and never applied on top:
+            # the head moved, so what she is appending answers a question that
+            # has changed, and «I could not do it» is the honest report. The
+            # recorded head is dropped so a retry in this same turn cannot
+            # write against the value that just lost.
+            note_heads.pop(note.id, None)
+            _record(metrics, "note_update", "unavailable", reason="stale_head")
+            return {
+                "status": "unavailable",
+                "note": "This note changed under you — read it again, then redo "
+                        "your change against what it says now. I have not "
+                        "written anything.",
+            }
+        except ValueError as exc:
+            _record(metrics, "note_update", "refused", reason="domain")
+            return {"status": "refused", "note": str(exc)}
+        except Exception:
+            log.exception("note_update failed")
+            _record(metrics, "note_update", "unavailable")
+            return dict(notes_off)
+        # A second revision this turn CASes against what the first one wrote,
+        # not against the body she read — which is no longer the head.
+        note_heads[note.id] = revision.id
+        _record(metrics, "note_update", "ok", chars=len(body))
+        return {"status": "ok", "title": note.title}
+
     async def make_artifact(
         task: str, context: list[dict] | None = None, artifact_id: str | None = None,
     ) -> dict:
@@ -4105,6 +4638,10 @@ def build_tool_specs(
         _spec("rsvp_event", rsvp_event),
         _spec("cancel_event", cancel_event),
         _spec("suggest_venue", suggest_venue),
+        _spec("note_read", note_read),
+        _spec("note_search", note_search),
+        _spec("note_create", note_create),
+        _spec("note_update", note_update),
         _spec("make_artifact", make_artifact),
         _spec("version", version),
         _spec("send_reply", send_reply),
@@ -4143,6 +4680,8 @@ def build_tools(
     context_window: int = 40,
     ai_peer: str = "nora",
     links: LinkCarry | None = None,
+    notes: NoteCollaborator | None = None,
+    note_workspace: str = "",
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -4162,5 +4701,6 @@ def build_tools(
         shortener=shortener,
         question=question, context_window=context_window, ai_peer=ai_peer,
         links=links, giphy_source=giphy_source,
+        notes=notes, note_workspace=note_workspace,
     )
     return [adapt(spec) for spec in specs]

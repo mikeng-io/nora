@@ -29,7 +29,7 @@ from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
 from .outbound import Outbound, OutboundComposer
-from .tools import utc_now
+from .tools import note_handle, utc_now
 
 log = logging.getLogger("nora.guards")
 
@@ -685,6 +685,24 @@ class ReplyGuard(HookProvider):
         # not accumulated: only the MOST RECENT call's own answer is what
         # "have I just seen something to reuse" means.
         self._recall_found_something = False
+        # R-55, the read-before-write latch (note-tier spec §6.2): the notes a
+        # `note_read` SUCCEEDED on this turn. Per-tag by construction, like
+        # every other counter here — a latch that outlived the turn would let a
+        # read in one tag license a revision in the next, against a body that
+        # has moved.
+        #
+        # Keyed on the note's TITLE, normalised by `nora.agent.tools.
+        # note_handle`, and not on an id — spec §16.1: the injected index
+        # carries title + description and no id, so the title is the only
+        # handle the model can name and therefore the only one that reaches
+        # this guard. `evaluate` sees the raw tool_use the model emitted;
+        # `note_update`'s own tool closure holds the id→head map the
+        # compare-and-swap needs, and refuses separately when the title
+        # resolved to a note this turn never read. Two keys for one fact, on
+        # purpose: this one is what the MODEL is told, that one is what the
+        # WRITE is bound to, and they disagree exactly when a title changed
+        # hands mid-turn — which is the case that must fail.
+        self._notes_read: set[str] = set()
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
@@ -844,6 +862,42 @@ class ReplyGuard(HookProvider):
                     "R-2", "You already sent your reply. Do not call send_reply "
                            "again. If you still need something, use one of the "
                            "other tools; otherwise finish your turn.",
+                )
+
+        # R-55 — the read-before-write latch (note-tier spec §6.2). A refusal,
+        # not a nudge, and it sits HERE beside R-2's latch rather than in the
+        # budget check above because it is the same KIND of rule: a per-turn
+        # fact about what has already happened, asked of state this guard owns.
+        # The budget check answers "may she call this again"; this answers "was
+        # she ever entitled to call it at all".
+        #
+        # WHY A VETO AND NOT ADVICE. The injected index carries title and
+        # description only — enough to know a note exists, nowhere near enough
+        # to revise one. `note_update` REPLACES the note's rendered body
+        # (§6.1's head), so a revision written without the body in front of her
+        # destroys the arrangement that is the whole value of the tier, and
+        # does it silently: the prior revision survives in the table, but
+        # nothing in the room ever learns the note stopped saying what it said.
+        #
+        # NOT ONE-SHOT, unlike R-45 above. R-45's argument for firing once is
+        # that a second refusal would not change the model's answer and would
+        # only spend a budget of 1 on refusals. Neither half holds here: the
+        # remedy IS a different call (`note_read`, its own budget), the veto
+        # names it, and a model that ignores the veto and re-fires must be
+        # refused again — a one-shot latch would let the SECOND attempt through
+        # unread, which is precisely the write this rule exists to stop.
+        #
+        # Costs no budget: `_after_tool` never `record`s a cancelled call
+        # (DEC-33), so read-then-revise is still two calls against a budget of
+        # two.
+        if tool_name == "note_update":
+            title = (tool_input or {}).get("title") or ""
+            if note_handle(title) not in self._notes_read:
+                return self._veto(
+                    "R-55",
+                    f"You have not read {title!r} this turn. Call note_read on it "
+                    "first, then revise it — a note's value is how it is "
+                    "arranged, and you cannot rewrite a body you have not seen.",
                 )
 
         # R-45 (DEC-101): a nudge, not a refusal — `make_artifact` itself
@@ -1081,6 +1135,36 @@ class ReplyGuard(HookProvider):
                 self._recall_found_something = (
                     _unwrap_tool_status(getattr(event, "result", None)) == "ok"
                 )
+            # R-55's latch (note-tier spec §6.2). **This is below BOTH early
+            # returns on purpose, and that placement is the whole rule.**
+            # `release()` above belongs where it is because it means «this call
+            # FINISHED», which is true on every path — vetoed, raised, done —
+            # and the bug 4d44d0d fixed was exactly that sentence being written
+            # below a return that made it false on one path. The latch means
+            # «this call SUCCEEDED», which is true on one path only, so the two
+            # take OPPOSITE positions in the same method and neither placement
+            # generalises to the other.
+            #
+            # Three ways a read can fail to license a revision, and all three
+            # are the same failure wearing different clothes — a call that
+            # produced no body:
+            #   - it RAISED (the first early return);
+            #   - the guard CANCELLED it (the second);
+            #   - it ran and answered `nothing_found` or `refused` — the note
+            #     is not there, or the title matched two and the tool refused
+            #     to guess. Strands calls both of those a successful tool call,
+            #     so only `_unwrap_tool_status` can tell them from a real read,
+            #     and reading a note that ISN'T THERE licensing a revision is
+            #     the single case this latch most exists to catch.
+            if (
+                name == "note_read"
+                and _unwrap_tool_status(getattr(event, "result", None)) == "ok"
+            ):
+                title = (
+                    (getattr(event, "tool_use", None) or {}).get("input") or {}
+                ).get("title") or ""
+                if title:
+                    self._notes_read.add(note_handle(title))
             if name in self._terminal:
                 # She has spoken: `_before_model` relaxes `tool_choice` from
                 # here on, and ends the turn once every terminal verb's budget

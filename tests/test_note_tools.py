@@ -1,0 +1,509 @@
+"""The four note tools (note-tier spec §5.2, §6, §16.1) and the
+read-before-write latch (§6.2), from the tool layer's side.
+
+The STORE is already contract-tested (`tests/contract/test_note_store_contract.py`)
+against both implementations, so nothing here re-asserts CAS or workspace
+scoping at the store. What this file tests is the layer above: title
+resolution (§16.1 — the index carries no id, so the title is the handle),
+the three-state R-27 answers each tool owes, and the latch, which is the one
+piece that lives in `ReplyGuard` rather than in a tool closure.
+"""
+
+from __future__ import annotations
+
+import json
+
+from nora.agent.guards import ReplyGuard
+from nora.agent.registry import ToolRegistry
+from nora.agent.room import Room
+from nora.agent.tools import NATIVE_TOOLS
+from nora.domain.models import PersonRef
+from nora.obs.metrics import Metrics
+from nora.testing import FakeRosterSource
+from nora.testing.note_store import InMemoryNoteStore
+from tests.fakes import FakeHoncho, SinkSender
+
+MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+GROUP = "signal:group-1"
+WORKSPACE = "household"
+NOW = 1_770_000_000_000
+
+
+class _NullStore:
+    async def recent(self, *, conversation_id: str, limit: int):
+        return []
+
+
+class _FakePersons:
+    def __init__(self, *refs: PersonRef) -> None:
+        self.by_person = {ref.person_id: ref for ref in refs}
+
+    def resolve(self, platform: str, sender_id: str):
+        return None
+
+
+def _room(*, tagger: PersonRef | None = MILES) -> Room:
+    source = FakeRosterSource(groups={GROUP: (frozenset({"miles"}),)})
+    return Room(
+        platform="signal", conversation_id=GROUP, roster_source=source,
+        persons=_FakePersons(MILES), tagger=tagger,
+    )
+
+
+def _tools(
+    *, notes: InMemoryNoteStore | None, workspace: str = WORKSPACE,
+    metrics: Metrics | None = None, tagger: PersonRef | None = MILES,
+) -> dict:
+    registry = ToolRegistry(notes=notes, note_workspace=workspace)
+    specs = registry.specs(
+        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
+        persons=_FakePersons(MILES), honcho=FakeHoncho(), deliverer=SinkSender(),
+        metrics=metrics or Metrics(), room=_room(tagger=tagger),
+    )
+    return {spec.name: spec.call for spec in specs}
+
+
+async def _seed(
+    store: InMemoryNoteStore, *, title: str, body: str,
+    workspace: str = WORKSPACE, description: str = "one line about it",
+):
+    return await store.create(
+        workspace=workspace, title=title, description=description,
+        uncertainty="not settled yet", closing_condition="somebody decides",
+        established_in=GROUP, body=body, established_by="tag:miles", now_ms=NOW,
+        anchor_date=20261011,
+    )
+
+
+# ── the table (§6.4) ─────────────────────────────────────────────────────────
+
+def test_the_four_note_tools_carry_the_budgets_the_spec_sizes_them_at():
+    """§6.4. A revision costs two calls — read then update — and the second is
+    what makes the first mandatory, so the numbers are load-bearing rather than
+    bookkeeping: `note_create` at 1 is the per-turn cap on note spam."""
+    assert NATIVE_TOOLS["note_read"].budget == 3
+    assert NATIVE_TOOLS["note_search"].budget == 2
+    assert NATIVE_TOOLS["note_create"].budget == 1
+    assert NATIVE_TOOLS["note_update"].budget == 2
+
+
+def test_no_note_tool_ends_the_turn():
+    """§6.4: none terminal — she still owes the room a reply. A terminal note
+    verb would write the row and go silent, which is R-23's shape."""
+    for name in ("note_read", "note_search", "note_create", "note_update"):
+        assert NATIVE_TOOLS[name].terminal is False
+
+
+# ── R-27: a wiring gap is `unavailable`, never `nothing_found` ───────────────
+
+async def test_every_note_tool_answers_unavailable_when_no_store_is_wired():
+    tools = _tools(notes=None)
+    calls = (
+        ("note_read", {"title": "Dinner"}),
+        ("note_search", {"query": "hotel"}),
+        ("note_create", {
+            "title": "T", "description": "d", "uncertainty": "u",
+            "closing_condition": "c", "body": "b", "anchor_date": 20261011,
+        }),
+        ("note_update", {"title": "Dinner", "body": "b"}),
+    )
+    for name, kwargs in calls:
+        assert (await tools[name](**kwargs))["status"] == "unavailable", name
+
+
+async def test_a_store_with_no_workspace_is_unavailable_not_empty():
+    """The other half of the same wiring gap: a store wired without the
+    workspace it is keyed on cannot answer, and «there is no such note» would
+    be a lie about a notebook that was never consulted."""
+    tools = _tools(notes=InMemoryNoteStore(), workspace="")
+    assert (await tools["note_read"](title="Dinner"))["status"] == "unavailable"
+    assert (await tools["note_search"](query="hotel"))["status"] == "unavailable"
+
+
+# ── note_read: the TITLE is the handle (§16.1) ───────────────────────────────
+
+async def test_note_read_resolves_the_title_the_index_shows_and_returns_the_body():
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked yet.")
+    tools = _tools(notes=store)
+
+    out = await tools["note_read"](title="Dinner, 9 Sept")
+
+    assert out["status"] == "ok"
+    assert out["body"] == "Nobody has booked yet."
+    assert out["title"] == "Dinner, 9 Sept"
+    # The head revision id rides back so §6.3's compare-and-swap has something
+    # to compare, even though the model never has to hand it to `note_update`.
+    assert out["revision_id"] == note.head_revision_id
+
+
+async def test_note_read_matches_a_title_case_insensitively():
+    """`(workspace, lower(title))` is what the partial unique index is on, so
+    case is not part of a note's identity — and 「dinner」 typed back at the
+    index's 「Dinner, 9 Sept」 must not be a miss."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked yet.")
+    tools = _tools(notes=store)
+    assert (await tools["note_read"](title="  dinner, 9 sept "))["status"] == "ok"
+
+
+async def test_note_read_answers_nothing_found_for_a_title_that_is_not_there():
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", body="b")
+    tools = _tools(notes=store)
+    out = await tools["note_read"](title="Grant's wedding")
+    assert out["status"] == "nothing_found"
+
+
+async def test_note_read_refuses_an_ambiguous_title_and_names_both():
+    """§16.1: ambiguity REFUSES, it never picks one. Guessing which note was
+    meant is how a revision lands on the wrong body — and the refusal has to
+    name the candidates or she cannot ask which was meant."""
+    store = InMemoryNoteStore()
+    # The database forbids this with a partial unique index; the store double
+    # does not, which is exactly why the TOOL has to refuse rather than trust
+    # the index to have made it impossible.
+    await _seed(store, title="Wedding", body="Grant's")
+    await _seed(store, title="wedding", body="Blake's")
+    tools = _tools(notes=store)
+
+    out = await tools["note_read"](title="Wedding")
+
+    assert out["status"] == "refused"
+    assert sorted(out["candidates"]) == ["Wedding", "wedding"]
+
+
+async def test_note_read_cannot_reach_another_workspaces_note():
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", body="b", workspace="somebody-else")
+    tools = _tools(notes=store)
+    assert (await tools["note_read"](title="Dinner, 9 Sept"))["status"] == "nothing_found"
+
+
+# ── note_search: bodies, never titles (§5.3) ────────────────────────────────
+
+async def test_note_search_reaches_into_a_body_the_title_says_nothing_about():
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", body="Ada suggested a hotel buffet.")
+    tools = _tools(notes=store)
+
+    out = await tools["note_search"](query="hotel")
+
+    assert out["status"] == "ok"
+    assert [m["title"] for m in out["matches"]] == ["Dinner, 9 Sept"]
+    assert "hotel" in out["matches"][0]["body"]
+
+
+async def test_note_search_does_not_match_on_the_title_alone():
+    """§5.3: the injected index already shows every title, so a title search
+    would duplicate the prompt and earn nothing. A hit on a word that appears
+    ONLY in the title means the search is reading the wrong column."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Hotel for Grant", body="Nobody has decided.")
+    tools = _tools(notes=store)
+    assert (await tools["note_search"](query="Hotel"))["status"] == "nothing_found"
+
+
+async def test_a_search_that_finds_nothing_is_recorded_as_a_candidate():
+    """§4.5, and the whole reason a miss is worth writing down: the second and
+    third time the room asks about something no note covers is the signal the
+    curator reads to decide a note should exist."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store)
+
+    assert (await tools["note_search"](query="酒店"))["status"] == "nothing_found"
+    assert (await tools["note_search"](query="酒店"))["status"] == "nothing_found"
+
+    candidate = store.candidates[(WORKSPACE, "酒店")]
+    assert candidate.occurrence_count == 2
+    assert candidate.observed_in == (GROUP,)
+
+
+async def test_a_search_that_finds_something_records_no_miss():
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", body="Ada suggested a hotel buffet.")
+    tools = _tools(notes=store)
+    await tools["note_search"](query="hotel")
+    assert store.candidates == {}
+
+
+# ── note_create (§6.5) ───────────────────────────────────────────────────────
+
+async def test_note_create_writes_the_note_and_its_first_revision():
+    store = InMemoryNoteStore()
+    tools = _tools(notes=store)
+
+    out = await tools["note_create"](
+        title="Grant's wedding", description="Nobody knows the venue",
+        uncertainty="which venue, and who is going",
+        closing_condition="Grant says where it is",
+        body="Ada thinks it might be in Sai Kung.",
+        anchor_date=20261011, anchor_entities=["grant"],
+    )
+
+    assert out["status"] == "ok"
+    assert out["title"] == "Grant's wedding"
+    (note,) = await store.standing(workspace=WORKSPACE)
+    assert note.anchor_date == 20261011
+    assert note.anchor_entity_ids == ("grant",)
+    assert note.established_in == GROUP
+    assert store.revisions[note.head_revision_id].body == (
+        "Ada thinks it might be in Sai Kung."
+    )
+    assert store.revisions[note.head_revision_id].established_by == "tag:miles"
+
+
+async def test_note_create_surfaces_the_domain_refusal_instead_of_swallowing_it():
+    """The four fields are the point of the tier, and three of them are only
+    load-bearing because the wrong thing is UNREPRESENTABLE. A tool that
+    reported a `ValueError` as a bare failure would hand the model no way to
+    fix the call — so the constructor's own sentence is the refusal."""
+    store = InMemoryNoteStore()
+    tools = _tools(notes=store)
+
+    no_anchor = await tools["note_create"](
+        title="We should hang out", description="d", uncertainty="u",
+        closing_condition="c", body="b",
+    )
+    assert no_anchor["status"] == "refused"
+    assert "anchor" in no_anchor["note"]
+
+    long_title = await tools["note_create"](
+        title="x" * 61, description="d", uncertainty="u",
+        closing_condition="c", body="b", anchor_date=20261011,
+    )
+    assert long_title["status"] == "refused"
+    assert "60 characters" in long_title["note"]
+
+    assert await store.standing(workspace=WORKSPACE) == ()
+
+
+async def test_note_create_refuses_when_it_does_not_know_who_is_asking():
+    """`established_by` distinguishes a tag-path revision from the curator's
+    own (§9.6), so a revision written under nobody's name breaks the strike
+    reset. Same refusal `remind` makes for the same reason."""
+    tools = _tools(notes=InMemoryNoteStore(), tagger=None)
+    out = await tools["note_create"](
+        title="T", description="d", uncertainty="u", closing_condition="c",
+        body="b", anchor_date=20261011,
+    )
+    assert out["status"] == "refused"
+
+
+# ── note_update: the CAS (§6.3) and the tool-layer backstop ──────────────────
+
+async def test_note_update_appends_a_revision_and_moves_the_head():
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store)
+    await tools["note_read"](title="Dinner, 9 Sept")
+
+    out = await tools["note_update"](
+        title="Dinner, 9 Sept", body="Nobody has booked. Ada says 8pm.",
+    )
+
+    assert out["status"] == "ok"
+    head = store.notes[note.id].head_revision_id
+    assert head != note.head_revision_id
+    assert store.revisions[head].body == "Nobody has booked. Ada says 8pm."
+    assert store.revisions[head].parent_revision_id == note.head_revision_id
+    # Append-only: the revision she read is still there (§6.1).
+    assert store.revisions[note.head_revision_id].body == "Nobody has booked."
+
+
+async def test_note_update_refuses_when_this_turn_never_read_that_note():
+    """The tool-layer half of §6.2. `ReplyGuard` vetoes this call before it
+    runs; this is the backstop for the one case the guard cannot see — a title
+    that resolved to a DIFFERENT note between the read and the write."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store)
+
+    out = await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+
+    assert out["status"] == "refused"
+    assert "note_read" in out["note"]
+
+
+async def test_a_head_that_moved_under_her_is_unavailable_never_applied_on_top():
+    """§6.3. R-27's three states at the store layer: «I could not do it», not
+    «there was nothing to do» and never a silent overwrite of the arrangement
+    the intervening revision made."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store)
+    await tools["note_read"](title="Dinner, 9 Sept")
+
+    # The curator merges it mid-turn, or a parallel turn in the other room of
+    # the same workspace revises it.
+    moved = await store.append_revision(
+        workspace=WORKSPACE, note_id=note.id, body="Ada booked it.",
+        parent_revision_id=note.head_revision_id, established_by="curator",
+        now_ms=NOW + 1,
+    )
+
+    out = await tools["note_update"](title="Dinner, 9 Sept", body="Nobody has booked.")
+
+    assert out["status"] == "unavailable"
+    assert "read it again" in out["note"]
+    assert store.notes[note.id].head_revision_id == moved.id
+
+
+async def test_a_second_update_in_one_turn_writes_against_what_she_just_wrote():
+    """Budget 2 makes two revisions in one turn reachable, and the second must
+    CAS against the head the FIRST one left — not against the body she read,
+    which is no longer the head."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store)
+    await tools["note_read"](title="Dinner, 9 Sept")
+    await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+
+    out = await tools["note_update"](
+        title="Dinner, 9 Sept", body="Ada says 8pm, Sai Kung.",
+    )
+
+    assert out["status"] == "ok"
+    assert store.revisions[store.notes[note.id].head_revision_id].body == (
+        "Ada says 8pm, Sai Kung."
+    )
+
+
+async def test_a_read_that_found_nothing_licenses_no_revision_at_the_tool_layer():
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store)
+    read = await tools["note_read"](title="Grant's wedding")
+    assert read["status"] == "nothing_found"
+
+    out = await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+    assert out["status"] == "refused"
+
+
+# ── R-55: the latch, measured through the veto ───────────────────────────────
+#
+# Every test below asserts through `evaluate`'s refusal rather than by reading
+# the latch set. The set is invisible to the model; the veto is where a miss
+# costs something, and a test that reads the set goes green against a latch
+# that never vetoes anything (4d44d0d's lesson, one method over).
+
+BUDGETS = ToolRegistry().budgets()
+TERMINAL = ToolRegistry().terminal_tools()
+
+
+def _guard() -> ReplyGuard:
+    return ReplyGuard(conversation_id=GROUP, budgets=BUDGETS, terminal=TERMINAL,
+                      metrics=Metrics())
+
+
+class _AfterEvent:
+    """What Strands really passes to `AfterToolCallEvent` — the tool's own dict
+    wrapped in `{"content": [{"text": json.dumps(...)}]}`, which is the only
+    place the tool's REAL status survives (see `_unwrap_tool_status`)."""
+
+    def __init__(self, name, payload, *, exception=None, cancel_message=None,
+                 tool_input=None):
+        self.tool_use = {"name": name, "input": tool_input or {}}
+        self.exception = exception
+        self.cancel_message = cancel_message
+        self.result = {"content": [{"text": json.dumps(payload)}]}
+
+
+def _read_happened(guard, title, **kw):
+    guard._after_tool(_AfterEvent(
+        "note_read", {"status": "ok", "title": title},
+        tool_input={"title": title}, **kw,
+    ))
+
+
+def test_r55_a_revision_is_vetoed_when_this_turn_never_read_the_note():
+    guard = _guard()
+    veto = guard.evaluate("note_update", {"title": "Dinner, 9 Sept", "body": "x"})
+    assert veto is not None
+    assert "note_read" in veto
+
+
+def test_r55_a_revision_is_allowed_once_the_read_succeeded():
+    guard = _guard()
+    _read_happened(guard, "Dinner, 9 Sept")
+    assert guard.evaluate("note_update", {"title": "Dinner, 9 Sept", "body": "x"}) is None
+
+
+def test_r55_reading_one_note_does_not_license_revising_another():
+    guard = _guard()
+    _read_happened(guard, "Dinner, 9 Sept")
+    veto = guard.evaluate("note_update", {"title": "Grant's wedding", "body": "x"})
+    assert veto is not None
+
+
+def test_r55_a_read_that_raised_licenses_nothing():
+    """`_after_tool` returns early on `exception is not None`, and the latch
+    write is BELOW that return on purpose: `release()` means «this call
+    finished» and is true on every path, the latch means «this call
+    SUCCEEDED» and is true on one. Hoisting the latch to sit with `release`
+    would license a revision off a call that never produced a body."""
+    guard = _guard()
+    _read_happened(guard, "Dinner, 9 Sept", exception=RuntimeError("boom"))
+    assert guard.evaluate(
+        "note_update", {"title": "Dinner, 9 Sept", "body": "x"},
+    ) is not None
+
+
+def test_r55_a_read_the_guard_cancelled_licenses_nothing():
+    guard = _guard()
+    _read_happened(
+        guard, "Dinner, 9 Sept", cancel_message="You already called note_read.",
+    )
+    assert guard.evaluate(
+        "note_update", {"title": "Dinner, 9 Sept", "body": "x"},
+    ) is not None
+
+
+def test_r55_a_read_that_found_no_such_note_licenses_nothing():
+    """The case the latch exists to catch, and the one a «did the call finish?»
+    check would miss: reading a note that ISN'T THERE tells her nothing about a
+    body, so it must not become a licence to append to one."""
+    guard = _guard()
+    guard._after_tool(_AfterEvent(
+        "note_read", {"status": "nothing_found"},
+        tool_input={"title": "Dinner, 9 Sept"},
+    ))
+    assert guard.evaluate(
+        "note_update", {"title": "Dinner, 9 Sept", "body": "x"},
+    ) is not None
+
+
+def test_r55_an_ambiguous_read_licenses_nothing():
+    guard = _guard()
+    guard._after_tool(_AfterEvent(
+        "note_read", {"status": "refused", "candidates": ["Wedding", "wedding"]},
+        tool_input={"title": "Wedding"},
+    ))
+    assert guard.evaluate("note_update", {"title": "Wedding", "body": "x"}) is not None
+
+
+def test_r55_does_not_apply_to_note_create():
+    """§5.2: the index is uncapped, so every title is already in front of her
+    and whether a note already covers this ground is checkable from the prompt
+    alone. Create needs no read — that is the payoff §5.1 pays for."""
+    guard = _guard()
+    assert guard.evaluate("note_create", {"title": "New", "body": "x"}) is None
+
+
+def test_a_vetoed_revision_does_not_spend_its_budget():
+    """DEC-33's mechanism, reused rather than re-invented: `_after_tool` never
+    `record`s a cancelled call, so the model's corrected second attempt — read
+    first, then revise — is not refused by R-7 for a call that never ran."""
+    guard = _guard()
+    event = type("E", (), {})()
+    event.tool_use = {"name": "note_update", "input": {"title": "D", "body": "x"}}
+    event.invocation_state = {"conversation_id": GROUP}
+    event.cancel_tool = None
+    guard._before_tool(event)
+    assert event.cancel_tool is not None
+    guard._after_tool(_AfterEvent(
+        "note_update", {"status": "refused"}, cancel_message=event.cancel_tool,
+    ))
+    _read_happened(guard, "D")
+    assert guard.evaluate("note_update", {"title": "D", "body": "x"}) is None
