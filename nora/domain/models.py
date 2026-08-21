@@ -8,6 +8,7 @@ from typing import Any
 
 from .facts import Fact
 from .media import MediaBlob, MediaRef
+from .notes import Note
 
 
 @dataclass(frozen=True)
@@ -317,6 +318,17 @@ class TagContext:
     # `nora.language.fact_render.render_facts` renders no block for that,
     # same as its siblings' empty state.
     facts: tuple[Fact, ...] = ()
+    # The note tier (2026-08-21 note-tier design), §5.1 — the INDEX of tracked
+    # uncertainties, workspace-keyed like `facts` above and unlike every block
+    # before it. Defaulted empty for the same reason all four of its siblings
+    # are: the existing construction sites keep working, and nothing writes
+    # this tier yet — `nora.language.note_render.render_notes` renders no block
+    # for an empty tuple, so a deployed prompt gains nothing until it does.
+    # Deliberately the whole standing set and never a top-N: a note absent from
+    # the index is invisible to her, and invisible is indistinguishable from
+    # absent. The prompt budget is paid by the per-entry caps in
+    # `nora.domain.notes` and by the curator's retirement pass, not here.
+    notes: tuple[Note, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -14,14 +14,16 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
 )
+from nora.domain.notes import Note
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", room_language=None, room_portrait=None,
-         room_exchange=None, tagger_card=(), facts=()) -> TagContext:
+         room_exchange=None, tagger_card=(), facts=(), notes=()) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
-    kwargs = {"tagger_card": tuple(tagger_card), "facts": tuple(facts)}
+    kwargs = {"tagger_card": tuple(tagger_card), "facts": tuple(facts),
+              "notes": tuple(notes)}
     if room_language is not None:
         kwargs["room_language"] = room_language
     if room_portrait is not None:
@@ -40,6 +42,18 @@ def _fact(obj="black_tower") -> Fact:
         source_excerpt="Red, Green, Yellow, Blue, and Black towers",
         valid_from=1, created_at=1, instruction_sha256="a" * 64,
         model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
+    )
+
+
+def _note(title="9 Sept dinner") -> Note:
+    return Note(
+        id="0191f2c4-0000-7000-8000-00000000000a", workspace="nora", title=title,
+        description="Three venues on the table; nobody has picked one.",
+        uncertainty="which venue, and whether the 9th still works",
+        closing_condition="a venue is booked, or the date is abandoned",
+        established_in="g1", created_at=1,
+        head_revision_id="0191f2c4-0000-7000-8000-00000000000b",
+        anchor_date=20260909,
     )
 
 
@@ -134,7 +148,7 @@ def test_transcript_is_wrapped_and_labelled_untrusted():
 # be suspicious of.
 _ALL_BLOCKS = (
     "group_transcript", "self_card", "peer_card", "peer_history",
-    "room_language", "room_exchange", "room_portrait", "facts",
+    "room_language", "room_exchange", "room_portrait", "facts", "notes",
 )
 
 
@@ -145,7 +159,7 @@ def _full_prefill_body() -> str:
         _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
         room_language=_room_language(), room_exchange=_room_exchange(),
-        room_portrait=_room_portrait(), facts=(_fact(),),
+        room_portrait=_room_portrait(), facts=(_fact(),), notes=(_note(),),
     )
     return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
 
@@ -159,7 +173,7 @@ def _opening_tag(body: str, name: str) -> str:
 
 
 def test_every_injected_block_is_labelled_untrusted():
-    """F3/F4: the marker, on all eight, not on one."""
+    """F3/F4: the marker, on all nine, not on one."""
     body = _full_prefill_body()
     for name in _ALL_BLOCKS:
         assert 'untrusted="true"' in _opening_tag(body, name), name
@@ -947,3 +961,62 @@ def test_the_room_portrait_block_comes_after_room_language_and_room_exchange():
 
     assert body.index("<room_language") < body.index("<room_portrait")
     assert body.index("<room_portrait") < body.index("<group_transcript")
+
+
+# ---- <notes>: the note tier's index ----------------------------------------
+
+
+def test_the_notes_block_is_after_the_context_header():
+    prefill = build_prefill(_ctx(notes=(_note(),)), display_name="Nora", context_window=40)
+    body = "\n".join(m["content"][0]["text"] for m in prefill)
+
+    assert body.index("<notes") > body.index("</context_header>")
+    assert body.index("<notes") < body.index("<group_transcript")
+
+
+def test_the_notes_block_is_not_in_the_static_header():
+    """The cached prefix is `_context_header`. A workspace-keyed block put
+    there would fragment DeepSeek's prefix match across every workspace, and
+    `TagContext.notes` is reassembled per tag anyway — see `_notes_block`'s
+    own docstring."""
+    prefill = build_prefill(_ctx(notes=(_note(),)), display_name="Nora", context_window=40)
+
+    assert "<notes" not in prefill[0]["content"][0]["text"]
+    assert "<notes" in prefill[1]["content"][0]["text"]
+
+
+def test_the_notes_block_is_absent_when_nothing_is_standing():
+    """`ctx.notes` defaults to `()` and nothing writes the tier yet, so the
+    deployed prompt must gain no bytes at all — not an empty `<notes>` tag."""
+    prefill = build_prefill(_ctx(), display_name="Nora", context_window=40)
+    body = "\n".join(m["content"][0]["text"] for m in prefill)
+
+    assert "<notes" not in body
+
+
+def test_the_notes_block_comes_after_the_facts_block():
+    """Both are workspace-keyed, so they sit together at the wide end of the
+    widening-scope order the volatile tail is built on. Settled before open:
+    `<facts>` is what is known, `<notes>` is what is not, and the open
+    questions sit closest to the transcript that may bear on them."""
+    prefill = build_prefill(
+        _ctx(room_language=_room_language(), facts=(_fact(),), notes=(_note(),)),
+        display_name="Nora", context_window=40,
+    )
+    body = "\n".join(m["content"][0]["text"] for m in prefill)
+
+    assert body.index("<room_language") < body.index("<facts")
+    assert body.index("<facts") < body.index("<notes")
+    assert body.index("<notes") < body.index("<group_transcript")
+
+
+def test_a_note_body_never_reaches_the_prefill():
+    """The whole read-path split (spec §5.1/§5.2): the index buys awareness,
+    `note_read` buys content. A `Note` carries no body at all — the body is a
+    `NoteRevision` — so what this guards is the next-nearest free-text field
+    being folded into the line because it was in scope."""
+    body = _full_prefill_body()
+
+    assert "9 Sept dinner" in body
+    assert "which venue, and whether the 9th still works" not in body
+    assert "a venue is booked, or the date is abandoned" not in body
