@@ -10,9 +10,10 @@ as it did before speech existed. A voice note that fails to transcribe is
 still a voice note; a message is never dropped over STT.
 
 The endpoint already applies OpenCC s2t (Simplified → Traditional), so the
-text this returns is yue-Hant-HK-ready. `language` is a BCP-47 hint the
-endpoint may use for LID; it never overrides detection, because the group
-mixes Cantonese and English.
+text this returns is yue-Hant-HK-ready. `language` is one of FunASR/
+SenseVoice's own short LID codes (`auto`/`zh`/`en`/`yue`/`ja`/`ko`/
+`nospeech`) — NOT a BCP-47 tag; the model silently treats anything it does
+not recognize as `auto`, so a tag like `yue-HK` would pin nothing.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ class SenseVoiceTranscriber:
     """
 
     def __init__(
-        self, *, endpoint: str, language: str = "yue-HK", timeout_seconds: float = 30.0,
+        self, *, endpoint: str, language: str = "yue", timeout_seconds: float = 30.0,
     ) -> None:
         self._url = endpoint.rstrip("/") + "/v1/audio/transcriptions"
         self._language = language
@@ -52,11 +53,16 @@ class SenseVoiceTranscriber:
     ) -> SttResult:
         """One transcription attempt, or an unavailable result — never raises.
 
-        A `media_type` that is not `audio/*` is refused here (a song is not a
-        voice note and a voice note is not a song — the caller is expected to
-        gate on `ref.voice_note`, but this is the port's own belt).
+        A `media_type` that is KNOWN and is not `audio/*` is refused here (a
+        song is not a voice note and a voice note is not a song — the caller
+        is expected to gate on `ref.voice_note`, but this is the port's own
+        belt). An UNRESOLVED type (`""` — the platform declared none and the
+        filename didn't resolve via `resolve_media_type`) is let through: the
+        caller already gated on `ref.voice_note`, and refusing here would
+        silently drop a real voice note over a missing content-type header
+        rather than over anything about the bytes themselves.
         """
-        if not media_type.startswith("audio/"):
+        if media_type and not media_type.startswith("audio/"):
             return SttResult(available=False, reason="unsupported")
         lang = language or self._language
         boundary = "----nora-stt"
@@ -96,6 +102,9 @@ class SenseVoiceTranscriber:
             return SttResult(available=False, reason="error")
 
         if not text:
-            log.warning("stt returned an empty transcript")
-            return SttResult(available=False, reason="error")
+            # A legitimate 200 with no words (silent/wordless voice note) is
+            # NOT the same failure as an unreachable/erroring endpoint — kept
+            # a distinct reason so the metric can tell them apart.
+            log.info("stt returned an empty transcript")
+            return SttResult(available=False, reason="empty")
         return SttResult(available=True, text=text)

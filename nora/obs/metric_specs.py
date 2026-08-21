@@ -813,14 +813,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     # ── the speech (STT) lane (spec 2026-08-21) ─────────────────────────────
     # Voice-note transcription outcomes in the media custody stage, by
-    # platform and status (ok / error / timeout / unsupported / blob_missing).
-    # An ERROR is never a PASS: a failed transcription is counted here with
-    # its reason and the voice note is still recorded with a bare handle.
+    # platform and status (ok / error / timeout / unsupported / empty).
+    # `empty` is a legitimate 200 with no words (a silent/wordless voice
+    # note) — kept distinct from `error` (a transport/server failure) so an
+    # operator can tell an outage from an ordinary silent note. An ERROR is
+    # never a PASS: a failed transcription is counted here with its reason
+    # and the voice note is still recorded with a bare handle.
     _CounterSpec(
         "nora_speech_transcriptions_total",
         "Voice-note transcription outcomes in the media custody stage, by "
-        "platform and status (ok / error / timeout / unsupported / "
-        "blob_missing).",
+        "platform and status (ok / error / timeout / unsupported / empty).",
         ("platform", "status"),
     ),
     # The Dreamer's one LLM call (nora.language.observer.LexemeObserver,

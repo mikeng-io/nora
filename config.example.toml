@@ -611,7 +611,7 @@ provider = "hko"           # the WeatherProvider adapter; "hko" is the only one 
 [speech.stt]
 enabled = false
 # endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
-# language = "yue-HK"            # BCP-47 hint; SenseVoice native yue
+# language = "yue"               # FunASR/SenseVoice's own LID code, not BCP-47
 [speech.tts]
 enabled = false
 # provider = ""

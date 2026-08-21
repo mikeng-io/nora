@@ -914,16 +914,18 @@ class SpeechSttConfig(BaseModel):
     written before this existed keeps loading (`extra="forbid"` makes that a
     real constraint). When enabled, the voice-note ingest path calls
     `endpoint` with the OpenAI-compatible `/v1/audio/transcriptions` contract;
-    `language` hints the model (BCP-47, e.g. `yue-HK`); `timeout_seconds`
-    bounds ONE call (the whole ingest path waits for it — see the stage
-    docstring).
+    `language` hints the model's LID — NOT a BCP-47 tag, but one of
+    FunASR/SenseVoice's own short codes (`auto`/`zh`/`en`/`yue`/`ja`/`ko`/
+    `nospeech`, per `deploy/stt/server.py`'s `lid_dict`) — any other string is
+    silently treated as `auto` by the model itself; `timeout_seconds` bounds
+    ONE call (the whole ingest path waits for it — see the stage docstring).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     endpoint: str = "http://stt:8000"
-    language: str = "yue-HK"
+    language: str = "yue"
     timeout_seconds: float = Field(default=30.0, gt=0)
 
 
@@ -961,6 +963,8 @@ class SpeechConfig(BaseModel):
 
 class HeartbeatConfig(BaseModel):
     """The background tick that fires due reminders (`nora.app.heartbeat`).
+
+    Optional, defaulted, and INERT by default like `[presence]` and `[search]`:
     this is Nora's first unprompted-speech path, so it must never turn itself on
     because a section is missing from a config.toml written before it existed.
 

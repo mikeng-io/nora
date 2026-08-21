@@ -102,6 +102,22 @@ async def test_a_timeout_is_an_unavailable_result(monkeypatch):
     assert result.reason == "timeout"
 
 
+async def test_an_empty_transcript_is_a_distinct_reason_from_a_server_error(monkeypatch):
+    """A silent/wordless voice note is a legitimate 200 with no words — NOT
+    the same failure as an unreachable/erroring endpoint. Conflating the two
+    would make `nora_speech_transcriptions_total{status="error"}` unable to
+    tell an outage from an ordinary silent note."""
+    import aiohttp
+    session = _FakeSession(response=_FakeResponse(payload={"text": ""}))
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda *a, **k: session)
+    transcriber = SenseVoiceTranscriber(endpoint="http://stt:8000")
+
+    result = await transcriber.transcribe(data=b"\x00\xff", media_type="audio/aac")
+
+    assert result.available is False
+    assert result.reason == "empty"
+
+
 async def test_a_non_audio_type_is_refused_without_a_call():
     transcriber = SenseVoiceTranscriber(endpoint="http://stt:8000")
 
@@ -109,3 +125,19 @@ async def test_a_non_audio_type_is_refused_without_a_call():
 
     assert result.available is False
     assert result.reason == "unsupported"
+
+
+async def test_an_unresolved_media_type_is_let_through_not_refused(monkeypatch):
+    """`media_type=""` means `resolve_media_type` could not tell what this
+    is (no declared content-type, no resolvable filename) — NOT that it is
+    known to be something other than audio. The caller already gated on
+    `ref.voice_note`, so refusing here would silently drop a real voice note
+    over a missing header rather than over the bytes themselves."""
+    import aiohttp
+    session = _FakeSession()
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda *a, **k: session)
+    transcriber = SenseVoiceTranscriber(endpoint="http://stt:8000")
+
+    result = await transcriber.transcribe(data=b"\x00\xff", media_type="")
+
+    assert result == SttResult(available=True, text="喂你今日得唔得閒啊")

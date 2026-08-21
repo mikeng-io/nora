@@ -21,11 +21,13 @@ Env knobs (all optional):
   STT_MODEL — default sensevoice; see MODEL_CONFIGS for aliases.
 """
 import argparse
+import asyncio
 import re
+import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -71,6 +73,26 @@ def clean_text(text: str) -> str:
     return re.sub(r"<\|[^|]*\|>", "", text).strip()
 
 
+def _run_stt_blocking(
+    *, tmp_path: str, wav_path: str, model: str, language: str | None,
+) -> tuple[list, float]:
+    """ffmpeg normalize + model.generate — the CPU-bound half of one
+    transcription. Run via `asyncio.to_thread` so the event loop keeps
+    serving `/health` and other requests while this runs (a real
+    transcription is seconds, not milliseconds, on this host's CPU)."""
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", tmp_path, "-ar", "16000", "-ac", "1", wav_path],
+        check=True, capture_output=True,
+    )
+    asr_model = load_model(model)
+    gen_kwargs: dict[str, Any] = {"input": wav_path, "batch_size": 1}
+    if language:
+        gen_kwargs["language"] = language
+    t0 = time.time()
+    result = asr_model.generate(**gen_kwargs)
+    return result, time.time() - t0
+
+
 @app.post("/v1/audio/transcriptions")
 async def transcribe(
     file: UploadFile = File(...),
@@ -98,20 +120,14 @@ async def transcribe(
         # audio/mp4 (measured 2026-08-21) and Signal voice notes commonly arrive
         # as audio/mp4 — without this the endpoint 500s on real voice notes.
         # mp3/ogg pass through the same pipe, so one code path for everything.
-        import subprocess
-
         wav_path = tmp_path + ".wav"
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", tmp_path, "-ar", "16000", "-ac", "1", str(wav_path)],
-            check=True, capture_output=True,
+        # Both ffmpeg and `generate` are blocking calls on this CPU-only host —
+        # run them in a worker thread so `/health` and any concurrent request
+        # aren't frozen behind this one for the whole transcription.
+        result, elapsed = await asyncio.to_thread(
+            _run_stt_blocking, tmp_path=tmp_path, wav_path=wav_path,
+            model=model, language=language,
         )
-        asr_model = load_model(model)
-        t0 = time.time()
-        gen_kwargs = {"input": str(wav_path), "batch_size": 1}
-        if language:
-            gen_kwargs["language"] = language
-        result = asr_model.generate(**gen_kwargs)
-        elapsed = time.time() - t0
 
         raw = result[0]["text"] if result else ""
         text = _cc.convert(clean_text(raw))  # s2t → 繁体 (yue-Hant-HK)

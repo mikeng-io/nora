@@ -18,14 +18,14 @@ import hashlib
 
 from nora.domain.media import MediaRef
 from nora.domain.models import NormalizedMessage, PersonRef
-from nora.domain.ports import MemoryHealth, SttResult
+from nora.domain.ports import MemoryHealth
 from nora.ingest.pipeline import IngestPipeline, IngestResult
 from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
 from nora.policy import permissive_policy
-from nora.testing import FakeBlobStore, FakeMediaSource, FakeRecordStore
+from nora.testing import FakeBlobStore, FakeMediaSource, FakeRecordStore, FakeTranscriber
 
 
 def _msg(sender_id: str = "+852111", body: str = "hello") -> NormalizedMessage:
@@ -276,21 +276,6 @@ async def test_with_custody_unwired_the_row_is_recorded_and_the_loss_is_counted(
     assert metrics.get("nora_media_custody_total", status="not_configured") == 1
 
 
-class FakeTranscriber:
-    """Local `Transcriber` double — the stage's success and failure lanes."""
-
-    def __init__(self, text: str = "喂你今日得唔得閒啊", *, fail: bool = False) -> None:
-        self.text = text
-        self.fail = fail
-        self.calls: list[tuple[bytes, str, str]] = []
-
-    async def transcribe(self, *, data: bytes, media_type: str, language: str = "") -> SttResult:
-        self.calls.append((data, media_type, language))
-        if self.fail:
-            return SttResult(available=False, reason="error")
-        return SttResult(available=True, text=self.text)
-
-
 AUDIO = b"\x00\xff pretend opus"
 
 
@@ -335,7 +320,7 @@ async def test_a_failed_transcription_still_records_the_voice_note_with_a_bare_h
     store = FakeRecordStore()
     blobs = FakeBlobStore()
     metrics = Metrics()
-    transcriber = FakeTranscriber(fail=True)
+    transcriber = FakeTranscriber(available=False, reason="error")
     msg = dataclasses.replace(
         _msg(body="[voice note]"),
         media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),),
@@ -383,3 +368,41 @@ async def test_a_song_is_never_transcribed_even_when_a_transcriber_is_wired():
     digest = hashlib.sha256(AUDIO).hexdigest()
     assert transcriber.calls == [], "a song must never be sent to STT"
     assert store.rows[0]["body"] == f"[audio {digest[:6]}]"
+
+
+class _RaisingGetBlobStore(FakeBlobStore):
+    """A `BlobStore` whose `get` always raises, e.g. a corrupted blob or a
+    rotated encryption key on an otherwise-successful `put`."""
+
+    async def get(self, *, key: str) -> bytes:
+        raise RuntimeError("simulated decrypt failure")
+
+
+async def test_a_voice_note_transcribes_even_when_the_blob_store_cannot_be_read_back():
+    """The custody stage must never call `blobs.get` to transcribe a voice
+    note it JUST wrote — it reuses the plaintext `_take` already holds. A
+    store whose `get` raises (corrupted blob, rotated key) must not stop the
+    message from ever transcribing or being recorded (regression for the
+    `blobs.get` round trip that could raise uncaught and drop the message)."""
+    store = FakeRecordStore()
+    blobs = _RaisingGetBlobStore()
+    metrics = Metrics()
+    transcriber = FakeTranscriber()
+    msg = dataclasses.replace(
+        _msg(body="[voice note]"),
+        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),),
+    )
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=Persons(by_person={}, index={}),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        audit=store, media_sources=MediaSourceRegistry([FakeMediaSource({"att1": AUDIO})]),
+        blobs=blobs, metrics=metrics, transcriber=transcriber, language="yue-HK",
+    )
+
+    await pipeline.run(message=msg)
+
+    digest = hashlib.sha256(AUDIO).hexdigest()
+    assert len(store.rows) == 1
+    assert store.rows[0]["body"] == f"[voice note {digest[:6]}: 喂你今日得唔得閒啊]"
+    assert transcriber.calls[0][0] == AUDIO
+    assert metrics.get("nora_speech_transcriptions_total", status="ok") == 1

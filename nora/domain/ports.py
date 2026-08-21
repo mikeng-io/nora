@@ -855,9 +855,10 @@ class Transcriber(Protocol):
 
     Bound to `[speech.stt]`: `enabled = false` (or an unset endpoint) leaves
     the ingest stage with no transcriber, and a voice note is recorded with a
-    bare handle — exactly as before this capability existed. `language` is a
-    BCP-47 hint (`yue-HK`) the endpoint may use for LID; it never overrides a
-    detected language, because the group mixes Cantonese and English.
+    bare handle — exactly as before this capability existed. `language` is
+    one of the endpoint's own short LID codes (`yue`, not a BCP-47 tag like
+    `yue-HK`) the endpoint may use; it never overrides a detected language,
+    because the group mixes Cantonese and English.
 
     Implementations NEVER raise into the ingest loop: any failure (network,
     timeout, empty transcript) is returned as an unavailable `SttResult`, and
@@ -874,9 +875,13 @@ class Transcriber(Protocol):
 class SttResult:
     """Outcome of one transcription call. `available` is the single truth a
     caller reads: `False` means «could not transcribe», and `reason` names why
-    (`error`, `timeout`, `unsupported` — an ERROR is never a PASS, R-27).
-    `text` is the Traditional-Chinese transcript (the endpoint already applies
-    OpenCC s2t, so the caller never sees Simplified)."""
+    (`error`, `timeout`, `unsupported`, `empty` — an ERROR is never a PASS,
+    R-27). `empty` is a legitimate 200 with no words (a silent/wordless voice
+    note) and is kept distinct from `error` (a transport/server failure) —
+    conflating the two would make `nora_speech_transcriptions_total{status=
+    "error"}` unable to tell an outage from an ordinary silent note. `text` is
+    the Traditional-Chinese transcript (the endpoint already applies OpenCC
+    s2t, so the caller never sees Simplified)."""
 
     available: bool
     text: str = ""

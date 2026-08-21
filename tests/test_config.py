@@ -661,7 +661,7 @@ def test_speech_ships_inert():
     speech = SpeechConfig()
     assert speech.stt.enabled is False
     assert speech.stt.endpoint == "http://stt:8000"
-    assert speech.stt.language == "yue-HK"
+    assert speech.stt.language == "yue"
     assert speech.tts.enabled is False
     assert speech.tts.provider == ""
 
