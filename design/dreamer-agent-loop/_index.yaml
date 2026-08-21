@@ -1,0 +1,87 @@
+kind: design_index
+title: "The Dreamer Agent Loop — Revision Bundle"
+description: >
+  The Dreamer was designed as a read-only research agent and built as a
+  pipeline. Four of five participants make a single completion call with no
+  tools; the fifth has a real loop and can only look outward at the open web.
+  This bundle is a revision layer over the three 2026-08-20 specs: it records
+  what is live, what was designed and never shipped, and the decisions that
+  close the gap. It supersedes their framing where it conflicts and defers the
+  rest.
+status: proposed
+governance: pre-governance-input
+timestamp: '2026-08-22'
+origin: >
+  Investigation session with miles, 2026-08-21/22, prompted by a repeating
+  MaxTokensReachedException in fact-candidates. Six parallel read-only
+  investigations against the running container, the live database, the
+  application log and the full design corpus.
+members:
+  - 00-overview.md
+  - 01-live-state.md
+  - 02-instrument-blindness.md
+  - 03-no-agent-loop.md
+  - 04-designed-vs-shipped.md
+  - 05-input-or-tool.md
+  - 06-tool-surface.md
+  - 07-room-access.md
+  - 08-disclosure.md
+  - 09-self-correction.md
+  - 10-orchestration.md
+  - 11-doctrine.md
+  - 12-migration-and-governance.md
+  - 13-open-items.md
+edges:
+  - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
+  - {src: 00-overview, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
+  - {src: 00-overview, dst: 04-designed-vs-shipped, rel: motivated_by, provenance: asserted}
+  - {src: 00-overview, dst: 05-input-or-tool, rel: decides_on, provenance: asserted}
+  - {src: 02-instrument-blindness, dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {src: 03-no-agent-loop, dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {src: 04-designed-vs-shipped, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
+  - {src: 05-input-or-tool, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
+  - {src: 05-input-or-tool, dst: 04-designed-vs-shipped, rel: motivated_by, provenance: asserted}
+  - {src: 06-tool-surface, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 06-tool-surface, dst: 05-input-or-tool, rel: realizes, provenance: asserted}
+  - {src: 06-tool-surface, dst: 04-designed-vs-shipped, rel: depends_on, provenance: asserted}
+  - {src: 07-room-access, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 07-room-access, dst: 06-tool-surface, rel: depends_on, provenance: asserted}
+  - {src: 08-disclosure, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 08-disclosure, dst: 07-room-access, rel: depends_on, provenance: asserted}
+  - {src: 09-self-correction, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 09-self-correction, dst: 06-tool-surface, rel: depends_on, provenance: asserted}
+  - {src: 09-self-correction, dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {src: 10-orchestration, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 10-orchestration, dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {src: 10-orchestration, dst: 02-instrument-blindness, rel: depends_on, provenance: asserted}
+  - {src: 11-doctrine, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 11-doctrine, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
+  - {src: 12-migration-and-governance, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 12-migration-and-governance, dst: 06-tool-surface, rel: sequences, provenance: asserted}
+  - {src: 12-migration-and-governance, dst: 07-room-access, rel: sequences, provenance: asserted}
+  - {src: 12-migration-and-governance, dst: 11-doctrine, rel: sequences, provenance: asserted}
+  - {src: 13-open-items, dst: 00-overview, rel: realizes, provenance: asserted}
+scope:
+  v1:
+    - "The loop is the deliverable: an adaptor with no tools is a completion, not an agent"
+    - "Knowable-before-the-call is an input; discovered-during-reasoning must be a tool"
+    - "A tier contributes read tools through the existing registry seam, not a bespoke mechanism"
+    - "Room access splits by key kind: scope-keyed proceeds, workspace-keyed is blocked"
+    - "The egress screen does not make a room read safe; the content class is what changes"
+    - "Every fix ships its own measurement"
+    - "Doctrine becomes shape-aware; the audience field stops being decorative"
+    - "Migrate room-language and room-exchange onto the runtime (Phase 3)"
+  deferred:
+    - "BLOCKED — workspace-keyed room access, pending R-49's second condition on the fact path"
+    - "BLOCKED — any budget sizing, pending a gateway probe on the per-call token ceiling"
+    - "BLOCKED — the migration landing, pending a chosen global concurrency bound"
+    - "Language-tier supersession (a designed cost; reversing it needs its own argument)"
+    - "Entity resolution mechanism (shared dependency of both tiers)"
+    - "Per-adaptor cadence"
+    - "What <facts> renders at reply time"
+    - "Whether the instruction digest must cover the tool subset"
+    - "OUT OF SCOPE — the fact tier's store"
+    - "OUT OF SCOPE — Standing and the debrief (tag path, separately owned)"
+    - "OUT OF SCOPE — game-state tools (excluded fail-closed pending a classification surface)"
+    - "OUT OF SCOPE — whether the Dreamer's model changes"
