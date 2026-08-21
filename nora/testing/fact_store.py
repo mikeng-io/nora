@@ -181,5 +181,18 @@ class InMemoryFactStore:
         matches.sort(key=lambda f: f.created_at, reverse=True)
         return tuple(matches[:limit])
 
+    async def recent_facts(self, *, workspace: str, limit: int) -> tuple[Fact, ...]:
+        # Same clamp as `standing_facts` above and for the same reason: the
+        # double must degrade the way the real store does, or a test that
+        # passes here would fail against Postgres.
+        if limit <= 0:
+            return ()
+        matches = [
+            f for (ws, _fid), f in self._facts.items()
+            if ws == workspace and f.is_standing
+        ]
+        matches.sort(key=lambda f: f.created_at, reverse=True)
+        return tuple(matches[:limit])
+
     async def fact_by_id(self, *, workspace: str, fact_id: str) -> Fact | None:
         return self._facts.get((workspace, fact_id))

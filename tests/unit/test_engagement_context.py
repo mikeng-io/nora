@@ -448,3 +448,104 @@ async def test_the_portrait_reader_is_called_with_the_conversation_as_scope():
 
     assert ctx.room_portrait == portrait
     assert reader.calls == ["g1"]
+
+
+# ---- the fact tier's read half (2026-08-20 fact-tier design §6) -----------
+
+
+def _fact(fact_id: str = "f1", *, workspace: str = "nora", subject: str = "big walk"):
+    from nora.domain.facts import Fact
+
+    return Fact(
+        id=fact_id, workspace=workspace, subject_id=subject,
+        predicate="unlocked_by", object_entity_id=None,
+        object_literal="the four coloured towers",
+        valid_from=1_000, created_at=1_000,
+        instruction_sha256="a" * 64, model="deepseek-v4-flash",
+        established_by="dream:fact-adjudication:nora:1000",
+        source_url="https://example.com/guide",
+        source_excerpt="The black tower opens once all four are complete.",
+    )
+
+
+class _FakeFactReader:
+    def __init__(self, facts=(), *, raises: bool = False) -> None:
+        self._facts = tuple(facts)
+        self._raises = raises
+        self.calls: list[tuple[str, int]] = []
+
+    async def recent_facts(self, *, workspace: str, limit: int):
+        self.calls.append((workspace, limit))
+        if self._raises:
+            raise RuntimeError("the store is down")
+        return self._facts[:limit]
+
+    async def standing_facts(self, *, workspace, subject_ids, limit):
+        return ()
+
+    async def fact_by_id(self, *, workspace, fact_id):
+        return None
+
+
+async def test_no_fact_reader_leaves_the_block_empty_and_asks_nothing():
+    """`[facts] enabled = false` is the shipped default, so this is what every
+    deployment does today. An empty tier renders NO BLOCK, not an empty one."""
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.facts == ()
+
+
+async def test_the_facts_are_read_for_this_conversations_workspace():
+    """The one block whose content is NOT derived from the room it renders
+    into — which is why the lookup is by workspace and why the map exists."""
+    reader = _FakeFactReader([_fact()])
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(),
+        facts=reader, workspaces={"g1": "friends"}, max_rendered_facts=5,
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert reader.calls == [("friends", 5)]
+    assert len(ctx.facts) == 1
+
+
+async def test_an_unmapped_conversation_falls_back_to_the_default_workspace():
+    """DEC-105's own default. Refusing here would make the fact tier an
+    admission gate, which it is not — a room absent from this map is a room
+    the ingest path already refused."""
+    reader = _FakeFactReader([_fact()])
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), facts=reader, workspaces={},
+    )
+
+    await assembler.assemble(request=_request())
+
+    assert reader.calls[0][0] == "nora"
+
+
+async def test_a_fact_read_failure_never_cancels_its_siblings():
+    """This runs inside the turn's `asyncio.gather`. One uncaught exception
+    there cancels six sibling reads and silences the whole turn — the property
+    every helper in this class holds, asserted for the newest one."""
+    metrics = Metrics()
+    store = FakeRecordStore()
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=metrics,
+        facts=_FakeFactReader(raises=True), workspaces={"g1": "nora"},
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.facts == ()
+    assert metrics.get("nora_errors_total", stage="facts", platform="signal") == 1
+    # The siblings still resolved — a failed fact read is not a failed turn.
+    assert ctx.room_language is not None

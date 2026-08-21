@@ -1513,6 +1513,35 @@ class FactReader(Protocol):
         `workspace`, most recent first, capped at `limit`. Never raises."""
         ...
 
+    async def recent_facts(self, *, workspace: str, limit: int) -> tuple[Fact, ...]:
+        """The workspace's most recent standing facts, capped at `limit`, with
+        NO subject filter. Never raises — same reason as `standing_facts`.
+
+        **This is what the `<facts>` block renders, and the subject-free shape
+        is a deliberate first cut.** §4 of the fact-tier design describes the
+        adaptor's input as "the live fact set for the subjects in play", and
+        §13.1 leaves the mechanism for deciding WHICH subjects — entity
+        resolution over `fact_entity.aliases` — explicitly open and unbuilt.
+        Rather than invent a resolution rule at the render site and have two
+        places disagree about what a subject is, this reads the tier's most
+        recent standing rows and lets the cap bound the cost.
+
+        It is defensible rather than merely expedient: the tier only ever holds
+        claims THIS workspace asserted and the Dreamer adjudicated, so it is
+        not a general world model whose rows would be off-topic by
+        construction. When entity resolution lands it NARROWS this — a strict
+        improvement, not a rewrite — and the caller stops passing a bare
+        workspace.
+
+        Separate from `standing_facts` rather than a defaulted parameter on it:
+        one takes a subject set and one deliberately has none, and a
+        `subject_ids=()` that meant "everything" would collide with
+        `standing_facts`' own documented behaviour, where an empty set returns
+        NOTHING (fail-closed, so a caller that resolved no subjects renders no
+        facts rather than all of them).
+        """
+        ...
+
     async def fact_by_id(self, *, workspace: str, fact_id: str) -> Fact | None:
         """One fact by id, standing or superseded. `None` if it does not
         exist in `workspace` — never a proxy for "the store could not be

@@ -71,6 +71,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.events import SqlEventStore
 from nora.infra.sql.exchange import SqlExchangeStore
+from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.presence import PresenceStore
@@ -538,6 +539,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # consumer (this same tag/fire prefill), and `[language].enabled` is its
     # off switch too (`LanguageConfig`'s own docstring on why Plan 2 has no
     # independent flag).
+    # The fact tier's read half (2026-08-20 fact-tier design §6). Its OWN
+    # gate, unlike the three room stores above: `[facts] enabled` is a
+    # different question from `[language] enabled`, because the fact tier
+    # renders a block whose content is not derived from the room it renders
+    # into — the only one — and that is a decision an operator makes
+    # separately from whether the room-language tier runs.
+    #
+    # Ships OFF, and flipping it before an adaptor writes anything would make
+    # `config.toml` assert a subsystem is running when none is — the defect
+    # class this tier exists to prevent, committed by its own switch.
+    fact_store: SqlFactStore | None = (
+        SqlFactStore(engine) if cfg.facts.enabled else None
+    )
     exchange_store: SqlExchangeStore | None = (
         SqlExchangeStore(engine, metrics=metrics) if cfg.language.enabled else None
     )
@@ -701,6 +715,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         language=language_store,
         exchange=exchange_store,
         portrait=portrait_store,
+        facts=fact_store,
+        # `Conversation.workspace` per conversation id (DEC-105), resolved
+        # ONCE here from the allowlist and handed over as data. The assembler
+        # gets a mapping rather than the `Policy` because this is the only
+        # thing it needs from admission, and a read on the turn's critical path
+        # should not be able to reach for admission decisions that belong
+        # upstream of it.
+        workspaces={
+            conv.primary_id: conv.workspace
+            for conv in allowlist.conversations
+            if conv.primary_id and conv.workspace
+        },
+        max_rendered_facts=cfg.facts.max_rendered_facts,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:

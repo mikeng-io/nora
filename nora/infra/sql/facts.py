@@ -253,6 +253,30 @@ class SqlFactStore:
             )
             return ()
 
+    async def recent_facts(self, *, workspace: str, limit: int) -> tuple[Fact, ...]:
+        """See the port. Same never-raises and same negative-limit clamp as
+        `standing_facts` — it runs on the same critical path, inside the same
+        `asyncio.gather`, where one uncaught exception cancels every sibling
+        read and silences the whole turn."""
+        if limit <= 0:
+            return ()
+        try:
+            stmt = (
+                sa.select(FACT)
+                .where(
+                    FACT.c.workspace == workspace,
+                    FACT.c.superseded_at.is_(None),
+                )
+                .order_by(FACT.c.created_at.desc())
+                .limit(limit)
+            )
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(stmt)).all()
+            return tuple(_row_to_fact(r) for r in rows)
+        except Exception:
+            log.exception("recent_facts unavailable for workspace %s", workspace)
+            return ()
+
     async def fact_by_id(self, *, workspace: str, fact_id: str) -> Fact | None:
         """History reads, including superseded rows — no `superseded_at`
         filter, unlike `standing_facts`. A `fact_id` that is not even
