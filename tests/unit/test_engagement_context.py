@@ -20,6 +20,7 @@ from nora.domain.models import (
     RoomLexeme,
     RoomPortrait,
 )
+from nora.domain.notes import Note
 from nora.domain.ports import (
     ContextAssembler,
     EngageDecision,
@@ -30,6 +31,7 @@ from nora.domain.ports import (
 from nora.engagement.context import TranscriptInjection
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.policy import Conversation, Policy
 from nora.testing import FakeRecordStore
 
 
@@ -448,3 +450,148 @@ async def test_the_portrait_reader_is_called_with_the_conversation_as_scope():
 
     assert ctx.room_portrait == portrait
     assert reader.calls == ["g1"]
+
+
+# ---------------------------------------------------------------------------
+# The note tier's read (2026-08-21 note-tier design, §5.1).
+#
+# The ONE read in this assembler that is not room-keyed: `standing` is scoped
+# by WORKSPACE (§3 / DEC-105), so the fake below is a workspace→notes map
+# rather than a store that says yes — a `standing` implementation ignoring its
+# argument would pass every assertion here and prove nothing about the
+# scoping, which is the only property deciding who sees a note.
+
+
+def _note(note_id: str, workspace: str, title: str) -> Note:
+    return Note(
+        id=note_id, workspace=workspace, title=title,
+        description="Three venues on the table; nobody has picked one.",
+        uncertainty="which venue, and whether the date still works",
+        closing_condition="a venue is booked, or the date is abandoned",
+        established_in="g1", created_at=1, head_revision_id=f"{note_id}-r1",
+        anchor_date=20260909,
+    )
+
+
+def _policy(workspace: str = "ridgeline", conversation_id: str = "g1") -> Policy:
+    convo = Conversation(
+        platform="signal", ids=frozenset({conversation_id}), persons=None,
+        primary_id=conversation_id, workspace=workspace,
+    )
+    return Policy(
+        conversations=(convo,), _by_id={("signal", conversation_id): convo},
+    )
+
+
+class FakeNoteStore:
+    """A workspace→notes map answering `()` for a workspace it does not hold —
+    the shape `SqlNoteStore.standing` has (`WHERE workspace = :workspace`), not
+    a double that returns its whole contents whatever it is asked."""
+
+    def __init__(self, by_workspace: dict[str, tuple[Note, ...]]) -> None:
+        self._by_workspace = by_workspace
+        self.calls: list[str] = []
+
+    async def standing(self, *, workspace: str) -> tuple[Note, ...]:
+        self.calls.append(workspace)
+        return self._by_workspace.get(workspace, ())
+
+
+class RaisingNoteStore:
+    async def standing(self, *, workspace: str) -> tuple[Note, ...]:
+        raise RuntimeError("note store is down")
+
+
+async def test_standing_notes_reach_the_tag_context_when_a_store_is_wired():
+    note = _note("n1", "ridgeline", "9 Sept dinner")
+    store = FakeNoteStore({"ridgeline": (note,)})
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), notes=store, policy=_policy(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.notes == (note,)
+
+
+async def test_notes_are_empty_when_no_store_is_configured():
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), policy=_policy(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.notes == ()
+
+
+async def test_the_notes_read_is_keyed_on_the_workspace_not_the_conversation():
+    """§3 is the whole point of this read: `g1` belongs to workspace `ridgeline`,
+    and a note established in the OTHER workspace must not appear however alike
+    the two rooms are. The ARGUMENT is asserted as well as the result, because
+    a read keyed on the conversation id would answer `()` here — the right
+    result for the wrong reason, and the wrong result the day a workspace has
+    two rooms."""
+    mine = _note("n1", "ridgeline", "9 Sept dinner")
+    theirs = _note("n2", "friends", "Someone else's wedding")
+    store = FakeNoteStore({"ridgeline": (mine,), "friends": (theirs,)})
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), notes=store,
+        policy=_policy(workspace="ridgeline"),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.notes == (mine,)
+    assert store.calls == ["ridgeline"], "scoped by workspace, never by room"
+
+
+async def test_a_failing_notes_read_yields_an_empty_index_not_a_dead_turn():
+    store = FakeRecordStore()
+    await store.append(message=_msg())
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10,
+        metrics=Metrics(), notes=RaisingNoteStore(), policy=_policy(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.notes == ()
+    assert ctx.transcript, "the other reads must still have completed"
+
+
+async def test_a_failing_notes_read_counts_nora_errors_total_stage_notes():
+    metrics = Metrics()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=metrics, notes=RaisingNoteStore(),
+        policy=_policy(),
+    )
+
+    await assembler.assemble(request=_request())
+
+    assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1
+
+
+async def test_a_room_the_policy_does_not_know_reads_no_notes_and_is_counted():
+    """A store wired with no workspace to scope it by is a WIRING GAP, not an
+    empty notebook: engagement and ingest disagree about which `Policy` they
+    were given (`EngagementPipeline`'s own `convo is not None` note). It
+    defaults safely — a thinner prompt, never notes from a guessed workspace —
+    and it is COUNTED, because the alternative is the `<notes>` block quietly
+    never appearing for the life of a deployment."""
+    metrics = Metrics()
+    store = FakeNoteStore({"ridgeline": (_note("n1", "ridgeline", "9 Sept dinner"),)})
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=metrics, notes=store,
+        policy=_policy(conversation_id="another-room"),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert ctx.notes == ()
+    assert store.calls == [], "no workspace means no read at all, not a guess"
+    assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1

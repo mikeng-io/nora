@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+from typing import Any, Protocol
 
 from nora.domain.models import (
     NormalizedMessage,
@@ -32,6 +32,7 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
 )
+from nora.domain.notes import Note
 from nora.domain.ports import (
     EngagementRequest,
     MemoryStore,
@@ -41,6 +42,7 @@ from nora.domain.ports import (
     RoomPortraitReader,
 )
 from nora.persons import Persons
+from nora.policy import Policy
 
 log = logging.getLogger("nora.engagement.context")
 
@@ -59,6 +61,31 @@ DEFAULT_ROOM_LANGUAGE_STORE_LIMIT = 15
 # Dreamer Plan 2's own version of the same relation, for the same reason —
 # see `nora.config.Config._exchange_render_cap_stays_below_the_store_limit`.
 DEFAULT_ROOM_EXCHANGE_STORE_LIMIT = 10
+
+
+class StandingNotesReader(Protocol):
+    """The one note-tier verb this assembler needs — `SqlNoteStore.standing`
+    (2026-08-21 note-tier design §5.1), narrowed to a Protocol for the same
+    reason `RoomPortraitReader` exists: `TranscriptInjection` takes
+    Protocol-typed collaborators only, so it never imports `nora.infra`.
+
+    Declared HERE rather than beside `FactReader` in `nora.domain.ports`
+    because today the prefill is the tier's only reader; when `note_read` /
+    `note_search` land in `nora.agent.tools` the tier's full read half belongs
+    in `ports` next to its fact-tier sibling, and this Protocol becomes an
+    alias of it.
+
+    **Never raises**, the promise every critical-path read in this module makes
+    (`FactReader.standing_facts`' own wording). `SqlNoteStore.standing` does not
+    yet make it — it is a bare `SELECT` — which is why `_notes` guards rather
+    than trusts, exactly as `_peer_card` does for a port that DOES promise it.
+    """
+
+    async def standing(self, *, workspace: str) -> tuple[Note, ...]:
+        """Every note in `workspace` that has not been retired. Uncapped by
+        design (§5.1): a note missing from the index is invisible to her, and
+        invisible is indistinguishable from absent."""
+        ...
 
 
 class TranscriptInjection:
@@ -80,6 +107,8 @@ class TranscriptInjection:
         exchange: RoomExchangeReader | None = None,
         room_exchange_store_limit: int = DEFAULT_ROOM_EXCHANGE_STORE_LIMIT,
         portrait: RoomPortraitReader | None = None,
+        notes: StandingNotesReader | None = None,
+        policy: Policy | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -99,10 +128,22 @@ class TranscriptInjection:
         self._exchange = exchange
         self._room_exchange_store_limit = room_exchange_store_limit
         self._portrait = portrait
+        # `notes` is `None` while `[notes] enabled = false` — the note tier
+        # ships dormant, the same "not yet wired" shape `language`/`exchange`/
+        # `portrait` above use, and the same one the fact tier will use.
+        self._notes_store = notes
+        # policy.toml, ONLY so `_notes` can name the workspace a room belongs
+        # to (`Conversation.workspace`, DEC-105). Nothing else in this class
+        # reads it, and nothing here decides admission — by the time a tag
+        # reaches the assembler ingest has already applied the allowlist
+        # (DEC-18). Passing the Policy rather than a resolved workspace string
+        # is what keeps this correct once a deployment runs two social units:
+        # the workspace is a property of the ROOM, resolved per message.
+        self._policy = policy
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
-        # Resolved BEFORE the gather because two of the five reads are keyed on
+        # Resolved BEFORE the gather because two of the eight reads are keyed on
         # it, and it is a pure dict lookup — no reason for it to be a step.
         ref = self._persons.resolve(msg.platform, msg.sender_id)
 
@@ -126,13 +167,20 @@ class TranscriptInjection:
         # SEVENTH (`_room_portrait`, Dreamer Plan 3) falls through to the
         # homogeneous `Future[list[_T]]` overload, where mypy joins all seven
         # return types down to `object`. Nesting keeps every branch within
-        # the typed overloads AND keeps all seven leaf reads scheduled in the
+        # the typed overloads AND keeps all eight leaf reads scheduled in the
         # same wave: the outer `gather` wraps each inner `gather(...)`
         # coroutine into a `Task` immediately, so the inner ones' own
         # children start concurrently too — nothing here becomes sequential.
+        #
+        # The EIGHTH (`_notes`, the note tier) joins the second branch rather
+        # than adding a third: both branches stay at four, well inside the six
+        # the overloads type, and the outer `gather` stays at two. It sits with
+        # the other prefill-block reads even though it is the one scoped by
+        # workspace and not by room — grouping is about arity here, and where a
+        # read is scheduled says nothing about what it is keyed on.
         (
             (transcript, card, self_card, tagger_card),
-            (room_language, room_exchange, room_portrait),
+            (room_language, room_exchange, room_portrait, notes),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._recent(msg),
@@ -144,6 +192,7 @@ class TranscriptInjection:
                 self._room_language(msg),
                 self._room_exchange(msg),
                 self._room_portrait(msg),
+                self._notes(msg),
             ),
         )
 
@@ -162,6 +211,7 @@ class TranscriptInjection:
             room_language=room_language,
             room_exchange=room_exchange,
             room_portrait=room_portrait,
+            notes=notes,
         )
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
@@ -363,3 +413,63 @@ class TranscriptInjection:
             self._metrics.inc(
                 "nora_errors_total", stage="room_portrait", platform=msg.platform)
             return RoomPortrait(scope_id=msg.conversation_id)
+
+    async def _notes(self, msg: NormalizedMessage) -> tuple[Note, ...]:
+        """The standing note index (2026-08-21 note-tier design §5.1).
+
+        **KEYED ON THE WORKSPACE, NOT THE ROOM — the one read in this class
+        that is.** Every sibling above passes `msg.conversation_id`; this one
+        passes `Conversation.workspace`, and the difference is deliberate
+        rather than an oversight to be tidied up later. §3/DEC-105: rooms
+        sharing a workspace are ONE social unit — the boundary `send_to`
+        already relays across — so a note raised in the group's Discord channel
+        belongs in its Signal room's index too, and `policy.toml`'s workspace
+        key is what keeps a different social unit's notes out. `established_in`
+        (the room a note was born in) is a routing key for promotion, never a
+        filter on who sees it.
+
+        Two ways this answers `()` rather than reading, and they are different
+        states wearing the same face:
+
+        - **No store** — `[notes] enabled = false`, the dormant default. Not an
+          error, not counted; the same "not yet wired" shape as `language`/
+          `exchange`/`portrait` above.
+        - **No `Conversation` for this room** — a store is wired but there is
+          no workspace to scope it by. That is a WIRING GAP (engagement and
+          ingest disagreeing about which `Policy` they hold — see
+          `EngagementPipeline`'s own `convo is not None` note), so it defaults
+          safely AND is counted: guessing a workspace would render another
+          unit's notes into this room, and staying silent about it is how a
+          block goes missing for the life of a deployment (`_peer_card`'s
+          `nora_peer_card_empty_total` was bought with exactly that lesson).
+
+        Fail-SOFT on the read itself, like every sibling: a thinner prompt
+        beats no reply. `StandingNotesReader` is documented never to raise, but
+        `SqlNoteStore.standing` is a bare `SELECT` with no guard of its own, so
+        here the catch is a REACHABLE path rather than belt-and-braces — an
+        unreachable database would otherwise cancel this read's three siblings
+        in the `gather` and take down a turn that would have worked.
+        """
+        if self._notes_store is None:
+            return ()
+        convo = (
+            self._policy.conversation(msg.platform, msg.conversation_id)
+            if self._policy is not None
+            else None
+        )
+        if convo is None:
+            log.warning(
+                "no policy conversation for %s/%s — the note index cannot be "
+                "scoped to a workspace; continuing without it",
+                msg.platform, msg.conversation_id,
+            )
+            self._metrics.inc(
+                "nora_errors_total", stage="notes", platform=msg.platform)
+            return ()
+        try:
+            return await self._notes_store.standing(workspace=convo.workspace)
+        except Exception:
+            log.exception("note-index read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="notes", platform=msg.platform)
+            return ()

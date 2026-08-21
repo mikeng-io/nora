@@ -1329,6 +1329,47 @@ class FactsConfig(BaseModel):
     retention_days: int = Field(default=180, ge=1)
 
 
+class NotesConfig(BaseModel):
+    """The note tier's gate (the `2026-08-21-note-tier-design` spec under
+    `docs/superpowers/specs/`).
+
+    `FactsConfig`'s shape immediately above, for the same reasons: the whole
+    section is optional and every field defaults, so a `config.toml` written
+    before this section existed keeps loading under `extra="forbid"`; and
+    `enabled` defaults to **False**, because a new subsystem does not switch
+    itself on — least of all one whose read lands in a block every tagged turn
+    carries.
+
+    **On today: the store is built and `<notes>` renders whatever is standing.**
+    Off: composition wires `notes=None` into `TranscriptInjection`, `_notes`
+    answers `()` without a query, and `render_notes(())` emits no block — the
+    dormant state the tier shipped in. Nothing WRITES a note yet either way
+    (`nora.agent` has no `note_create`/`note_update`, `nora.dreamer` has no
+    curator), so turning this on today buys a `SELECT` that returns nothing;
+    it is the operator's switch for the moment a writer lands, not a
+    retroactive one.
+
+    **There is deliberately no render cap here**, and that is the one place
+    this section differs from `[facts]`' `max_rendered_facts`. §5.1 decides the
+    index is UNCAPPED: a note silently missing from it is invisible to her, and
+    invisible is indistinguishable from absent — the same
+    `unavailable`-reported-as-`nothing_found` failure R-27 exists to prevent. A
+    top-N knob here would be a supported way to reintroduce it. The prompt
+    budget is paid instead by the per-entry caps in `nora.domain.notes` (a
+    title is ≤ 60 chars and a description ≤ 200, enforced in the constructor
+    rather than truncated at render) and by the curator retiring closed notes.
+    An index long enough to hurt is a curation problem, and a cap would hide it.
+
+    No `retention_days` either: retirement is a status change, not a delete
+    (§7.4) — a retired note stays readable so a lossy step can be re-derived —
+    so there is nothing here for a prune sweep to bound.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1588,6 +1629,12 @@ class Config(BaseModel):
     # (`enabled = false`); nothing writes a fact yet, so this is a flag and
     # three bounds for a future adaptor, not a running subsystem.
     facts: FactsConfig = FactsConfig()
+    # Optional and defaulted — see `NotesConfig`. Ships INERT
+    # (`enabled = false`); off, composition wires `notes=None` into
+    # `TranscriptInjection` and the `<notes>` block never renders. On, the
+    # index is read from `SqlNoteStore` on every tag — nothing writes a note
+    # yet, so it is empty until a curator lands.
+    notes: NotesConfig = NotesConfig()
     # Optional and defaulted — see `ComputeConfig`. Ships INERT
     # (`enabled = false`); the `ComputeJobStore` is built unconditionally
     # regardless (the `reminders` shape), only the poller's tick loop is gated.

@@ -401,6 +401,34 @@ def test_the_facts_section_is_optional_and_ships_inert(toml_path):
     assert cfg.facts.retention_days == 180
 
 
+def test_the_notes_section_is_optional_and_ships_inert(toml_path):
+    """The note tier's `[notes]`, its `[facts]` sibling's shape and reasoning:
+    a config.toml written before this section existed must keep loading under
+    `extra="forbid"`, and `enabled` must default to False — the tier ships
+    dormant and an operator turns it on deliberately, which is what keeps a
+    `<notes>` block out of every tag until somebody decides otherwise.
+
+    One field only, and the ABSENCE is the assertion worth making: there is no
+    render cap here, unlike `[facts].max_rendered_facts`. §5.1 makes the index
+    uncapped on purpose — a note missing from it is invisible to her, and
+    invisible is indistinguishable from absent — so a top-N knob would be a
+    supported way to reintroduce that failure. The per-entry caps in
+    `nora.domain.notes` are where the prompt budget is held instead."""
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[notes]\n")
+    assert tail, "config.example.toml no longer declares [notes]"
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
+
+    cfg = load(toml_path)
+
+    assert cfg.notes.enabled is False
+    assert not hasattr(cfg.notes, "max_rendered_notes"), (
+        "the note index is uncapped by design (§5.1) — a render cap here "
+        "would make a note silently invisible"
+    )
+
+
 def test_a_render_cap_at_or_above_the_store_limit_is_refused(toml_path):
     """`[language].max_rendered_lexemes` has no upper bound of its own
     (`Field(ge=1)`) — this cross-field relation was a comment in
