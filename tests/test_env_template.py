@@ -85,6 +85,12 @@ _MAY_DIFFER = {
     "platforms.discord.enabled", "presence.enabled", "preview.enabled",
     "route.enabled", "search.enabled", "shortener.enabled",
     "tools.mcp.pulse.enabled", "weather.enabled", "speech.stt.enabled",
+    # `notes.enabled` joins them 2026-08-21: the template ships the tier inert
+    # so a copied config never silently starts writing a notebook, and this
+    # deployment has opted in. NOT `max_rendered_notes` — there is no such key
+    # and §5.1 says there must not be, because a capped index can hide a note
+    # and an invisible note is indistinguishable from one that does not exist.
+    "notes.enabled",
     # The one flag that runs the OTHER direction: the template ships the
     # trigger phrase ON (the code default, `TriggerConfig.enabled = True`,
     # matching every deployment's behaviour before this flag existed); this

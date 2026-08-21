@@ -774,9 +774,15 @@ retention_days = 180
 # block never appears.
 #
 # Ships INERT, like [facts] above: a config.toml written before this section
-# existed keeps loading with the tier off. Nothing WRITES a note yet either
-# way, so turning it on today buys a SELECT that returns nothing — it is the
-# switch for the moment a curator lands, not a retroactive one.
+# existed keeps loading with the tier off.
+#
+# 2026-08-21: the four tools landed, so ON is no longer only a SELECT — she can
+# now create and revise notes herself (`note_create`/`note_update`, gated by a
+# read-before-write latch and a CAS on the head revision, R-55). What is still
+# absent is the CURATOR: nothing merges duplicates, retires an expired anchor,
+# or promotes a settled note to an event, because that is a Dreamer adaptor and
+# the runtime it needs is not built. So a notebook turned on today grows and is
+# never tidied — fine at this scale, and the thing to watch before it is not.
 enabled = false
 # No render cap here, unlike [facts]' max_rendered_facts, and that is a
 # decision rather than an omission: §5.1 makes the index uncapped, because a

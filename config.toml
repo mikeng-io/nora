@@ -779,3 +779,15 @@ enabled = true
 # label_freshness_days = 45
 # tz_name = "Asia/Hong_Kong"
 # metrics_port = 9103
+
+[notes]
+# ON (operator, 2026-08-21). Every tag renders the standing note index for the
+# room's WORKSPACE as <notes>, and the four note tools become reachable.
+# Workspace, not conversation: `ridgeline` and `friends` are separate notebooks
+# and policy.toml says they are never paired, so a note raised in the group
+# never appears in the operator's own rooms (§3/DEC-105).
+#
+# No curator yet — nothing merges, retires or promotes a note, because that is
+# a Dreamer adaptor and the runtime is unbuilt. The notebook only grows for
+# now; `nora_note_index_entries` is the tell if it grows faster than it earns.
+enabled = true
