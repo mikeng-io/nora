@@ -13,6 +13,7 @@ import contextlib
 import gc
 import logging
 import time
+from dataclasses import dataclass
 
 from nora.app.runtime import (
     BackgroundTasks,
@@ -21,6 +22,7 @@ from nora.app.runtime import (
     debounce_sweep_loop,
     dream_loop,
     prune_loop,
+    seed_watermarks,
     start_adapters,
     supervise_adapter,
 )
@@ -1027,3 +1029,459 @@ async def test_no_instruction_source_logs_no_line_and_changes_nothing(caplog):
         with contextlib.suppress(asyncio.CancelledError):
             await task
     assert not [r for r in caplog.records if "instruction_versions" in r.getMessage()]
+
+
+# ===========================================================================
+# per-adaptor scheduling (substrate plan Task 2.8, gate D3)
+#
+# The loop that carries live traffic gains a second, additive schedule. Every
+# test below asserts one of the four properties that fail QUIETLY if they are
+# wrong: the isolation boundary, the backoff key that must move with it, the
+# watermark that must not advance past a batch nobody read, and the key
+# population an adaptor is actually ticked over.
+# ===========================================================================
+
+
+class _KeyedLanguage:
+    """`_FakeLanguage`'s per-adaptor sibling: keys everything on
+    `(consolidator_name, scope_id)` rather than on the scope alone.
+
+    A separate fake rather than a widened one. `_FakeLanguage` is shared by
+    two dozen tests of the consolidator path, where the cursor name is the
+    hardcoded `"language"` and keying on it would change nothing — widening it
+    would edit those tests' collaborator to prove a property they do not have.
+    This one exists precisely because per-adaptor scheduling makes the name
+    load-bearing, and it must be able to FAIL when two adaptors share a row.
+    """
+
+    def __init__(self, *, lag: int = 0, quiet: float = 0.0, age: float = 0.0) -> None:
+        self._lag = lag
+        self._quiet = quiet
+        self._age = age
+        self.watermarks: dict[tuple[str, str], int] = {}
+        self.advance_calls: list[tuple[str, str, int]] = []
+        self._advanced: set[tuple[str, str]] = set()
+
+    async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int:
+        return self.watermarks.get((consolidator_name, scope_id), 0)
+
+    async def watermark_is_behind_the_record(
+        self, *, scope_id: str, watermark: int
+    ) -> bool:
+        return False
+
+    async def lag(self, *, scope_id: str, after_id: int) -> int:
+        return 0 if after_id > 0 else self._lag
+
+    async def seconds_since_last_message(self, *, scope_id: str) -> float:
+        return self._quiet
+
+    async def watermark_age_seconds(
+        self, *, consolidator_name: str, scope_id: str
+    ) -> float:
+        if (consolidator_name, scope_id) in self._advanced:
+            return 0.0
+        return self._age
+
+    async def advance_watermark(
+        self, *, consolidator_name: str, scope_id: str, last_message_id: int
+    ) -> None:
+        self.advance_calls.append((consolidator_name, scope_id, last_message_id))
+        self.watermarks[(consolidator_name, scope_id)] = last_message_id
+        self._advanced.add((consolidator_name, scope_id))
+
+
+class _StubAdaptor:
+    def __init__(
+        self, name: str, *, key_kind: str = "scope", uses_watermark: bool = True,
+    ) -> None:
+        self.name = name
+        self.key_kind = key_kind
+        self.uses_watermark = uses_watermark
+        self.objective = "room-language"
+        self.envelope_key = "observations"
+        self.tools: frozenset[str] = frozenset()
+
+    async def inputs(self, *, key, batch):        # pragma: no cover - unused
+        return ""
+
+    async def accept(self, *, key, items):        # pragma: no cover - unused
+        return ()
+
+    async def commit(self, *, key, proposals, now_ms):   # pragma: no cover
+        return 0
+
+
+@dataclass
+class _StubOutcome:
+    status: str = "ok"
+    written: int = 1
+
+
+class _RecordingRunner:
+    """Records every `(adaptor, key)` it was asked to run, and can be told to
+    fail — or to report `unavailable` — for one named adaptor."""
+
+    def __init__(
+        self, *, status: str = "ok", raises_for: str | None = None,
+        unavailable_for: str | None = None,
+    ) -> None:
+        self.calls: list[tuple[str, str, int]] = []
+        self._status = status
+        self._raises_for = raises_for
+        self._unavailable_for = unavailable_for
+
+    async def run(self, *, adaptor, key, batch):
+        self.calls.append((adaptor.name, key, len(batch)))
+        if adaptor.name == self._raises_for:
+            raise RuntimeError("the store is down")
+        if adaptor.name == self._unavailable_for:
+            return _StubOutcome(status="unavailable", written=0)
+        return _StubOutcome(status=self._status)
+
+
+async def _tick(loop_coro, *, ticks: float = 0.06):
+    task = asyncio.create_task(loop_coro)
+    await asyncio.sleep(ticks)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def test_an_adaptor_is_ticked_over_the_scopes_when_it_is_scope_keyed():
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(1)], "g2": [_row(2)]}), language, [], Metrics(),
+        scopes=lambda: ["g1", "g2"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("lexemes")], runtime=runner,
+    ))
+
+    assert {(a, k) for a, k, _ in runner.calls} == {("lexemes", "g1"), ("lexemes", "g2")}
+
+
+async def test_a_workspace_keyed_adaptor_is_ticked_once_per_workspace():
+    """Not a wider or narrower batch — a DIFFERENT key. Two rooms of one
+    workspace must produce ONE tick, or the fact tier adjudicates the same
+    claim once per room and calls it corroboration."""
+    language = _KeyedLanguage()
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], Metrics(),
+        scopes=lambda: ["g1", "g2"], workspaces=lambda: ["nora"],
+        tick_seconds=0.01, safety_lag=0, quiet_seconds=0.0,
+        max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("facts", key_kind="workspace", uses_watermark=False)],
+        runtime=runner,
+    ))
+
+    assert {(a, k) for a, k, _ in runner.calls} == {("facts", "nora")}
+
+
+async def test_an_unknown_key_kind_runs_nothing_and_says_so(caplog):
+    """Silently ticking it over the scopes would be a guess about what its rows
+    mean; silently skipping it is a subsystem that does nothing and reports
+    nothing."""
+    runner = _RecordingRunner()
+
+    with caplog.at_level(logging.ERROR):
+        await _tick(dream_loop(
+            _FakeRecord({}), _KeyedLanguage(), [], Metrics(),
+            scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[_StubAdaptor("odd", key_kind="galaxy")], runtime=runner,
+        ))
+
+    assert runner.calls == []
+    assert "key_kind='galaxy'" in caplog.text
+
+
+async def test_a_watermarkless_adaptor_gets_an_empty_batch_and_no_cursor_read():
+    """`RoomPortraitSynthesizer`'s posture, generalised: no watermark, no lag,
+    no quiet, no age. Asserted through the CURSOR — a fake that recorded no
+    calls proves the loop never asked, which is the property; a passing run
+    alone would not."""
+    language = _KeyedLanguage(age=1e9)
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(1)]}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("facts", uses_watermark=False)], runtime=runner,
+    ))
+
+    assert runner.calls[0] == ("facts", "g1", 0)
+    # Filtered to THIS adaptor's own cursor: the consolidator schedule keeps
+    # its `"language"` row on the same tick, and asserting over every row would
+    # make this test about the legacy path instead of about this one.
+    assert [c for c in language.advance_calls if c[0] == "facts"] == []
+
+
+async def test_the_watermark_is_held_when_the_run_reports_unavailable():
+    """`ExtractionUnparseableError`'s guarantee, now a value instead of an
+    exception. Advancing here consumes those messages permanently with nothing
+    left to retry, and `nora_dream_evidence_lost_total` is structurally blind
+    to it — it measures PRUNING."""
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner(unavailable_for="lexemes")
+
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(1), _row(2)]}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("lexemes")], runtime=runner,
+    ))
+
+    assert runner.calls                      # it DID run
+    assert [c for c in language.advance_calls if c[0] == "lexemes"] == []
+
+
+async def test_the_watermark_advances_after_a_successful_run():
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(1), _row(7)]}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("lexemes")], runtime=runner,
+    ))
+
+    assert ("lexemes", "g1", 7) in language.advance_calls
+
+
+async def test_an_empty_batch_still_refreshes_the_age_clock_in_place():
+    """The age-only condition is the ONE that fires at `lag == 0`, and without
+    the refresh it is a latch with no reset: a dormant scope would fire once
+    and then never stop, 288x/day, unattended."""
+    language = _KeyedLanguage(age=1e9)
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1.0, batch_limit=10,
+        adaptors=[_StubAdaptor("lexemes")], runtime=runner,
+    ))
+
+    assert ("lexemes", "g1", 0) in language.advance_calls
+
+
+async def test_two_adaptors_hold_separate_cursors_for_one_scope():
+    """The reason `consolidator_name` had to stop being the hardcoded
+    `"language"`. Two adaptors sharing one row means the second never sees a
+    message the first consumed."""
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(5)]}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("lexemes"), _StubAdaptor("exchanges")],
+        runtime=runner,
+    ))
+
+    assert language.watermarks[("lexemes", "g1")] == 5
+    assert language.watermarks[("exchanges", "g1")] == 5
+
+
+# ---- gate D3: the isolation boundary, and the backoff key that moved with it
+
+
+async def test_a_failing_adaptor_does_not_stop_its_sibling_running():
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner(raises_for="facts")
+
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(1)]}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("facts"), _StubAdaptor("lexemes")], runtime=runner,
+    ))
+
+    assert ("lexemes", "g1", 1) in runner.calls
+
+
+async def test_a_failing_adaptor_does_not_back_off_its_sibling():
+    """The bug per-adaptor isolation exists to prevent, reintroduced one layer
+    down: isolate the try/except per adaptor but leave the backoff keyed per
+    SCOPE, and one failing adaptor silences every other adaptor in that scope.
+
+    Measured by call COUNT across several ticks rather than by presence: the
+    sibling appearing once proves it ran before any backoff could apply, which
+    is exactly what a shared key would also produce."""
+    language = _KeyedLanguage(age=1e9)
+    runner = _RecordingRunner(raises_for="facts")
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=0.0, batch_limit=10,
+        adaptors=[_StubAdaptor("facts"), _StubAdaptor("lexemes")], runtime=runner,
+    ), ticks=0.08)
+
+    healthy = [c for c in runner.calls if c[0] == "lexemes"]
+    failing = [c for c in runner.calls if c[0] == "facts"]
+    assert len(healthy) > 1, "the healthy adaptor was backed off by its sibling"
+    assert len(failing) == 1, "the failing adaptor was not backed off at all"
+
+
+async def test_a_failing_adaptor_does_not_disturb_the_consolidator_path():
+    """The legacy schedule keys on a bare `scope_id` and the adaptor schedule on
+    `adaptor:key`; a failing adaptor must not increment the scope's own
+    consecutive-failure count."""
+    language = _KeyedLanguage(age=1e9)
+    runner = _RecordingRunner(raises_for="facts")
+    consolidator = _CountingConsolidator(appended=0)
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [consolidator], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=0.0, batch_limit=10,
+        adaptors=[_StubAdaptor("facts")], runtime=runner,
+    ), ticks=0.08)
+
+    assert consolidator.consolidations > 1
+
+
+async def test_an_adaptor_still_in_flight_is_skipped_not_re_entered():
+    """The per-unit lock. Re-entering would read the same un-advanced cursor
+    and hand the same batch to a second model call."""
+    language = _KeyedLanguage(age=1e9)
+    metrics = Metrics()
+
+    class _SlowRunner:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def run(self, *, adaptor, key, batch):
+            self.calls += 1
+            await asyncio.sleep(5)
+            return _StubOutcome()
+
+    runner = _SlowRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=0.0, batch_limit=10,
+        adaptors=[_StubAdaptor("facts")], runtime=runner,
+    ), ticks=0.08)
+
+    assert runner.calls == 1
+    assert metrics.get("nora_dream_skipped_total", reason="in_flight") > 0
+
+
+# ---- the additive guarantee, and the wiring mistake that is otherwise silent
+
+
+async def test_no_adaptors_leaves_the_loop_exactly_as_it_was():
+    """What makes the migration a per-adaptor cutover rather than a big-bang
+    switch: the consolidator path still runs, untouched, with no runtime wired
+    at all."""
+    language = _FakeLanguage(lag=99)
+    consolidator = _CountingConsolidator(appended=1)
+
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(3)]}), language, [consolidator], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+    ))
+
+    assert consolidator.consolidations >= 1
+    assert ("g1", 3) in language.advance_calls
+
+
+async def test_adaptors_with_no_runtime_are_reported_rather_than_silently_idle(caplog):
+    """A subsystem whose only symptom is silence. The loop would tick forever,
+    write nothing, and be indistinguishable from a healthy quiet deployment."""
+    with caplog.at_level(logging.ERROR):
+        await _tick(dream_loop(
+            _FakeRecord({}), _KeyedLanguage(), [], Metrics(),
+            scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[_StubAdaptor("facts")], runtime=None,
+        ))
+
+    assert "no runtime" in caplog.text
+
+
+# ---- seeding: the trap that is cheap to forget and expensive to discover
+
+
+async def test_a_newly_named_adaptor_is_seeded_from_the_shared_cursor():
+    """`watermark_for` returns 0 for an unknown pair, so an unseeded adaptor
+    re-reads the room from the beginning — safe, slow, expensive, and it looks
+    exactly like a bug."""
+    language = _KeyedLanguage()
+    language.watermarks[("language", "g1")] = 412
+
+    seeded = await seed_watermarks(
+        language, [_StubAdaptor("lexemes")], keys=lambda a: ["g1"],
+    )
+
+    assert seeded == 1
+    assert language.watermarks[("lexemes", "g1")] == 412
+
+
+async def test_seeding_never_overwrites_a_cursor_that_already_exists():
+    """`advance_watermark` is an UPSERT. Seeding unconditionally would clobber
+    a live cursor — the disaster this function exists to avoid, not a stronger
+    version of the fix."""
+    language = _KeyedLanguage()
+    language.watermarks[("language", "g1")] = 412
+    language.watermarks[("lexemes", "g1")] = 900
+
+    seeded = await seed_watermarks(
+        language, [_StubAdaptor("lexemes")], keys=lambda a: ["g1"],
+    )
+
+    assert seeded == 0
+    assert language.watermarks[("lexemes", "g1")] == 900
+
+
+async def test_seeding_is_idempotent():
+    language = _KeyedLanguage()
+    language.watermarks[("language", "g1")] = 412
+    adaptors = [_StubAdaptor("lexemes")]
+
+    first = await seed_watermarks(
+        language, adaptors, keys=lambda a: ["g1"])
+    second = await seed_watermarks(
+        language, adaptors, keys=lambda a: ["g1"])
+
+    assert (first, second) == (1, 0)
+
+
+async def test_seeding_skips_a_watermarkless_adaptor():
+    """A cursor for an adaptor that never reads one is a row nothing maintains,
+    and `watermark_age_seconds` over it would answer a question nobody asked."""
+    language = _KeyedLanguage()
+    language.watermarks[("language", "g1")] = 412
+
+    seeded = await seed_watermarks(
+        language, [_StubAdaptor("facts", uses_watermark=False)],
+        keys=lambda a: ["g1"],
+    )
+
+    assert seeded == 0
+    assert ("facts", "g1") not in language.watermarks
+
+
+async def test_seeding_leaves_a_scope_the_source_has_never_read():
+    """Nothing to inherit and nothing to skip. Seeding 0 over 0 would write a
+    row whose only effect is to make `watermark_age_seconds` start ticking for
+    a room the source has not reached yet."""
+    language = _KeyedLanguage()
+
+    seeded = await seed_watermarks(
+        language, [_StubAdaptor("lexemes")], keys=lambda a: ["g1"],
+    )
+
+    assert seeded == 0
+    assert language.advance_calls == []

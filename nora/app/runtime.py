@@ -41,7 +41,7 @@ from typing import Any, Protocol
 
 from .. import tag as tag_module
 from ..domain.models import TranscriptRow
-from ..domain.ports import RoomConsolidator, RoomPortraitSynthesizer
+from ..domain.ports import DreamAdaptor, RoomConsolidator, RoomPortraitSynthesizer
 from ..obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.runtime")
@@ -262,6 +262,24 @@ class _ConsolidationCursor(Protocol):
     ) -> None: ...
 
 
+class _AdaptorRunner(Protocol):
+    """`nora.agent.dreamer.DreamerRuntime`, seen from the clock: run one
+    adaptor for one key and say what happened.
+
+    A narrow local shape rather than a `nora.domain.ports` Protocol, the same
+    reason `_SinceReadable`, `_ConsolidationCursor` and `_InstructionVersions`
+    beside it are: threading the whole runtime through would let this loop
+    reach for its budget table or its tool source, neither of which is any of
+    the clock's business. **`nora.app` may not import `strands`, and the
+    concrete runtime lives in `nora.agent` because it must** — so the return is
+    read structurally, by the one attribute this loop acts on.
+    """
+
+    async def run(
+        self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
+    ) -> Any: ...
+
+
 # The capped-exponential SHAPE `supervise_adapter` uses above, reused rather
 # than re-derived — but not its literal numbers. `supervise_adapter` backs off
 # a single adapter reconnecting to a LOCAL websocket, where a fast retry is
@@ -274,30 +292,39 @@ _DREAM_BACKOFF_MAX_SECONDS = 3_600.0
 
 
 def _backoff_elapsed(
-    scope_id: str,
+    key: str,
     failure_count: int,
     last_failure_at: dict[str, float],
     *,
     base_delay_seconds: float = _DREAM_BACKOFF_BASE_SECONDS,
     max_delay_seconds: float = _DREAM_BACKOFF_MAX_SECONDS,
 ) -> bool:
-    """Has enough wall-clock time passed since `scope_id` last failed to try
-    it again, at `supervise_adapter`'s own capped-exponential rate?
+    """Has enough wall-clock time passed since `key` last failed to try it
+    again, at `supervise_adapter`'s own capped-exponential rate?
 
     `supervise_adapter` expresses this by literally sleeping inside its own
     one-adapter loop — it owns nothing else, so blocking is free. `dream_loop`
-    ticks EVERY scope in one loop; sleeping here would stall every scope that
-    is not backing off. So this answers the same question `supervise_adapter`
-    answers by sleeping — "has the capped-exponential delay for this many
-    consecutive failures elapsed" — as a non-blocking check against a
-    per-scope last-failure timestamp instead, consulted once per tick rather
-    than awaited once per retry. `failure_count` is `dream_loop`'s own
-    `failures[scope_id]` (consecutive failures since the last success);
-    `last_failure_at` is `dream_loop`'s own local dict, function-scoped to one
-    `dream_loop` call and mutated only there, never a module-level singleton.
+    ticks EVERY unit of work in one loop; sleeping here would stall every unit
+    that is not backing off. So this answers the same question
+    `supervise_adapter` answers by sleeping — "has the capped-exponential
+    delay for this many consecutive failures elapsed" — as a non-blocking
+    check against a per-unit last-failure timestamp instead, consulted once
+    per tick rather than awaited once per retry. `failure_count` is
+    `dream_loop`'s own `failures[key]` (consecutive failures since the last
+    success); `last_failure_at` is `dream_loop`'s own local dict,
+    function-scoped to one `dream_loop` call and mutated only there, never a
+    module-level singleton.
+
+    **`key` is the ISOLATION BOUNDARY, and it stopped being a `scope_id` when
+    per-adaptor scheduling landed (DEC-133, gate D3).** The consolidator path
+    still keys on the scope; an adaptor keys on `(adaptor, its own key)`.
+    Isolating failures per adaptor while leaving the backoff keyed per scope
+    would let one failing adaptor back off every OTHER adaptor in that scope —
+    the exact bug per-adaptor isolation exists to prevent, reintroduced one
+    layer down. The key moves WITH the boundary or the isolation is a lie.
     """
     delay = min(base_delay_seconds * (2.0 ** (failure_count - 1)), max_delay_seconds)
-    return bool((time.monotonic() - last_failure_at.get(scope_id, 0.0)) >= delay)
+    return bool((time.monotonic() - last_failure_at.get(key, 0.0)) >= delay)
 
 
 def _log_instruction_versions(instructions: _InstructionVersions | None) -> None:
@@ -335,6 +362,143 @@ class _InstructionVersions(Protocol):
     def versions(self) -> dict[str, int]: ...
 
 
+async def seed_watermarks(
+    language: _ConsolidationCursor,
+    adaptors: Sequence[DreamAdaptor],
+    *,
+    keys: Callable[[DreamAdaptor], Sequence[str]],
+    source: str = "language",
+) -> int:
+    """Give every watermarked adaptor that has none a cursor, BEFORE the new
+    schedule ever fires. Returns the number of rows seeded.
+
+    **The hazard this exists for is cheap to forget and expensive to
+    discover.** `watermark_for` returns 0 for an unknown `(name, scope)` pair,
+    and `_dream_once` hardcodes the shared cursor's name as `"language"`. So an
+    adaptor with a NEW name — a migrated observer, or a tier that never ran —
+    starts at 0 and re-reads the room from the beginning, `batch_limit` rows at
+    a time, paying a model call per batch to re-derive evidence that already
+    exists. It is SAFE (the natural key makes the append idempotent) and it is
+    slow, expensive, and looks exactly like a bug.
+
+    Seeded from another adaptor's row rather than from the record head, and one
+    mechanism covers both cases it has to: a RENAMED adaptor inherits the
+    cursor of the thing it replaced, and a genuinely NEW one starts roughly
+    where the room consolidator has already read to — «from now» — rather than
+    at the dawn of the record.
+
+    **Conditional on the row being absent, and that is load-bearing.**
+    `advance_watermark` is an UPSERT: calling it unconditionally would overwrite
+    a live cursor, which is the disaster this function exists to avoid, not a
+    stronger version of the fix. A pair already at 0 with a source also at 0 is
+    left alone — there is nothing to inherit and nothing to skip.
+
+    Idempotent: run it every startup. The second run finds every row present
+    and seeds nothing.
+    """
+    seeded = 0
+    for adaptor in adaptors:
+        if not adaptor.uses_watermark or adaptor.name == source:
+            continue
+        for key in keys(adaptor):
+            if await language.watermark_for(
+                consolidator_name=adaptor.name, scope_id=key
+            ):
+                continue
+            inherited = await language.watermark_for(
+                consolidator_name=source, scope_id=key
+            )
+            if not inherited:
+                continue
+            await language.advance_watermark(
+                consolidator_name=adaptor.name, scope_id=key,
+                last_message_id=inherited,
+            )
+            seeded += 1
+            log.info(
+                "seeded dream watermark: adaptor=%s scope=%s from %s at %d",
+                adaptor.name, key, source, inherited,
+            )
+    return seeded
+
+
+async def _dream_adaptor_once(
+    *, adaptor: DreamAdaptor, runtime: _AdaptorRunner,
+    record: _SinceReadable, language: _ConsolidationCursor, metrics: Metrics,
+    key: str, safety_lag: int, quiet_seconds: float, max_age_seconds: float,
+    batch_limit: int,
+) -> None:
+    """One adaptor, one key, one cycle — `_dream_once`'s shape generalised off
+    the hardcoded `"language"` cursor and off `RoomConsolidator`.
+
+    An adaptor with `uses_watermark = False` gets NO watermark, lag, quiet or
+    age condition and runs on every tick with an empty batch;
+    `RoomPortraitSynthesizer` is the standing precedent for a dream-loop
+    participant with none of those, and the fact adaptor is the second — its
+    input is the candidate table, not a raw-message proxy for it.
+    """
+    if not adaptor.uses_watermark:
+        await runtime.run(adaptor=adaptor, key=key, batch=())
+        return
+
+    watermark = await language.watermark_for(
+        consolidator_name=adaptor.name, scope_id=key)
+
+    # The fail-closed tell, unchanged from `_dream_once`: a watermark below the
+    # oldest surviving row means messages were deleted before they were ever
+    # read — R-27's `unavailable`, never `nothing_found`.
+    if await language.watermark_is_behind_the_record(
+            scope_id=key, watermark=watermark):
+        metrics.inc("nora_dream_evidence_lost_total", scope=key)
+
+    lag = await language.lag(scope_id=key, after_id=watermark)
+    quiet = await language.seconds_since_last_message(scope_id=key)
+    age = await language.watermark_age_seconds(
+        consolidator_name=adaptor.name, scope_id=key)
+
+    fires = (
+        lag > safety_lag
+        or (lag > 0 and quiet >= quiet_seconds)
+        or age >= max_age_seconds      # fires at lag == 0 ON PURPOSE
+    )
+    if not fires:
+        return
+
+    batch = await record.since(
+        conversation_id=key, after_id=watermark, limit=batch_limit)
+
+    outcome = await runtime.run(adaptor=adaptor, key=key, batch=batch)
+
+    if outcome.status == "unavailable":
+        # NOBODY READ THIS BATCH. Hold the cursor — this is
+        # `ExtractionUnparseableError`'s guarantee, which used to be an
+        # exception and is now a value: advancing here consumes those messages
+        # permanently with nothing left to retry, and
+        # `nora_dream_evidence_lost_total` above is structurally blind to it
+        # (it measures PRUNING). An ERROR is never a PASS.
+        return
+
+    if batch:
+        # LAST, and after the write has committed. The unsafe direction is
+        # watermark-first: a crash between the two loses that range forever.
+        await language.advance_watermark(
+            consolidator_name=adaptor.name, scope_id=key,
+            last_message_id=batch[-1].id,
+        )
+    else:
+        # The age-only condition is the ONE that fires at `lag == 0`, and
+        # without this it is a latch with no reset: `watermark_age_seconds`
+        # reads `updated_at`, which only the `if batch:` arm writes, so a
+        # dormant scope fires once at `max_age_seconds` and then NEVER STOPS
+        # FIRING — 288x/day at the shipped 300s cadence, unattended. Refresh
+        # the row at the SAME cursor value purely to reset that clock; the
+        # upsert makes it a no-op on `last_message_id`.
+        await language.advance_watermark(
+            consolidator_name=adaptor.name, scope_id=key,
+            last_message_id=watermark,
+        )
+
+
 async def dream_loop(
     record: _SinceReadable, language: _ConsolidationCursor,
     consolidators: Sequence[RoomConsolidator], metrics: Metrics, *,
@@ -342,6 +506,9 @@ async def dream_loop(
     safety_lag: int, quiet_seconds: float, max_age_seconds: float,
     batch_limit: int, portrait: RoomPortraitSynthesizer | None = None,
     instructions: _InstructionVersions | None = None,
+    adaptors: Sequence[DreamAdaptor] = (),
+    runtime: _AdaptorRunner | None = None,
+    workspaces: Callable[[], Sequence[str]] = lambda: (),
 ) -> None:
     """The Dreamer's clock. A sibling of `prune_loop`, with two differences
     that are not stylistic.
@@ -388,6 +555,31 @@ async def dream_loop(
     deliberately NOT a `RoomConsolidator` and carries no watermark/lag/quiet/
     age trigger of its own; see `_dream_once` for why (its real input is
     Plan 1/2's already-consolidated state, not a raw-message proxy for it).
+
+    FIFTH — `adaptors` is ADDITIVE, and that is what makes the migration a
+    per-adaptor cutover instead of a big-bang switch. `consolidators` and
+    `portrait` stay, keep working, and when `adaptors` is empty this loop is
+    byte-for-byte the one that has been carrying live traffic. Each adaptor is
+    scheduled on ITS OWN key: `scopes()` for a `key_kind == "scope"` adaptor,
+    `workspaces()` for a workspace-keyed one (`Conversation.workspace`,
+    DEC-105). That is not a wider or narrower batch — it is a DIFFERENT key,
+    which is why `_dream_once`'s single shared per-scope watermark could not
+    host one unchanged.
+
+    SIXTH — **failure isolation is PER ADAPTOR, and the backoff key moved with
+    it** (gate D3). The adaptors have different value densities: a fact adaptor
+    researching the open web has far more ways to fail than a lexeme extractor
+    reading its own message batch, and letting the riskiest one silence the
+    cheapest is backwards. The portrait branch at the tail of `_dream_once`
+    already behaves this way and says so; this generalises it.
+
+    The cost is stated rather than hidden. A provider outage now needs one
+    failure per (adaptor, key) pair before all of them are backing off, where
+    before it needed one per scope — so the first tick of an outage costs
+    `len(adaptors) x len(keys)` calls instead of `len(scopes)`. That is
+    accepted: each pair still backs off on the same capped exponential, and the
+    alternative — one shared key — is precisely the coupling this decision
+    exists to remove.
     """
     # Announce, the way `heartbeat` does — this loop had NO positive liveness
     # signal, and `__main__` logs only the disabled branch, so with the flag on
@@ -399,9 +591,18 @@ async def dream_loop(
         # sub-second in tests and up to minutes in production, and `%.1f`
         # renders a 0.02s tick as "0.0s" — a liveness line that misreports the
         # interval it is announcing is worse than none.
-        "dream loop started: tick every %gs over %d scope(s)",
-        tick_seconds, len(scopes()),
+        "dream loop started: tick every %gs over %d scope(s), %d adaptor(s)",
+        tick_seconds, len(scopes()), len(adaptors),
     )
+    if adaptors and runtime is None:
+        # Loud, and at startup rather than at the first tick. An adaptor list
+        # with no runtime to run it is a wiring mistake whose only symptom is
+        # silence — the loop would tick forever, log nothing, and write nothing,
+        # which is indistinguishable from a healthy quiet deployment.
+        log.error(
+            "dream loop has %d adaptor(s) and no runtime; none of them will run",
+            len(adaptors),
+        )
     failures: dict[str, int] = {}
     running: set[str] = set()
     # `_backoff_elapsed`'s own per-scope companion state (see its docstring
@@ -410,6 +611,56 @@ async def dream_loop(
     # and `running` beside it.
     last_failure_at: dict[str, float] = {}
     tasks: set[asyncio.Task[None]] = set()
+
+    def _keys_for(adaptor: DreamAdaptor) -> Sequence[str]:
+        """One population per `key_kind`, resolved by the loop.
+
+        An unknown kind returns nothing AND says so: silently ticking such an
+        adaptor over the scopes would be a guess about what its rows mean, and
+        silently skipping it would be the same subsystem-that-does-nothing
+        failure the runtime-less branch above logs.
+        """
+        if adaptor.key_kind == "scope":
+            return scopes()
+        if adaptor.key_kind == "workspace":
+            return workspaces()
+        log.error(
+            "dream adaptor %s declares key_kind=%r, which this loop cannot "
+            "enumerate; it will not run", adaptor.name, adaptor.key_kind,
+        )
+        return ()
+
+    async def _run_adaptor(
+        adaptor: DreamAdaptor, key: str, runner: _AdaptorRunner
+    ) -> None:
+        """One adaptor's cycle, isolated from every sibling's (gate D3).
+
+        `runner` is a PARAMETER rather than the enclosing `runtime`, which is
+        `_AdaptorRunner | None`: the dispatch below narrows it once, at the one
+        place that knows it is set, instead of this function re-asserting a
+        condition its caller already established.
+        """
+        unit = f"{adaptor.name}:{key}"
+        try:
+            await _dream_adaptor_once(
+                adaptor=adaptor, runtime=runner, record=record,
+                language=language, metrics=metrics, key=key,
+                safety_lag=safety_lag, quiet_seconds=quiet_seconds,
+                max_age_seconds=max_age_seconds, batch_limit=batch_limit,
+            )
+            failures.pop(unit, None)
+            last_failure_at.pop(unit, None)
+        except Exception:
+            # `DreamerRuntime.run` absorbs its own failures into an
+            # `unavailable` outcome, so reaching here means something OUTSIDE
+            # the model call broke — the cursor store, the record read. Counted
+            # against this adaptor's own backoff, never its siblings'.
+            log.exception("dream cycle failed for %s", unit)
+            metrics.inc("nora_errors_total", stage="dream")
+            failures[unit] = failures.get(unit, 0) + 1
+            last_failure_at[unit] = time.monotonic()
+        finally:
+            running.discard(unit)
 
     async def _run_one(scope_id: str) -> None:
         try:
@@ -449,6 +700,32 @@ async def dream_loop(
                 task = asyncio.create_task(_run_one(scope_id))
                 tasks.add(task)
                 task.add_done_callback(tasks.discard)
+            if runtime is None:
+                continue
+            for adaptor in adaptors:
+                for key in _keys_for(adaptor):
+                    # `unit`, not `key`: the lock, the failure count and the
+                    # backoff are all per (adaptor, key) — see the SIXTH note.
+                    # Sharing the `running` set with the consolidator path is
+                    # safe because a consolidator entry is a bare `scope_id`
+                    # and an adaptor entry always carries a `:`; an adaptor
+                    # named to collide with a scope id would be caught by the
+                    # runtime's own per-adaptor metric labels long before this
+                    # mattered, and nothing here can invent one.
+                    unit = f"{adaptor.name}:{key}"
+                    if unit in running:
+                        metrics.inc(
+                            "nora_dream_skipped_total", reason="in_flight")
+                        continue
+                    if failures.get(unit) and not _backoff_elapsed(
+                        unit, failures[unit], last_failure_at,
+                    ):
+                        continue
+                    running.add(unit)
+                    task = asyncio.create_task(
+                        _run_adaptor(adaptor, key, runtime))
+                    tasks.add(task)
+                    task.add_done_callback(tasks.discard)
     finally:
         # `BackgroundTasks.cancel_all`'s own shape, not just its `.cancel()`
         # half: that method's docstring records the exact gap a cancel-only
