@@ -1,0 +1,779 @@
+"""The fact tier's two `DreamAdaptor`s — the writer that makes the tier
+non-dormant (docs/superpowers/specs/2026-08-20-fact-tier-design.md §4, §5).
+
+Two adaptors, not one, and the split IS the cost decision (§5). Phase A
+(`FactCandidateAdaptor`) is one cheap, TOOL-FREE call per tick that reads a
+room's message batch and names the claims somebody asserted. Phase B
+(`FactAdaptor`) is one research loop per surviving candidate, capped by
+`[facts] max_adjudications_per_tick`. Folding them into one adaptor would mean
+a research loop per message, which is unbounded cost on a background clock
+nobody is watching — and it fails quietly, because nobody is waiting on the
+Dreamer.
+
+**Why these live in `nora/language/` and name their tools by STRING.** The
+layer contract (`pyproject.toml`'s "layered architecture") forbids
+`nora.agent` from holding tier logic and forbids `nora.language` from
+importing `nora.agent`, `nora.doctrine` or `nora.config`. So an adaptor
+declares tool NAMES and the runtime resolves them against its registry —
+`DreamAdaptor.tools`' own inversion, the same one `ToolRegistry.tool_names()`
+already performs for the doctrine loader. It is also why
+`max_adjudications_per_tick` arrives through `__init__` as a plain int rather
+than being read from `nora.config` here.
+
+**The parse discipline is `nora.language.observer`'s, deliberately copied
+rather than reinvented**: a malformed item is DROPPED, never raised, because
+the runtime maps a raised parse to `unavailable` — «nobody read this batch»,
+watermark held — and two bad items must not cost a room its whole tick. Every
+model-authored string field carries a length cap at parse time, ahead of the
+store: an unbounded model-authored string reaching a durable column is the
+audit's F14 shape, and here it would additionally become half of
+`fact_candidate`'s natural key, where nothing can ever match it back.
+
+**The two adaptors' `accept` differ in one place, and it is not stylistic.**
+Phase A's `CandidateClaim` has no invariants beyond its field types, so its
+parse is a plain typed read. Phase B's `FactVerdict.__post_init__` already
+enforces R-27's batch invariants (`not_covered` ⇒ no `supersedes`;
+`contradicted` ⇒ `supersedes` + `addresses_claim` + a source; `supported` ⇒
+no `supersedes`) by RAISING — so `FactAdaptor.accept` catches that
+`ValueError` and drops the item. The domain type is the enforcement; this
+module's job is to not let its enforcement escape as a tick-killing
+exception.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Protocol
+
+from ..domain.facts import CandidateClaim, Fact, FactCandidate, FactVerdict
+from ..domain.models import TranscriptRow
+from ..domain.ports import DreamSink, FactCandidateReader, FactReader, Proposal
+from ..obs.metrics import Metrics
+
+log = logging.getLogger(__name__)
+
+# Reject, at parse time, a model-authored field implausibly longer than any
+# genuine one could be — `nora.language.observer._MAX_FIELD_CHARS`' own
+# argument, applied to this tier's columns. Generous enough never to reject a
+# real claim; `nora.language.fact_render`'s caps are the far tighter DISPLAY
+# bound and are what a legitimately long value is actually cut down to for a
+# reader. The triple fields are the strictest case: they are half of
+# `fact_candidate_triple_key`, so an over-long one is not merely a big column,
+# it is a key nobody can ever match a later sighting against.
+_MAX_SUBJECT_CHARS = 200
+_MAX_PREDICATE_CHARS = 100
+_MAX_OBJECT_CHARS = 500
+# A URL past this is not a citation, and an excerpt past it is not a quoted
+# sentence — both are the model pasting a page into a durable column.
+_MAX_SOURCE_URL_CHARS = 2_000
+_MAX_SOURCE_EXCERPT_CHARS = 2_000
+# `supersedes` names a `fact.id`, which is a uuid. Capped rather than
+# UUID-validated here because the membership check in `FactAdaptor.accept` is
+# strictly stronger: the id must be one this run actually SHOWED the model.
+_MAX_FACT_ID_CHARS = 64
+
+# How many standing facts one adjudication tick puts in front of the model.
+# NOT `[facts] max_rendered_facts` (8), which is the per-TURN render cap on
+# the `<facts>` block a tag reads: this is a background research prompt, the
+# facts here are what `supersedes` is allowed to name, and a cap that tight
+# would make a genuine contradiction unnameable — the model may only supersede
+# a fact it was shown. Still bounded, because §4.2's whole point is that the
+# live set is a code-selected INPUT and selection stays where it can be capped
+# and counted.
+DEFAULT_MAX_STANDING_FACTS = 50
+
+
+class _FactStore(DreamSink, FactReader, Protocol):
+    """`SqlFactStore`, seen from here: the fact tier's sink AND its reader.
+
+    One collaborator rather than two parameters holding the same object,
+    because they ARE the same object — `SqlFactStore` satisfies both and
+    splitting it at this constructor would invite a wiring where the adaptor
+    reads one store and writes another.
+    """
+
+
+class _CandidateStore(DreamSink, FactCandidateReader, Protocol):
+    """`SqlFactCandidateStore`, seen from here — sink and reader, for the
+    reason `_FactStore` gives. `candidate_by_id` is deliberately NOT in this
+    shape: it is that store's own surface, not the port's, and nothing here
+    reads a candidate by id."""
+
+
+def _text(value: object, *, limit: int) -> str | None:
+    """One model-authored string field, or `None` if it is not one.
+
+    STRICT `isinstance(str)` rather than `nora.language.observer._parse_item`'s
+    `str(item[name])` coercion, and this is the one place this module
+    deliberately diverges from that discipline. These three fields become a
+    durable natural key (`fact_candidate_triple_key`) and the words a later
+    verdict is matched back by; coercion turns `None` into the string
+    `"None"` and `7` into `"7"`, which are keys that look real, never match
+    anything, and cannot be told apart from a claim somebody actually made.
+    The objectives both say "strings", so a non-string is the model not
+    answering the question.
+    """
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not stripped or len(stripped) > limit:
+        return None
+    return stripped
+
+
+def _optional_text(value: object, *, limit: int) -> tuple[str | None, bool]:
+    """An optional string field: `(value, ok)`.
+
+    Absent and explicitly null both yield `(None, True)` — the objective marks
+    `source_url`/`source_excerpt`/`supersedes` absent for the statuses that
+    forbid them, and a missing key is the correct way to say so. A present
+    value of the wrong type or the wrong length is `(None, False)`: the model
+    tried to say something and this module could not read it, which is not the
+    same as it saying nothing.
+    """
+    if value is None:
+        return None, True
+    text = _text(value, limit=limit)
+    return (None, False) if text is None else (text, True)
+
+
+# ---------------------------------------------------------------------------
+# Phase A — extraction
+# ---------------------------------------------------------------------------
+
+
+class FactCandidateAdaptor:
+    """Phase A: read one room's message batch, name the claims, write them to
+    the candidate table. Scope-keyed and watermarked — its input IS the
+    messages.
+
+    **`tools` is EMPTY on purpose, and that is a COST decision (§5), not an
+    oversight.** One cheap tool-free call per tick decides what is worth a
+    research loop; a research loop per message is unbounded cost on a
+    background clock nobody is watching. The objective says the same thing to
+    the model in its own words ("You are NOT deciding whether any of them is
+    true"): checking a claim here would spend Phase B's budget on every
+    message in the room, including the ones the deterministic filter between
+    the phases exists to throw away.
+
+    **`workspace_for` is a required collaborator, not a convenience.** This
+    adaptor is keyed on a SCOPE (a watermark and a message batch are per room)
+    and writes into a table keyed on a WORKSPACE (`Conversation.workspace`,
+    DEC-105) — see `commit` for what happens without the translation, and why
+    an unresolvable scope raises rather than guessing. The composition root is
+    where the two keys are both known: `language_scopes` reads
+    `conv.primary_id` and `workspace_scopes` reads `conv.workspace` off the
+    same allowlist, so the resolver is the map between those two closures.
+
+    A plain callable rather than a declared Protocol, following
+    `dream_loop`'s own `scopes`/`workspaces` parameters and
+    `Dependencies.workspace_scopes`: this is a policy-derived lookup the
+    composition root already expresses as a closure, not a collaborator with
+    behaviour of its own. It is NOT a `*_fn` test seam — the production
+    wiring is the closure, and no test-only path exists beside it.
+
+    Collaborators through `__init__` only, per the test-seam policy. No
+    metrics collaborator, because this class emits none: a malformed item is
+    dropped SILENTLY here (`DreamAdaptor.accept`'s own contract), and the
+    fact-tier counter names declared in `nora.obs.metric_specs` all belong to
+    adjudication rather than extraction. Counting extraction drops would need
+    a new metric name, which is a change to that module and not this one's to
+    make.
+    """
+
+    name = "fact-candidates"
+    key_kind = "scope"
+    uses_watermark = True
+    objective = "fact-candidates"
+    envelope_key = "candidates"
+    tools: frozenset[str] = frozenset()
+
+    def __init__(
+        self,
+        *,
+        candidates: DreamSink,
+        workspace_for: Callable[[str], str | None],
+    ) -> None:
+        self._candidates = candidates
+        self._workspace_for = workspace_for
+        # Per key, written by `inputs` and read by `accept` — the only channel
+        # there is between them, because `DreamAdaptor.accept` takes no batch.
+        # Keyed by `key` and not a bare attribute because `dream_loop`
+        # dispatches each key as its own task: its per-(adaptor, key) `running`
+        # lock is what makes ONE key's inputs/accept pair non-overlapping, and
+        # nothing makes two DIFFERENT keys' pairs non-overlapping. Bounded by
+        # the number of scopes, which `policy.toml` fixes at startup.
+        self._message_ids: dict[str, frozenset[int]] = {}
+
+    async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
+        """`id: body` lines, which is exactly what the objective points at
+        when it says "the integer id of the message the claim was asserted
+        in, exactly as it appears in the batch you were given".
+
+        `TranscriptRow.body` is `str | None` — a media-only message has no
+        text at all — so it is rendered as an empty body rather than assumed
+        to be a string; an `inputs` that assumed one would take the tick down
+        on a sticker. Such a row is still rendered, with its id, rather than
+        skipped: `accept` validates a returned `message_id` against the whole
+        BATCH, so skipping a row here would make the set the model was shown
+        smaller than the set `accept` will accept from it.
+
+        The speaker is deliberately absent. The objective's first exclusion is
+        "anything about a person in this room", and naming the speakers is how
+        a batch of ordinary chat starts looking like a batch of claims about
+        the people in it.
+        """
+        self._message_ids[key] = frozenset(row.id for row in batch)
+        lines = [f"{row.id}: {row.body or ''}" for row in batch]
+        return "Messages in this batch:\n" + ("\n".join(lines) if lines else "(none)")
+
+    async def accept(
+        self, *, key: str, items: Sequence[Mapping[str, object]]
+    ) -> Sequence[object]:
+        """Typed parse into `CandidateClaim`, dropping a malformed item
+        silently rather than raising.
+
+        Two guards beyond the field types:
+
+        - **Length caps** (see `_MAX_SUBJECT_CHARS` and friends), so an
+          unbounded model-authored string never reaches a durable column.
+        - **`message_id` must be IN `batch`.** The objective tells the model
+          "do not invent one, and do not use a message id that is not in the
+          batch"; an invented id points a later reader at a message that does
+          not exist, which is fabricated provenance — worse than a missing
+          entry, and the same drop `LexemeObserver._extract` makes for the
+          same reason. `accept` has no `batch` parameter, so the set of ids
+          this run showed is remembered by `inputs` (see `_message_ids`).
+          When `inputs` has not run for this key — nothing in production, and
+          the shared contract suite calling `accept` on its own — the check
+          is skipped rather than failing every item closed: refusing a batch
+          because this class has no record of showing it would be a guess
+          about a call it did not observe.
+        """
+        seen = self._message_ids.get(key)
+        parsed: list[object] = []
+        for item in items:
+            claim = _parse_claim(item)
+            if claim is None:
+                continue
+            if seen is not None and claim.message_id not in seen:
+                log.warning(
+                    "fact candidate dropped: message_id %d is not in the batch "
+                    "(scope=%s)", claim.message_id, key,
+                )
+                continue
+            parsed.append(claim)
+        return tuple(parsed)
+
+    async def commit(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> int:
+        """Upsert every claim through the candidate store; return rows
+        touched.
+
+        **`key` is a SCOPE here and the candidate table is keyed on a
+        WORKSPACE, so it is translated — this is not a detail.** This adaptor
+        is scope-keyed because a watermark and a message batch are per room;
+        `fact_candidate.workspace` is `Conversation.workspace` (DEC-105),
+        which is the unit `FactAdaptor` adjudicates over. Writing the scope id
+        into that column would put every room's candidates in a "workspace"
+        named after the room, where the workspace-keyed adjudicator's
+        `pending()` would never find one — a tier wired end to end and inert,
+        which is the failure mode this whole subsystem is most exposed to
+        because nobody is waiting on the Dreamer.
+
+        **An unresolvable scope RAISES rather than guessing.** The runtime
+        turns it into a counted `unavailable`, which holds the watermark so
+        the batch is retried rather than consumed — and, more importantly,
+        nothing is written. A guessed workspace is not a bad label: within one
+        workspace a fact crosses rooms by design (R-49/DEC-105), so a
+        candidate filed under the wrong one is a claim from one social unit
+        entering another's standing facts. Every allowlisted room has a
+        workspace (`Conversation.workspace` defaults to `"nora"`), so this is
+        a wiring fault and reads as one.
+
+        `commit(key, ())` still reaches the sink — it is R-27's
+        `nothing_found` («I looked and there was nothing»), a legal call the
+        sink may act on, and collapsing it into "nothing to do, skip the call"
+        is what turns a wiring gap into a false negative one layer up.
+        """
+        workspace = self._workspace_for(key)
+        if workspace is None:
+            raise LookupError(
+                f"fact-candidates: scope {key!r} resolves to no workspace, so "
+                f"there is no key to file its candidates under. Filing them "
+                f"under the scope id would hide them from the workspace-keyed "
+                f"adjudicator; filing them under a guessed workspace would let "
+                f"one social unit's claims enter another's (DEC-105/R-49)."
+            )
+        return len(
+            await self._candidates.propose(
+                key=workspace, proposals=proposals, now_ms=now_ms,
+            )
+        )
+
+
+def _parse_claim(item: Mapping[str, object]) -> CandidateClaim | None:
+    """One envelope item -> a `CandidateClaim`, or `None` if it is malformed.
+
+    `_parse_item`'s shape: every failure is the same silent drop, and there is
+    deliberately no partial parse — a claim missing its object is not a claim
+    with an empty object.
+    """
+    subject = _text(item.get("subject"), limit=_MAX_SUBJECT_CHARS)
+    predicate = _text(item.get("predicate"), limit=_MAX_PREDICATE_CHARS)
+    obj = _text(item.get("object"), limit=_MAX_OBJECT_CHARS)
+    if subject is None or predicate is None or obj is None:
+        return None
+    try:
+        message_id = int(item["message_id"])  # type: ignore[call-overload]
+    except (KeyError, TypeError, ValueError):
+        return None
+    return CandidateClaim(
+        subject=subject, predicate=predicate, object=obj, message_id=message_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase B — adjudication
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Shown:
+    """What ONE adjudication run put in front of the model, remembered by
+    `inputs` for `accept` and `commit` to check against.
+
+    Both halves exist for the same reason and it is the tier's own rule: the
+    model may only name something it was shown.
+
+    - `candidate_ids` maps a candidate's TRIPLE to its row id. The triple is
+      the natural key on both sides — `fact_candidate_triple_key` is
+      `(workspace, subject_id, predicate, object)`, and the objective tells
+      the model to copy the claim's words verbatim ("the words are how it is
+      matched back"). It is what lets `commit` retire the CANDIDATE a verdict
+      settled, which is §5.1's negative cache and the difference between a
+      bounded cost and an unbounded one.
+    - `fact_ids` is the set of standing-fact ids rendered into the prompt, and
+      it is what `accept` checks `supersedes` against. A uuid the model
+      invented is not a verdict, it is a guess with a delete attached.
+    """
+
+    candidate_ids: Mapping[tuple[str, str, str], str]
+    fact_ids: frozenset[str]
+
+
+class FactAdaptor:
+    """Phase B: adjudicate pending candidates against the open web, write the
+    facts, retire what they settled. Workspace-keyed (`Conversation.workspace`,
+    DEC-105) and NOT watermarked — its input is the candidate table, not a
+    message batch, so it has no watermark, lag or quiet condition and runs on
+    every tick with an empty batch (`RoomPortraitSynthesizer` is the standing
+    precedent).
+
+    **`tools` is a subset of `nora.agent.dreamer.WORKSPACE_SAFE_TOOLS`, and
+    that set is small for a structural reason.** Every other read tool is
+    bound to a CONVERSATION — `load_transcript` reads one room's record,
+    `group_members`/`lookup_person`/`about`/`ask_memory`/`search_memory` all
+    answer against one room's live roster, and `recall_lookups`/`media_fetch`
+    replay one room's own calls. A workspace has no single room to bind them
+    to, and binding one to an arbitrary room of that workspace would be a
+    disclosure decision (R-31) nobody has made. So they are refused rather
+    than guessed at, and the cost is named rather than hidden: this adaptor
+    researches the open web and cannot read the group's own transcript. That
+    is the right side to fail on — the candidate EXTRACTOR is scope-keyed and
+    reads the room; the adjudicator checks the world.
+
+    (`weather` and `version` are in `WORKSPACE_SAFE_TOOLS` and are left out
+    here. Neither answers a question about a claim's truth: `weather` is one
+    live reading of one place with no bearing on an adjudication, and
+    `version` reports this process. A tool granted "because it was allowed" is
+    a tool the model will find a use for.)
+    """
+
+    name = "fact-adjudication"
+    key_kind = "workspace"
+    uses_watermark = False
+    objective = "fact-adjudication"
+    envelope_key = "verdicts"
+    tools: frozenset[str] = frozenset({"web_search", "web_fetch", "now", "calculate"})
+
+    def __init__(
+        self,
+        *,
+        facts: _FactStore,
+        candidates: _CandidateStore,
+        max_adjudications_per_tick: int,
+        max_standing_facts: int = DEFAULT_MAX_STANDING_FACTS,
+        metrics: Metrics | None = None,
+    ) -> None:
+        self._facts = facts
+        self._candidates = candidates
+        self._max_adjudications = max_adjudications_per_tick
+        self._max_standing_facts = max_standing_facts
+        self._metrics = metrics
+        self._shown: dict[str, _Shown] = {}
+
+    # -- inputs -------------------------------------------------------------
+
+    async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
+        """The pending candidates and the standing facts for their subjects —
+        an INPUT, never a tool (§4.2).
+
+        That is the whole of §4.2's answer to "should there be a fact-read
+        tool": no. Selection stays in code where it can be capped and counted,
+        and the tool subset stays read-only about the WORLD rather than
+        read-only about ourselves.
+
+        `batch` is always empty here (`uses_watermark = False`) and is
+        accepted and ignored, which is the port's shape rather than a
+        surprise.
+
+        **Raises rather than degrading to an empty prompt.**
+        `FactCandidateReader.pending` raises by contract and this does not
+        catch it: an empty candidate list would tell the model there is
+        nothing to settle when the truth is that this run could not check —
+        `unavailable` reported as `nothing_found`, the one substitution R-27
+        exists to forbid. The runtime's own try/except turns it into a counted
+        `unavailable`, which is the honest outcome.
+        `FactReader.standing_facts` never raises and degrades to `()` on its
+        own; that direction is safe, because a run with no standing facts
+        shown simply has no fact it is allowed to supersede.
+        """
+        pending = await self._candidates.pending(
+            workspace=key, limit=self._max_adjudications,
+        )
+        subject_ids = tuple(dict.fromkeys(c.subject_id for c in pending))
+        standing: tuple[Fact, ...] = ()
+        if subject_ids:
+            standing = await self._facts.standing_facts(
+                workspace=key, subject_ids=subject_ids,
+                limit=self._max_standing_facts,
+            )
+        self._shown[key] = _Shown(
+            candidate_ids={
+                (c.subject_id, c.predicate, c.object): c.id for c in pending
+            },
+            fact_ids=frozenset(f.id for f in standing),
+        )
+        return _render_adjudication(pending, standing)
+
+    # -- accept -------------------------------------------------------------
+
+    async def accept(
+        self, *, key: str, items: Sequence[Mapping[str, object]]
+    ) -> Sequence[object]:
+        """Typed parse into `FactVerdict`. Drop, log, count.
+
+        Three drop reasons, all counted under
+        `nora_fact_adjudications_skipped_total{reason}`:
+
+        - `malformed` — a field missing, of the wrong type, or over its cap.
+        - `invariant` — `FactVerdict.__post_init__` refused it. That is the
+          domain type enforcing R-27's batch invariants BY RAISING, which is
+          right for a constructor and fatal for a background tick, so it is
+          caught here and the item is dropped like any other bad one.
+        - `unknown_supersedes` — the verdict names a fact id this run did not
+          show the model. The model can hallucinate a uuid; a supersession of
+          a row nobody showed it is not a verdict, it is a guess with a delete
+          attached. Checked against `_Shown.fact_ids` rather than against the
+          store, because "does this row exist" is the wrong question — a real
+          fact from a different subject is still one nobody put in front of
+          it. Skipped entirely when `inputs` did not run for this key (the
+          contract suite calling `accept` on its own), for the reason
+          `FactCandidateAdaptor.accept` states.
+        """
+        shown = self._shown.get(key)
+        kept: list[object] = []
+        for item in items:
+            verdict, reason = _parse_verdict(item)
+            if verdict is None:
+                self._skip(reason or "malformed")
+                continue
+            if (
+                shown is not None
+                and verdict.supersedes is not None
+                and verdict.supersedes not in shown.fact_ids
+            ):
+                log.warning(
+                    "fact verdict dropped: supersedes %r names a fact this run "
+                    "did not show (workspace=%s)", verdict.supersedes, key,
+                )
+                self._skip("unknown_supersedes")
+                continue
+            self._inc("nora_fact_verdicts_total", status=verdict.status)
+            kept.append(verdict)
+        return tuple(kept)
+
+    # -- commit -------------------------------------------------------------
+
+    async def commit(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> int:
+        """The tier's two-verb sequence, in order, and the reason `commit`
+        exists on `DreamAdaptor` at all: the runtime cannot do this, because
+        knowing the sequence means knowing `FactVerdict`.
+
+        1. **`propose` every proposal**, `not_covered` included. The store
+           skips those by design (silence adds nothing and removes nothing)
+           and returns ids only for the rows it WROTE.
+        2. **`supersede` the fact each `contradicted` verdict named**, with
+           `replaced_by` set to the id `propose` just returned for THAT
+           verdict.
+        3. **Retire the CANDIDATE**, `not_covered` into §5.1's negative cache
+           and everything else as `adjudicated`.
+
+        **How the propose-ids are matched back, since they cannot be zipped
+        against `proposals` positionally.** `SqlFactStore.propose` walks
+        `proposals` in order and appends an id for each one it writes, so the
+        returned sequence is the ids of the SUBSEQUENCE of proposals whose
+        status is not `not_covered`, in the same order. So the correspondence
+        is recovered by building that same subsequence here, with the same
+        filter and in the same order, and zipping — `strict=True`, and guarded
+        by a length check first. If the two ever disagree, the supersession
+        step is SKIPPED entirely rather than guessed at: superseding the wrong
+        fact is a silent, permanent, unauditable deletion, and no count of
+        rows written is worth risking one.
+
+        Returns rows WRITTEN — `len(ids)`, not `len(proposals)`: a
+        `not_covered` verdict writes no fact, so a legal commit of three can
+        write one. Candidate retirements are not rows of this tier and are not
+        counted here.
+        """
+        # Built BEFORE the call, from the same filter the store applies, so
+        # the correspondence is stated rather than inferred from the result.
+        writable = [
+            p.payload for p in proposals
+            if isinstance(p.payload, FactVerdict)
+            and p.payload.status != "not_covered"
+        ]
+        # Unconditional, empty batch included: `commit(key, ())` is R-27's
+        # `nothing_found` and a legal call the sink may act on. A payload that
+        # is not a `FactVerdict` raises `TypeError` in the store, which is the
+        # one place that can catch it (`Proposal.payload` is `object` at the
+        # port on purpose).
+        ids = await self._facts.propose(
+            key=key, proposals=proposals, now_ms=now_ms,
+        )
+        if ids:
+            self._inc("nora_facts_proposed_total", value=len(ids))
+
+        if len(ids) != len(writable):
+            log.error(
+                "fact commit: %d ids for %d writable verdicts (workspace=%s); "
+                "supersessions SKIPPED rather than matched by guess",
+                len(ids), len(writable), key,
+            )
+            self._skip("id_mismatch")
+        else:
+            for verdict, fact_id in zip(writable, ids, strict=True):
+                await self._supersede_fact(
+                    key=key, verdict=verdict, fact_id=fact_id, now_ms=now_ms,
+                )
+
+        await self._retire_candidates(key=key, proposals=proposals, now_ms=now_ms)
+        return len(ids)
+
+    async def _supersede_fact(
+        self, *, key: str, verdict: FactVerdict, fact_id: str, now_ms: int,
+    ) -> None:
+        """Retire the fact a `contradicted` verdict named, pointing at the
+        correction `propose` just wrote.
+
+        `because="wrong"` and not `"stale"`: a contradiction says the standing
+        row was never right, which is a different claim from "it was true then
+        and isn't now" — and `supersede_reason` cannot be reconstructed from
+        the row afterwards at any price. `source` is the verdict's own URL,
+        which is a WARRANT and never a row id (`DreamSink.supersede`'s own
+        separation; `replaced_by` already carries the successor).
+
+        A failure here is caught rather than propagated, and the direction
+        matters: the fact has ALREADY been written by the time this runs, so
+        letting the exception reach the runtime would report the whole run
+        `unavailable` with `written=0` while a row sits in the table. Counted
+        instead, so a supersession that never happened is visible rather than
+        merely survived.
+        """
+        if verdict.status != "contradicted" or verdict.supersedes is None:
+            return
+        try:
+            affected = await self._facts.supersede(
+                key=key, target=verdict.supersedes, replaced_by=fact_id,
+                because="wrong", source=verdict.source_url, now_ms=now_ms,
+            )
+        except Exception:
+            log.exception(
+                "fact supersede failed: target=%s workspace=%s",
+                verdict.supersedes, key,
+            )
+            self._skip("supersede_failed")
+            return
+        if affected:
+            self._inc("nora_facts_superseded_total", value=affected)
+        else:
+            # Already superseded, or gone. Not an error — a background pass
+            # may legitimately re-fire over work it already did — but silence
+            # here would read as "the old fact was retired".
+            log.info(
+                "fact supersede affected no rows: target=%s workspace=%s",
+                verdict.supersedes, key,
+            )
+            self._skip("supersede_missed")
+
+    async def _retire_candidates(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
+    ) -> None:
+        """§5.1's negative cache, and the ordinary settled case beside it.
+
+        A `not_covered` verdict retires its CANDIDATE, not the fact —
+        `because="not_covered"`. Without it the same unprovable claim is
+        re-extracted and re-adjudicated every tick forever, and it fails
+        quietly because nobody is waiting on the Dreamer; with it, the tier
+        remembers what it could not settle. A `supported`/`contradicted`
+        verdict retires its candidate with `because="adjudicated"`.
+
+        The verdict is mapped back to its candidate by the TRIPLE (see
+        `_Shown`), against what THIS run showed the model. A verdict whose
+        triple was not shown retires nothing: the model reworded the claim
+        (which the objective forbids for exactly this reason) or invented one,
+        and retiring some other candidate on a near-match would settle a claim
+        nobody adjudicated.
+        """
+        shown = self._shown.get(key)
+        if shown is None:
+            return
+        for proposal in proposals:
+            verdict = proposal.payload
+            if not isinstance(verdict, FactVerdict):
+                continue
+            candidate_id = shown.candidate_ids.get(
+                (verdict.subject, verdict.predicate, verdict.object)
+            )
+            if candidate_id is None:
+                log.info(
+                    "fact verdict settled no candidate: %r/%r (workspace=%s)",
+                    verdict.subject, verdict.predicate, key,
+                )
+                self._skip("unmatched_candidate")
+                continue
+            because = (
+                "not_covered" if verdict.status == "not_covered" else "adjudicated"
+            )
+            try:
+                await self._candidates.supersede(
+                    key=key, target=candidate_id, replaced_by=None,
+                    because=because, source=None, now_ms=now_ms,
+                )
+            except Exception:
+                log.exception(
+                    "candidate retire failed: target=%s workspace=%s",
+                    candidate_id, key,
+                )
+                self._skip("retire_failed")
+
+    # -- metrics ------------------------------------------------------------
+
+    def _inc(self, name: str, value: float = 1.0, **labels: object) -> None:
+        if self._metrics is not None:
+            self._metrics.inc(name, value, **labels)
+
+    def _skip(self, reason: str) -> None:
+        self._inc("nora_fact_adjudications_skipped_total", reason=reason)
+
+
+def _parse_verdict(
+    item: Mapping[str, object],
+) -> tuple[FactVerdict | None, str | None]:
+    """One envelope item -> `(verdict, None)` or `(None, reason)`.
+
+    The reason is returned rather than counted here so this stays a pure
+    function the way `_parse_item` is; the caller holds the metrics.
+
+    `addresses_claim` is required to be a real `bool`. A string `"true"` is
+    the model not answering the field, and coercing it would make the one
+    field that decides whether a source may contradict anything depend on a
+    guess about what the model meant.
+    """
+    subject = _text(item.get("subject"), limit=_MAX_SUBJECT_CHARS)
+    predicate = _text(item.get("predicate"), limit=_MAX_PREDICATE_CHARS)
+    obj = _text(item.get("object"), limit=_MAX_OBJECT_CHARS)
+    status = item.get("status")
+    addresses = item.get("addresses_claim")
+    if subject is None or predicate is None or obj is None:
+        return None, "malformed"
+    if not isinstance(status, str) or not isinstance(addresses, bool):
+        return None, "malformed"
+    url, url_ok = _optional_text(
+        item.get("source_url"), limit=_MAX_SOURCE_URL_CHARS,
+    )
+    excerpt, excerpt_ok = _optional_text(
+        item.get("source_excerpt"), limit=_MAX_SOURCE_EXCERPT_CHARS,
+    )
+    supersedes, supersedes_ok = _optional_text(
+        item.get("supersedes"), limit=_MAX_FACT_ID_CHARS,
+    )
+    if not (url_ok and excerpt_ok and supersedes_ok):
+        return None, "malformed"
+    try:
+        # `FactVerdict.__post_init__` is the enforcement of R-27's batch
+        # invariants and it enforces them by RAISING. Caught here so the
+        # domain type keeps its teeth without a malformed item taking down a
+        # tick four other adaptors are sharing.
+        verdict = FactVerdict(
+            subject=subject, predicate=predicate, object=obj,
+            status=status,  # type: ignore[arg-type]
+            addresses_claim=addresses, source_url=url,
+            source_excerpt=excerpt, supersedes=supersedes,
+        )
+    except ValueError as exc:
+        log.warning("fact verdict dropped: %s", exc)
+        return None, "invariant"
+    return verdict, None
+
+
+def _render_adjudication(
+    pending: Sequence[FactCandidate], standing: Sequence[Fact],
+) -> str:
+    """The adjudication prompt: the claims to settle, then the facts already
+    standing for their subjects.
+
+    **Every candidate carries its id and every fact carries ITS id**, and the
+    second is load-bearing: `supersedes` names a fact id, and the objective
+    tells the model it may only ever name "the id of a standing fact you were
+    shown". A fact rendered without its id is one the model cannot correct;
+    an id shown without its source excerpt is one it cannot judge whether it
+    has overturned, which is the check the objective spends its longest
+    paragraph on.
+    """
+    lines = ["Claims to settle:"]
+    if pending:
+        lines.extend(
+            f"- [{c.id}] {c.subject_id} | {c.predicate} | {c.object} "
+            f"(asserted {c.occurrence_count}x)"
+            for c in pending
+        )
+    else:
+        lines.append("(none)")
+    lines.append("")
+    lines.append("Facts already standing for these subjects:")
+    if standing:
+        lines.extend(_render_standing(f) for f in standing)
+    else:
+        lines.append("(none)")
+    return "\n".join(lines)
+
+
+def _render_standing(fact: Fact) -> str:
+    obj = fact.object_literal if fact.object_literal is not None else (
+        fact.object_entity_id or ""
+    )
+    parts = [f"- [{fact.id}] {fact.subject_id} | {fact.predicate} | {obj}"]
+    if fact.source_url:
+        parts.append(f"  source: {fact.source_url}")
+    if fact.source_excerpt:
+        parts.append(f'  excerpt: "{fact.source_excerpt}"')
+    return "\n".join(parts)
+
+
