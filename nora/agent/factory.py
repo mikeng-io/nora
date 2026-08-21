@@ -53,6 +53,12 @@ log = logging.getLogger("nora.factory")
 # "nora" exactly — a rename is a deliberate new-agent act, not a casual edit.
 DEFAULT_AGENT_NAME = "nora"
 
+# The second agent's span name (`create_dream_agent`). Separate from the value
+# above ON PURPOSE: the Dreamer's traces must be findable APART from her turns —
+# it runs with nobody waiting on it, and a background loop sharing her span name
+# would make every saved Langfuse view a mixture of the two.
+DEFAULT_DREAM_AGENT_NAME = "dreamer"
+
 # How much of one invocation's wall clock may be spent sleeping between retries.
 # The rest has to cover the model calls themselves, of which there may be
 # `max_attempts` — a quarter leaves three quarters for up to four attempts.
@@ -67,7 +73,7 @@ def create_client(*, base_url: str, api_key: str) -> AsyncOpenAI:
 
 def create_model_provider(
     *, model: str, max_tokens: int, temperature: float, client: AsyncOpenAI,
-    reasoning_effort: str = "none",
+    reasoning_effort: str = "none", tool_choice: str = FIRST_CALL,
 ) -> OpenAIModel:
     """`tool_choice="required"` is load-bearing, not a tuning knob.
 
@@ -94,6 +100,27 @@ def create_model_provider(
     object this function returns is now built PER TAG (`ModelSource` below) —
     it is per-turn mutable state, and one instance shared by two concurrent
     tags would apply one tag's relaxation to the other tag's first call.
+
+    **`tool_choice` is a PARAMETER since the Dreamer, and the default above is
+    unchanged.** Everything written above is an argument about *a turn that
+    must end in `send_reply`* — Nora's turn — and it is not relativised by the
+    parameter: every tag-path call site takes the default and the request is
+    byte-identical to what it was before this parameter existed. The parameter
+    exists because there is now a SECOND kind of loop in this process, and the
+    argument above does not reach it.
+
+    The Dreamer (`create_dream_agent` below) has **no terminal verb at all**:
+    every act verb is excluded from it by construction, and the terminal ones
+    ARE act verbs. Its loop therefore ends the only way a loop with nothing to
+    end it can — the model **declines to call anything** and returns its
+    structured result. Under `"required"` that is unreachable: the model must
+    call something on every pass, so a loop whose terminal condition is a
+    non-call would run until a limit caught it. On Nora's path
+    `ReplyGuard`'s `BeforeModelCallEvent` hook is what ends a turn, and it ends
+    it by observing a terminal call (DEC-21, DEC-32); the Dreamer has no such
+    observation to make. So it passes `"auto"` — for the same reason
+    `ReplyGuard` flips to `AFTER_SPEAKING` after she has spoken, one step
+    earlier: a loop that is permitted to stop is a loop that can stop.
     """
     return OpenAIModel(
         model_id=model,
@@ -113,7 +140,7 @@ def create_model_provider(
             # distribution on a guess. See the sampling note in
             # config.example.toml's `[llm]` for what measuring it would take.
             "temperature": temperature,
-            "tool_choice": FIRST_CALL,
+            "tool_choice": tool_choice,
             # Comes from the tier (config.toml), not from here — a runtime
             # value belongs in config, not in code (DEC-8). See
             # `LLMTierConfig.reasoning_effort` for the measurements.
@@ -380,6 +407,85 @@ def create_agent(
     )
 
 
+def create_dream_agent(
+    *,
+    model: OpenAIModel,
+    system_prompt: str,
+    tools: list,
+    guard: HookProvider,
+    trace_attributes: dict,
+    retry: RetryPolicy,
+    agent_name: str = DEFAULT_DREAM_AGENT_NAME,
+) -> Agent:
+    """The Dreamer's agent: a loop that may LOOK and may not ACT.
+
+    A sibling of `create_agent` rather than a flag on it, and it lives HERE
+    rather than beside the Dreamer runtime because this module is the only one
+    in the codebase allowed to construct Strands objects (spec C.7). A second
+    agent gets a second constructor in this file; it never gets an `Agent(...)`
+    call somewhere else.
+
+    **What is absent is the specification.** `create_agent`'s parameters are
+    each welded to Nora's turn and none of them has a meaning here:
+
+    - no `pre_fill` — a tag's prefill is the transcript, the peer card and the
+      room; the Dreamer is handed its batch by the runtime as the invocation's
+      own prompt, and there is no conversation to reconstruct;
+    - no `skills_dir` — DEC-50's on-demand layer injects `<available_skills>`
+      and registers the `skills` activation tool for a model composing a reply.
+      A research loop has an objective, not a repertoire, and a tool the guard
+      would have to admit is a tool the Dreamer would have to budget;
+    - no `tool_call_log` — that log exists so `recall_lookups` can replay one
+      conversation's earlier lookups to a later turn in the same conversation.
+      The Dreamer has no conversation.
+
+    **`guard` is typed `HookProvider`, not `ReplyGuard` and not `DreamGuard`** —
+    structurally, because what this constructor needs from it is exactly what
+    `Agent(hooks=...)` needs from it and nothing more. `ReplyGuard` satisfies it
+    too; that is a property of the protocol, not an invitation. The guard that
+    belongs here is `DreamGuard` — R-7 default-deny with no terminal verb and no
+    deliverer — and typing this parameter to that class would make this module
+    import it for a constraint the SDK does not impose.
+
+    **`tool_choice` is not set here, and that is deliberate**: it is a property
+    of the MODEL, and the model arrives already built. The Dreamer's is built
+    with `create_model_provider(..., tool_choice=AFTER_SPEAKING)`; see that
+    function's docstring for why a loop with no terminal verb cannot run under
+    `"required"`. Setting it from this constructor would put the same fact in
+    two places and let a caller pass a `"required"` model that silently could
+    not stop.
+
+    Everything else is the posture `create_agent` already holds, for the same
+    reasons: `conversation_manager=NullConversationManager()` and
+    `session_manager=None` (D4 — no agent memory, ever; continuity is the store),
+    `callback_handler=None` (nothing prints to stdout),
+    `load_tools_from_directory=False` (the tool set is the one passed in, and for
+    this agent that set is a *ceiling*, not a default), and a FRESH
+    `ModelRetryStrategy` per agent (see `RetryPolicy` — it holds per-invocation
+    state, and dream runs overlap the same way tags do).
+    """
+    return Agent(
+        model=model,
+        # Identity, so a background run is findable in Langfuse APART from her
+        # turns — same argument as `create_agent`, different default.
+        name=agent_name,
+        agent_id=agent_name,
+        retry_strategy=ModelRetryStrategy(
+            max_attempts=retry.max_attempts,
+            initial_delay=retry.initial_delay,
+            max_delay=retry.max_delay,
+        ),
+        system_prompt=system_prompt,
+        tools=tools,
+        hooks=[guard],
+        conversation_manager=NullConversationManager(),
+        session_manager=None,
+        callback_handler=None,
+        load_tools_from_directory=False,
+        trace_attributes=trace_attributes,
+    )
+
+
 async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limits: dict) -> Any:
     """Run one turn and return Strands' `AgentResult` — `stop_reason` included.
 
@@ -407,3 +513,43 @@ async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limi
         # value is shape-correct at runtime, only the static type differs.
         limits=limits,  # type: ignore[arg-type]
     )
+
+
+def final_text(result: Any) -> str:
+    """The model's last PROSE, or "" — the words it wrote instead of calling
+    `send_reply` (DEC-93).
+
+    Empty on every healthy turn: a turn that used the tool has already said
+    what it had to say, and its final message carries a `toolUse` block rather
+    than text. This exists for the turn that ends `end_turn` with a complete,
+    group-addressed reply sitting in a `text` block that strict-silence then
+    discards — measured live at 2 of 4 tags.
+
+    Defensive throughout (`getattr`, `isinstance`) because this reads a
+    third-party result shape on the reply path: a Strands version that renames
+    `message` must degrade to "" — the pre-DEC-93 behaviour — never raise into
+    a turn that otherwise succeeded.
+
+    **It lives HERE, beside `invoke`, and not in `nora/app/agent_runner.py`
+    where it was written.** Two reasons, and the second is the one that made it
+    move. First, it reads the SDK shape `invoke` above returns — the same
+    `AgentResult` that function is typed `Any` for — and this module is where
+    knowing a Strands shape belongs; `agent_runner` may not even import
+    `strands`, so a reader there could not check this parser against the type it
+    parses. Second, the Dreamer needs exactly this extraction (its loop ends
+    with the model's structured result as authored text, DEC-93's shape read for
+    a different purpose) and `nora.agent` may not import `nora.app` — so the
+    alternative to promoting it was a second copy, which is how two defensive
+    parsers of one third-party shape drift apart.
+    """
+    message = getattr(result, "message", None)
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return ""
+    parts = [
+        block["text"] for block in content
+        if isinstance(block, dict) and isinstance(block.get("text"), str)
+    ]
+    return "\n".join(p for p in parts if p.strip()).strip()
