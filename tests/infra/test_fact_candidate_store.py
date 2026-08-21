@@ -65,7 +65,7 @@ below, and the first is already global (it checks the Protocol, not a store).
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass
 
 import pytest
@@ -104,6 +104,42 @@ def _candidate(
         subject=subject, predicate=predicate, object=object,
         message_id=message_id, established_by=established_by,
     )
+
+
+@pytest.fixture(scope="module")
+def candidate_pg_url(pg_admin) -> Iterator[str]:
+    """One database, migrated once, for every test in this module.
+
+    The house pattern — function-scoped `pg_url` plus `run_migrations` per test
+    — costs a CREATE DATABASE, the whole migration chain and a DROP for each of
+    this file's 56 tests. That degrades the shared testcontainer, and the bill
+    is paid by `tests/integration/test_latency.py`, which writes audit rows to
+    the same container and asserts a p95. A defect in one file charged to
+    another, which is exactly why it read as an unrelated flake.
+    """
+    import uuid
+
+    import psycopg
+
+    dbname = "t_factcand_" + uuid.uuid4().hex
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{dbname}"')
+    url = (
+        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
+    )
+    run_migrations(url)
+    try:
+        yield url
+    finally:
+        with psycopg.connect(
+            pg_admin.dsn(pg_admin.maintenance_db), autocommit=True
+        ) as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()", (dbname,),
+            )
+            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
 
 
 @dataclass
@@ -189,9 +225,18 @@ async def world(request) -> AsyncIterator[_World]:
         )
         return
 
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    # ONE database and ONE migration chain for this module — see
+    # `candidate_pg_url` below. Row isolation between tests comes from
+    # truncating the four fact-tier tables, which is the guarantee this file
+    # actually needs; rebuilding the schema 56 times was buying nothing and
+    # charging `tests/integration/test_latency.py` for it.
+    url = request.getfixturevalue("candidate_pg_url")
+    engine = create_sql_engine(url)
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "TRUNCATE fact_premise, fact, fact_candidate, fact_entity "
+            "RESTART IDENTITY CASCADE"
+        ))
     fact_store = SqlFactStore(engine)
 
     async def seed_fact(

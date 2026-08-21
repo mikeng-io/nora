@@ -156,10 +156,13 @@ import enum
 import hashlib
 import inspect
 import itertools
-from collections.abc import AsyncIterator, Awaitable, Callable
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import FrozenInstanceError, dataclass, field
 
+import psycopg
 import pytest
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.ports import DreamSink, Proposal
@@ -463,6 +466,49 @@ FOREIGN_PAYLOAD_EXEMPT: dict[str, str] = {
 }
 
 
+# The database and its migrations are built ONCE for this module, not once per
+# test, and the reason is a measured defect rather than tidiness.
+#
+# The house pattern is the function-scoped `pg_url` fixture plus a
+# `run_migrations(pg_url)` at the top of each test's setup: CREATE DATABASE, the
+# full migration chain, DROP — per test. At three or four tests nobody notices.
+# This file has 44 across three implementations, and the sibling
+# `tests/infra/test_fact_candidate_store.py` has 56, so the two of them
+# rebuilt the world a hundred times in one run. The cost does NOT land here: it
+# degrades the shared testcontainer, and the bill arrives at
+# `tests/integration/test_latency.py`, which writes audit rows to the same
+# container and asserts a p95. A defect in one file, paid for by a different
+# one, which is why it read as somebody else's flake.
+#
+# What isolation this suite actually needs is "no rows from the last test", not
+# "no schema from the last test" — so the schema is built once and the four
+# tables are truncated between tests. The ENGINE stays per test (cheap, and
+# `dispose()` still runs) because a shared engine would let one test's pool
+# state reach another's.
+@pytest.fixture(scope="module")
+def fact_pg_url(pg_admin, request) -> Iterator[str]:
+    """One database, one migration chain, for the whole module."""
+    dbname = "t_dreamsink_" + uuid.uuid4().hex
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{dbname}"')
+    url = (
+        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
+    )
+    run_migrations(url)
+    try:
+        yield url
+    finally:
+        with psycopg.connect(
+            pg_admin.dsn(pg_admin.maintenance_db), autocommit=True
+        ) as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()", (dbname,),
+            )
+            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
 @contextlib.asynccontextmanager
 async def _open_sink(name: str, request) -> AsyncIterator[tuple[object, _Impl]]:
     """Builds the store for `name` and yields `(sink, impl)` — the store plus
@@ -478,10 +524,18 @@ async def _open_sink(name: str, request) -> AsyncIterator[tuple[object, _Impl]]:
     if not impl.needs_engine:
         yield (impl.build(None), impl)
         return
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    url = request.getfixturevalue("fact_pg_url")
+    engine = create_sql_engine(url)
     try:
+        # Row isolation, not schema isolation — the guarantee this suite needs.
+        # RESTART IDENTITY CASCADE so a sequence-backed id cannot carry a value
+        # across tests, and every fact-tier table in one statement so ordering
+        # against the foreign keys is Postgres's problem rather than ours.
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(
+                "TRUNCATE fact_premise, fact, fact_candidate, fact_entity "
+                "RESTART IDENTITY CASCADE"
+            ))
         yield (impl.build(engine), impl)
     finally:
         await engine.dispose()
