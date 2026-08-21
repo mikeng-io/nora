@@ -66,6 +66,7 @@ from nora.infra.sql.events import SqlEventStore
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
+from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.room_portrait import SqlRoomPortraitStore
@@ -528,6 +529,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     portrait_store: SqlRoomPortraitStore | None = (
         SqlRoomPortraitStore(engine, metrics=metrics) if cfg.language.enabled else None
     )
+    # The note tier's store (2026-08-21 note-tier design), REUSING `engine`
+    # like every store above. Gated on its OWN flag rather than `[language]`'s,
+    # unlike the three Dreamer stores: this tier is not the Dreamer's — its
+    # reader is the tag prefill and its future writers are the agent's
+    # `note_create`/`note_update` and the curator, so `[language] enabled`
+    # would be somebody else's switch. Off, `TranscriptInjection` gets
+    # `notes=None` and `_notes` answers `()` without a query — the dormant
+    # state the tier shipped in. No `metrics=`: `SqlNoteStore.__init__` takes
+    # an engine and nothing else on purpose (its own docstring), and the one
+    # read on the critical path is counted by `_notes` instead.
+    note_store: SqlNoteStore | None = SqlNoteStore(engine) if cfg.notes.enabled else None
 
     # Resolved here, not inside AdapterRegistry — the same convention every
     # other `*_env` secret (the LLM key, the route key) follows: composition.py
@@ -681,6 +693,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         language=language_store,
         exchange=exchange_store,
         portrait=portrait_store,
+        # `None` while `[notes] enabled = false`. `policy=allowlist` is the
+        # SAME policy.toml instance the ingest pipeline and `EngagementPipeline`
+        # are given below — the assembler needs it for one thing only, naming
+        # the workspace a room belongs to (`Conversation.workspace`, DEC-105),
+        # which is what the note index is scoped by. Handing it a different
+        # Policy would scope the read to a workspace ingest never admitted.
+        notes=note_store,
+        policy=allowlist,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:

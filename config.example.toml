@@ -760,6 +760,25 @@ max_rendered_facts = 8
 # recall-log's own retention_days = 180 for the same shape of row.
 retention_days = 180
 
+[notes]
+# The note tier's gate (docs/superpowers/specs/2026-08-21-note-tier-design.md).
+# ON, every tag reads the standing note index for the room's WORKSPACE — not
+# its conversation (§3/DEC-105: rooms sharing a workspace are one social unit)
+# — and renders it as <notes>. OFF, no store is built, no query runs, and the
+# block never appears.
+#
+# Ships INERT, like [facts] above: a config.toml written before this section
+# existed keeps loading with the tier off. Nothing WRITES a note yet either
+# way, so turning it on today buys a SELECT that returns nothing — it is the
+# switch for the moment a curator lands, not a retroactive one.
+enabled = false
+# No render cap here, unlike [facts]' max_rendered_facts, and that is a
+# decision rather than an omission: §5.1 makes the index uncapped, because a
+# note silently missing from it is invisible to her and invisible is
+# indistinguishable from absent. The budget is held by the per-entry caps in
+# the domain type (title <= 60 chars, description <= 200) and by the curator
+# retiring closed notes.
+
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version
 # baked into this image has not been announced in a room yet, Nora relays the
