@@ -655,3 +655,67 @@ def test_only_app_and_main_import_config():
             if resolved == "nora.config" or resolved.startswith("nora.config."):
                 offenders.append(str(rel))
     assert not offenders, f"config imported outside app/ and __main__: {offenders}"
+
+
+# ---- the Dreamer runtime (substrate plan Phase 2) -------------------------
+
+
+async def test_the_dreamer_runtime_is_not_built_when_it_is_off(cfg):
+    """The shipped default. A subsystem that is off builds NOTHING, so a wiring
+    mistake in it cannot cost a deployment that never turned it on — the shape
+    `language_store` and `portrait_synthesizer` already use."""
+    deps = await build_dependencies(cfg)
+
+    assert deps.dreamer_runtime is None
+    assert deps.dream_adaptors == ()
+
+
+async def test_the_dreamer_runtime_is_built_when_it_is_on(cfg):
+    deps = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True})
+    )
+
+    assert deps.dreamer_runtime is not None
+
+
+async def test_the_dreamer_runs_on_a_model_that_can_stop(cfg):
+    """The gap between the factory's `tool_choice` parameter and the runtime
+    actually getting one: `ModelSource` builds the provider, and it built every
+    one from the tag path's spec.
+
+    Under `"required"` the model must call something on every pass, and the
+    only thing that ends a turn is a guard observing a TERMINAL call — which
+    the Dreamer has none of. So this asserts the property the whole phase
+    depends on, at the one place it is decided."""
+    deps = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True})
+    )
+    assert deps.dreamer_runtime is not None
+
+    model = deps.dreamer_runtime._models.create()
+    assert model.config["params"]["tool_choice"] == "auto"
+
+
+async def test_workspace_scopes_are_the_allowlists_workspaces_deduplicated(cfg):
+    """Two rooms of one workspace are ONE unit of work, not two — which is the
+    whole reason a workspace-keyed adaptor could not ride the per-scope
+    schedule, and the reason this closure exists beside `language_scopes`.
+
+    Sorted, so the tick order is stable between runs of the same build; a set
+    would make «did adaptor X run for workspace Y this tick» unanswerable from
+    a log.
+
+    Asserted against the loaded allowlist rather than a hand-built one, so it
+    fails if `Conversation.workspace`'s default ever stops being honoured."""
+    deps = await build_dependencies(cfg)
+
+    workspaces = deps.workspace_scopes()
+
+    assert workspaces == tuple(sorted(set(workspaces)))
+    assert workspaces, "a deployment with allowed conversations has a workspace"
+    # NARROWER than the per-scope population, or the distinction this closure
+    # exists for would be untestable here: DEC-105 defaults every conversation
+    # to one workspace, so several rooms collapse to one key.
+    assert len(workspaces) <= len(deps.language_scopes())
+
+

@@ -567,7 +567,9 @@ def _tool_budgets(tools: list[Any], adaptor: DreamAdaptor) -> dict[str, int]:
 
     budgets: dict[str, int] = {}
     for tool in tools:
-        name = getattr(tool, "tool_name", None) or getattr(tool, "__name__", "")
+        name = str(
+            getattr(tool, "tool_name", None) or getattr(tool, "__name__", "") or ""
+        )
         spec = NATIVE_TOOLS.get(name)
         if spec is None:
             log.warning(
