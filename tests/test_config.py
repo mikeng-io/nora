@@ -904,7 +904,7 @@ def test_an_unknown_budget_key_is_a_startup_failure(toml_path):
         load(toml_path)
 
 
-def test_every_adaptor_that_exists_has_a_budget_of_its_own():
+def test_every_adaptor_that_exists_has_a_budget_of_its_own(toml_path):
     """`budget_for` falls back to defaults for an unknown key, SILENTLY — its
     own docstring concedes it. So a `[dreamer.budgets.*]` section naming only
     adaptors that do not exist yet leaves the ones that DO on numbers nobody
@@ -913,11 +913,9 @@ def test_every_adaptor_that_exists_has_a_budget_of_its_own():
 
     Derived from the adaptor classes rather than hand-listed, so an adaptor
     added tomorrow turns this red instead of quietly inheriting a default."""
-    from pathlib import Path
-
     from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
 
-    cfg = load(Path("config.toml"))
+    cfg = load(toml_path)
     for adaptor in (FactCandidateAdaptor, FactAdaptor):
         assert adaptor.name in cfg.dreamer.budgets, (
             f"adaptor {adaptor.name!r} has no [dreamer.budgets.{adaptor.name}] "
@@ -925,16 +923,14 @@ def test_every_adaptor_that_exists_has_a_budget_of_its_own():
         )
 
 
-def test_the_adjudicator_is_budgeted_more_generously_than_the_extractor():
+def test_the_adjudicator_is_budgeted_more_generously_than_the_extractor(toml_path):
     """The reason budgets are PER ADAPTOR rather than one global ceiling
     (keystone §6): proving a claim against the open web is search, read, notice
     the page does not cover the question, search differently — while the
     extractor makes one tool-free call over a message batch. A single number
     would starve the first or overpay for the second, and this asserts the
     config actually expresses that rather than merely allowing it."""
-    from pathlib import Path
-
-    cfg = load(Path("config.toml"))
+    cfg = load(toml_path)
     extract = cfg.dreamer.budget_for("fact-candidates")
     adjudicate = cfg.dreamer.budget_for("fact-adjudication")
 
