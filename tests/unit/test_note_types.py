@@ -253,5 +253,5 @@ def test_a_revision_is_frozen():
         id="r1", note_id="n1", body="x",
         parent_revision_id=None, written_at=NOW, established_by="miles_novak",
     )
-    with pytest.raises(Exception):
+    with pytest.raises((AttributeError, TypeError)):
         rev.body = "y"  # type: ignore[misc]
