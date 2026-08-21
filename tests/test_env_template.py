@@ -164,6 +164,53 @@ def test_config_example_still_loads_through_the_config_model(tmp_path, monkeypat
     assert cfg.llm.timeout_seconds == 120
 
 
+def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypatch):
+    """Key-level parity above compares two TOML documents; this compares the two
+    TYPED sections they produce, which is the level `[dreamer.budgets.*]`
+    actually has to agree on.
+
+    A budget block is a nested table keyed by adaptor NAME, so the two files can
+    drift in a way `_flatten` reports as a plain missing key without saying what
+    it means: an adaptor budgeted in one file and not the other silently runs
+    under a different ceiling in the deployment than the template documents.
+    Comparing the model-level maps names the adaptor instead.
+
+    Also the bound: EVERY declared budget, in either file, must be a real
+    ceiling on all four axes. `timeout_seconds` above all — a hung Dreamer call
+    is quiet (`dream_loop` marks the scope `running` and skips it every
+    subsequent tick without ever raising, so the exponential backoff never
+    engages), so an unbounded one is a subsystem that stops working with no
+    error anywhere.
+    """
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    loaded = {}
+    for name in ("config.example.toml", "config.toml"):
+        dst = tmp_path / name.replace(".example", "") / "config.toml"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / name, dst)
+        loaded[name] = load(dst).dreamer
+
+    example, live = loaded["config.example.toml"], loaded["config.toml"]
+    assert example.enabled == live.enabled is False, (
+        "the Dreamer runtime ships OFF in both files"
+    )
+    assert example.model == live.model == "", (
+        "an empty model means [language].model — the open D2 gate fills this in"
+    )
+    assert set(example.budgets) == set(live.budgets), (
+        "the two files budget different adaptors: "
+        f"{sorted(set(example.budgets) ^ set(live.budgets))}"
+    )
+    for adaptor in example.budgets:
+        assert example.budgets[adaptor] == live.budgets[adaptor], adaptor
+    for section in (example, live):
+        for adaptor, budget in section.budgets.items():
+            assert budget.turns > 0, adaptor
+            assert budget.total_tokens > 0, adaptor
+            assert budget.output_tokens > 0, adaptor
+            assert budget.timeout_seconds > 0, adaptor
+
+
 def test_config_example_sets_no_top_p():
     """`top_p` stays UNSET until somebody measures it (audit F8 / A6).
 

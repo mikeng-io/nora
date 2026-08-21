@@ -12,6 +12,8 @@ from nora.config import (
     AnalyticsConfig,
     Config,
     ConfigError,
+    DreamBudgetConfig,
+    DreamerConfig,
     LimitsConfig,
     LLMConfig,
     MediaConfig,
@@ -699,7 +701,13 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     """`extra="forbid"` cuts both ways: a NEW required section breaks every
     config file that predates it. The whole section is optional and every field
     defaulted for exactly that reason — the `[route]`/`[presence]`/`[language]`
-    shape."""
+    shape.
+
+    Deleting from `[dreamer]` to `[obs.logging]` also removes the
+    `[dreamer.budgets.*]` tables, which is the point: a config written before
+    the runtime existed declares no budget for any adaptor, and every adaptor
+    must still come back BOUNDED rather than raising. The values asserted are
+    the class defaults, so this fails if one silently changes."""
     text = toml_path.read_text()
     start = text.index("\n[dreamer]")
     end = text.index("\n[obs.logging]")
@@ -708,6 +716,13 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     assert cfg.dreamer.reload == "mtime"
     assert cfg.dreamer.strict is True
     assert cfg.dreamer.dir == (toml_path.parent / "nora" / "dreamer").resolve()
+    # The runtime half, absent from the file entirely: OFF, no model pinned,
+    # no budget declared — and still bounded.
+    assert cfg.dreamer.enabled is False
+    assert cfg.dreamer.model == ""
+    assert cfg.dreamer_model() == cfg.language.model
+    assert cfg.dreamer.budgets == {}
+    assert cfg.dreamer.budget_for("room_language") == DreamBudgetConfig()
 
 
 def test_two_configs_do_not_share_one_defaulted_dreamer_section(tmp_path, monkeypatch):
@@ -738,8 +753,126 @@ def test_an_invalid_dreamer_reload_mode_is_a_startup_failure(toml_path):
 
 def test_an_unknown_dreamer_key_is_a_startup_failure(toml_path):
     """`extra="forbid"`: a typo'd key is a silent no-op everywhere it is
-    tolerated, and this section's whole job is to be edited by hand."""
+    tolerated, and this section's whole job is to be edited by hand.
+
+    The probe used to be `enabled = true`, which stopped being an unknown key
+    the moment the runtime's own switch landed — and would then have passed for
+    the wrong reason (a DUPLICATE `enabled` in one table is a TOML decode
+    error, not an `extra="forbid"` refusal). A misspelling of a real key is the
+    probe that stays honest as the section grows."""
     toml_path.write_text(toml_path.read_text().replace(
-        '[dreamer]\n', '[dreamer]\nenabled = true\n'))
-    with pytest.raises(ConfigError):
+        '[dreamer]\n', '[dreamer]\nenbaled = true\n'))
+    with pytest.raises(ConfigError, match="enbaled"):
+        load(toml_path)
+
+
+def test_the_dreamer_runtime_ships_off(toml_path):
+    """`enabled` arrives WITH the runtime it gates, shipping False.
+
+    Phase 1 shipped `[dreamer]` with no `enabled` field at all, and said why
+    (DEC-128): the section described a CORPUS two already-running adaptors read
+    regardless, and a flag that gates nothing is a flag an operator will
+    eventually set expecting it to gate something. That argument named its own
+    expiry — "it arrives with the Dreamer RUNTIME, shipping false" — and this is
+    that arrival.
+
+    Asserted BOTH ways on purpose: the CODE default (what a config.toml written
+    before this field existed gets) and the SHIPPED value in the template (what
+    someone copying it gets). Either one being true alone would leave the other
+    free to turn a background loop on by accident."""
+    assert DreamerConfig().enabled is False
+    assert load(toml_path).dreamer.enabled is False
+
+
+def test_an_empty_dreamer_model_falls_back_to_the_language_model(toml_path):
+    """`model = ""` is the shipped value and means "today's tier".
+
+    That is what makes the runtime's arrival a no-op at runtime rather than a
+    silent model change: plan gate D2 (which model the Dreamer runs) is OPEN and
+    answered by measurement, so nothing here may pick one. Resolved through
+    `Config.dreamer_model()` and nowhere else — the `describer_for` shape."""
+    cfg = load(toml_path)
+    assert cfg.dreamer.model == ""
+    assert cfg.dreamer_model() == cfg.language.model
+
+
+def test_an_explicit_dreamer_model_overrides_the_language_model(toml_path):
+    """Otherwise the fallback would pin the knob open and D2's answer, when it
+    arrives, would be a no-op — the same failure
+    `test_an_explicit_image_model_wins_over_the_legacy_alias` guards for
+    `[media]`'s own alias."""
+    toml_path.write_text(toml_path.read_text().replace(
+        '[dreamer]\n', '[dreamer]\nmodel = "measured/dreamer-tier"\n'
+    ).replace('\nmodel = ""\n', "\n"))
+    cfg = load(toml_path)
+    assert cfg.language.model == "ollamacloud/deepseek-v4-flash"
+    assert cfg.dreamer_model() == "measured/dreamer-tier"
+
+
+def test_an_adaptor_with_no_budget_block_gets_the_default_budget(toml_path):
+    """Never a `KeyError` at tick time, and never an unbounded run.
+
+    An adaptor added later — or renamed, or misspelled in the TOML — must still
+    be bounded. The failure this replaces has no metric of its own: a `KeyError`
+    inside `_dream_once` is caught per scope, counted, and backed off, so it
+    would look exactly like a provider outage."""
+    cfg = load(toml_path)
+    assert "room_portrait" not in cfg.dreamer.budgets
+    budget = cfg.dreamer.budget_for("room_portrait")
+    assert budget == DreamBudgetConfig()
+    assert (budget.turns, budget.total_tokens, budget.output_tokens) == (6, 40_000, 4_000)
+    assert budget.timeout_seconds == 120.0
+
+
+def test_a_partial_budget_block_fills_the_rest_from_the_default(toml_path):
+    """A block naming one field must not zero the other three.
+
+    `output_tokens = 0` is not "no limit", it is a subsystem that silently never
+    produces anything — and `total_tokens = 0` is a run that ends before it
+    starts. Both would be a Dreamer that appears to be on, ticks, and writes
+    nothing, with no error anywhere."""
+    toml_path.write_text(
+        toml_path.read_text() + '\n[dreamer.budgets.room_portrait]\nturns = 3\n')
+    budget = load(toml_path).dreamer.budget_for("room_portrait")
+    assert budget.turns == 3
+    # Against the class defaults *and* against the literals: comparing only to
+    # `DreamBudgetConfig()` would stay green if those defaults were themselves
+    # zeroed, which is precisely the failure being guarded.
+    assert budget.total_tokens == DreamBudgetConfig().total_tokens == 40_000
+    assert budget.output_tokens == DreamBudgetConfig().output_tokens == 4_000
+    assert budget.timeout_seconds == DreamBudgetConfig().timeout_seconds == 120.0
+
+
+def test_the_declared_budgets_parse_into_bounded_budgets(toml_path):
+    """The template's own blocks, read back through the typed model.
+
+    "It loaded" is not the same as "it loaded what we think": a
+    `[dreamer.budgets.x]` block with a typo'd table name would parse as TOML,
+    refuse under `extra="forbid"`... but a block that parses into an EMPTY map
+    would not, and the section would silently be doing nothing."""
+    budgets = load(toml_path).dreamer.budgets
+    assert set(budgets) == {"room_language", "room_exchange"}
+    for name, budget in budgets.items():
+        assert budget.turns > 0, name
+        assert budget.total_tokens > 0, name
+        assert budget.output_tokens > 0, name
+        assert budget.timeout_seconds > 0, name
+
+
+def test_a_zero_budget_field_is_a_startup_failure(toml_path):
+    """`ge=1`/`gt=0` on every field, for `LimitsConfig`'s own reason: a cap that
+    can be zeroed is a cap an operator can turn into a silent outage by hand,
+    and this section's whole job is to be edited by hand."""
+    toml_path.write_text(toml_path.read_text().replace(
+        '[dreamer.budgets.room_language]\nturns = 6',
+        '[dreamer.budgets.room_language]\nturns = 0'))
+    with pytest.raises(ConfigError, match="turns"):
+        load(toml_path)
+
+
+def test_an_unknown_budget_key_is_a_startup_failure(toml_path):
+    toml_path.write_text(toml_path.read_text().replace(
+        '[dreamer.budgets.room_language]\nturns = 6',
+        '[dreamer.budgets.room_language]\nturn = 6'))
+    with pytest.raises(ConfigError, match="turn"):
         load(toml_path)
