@@ -6,7 +6,7 @@ tags: [nora, roadmap, fact-tier, note-tier, dreamer, standing, ownership]
 timestamp: '2026-08-22'
 edges:
   - {dst: 00-overview, rel: realizes, provenance: asserted}
-  - {dst: 13-open-items, rel: relates_to, provenance: asserted}
+  - {dst: 16-open-items, rel: relates_to, provenance: asserted}
 ---
 
 # Roadmap — Every Tier, One Picture
@@ -21,7 +21,7 @@ snapshot of one moment, and each is now partly false.
 That is not a documentation problem, it is the same defect this bundle is
 about: **a spec owns a decision, a handoff restates it, and nothing detects the
 drift.** [04-designed-vs-shipped.md](04-designed-vs-shipped.md) §6 records four
-instances. The transfer docs are the fifth, at a larger grain.
+instances, the fourth of which is these transfer documents.
 
 It covers **five** tiers: fact, note, language, the Dreamer runtime, and
 Standing/debrief. This node is the durable version. It is a *reference* — the thing you read
@@ -29,7 +29,8 @@ before picking anything up — and it carries a staleness register (§7) rather
 than pretending to be permanently true.
 
 **Verification baseline.** Everything below was read back from the running
-system and the source on 2026-08-22, at master `c528912`. Where the corpus and
+system and the source on 2026-08-22. Row counts and watermarks drift; treat
+every number here as *as of that read*, and re-read rather than cite. Where the corpus and
 the system disagree, the system wins and §7 records the disagreement.
 
 ## 1. The state that invalidates most of the corpus
@@ -101,7 +102,7 @@ failing. Keep that distinction.
 | piece | state |
 |---|---|
 | **`NoteCurator`** (merge, retire, promote, coherence-rewrite) | **unblocked, unbuilt.** Its blocker landed. It waited by *decision*, not necessity: building it on the old one-shot port would have shipped sooner and then required rewriting onto the runtime |
-| **`NoteRevisitor`** (the revisit adaptor) | code-unblocked, **deploy-blocked** by the Dreamer flag |
+| **`NoteRevisitor`** (the revisit adaptor) | **spec-blocked**, and the flag is not what stands in its way. Its specced tool subset includes an **act verb**, so the startup check would refuse it — and that verb is the entire mechanism by which its own spec has a background pass reach a person. Removing it leaves that section with no implementation path |
 | **joining the shared sink contract suite** | unbuilt. The note store is not a sink at all yet — it implements neither sink verb |
 | **the debrief's fourth output** | moved to the Standing workstream (§6) |
 | **the re-derivation sweep** | deferred behind an evidence gate that *cannot be collected*, because the two metrics it names do not exist (§7, C-vi) |
@@ -114,7 +115,8 @@ corpus:
   debrief's fourth output, which moved.
 - **1b** — the curator, plus the contract-suite join. **Unblocked, unbuilt.**
   One item in its scope was built by the other side instead.
-- **2** — the revisitor. Code-unblocked, deploy-blocked.
+- **2** — the revisitor. **Spec-blocked** (see the table above), then
+  deploy-blocked behind the flag.
 
 ## 4. Language tier — the only one actually producing, and it cannot correct itself
 
@@ -137,8 +139,8 @@ rows. Zero portrait rows. Details and the mechanism for each in
 
 | kind | what | where |
 |---|---|---|
-| **it has no loop** | one-shot completions, no tools, and it never receives the doctrine at all — the very instruction that would have prevented its wrong gloss reaches the extractor that has no sources instead | [03](03-no-agent-loop.md), [11](11-doctrine.md) §5 |
-| **it cannot correct itself, by design** | a better gloss is a *new row*; the compound key was a deliberate fix for a worse bug; the only removal mechanism is decay, which fires on absence and cannot tell a wrong gloss from a right one | [09](09-self-correction.md) §1 |
+| **it has no loop** | one-shot completions, no tools, and it never receives the doctrine at all — the very instruction that would have prevented its wrong gloss reaches the extractor that has no sources instead | [03](03-no-agent-loop.md), [13](13-doctrine.md) §5 |
+| **it cannot correct itself, by design** | a better gloss is a *new row*; the compound key was a deliberate fix for a worse bug; the only removal mechanism is decay, which fires on absence and cannot tell a wrong gloss from a right one | [12](12-self-correction.md) §1 |
 | **it cannot be observed** | no trace, nothing logged on success, no cycle counter — "ran and found nothing" is indistinguishable from "never ran" for the entire tier | [02](02-instrument-blindness.md) Layer 2 |
 
 **Two things it is owed that are not corrections but repairs:** the known-entity
@@ -170,9 +172,9 @@ existed.
 **Specced and unbuilt:** **Phase 3** — migrating room-language and
 room-exchange onto the runtime, with the three-way re-partition of their
 objective text. This is also the change that **deletes the byte-identity
-fixtures**, which is why editing three of the six objective bodies is currently
+fixtures**, which is why editing three of the five objective bodies is currently
 a substrate bug by the rule's own terms
-([12-migration-and-governance.md](12-migration-and-governance.md) §1). It is also
+([14-migration-and-governance.md](14-migration-and-governance.md) §1). It is also
 what the language tier's corrections depend on (§4).
 
 **Structure — Phases 1/2/3.** Phase 1 (substrate) done. Phase 2 (runtime) done.
@@ -189,9 +191,11 @@ completes, and none ever has.
 **On master: nothing.** No Standing type, no debrief, no trace table.
 
 **On branch `standing-debrief` (unmerged): Phase 1, complete.** Thirteen
-commits, a full gate-green run, migration `0028_tag_trace` whose parent is
-master's current head — **no collision**, and it is the only unmerged migration
-in the repo.
+commits, a self-attested gate-green run (recorded against a head the branch has
+since moved past), and migration `0028_tag_trace` whose parent is the current
+**migration** head — **no collision**, and it is the only unmerged migration in
+the repo. Note the invariant is the migration head, not the git head: a git
+commit landing changes nothing about whether two revisions share a parent.
 
 Phase 1 is the *recording* layer only: every completed tag turn — success,
 silence, veto, timeout alike — has its real reasoning captured, sanitized and
@@ -213,7 +217,7 @@ ships, or early folds are unrecoverable.**
 matters most here: *the fold must read the current Standing before writing a
 new one, or it reproduces the language tier's exact failure* — two contradictory
 positions coexisting, neither able to correct the other
-([09-self-correction.md](09-self-correction.md) §3). The re-derivation
+([12-self-correction.md](12-self-correction.md) §3). The re-derivation
 signature does not yet take the prior state and must gain it **before**
 implementation, not during.
 
@@ -276,7 +280,7 @@ tier's four parts; the Dreamer runtime; Standing (now — see C-iii).
 3. **A corpus defect in the eval suite**, explicitly declared independent of the
    tier that found it and to be fixed "where it lives". Partially closed.
 4. **Three governance defects**, which this bundle assigns only to "in passing"
-   ([12-migration-and-governance.md](12-migration-and-governance.md) §3).
+   ([14-migration-and-governance.md](14-migration-and-governance.md) §3).
 
 ## 9. Dependency ordering
 
@@ -304,7 +308,7 @@ entity resolution  (UNBUILT, UNOWNED)
    → fact tier self-contradiction
    → note anchoring and its junction table
    → language tier de-fragmentation
-   → the usefulness of every search tool in 06-tool-surface
+   → the usefulness of every search tool in 08-state
 
 gateway ceiling probe  (NOT RUN)
    → all budget sizing                        (13-open-items §1)
@@ -316,7 +320,7 @@ global concurrency bound  (NOT CHOSEN)
    → the Phase 3 migration landing            (12 §1)
 
 Phase 3 fixture deletion
-   → editing three of six objective bodies    (11, 12 §1)
+   → editing three of five objective bodies    (11, 12 §1)
 ```
 
 **The shortest path to the Dreamer producing anything:** the gateway probe →
@@ -327,7 +331,9 @@ downstream of, or parallel to, that.
 ## Status / Checkpoint
 
 2026-08-22 — consolidated from six investigations plus a direct handoff from the
-session that owns Standing. Supersedes the three transfer documents in
-substance; they are **not** yet marked superseded in-file, which is a deliberate
-omission pending an operator decision, and is itself an instance of the drift
-this node exists to stop.
+session that owns Standing, then corrected against four adversarial reviews.
+The three transfer documents and the note-tier handoff now each carry an in-file
+superseded banner pointing here.
+
+**Read every number here as of that date, not as current.** This node is a
+register of what drifts; it drifts too.

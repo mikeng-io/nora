@@ -83,9 +83,10 @@ resolving it by explaining itself writes prose.
 - **Expected output size is stated nowhere**, in any file. The extraction ask
   scales linearly with batch size — *"write each one down"* over up to four
   hundred messages — against a fixed output budget.
-- **The item cap is never communicated.** Over-production is truncated to the
-  first N, **and the watermark still advances**, so a large batch silently
-  loses everything past the cap.
+- **The item cap is never communicated to the model.** Over-production is
+  truncated to the first N — logged and counted, so the runtime is not silent —
+  but **the watermark still advances**, so a large batch loses everything past
+  the cap and the model is never told the cap exists.
 - **"You have no tools" is never said**, while the doctrine repeatedly says
   *"you went and looked."*
 - **The output contract is not actually last.** A recent fix moved it to the
@@ -127,11 +128,11 @@ Which produces the sharpest statement of the whole mismatch:
 - Re-examine what "last" means once the contract lives in a system prompt and
   the batch is a user message.
 
-**Sequencing constraint.** Three of the six objective bodies are pinned
+**Sequencing constraint.** Three of the five objective bodies are pinned
 byte-for-byte to fixtures, deliberately, so that the lift could be proven
 separable from any content change. Editing them before the migration is a
 substrate bug **by the rule's own terms** — and the migration is exactly when
 those fixtures are deleted. See
-[12-migration-and-governance.md](12-migration-and-governance.md).
+[14-migration-and-governance.md](14-migration-and-governance.md).
 
 The two fact objectives are **not** fixture-pinned and can move first.

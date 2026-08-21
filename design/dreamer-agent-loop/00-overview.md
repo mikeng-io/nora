@@ -1,145 +1,158 @@
 ---
 type: design
 title: "The Dreamer Agent Loop — Revision Overview"
-description: "The Dreamer was designed as a research agent and built as a pipeline. Entry point for the revision layer: what is live, what was designed and never shipped, and the decisions that close the gap."
+description: "The Dreamer was designed as a research agent and built as a pipeline. Five seams — transport, trigger, loop, state, measurement — each collapsed into something else. Entry point for the revision layer."
 tags: [nora, dreamer, agent, tools, revision, architecture]
 timestamp: '2026-08-22'
 supersedes: >
   Framing in docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md §1
   (stale measurements), 2026-08-20-fact-tier-design.md §4.2 (no fact-read tool)
-  and §5 (Phase A tool-less), and 2026-08-20-dreamer-prompt-substrate-design.md
-  §2 (one doctrine for every adaptor). Defers the rest.
+  and §5's Phase-A-is-tool-less clause ONLY — that section's deterministic
+  filter and recurrence argument are relied on, not superseded — and
+  2026-08-20-dreamer-prompt-substrate-design.md §2.1 (one doctrine, shared by
+  every adaptor). Defers the rest.
 status: proposed
 edges:
   - {dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
   - {dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
   - {dst: 04-designed-vs-shipped, rel: motivated_by, provenance: asserted}
-  - {dst: 05-input-or-tool, rel: decides_on, provenance: asserted}
 ---
 
 # The Dreamer Agent Loop — Revision Overview
 
-> This is the entry point for the 2026-08-22 revision layer. It does **not**
-> rewrite the three 2026-08-20 specs in place. It supersedes their framing
-> where they conflict with what shipped or with what is now known, and defers
-> the rest. Read this, then `01`–`04` for the evidence, then the detail nodes.
+> Entry point for the 2026-08-22 revision layer. It does **not** rewrite the
+> three 2026-08-20 specs in place; it supersedes their framing where it
+> conflicts with what shipped or what is now known, and defers the rest.
 
-## 1. The diagnosis, in one line
+## 1. The diagnosis
 
 **The Dreamer was designed as a research agent and built as a pipeline.**
 
-The keystone spec's own framing — *"Proving a fact is not a one-shot task — it
-is search, read, notice the source does not cover the question, search
-differently, cross-check. That is a tool loop with judgement in it"* — describes
-a thing that does not exist in production. Four of the five Dreamer
-participants make a single completion call with no tools. The fifth has a loop
+Four of the five participants hold no tools at all — three make a single
+completion call, and the fourth makes none by design. The fifth has a real loop
 and can only look **outward**, at the open web; it cannot consult the room, the
 transcript, Nora's memory, the notes, or its own prior conclusions.
 
-Every one of the operator's originally-named tools — *the previous calls, the
-image, the previous transcript, the user profile* — is absent from every
-shipped adaptor.
+Every tool the operator originally named — *the previous calls, the image, the
+previous transcript, the user profile* — is absent from every shipped adaptor,
+and **no decision removed them** ([04](04-designed-vs-shipped.md)).
 
-## 2. The evidence, in one line
+## 2. The evidence
 
-**963 messages processed. Two rows written. Both wrong.**
+**963 messages processed. Two rows written. Both wrong.** That is the entire
+lifetime output of every tier. The two rows are contradictory glosses of one
+phrase, both live, rendered side by side into Nora's prompt with no marker that
+they disagree. Full accounting in [01-live-state.md](01-live-state.md).
 
-That is the Dreamer's entire lifetime output across every tier. The two rows
-are contradictory glosses of the same phrase, both `live`, rendered side by
-side into Nora's prompt with the wrong one first. Full accounting in
-[01-live-state.md](01-live-state.md).
+## 3. The architecture — five seams, each collapsed into something else
 
-## 3. What makes this a bundle and not a bug list
+This is what makes it a design rather than a bug list. Every finding from six
+investigations and four adversarial reviews lands in exactly one row.
 
-Six independent investigations found the same shape at six different layers,
-and it is not "the tools were forgotten". Three findings organise the rest:
+| seam | should be | is today | node |
+|---|---|---|---|
+| **Transport** | the Dreamer's own, sized and measured for research | the tag tier's, inherited wholesale | [05](05-transport.md) |
+| **Trigger** | each adaptor declares when it wants to run | a side-effect of rendering a prompt | [06](06-trigger.md) |
+| **Loop** | what one turn is — tools, termination, partial progress | absent for four of five participants | [07](07-loop.md) |
+| **State** | knowable-before is an input; discovered-during is a tool | everything pre-rendered by Python | [08](08-state.md) |
+| **Measurement** | every seam ships its instrument | six blind layers | [09](09-measurement.md) |
 
-1. **Nobody decided any of it.** The tool set narrowed from eleven to four
-   through the composition of three documents and one mechanism that did not
-   know about each other. There is no recorded decision to remove them. See
-   [04-designed-vs-shipped.md](04-designed-vs-shipped.md).
-2. **Every layer has an instrument that cannot measure the thing it exists to
-   measure.** Five of them, independently. This repo's own rule — *"Never read
-   an instrument's output as evidence without first checking it can measure the
-   thing"* — is violated throughout the subsystem that most needs it, because
-   nobody is waiting on a background loop. See
-   [02-instrument-blindness.md](02-instrument-blindness.md).
-3. **The safety argument for the missing half is unsound, and the missing half
-   is not one change.** Giving a *scope*-keyed adaptor room tools is a small,
-   already-sanctioned wiring change. Giving a *workspace*-keyed adaptor the
-   same thing is blocked by a real, unclosed gap in R-49. See
-   [07-room-access.md](07-room-access.md) and
-   [08-disclosure.md](08-disclosure.md).
+Two properties of that table are the argument:
 
-## 4. Decision trail
+**They are not independent.** A trigger that cannot be evaluated cheaply forces
+the runtime to render before deciding, which is why concurrency cannot be
+bounded. A transport sized for chat makes every loop budget meaningless. Fixing
+one without the others produces a subsystem that fails differently.
 
-Proposed, not yet ratified. Each is argued in the node named.
+**Three of the five were never decided — they were inherited.** Transport from
+the tag path, trigger from a watermark-driven consolidator that predates the
+runtime, measurement from nowhere at all. Only State was reasoned about, and it
+was reasoned about narrowly ([08](08-state.md) §2).
 
-| # | Decision | Supersedes | Rationale (short) | Node |
-|---|---|---|---|---|
-| D1 | The loop is the deliverable, not the runtime. An adaptor with no tools is a completion, and the runtime's stopping condition is satisfied on pass one. | keystone §1's "measured against HEAD" table | The machinery exists and guards a loop that never runs | [03](03-no-agent-loop.md) |
-| D2 | **Knowable-before-the-call is an input; discovered-during-reasoning must be a tool.** | fact-tier §4.2's blanket "no fact-read tool" | §4.2 is a correct rule applied to a case it does not fit; the rule generalises, the refusal does not | [05](05-input-or-tool.md) |
-| D3 | A tier contributes its own read tools through `ToolRegistry`, as the note tier already does. No bespoke per-tier mechanism. | (new) | The seam exists, is proven in-tree, and serves the tag path and the Dreamer from one instance | [06](06-tool-surface.md) |
-| D4 | Room access splits by `key_kind`. Scope-keyed proceeds; workspace-keyed is **blocked** pending an answer to R-49's second condition. | the implicit assumption that these are one change | One is wiring; the other is an unclosed disclosure question | [07](07-room-access.md) |
-| D5 | Reading is **not** made safe by the egress screen. A room read changes the *content class* of what the fact tier persists. | this bundle's own earlier draft; DEC-133(2)'s cost note | The screen is four regexes; the leak moves to the write | [08](08-disclosure.md) |
-| D6 | Self-correction is per tier, and the language tier's absence of it is a **designed cost** to be reopened deliberately — not a bug to patch. | (clarifies room-language §6 and §12) | The compound PK is a fix for an earlier bug; reversing it needs its own argument | [09](09-self-correction.md) |
-| D7 | Every fix ships its own measurement. A change whose effect cannot be read back is not done. | (new; makes CLAUDE.md's rule structural here) | Five blind layers is one missing discipline, not five bugs | [02](02-instrument-blindness.md) |
-| D8 | Budgets get an R-24 analog, and the per-call ceiling is verified against the gateway before anything is sized. | `[dreamer.budgets.*]` as shipped | Four of five budgets run at the bare minimum R-24 tolerates; the observed ceiling does not match the configured one | [10](10-orchestration.md) |
-| D9 | Doctrine becomes shape-aware. `applies_to` stops being decorative. | substrate §2's one-doctrine-for-all | A research preamble on a tool-less extractor has no reachable stopping condition | [11](11-doctrine.md) |
-| D10 | Phase 3 is how the DEC-128 fixture freeze legitimately unfreezes. | (sequencing, not a reversal) | The pre-move fixtures are deleted *by* the migration; editing them before it is a substrate bug | [12](12-migration-and-governance.md) |
+## 4. Why now
 
-## 5. Detail nodes
+The runtime landed roughly one day before this was written. There is no legacy
+to protect, and two more tiers are queued to migrate onto it — each of which
+would inherit the same transport, the same trigger, and the same silence.
 
-| Node | Covers |
-|---|---|
-| [01-live-state.md](01-live-state.md) | What is actually true right now: output, watermarks, the failure reconstruction, why each table is empty |
-| [02-instrument-blindness.md](02-instrument-blindness.md) | The five layers whose instruments cannot measure their subject |
-| [03-no-agent-loop.md](03-no-agent-loop.md) | `tools=[]`, one-pass termination, the outward-only loop |
-| [04-designed-vs-shipped.md](04-designed-vs-shipped.md) | The eleven-to-four narrowing nobody decided; the three-document collision |
-| [05-input-or-tool.md](05-input-or-tool.md) | The rule that replaces fact-tier §4.2 |
-| [06-tool-surface.md](06-tool-surface.md) | What each adaptor holds, and the tier-contributes-read-tools seam |
-| [07-room-access.md](07-room-access.md) | Path A vs Path B; the empty-`Room` guard |
-| [08-disclosure.md](08-disclosure.md) | R-49's missing second condition; the act verb hiding as a read |
-| [09-self-correction.md](09-self-correction.md) | Supersession per tier, and why language has none |
-| [10-orchestration.md](10-orchestration.md) | Backoff, timeouts, concurrency, budget arithmetic |
-| [11-doctrine.md](11-doctrine.md) | The doctrine/objective seam and shape-awareness |
-| [12-migration-and-governance.md](12-migration-and-governance.md) | Phase 3, DEC/R numbers, tests to replace, landmines |
-| [13-open-items.md](13-open-items.md) | Unresolved, starting with the gateway probe |
-| [14-roadmap.md](14-roadmap.md) | All four workstreams consolidated: built, inert, unmerged, unbuilt, owned, orphaned |
+The cost of separating the seams now is a config section, a port method, and a
+node that says what a turn is. The cost of not doing it is that the error
+propagates to every adaptor built afterwards and becomes indistinguishable from
+intent — which is precisely what already happened to the tool subsets.
 
-## 6. Grounding
+## 5. Decisions
 
-Everything in `01`–`04` was read back from the running system or from the
-source, not recalled. Provenance is cited per claim inside each node.
+Proposed, not ratified. Each is argued in the node named. Findings are marked as
+such rather than dressed as decisions.
 
-- **Live container** `nora`, image built `2026-08-21T13:24:55Z`; the failure
-  window ran under a previous container from the same image.
-- **Live database** `nora-db-1` — watermarks, tier tables, message counts.
-- **`/app/data/nora.log`** — 88,678 lines, `2026-08-01` → `2026-08-21T17:38`.
-  Note `docker logs nora` is always empty; the file inside the container is the
-  only log.
-- **Langfuse trace** `b782c5afba571f7ec47cf706eb6ebe18` — the single-generation
-  runaway, contributed by a peer session.
-- **The design corpus** — twelve specs under `docs/superpowers/specs/`, read in
-  full rather than summarised.
+| # | | Statement | Node |
+|---|---|---|---|
+| F1 | *finding* | An adaptor with no tools is a completion, not an agent; the stopping condition is satisfied on pass one | [03](03-no-agent-loop.md) |
+| F2 | *finding* | The narrowing from eleven tools to four was decided by nobody — it is three documents and one mechanism that never met | [04](04-designed-vs-shipped.md) |
+| F3 | *refutation* | Reading is **not** made safe by the egress screen; a room read changes the content class the tier persists | [11](11-disclosure.md) |
+| **D1** | decision | The Dreamer gets its **own transport**, complete rather than a partial override, and verified against the wire rather than assumed | [05](05-transport.md) |
+| **D2** | decision | An adaptor **declares its trigger**, evaluated before any input is rendered. "Did not fire" is a third outcome | [06](06-trigger.md) |
+| **D3** | decision | **Knowable-before-the-call is an input; discovered-during-reasoning must be a tool** | [08](08-state.md) §1 |
+| **D4** | decision | A tier contributes read access through the existing registry seam — not a bespoke mechanism | [08](08-state.md) §10 |
+| **D5** | decision | Phase A **gains tools**, and must **not** deduplicate against existing candidates — that would destroy the recurrence signal the filter ranks on | [08](08-state.md) §9 |
+| **D6** | decision | Room access splits by key kind: scope-keyed proceeds; workspace-keyed is **blocked**, and the cheaper answer is a bounded input | [10](10-room-access.md) |
+| **D7** | decision | **Every seam ships its instrument**, this bundle's own change first — with a stated acceptance reading and a rollback condition | [09](09-measurement.md) |
+| **D8** | decision | Doctrine becomes shape-aware; the audience field stops being decorative | [13](13-doctrine.md) |
+| **D9** | deferral | The language tier's absence of supersession is a **designed cost**; reversing it needs its own argument | [12](12-self-correction.md) |
+| **D10** | sequencing | Phase 3 is how the objective-text freeze legitimately lifts | [14](14-migration-and-governance.md) |
 
-## 7. What this bundle does not decide
+**D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
+the second half is the load-bearing part: an extractor that suppresses claims it
+has seen before destroys the signal that decides what is worth researching.
 
-- **The fact tier's store.** Owned elsewhere; unchanged here.
-- **Standing / the debrief.** Tag-path work, owned by another session. Its
-  roadmap is consolidated here ([14](14-roadmap.md) §5) with that session's
-  agreement; this bundle records it, it does not own it.
-- **Entity resolution.** Named as a dependency in
-  [09-self-correction.md](09-self-correction.md); its mechanism stays open.
-- **Whether the Dreamer's model changes.** The keystone's falsifiability
-  obligation is still unmet and is recorded in
-  [13-open-items.md](13-open-items.md), not answered here.
+## 6. Reading order
+
+**Evidence** — [01](01-live-state.md) what is true now · [02](02-instrument-blindness.md) why it stayed invisible · [03](03-no-agent-loop.md) the mechanism · [04](04-designed-vs-shipped.md) how it got this way
+
+**The seams** — [05](05-transport.md) · [06](06-trigger.md) · [07](07-loop.md) · [08](08-state.md) · [09](09-measurement.md)
+
+**Constraints on them** — [10](10-room-access.md) what may be reached · [11](11-disclosure.md) what must be true first · [12](12-self-correction.md) correcting yourself · [13](13-doctrine.md) what the model is told
+
+**Execution** — [14](14-migration-and-governance.md) sequencing, numbers, tests · [15](15-roadmap.md) every tier's state and owner · [16](16-open-items.md) what is unresolved
+
+## 7. The critical path
+
+1. **Measure the transport** ([16](16-open-items.md) §0 and §1, one run). Does it
+   sustain tool calls and carry reasoning between turns; which ceiling actually
+   binds. **Everything else is downstream of this** — and if the answer is no,
+   the loop's shape changes rather than its numbers.
+2. **Give the Dreamer its own transport** ([05](05-transport.md)) sized against
+   that reading.
+3. **Declare triggers** ([06](06-trigger.md)), which is what makes a concurrency
+   bound expressible at all.
+4. **Wire the tier read tools** ([08](08-state.md)) and the scope-keyed room
+   access ([10](10-room-access.md)).
+5. **Turn it on for one scope**, with the acceptance reading from
+   [09](09-measurement.md) §4 and the rollback condition from §5 in place before
+   the flag flips, not after.
+
+## 8. What this bundle does not decide
+
+- **The fact tier's store** — owned elsewhere, unchanged here.
+- **Standing / the debrief** — owned by another session; its roadmap is
+  consolidated in [15](15-roadmap.md) §6 with that session's agreement. This
+  bundle records it, it does not own it.
+- **Entity resolution** — a shared dependency of three tiers, owned by nobody.
+  Named in [12](12-self-correction.md) §4; its mechanism stays open.
+- **Which model the Dreamer runs** — closed by operator decision, carrying a
+  falsifiability commitment never discharged because no loop has ever completed
+  ([16](16-open-items.md) §9).
 
 ## Status / Checkpoint
 
-2026-08-22 — bundle drafted from six parallel investigations. No code. No
-`design/09-decision-index.md` entry yet: DEC-135 and R-57 are reserved but
-unclaimed until merge (see [12](12-migration-and-governance.md)).
-`[dreamer] enabled = false` on master since `2026-08-21T17:02Z`, container
-recreated and read back — the loop reports `0 adaptor(s)`. Nothing is running.
+2026-08-22 — restructured around the five seams after four adversarial reviews
+(fact-check, coherence, design-quality, completeness) found ~8 refuted claims,
+~15 overstated, 5 internal contradictions and 9 propagated concepts. The
+forensic nodes 01–04 were independently reproduced and survive; the design half
+was rewritten rather than patched.
+
+Merged with **no** `design/09-decision-index.md` entry: DEC-135 and R-57 remain
+reserved and unclaimed, and R-57's text is still undrafted — see
+[14](14-migration-and-governance.md) §2. `[dreamer] enabled = false`; the loop
+reports `0 adaptor(s)`.

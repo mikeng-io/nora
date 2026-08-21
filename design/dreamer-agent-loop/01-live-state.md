@@ -48,7 +48,7 @@ Four things compound in these two rows:
 
 1. **They are two rows, not one corrected row.** The primary key includes
    `sense`, so a better gloss is a *new row*, never a correction. This is
-   deliberate — see [09-self-correction.md](09-self-correction.md).
+   deliberate — see [12-self-correction.md](12-self-correction.md).
 2. **`canonical_form` is case-sensitive and model-authored.** `Big Walk` and
    `big walk` are different keys.
 3. **The two observations swapped `surface_form` and `canonical_form`** in
@@ -58,9 +58,11 @@ Four things compound in these two rows:
    observation for that key, they will carry NULL indefinitely.
 
 **What Nora actually sees.** Both are `live`, both carry a quotable example,
-and two is under the render cap — so **both render, wrong one first** (it
-scores marginally higher), with no marker of contradiction, no confidence and
-no score shown. The render rule that is supposed to protect against this —
+and two is under the render cap — so **both render**, ordered by score, with no
+marker of contradiction, no confidence and no score shown. The higher-scoring
+row is the *later* one, which is also the *less* wrong one — it at least knows
+the group plays the thing. So the ordering is not perverse; it is simply
+indifferent, and presents two incompatible definitions with equal authority. The render rule that is supposed to protect against this —
 *"the verbatim quote is the only thing that makes a wrong gloss visible"* — is
 satisfied in letter and defeated in fact: 「big walk」 appears in both quoted
 messages, so the quote falsifies neither gloss. The quote under the English
@@ -81,7 +83,7 @@ The `fact-candidates` row still carries its **seeding** timestamp. The advance
 path writes `updated_at` on both of its arms, so this proves the adaptor never
 once reached the advance, on any scope, in five hours and roughly sixty ticks.
 
-The lag was 125 rows and growing while `language` on the same scope kept pace.
+The lag was 119 non-Nora rows and growing while `language` on the same scope kept pace.
 Failure holds the watermark — correct, fail-closed, and exactly what makes it a
 ratchet: the batch that failed is re-read next tick, larger.
 
@@ -117,7 +119,7 @@ reached 24 h). Compressed:
 
 The backoff engaged four times and was **destroyed three times by a single
 incoming chat message**. Mechanism and consequences in
-[10-orchestration.md](10-orchestration.md).
+[06-trigger.md](06-trigger.md).
 
 A Langfuse trace of one run carries exactly three observations — an AGENT, one
 event-loop-cycle span, and **one GENERATION** at input 3,201 / output 4,096
@@ -128,8 +130,12 @@ failing to terminate.
 
 **`fact_candidate` / `fact`** — the extractor has never completed a run. §4.
 
-**`exchange_observation` / `room_exchange`** — the observer **is** wired, **is**
-running, and parses fine. It returns `{"patterns": []}`. No flag, no wiring
+**`exchange_observation` / `room_exchange`** — the observer **is** wired and
+**is** running, and nothing suggests a parse failure. That it returns an empty
+list is an **inference**, not a read-back — and it has to be, because this tier
+emits no trace and logs nothing on success ([02](02-instrument-blindness.md)
+Layer 2). The inference rests on a zero parse-failure counter, no dropped
+candidates, and an advancing watermark. No flag, no wiring
 gap, no code defect. The fire condition hands it roughly thirty-minute
 conversational slices while its objective asks for *"a RECURRING EXCHANGE
 PATTERN … a kind of interaction they trade back and forth"* and explicitly
@@ -144,7 +150,10 @@ satisfy it either, so the portrait fires strictly *less* often than the
 language tier writes rows — the opposite of the keystone's framing of it as a
 low-bar, watermark-free participant.
 
-**`note`** — the note tier is live and inert by design; no tools are wired.
+**`note`** — the note tier is live and its four tools are wired to the tag
+path. It has produced nothing because there have been no tags since the last
+restart, so it is *untested* rather than failing. What is unwired is any
+**Dreamer adaptor** holding those tools.
 
 ## 6. Two rows in 963 messages is also a finding
 
@@ -168,4 +177,4 @@ The keystone's §1 "measured against HEAD" table has drifted:
 
 The prompt-substrate lift already happened. What remains true, and is the real
 defect, is that the two observers **bypass the runtime entirely** and therefore
-never receive the doctrine at all — see [11-doctrine.md](11-doctrine.md).
+never receive the doctrine at all — see [13-doctrine.md](13-doctrine.md).

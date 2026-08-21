@@ -6,7 +6,7 @@ tags: [nora, dreamer, supersession, lexeme, facts, entity-resolution]
 timestamp: '2026-08-22'
 edges:
   - {dst: 00-overview, rel: realizes, provenance: asserted}
-  - {dst: 06-tool-surface, rel: depends_on, provenance: asserted}
+  - {dst: 08-state, rel: depends_on, provenance: asserted}
   - {dst: 01-live-state, rel: motivated_by, provenance: asserted}
 ---
 
@@ -60,7 +60,7 @@ correct the first gloss because it **could not see it**.
 
 Even with a supersession mechanism, an adaptor that cannot read its own prior
 output has nothing to supersede *against*. That is why
-[06-tool-surface.md](06-tool-surface.md) puts the own-tier read first for every
+[08-state.md](08-state.md) puts the own-tier read first for every
 adaptor with a store: it is the precondition, and the schema question is
 downstream of it.
 
@@ -83,7 +83,7 @@ The alias mechanism exists in the schema; nothing populates it. Which means:
 - **A search tool over either store is weak until resolution lands.** A search
   that mostly misses teaches the model that searching is useless, which is
   worse than no tool. This is a real constraint on
-  [06-tool-surface.md](06-tool-surface.md) and should temper expectations of
+  [08-state.md](08-state.md) and should temper expectations of
   the first version.
 - **The live language rows already demonstrate it** — two forms differing only
   in capitalisation, with the surface and canonical fields swapped between the
@@ -91,7 +91,7 @@ The alias mechanism exists in the schema; nothing populates it. Which means:
 
 The mechanism stays open here. What this bundle records is that it is a
 **shared** dependency of both tiers, not a fact-tier detail, and that the
-tool-surface work should not be scoped as though resolution were already
+state-surface work should not be scoped as though resolution were already
 solved.
 
 ## 5. Provenance points at the machine, not the belief
@@ -116,8 +116,17 @@ unthreaded fragments — and the exclusion rule in its own objective ("nothing
 about a person in this room") is structurally uncheckable from the input it
 receives.
 
-Notably the **language** tier's prompt already includes the speaker. The fact
-tier regressed from an existing in-repo pattern.
+**And the omission is deliberate, not an oversight.** The extractor's own code
+argues it: naming the speakers *"is how a batch of ordinary chat starts looking
+like a batch of claims about the people in it"* — i.e. it is a defence of the
+very exclusion rule this section says becomes uncheckable. The language tier
+does include the speaker, and reaches the opposite conclusion for the same
+reason.
+
+So this is a genuine tension between two defensible positions, not a regression:
+naming the speaker makes the person-exclusion rule checkable *and* makes
+person-claims more tempting. That tension is the thing to resolve; neither side
+of it is an accident.
 
 **This bundle does not redesign the fact shape.** It records that the
 assertion — who, when, in reply to what — is currently discarded at the one

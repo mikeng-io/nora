@@ -1,7 +1,7 @@
 ---
 type: analysis
 title: "There Is No Agent Loop"
-description: "Four of five Dreamer participants make a single completion call. The fifth has a real loop and can only look outward. The runtime's guards, ceilings and stopping condition all exist and guard a loop that never runs."
+description: "Four of five hold no tools; three make a single completion call and the fourth makes none. The fifth has a real loop and can only look outward. The runtime's guards, ceilings and stopping condition all exist and guard a loop that never runs."
 tags: [nora, dreamer, agent, loop, tools, diagnosis]
 timestamp: '2026-08-22'
 edges:
@@ -84,11 +84,11 @@ means by that vocabulary.
 |---|---|---|---|
 | `LexemeObserver` | no — legacy one-shot | none | no |
 | `ExchangePatternObserver` | no — legacy one-shot | none | no |
-| `RoomPortraitSynthesizer` | yes | none — deterministic **by design** | n/a, correct |
+| `RoomPortraitSynthesizer` | no — on the clock, not the runtime | none, and **no model call at all** | n/a, correct |
 | `FactCandidateAdaptor` | yes | none | no |
 | `FactAdaptor` | yes | web only | partial — outward only |
 
-Four of five have no loop. The portrait is the one legitimate case: its
+Four of five have no loop; the portrait is the one that should not. The portrait is the one legitimate case: its
 objective is executed in code and the keystone argues, correctly, that a third
 model call synthesising prose from already-vetted output would reintroduce the
 risk the tier removed. Making everything an agent is not the goal.
@@ -107,9 +107,9 @@ comprehend them would:
 - check whether it already tried and failed to settle it.
 
 Not one of those is possible today. The first three are room reads
-([07-room-access.md](07-room-access.md)); the last two are reads of the tier's
-own state ([05-input-or-tool.md](05-input-or-tool.md),
-[06-tool-surface.md](06-tool-surface.md)).
+([10-room-access.md](10-room-access.md)); the last two are reads of the tier's
+own state ([08-state.md](08-state.md),
+[08-state.md](08-state.md)).
 
 The output of such a loop over that batch is not sixty-five triples. It is two
 or three grounded, attributed claims and a decision that the rest was chatter.

@@ -6,7 +6,7 @@ tags: [nora, dreamer, disclosure, r-49, screening, security]
 timestamp: '2026-08-22'
 edges:
   - {dst: 00-overview, rel: realizes, provenance: asserted}
-  - {dst: 07-room-access, rel: depends_on, provenance: asserted}
+  - {dst: 10-room-access, rel: depends_on, provenance: asserted}
 ---
 
 # Disclosure — What Must Be True Before a Background Loop Reads a Room
@@ -22,8 +22,9 @@ it says so and blocks.
 This bundle asserted it in draft. It is unsound, and the refutation should be
 recorded so it is not re-derived.
 
-The screen walks every string in the model's envelope and tests **four
-identifier patterns and a coordinate pair**. That is its entire alphabet. It
+The screen walks every string in the model's envelope and tests **three
+identifier patterns and a coordinate pair** — four in total. That is its entire
+alphabet. It
 cannot see names, nicknames, quoted messages, memory conclusions, roster
 composition, membership counts, or relationship claims. It never sees tool
 arguments or tool results at all — only the model's final restatement of them.
@@ -86,7 +87,7 @@ nobody watching it.
 **Contract:** before any room-scoped read is granted to an adaptor whose sink
 is workspace-keyed, R-49's second condition must have a mechanism on the fact
 path. It does not today. This is why
-[07-room-access.md](07-room-access.md) blocks Path B.
+[10-room-access.md](10-room-access.md) blocks Path B.
 
 For a **scope**-keyed adaptor the question is narrower but not absent: the
 adaptor reads room A and writes to a workspace-keyed store, so the carry still
@@ -128,6 +129,36 @@ cannot be both. Under the Dreamer's key it would also corrupt the evidence it
 records — the array answers *"in how many different rooms was this asked"*, and
 a workspace name written in as a room makes one background loop look like an
 extra room.
+### 4.1 The same defect, larger, in a spec rather than a test
+
+The revisit adaptor's specced tool subset includes an **act verb** while
+labelling itself *"read verbs only"*. The startup check would refuse it, so the
+adaptor cannot be built as written — and that verb is the entire mechanism by
+which its own spec has a background pass reach a person, so removing it leaves
+that section with no implementation path.
+
+`note_search` is a tool misfiled as a read. This is a **design** misfiled as
+one, and it is the reason
+[15-roadmap.md](15-roadmap.md) §3 records that adaptor as spec-blocked rather
+than deploy-blocked.
+
+## 4.2 A precondition, recorded in a spec, unmet in production today
+
+The known-entity check calls the search provider **directly, one layer below**
+the tool-level egress screen. Its own spec says so, and says that deserves *"a
+second look before it is ever flipped true in the live config."*
+
+It is true in the live config. Nothing records the second look.
+
+So a model-authored string derived from room messages leaves the process to a
+third party, below the screen this node spends its length on — on the only
+Dreamer-adjacent component **currently running**. Today's exposure is nil: the
+values are two spellings of a game's name. The unmet gate is the finding, not
+the exposure.
+
+That spec is also the only one in the set with no frontmatter, and its own
+status line records *"no live human review of this specific doc before
+implementation."*
 
 ## 5. Trace egress
 

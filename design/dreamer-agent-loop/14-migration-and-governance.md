@@ -6,9 +6,9 @@ tags: [nora, dreamer, migration, governance, tests, decision-index]
 timestamp: '2026-08-22'
 edges:
   - {dst: 00-overview, rel: realizes, provenance: asserted}
-  - {dst: 06-tool-surface, rel: sequences, provenance: asserted}
-  - {dst: 07-room-access, rel: sequences, provenance: asserted}
-  - {dst: 11-doctrine, rel: sequences, provenance: asserted}
+  - {dst: 08-state, rel: sequences, provenance: asserted}
+  - {dst: 10-room-access, rel: sequences, provenance: asserted}
+  - {dst: 13-doctrine, rel: sequences, provenance: asserted}
 ---
 
 # Migration and Governance
@@ -65,8 +65,9 @@ Note `uniq -d` exits 0 with no output — **test the string, not the exit code.*
    fix, and it makes the corrected grep above return clean.
 2. **Eleven enforced rules have no index row** — including **R-56, the rule
    governing the Dreamer's tool ceiling, which is precisely what this work
-   reverses**, and the disclosure-subset rule. Both are cited by name in code
-   and in a decision's text, so a reader following the index finds nothing.
+   reverses**, and the disclosure-subset rule. R-31 is cited by name five times in the source; R-56 is cited only in the
+   acceptance tests and in a decision's text, never in `nora/`. Either way a
+   reader following the index finds nothing.
    There is a test that every enforced rule has a *named test*; there is none
    that it has an *index row*. Write it.
 3. **Two fact-tier read ports have two implementations each and no contract
@@ -88,7 +89,7 @@ deletes them without argument is the failure they were written against.
 | asking for nothing builds nothing and touches no collaborator | the tool-free path | dies when extraction gains tools; replace with the equivalent assertion for the new empty case |
 | the adjudicator's tools stay inside the workspace-safe set | non-empty **and** within the ceiling | keep |
 
-**A new tool must be classified in five places.** The tool table, the read/act
+**A new tool must be classified in three places.** The tool table, the read/act
 partition in tests, and the workspace-safe or room-scoped bucket. Miss one and
 a test fails by name — which is the design.
 
@@ -133,7 +134,7 @@ a comment or a docstring — turns it red with no file read involved.**
 - **At least two release fragments.** A `change` for the model-facing tool
   surface and the altered cost profile; and a **`security`** one if the empty
   room is reversed for any key kind — given
-  [08-disclosure.md](08-disclosure.md), that fragment is not optional. Only a
+  [11-disclosure.md](11-disclosure.md), that fragment is not optional. Only a
   newly *added* fragment satisfies the check; modifying an existing one does
   not.
 - **The gate is serial and is the final check.** Iterate with the affected-test
