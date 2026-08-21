@@ -1,0 +1,16 @@
+{
+  "type": "feature",
+  "summary": "The Dreamer is now a real read-only research agent rather than a clock calling three one-shot extractors. It runs a bounded tool loop per adaptor, screens everything it produces before any of it is written, and stamps every row with the instruction digest and model that produced it. It ships OFF ([dreamer] enabled = false) with no adaptors migrated onto it yet, so nothing about today's behaviour changes.",
+  "details": [
+    "The hard line is that the Dreamer may LOOK and may not ACT. Every tool now declares whether it only reads, the Dreamer's grantable set is DERIVED from that field rather than written down, and no act verb can reach a background loop — not by convention, but because the set that admits it is computed. The specification's own hand-written list of act verbs turned out to be four verbs short, which is the argument for deriving it.",
+    "Each adaptor declares its own key, so the loop can schedule a workspace-keyed adaptor beside the existing room-keyed ones, and its own budget — turns, tokens, and a wall clock. A failing adaptor no longer costs its siblings their tick, and the backoff that protects an external model provider during an outage moved with that isolation rather than being left behind.",
+    "The fact tier gained its writer's foundations: a candidate store that remembers what it could not settle (so an unprovable claim is not re-researched every five minutes forever), and the read path that lets the <facts> block render at all — it had none, so the tier would have stayed invisible even once filled.",
+    "Two bugs were found and fixed on the LIVE reply path while building this. A tool call that raised permanently consumed one unit of its own call budget for the rest of the turn, so Nora could be refused a lookup she was entitled to — on exactly the turns that had already gone wrong once. And the model provider was hard-coded to a setting under which a loop with no terminal verb can never stop by itself."
+  ],
+  "limitations": [
+    "Ships inert. [dreamer] enabled and [facts] enabled both default to false, no adaptor has been migrated onto the runtime, and the two room consolidators still run on the old one-shot path. Turning it on is a separate, measured decision.",
+    "Which model the Dreamer runs is still open by design. It defaults to the same model Nora runs, which makes the architecture's central claim falsifiable: the Dreamer is meant to do better because it is differently situated — no social pressure, a loop, and the ability to fetch a page — not because it is smarter. A negative result reopens the design rather than quietly swapping the model.",
+    "A workspace-keyed adaptor can research the open web but cannot read the group's own transcript. Every room-scoped tool is bound to one conversation's roster and record, and a workspace has no single room to bind them to; binding one to an arbitrary room would be a disclosure decision nobody has made, so it is refused rather than guessed at.",
+    "The <facts> block renders the workspace's most recent standing facts with no subject filter. Deciding WHICH facts are relevant to a turn needs entity resolution — making 'big walk', 'Big Walk' and the Chinese name resolve to one subject — which is specified but unbuilt. When it lands it narrows what renders rather than changing how."
+  ]
+}
