@@ -90,14 +90,30 @@ Nora **refuses to start** if it is missing or allows nothing (R-5).
 
 ## Gate commands
 
-Run before claiming anything is done, and before every commit:
+**While iterating**, use the fast loop — it is what the edit-run-edit cycle is for:
 
 ```bash
+make test-affected     # selects targets from what changed; -n 8; falls back to the full parallel suite
+make test-fast         # the whole suite, -n 8
+```
+
+**Before claiming anything is done, and before every commit**, run the gate. It is
+deliberately SERIAL and `make test-fast` does not replace it (see the Makefile's
+own note):
+
+```bash
+make gate              # all four, in order — or run them individually:
+
 uv run pytest -q                                         # tests green
 uv run ruff check nora/ evals/ tests/                    # lint clean
 uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence   # types clean (strict, scoped)
 uv run lint-imports                                      # import boundaries clean
 ```
+
+The gate is the FINAL check, not the iteration check. It takes ~8 minutes; running
+it after every edit instead of `make test-affected` costs an hour a day and buys
+nothing — this file previously named only the serial form, and that is exactly the
+mistake it produced (2026-08-21: eight full gate runs in one session).
 
 ## Release fragments
 
