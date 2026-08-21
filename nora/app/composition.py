@@ -71,6 +71,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.events import SqlEventStore
 from nora.infra.sql.exchange import SqlExchangeStore
+from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
@@ -94,6 +95,7 @@ from nora.instructions.frontmatter import InstructionError
 from nora.language.consolidator import LanguageConsolidator
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
+from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
 from nora.language.observer import LexemeObserver
 from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.health import LLMState
@@ -1603,6 +1605,41 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     dream_adaptors: tuple[DreamAdaptor, ...] = ()
     dreamer_runtime: DreamerRuntime | None = None
     if cfg.dreamer.enabled:
+        # The fact tier's two adaptors, built only when BOTH gates are on.
+        # `[dreamer]` decides whether the runtime exists; `[facts]` decides
+        # whether this tier is one of the things it runs — two questions, and
+        # an operator turning on the research loop has not thereby asked for a
+        # fact store to start filling.
+        if cfg.facts.enabled and fact_store is not None:
+            fact_candidates = SqlFactCandidateStore(engine)
+            dream_adaptors = (
+                # PHASE A, scope-keyed: it reads one room's message batch.
+                # `workspace_for` is not a convenience — the extractor's KEY is
+                # a scope and the candidate table's key is a WORKSPACE, so
+                # without the translation every room's candidates would land
+                # under a workspace named after the room and the adjudicator
+                # would never see one. The tier would be wired end to end and
+                # silently inert. An unresolvable scope RAISES rather than
+                # guessing: within one workspace a fact crosses rooms by design
+                # (R-49/DEC-105), so a guessed workspace is one social unit's
+                # claims entering another's.
+                FactCandidateAdaptor(
+                    candidates=fact_candidates,
+                    workspace_for={
+                        conv.primary_id: conv.workspace
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.workspace
+                    }.get,
+                ),
+                # PHASE B, workspace-keyed and watermark-free: its input is the
+                # candidate table, not a message batch.
+                FactAdaptor(
+                    facts=fact_store,
+                    candidates=fact_candidates,
+                    max_adjudications_per_tick=cfg.facts.max_adjudications_per_tick,
+                    metrics=metrics,
+                ),
+            )
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
         # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
         # model must call something on every pass, and the only thing that ends

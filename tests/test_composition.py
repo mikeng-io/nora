@@ -696,6 +696,54 @@ async def test_the_dreamer_runs_on_a_model_that_can_stop(cfg):
     assert model.config["params"]["tool_choice"] == "auto"
 
 
+async def test_the_fact_adaptors_need_both_gates_on(cfg):
+    """`[dreamer]` decides whether the runtime EXISTS; `[facts]` decides
+    whether this tier is one of the things it runs. Two questions — an operator
+    turning on the research loop has not thereby asked for a fact store to
+    start filling — so neither flag alone produces an adaptor."""
+    dreamer_only = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True})
+    )
+    facts_only = await build_dependencies(
+        override_config(cfg, {"facts.enabled": True})
+    )
+
+    assert dreamer_only.dream_adaptors == ()
+    assert facts_only.dream_adaptors == ()
+    assert facts_only.dreamer_runtime is None
+
+
+async def test_both_gates_on_builds_the_extractor_and_the_adjudicator(cfg):
+    deps = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True, "facts.enabled": True})
+    )
+
+    names = [a.name for a in deps.dream_adaptors]
+    assert names == ["fact-candidates", "fact-adjudication"]
+    # The two halves are keyed DIFFERENTLY, which is the whole reason
+    # `dream_loop` had to learn to schedule per adaptor: the extractor reads one
+    # room's messages, the adjudicator settles claims for a workspace.
+    assert [a.key_kind for a in deps.dream_adaptors] == ["scope", "workspace"]
+    assert [a.uses_watermark for a in deps.dream_adaptors] == [True, False]
+
+
+async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg):
+    """`verify_tool_subsets` runs at startup in R-5's refuse-to-start shape, so
+    reaching this line at all is the assertion — a subset naming an act verb
+    would have raised inside `build_dependencies`. Restated here against the
+    registry so the property is checked rather than merely implied by the
+    absence of an exception."""
+    from nora.agent.registry import ToolRegistry
+
+    deps = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True, "facts.enabled": True})
+    )
+
+    ceiling = ToolRegistry().read_only_tools()
+    for adaptor in deps.dream_adaptors:
+        assert adaptor.tools <= ceiling, adaptor.name
+
+
 async def test_workspace_scopes_are_the_allowlists_workspaces_deduplicated(cfg):
     """Two rooms of one workspace are ONE unit of work, not two — which is the
     whole reason a workspace-keyed adaptor could not ride the per-scope
