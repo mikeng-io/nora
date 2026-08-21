@@ -1292,6 +1292,55 @@ class DoctrineConfig(BaseModel):
         return self
 
 
+class DreamBudgetConfig(BaseModel):
+    """One adaptor's ceiling on a single Dreamer run: three caps and a clock.
+
+    Mirrors `AdaptorBudget`, the value `nora.agent.dreamer`'s runtime actually
+    receives — import-linter forbids `nora.agent` from importing `nora.config`
+    at all, so the config type cannot cross that boundary. The
+    `RemindersConfig`/`nora.domain.reminders.ReminderCaps` pair is the same
+    shape and the same rule: the composition root builds the domain value from
+    this one, and the DEFAULTS on both are the same numbers on purpose.
+
+    `turns`/`total_tokens`/`output_tokens` are `LimitsConfig`'s three caps —
+    R-8's, applied to a Dreamer run instead of a tag turn — and are three
+    fields for `LimitsConfig`'s own reason: Strands' `_check_limits` SKIPS a
+    cap it cannot find, so a missing one means "unbounded" rather than
+    "default".
+
+    **PER ADAPTOR, not one global ceiling.** Proving a fact is worth more calls
+    than glossing a word; a single number would starve the first or overpay for
+    the second.
+
+    **The numbers are UNMEASURED starting points, not measurements** — the same
+    honesty `[analytics]`'s `stay_radius_m`/`stay_min_dwell_seconds` carry
+    (`INHERITED, not measured`, design/27 §7.1). `turns = 6` and
+    `output_tokens = 4000` are read off `[llm.limits]`'s shipped 20/12000 scaled
+    down for a background job nobody waits on; `total_tokens = 40000` is
+    `[llm.limits].total_tokens / 3`. Plan gate D2 (which model the Dreamer runs)
+    is OPEN and decided by measurement later; these are what a run is bounded by
+    until then, not what a run was observed to need.
+
+    **`timeout_seconds` is not optional, and the reason is specific to this
+    subsystem.** Unlike a tag turn's timeout, a hung Dreamer call is QUIET:
+    `dream_loop` marks the scope `running` and skips it every subsequent tick
+    (`nora_dream_skipped_total{reason="in_flight"}`) without ever raising, so
+    the exponential backoff — which only triggers on an EXCEPTION — never
+    engages, and a hung provider is skipped FOREVER rather than backed off
+    (`nora/app/composition.py`'s `_LanguageModelClient`, which records this from
+    the last time it was gotten wrong). 120 s matches `[llm].timeout_seconds`
+    and `[language].timeout_seconds` rather than inventing a third number with
+    no basis; it wraps the WHOLE run, not one call.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    turns: int = Field(default=6, ge=1)
+    total_tokens: int = Field(default=40_000, ge=1)
+    output_tokens: int = Field(default=4_000, ge=1)
+    timeout_seconds: float = Field(default=120.0, gt=0)
+
+
 class DreamerConfig(BaseModel):
     """Where the Dreamer's instruction corpus lives and how it reloads.
 
@@ -1306,10 +1355,32 @@ class DreamerConfig(BaseModel):
     section existed keeps loading under `extra="forbid"`, and a deployment that
     never touches it gets the bind-mounted tree and mtime reload.
 
-    **No `enabled` field.** Phase 1 has nothing to enable: the corpus is read by
-    the two existing adaptors whether or not anything else is switched on, and a
-    flag that gates nothing is a flag an operator will eventually set expecting
-    it to gate something. It arrives with the Dreamer RUNTIME, shipping `false`.
+    Phase 1 shipped this section with **no `enabled` field**, on the argument
+    that it had nothing to enable — the corpus was read by the two existing
+    adaptors whether or not anything else was switched on, and a flag that gates
+    nothing is a flag an operator will eventually set expecting it to gate
+    something (DEC-128). That argument named its own expiry: *"it arrives with
+    the Dreamer RUNTIME, shipping `false`."* This is that arrival. `enabled`
+    below is what turns the section from a description of a CORPUS into the
+    switch for a SUBSYSTEM, and it ships **False** — a new subsystem does not
+    switch itself on, the `[presence]`/`[search]`/`[compute]`/`[language]`/
+    `[analytics]`/`[facts]` shape. Off, nothing constructs a `DreamerRuntime`
+    and the existing consolidators keep running exactly as they do today.
+
+    `model = ""` means **fall back to `[language].model`** — resolved by
+    `Config.dreamer_model()` and nowhere else, the `MediaConfig.describer_for`
+    shape, so exactly one place knows the fallback exists. Empty is the shipped
+    value ON PURPOSE: it reproduces today's tier, which makes this section's
+    arrival a no-op at runtime. Plan gate D2 — which model the Dreamer runs —
+    is OPEN and is answered by measurement (the DEC-58 method), not by a value
+    picked here.
+
+    `budgets` maps an ADAPTOR NAME to its `DreamBudgetConfig`. An adaptor with
+    no block of its own gets `DreamBudgetConfig`'s own field defaults through
+    `budget_for` — never a `KeyError` at tick time, and never an unbounded run.
+    A PARTIAL block fills its missing fields from those same defaults rather
+    than zeroing them, which matters because `output_tokens = 0` is not "no
+    limit", it is a subsystem that silently never produces anything.
 
     `dir` is resolved relative to the config file, not the working directory,
     by `Config._resolve_paths` — NOT by a validator here, because a defaulted
@@ -1322,6 +1393,37 @@ class DreamerConfig(BaseModel):
     dir: Path = Path("nora/dreamer")
     reload: Literal["mtime", "startup"] = "mtime"
     strict: bool = True
+    enabled: bool = False
+    # Empty = `[language].model`. Never read directly — `Config.dreamer_model()`
+    # is the only resolver.
+    model: str = ""
+    budgets: dict[str, DreamBudgetConfig] = Field(default_factory=dict)
+
+    def budget_for(self, adaptor: str) -> DreamBudgetConfig:
+        """The budget one adaptor runs under, ALWAYS bounded.
+
+        A `.get` with a default rather than a subscript, and that is the whole
+        point: an adaptor added later — or renamed, or misspelled in the TOML —
+        must get a bounded budget, not a `KeyError` raised inside a background
+        tick nobody is watching. The failure mode this replaces has no metric of
+        its own: `_dream_once` catches the exception per scope, counts a
+        failure, and backs the scope off, so a typo'd budget key would look
+        exactly like a provider outage.
+
+        The cost of that leniency is that a misspelled key is silent. It is
+        still the right direction: the default is a real ceiling, so the worst
+        case is a run bounded by numbers the operator did not choose, never a
+        run bounded by nothing.
+
+        The fallback is a freshly constructed `DreamBudgetConfig()`, not a
+        module-level constant: DEC-13's gate
+        (`tests/architecture/test_no_module_level_mutable_singletons.py`) bans a
+        class instantiated and bound to a module-level name in its own module,
+        and this earns no exemption for being frozen. It also keeps the class's
+        own field defaults as the single answer to "what does an unconfigured
+        adaptor get" — there is no second place to keep in step.
+        """
+        return self.budgets.get(adaptor, DreamBudgetConfig())
 
 
 class LoggingConfig(BaseModel):
@@ -1538,8 +1640,9 @@ class Config(BaseModel):
     doctrine: DoctrineConfig
     # Optional and defaulted — see `DreamerConfig`. A config.toml with no
     # `[dreamer]` section keeps loading and reads the bind-mounted tree with
-    # mtime reload, which is what every deployment wants; the section exists so
-    # a deployment can pin `reload = "startup"` or point `dir` elsewhere.
+    # mtime reload, which is what every deployment wants. Ships INERT
+    # (`enabled = false`): off, no `DreamerRuntime` is constructed and the
+    # existing consolidators keep running unchanged.
     dreamer: DreamerConfig = DreamerConfig()
     identity_file: Path
     policy_file: Path
@@ -1556,6 +1659,23 @@ class Config(BaseModel):
         # Resolved here instead, where the context is.
         _resolve_context_field(self.dreamer, "dir", info)
         return self
+
+    def dreamer_model(self) -> str:
+        """`[dreamer].model`, falling back to `[language].model` when empty.
+
+        Lives on `Config` and not on `DreamerConfig` because the fallback
+        source is a SIBLING section a sub-model cannot see — the one place that
+        holds both. `MediaConfig.describer_for`'s rule applies unchanged: the
+        fallback is folded in HERE and nowhere else, so exactly one place knows
+        it exists and no caller can reach past it to the raw field.
+
+        Empty is the shipped value and it is not a gap: it reproduces today's
+        tier, which is what makes `[dreamer]` growing a runtime a no-op until
+        plan gate D2 measures a model and fills this in. An explicit value wins,
+        or the fallback would pin the new knob open and the split would be a
+        no-op the other way.
+        """
+        return self.dreamer.model or self.language.model
 
     @model_validator(mode="after")
     def _lead_clears_the_tick(self) -> Config:
