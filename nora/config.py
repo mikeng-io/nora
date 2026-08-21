@@ -259,6 +259,16 @@ class LLMConfig(BaseModel):
 class TriggerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    # ON by default — a `config.toml` written before this field existed keeps
+    # matching `text` exactly as it always did (the `[speech]`/`[weather]`
+    # INERT-by-default shape runs the other way here: the trigger phrase was
+    # already live for every deployment, so defaulting this OFF would be the
+    # silent behavior change, not defaulting it on). Turning it off narrows
+    # `CompositePolicy` (`nora/app/composition.py`) down to `MentionPolicy` +
+    # `ReplyToNoraPolicy` — a real `@mention` or a reply to one of her own
+    # messages still engage her; only the spoken/typed trigger PHRASE stops
+    # matching. `min_interval_seconds` (the debounce) is unaffected either way.
+    enabled: bool = True
     text: str
     min_interval_seconds: float
 
