@@ -37,11 +37,12 @@ for one by accident would make several tests pass for the wrong reason.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 from uuid import uuid4
 
+import psycopg
 import pytest
 import sqlalchemy as sa
 
@@ -100,6 +101,52 @@ class _Harness:
     read_candidate: Callable[[str, str], Awaitable[_Candidate | None]]
 
 
+@pytest.fixture(scope="module")
+def _notes_db(pg_admin: Any) -> Iterator[str]:
+    """ONE database and ONE migration run for this whole file.
+
+    The obvious fixture is the shared function-scoped `pg_url`, and this suite
+    used it until 2026-08-21. It creates a database, runs the full 26-migration
+    chain and drops the database **per test** — 31 sql-param tests, so 31 full
+    rebuilds. That is correct and, for a small suite, affordable.
+
+    It stopped being affordable here, and the way it showed up is worth
+    recording: `tests/integration/test_latency.py` — a p95 budget on Nora's
+    non-model overhead, and one of the few tests that writes audit rows to this
+    same container — went from **0.032s in-suite on master to 0.346s in-suite
+    with this file present**, a 10x regression that reproduced four times and
+    was *absent* when the latency test ran standalone. The container was being
+    left degraded by the churn, and the cost landed on an unrelated test rather
+    than on this one, which is why it read as somebody else's flake for most of
+    a morning.
+
+    Isolation is preserved by truncating the four note tables between tests
+    (see the `notes` fixture) rather than by rebuilding the world. That is
+    cheaper by orders of magnitude and gives the same guarantee this suite
+    actually needs: no row written by one test is visible to the next.
+    """
+    dbname = "t_notes_" + uuid4().hex
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{dbname}"')
+    url = (
+        f"postgresql+asyncpg://{pg_admin.user}:{pg_admin.password}"
+        f"@{pg_admin.host}:{pg_admin.port}/{dbname}"
+    )
+    run_migrations(url)
+    try:
+        yield url
+    finally:
+        with psycopg.connect(
+            pg_admin.dsn(pg_admin.maintenance_db), autocommit=True
+        ) as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()",
+                (dbname,),
+            )
+            conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+
+
 @pytest.fixture(params=["memory", "sql"])
 async def notes(request: Any) -> AsyncIterator[_Harness]:
     if request.param == "memory":
@@ -122,9 +169,9 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
         yield _Harness(memory, _retire_mem, _candidate_mem)
         return
 
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
+    # The ENGINE is per test (cheap); the DATABASE and its migrations are
+    # module-scoped (see `_notes_db`) because that is where the cost was.
+    engine = create_sql_engine(request.getfixturevalue("_notes_db"))
 
     async def _retire_sql(note_id: str, now_ms: int) -> None:
         async with engine.begin() as conn:
@@ -154,6 +201,14 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
     try:
         yield _Harness(SqlNoteStore(engine), _retire_sql, _candidate_sql)
     finally:
+        # Truncate rather than rebuild: same isolation guarantee this suite
+        # needs — no row written by one test is visible to the next — at a
+        # fraction of the cost. See `_notes_db` for what the rebuild was doing
+        # to an unrelated test.
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(
+                "truncate note, note_revision, note_entity, note_candidate cascade"
+            ))
         await engine.dispose()
 
 
