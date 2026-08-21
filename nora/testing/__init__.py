@@ -106,6 +106,7 @@ from nora.testing.fakes import (
     FakeRecordStore,
     FakeRosterSource,
     FakeToolCallLogStore,
+    FakeTranscriber,
 )
 from nora.testing.scripted_agent import (
     TOOL_CHOICE_FIRST_CALL,
@@ -140,6 +141,7 @@ __all__ = [
     "FakeRecordStore",
     "FakeRosterSource",
     "FakeToolCallLogStore",
+    "FakeTranscriber",
     "InMemoryFactCandidateStore",
     "InMemoryFactStore",
     "ScriptedModel",

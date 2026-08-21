@@ -17,6 +17,7 @@ from nora.config import (
     LimitsConfig,
     LLMConfig,
     MediaConfig,
+    SpeechConfig,
     load,
 )
 
@@ -648,6 +649,23 @@ def test_audio_and_video_describers_ship_inert():
     # enabled modality with no model named is still no describer.
     assert describe.audio.model == ""
     assert describe.video.model == ""
+
+
+def test_speech_ships_inert():
+    """`[speech]` is off by default — a config.toml written before speech
+    existed keeps loading and Nora never calls out. TTS is deferred and
+    present-but-inert so the section's shape is stable.
+
+    Asserted against the CODE DEFAULTS, not against a loaded
+    config.example.toml — inverting the defaults in `SpeechConfig` must leave
+    this test red, exactly like `test_audio_and_video_describers_ship_inert`.
+    """
+    speech = SpeechConfig()
+    assert speech.stt.enabled is False
+    assert speech.stt.endpoint == "http://stt:8000"
+    assert speech.stt.language == "yue"
+    assert speech.tts.enabled is False
+    assert speech.tts.provider == ""
 
 
 def test_a_config_written_before_the_split_still_describes_images(toml_path):

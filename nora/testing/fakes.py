@@ -39,6 +39,7 @@ from nora.domain.ports import (
     Recollection,
     Roster,
     SendResult,
+    SttResult,
     TextStyle,
 )
 from nora.domain.presence import haversine_distance_m
@@ -725,6 +726,39 @@ class FakeMediaInterpreter:
         if not self.available:
             return MediaDescription(available=False, reason=self.reason or "vision")
         return MediaDescription(available=True, text=self.text)
+
+
+class FakeTranscriber:
+    """In-memory `Transcriber`, bound to `SenseVoiceTranscriber` by
+    `tests/contract/test_transcriber_contract.py`. `calls` is the point of
+    it: the ingest stage's voice-note-only gate (`nora/ingest/stages/media.py`)
+    is proved by what this RECORDS, not by reading the stage and believing it.
+
+    Mirrors `SenseVoiceTranscriber.transcribe`'s own `media_type` belt gate:
+    a `media_type` that is KNOWN and is not `audio/*` refuses with
+    `unsupported` before touching `available`/`text`; an UNRESOLVED type
+    (`""`) is let through, exactly like production. Without this gate a test
+    could feed a non-audio type through the fake and see it refused even if
+    the real client never checked at all — the fake would mask the omission
+    instead of proving it absent.
+    """
+
+    def __init__(self, text: str = "喂你今日得唔得閒啊", *, available: bool = True,
+                 reason: str = "") -> None:
+        self.text = text
+        self.available = available
+        self.reason = reason
+        self.calls: list[tuple[bytes, str, str]] = []
+
+    async def transcribe(
+        self, *, data: bytes, media_type: str, language: str = ""
+    ) -> SttResult:
+        if media_type and not media_type.startswith("audio/"):
+            return SttResult(available=False, reason="unsupported")
+        self.calls.append((data, media_type, language))
+        if not self.available:
+            return SttResult(available=False, reason=self.reason or "error")
+        return SttResult(available=True, text=self.text)
 
 
 class FakeArtifactIngest:

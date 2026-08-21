@@ -604,6 +604,50 @@ services:
       timeout: 5s
       retries: 5
 
+  # stt — Nora's local Cantonese STT (SenseVoice/FunASR). Own image, own
+  # dependency set (deploy/stt/), NOT built from nora:latest — the same
+  # "separate app that lives in this repo" shape `drop` uses. Spec:
+  # docs/superpowers/specs/2026-08-21-nora-stt-infrastructure-design.md.
+  #
+  # Purpose: [media.describe.audio] in config.toml needs a model for voice
+  # notes. faster-whisper mangles Cantonese into Mandarin-sounding output
+  # (measured in voice-lab 2026-08-21); SenseVoiceSmall natively tags `yue`
+  # and preserves 口語 particles (唔/嘅/喺/哋). Serves OpenAI-compatible
+  # /v1/audio/transcriptions so Nora calls it like any other ASR.
+  #
+  # Posture mirrors signal-cli/drop: NO `ports:` publish at all — reachable
+  # only as `stt:8000` on the private `nora` network. Audio from the group
+  # stays on the box; there is no reason to ever expose the transcription
+  # surface to the host or the internet.
+  #
+  # The model (~936MB) downloads from ModelScope on FIRST boot into the
+  # container's ~/.cache/modelscope. The named volume pins that cache so a
+  # restart/recreate doesn't re-download; first start_period is long
+  # because of the download, subsequent starts are fast.
+  stt:
+    build:
+      context: ./deploy/stt
+      # network: host is REQUIRED, same reason as every other build in this
+      # file (operational constraint 1): BuildKit's bridge can't resolve
+      # deb.debian.org on this host, so apt-get stalls/fails. This Dockerfile
+      # does apt-get install curl.
+      network: host
+    image: stt:latest
+    container_name: stt
+    restart: unless-stopped
+    networks: [nora]
+    volumes:
+      - stt-modelscope-cache:/home/stt/.cache/modelscope
+    healthcheck:
+      # /health is served by the FunASR server process itself (deploy/stt/server.py)
+      # — proves the HTTP layer is up; the model may still be downloading on
+      # first boot, hence the long start_period below.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 240s
+      retries: 3
+
 networks:
   nora:
   # SearXNG + Firecrawl network joins REMOVED (DEC-73, 2026-08-08): web_search is
@@ -634,3 +678,7 @@ volumes:
   # service (docs/superpowers/specs/2026-08-12-nora-drop-design.md).
   valkey-data:
   rustfs-data:
+  # ModelScope weights cache for the `stt` service (~/.cache/modelscope inside
+  # the container) — pins the ~936MB SenseVoiceSmall download across
+  # restarts/recreates so it happens once, not every boot.
+  stt-modelscope-cache:

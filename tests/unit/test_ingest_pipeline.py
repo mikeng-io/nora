@@ -14,6 +14,7 @@ against the adapter that actually does that parsing.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 
 from nora.domain.media import MediaRef
 from nora.domain.models import NormalizedMessage, PersonRef
@@ -24,7 +25,7 @@ from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
 from nora.policy import permissive_policy
-from nora.testing import FakeBlobStore, FakeMediaSource, FakeRecordStore
+from nora.testing import FakeBlobStore, FakeMediaSource, FakeRecordStore, FakeTranscriber
 
 
 def _msg(sender_id: str = "+852111", body: str = "hello") -> NormalizedMessage:
@@ -60,7 +61,8 @@ class FakeMemory:
 
 
 def _pipeline(*, memory, persons, policy, spawn, audit=None, allowlist=None,
-              media_sources=None, blobs=None, metrics=None):
+              media_sources=None, blobs=None, metrics=None,
+              transcriber=None, language=""):
     return IngestPipeline(
         audit=audit if audit is not None else FakeRecordStore(),
         memory=memory,
@@ -73,6 +75,8 @@ def _pipeline(*, memory, persons, policy, spawn, audit=None, allowlist=None,
         spawn=spawn,
         media_sources=media_sources,
         blobs=blobs,
+        transcriber=transcriber,
+        language=language,
     )
 
 
@@ -270,3 +274,135 @@ async def test_with_custody_unwired_the_row_is_recorded_and_the_loss_is_counted(
     assert store.rows[0]["body"] == "[voice note]"
     assert store.rows[0]["media_json"] is None
     assert metrics.get("nora_media_custody_total", status="not_configured") == 1
+
+
+AUDIO = b"\x00\xff pretend opus"
+
+
+async def test_a_voice_note_is_transcribed_at_custody_and_the_transcript_rides_the_body():
+    """A voice note is conversation CONTENT — the ingest path transcribes it
+    inline and the words ride the body beside the handle, so Nora sees them
+    without ever calling a tool. A song (`voice_note=False`) stays on the
+    bare-handle path even when a transcriber is wired (the gate is the
+    `voiceNote` flag, NOT the audio/* MIME type).
+    """
+    store = FakeRecordStore()
+    blobs = FakeBlobStore()
+    metrics = Metrics()
+    transcriber = FakeTranscriber()
+    msg = dataclasses.replace(
+        _msg(body="[voice note]"),
+        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),),
+    )
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=Persons(by_person={}, index={}),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        audit=store, media_sources=MediaSourceRegistry([FakeMediaSource({"att1": AUDIO})]),
+        blobs=blobs, metrics=metrics, transcriber=transcriber, language="yue-HK",
+    )
+
+    await pipeline.run(message=msg)
+
+    digest = hashlib.sha256(AUDIO).hexdigest()
+    assert len(store.rows) == 1
+    row = store.rows[0]
+    assert row["body"] == f"[voice note {digest[:6]}: 喂你今日得唔得閒啊]"
+    assert transcriber.calls[0][1] == "audio/aac"
+    assert transcriber.calls[0][2] == "yue-HK"
+    assert metrics.get("nora_speech_transcriptions_total", status="ok") == 1
+
+
+async def test_a_failed_transcription_still_records_the_voice_note_with_a_bare_handle():
+    """R-27: an ERROR is never a PASS. A transcription failure leaves the
+    voice note recorded with the handle and no guessed words — the note is
+    still a note, and the message is never dropped over STT.
+    """
+    store = FakeRecordStore()
+    blobs = FakeBlobStore()
+    metrics = Metrics()
+    transcriber = FakeTranscriber(available=False, reason="error")
+    msg = dataclasses.replace(
+        _msg(body="[voice note]"),
+        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),),
+    )
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=Persons(by_person={}, index={}),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        audit=store, media_sources=MediaSourceRegistry([FakeMediaSource({"att1": AUDIO})]),
+        blobs=blobs, metrics=metrics, transcriber=transcriber,
+    )
+
+    await pipeline.run(message=msg)
+
+    digest = hashlib.sha256(AUDIO).hexdigest()
+    assert store.rows[0]["body"] == f"[voice note {digest[:6]}]"
+    assert metrics.get("nora_speech_transcriptions_total", status="error") == 1
+
+
+async def test_a_song_is_never_transcribed_even_when_a_transcriber_is_wired():
+    """The gate is the parser's `voiceNote` flag, NOT the audio/* MIME type.
+
+    A song is an audio file, not conversation content: its bytes must never
+    reach the STT endpoint even when a transcriber is present. This is the
+    negative half of `test_a_voice_note_is_transcribed...` — a future refactor
+    that relaxed the gate to `media_type.startswith("audio/")` must turn this
+    red.
+    """
+    store = FakeRecordStore()
+    blobs = FakeBlobStore()
+    metrics = Metrics()
+    transcriber = FakeTranscriber()
+    msg = dataclasses.replace(
+        _msg(body="[audio]"),
+        media=(MediaRef(platform_id="att1", media_type="audio/mpeg", voice_note=False),),
+    )
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=Persons(by_person={}, index={}),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        audit=store, media_sources=MediaSourceRegistry([FakeMediaSource({"att1": AUDIO})]),
+        blobs=blobs, metrics=metrics, transcriber=transcriber, language="yue-HK",
+    )
+
+    await pipeline.run(message=msg)
+
+    digest = hashlib.sha256(AUDIO).hexdigest()
+    assert transcriber.calls == [], "a song must never be sent to STT"
+    assert store.rows[0]["body"] == f"[audio {digest[:6]}]"
+
+
+class _RaisingGetBlobStore(FakeBlobStore):
+    """A `BlobStore` whose `get` always raises, e.g. a corrupted blob or a
+    rotated encryption key on an otherwise-successful `put`."""
+
+    async def get(self, *, key: str) -> bytes:
+        raise RuntimeError("simulated decrypt failure")
+
+
+async def test_a_voice_note_transcribes_even_when_the_blob_store_cannot_be_read_back():
+    """The custody stage must never call `blobs.get` to transcribe a voice
+    note it JUST wrote — it reuses the plaintext `_take` already holds. A
+    store whose `get` raises (corrupted blob, rotated key) must not stop the
+    message from ever transcribing or being recorded (regression for the
+    `blobs.get` round trip that could raise uncaught and drop the message)."""
+    store = FakeRecordStore()
+    blobs = _RaisingGetBlobStore()
+    metrics = Metrics()
+    transcriber = FakeTranscriber()
+    msg = dataclasses.replace(
+        _msg(body="[voice note]"),
+        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),),
+    )
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=Persons(by_person={}, index={}),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        audit=store, media_sources=MediaSourceRegistry([FakeMediaSource({"att1": AUDIO})]),
+        blobs=blobs, metrics=metrics, transcriber=transcriber, language="yue-HK",
+    )
+
+    await pipeline.run(message=msg)
+
+    digest = hashlib.sha256(AUDIO).hexdigest()
+    assert len(store.rows) == 1
+    assert store.rows[0]["body"] == f"[voice note {digest[:6]}: 喂你今日得唔得閒啊]"
+    assert transcriber.calls[0][0] == AUDIO
+    assert metrics.get("nora_speech_transcriptions_total", status="ok") == 1

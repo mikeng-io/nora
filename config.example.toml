@@ -602,6 +602,20 @@ provider = "hko"           # the WeatherProvider adapter; "hko" is the only one 
 # lang = "tc"              # HKO language: tc | en | sc
 # timeout_seconds = 8.0
 
+[speech]
+# Voice capability (spec 2026-08-21). STT = Cantonese voice-note transcription
+# at ingest via the LOCAL deploy/stt endpoint — audio never leaves the box.
+# Ships INERT like [weather]/[heartbeat]: turning it on is an operator
+# decision, never something a missing section decides. TTS is deferred
+# (present-but-inert; nothing reads it yet).
+[speech.stt]
+enabled = false
+# endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
+# language = "yue"               # FunASR/SenseVoice's own LID code, not BCP-47
+[speech.tts]
+enabled = false
+# provider = ""
+
 [heartbeat]
 # The background tick that fires due reminders — Nora's first unprompted-speech
 # path. Ships INERT, like [presence] and [search]: turning it on is an operator
