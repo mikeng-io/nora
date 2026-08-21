@@ -300,7 +300,15 @@ strict = true
 # new subsystem does not switch itself on — [presence]/[search]/[compute]/
 # [language]/[analytics]/[facts] all shipped inert too. Off, no DreamerRuntime
 # is constructed and the existing consolidators run exactly as they do today.
-enabled = true
+#
+# TEMPORARILY OFF (2026-08-21, operator instruction): fact-candidates is stuck
+# in a permanent MaxTokensReachedException retry loop on scope
+# 100000000000000201/100000000000000202 (watermark held at 1180, room's
+# language watermark at 1300 and climbing) while the fact tier's architecture
+# — no read/search/cross-compare tools during reasoning, Phase A pre-fetches
+# nothing — is being rebuilt on fact-tier-agentic-tools. Re-enable once that
+# lands, or once the stuck scope is otherwise resolved.
+enabled = false
 # The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
 # — and the distinction is stated because the earlier version of this comment
 # claimed the opposite while carrying a value nobody had measured.
