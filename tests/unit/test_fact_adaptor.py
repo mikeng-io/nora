@@ -650,3 +650,33 @@ async def test_an_unavailable_candidate_read_propagates_rather_than_looking_empt
 
     with pytest.raises(ConnectionError):
         await adaptor.inputs(key=WS, batch=())
+
+
+async def test_the_adjudicator_renders_nothing_when_no_candidate_is_pending():
+    """BLANK, not "(none)" — and the difference is one model call every 300s
+    per workspace, forever.
+
+    `DreamAdaptor` has no `should_fire` verb: the runtime's fire condition is
+    "did `inputs` render anything to reason about". An adaptor that renders a
+    polite empty form defeats it, and the runtime happily invokes an agent on a
+    prompt that says there is nothing to do. Observed live 2026-08-21 —
+    `invoke_agent dreamer:fact-adjudication` on every tick against an empty
+    candidate table, which is exactly what the fire condition was added to
+    prevent and did not."""
+    adaptor = FactAdaptor(
+        facts=InMemoryFactStore(), candidates=InMemoryFactCandidateStore(),
+        max_adjudications_per_tick=10,
+    )
+
+    assert await adaptor.inputs(key=WS, batch=()) == ""
+
+
+async def test_the_extractor_renders_nothing_for_an_empty_batch():
+    """Same rule. A watermarked adaptor reaches an empty batch on the 24h age
+    condition, which fires at `lag == 0` on purpose — so without this a dormant
+    room bought one model call a day to be told there were no messages."""
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
+
+    assert await adaptor.inputs(key="g1", batch=()) == ""

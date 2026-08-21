@@ -227,7 +227,15 @@ class FactCandidateAdaptor:
         """
         self._message_ids[key] = frozenset(row.id for row in batch)
         lines = [f"{row.id}: {row.body or ''}" for row in batch]
-        return "Messages in this batch:\n" + ("\n".join(lines) if lines else "(none)")
+        if not lines:
+            # Same rule as the adjudicator's: blank means "nothing to reason
+            # about", and the runtime skips the model rather than paying for a
+            # prompt that says "(none)". A watermarked adaptor reaches this on
+            # the 24h age condition, which fires at `lag == 0` on purpose —
+            # so without it a dormant room bought one model call a day for
+            # nothing.
+            return ""
+        return "Messages in this batch:\n" + "\n".join(lines)
 
     async def accept(
         self, *, key: str, items: Sequence[Mapping[str, object]]
@@ -458,6 +466,19 @@ class FactAdaptor:
             },
             fact_ids=frozenset(f.id for f in standing),
         )
+        if not pending:
+            # BLANK, not "(none)" — and the difference is a model call every
+            # 300s per workspace, forever. `DreamAdaptor` has no `should_fire`
+            # verb; the runtime's fire condition is "did `inputs` render
+            # anything to reason about", so an adaptor that renders a polite
+            # empty form instead of nothing defeats it. Observed live
+            # 2026-08-21: `invoke_agent dreamer:fact-adjudication` on every
+            # tick against an empty candidate table.
+            #
+            # Returning "" makes the runtime skip the agent entirely, still
+            # call `commit(key, ())`, and report `nothing_found` — which is
+            # what actually happened.
+            return ""
         return _render_adjudication(pending, standing)
 
     # -- accept -------------------------------------------------------------

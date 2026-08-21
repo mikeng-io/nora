@@ -559,7 +559,14 @@ async def test_inputs_renders_a_real_batch(adaptor):
     rendered = await adaptor.inputs(key=KEY, batch=(row,))
 
     assert isinstance(rendered, str)
-    assert rendered != ""
+    # NOT asserted non-empty, and that is the port's contract rather than a
+    # weakening: a BLANK return means "nothing to reason about", and the
+    # runtime uses it as the fire condition — it skips the model entirely.
+    # An adaptor whose input is not the message batch (the fact adjudicator
+    # reads the candidate table) correctly renders nothing for any batch at
+    # all, so requiring non-empty here would demand a prompt that says "there
+    # is nothing to do" and pay a model call for it. That is the defect this
+    # assertion used to hide (observed live 2026-08-21).
 
 
 async def test_inputs_tolerates_a_row_with_no_body(adaptor):
