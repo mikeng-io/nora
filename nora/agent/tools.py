@@ -1501,7 +1501,7 @@ def build_tool_specs(
     relay: Relay | None = None,
     events: EventsCollaborator | None = None,
     notes: NoteCollaborator | None = None,
-    note_workspace: str = "",
+    note_workspace: Callable[[str, str], str | None] | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -1544,9 +1544,18 @@ def build_tool_specs(
     wiring in two arguments rather than two independent ones: a note is keyed on
     the workspace (spec §3), so a store with no workspace to read is as unusable
     as no store, and both states answer `unavailable` — never `nothing_found`,
-    which would report an unconsulted notebook as an empty one. `note_workspace`
-    is a per-PROCESS value like `ai_peer`, resolved by the composition root's
-    conversation→workspace seam, not something a tag brings with it.
+    which would report an unconsulted notebook as an empty one.
+
+    **`note_workspace` RESOLVES a room to its workspace; it is not a constant.**
+    It was written as a per-process string, on the reasoning that the
+    conversation→workspace seam is fixed by the deployment. That is false for
+    every deployment with more than one workspace, and this one has two:
+    `policy.toml` puts the operator's own rooms in `ridgeline` and the group in
+    `friends`, deliberately never paired. A single string would hand one room
+    the OTHER's notebook — a cross-workspace read and write, which is the exact
+    boundary §3's scope decision exists to hold, and DEC-105/R-49 hold for
+    `send_to`. So it takes `(platform, conversation_id)` and answers `None` for
+    a room policy cannot name, which is `unavailable` rather than a guess.
     """
     caps = reminder_caps or ReminderCaps()
     now_fn = clock or utc_now
@@ -3957,7 +3966,23 @@ def build_tool_specs(
         bind a non-optional local, so the narrowing is the type checker's job
         rather than an `assert` restating what this function already decided.
         """
-        return notes if note_workspace else None
+        return notes if _workspace() else None
+
+    def _workspace() -> str | None:
+        """This turn's workspace, or `None` when it cannot be named.
+
+        Resolved per turn from `room.platform` and the bound conversation —
+        never a process-wide constant. `None` means policy could not name the
+        room, and every note verb answers `unavailable` on it: reading the
+        wrong workspace's notebook is worse than reading none.
+        """
+        if note_workspace is None:
+            return None
+        try:
+            return note_workspace(room.platform, bound_conversation_id)
+        except Exception:
+            log.exception("note workspace resolution failed")
+            return None
 
     async def _resolve(book: NoteCollaborator, title: str) -> list[Note]:
         """Title → the standing notes that answer to it (§16.1).
@@ -3970,7 +3995,7 @@ def build_tool_specs(
         """
         wanted = note_handle(title)
         return [
-            n for n in await book.standing(workspace=note_workspace)
+            n for n in await book.standing(workspace=_workspace() or "")
             if note_handle(n.title) == wanted
         ]
 
@@ -4019,7 +4044,7 @@ def build_tool_specs(
                     "note": "There's no note by that title. Only the ones in "
                             "<notes> exist — don't describe one that isn't there.",
                 }
-            found = await book.read(workspace=note_workspace, note_id=candidates[0].id)
+            found = await book.read(workspace=_workspace() or "", note_id=candidates[0].id)
         except Exception:
             log.exception("note_read failed")
             _record(metrics, "note_read", "unavailable")
@@ -4081,7 +4106,7 @@ def build_tool_specs(
             }
         try:
             hits = await book.search(
-                workspace=note_workspace, query=probe, limit=NOTE_SEARCH_LIMIT,
+                workspace=_workspace() or "", query=probe, limit=NOTE_SEARCH_LIMIT,
             )
         except Exception:
             log.exception("note_search failed")
@@ -4095,7 +4120,7 @@ def build_tool_specs(
             # written must not turn a real `nothing_found` into a failure.
             try:
                 await book.record_miss(
-                    workspace=note_workspace, probe=probe,
+                    workspace=_workspace() or "", probe=probe,
                     conversation_id=bound_conversation_id, now_ms=_now_ms(),
                 )
             except Exception:
@@ -4178,7 +4203,7 @@ def build_tool_specs(
             }
         try:
             note = await book.create(
-                workspace=note_workspace, title=title, description=description,
+                workspace=_workspace() or "", title=title, description=description,
                 uncertainty=uncertainty, closing_condition=closing_condition,
                 established_in=bound_conversation_id, body=body,
                 established_by=f"tag:{tagger.person_id}", now_ms=_now_ms(),
@@ -4271,7 +4296,7 @@ def build_tool_specs(
             }
         try:
             revision = await book.append_revision(
-                workspace=note_workspace, note_id=note.id, body=body,
+                workspace=_workspace() or "", note_id=note.id, body=body,
                 parent_revision_id=parent,
                 established_by=f"tag:{tagger.person_id}", now_ms=_now_ms(),
             )
@@ -4681,7 +4706,7 @@ def build_tools(
     ai_peer: str = "nora",
     links: LinkCarry | None = None,
     notes: NoteCollaborator | None = None,
-    note_workspace: str = "",
+    note_workspace: Callable[[str, str], str | None] | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema

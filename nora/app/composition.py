@@ -1300,6 +1300,22 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # with the tick's would let a row be accepted as "two minutes out" and
         # then be found already due.
         clock=lambda: datetime.now(UTC),
+        # The note tier's four tools. `None` while `[notes] enabled = false`,
+        # so all four answer `unavailable` (R-5) rather than a guessed empty
+        # result — the same optional-collaborator shape `events` and
+        # `reminders` above use. `note_workspace` resolves a room to its
+        # `Conversation.workspace` (DEC-105), because a note is workspace-keyed
+        # while every tool argument the model can name is room-scoped; without
+        # it the tools would have no way to reach the right notebook. The
+        # SAME `allowlist` the assembler is given, for the reason stated there.
+        notes=note_store,
+        # RESOLVER, not a constant — see `build_tools`' own note. This
+        # deployment has two workspaces (`ridgeline`, `friends`) that
+        # `policy.toml` says are never paired, so a fixed string would hand one
+        # room the other's notebook. `None` for a room policy cannot name, which
+        # the note verbs report as `unavailable` rather than guessing a
+        # notebook. Same `allowlist` instance the assembler and ingest hold.
+        note_workspace=_note_workspace_of(allowlist),
         versions=version_manifest,
         giphy=giphy_client,
         # `[llm.budgets]`, the per-deployment delta over the table. Threaded
@@ -1788,3 +1804,21 @@ def _build_media_custody(cfg: Config) -> tuple[MediaSourceRegistry | None, BlobS
     ])
     blobs = FilesystemBlobStore(cfg.store.data_dir / "media", cipher=cipher)
     return sources, blobs
+
+
+def _note_workspace_of(policy: Policy) -> Callable[[str, str], str | None]:
+    """`(platform, conversation_id)` → the room's workspace, or `None`.
+
+    A free function rather than a lambda so the `None` branch is nameable: a
+    room `policy.toml` does not list has no workspace, and the note verbs must
+    answer `unavailable` for it. Guessing one — defaulting to "nora", or to
+    whichever workspace happens to be first — would write a note into a
+    notebook the room is not part of, and `standing` would then render it to
+    people who never saw the conversation it came from.
+    """
+
+    def _resolve(platform: str, conversation_id: str) -> str | None:
+        convo = policy.conversation(platform, conversation_id)
+        return convo.workspace if convo is not None else None
+
+    return _resolve

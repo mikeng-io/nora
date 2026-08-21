@@ -42,23 +42,36 @@ class _FakePersons:
         return None
 
 
-def _room(*, tagger: PersonRef | None = MILES) -> Room:
-    source = FakeRosterSource(groups={GROUP: (frozenset({"miles"}),)})
+def _room(*, tagger: PersonRef | None = MILES, conversation_id: str = GROUP) -> Room:
+    source = FakeRosterSource(groups={conversation_id: (frozenset({"miles"}),)})
     return Room(
-        platform="signal", conversation_id=GROUP, roster_source=source,
+        platform="signal", conversation_id=conversation_id, roster_source=source,
         persons=_FakePersons(MILES), tagger=tagger,
     )
 
 
 def _tools(
-    *, notes: InMemoryNoteStore | None, workspace: str = WORKSPACE,
+    *, notes: InMemoryNoteStore | None, workspace: str | None = WORKSPACE,
     metrics: Metrics | None = None, tagger: PersonRef | None = MILES,
+    conversation_id: str = GROUP, rooms: dict[str, str] | None = None,
 ) -> dict:
-    registry = ToolRegistry(notes=notes, note_workspace=workspace)
+    # `note_workspace` RESOLVES a room to its workspace rather than naming one.
+    # The resolver here READS its arguments — a lambda ignoring them would make
+    # every test below pass whether or not the tool consults the room, which is
+    # exactly the decorative test CLAUDE.md names. `rooms` maps
+    # conversation_id -> workspace, the shape `policy.toml` actually has.
+    book = rooms if rooms is not None else {conversation_id: workspace}
+
+    def _resolve(_platform: str, cid: str) -> str | None:
+        return book.get(cid)
+
+    registry = ToolRegistry(notes=notes, note_workspace=_resolve)
     specs = registry.specs(
-        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
+        store=_NullStore(), conversation_id=conversation_id,
+        conversation_type="group",
         persons=_FakePersons(MILES), honcho=FakeHoncho(), deliverer=SinkSender(),
-        metrics=metrics or Metrics(), room=_room(tagger=tagger),
+        metrics=metrics or Metrics(),
+        room=_room(tagger=tagger, conversation_id=conversation_id),
     )
     return {spec.name: spec.call for spec in specs}
 
@@ -507,3 +520,52 @@ def test_a_vetoed_revision_does_not_spend_its_budget():
     ))
     _read_happened(guard, "D")
     assert guard.evaluate("note_update", {"title": "D", "body": "x"}) is None
+
+
+async def test_two_rooms_in_different_workspaces_see_different_notebooks():
+    """The leak this resolver exists to prevent, and it fails if the workspace
+    stops being read from the ROOM.
+
+    `policy.toml` puts the operator's own rooms in `ridgeline` and the group in
+    `friends`, deliberately never paired (DEC-105/R-49 — a workspace is the
+    boundary `send_to` may not cross). A process-wide workspace string hands
+    one room the OTHER's notebook: `note_read` answers from it, `note_update`
+    writes into it, past the boundary spec §3's scope decision rests on.
+
+    Both calls below go through the SAME resolver and the same store; only the
+    room differs. That is what makes this red when the tool stops consulting
+    the room — with one workspace configured, every other test in this file
+    passes either way.
+    """
+    store = InMemoryNoteStore()
+    await store.create(
+        workspace="friends", title="Group dinner", description="undecided",
+        uncertainty="where", closing_condition="somebody picks",
+        established_in="signal:friends-room", body="three places",
+        established_by="miles", now_ms=1, anchor_date=20260909,
+    )
+    book = {"friends-room": "friends", "ridgeline-room": "ridgeline"}
+
+    in_friends = await _tools(
+        notes=store, rooms=book, conversation_id="friends-room",
+    )["note_read"](title="Group dinner")
+    in_ridgeline = await _tools(
+        notes=store, rooms=book, conversation_id="ridgeline-room",
+    )["note_read"](title="Group dinner")
+
+    assert in_friends["status"] == "ok"
+    # Same store, same title, different room: not there, and not readable.
+    assert in_ridgeline["status"] == "nothing_found"
+
+
+async def test_a_room_policy_cannot_name_gets_unavailable_never_a_guess():
+    """An unlisted room has no workspace, and the verbs must say so.
+
+    Defaulting to any particular notebook would write a note into one the room
+    is not part of — and `standing` would then render it to people who never
+    saw the conversation it came from. `unavailable` is «I could not check»;
+    `nothing_found` would be the lie.
+    """
+    store = InMemoryNoteStore()
+    out = await _tools(notes=store, workspace=None)["note_read"](title="anything")
+    assert out["status"] == "unavailable"

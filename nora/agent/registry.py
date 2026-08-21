@@ -107,7 +107,7 @@ class ToolRegistry:
         reminder_caps: ReminderCaps | None = None,
         events: EventsCollaborator | None = None,
         notes: NoteCollaborator | None = None,
-        note_workspace: str = "",
+        note_workspace: Callable[[str, str], str | None] | None = None,
         compute_backend: ComputeBackend | None = None,
         compute_jobs: ComputeJobStore | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
@@ -220,11 +220,15 @@ class ToolRegistry:
         # four note verbs answer `unavailable` (R-5) rather than crash or
         # report an unconsulted notebook as an empty one.
         #
-        # `note_workspace` is a registry field rather than a `specs()` argument
-        # for `ai_peer`'s reason: it is a PROCESS-lifetime value fixed by the
-        # deployment's conversation→workspace seam, not something a tag brings
-        # with it. The day that seam routes per-conversation it moves to
-        # `specs()` alongside `conversation_id`, and that is a deliberate edit.
+        # `note_workspace` is a registry field because the RESOLVER is
+        # process-lifetime; the workspace it returns is not. It was first
+        # written as a plain `str` on the reasoning that the seam is fixed by
+        # the deployment — false the moment a deployment has two workspaces,
+        # and this one has had two all along (`ridgeline` and `friends`,
+        # `policy.toml`, deliberately never paired). A constant would hand one
+        # room the other's notebook, which is a cross-workspace read AND write
+        # past the boundary spec §3 and DEC-105/R-49 both rest on. It takes
+        # `(platform, conversation_id)` and may answer `None`.
         self._notes = notes
         self._note_workspace = note_workspace
         # `make_artifact`'s pair (Nora Compute spec §4), wired the same honest
