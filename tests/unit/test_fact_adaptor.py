@@ -122,7 +122,10 @@ def test_the_extractor_holds_no_tools_at_all():
     research loop per message is unbounded cost on a background clock nobody
     is watching. Granting this adaptor even one tool is the change that turns
     Phase A into Phase B for every message in the room."""
-    assert FactCandidateAdaptor(candidates=InMemoryFactCandidateStore()).tools == frozenset()
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
+    assert adaptor.tools == frozenset()
 
 
 async def test_inputs_renders_every_row_including_one_with_no_body():
@@ -131,7 +134,9 @@ async def test_inputs_renders_every_row_including_one_with_no_body():
     `message_id` against the whole batch, so a row dropped from the render
     would make the set the model was shown smaller than the set `accept`
     accepts from it."""
-    adaptor = FactCandidateAdaptor(candidates=InMemoryFactCandidateStore())
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
 
     rendered = await adaptor.inputs(
         key=SCOPE, batch=(_row(41, "big walk 今晚?"), _row(42, None)),
@@ -146,7 +151,9 @@ async def test_a_message_id_outside_the_batch_is_dropped():
     An invented id points a later reader at a message that does not exist —
     fabricated provenance, which `LexemeObserver._extract` drops for the same
     reason."""
-    adaptor = FactCandidateAdaptor(candidates=InMemoryFactCandidateStore())
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
     await adaptor.inputs(key=SCOPE, batch=(_row(41, "a claim"),))
 
     parsed = await adaptor.accept(key=SCOPE, items=(
@@ -164,7 +171,9 @@ async def test_an_over_long_field_never_reaches_the_store():
     column — and here it would additionally become half of
     `fact_candidate_triple_key`, a key nobody can ever match a later sighting
     against."""
-    adaptor = FactCandidateAdaptor(candidates=InMemoryFactCandidateStore())
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
 
     parsed = await adaptor.accept(key=SCOPE, items=(
         {"subject": "x" * 5_000, "predicate": "contains", "object": "a tower",
@@ -180,7 +189,7 @@ async def test_the_extractor_writes_its_claims_through_the_candidate_sink():
     # the entity is what makes the written row observable through the read
     # half rather than through the store's internals.
     store.entities = [_entity("big walk")]
-    adaptor = FactCandidateAdaptor(candidates=store)
+    adaptor = FactCandidateAdaptor(candidates=store, workspace_for=lambda _: WS)
     await adaptor.inputs(key=SCOPE, batch=(_row(41, "a claim"),))
     payloads = await adaptor.accept(key=SCOPE, items=(
         {"subject": "big walk", "predicate": "contains", "object": "a tower",
@@ -188,11 +197,61 @@ async def test_the_extractor_writes_its_claims_through_the_candidate_sink():
     ))
 
     written = await adaptor.commit(
-        key=WS, proposals=tuple(_proposal(p) for p in payloads), now_ms=NOW,
+        key=SCOPE, proposals=tuple(_proposal(p) for p in payloads), now_ms=NOW,
     )
 
     assert written == 1
     assert (await store.pending(workspace=WS, limit=10))[0].object == "a tower"
+
+
+async def test_candidates_are_filed_under_the_workspace_not_the_scope():
+    """The extractor is SCOPE-keyed (a watermark and a message batch are per
+    room) and `fact_candidate.workspace` is a WORKSPACE (DEC-105), which is
+    what the workspace-keyed adjudicator reads. Filing a candidate under the
+    scope id would put every room's claims in a "workspace" named after the
+    room, where `pending()` never finds one — the two halves of the tier wired
+    end to end and unable to see each other, silently, forever.
+
+    Asserted through the READ the adjudicator actually makes, not through the
+    write: `pending(workspace=SCOPE)` returning nothing is the half that
+    matters."""
+    store = InMemoryFactCandidateStore()
+    store.entities = [_entity("big walk")]
+    adaptor = FactCandidateAdaptor(candidates=store, workspace_for=lambda _: WS)
+    await adaptor.inputs(key=SCOPE, batch=(_row(41, "a claim"),))
+    payloads = await adaptor.accept(key=SCOPE, items=(
+        {"subject": "big walk", "predicate": "contains", "object": "a tower",
+         "message_id": 41},
+    ))
+
+    await adaptor.commit(
+        key=SCOPE, proposals=tuple(_proposal(p) for p in payloads), now_ms=NOW,
+    )
+
+    assert len(await store.pending(workspace=WS, limit=10)) == 1
+    assert await store.pending(workspace=SCOPE, limit=10) == ()
+
+
+async def test_a_scope_with_no_workspace_writes_nothing_and_raises():
+    """Fail closed, and loudly. Within one workspace a fact crosses rooms BY
+    DESIGN (R-49/DEC-105), so a candidate filed under a guessed workspace is
+    one social unit's claim entering another's standing facts. Raising makes
+    the runtime report `unavailable`, which holds the watermark — the batch is
+    retried rather than consumed by a tick that wrote nothing."""
+    store = InMemoryFactCandidateStore()
+    adaptor = FactCandidateAdaptor(candidates=store, workspace_for=lambda _: None)
+    payloads = await adaptor.accept(key=SCOPE, items=(
+        {"subject": "big walk", "predicate": "contains", "object": "a tower",
+         "message_id": 41},
+    ))
+
+    with pytest.raises(LookupError):
+        await adaptor.commit(
+            key=SCOPE, proposals=tuple(_proposal(p) for p in payloads),
+            now_ms=NOW,
+        )
+
+    assert store._by_triple == {}
 
 
 # ---------------------------------------------------------------------------

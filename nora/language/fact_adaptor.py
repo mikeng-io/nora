@@ -43,7 +43,7 @@ exception.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -158,6 +158,22 @@ class FactCandidateAdaptor:
     message in the room, including the ones the deterministic filter between
     the phases exists to throw away.
 
+    **`workspace_for` is a required collaborator, not a convenience.** This
+    adaptor is keyed on a SCOPE (a watermark and a message batch are per room)
+    and writes into a table keyed on a WORKSPACE (`Conversation.workspace`,
+    DEC-105) — see `commit` for what happens without the translation, and why
+    an unresolvable scope raises rather than guessing. The composition root is
+    where the two keys are both known: `language_scopes` reads
+    `conv.primary_id` and `workspace_scopes` reads `conv.workspace` off the
+    same allowlist, so the resolver is the map between those two closures.
+
+    A plain callable rather than a declared Protocol, following
+    `dream_loop`'s own `scopes`/`workspaces` parameters and
+    `Dependencies.workspace_scopes`: this is a policy-derived lookup the
+    composition root already expresses as a closure, not a collaborator with
+    behaviour of its own. It is NOT a `*_fn` test seam — the production
+    wiring is the closure, and no test-only path exists beside it.
+
     Collaborators through `__init__` only, per the test-seam policy. No
     metrics collaborator, because this class emits none: a malformed item is
     dropped SILENTLY here (`DreamAdaptor.accept`'s own contract), and the
@@ -174,8 +190,14 @@ class FactCandidateAdaptor:
     envelope_key = "candidates"
     tools: frozenset[str] = frozenset()
 
-    def __init__(self, *, candidates: DreamSink) -> None:
+    def __init__(
+        self,
+        *,
+        candidates: DreamSink,
+        workspace_for: Callable[[str], str | None],
+    ) -> None:
         self._candidates = candidates
+        self._workspace_for = workspace_for
         # Per key, written by `inputs` and read by `accept` — the only channel
         # there is between them, because `DreamAdaptor.accept` takes no batch.
         # Keyed by `key` and not a bare attribute because `dream_loop`
@@ -251,14 +273,44 @@ class FactCandidateAdaptor:
         """Upsert every claim through the candidate store; return rows
         touched.
 
-        `commit(key, ())` reaches the sink unconditionally — it is R-27's
+        **`key` is a SCOPE here and the candidate table is keyed on a
+        WORKSPACE, so it is translated — this is not a detail.** This adaptor
+        is scope-keyed because a watermark and a message batch are per room;
+        `fact_candidate.workspace` is `Conversation.workspace` (DEC-105),
+        which is the unit `FactAdaptor` adjudicates over. Writing the scope id
+        into that column would put every room's candidates in a "workspace"
+        named after the room, where the workspace-keyed adjudicator's
+        `pending()` would never find one — a tier wired end to end and inert,
+        which is the failure mode this whole subsystem is most exposed to
+        because nobody is waiting on the Dreamer.
+
+        **An unresolvable scope RAISES rather than guessing.** The runtime
+        turns it into a counted `unavailable`, which holds the watermark so
+        the batch is retried rather than consumed — and, more importantly,
+        nothing is written. A guessed workspace is not a bad label: within one
+        workspace a fact crosses rooms by design (R-49/DEC-105), so a
+        candidate filed under the wrong one is a claim from one social unit
+        entering another's standing facts. Every allowlisted room has a
+        workspace (`Conversation.workspace` defaults to `"nora"`), so this is
+        a wiring fault and reads as one.
+
+        `commit(key, ())` still reaches the sink — it is R-27's
         `nothing_found` («I looked and there was nothing»), a legal call the
-        sink may act on, and collapsing it into "nothing to do, skip the
-        call" is what turns a wiring gap into a false negative one layer up.
+        sink may act on, and collapsing it into "nothing to do, skip the call"
+        is what turns a wiring gap into a false negative one layer up.
         """
+        workspace = self._workspace_for(key)
+        if workspace is None:
+            raise LookupError(
+                f"fact-candidates: scope {key!r} resolves to no workspace, so "
+                f"there is no key to file its candidates under. Filing them "
+                f"under the scope id would hide them from the workspace-keyed "
+                f"adjudicator; filing them under a guessed workspace would let "
+                f"one social unit's claims enter another's (DEC-105/R-49)."
+            )
         return len(
             await self._candidates.propose(
-                key=key, proposals=proposals, now_ms=now_ms,
+                key=workspace, proposals=proposals, now_ms=now_ms,
             )
         )
 

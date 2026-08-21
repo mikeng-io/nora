@@ -199,7 +199,13 @@ class _CountsEmptyProposes:
 
 def _build_fact_candidates() -> tuple[object, object]:
     sink = _CountsEmptyProposes(InMemoryFactCandidateStore())
-    return FactCandidateAdaptor(candidates=sink), sink
+    # The extractor is SCOPE-keyed and the candidate table is WORKSPACE-keyed
+    # (DEC-105), so it translates; the composition root builds this closure
+    # from the same allowlist `language_scopes`/`workspace_scopes` read.
+    adaptor = FactCandidateAdaptor(
+        candidates=sink, workspace_for=lambda scope: "ws-main",
+    )
+    return adaptor, sink
 
 
 def _fact_candidate_items() -> tuple[Mapping[str, object], ...]:
