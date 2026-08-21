@@ -195,8 +195,9 @@ def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypa
     assert example.enabled == live.enabled is False, (
         "the Dreamer runtime ships OFF in both files"
     )
-    assert example.model == live.model == "", (
-        "an empty model means [language].model — the open D2 gate fills this in"
+    assert example.model == live.model == "ollamacloud/deepseek-v4-flash", (
+        "the two files disagree about which model the Dreamer runs — an "
+        "operator decision (2026-08-21), so it is stated, not inferred"
     )
     assert set(example.budgets) == set(live.budgets), (
         "the two files budget different adaptors: "

@@ -737,6 +737,10 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     # The runtime half, absent from the file entirely: OFF, no model pinned,
     # no budget declared — and still bounded.
     assert cfg.dreamer.enabled is False
+    # The CLASS default, not the shipped file's value: this test deletes the
+    # section, so what it measures is what a config predating it gets. Empty
+    # still means "fall back to [language].model", which is why that fallback
+    # stays wired even though config.toml now states the model outright.
     assert cfg.dreamer.model == ""
     assert cfg.dreamer_model() == cfg.language.model
     assert cfg.dreamer.budgets == {}
@@ -802,13 +806,33 @@ def test_the_dreamer_runtime_ships_off(toml_path):
     assert load(toml_path).dreamer.enabled is False
 
 
-def test_an_empty_dreamer_model_falls_back_to_the_language_model(toml_path):
-    """`model = ""` is the shipped value and means "today's tier".
+def test_the_shipped_dreamer_model_is_the_one_nora_runs(toml_path):
+    """`deepseek-v4-flash`, stated explicitly — an OPERATOR DECISION
+    (2026-08-21), not a measurement.
 
-    That is what makes the runtime's arrival a no-op at runtime rather than a
-    silent model change: plan gate D2 (which model the Dreamer runs) is OPEN and
-    answered by measurement, so nothing here may pick one. Resolved through
-    `Config.dreamer_model()` and nowhere else — the `describer_for` shape."""
+    Plan gate D2 asked which model the Dreamer should run and answered "measure
+    it". That is closed as unanswerable in its own terms for now: nothing is
+    deployed, the fact tier holds zero rows, and a research loop's quality
+    cannot be graded against an empty store. A number produced there would look
+    like evidence and not be one.
+
+    Running Nora's own model is also what keeps the architecture's claim
+    falsifiable — the Dreamer is meant to do better because it is DIFFERENTLY
+    SITUATED, not smarter — so this equality is asserted rather than left to
+    coincidence."""
+    cfg = load(toml_path)
+    assert cfg.dreamer.model == "ollamacloud/deepseek-v4-flash"
+    assert cfg.dreamer_model() == cfg.language.model
+
+
+def test_an_empty_dreamer_model_still_falls_back_to_the_language_model(toml_path):
+    """The fallback stays wired even though the shipped file no longer uses it:
+    a deployment whose `config.toml` predates this field must keep loading, and
+    `extra="forbid"` makes that a real constraint rather than a courtesy."""
+    toml_path.write_text(toml_path.read_text().replace(
+        'model = "ollamacloud/deepseek-v4-flash"\n\n# One budget block',
+        'model = ""\n\n# One budget block',
+    ))
     cfg = load(toml_path)
     assert cfg.dreamer.model == ""
     assert cfg.dreamer_model() == cfg.language.model
@@ -820,8 +844,9 @@ def test_an_explicit_dreamer_model_overrides_the_language_model(toml_path):
     `test_an_explicit_image_model_wins_over_the_legacy_alias` guards for
     `[media]`'s own alias."""
     toml_path.write_text(toml_path.read_text().replace(
-        '[dreamer]\n', '[dreamer]\nmodel = "measured/dreamer-tier"\n'
-    ).replace('\nmodel = ""\n', "\n"))
+        'model = "ollamacloud/deepseek-v4-flash"\n\n# One budget block',
+        'model = "measured/dreamer-tier"\n\n# One budget block',
+    ))
     cfg = load(toml_path)
     assert cfg.language.model == "ollamacloud/deepseek-v4-flash"
     assert cfg.dreamer_model() == "measured/dreamer-tier"
