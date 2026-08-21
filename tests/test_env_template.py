@@ -85,6 +85,12 @@ _MAY_DIFFER = {
     "platforms.discord.enabled", "presence.enabled", "preview.enabled",
     "route.enabled", "search.enabled", "shortener.enabled",
     "tools.mcp.pulse.enabled", "weather.enabled",
+    # The Dreamer runtime and the fact tier, live here since 2026-08-21 and
+    # INERT in the template for the same reason as their neighbours above: the
+    # Dreamer spends model calls on a background clock and the fact tier writes
+    # claims into a block every tagged turn reads. A copied file must not do
+    # either without somebody deciding to.
+    "dreamer.enabled", "facts.enabled",
     # Per-deployment policy/cost knobs.
     "doctrine.canary",            # deliberately CHANGE-ME in the template
     "presence.retention_days",    # disk and privacy, the operator's call
@@ -192,8 +198,11 @@ def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypa
         loaded[name] = load(dst).dreamer
 
     example, live = loaded["config.example.toml"], loaded["config.toml"]
-    assert example.enabled == live.enabled is False, (
-        "the Dreamer runtime ships OFF in both files"
+    assert example.enabled is False, (
+        "the Dreamer runtime must ship OFF in the TEMPLATE — a copied file does "
+        "not start spending model calls on a background clock. The live "
+        "deployment's own value is an operator decision and is listed in "
+        "_MAY_DIFFER."
     )
     assert example.model == live.model == "ollamacloud/deepseek-v4-flash", (
         "the two files disagree about which model the Dreamer runs — an "

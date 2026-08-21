@@ -294,7 +294,7 @@ strict = true
 # new subsystem does not switch itself on — [presence]/[search]/[compute]/
 # [language]/[analytics]/[facts] all shipped inert too. Off, no DreamerRuntime
 # is constructed and the existing consolidators run exactly as they do today.
-enabled = false
+enabled = true
 # The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
 # — and the distinction is stated because the earlier version of this comment
 # claimed the opposite while carrying a value nobody had measured.
@@ -747,7 +747,7 @@ verify_known_entities = true
 # so this section is a flag and three bounds for a future adaptor, not a
 # running subsystem today. Stays off with this first deployment of the
 # schema, the same "off at first" period [language] shipped in.
-enabled = false
+enabled = true
 # max_adjudications_per_tick = 10
 # max_rendered_facts = 8
 # retention_days = 180
