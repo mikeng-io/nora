@@ -97,15 +97,50 @@ stuck in a `MaxTokensReachedException` loop on one scope
 (`docs/superpowers/specs` cross-session trail; trace
 `b782c5afba571f7ec47cf706eb6ebe18`, 2026-08-21, verified via the real
 Langfuse API: input 3201 tokens / output 4096 tokens, mid-generation cut).
-Root cause, confirmed with nora-cc: a Strands `Agent` built with `tools=[]`
-has no way to reach its own stopping condition — the Dreamer's loop ends
-when "the model declines to call anything," which is unreachable when there
-is nothing it could call — so it deliberates into the void until the output
-budget runs out. §9's debrief design is *also* toolless ("producing all
-three outputs from one call"), so building it the same way
-(`create_dream_agent`) would inherit the identical structural defect.
+**Root cause — CORRECTED 2026-08-22, cross-session (nora-cc).** The first
+version of this note got the mechanism backwards. `tools=[]` under
+`tool_choice="auto"` does not prevent the Dreamer's stop condition
+("the model declines to call anything") from being reached — it satisfies
+it *trivially, on the first pass*, because there is nothing else the model
+could do. There is no loop at all in this case: it is **one single
+generation** that ran away to 4096 tokens *within itself*. Confirmed against
+the actual trace pulled from Langfuse (`b782c5afba571f7ec47cf706eb6ebe18`):
+exactly one `GENERATION` observation (`chat`, `ollamacloud/deepseek-v4-flash`,
+input=3201/output=4096), not several — a multi-turn loop would show more
+than one.
 
-The fix, three parts, all before Phase 2 ships:
+**What that means: the Strands `Agent`-vs-raw-completion choice buys NO
+protection from this failure by itself.** A raw `chat.completions.create`
+with the same prompt and the same output ceiling runs away identically —
+and *worse*, because it fails silently (`finish_reason="length"`, a
+truncated body) rather than raising. The actual causes are the ones already
+found and are independent of the SDK wrapper: a research-framed doctrine on
+a task with no research, no stated expected output size, and an unbounded
+input.
+
+**The real design rule, and it decides both the debrief's shape AND why
+Standing needs no tool for `prior` (ties directly to blocker 3, below):**
+
+> If the selection is knowable *before* the call, it is an input. If the
+> selection depends on what the model concludes *mid-reasoning*, it must be
+> a tool.
+
+`Standing.state`, the current `TagTrace`, and the debrief's whole input set
+are all knowable in advance — the debrief needs no tool, full stop, not
+merely "probably doesn't need one." The fact tier's `FactCandidateAdaptor`/
+`FactAdaptor` are the other case: *"what do we already call this thing?"*
+isn't answerable until the model has read the batch and formed a
+hypothesis — Python cannot pre-select it, which is exactly why two
+contradictory `big walk` rows exist. **The one thing that would flip
+Standing onto the tool side**: if a debrief should ever ask *"have I
+concluded something like this before, in another conversation?"* — that is
+discovery, not a known-row read, and would need nora-cc's read-tool seam.
+Worth checking which side of that line any future addition falls on, rather
+than assuming a plain completion stays sufficient forever.
+
+The fix (still three parts — unaffected by the correction above, since the
+underlying causes were always these, not the SDK wrapper), all before Phase
+2 ships:
 - Build the debrief as a raw `chat.completions.create` call, matching the
   OLD one-shot `_LanguageModelClient` pattern
   (`nora/app/composition.py:150-204`) — not a Strands `Agent` construction.
