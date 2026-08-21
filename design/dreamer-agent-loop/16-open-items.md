@@ -12,6 +12,22 @@ edges:
 
 ## Blocking
 
+**0. Does the transport sustain a research loop at all?**
+
+Two indexed findings say the route does **not** reliably honour the tool-choice
+setting the loop depends on, and that **reasoning is stripped between
+iterations**. This bundle's central proposal is multi-turn loops that carry
+their reasoning forward and can rely on calling something.
+
+If either holds, the loop designed in [07-loop.md](07-loop.md) cannot run as
+designed — not "runs worse", but rests on a property the transport does not
+have. **This outranks every other item here**, including the ceiling question
+below, because it decides whether the shape is right rather than how to size it.
+
+Measured the same way as §1, in the same run: drive the real pipeline and read
+back whether tool calls are honoured and whether reasoning survives a turn
+boundary.
+
 **1. Does the gateway honour the per-call token ceiling?**
 
 The observed generation was 4,096 output tokens. The configured per-call
@@ -36,7 +52,7 @@ the answer to this item, and to the `tool_choice` reliability question that is
 still open beside it. *(Credit: the Standing/debrief session, who learned it the
 expensive way.)*
 
-Nothing in [10-orchestration.md](10-orchestration.md) should be sized until it
+Nothing in [06-trigger.md](06-trigger.md) should be sized until it
 is run. This is the cheapest open item and the one most other numbers depend
 on.
 
@@ -44,14 +60,19 @@ on.
 
 The workspace bounds which rooms may be paired; the persons list decides who
 may use the pair. The fact path implements the first and has no mechanism for
-the second. Until it does, Path B in [07-room-access.md](07-room-access.md) is
-blocked and the content-class change in [08-disclosure.md](08-disclosure.md) is
+the second. Until it does, Path B in [10-room-access.md](10-room-access.md) is
+blocked and the content-class change in [11-disclosure.md](11-disclosure.md) is
 unsanctioned.
 
-This is a policy question, not an implementation one. It may be answerable by
-asserting a property of the deployment (rooms in one workspace share a person
-list) and **checking it at startup** — which would turn a borrowed argument
-into a guard. That is a proposal, not a decision.
+**It is not unanswered — it is answered twice, incompatibly.** One spec holds
+that a fact has *no* second gate and therefore the workspace must be **stated**,
+in the refuse-to-start shape, with a named test. Another withdraws its own
+room-gate on the opposite reading: *"the workspace key already **is** the
+gate."* The startup check the first implies was cut.
+
+So the work is to pick one and record why, not to research an open question.
+The check-at-startup reading is the one that turns a borrowed argument into a
+guard, and it is the one with a test already written for it.
 
 **3. A global concurrency bound.**
 
@@ -64,10 +85,10 @@ be chosen before the migration lands, not discovered after.
 **4. Cadence per adaptor.** Extraction is watermark-driven and suits a clock.
 Adjudication is a work queue wearing a clock's clothing. Synthesis, if it
 lands, wants to run rarely. One tick currently serves all three
-([10-orchestration.md](10-orchestration.md) §8).
+([06-trigger.md](06-trigger.md) §2).
 
 **5. Entity resolution.** The shared dependency of both tiers
-([09-self-correction.md](09-self-correction.md) §4). Its absence bounds how
+([12-self-correction.md](12-self-correction.md) §4). Its absence bounds how
 useful any search tool can be, and the fact tier is on course to reproduce the
 language tier's fragmentation. Mechanism still open; this bundle records only
 that it is shared, not fact-tier-local.
@@ -82,13 +103,13 @@ second column rather than a different one — so today's stamp stays correct
 either way. Still owed an answer.
 
 **7. Language-tier supersession.** Deliberately not decided here
-([09-self-correction.md](09-self-correction.md) §1). Any proposal must say what
+([12-self-correction.md](12-self-correction.md) §1). Any proposal must say what
 happens to the overwrite bug the compound key was introduced to fix.
 
 **8. What `<facts>` renders.** Currently the workspace's most recent standing
 facts with no subject filter. Whether it becomes query-relevant, becomes a tool
 Nora calls, or both, is a tag-path cost question
-([06-tool-surface.md](06-tool-surface.md) §5).
+([08-state.md](08-state.md) §11).
 
 **9. Was the model ever the problem?**
 
@@ -108,7 +129,7 @@ that contradicts from one that merely does not cover, that reopens the
 
 - **The fact tier's store.** Owned by its own workstream.
 - **Standing and the debrief.** Tag-path work, separately owned. The
-  input-versus-tool rule ([05-input-or-tool.md](05-input-or-tool.md)) applies
+  input-versus-tool rule ([08-state.md](08-state.md)) applies
   to it; that is the whole overlap. Its read is one known row, so it is an
   input — unless it ever asks "have I concluded something like this before,
   elsewhere", which is discovery and needs the seam.
@@ -118,4 +139,4 @@ that contradicts from one that merely does not cover, that reopens the
   own game state, which is the one thing that would settle the motivating
   claim. Reopen by giving those tools a classification surface.
 - **Transitive supersession, premise cardinality, two writerless warrant
-  kinds.** [09-self-correction.md](09-self-correction.md) §6.
+  kinds.** [12-self-correction.md](12-self-correction.md) §6.

@@ -6,7 +6,7 @@ tags: [nora, dreamer, room, roster, scope, workspace]
 timestamp: '2026-08-22'
 edges:
   - {dst: 00-overview, rel: realizes, provenance: asserted}
-  - {dst: 06-tool-surface, rel: depends_on, provenance: asserted}
+  - {dst: 08-state, rel: depends_on, provenance: asserted}
 ---
 
 # Room Access — Two Paths, Not One Change
@@ -76,7 +76,7 @@ that was never built. Concretely:
   one room readable and one not is `unavailable`, not a truncated `ok`.
 - **Roster-shaped tools would need a union of rosters**, and that union is a
   disclosure decision that **conflicts with R-49** rather than merely being
-  unmade. See [08-disclosure.md](08-disclosure.md).
+  unmade. See [11-disclosure.md](11-disclosure.md).
 - **Memory search cannot be workspace-scoped** without reversing a decision
   made deliberately: private DMs are separate sessions inside one workspace,
   and the session scoping is what keeps them apart.
@@ -85,7 +85,7 @@ that was never built. Concretely:
 
 **Decision (D4): Path B is blocked.** Not deferred for effort — blocked pending
 an answer to the disclosure question. It is listed in
-[13-open-items.md](13-open-items.md).
+[16-open-items.md](16-open-items.md).
 
 ## 4. The cheaper answer for Path B, and it is already decided
 
@@ -95,8 +95,8 @@ countable, cappable, needs no new mechanism, and is what fact-tier §4.2 already
 sanctions for exactly this shape of need.
 
 That is not a substitute for the tier-read tools of
-[06-tool-surface.md](06-tool-surface.md) — those answer questions Python cannot
-pre-select, per [05-input-or-tool.md](05-input-or-tool.md). It is a substitute
+[08-state.md](08-state.md) — those answer questions Python cannot
+pre-select, per [08-state.md](08-state.md). It is a substitute
 for the *room* half, and it is the right first move while Path B is blocked.
 
 ## 5. What replaces the guard
@@ -125,5 +125,5 @@ tick, all day, and there is **no per-run total tool-call ceiling** — only
 per-tool. The loop's only global bounds are turns, tokens and the wall clock.
 
 That sizing belongs with the rest of the budget work in
-[10-orchestration.md](10-orchestration.md), and it should land in the same
+[06-trigger.md](06-trigger.md), and it should land in the same
 change as the grant rather than after it.

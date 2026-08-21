@@ -2,89 +2,100 @@ kind: design_index
 title: "The Dreamer Agent Loop — Revision Bundle"
 description: >
   The Dreamer was designed as a read-only research agent and built as a
-  pipeline. Four of five participants make a single completion call with no
-  tools; the fifth has a real loop and can only look outward at the open web.
-  This bundle is a revision layer over the three 2026-08-20 specs: it records
+  pipeline. Five seams — transport, trigger, loop, state, measurement — were
+  each collapsed into something else: the transport inherited from the chat
+  path, the trigger reduced to a side-effect of rendering a prompt, the loop
+  absent for four of five participants, state pre-rendered by code, and
+  measurement blind at six independent layers. This bundle is a revision layer
+  over the three 2026-08-20 specs and the four transfer documents: it records
   what is live, what was designed and never shipped, and the decisions that
-  close the gap. It supersedes their framing where it conflicts and defers the
-  rest.
+  close the gap.
 status: proposed
 governance: pre-governance-input
 timestamp: '2026-08-22'
 origin: >
   Investigation session with miles, 2026-08-21/22, prompted by a repeating
-  MaxTokensReachedException in fact-candidates. Six parallel read-only
+  token-limit failure in the fact extractor. Six parallel read-only
   investigations against the running container, the live database, the
-  application log and the full design corpus.
+  application log and the full design corpus; a direct handoff from the session
+  that owns Standing/debrief; a study of a sibling project's built agent loop;
+  then four adversarial reviews (fact-check, coherence, design-quality,
+  completeness) whose corrections are folded in.
 members:
   - 00-overview.md
   - 01-live-state.md
   - 02-instrument-blindness.md
   - 03-no-agent-loop.md
   - 04-designed-vs-shipped.md
-  - 05-input-or-tool.md
-  - 06-tool-surface.md
-  - 07-room-access.md
-  - 08-disclosure.md
-  - 09-self-correction.md
-  - 10-orchestration.md
-  - 11-doctrine.md
-  - 12-migration-and-governance.md
-  - 13-open-items.md
-  - 14-roadmap.md
+  - 05-transport.md
+  - 06-trigger.md
+  - 07-loop.md
+  - 08-state.md
+  - 09-measurement.md
+  - 10-room-access.md
+  - 11-disclosure.md
+  - 12-self-correction.md
+  - 13-doctrine.md
+  - 14-migration-and-governance.md
+  - 15-roadmap.md
+  - 16-open-items.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 04-designed-vs-shipped, rel: motivated_by, provenance: asserted}
-  - {src: 00-overview, dst: 05-input-or-tool, rel: decides_on, provenance: asserted}
   - {src: 02-instrument-blindness, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 03-no-agent-loop, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 04-designed-vs-shipped, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
-  - {src: 05-input-or-tool, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
-  - {src: 05-input-or-tool, dst: 04-designed-vs-shipped, rel: motivated_by, provenance: asserted}
-  - {src: 06-tool-surface, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 06-tool-surface, dst: 05-input-or-tool, rel: realizes, provenance: asserted}
-  - {src: 06-tool-surface, dst: 04-designed-vs-shipped, rel: depends_on, provenance: asserted}
-  - {src: 07-room-access, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 07-room-access, dst: 06-tool-surface, rel: depends_on, provenance: asserted}
-  - {src: 08-disclosure, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 08-disclosure, dst: 07-room-access, rel: depends_on, provenance: asserted}
-  - {src: 09-self-correction, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 09-self-correction, dst: 06-tool-surface, rel: depends_on, provenance: asserted}
-  - {src: 09-self-correction, dst: 01-live-state, rel: motivated_by, provenance: asserted}
-  - {src: 10-orchestration, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 10-orchestration, dst: 01-live-state, rel: motivated_by, provenance: asserted}
-  - {src: 10-orchestration, dst: 02-instrument-blindness, rel: depends_on, provenance: asserted}
-  - {src: 11-doctrine, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 11-doctrine, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
-  - {src: 12-migration-and-governance, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 12-migration-and-governance, dst: 06-tool-surface, rel: sequences, provenance: asserted}
-  - {src: 12-migration-and-governance, dst: 07-room-access, rel: sequences, provenance: asserted}
-  - {src: 12-migration-and-governance, dst: 11-doctrine, rel: sequences, provenance: asserted}
-  - {src: 13-open-items, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 14-roadmap, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 14-roadmap, dst: 13-open-items, rel: relates_to, provenance: asserted}
+  - {src: 05-transport, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 05-transport, dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {src: 06-trigger, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 06-trigger, dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {src: 07-loop, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 07-loop, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
+  - {src: 07-loop, dst: 08-state, rel: depends_on, provenance: asserted}
+  - {src: 08-state, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 08-state, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
+  - {src: 08-state, dst: 04-designed-vs-shipped, rel: motivated_by, provenance: asserted}
+  - {src: 09-measurement, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 09-measurement, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
+  - {src: 10-room-access, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 10-room-access, dst: 08-state, rel: depends_on, provenance: asserted}
+  - {src: 11-disclosure, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 11-disclosure, dst: 10-room-access, rel: depends_on, provenance: asserted}
+  - {src: 12-self-correction, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 12-self-correction, dst: 08-state, rel: depends_on, provenance: asserted}
+  - {src: 12-self-correction, dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {src: 13-doctrine, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 13-doctrine, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
+  - {src: 14-migration-and-governance, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 14-migration-and-governance, dst: 08-state, rel: sequences, provenance: asserted}
+  - {src: 14-migration-and-governance, dst: 10-room-access, rel: sequences, provenance: asserted}
+  - {src: 14-migration-and-governance, dst: 13-doctrine, rel: sequences, provenance: asserted}
+  - {src: 15-roadmap, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 15-roadmap, dst: 16-open-items, rel: relates_to, provenance: asserted}
+  - {src: 16-open-items, dst: 00-overview, rel: realizes, provenance: asserted}
 scope:
   v1:
-    - "The loop is the deliverable: an adaptor with no tools is a completion, not an agent"
-    - "Knowable-before-the-call is an input; discovered-during-reasoning must be a tool"
-    - "A tier contributes read tools through the existing registry seam, not a bespoke mechanism"
+    - "Transport: the Dreamer gets its own, verified against the wire rather than inherited"
+    - "Trigger: an adaptor declares when it wants to run; did-not-fire is a third outcome"
+    - "Loop: termination is a structured act whose absence fails closed; partial progress survives a bounded run"
+    - "State: knowable-before is an input, discovered-during is a tool; a tier contributes read access through the existing registry seam"
+    - "Measurement: every seam ships its instrument, this bundle's own change first"
+    - "Phase A gains tools, and must NOT deduplicate against existing candidates"
     - "Room access splits by key kind: scope-keyed proceeds, workspace-keyed is blocked"
-    - "The egress screen does not make a room read safe; the content class is what changes"
-    - "Every fix ships its own measurement"
     - "Doctrine becomes shape-aware; the audience field stops being decorative"
     - "Migrate room-language and room-exchange onto the runtime (Phase 3)"
   deferred:
-    - "BLOCKED — workspace-keyed room access, pending R-49's second condition on the fact path"
-    - "BLOCKED — any budget sizing, pending a gateway probe on the per-call token ceiling"
+    - "BLOCKED — everything, pending one measurement: does the transport honour tool calls and carry reasoning between turns, and which token ceiling actually binds"
+    - "BLOCKED — workspace-keyed room access, pending a decision on R-49's second condition (answered twice, incompatibly)"
     - "BLOCKED — the migration landing, pending a chosen global concurrency bound"
     - "Language-tier supersession (a designed cost; reversing it needs its own argument)"
-    - "Entity resolution mechanism (shared dependency of both tiers)"
-    - "Per-adaptor cadence"
+    - "Entity resolution (shared dependency of three tiers, owned by nobody)"
     - "What <facts> renders at reply time"
-    - "Whether the instruction digest must cover the tool subset"
+    - "Whether the instruction digest must cover the tool subset and budget"
+    - "R-57's text and DEC-135's row, both reserved and undrafted"
     - "OUT OF SCOPE — the fact tier's store"
-    - "OUT OF SCOPE — Standing and the debrief (tag path, separately owned)"
+    - "OUT OF SCOPE — Standing and the debrief (tag path, separately owned; roadmap consolidated here by agreement)"
     - "OUT OF SCOPE — game-state tools (excluded fail-closed pending a classification surface)"
     - "OUT OF SCOPE — whether the Dreamer's model changes"

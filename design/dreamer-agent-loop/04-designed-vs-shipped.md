@@ -73,7 +73,7 @@ Its **rationale** is general, and applied consistently would strip
 list ten lines above it in the same document.
 
 A rule scoped to one tool is being used to justify the absence of a different
-one. [05-input-or-tool.md](05-input-or-tool.md) replaces it with a rule that
+one. [08-state.md](08-state.md) replaces it with a rule that
 survives generalisation.
 
 ## 4. The ceiling is the hand-list the keystone forbids
@@ -95,13 +95,16 @@ room-scoped with an inline note saying *"nothing wires their collaborators
 yet"* — and that reason is factually false; both collaborators are wired. The
 real blocker is the resolution key, not the wiring. A careful reader who checks
 the stated reason, finds it wrong, and reclassifies would hand a background
-loop a tool that writes ([08-disclosure.md](08-disclosure.md)).
+loop a tool that writes ([11-disclosure.md](11-disclosure.md)).
 
-Worse, the ceiling's own rationale — *"a workspace has no single room to bind
-them to"* — is disproved by an existing counter-example. The note read verbs
-take a workspace **directly** and resolve room→workspace through an injected
-callable. A workspace-keyed read tool needing no room already exists in this
-repo.
+The ceiling's own rationale — *"a workspace has no single room to bind them
+to"* — is true of every read tool **as currently built**, and is not a general
+claim. The note read verbs are sometimes offered as the counter-example; they
+are not one. They take a title or a query and **derive** the workspace from
+`(platform, conversation_id)`, so they need a room exactly as the others do. It
+is the *store port* beneath them that takes a workspace directly. The
+distinction matters because it is the difference between "this already exists"
+and "this needs building" — see [08-state.md](08-state.md) §10.
 
 ## 5. Three live specs still say "Design only. No code."
 
@@ -113,8 +116,16 @@ repo.
 
 CLAUDE.md's reading order says specs are for *why*, not current state. But an
 implementer opening fact-tier §4 sees an **unimplemented specification** rather
-than one the shipped code deliberately departed from. There is no marker
-distinguishing "not built yet" from "built differently, on purpose."
+than one the shipped code deliberately departed from.
+
+**The convention for marking this exists, and is applied inconsistently inside
+single files.** The corpus does use in-file `SUPERSEDED` blockquotes, `CLOSED`
+headings, strikethroughs, and in one case a whole "corrections found in
+implementation" section. The fact-tier spec carries both at once: "Design only.
+No code." and "Both are now **on master**" sit **five lines apart**. So the
+failure is not an absent convention — it is one applied to some sections and not
+their neighbours, which is worse, because its presence elsewhere in the file
+implies the unmarked parts were checked.
 
 That is the mechanism by which seven tools went missing without anyone
 noticing, and it is why this bundle is a **revision layer** that supersedes
@@ -141,12 +152,23 @@ further instances, three found by investigations that were not looking for this:
    attempt, as **four passed and nine failed**. The spec was never annotated.
 4. **The three transfer documents**, at a larger grain — each written because
    the last did not survive a session boundary, each now partly false. See
-   [14-roadmap.md](14-roadmap.md) §6.
+   [15-roadmap.md](15-roadmap.md) §6.
+5. **An accepted spec asserts a defect that has been fixed.** It records that
+   the doctrine loader accepts authority cycles. The loader implements
+   acyclicity, with named tests for the exact shapes, and one test's docstring
+   records the history. Anyone reading that spec today would reopen closed work
+   — the most expensive form of this failure, in a document whose whole subject
+   is claims drifting from what they describe.
+6. **Three more, all in files this bundle otherwise audits**: a retired-then-
+   reinstated web tool still described as retired in config; a comment saying
+   the adaptors are not built, twenty lines above the code that builds both; and
+   the fact tier documented as shipping dormant directly above the line
+   enabling it.
 
 The common shape is that the **restatement is the artefact people read**, and
 nothing binds it to the decision it restates. That is why this bundle is a
 revision layer with an explicit supersedes field, and why
-[14-roadmap.md](14-roadmap.md) carries a staleness register instead of claiming
+[15-roadmap.md](15-roadmap.md) carries a staleness register instead of claiming
 to be permanently true.
 
 
@@ -161,6 +183,6 @@ It is a designed decision, argued on cost, that this bundle proposes to reopen
 on evidence — not an oversight to be corrected. The evidence is that it is not
 cheap: it spends its entire output budget producing nothing parseable, every
 tick, and has never once succeeded. See
-[05-input-or-tool.md](05-input-or-tool.md) for the replacement argument and
-[12-migration-and-governance.md](12-migration-and-governance.md) for the test
+[08-state.md](08-state.md) for the replacement argument and
+[14-migration-and-governance.md](14-migration-and-governance.md) for the test
 that pins it and must be replaced rather than deleted.

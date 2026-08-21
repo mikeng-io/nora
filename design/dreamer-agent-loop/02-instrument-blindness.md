@@ -26,6 +26,9 @@ On the tag path a broken instrument is discovered within one turn, because a
 human is holding the phone. Here, a null reading and a broken gauge are the
 same observation, and nothing forces the question.
 
+One layer below is in the note tier, not the Dreamer. That is what settles this
+as a repo-wide discipline gap rather than one subsystem's bug.
+
 ## Layer 1 — The stop-reason counter is blind to both caps that bind
 
 `nora_dream_stop_reason_total` exists to answer *"did a budget cap bind?"*. It
@@ -97,8 +100,8 @@ messages, memory conclusions, roster composition, membership counts, or
 relationship claims. It also never sees tool *arguments* or tool *results*,
 only the model's final restatement.
 
-Full argument in [08-disclosure.md](08-disclosure.md). It is listed here
-because the failure mode is identical to the other four: a real instrument,
+Full argument in [11-disclosure.md](11-disclosure.md). It is listed here
+because the failure mode is identical to the other five: a real instrument,
 correctly implemented, measuring a narrower property than the one it is
 credited with.
 
