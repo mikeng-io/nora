@@ -804,6 +804,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # host. `AgentSkills` is built per tag inside `factory.create_agent`.
         skills_dir=cfg.doctrine.dir.parent / "skills",
         agent_name=cfg.agent.name,
+        # The process-wide registry, not a private one — `nora_tagtrace_
+        # truncations_total` (spec §11) has to land where `/metrics` reads it.
+        metrics=metrics,
     )
     # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`.
     # The two were the same value until 2026-08-06, which made the whole

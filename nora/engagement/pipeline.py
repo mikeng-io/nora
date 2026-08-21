@@ -479,7 +479,12 @@ class EngagementPipeline:
                 ctx, tagger_name=tagger_name, display_name=self._display_name,
             )
 
-            ok, llm_elapsed, stop_reason, final_text = await invoke.run(
+            # `invoke.run` also hands back a `TagTrace` (Task 4) — not yet
+            # consumed here. Task 6 wires it into `SqlTagTraceStore`, once the
+            # true `outcome` below (recovered/vetoed/silent/send_reply) is
+            # decided; this stage only needs to keep unpacking the widened
+            # tuple without breaking.
+            ok, llm_elapsed, stop_reason, final_text, _trace = await invoke.run(
                 runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
                 tag_message=tag_message, limits=self._limits, ctx=ctx,

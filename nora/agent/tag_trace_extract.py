@@ -33,7 +33,7 @@ def extract_tag_trace(
 ) -> TagTrace:
     try:
         raw = list(agent.messages)[baseline:]
-    except Exception:
+    except Exception:  # noqa: BLE001 — defensive-throughout (see module docstring)
         log.warning(
             "tag_trace extraction: agent.messages unreadable (tag=%s); "
             "degrading to an empty trace", tag_id,

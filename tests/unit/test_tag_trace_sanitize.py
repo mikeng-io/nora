@@ -1,4 +1,5 @@
-from nora.agent.tag_trace_sanitize import strip_synthetic_artifacts, cap_messages
+from nora.agent.tag_trace_sanitize import cap_messages, strip_synthetic_artifacts
+
 
 def test_the_reply_guard_veto_message_is_dropped():
     messages = [

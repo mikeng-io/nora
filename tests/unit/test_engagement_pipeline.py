@@ -1661,7 +1661,7 @@ async def test_the_scripted_double_returns_the_cancel_text_like_the_real_sdk():
     guard._turn_is_over = True          # a terminal verb has run
 
     runner = FakeAgentRunner([ScriptedTurn(final_text="never reached")])
-    stop_reason, final_text = await runner.invoke(
+    stop_reason, final_text, _trace = await runner.invoke(
         doctrine=None, tools=[], pre_fill=[], guard=guard,
         tag_message="", limits={}, ctx=None, trace_attributes={},
     )

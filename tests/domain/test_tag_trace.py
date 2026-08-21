@@ -30,11 +30,11 @@ def test_an_unknown_outcome_is_refused():
 
 
 def test_valid_outcomes_matches_the_spec_six():
-    assert VALID_OUTCOMES == frozenset({
+    assert frozenset({
         "send_reply",
         "recovered",
         "silent",
         "vetoed",
         "timeout",
         "llm_error",
-    })
+    }) == VALID_OUTCOMES

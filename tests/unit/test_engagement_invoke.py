@@ -9,6 +9,7 @@ import asyncio
 from dataclasses import dataclass
 
 from nora.domain.models import NormalizedMessage, TagContext
+from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages import invoke
 from nora.obs.metrics import Metrics
 
@@ -47,15 +48,22 @@ class _FakeRunner:
         self.final_text = final_text
         self.calls: list[dict] = []
 
-    async def invoke(self, **kwargs) -> tuple[str | None, str]:
+    async def invoke(self, **kwargs) -> tuple[str | None, str, TagTrace]:
         self.calls.append(kwargs)
         if self.delay:
             await asyncio.sleep(self.delay)
         if self.raises:
             raise self.raises
-        # `(stop_reason, final_text)` since DEC-93 — the prose the model wrote
-        # WITHOUT calling send_reply, empty on every healthy turn.
-        return self.stop_reason, self.final_text
+        ctx = kwargs["ctx"]
+        trace = TagTrace(
+            tag_id=ctx.tag_id, conversation_id=ctx.message.conversation_id,
+            messages=({"role": "assistant", "content": []},), transcript=(),
+            outcome="send_reply", created_at=0,
+        )
+        # `(stop_reason, final_text, trace)` since DEC-93/Task 4 — the prose
+        # the model wrote WITHOUT calling send_reply (empty on every healthy
+        # turn) and the TagTrace this invocation produced.
+        return self.stop_reason, self.final_text, trace
 
 
 async def _run(runner, *, timeout_seconds=5.0, metrics=None, ctx=None, doctrine=None):
@@ -70,7 +78,7 @@ async def _run(runner, *, timeout_seconds=5.0, metrics=None, ctx=None, doctrine=
 
 async def test_a_successful_invocation_returns_ok_and_observes_latency():
     runner = _FakeRunner()
-    (ok, elapsed, stop_reason, _text), metrics = await _run(runner)
+    (ok, elapsed, stop_reason, _text, _trace), metrics = await _run(runner)
 
     assert ok is True
     assert stop_reason == "end_turn"
@@ -78,6 +86,50 @@ async def test_a_successful_invocation_returns_ok_and_observes_latency():
     assert len(metrics.observations("nora_llm_latency_seconds")) == 1
     assert metrics.get("nora_silent_failures_total", reason="invocation_timeout") == 0
     assert metrics.get("nora_silent_failures_total", reason="llm_error") == 0
+
+
+async def test_invoke_run_returns_a_tag_trace_on_success():
+    """The `TagTrace` the runner built comes back, with its `transcript`
+    filled in here from `ctx` (the runner itself has no access to the
+    assembled window — see this module's docstring addendum)."""
+    ctx = _ctx(tag_id="tag-99", conversation_id="g5")
+    runner = _FakeRunner()
+    (ok, _elapsed, _stop_reason, _text, trace), _metrics = await _run(runner, ctx=ctx)
+
+    assert ok is True
+    assert trace.tag_id == "tag-99"
+    assert trace.conversation_id == "g5"
+    assert trace.outcome == "send_reply"
+    assert trace.messages != ()
+
+
+async def test_invoke_run_returns_a_blank_trace_on_timeout():
+    """A runner that hangs past the timeout never returns a trace at all — the
+    invocation is abandoned, so `invoke.run` builds a blank one itself, with
+    `outcome="timeout"` (§7.4: those turns debrief from `transcript` alone)."""
+    ctx = _ctx(tag_id="tag-100")
+    runner = _FakeRunner(delay=5.0)
+    (ok, _elapsed, _stop_reason, _text, trace), _metrics = await _run(
+        runner, ctx=ctx, timeout_seconds=0.05,
+    )
+
+    assert ok is False
+    assert trace.tag_id == "tag-100"
+    assert trace.messages == ()
+    assert trace.outcome == "timeout"
+
+
+async def test_invoke_run_returns_a_blank_trace_on_llm_error():
+    """Same shape as the timeout case, but `outcome="llm_error"` — the other
+    ok=False path."""
+    ctx = _ctx(tag_id="tag-101")
+    runner = _FakeRunner(raises=RuntimeError("omniroute down"))
+    (ok, _elapsed, _stop_reason, _text, trace), _metrics = await _run(runner, ctx=ctx)
+
+    assert ok is False
+    assert trace.tag_id == "tag-101"
+    assert trace.messages == ()
+    assert trace.outcome == "llm_error"
 
 
 async def test_the_runner_is_called_with_every_argument():
@@ -115,7 +167,7 @@ async def test_trace_attributes_are_computed_from_ctx_and_doctrine():
 
 async def test_a_timeout_returns_not_ok_and_counts_invocation_timeout():
     runner = _FakeRunner(delay=5.0)
-    (ok, elapsed, stop_reason, _text), metrics = await _run(runner, timeout_seconds=0.05)
+    (ok, elapsed, stop_reason, _text, _trace), metrics = await _run(runner, timeout_seconds=0.05)
 
     assert ok is False
     assert stop_reason is None
@@ -126,7 +178,7 @@ async def test_a_timeout_returns_not_ok_and_counts_invocation_timeout():
 
 async def test_a_generic_exception_returns_not_ok_and_counts_llm_error():
     runner = _FakeRunner(raises=RuntimeError("omniroute down"))
-    (ok, _elapsed, stop_reason, _text), metrics = await _run(runner)
+    (ok, _elapsed, stop_reason, _text, _trace), metrics = await _run(runner)
 
     assert ok is False
     assert stop_reason is None

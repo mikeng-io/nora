@@ -842,7 +842,13 @@ class FirePath:
         final_text = ""
         failure: str | None = None
         try:
-            stop_reason, final_text = await asyncio.wait_for(
+            # `AgentRunner.invoke` also hands back a `TagTrace` (Task 4), but
+            # this path builds no debrief record of its own — §7.4/Task 6
+            # wire the tag path's trace into `SqlTagTraceStore`, and this
+            # module still has none of that plumbing. Discarded rather than
+            # threaded further for now; a fire turn is a real invocation too
+            # and picking it up is a flagged follow-up, not a silent gap.
+            stop_reason, final_text, _trace = await asyncio.wait_for(
                 self._runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                     tool_call_log=tool_call_log,

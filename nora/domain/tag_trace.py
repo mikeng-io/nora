@@ -15,6 +15,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from .models import TranscriptRow
 
@@ -32,7 +33,7 @@ VALID_OUTCOMES = frozenset({
 class TagTrace:
     tag_id: str
     conversation_id: str
-    messages: tuple[dict, ...]
+    messages: tuple[dict[str, Any], ...]
     transcript: tuple[TranscriptRow, ...]
     outcome: str
     created_at: int

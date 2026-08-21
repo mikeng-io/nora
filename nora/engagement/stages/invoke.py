@@ -30,25 +30,37 @@ immediately before `factory.create_agent` (`nora/handler.py:133`) — and
 handed to the runner rather than left for it to recompute.
 
 
-Returns `(ok, elapsed, stop_reason, final_text)` rather than just `ok`: `elapsed` is the
-single measurement both recorded as `nora_llm_latency_seconds` here AND reused
-by `nora.engagement.pipeline` for the `nora_overhead_seconds` computation —
-one clock read, not two independent ones that could drift apart —
+Returns `(ok, elapsed, stop_reason, final_text, trace)` rather than just `ok`:
+`elapsed` is the single measurement both recorded as `nora_llm_latency_seconds`
+here AND reused by `nora.engagement.pipeline` for the `nora_overhead_seconds`
+computation — one clock read, not two independent ones that could drift apart —
 and `stop_reason` is how the agent LOOP ended (R-23), which no amount of
 `ok` can express: a turn that Strands cut off on `limit_total_tokens` returns
 normally with `ok=True` and no reply, which is exactly what a model declining
 to call `send_reply` also looks like from here. The distinction is made at
 `nora.engagement.stages.deliver.check_outcome`, which needs this value.
+
+`trace` is a `TagTrace` (spec §6.1/§7.4): the reasoning-continuity record of
+this invocation, `agent.messages` sliced/sanitised/capped by the `AgentRunner`
+itself (`nora.agent.tag_trace_extract.extract_tag_trace`) with `transcript`
+filled in HERE from `ctx.transcript` — the runner has no access to the
+assembled window, only to `agent`. On the `ok=False` paths (timeout/llm_error)
+`runner.invoke` never returned, so there is no `agent` to extract from: this
+function builds a blank trace instead (`messages=()`, `outcome` mapped from
+which exception fired) with `transcript` filled in the same way — §7.4's "those
+turns debrief from `transcript` alone with `messages` empty".
 """
 
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 from typing import Any, Protocol
 
 from nora.domain.models import TagContext
+from nora.domain.tag_trace import TagTrace
 from nora.obs.tracing import trace_attributes as build_trace_attributes
 
 log = logging.getLogger("nora.engagement.invoke")
@@ -69,7 +81,18 @@ class AgentRunner(Protocol):
         limits: dict,
         ctx: TagContext,
         trace_attributes: dict,
-    ) -> tuple[str | None, str]: ...
+    ) -> tuple[str | None, str, TagTrace]: ...
+
+
+def _blank_trace(*, ctx: TagContext, outcome: str) -> TagTrace:
+    """A trace for a tag whose invocation never returned — no `agent` survived
+    to extract from (§7.4). `transcript` is still real: it comes from `ctx`,
+    not from the dead invocation."""
+    return TagTrace(
+        tag_id=ctx.tag_id, conversation_id=ctx.message.conversation_id,
+        messages=(), transcript=ctx.transcript, outcome=outcome,
+        created_at=int(time.time() * 1000),
+    )
 
 
 async def run(
@@ -85,8 +108,8 @@ async def run(
     ctx: TagContext,
     timeout_seconds: float,
     metrics: Any,
-) -> tuple[bool, float, str | None, str]:
-    """Return `(ok, elapsed, stop_reason, final_text)`. `ok` is False on a timeout or any
+) -> tuple[bool, float, str | None, str, TagTrace]:
+    """Return `(ok, elapsed, stop_reason, final_text, trace)`. `ok` is False on a timeout or any
     other exception, in which case the model was never allowed to reply — the
     caller must not proceed to delivery.
 
@@ -117,8 +140,9 @@ async def run(
     # Empty on every healthy turn, because a turn that called `send_reply` has
     # said what it had to say through the tool. See `pipeline`'s recovery.
     final_text = ""
+    trace: TagTrace
     try:
-        stop_reason, final_text = await asyncio.wait_for(
+        stop_reason, final_text, trace = await asyncio.wait_for(
             runner.invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                 tool_call_log=tool_call_log,
@@ -127,6 +151,10 @@ async def run(
             ),
             timeout=timeout_seconds,
         )
+        # The runner has no access to the assembled transcript window (only
+        # to `agent`), so it always hands back `transcript=()` — filled in
+        # here, the one place that holds both the trace and `ctx`.
+        trace = dataclasses.replace(trace, transcript=ctx.transcript)
     except TimeoutError:
         log.error("invocation_timeout (tag=%s)", ctx.tag_id)
         metrics.inc(
@@ -134,6 +162,7 @@ async def run(
             platform=ctx.message.platform, audience="tag",
         )
         ok = False
+        trace = _blank_trace(ctx=ctx, outcome="timeout")
     except Exception:
         log.exception("llm_error (tag=%s); staying silent", ctx.tag_id)
         metrics.inc(
@@ -141,6 +170,7 @@ async def run(
             platform=ctx.message.platform, audience="tag",
         )
         ok = False
+        trace = _blank_trace(ctx=ctx, outcome="llm_error")
     finally:
         elapsed = time.perf_counter() - started
         metrics.observe("nora_llm_latency_seconds", elapsed, audience="tag")
@@ -150,4 +180,4 @@ async def run(
         # fraction of turns are being cut off, and `end_turn` being the
         # overwhelming majority is the thing that makes a `limit_*` legible.
         metrics.inc("nora_llm_stop_reason_total", reason=stop_reason, audience="tag")
-    return ok, elapsed, stop_reason, final_text
+    return ok, elapsed, stop_reason, final_text, trace
