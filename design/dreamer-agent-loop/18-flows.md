@@ -1,7 +1,7 @@
 ---
 type: reference
-title: "Three Flows — How Each Tier Actually Runs"
-description: "Language, fact and note, each traced end to end: what fires it, what selects, what the model sees, how it ends, what code does with the result, and what can be read back afterwards. The same nine steps for all three, so they compare."
+title: "Four Flows — How Each Tier Actually Runs"
+description: "Language, fact, note and standing, each traced end to end: what fires it, what selects, what the model sees, how it ends, what code does with the result, and what can be read back afterwards. The same nine steps for all three, so they compare."
 tags: [nora, dreamer, flows, language-tier, fact-tier, note-tier, walkthrough]
 timestamp: '2026-08-22'
 edges:
@@ -9,12 +9,13 @@ edges:
   - {dst: 01-live-state, rel: motivated_by, provenance: asserted}
 ---
 
-# Three Flows — How Each Tier Actually Runs
+# Four Flows — How Each Tier Actually Runs
 
 The rest of the bundle argues about seams. This node runs each tier top to
-bottom so the seams have somewhere to land.
+bottom so the seams have somewhere to land. Three are background flows; the
+fourth, Standing, runs in-slot, and the contrast is the point.
 
-**Same nine steps for all three**, deliberately, so the differences are legible
+**Same nine steps for all four**, deliberately, so the differences are legible
 rather than buried in prose. Each flow gives the **target** shape, then a
 `TODAY` block naming exactly how the live system differs.
 
@@ -266,17 +267,84 @@ genuinely different shapes.
 
 ---
 
-## What the three flows show side by side
+## Flow D — Standing
 
-| | language | fact | note |
-|---|---|---|---|
-| **passes** | 2 + a deterministic synthesis | 2, split on cost | 1 live turn + 2 background |
-| **shape** | cursor | cursor, then **work queue** | cursor **and** content-addressed |
-| **selector** | the batch | the batch, then a ranked cap | **SQL, zero tokens** |
-| **speaker in the prompt** | ✅ today | ❌ today | n/a — it is her own turn |
-| **can supersede itself** | ❌ by design | ✅ built | ✅ built (CAS) |
-| **no-progress breaker** | the cursor | the negative cache | cursor / **strike** |
-| **live?** | ✅ producing, wrongly | ❌ flag off, never completed | ⚠️ live, untested |
+*What she currently thinks, carried between turns.* **Not a Dreamer flow.** It
+runs in-slot, after the reply is delivered — which makes it the useful contrast
+to the three above. Owned by another session; recorded here because the seams
+apply to it and because the bundle's input-vs-tool rule decided one of its
+choices.
+
+```
+   a tag turn completes (success, silence, veto, timeout — all of them)
+                      │
+                      ▼
+        TagTrace: her real reasoning, sanitized, capped     ◀── BUILT
+                      │                                          (unmerged)
+                      ▼
+        ┌──── debrief ─────────────────────────────────┐
+        │  runs AFTER delivery, off the reply path      │
+        │  reads: the trace + the PRIOR Standing        │
+        │  raw completion — no tools, no loop           │
+        └───────────────────────────────────────────────┘
+                      │
+        ┌─────────────┼─────────────┐
+        ▼             ▼             ▼
+     Standing     TurnVerdict   NoteProposal
+   (in place)     (append)       (to notes)
+        │
+        └──renders──▶ <standing>
+```
+
+1. **Fires when** — a tag turn **completes**, in every terminal state: success,
+   silence, veto, timeout. Not gated on whether she spoke.
+2. **Selects** — nothing. One turn, already in hand.
+3. **Reads** — the turn's trace **and the current Standing**. That second read is
+   load-bearing: without it the fold reproduces the language tier's failure
+   exactly — two positions coexisting, neither able to correct the other
+   ([12-self-correction.md](12-self-correction.md) §3).
+4. **Model gets** — the trace, the prior Standing, a sliding transcript window.
+5. **May call** — **nothing, correctly.** Its read is one row, known in advance,
+   so it is an **input** ([08-state.md](08-state.md) §1). This is the rule's
+   clean negative case: the same rule that says the adjudicator *needs* tools
+   says Standing does not.
+6. **Ends when** — the completion returns. A `finish_reason` of length maps to
+   `unavailable`, never a partial parse.
+7. **Returns** — a revised Standing, a verdict, and a note proposal.
+8. **Code does** — dispose. The fast path is append-only; only a background pass
+   may invalidate.
+9. **Lands in** — `standing` (**updated in place**), `turn_verdict` (append).
+10. **Read back by** — `<standing>` in later turns; and whether the position
+    ever *changed*, which is the only evidence the fold is doing anything.
+
+> **TODAY.** Phase 1 — the trace capture — is complete and gate-green on an
+> unmerged branch. The debrief itself is drafted, zero code. Three blockers are
+> recorded there, and the sharpest is that the re-derivation signature **does not
+> yet take the prior Standing** and must gain it *before* implementation, not
+> during.
+
+**Two properties the Dreamer flows do not have.** It runs **off the reply path
+but inside the turn**, so it sees a completed trajectory without spending the
+turn's budget or its single reply — the shape
+[17-failure-classes.md](17-failure-classes.md) §2 argues for. And because
+Standing is **update-in-place**, a successful prompt injection **persists** until
+a later fold drops it. The design markets that persistence as the feature;
+escaping is necessary and not obviously sufficient.
+
+
+---
+
+## What the four flows show side by side
+
+| | language | fact | note | standing |
+|---|---|---|---|---|
+| **passes** | 2 + a deterministic synthesis | 2, split on cost | 1 live turn + 2 background | 1, in-slot |
+| **shape** | cursor | cursor, then **work queue** | cursor **and** content-addressed | per-turn |
+| **selector** | the batch | the batch, then a ranked cap | **SQL, zero tokens** | none — one turn |
+| **speaker in the prompt** | ✅ today | ❌ today | n/a — her own turn | n/a — her own turn |
+| **can supersede itself** | ❌ by design | ✅ built | ✅ built (CAS) | ✅ by rewriting in place |
+| **no-progress breaker** | the cursor | the negative cache | cursor / **strike** | none needed — one turn in, one out |
+| **live?** | ✅ producing, wrongly | ❌ flag off, never completed | ⚠️ live, untested | ❌ capture built, fold unbuilt |
 
 Three things fall out that no single flow shows:
 
@@ -288,3 +356,7 @@ Three things fall out that no single flow shows:
 3. **Every tier's step 5 is nearly empty today.** The flows differ enormously in
    design and barely at all in production, because the missing seam is the same
    one in all three.
+4. **Standing is the rule's clean negative.** It is the one flow that *should*
+   have no tools — its read is a single known row — which is what makes it
+   evidence that [08-state.md](08-state.md) §1 is a real rule rather than a
+   licence to grant everything.
