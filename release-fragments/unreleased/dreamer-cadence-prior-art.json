@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Docs only. Records Honcho's dreamer cadence (8-hour floor, accumulation trigger, idle delay, DB-enforced in-flight) as prior art in design/dreamer-agent-loop/06-trigger.md, and narrows the cadence open item accordingly. No code, no behaviour change."
+}

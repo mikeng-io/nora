@@ -53,12 +53,61 @@ invoked every tick to be told there was nothing to do. The fix was to render an
 empty string instead — which is a workaround for a missing verb, and it leaves
 the next adaptor author one polite sentence away from the same bug.
 
-## 3. The design
+## 3. Prior art, running, in a dependency this project already uses
+
+Honcho — which Nora already depends on for memory — has a dreamer. It is
+event-driven, not clock-driven, and its trigger is **three separate gates**:
+
+| gate | value | what it answers |
+|---|---|---|
+| document threshold | 50 | *why* it fired — has enough accumulated to be worth a pass |
+| minimum hours between dreams | **8** | a **floor**, not a period — refuse even when the threshold is met, if the last pass was recent |
+| idle timeout | 60 min | *how* it fires — once triggered, wait for quiet rather than going immediately |
+
+Its own comment on keeping two of those apart is the design in one line:
+
+> *the two gates were intentionally split — collapsing them into a single
+> trigger_reason would lose the scheduling semantics.*
+
+So it records **why it fired** and **how it fired** as different fields. Nora
+records neither, because it has neither.
+
+Two more properties worth taking:
+
+- **A new signal cancels the pending pass** rather than queueing a second one.
+  Debounce is part of the trigger, not a separate concern.
+- **In-flight is enforced by a unique index in the database**, with the queue as
+  the source of truth. Nora's in-flight lock is a process-local set that dies
+  on restart — which is also why its backoff does not survive one.
+
+### The cadence comparison
+
+| | Nora's Dreamer | Honcho's dreamer |
+|---|---|---|
+| shape | 300-second clock, every scope, every adaptor | event-driven; no clock at all |
+| trigger | "did rendering produce a non-empty string" | accumulation crossed a threshold |
+| rate limit | none — backoff only, and one message resets it | an **8-hour floor** between passes |
+| when it fires | immediately, on the tick | after the room goes quiet |
+| in-flight | process-local set, lost on restart | unique index, survives everything |
+| telemetry | one outcome | why it fired and how it fired, separately |
+
+**300 seconds against an 8-hour floor is roughly two orders of magnitude.** But
+the interval is the least of it: Nora has **no floor at all**. Nothing anywhere
+says *this adaptor may not run again for N hours*, so the only thing standing
+between the current design and running every five minutes forever is whether
+rendering happened to produce an empty string.
+
+And the metaphor was right the whole time. A pass that runs every five minutes
+is not dreaming, it is polling. Consolidation is what happens **after** enough
+has accumulated and the room has gone quiet — which is precisely the shape the
+three gates above encode, and precisely what a clock cannot express.
+
+## 4. The design
 
 **An adaptor declares its own trigger, and the runtime evaluates it before any
 input is rendered.**
 
-Three properties, each earning its place from §2:
+Four properties: three earned from §2, the fourth from §3.
 
 1. **Cheap.** The trigger must be answerable without doing the work it gates.
    Whatever it consults — a lag count, a queue depth, a clock, a watermark age —
@@ -70,18 +119,28 @@ Three properties, each earning its place from §2:
    bound.
 3. **A distinct outcome.** "Did not fire" is neither success nor failure and
    must not be folded into either. Fold it into success and the backoff dies;
-   fold it into failure and a quiet room looks broken.
+   fold it into failure and a quiet room looks broken. Recording *why* it fired
+   separately from *how* — §3's split — is what makes the distinction legible
+   afterwards rather than merely correct at the time.
+4. **A floor, separate from the trigger.** A minimum interval between passes for
+   an adaptor, independent of whether its conditions are met. The trigger says
+   *there is something to do*; the floor says *not yet, regardless*. Nora has
+   the first (weakly) and not the second at all, which is why a busy room can
+   drive a failing adaptor at full tick rate indefinitely.
 
 **Cadence then belongs to the adaptor, not the clock.** The tick becomes the
-thing that *asks*, not the thing that decides. Extraction can want new messages;
-adjudication can want queue depth; synthesis can want a slow clock and a
-quorum. None of those is expressible today.
+thing that *asks*, not the thing that decides — and on the evidence of §3 it
+should ask far less often than every five minutes, or stop being a clock at all
+and become event-driven. Extraction can want new messages; adjudication can want
+queue depth; synthesis can want accumulation plus quiet plus a floor. None of
+those is expressible today, and the third is exactly what the dependency next
+door already implements.
 
 **What this does not change:** per-adaptor failure isolation, the in-flight
 lock, and watermark seeding are all correct and stay as they are. The backoff
 mechanism itself is correct — it is fed a wrong signal, not wrongly built.
 
-## 4. Two things the trigger does not fix, recorded so they are not assumed away
+## 5. Two things the trigger does not fix, recorded so they are not assumed away
 
 **The wall clock covers the model call only.** Input rendering, item acceptance,
 commit, and the watermark queries around them sit outside any timeout, so a hung
@@ -97,7 +156,7 @@ batch is re-read next tick, larger. That is the ratchet
 ([01-live-state.md](01-live-state.md) §3), and it is a property of the **loop**,
 not the trigger. See [07-loop.md](07-loop.md).
 
-## 5. What must be true before the migration lands
+## 6. What must be true before the migration lands
 
 A global concurrency bound, **chosen rather than inherited**. Ten units today,
 eighteen after two more tiers migrate, all sharing one client, with the only
