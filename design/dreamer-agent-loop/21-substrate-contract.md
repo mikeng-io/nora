@@ -422,6 +422,18 @@ into the object. **This also protects contradiction ranking**, which needs the
 predicate to hold still while the object varies — a coined predicate per detail
 makes every claim unique and nothing ever contradicts anything.
 
+**The shipped objective already demonstrates the failure in its own worked
+example.** The adjudication objective's sample output carries
+`predicate: "gourds_required", object: "five"` — the object folded into the
+relation name. The form this section asks for is a predicate that holds still
+(`requires`, object `five gourds`) so that a later claim of *six* contradicts it.
+As written, a differing count would coin `gourds_required` against some other
+predicate and **contradiction ranking would never fire on it.**
+
+One example, and it is the example the model is shown. Fixing it is a
+one-line change to an operator-owned file, and it belongs with the seed list
+rather than ahead of it.
+
 ### 8.4 A bad predicate currently fails silently
 
 Phase A's parse drop is a bare `continue` with **no counter and no log line** —
