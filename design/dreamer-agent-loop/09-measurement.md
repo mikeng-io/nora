@@ -79,7 +79,30 @@ nothing. It is also, notably, the one place in the corpus where a cap is
 specified *with* its instrument rather than as a bare number.
 
 
-## 4. This bundle's own acceptance — the part it was missing
+## 3.2 Two ways an instrument passes while measuring nothing
+
+**A fixture that reuses one value across N fields cannot see a permutation.** A
+non-null constraint catches a dropped field; it does not catch a *wrong* one — a
+sink that stamped a constant, or **swapped two columns**, satisfies every
+constraint and passes every assertion. The suite must write a **distinct value
+into each field** and read all of them back. With one repeated string a swap is
+invisible, and *"the assertion becomes the thing it exists to prevent: a check
+that looks like rigour and verifies nothing."*
+
+This is CLAUDE.md's never-write-a-fake-that-answers-everything-the-same-way rule,
+applied to **fixtures** rather than to fakes.
+
+**A primitive chosen by name may answer a different question.** Measured on 3000
+rows: a similarity operator returned **0 of 3000 rows that all contained the
+string**, because it compares whole strings rather than doing the containment a
+search asks for. A plausible, correctly-named, documented operator would have
+reported `nothing_found` on a corpus where everything matched.
+
+**So: a granted read tool must be measured against a corpus with a known answer
+before any of its null results are believed.** That extends this seam's State row
+— not only *was the tool called*, but *could it have found the thing*.
+
+ — the part it was missing
 
 The design review's sharpest finding was that this bundle asserts the rule and
 does not apply it to itself. It owes three things.

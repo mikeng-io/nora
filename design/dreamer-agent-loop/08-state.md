@@ -166,7 +166,7 @@ and the classification test is the arbiter
 | fact extraction (Phase A) | scope | ✅ vocabulary + negative cache | ✅ | ✅ | ✅ | — |
 | fact adjudication (Phase B) | workspace | ✅ | **blocked** | **blocked** | ✅ | ✅ |
 | note curator | workspace | ✅ own notebook | — | — | ✅ | — |
-| note revisitor | workspace | ✅ | — | ✅ | ✅ | ✅ |
+| note revisitor | workspace | ✅ | — | ⚠️ **contingent** | ✅ | ✅ |
 
 Three things to read off it:
 
@@ -186,6 +186,12 @@ destroy the signal that decides what is worth adjudicating. The grant is for
 *naming consistency* and for reading the **negative cache** — "we already tried
 and could not settle this" — not for dedup. This is the sharpest constraint on
 the grant and the easiest to get wrong.
+
+**The revisitor's memory column is contingent, not granted.** Memory-derived
+content about a person, written into a workspace-keyed note body that renders in
+every room of that workspace, is the same carry
+[11-disclosure.md](11-disclosure.md) §4.3 blocks — arriving through memory rather
+than through a room read. It waits on the same condition.
 
 **The two note adaptors are in the table because they are Dreamer adaptors**,
 specced in detail and unbuilt — and because every seam in this bundle applies to
@@ -249,6 +255,66 @@ Python guessed. This bundle does not settle whether the block becomes
 query-relevant, becomes a tool she calls, or both — that is a tag-path cost
 question ([16-open-items.md](16-open-items.md)). It settles only that the
 capability is the same one, and should not be built twice.
+
+## 11.1 Two writers, and no lock
+
+The bundle asks what stops a background pass and a live turn clobbering each
+other, and does not answer it. The note tier does, with **no lock at all**:
+
+- **A read-before-write latch.** A revision is vetoed unless the read succeeded
+  in the same turn — *"appending a revision without the body in front of her
+  rewrites structure she cannot see."* The write costs two calls, and *"the
+  second one is what makes the first mandatory."*
+- **A compare-and-swap on the head.** The write echoes the version the read
+  returned. If it moved — the background pass merged it mid-turn, or a parallel
+  turn in another room did — the write is **refused as `unavailable`**, never
+  applied on top.
+
+Three properties generalise:
+
+1. **The primitive between a background pass and a live turn is a version echo,
+   not a lock.** A lock held across a model call is held for seconds against a
+   human waiting; a version echo costs nothing and its failure is a legible tool
+   result.
+2. **A stale-write refusal is `unavailable`, never `nothing_found`** — the
+   three-state discipline at the storage boundary rather than the instrument.
+3. **The refusal names its remedy** — *"this changed under you, read it again"*.
+   A refusal the model cannot act on is a dead end.
+
+## 11.2 Who owns an operation is decided by who can see enough to do it
+
+> *the tag path may only touch a note it can see the whole of this turn. The
+> Dreamer is the only thing that may act across notes.*
+
+And the derivation, which is the part worth keeping:
+
+> *merging **cannot** be in-slot, and this is a statement about **what she can
+> see** rather than a policy choice: it needs every note's full body, which is
+> neither in the prompt nor affordable to load mid-turn.*
+
+**Which actor owns an operation follows from whose view is wide enough to
+perform it correctly, and destructive operations belong to whoever can see the
+whole.** The corollary is the one this bundle must not forget: the fast path is
+permitted to be wrong-by-addition *because the background pass is the cleanup* —
+which only holds if the background pass actually runs. It has not, for weeks.
+
+## 11.3 A granted tool whose argument cannot be constructed is inert
+
+A hole found during implementation: the index carried titles, the read verb took
+an id, and the search covered bodies — so *"she could see every note and name
+none of them."*
+
+**A tool is unreachable unless its arguments are constructible from what is
+already in the prompt.** This is the sibling of the key-derivation trap in §10 —
+there the key was underivable, here the handle was unnameable — and both make a
+wired grant inert while looking wired.
+
+**The design rule for every grant in §9: name the prompt-resident datum its
+argument comes from.** Two more requirements ride along, both from the fix:
+addressing is by the name a person would say, not an id; and **ambiguity refuses
+rather than picking** — guessing which object was meant is how a write lands on
+the wrong one.
+
 
 ## 12. What does not change
 

@@ -117,6 +117,28 @@ takes the shape and the two failures. It does not take the six roles, because
 the Dreamer does not need a proposer and an executor as separate agents — it has
 one adaptor and a runtime that disposes.
 
+## 5.0 Three protections, and only one bounds a non-failing pass
+
+A correction recorded in the note tier's spec, answering the question directly:
+
+> *it has **three protections and only one is a loop breaker**, and it needs no
+> strike because its unit of work is a cursor that always advances.*
+
+The three are routinely conflated:
+
+| protection | bounds | supplied by |
+|---|---|---|
+| re-entry lock | **concurrency** — the same unit running twice | the runtime, free |
+| failure backoff | **errors** — a unit that keeps throwing | the runtime, free |
+| progress breaker | **a pass that runs cleanly and achieves nothing** | **the adaptor** |
+
+The runtime hands out the first two by construction, which is precisely why the
+third's absence is invisible: a pass with no breaker still *looks* protected.
+Only the third bounds a non-failing, non-progressing loop — and whether an
+adaptor needs one is derivable, not a judgement
+([06-trigger.md](06-trigger.md) §3.2).
+
+
 ## 5.1 Two things Nora's own note tier already specifies for this seam
 
 **Containment for the failure that is actually killing runs.** The revisit

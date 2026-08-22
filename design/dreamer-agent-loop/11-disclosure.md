@@ -160,6 +160,41 @@ That spec is also the only one in the set with no frontmatter, and its own
 status line records *"no live human review of this specific doc before
 implementation."*
 
+### 4.3 The same leak, one tier over, through memory rather than a room
+
+The note tier defends workspace-scoped rendering on the grounds that rooms
+sharing a workspace *"are one social unit"*, so a note established in one room
+rendering into another crosses no boundary.
+
+**That argument was made about notes written on the tag path, from what was said
+in the room.** The revisit adaptor is granted memory reads, and its output is a
+note revision — workspace-keyed, whose title and description render in **every**
+tag, and whose body is one read verb away in any room of the workspace.
+
+So §1's finding arrives again, with a shorter fuse. A fact carries a *screened
+restatement*; a note body is **model-authored prose whose whole purpose is to
+preserve arrangement**, reachable by an explicit read rather than only by a
+recency slice. And the "one social unit" defence does not cover memory-derived
+content about a person, **because that content never entered the room at all.**
+
+**Contract:** §3's condition applies to the revisit adaptor via *memory*, not via
+a room read. [08-state.md](08-state.md) §9 currently grants it exactly that, and
+this node blocks the content class it produces. **That is a contradiction between
+two nodes of this bundle, and it resolves the way §3 does — the grant waits on a
+mechanism for R-49's second condition, or the adaptor's memory column comes off.**
+
+### 4.4 A refusal message is an information channel
+
+A stale-write refusal distinguishes *"not there"* from *"not there **from your
+workspace**"* — deliberately not distinguishable, *"so a cross-workspace probe
+cannot confirm a note exists."*
+
+**Every refusal a concurrency guard emits is observable by the model, and a guard
+that separates "does not exist" from "exists but is not yours" is an existence
+oracle across the tenancy boundary.** This is the disclosure counterpart to
+[08-state.md](08-state.md) §11.1: the screen inspects the model's *output*; this
+leaks on the *input* side, inside a tool result.
+
 ## 5. Trace egress
 
 Tool inputs and outputs are exported to the trace store. A room read therefore

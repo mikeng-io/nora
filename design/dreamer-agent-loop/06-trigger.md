@@ -142,6 +142,81 @@ reason.
 adaptor in the corpus declares a trigger the runtime has no verb for.
 
 
+## 3.2 Two kinds of work, and they need different breakers
+
+The note tier separates its two passes on a distinction the bundle has been
+missing, and it decides more than scheduling:
+
+| | **cursor-shaped** | **content-addressed** |
+|---|---|---|
+| unit of work | a backlog that drains | one object that may never change |
+| trigger | lag / quiet / age over a scope | *this item is due*, a predicate over the tier's own rows |
+| self-bounding? | yes — working consumes the backlog | **no — an item can be "due" forever** |
+| breaker | the cursor is the breaker | needs a per-item counter standing in for one |
+| read cost | splits into a cheap selector + a bounded pass | the unit is already one item; the whole pass is expensive |
+| tools | may need none at all | definitionally a tool loop |
+
+> *nothing is consumed by working on it — no cursor advances, no backlog drains
+> — so a note can be "due" forever. **The strike is the substitute for the cursor
+> the other passes have.**"*
+
+**This is a derivation rule, not a taxonomy for its own sake:** a pass over a
+consumable backlog needs no no-progress breaker; a pass over a persistent object
+needs one, and its breaker is a per-item counter. Adding a breaker to the first
+is ceremony; omitting it from the second is a loop that never ends.
+
+**It also reclassifies one of this bundle's own findings.** The fact adjudicator
+is content-addressed in this sense — a candidate that can never be settled stays
+pending — and the negative cache is doing the strike's job. The ratchet in
+[01-live-state.md](01-live-state.md) §3 is what happens when a content-addressed
+pass has *neither* a cursor nor a counter.
+
+**And it names a third scheduling shape.** The spec's end state is not a clock
+and not an event stream:
+
+> *over time most work should move to [self-scheduled revisits], which is the
+> cheaper one: **the notebook tells the Dreamer when to think about what**,
+> instead of every scope being swept whether or not anything moved.*
+
+So the sweep exists to bootstrap and to catch what nothing scheduled; the steady
+state is **per-item due times living in tier tables**. That is a stronger claim
+than D2's "event-driven", and it is the direction D2 should be read as pointing.
+
+## 3.3 The counter-case to an accumulation threshold
+
+§3 held up an accumulation threshold as prior art. The same corpus supplies the
+case it fails, and rejects it explicitly:
+
+> *recurrence-gating was considered and **rejected**: in the operator's own
+> scenario **the thread dies after one exchange and is never mentioned again,
+> which is precisely when the note has to exist.** A "wait for a second mention"
+> rule fails the case the tier is for.*
+
+An accumulation threshold is a **confidence-raising gate**, and confidence-raising
+gates suppress exactly the singleton events some passes exist to catch. Together
+with time-driven retirement (§3.1), the full statement is:
+
+**accumulation is one trigger axis of at least three, and it is the wrong one
+for both time-driven work and singleton-event work.**
+
+Which is the argument for *declared* conditions rather than a better default: no
+single axis serves all three, so the axis has to be the adaptor's to choose.
+
+## 3.4 The runtime iterates the wrong domain
+
+A gap, recorded because it is small and silent:
+
+> *the runtime's iteration returns **conversations**; the notebook is keyed on
+> **workspace**, so both rooms would tick the same notebook … **or the pass does
+> duplicate work behind a lock.***
+
+**When the runtime's iteration domain is finer than the adaptor's key, every
+pass is duplicated and the only thing preventing corruption is the in-flight
+lock** — which converts a design error into a silent throughput cost. It is the
+trigger-side twin of the key-derivation trap in
+[08-state.md](08-state.md) §10.
+
+
 ## 4. The design
 
 **An adaptor declares its own trigger condition, and the runtime evaluates it
