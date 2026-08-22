@@ -98,7 +98,7 @@ such rather than dressed as decisions.
 | F2 | *finding* | The narrowing from eleven tools to four was decided by nobody — it is three documents and one mechanism that never met | [04](04-designed-vs-shipped.md) |
 | F3 | *refutation* | Reading is **not** made safe by the egress screen; a room read changes the content class the tier persists | [11](11-disclosure.md) |
 | **D1** | decision | The Dreamer gets its **own transport**, complete rather than a partial override, and verified against the wire rather than assumed | [05](05-transport.md) |
-| **D2** | decision | An adaptor **declares its trigger**, evaluated before any input is rendered. "Did not fire" is a third outcome | [06](06-trigger.md) |
+| **D2** | decision | An adaptor **declares its trigger condition and a floor between passes**; the period is **not fixed**, and the shape is event-driven. "Did not fire" is a third outcome | [06](06-trigger.md) |
 | **D3** | decision | **Knowable-before-the-call is an input; discovered-during-reasoning must be a tool** | [08](08-state.md) §1 |
 | **D4** | decision | A tier contributes read access through the existing registry seam — not a bespoke mechanism | [08](08-state.md) §10 |
 | **D5** | decision | Phase A **gains tools**, and must **not** deduplicate against existing candidates — that would destroy the recurrence signal the filter ranks on | [08](08-state.md) §9 |

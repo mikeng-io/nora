@@ -78,7 +78,7 @@ edges:
 scope:
   v1:
     - "Transport: the Dreamer gets its own, verified against the wire rather than inherited"
-    - "Trigger: an adaptor declares when it wants to run; did-not-fire is a third outcome"
+    - "Trigger: an adaptor declares its condition and a floor between passes; the period is NOT fixed and the shape is event-driven; did-not-fire is a third outcome"
     - "Loop: termination is a structured act whose absence fails closed; partial progress survives a bounded run"
     - "State: knowable-before is an input, discovered-during is a tool; a tier contributes read access through the existing registry seam"
     - "Measurement: every seam ships its instrument, this bundle's own change first"
