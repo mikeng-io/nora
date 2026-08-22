@@ -229,6 +229,43 @@ successful prompt injection **persists** until a later fold drops it — and the
 design markets that persistence as the feature. Escaping is necessary and not
 obviously sufficient.
 
+## 6.1 Two stores the tier table omits, and the boundary they reveal
+
+`events` and `reminders` are not tiers in the sense the five above are, and
+leaving them out has been hiding a real boundary.
+
+| | facts, notes, lexemes | events, reminders |
+|---|---|---|
+| scope | **workspace** | **conversation** |
+| audience | the model, through injected blocks | **a person**, through the delivery path |
+| shape | claims, questions, meanings | a thing that happens at a time |
+
+Two consequences.
+
+**They are the only route by which background work reaches a human**
+([17-failure-classes.md](17-failure-classes.md) §7) — which makes their
+per-requester caps the *de facto* budget on how much any pass may nudge
+somebody, using machinery that already exists rather than a new counter.
+
+**And `events` is shaped for one kind of event.** Its columns are
+`venue_text`, `venue_rating`, `venue_maps_url`, `venue_place_id`, plus an RSVP
+table — a dinner, not an occurrence. A game's release, a patch landing, a
+deadline passing are all events a background pass would want to reason about and
+none of them fit. **Abstracting it is a real refactor**, and it is a *different
+axis* from the entity registry (§6.2) — one is about what a thing IS, the other
+about when something HAPPENS. They should not be folded together.
+
+## 6.2 There is no registry to build
+
+Recorded here because it changes the shape of the entity-resolution item that
+appears in the dependency graph below: **`fact_entity` is already the shared
+registry, `note_entity` already has a live foreign key into it, and neither tier
+populates or uses it** — facts store subjects as plain strings.
+
+So the blocker is not "design a registry". It is "populate the one that is
+already wired across two tiers", and that is the same unowned resolution step
+([12-self-correction.md](12-self-correction.md) §4).
+
 ## 7. Staleness register
 
 What the corpus asserts that the system now contradicts. Ordered by how

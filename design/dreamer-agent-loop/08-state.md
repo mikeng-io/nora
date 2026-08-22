@@ -316,6 +316,37 @@ rather than picking** — guessing which object was meant is how a write lands o
 the wrong one.
 
 
+## 11.4 Across tiers, the same rule — not N-by-M exposure
+
+Tiers already reference each other: the revisit adaptor's inputs include the
+facts reached through its note's entities, and `note_entity` carries a live FK
+into the fact tier's entity table.
+
+The tempting generalisation is *every adaptor exposes its state to every other*.
+That is N×M grants, each a disclosure decision and a budget line, and it is not
+what the connection needs.
+
+**The rule in §1 already decides it, unchanged, across a tier boundary:**
+
+| need | knowable before? | verdict |
+|---|---|---|
+| the anchor facts for this note (derivable from its entity ids) | yes | **input** |
+| "does any note bear on this claim?" | no — not pre-selectable | **tool** |
+| "what does this room call this thing?" | no | **tool** |
+| the standing position for this conversation | yes — one known row | **input** |
+
+Two riders, both load-bearing:
+
+- **Cross-tier reads are where [11-disclosure.md](11-disclosure.md) bites
+  hardest**, because what comes back is not a screened restatement but another
+  tier's model-authored prose. A note body reached from the fact tier carries
+  the same problem §4.3 raises in the other direction.
+- **The useful cross-tier read is mostly the same question**: *what is this
+  thing, and what do we already believe about it?* That is one capability over
+  several stores, not several capabilities — which is why it is being
+  investigated as one thing rather than granted store by store
+  ([16-open-items.md](16-open-items.md)).
+
 ## 12. What does not change
 
 - **No write tool, ever.** The model proposes; code disposes. Every mutation

@@ -76,6 +76,23 @@ The fact-tier spec states the stake plainly:
 > fragments into near-duplicates that can never contradict each other — **a
 > fact tier that cannot contradict itself is decoration**."*
 
+**And the shared registry already exists — it is simply empty.** This is the
+part that reframes the item from *build something* to *populate something*:
+
+- `fact_entity` is the entity table, with an alias mechanism.
+- **`note_entity.entity_id` is a live foreign key to `fact_entity.id`** — a
+  shipped, cross-tier reference, so the note tier already treats it as the
+  shared registry.
+- **Nothing populates it**, on either side. The note tier says so directly: the
+  junction stays empty *"because writing it requires every anchor entity to be
+  resolved first."*
+- **And the tier that owns it does not use it either** — facts store subject and
+  object as **plain strings, not entity ids**.
+
+So there is no registry to design. There is one wired across two tiers, unused
+by both, waiting on the same unowned resolution step. Its name is also now
+wrong: `fact_` prefixes a table the note tier depends on.
+
 The alias mechanism exists in the schema; nothing populates it. Which means:
 
 - **The fact tier is on course to reproduce the language tier's failure
