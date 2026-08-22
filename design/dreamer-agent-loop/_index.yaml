@@ -40,6 +40,7 @@ members:
   - 15-roadmap.md
   - 16-open-items.md
   - 17-failure-classes.md
+  - 18-flows.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -78,6 +79,8 @@ edges:
   - {src: 16-open-items, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 17-failure-classes, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 17-failure-classes, dst: 02-instrument-blindness, rel: relates_to, provenance: asserted}
+  - {src: 18-flows, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 18-flows, dst: 01-live-state, rel: motivated_by, provenance: asserted}
 scope:
   v1:
     - "Transport: the Dreamer gets its own, verified against the wire rather than inherited"
