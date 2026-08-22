@@ -741,7 +741,12 @@ max_horizon_days = 365
 # `RecordStore.since` keeps her own words out of the room's lexicon. Turn this
 # back off if the rendered block starts asserting things about people rather
 # than describing how the room talks.
-enabled = true
+# ALL-OFF (2026-08-23, operator instruction: "turn off ALL dreamer").
+# Everything the background tiers have written is wrong or unverified
+# (963 messages -> 2 rows, both wrong), and the substrate contract they
+# write against landed only today (design/dreamer-agent-loop/21).
+# Nothing writes until that contract is built against.
+enabled = false
 # tick_seconds = 300
 # safety_lag = 300
 # quiet_seconds = 1800
@@ -771,7 +776,12 @@ verify_known_entities = true
 # so this section is a flag and three bounds for a future adaptor, not a
 # running subsystem today. Stays off with this first deployment of the
 # schema, the same "off at first" period [language] shipped in.
-enabled = true
+# ALL-OFF (2026-08-23, operator instruction: "turn off ALL dreamer").
+# Everything the background tiers have written is wrong or unverified
+# (963 messages -> 2 rows, both wrong), and the substrate contract they
+# write against landed only today (design/dreamer-agent-loop/21).
+# Nothing writes until that contract is built against.
+enabled = false
 # max_adjudications_per_tick = 10
 # max_rendered_facts = 8
 # retention_days = 180
