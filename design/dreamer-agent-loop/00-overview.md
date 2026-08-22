@@ -53,7 +53,7 @@ investigations and four adversarial reviews lands in exactly one row.
 | seam | should be | is today | node |
 |---|---|---|---|
 | **Transport** | the Dreamer's own, sized and measured for research | the tag tier's, inherited wholesale | [05](05-transport.md) |
-| **Trigger** | each adaptor declares when it wants to run | a side-effect of rendering a prompt | [06](06-trigger.md) |
+| **Trigger** | each adaptor declares when it wants to run, with a floor between passes | a side-effect of rendering a prompt, on a 300-second clock | [06](06-trigger.md) |
 | **Loop** | what one turn is — tools, termination, partial progress | absent for four of five participants | [07](07-loop.md) |
 | **State** | knowable-before is an input; discovered-during is a tool | everything pre-rendered by Python | [08](08-state.md) |
 | **Measurement** | every seam ships its instrument | six blind layers | [09](09-measurement.md) |
@@ -64,6 +64,12 @@ Two properties of that table are the argument:
 the runtime to render before deciding, which is why concurrency cannot be
 bounded. A transport sized for chat makes every loop budget meaningless. Fixing
 one without the others produces a subsystem that fails differently.
+
+**And the cadence is off by about two orders of magnitude.** Honcho's dreamer —
+in a dependency this project already runs — uses an **8-hour floor** between
+passes, triggered by accumulation and delayed until the room goes quiet. Nora's
+runs a 300-second clock with **no floor at all** ([06](06-trigger.md) §3). A
+pass that runs every five minutes is not dreaming, it is polling.
 
 **Three of the five were never decided — they were inherited.** Transport from
 the tag path, trigger from a watermark-driven consolidator that predates the
