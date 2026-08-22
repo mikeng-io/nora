@@ -83,6 +83,15 @@ Fused by **reciprocal rank** — arithmetic, not a model — because three ranke
 lists with incomparable scores cannot otherwise be combined. Then ranked by
 **distance from the focal node**, also arithmetic.
 
+**And the cheap channel runs first, with a short-circuit.** The prior art skips
+its entire expensive path when the lexical top hit is both strong in absolute
+terms *and* clearly ahead of the runner-up. That shape is worth copying exactly:
+an exact-name hit on a canonical entity is the common case in this store, and
+paying for a dense pass to confirm what an exact match already settled is the
+per-turn mistake of §2 wearing a different hat.
+
+The two thresholds are **ours to derive** (§10), not theirs to inherit.
+
 ## 5. No cross-encoder
 
 "Reranker" names three different things and only one of them is a model:
@@ -103,18 +112,62 @@ paragraph of a fetched page — rather than over the triple. That is a different
 retrieval target against a different column, and it is worth revisiting when
 facts carry real excerpts. It is not this.
 
+**The obvious counter-example confirms the rule.** The prior-art tool examined
+for this node *does* ship a cross-encoder reranker — and its unit is a ~900-token
+chunk. It also reranks **one selected chunk per candidate document, never full
+bodies**, with the comment: *"Reranking full bodies is O(tokens) — the critical
+perf lesson that motivated this refactor."* Reranker cost scales with document
+length, and their whole optimisation is to shrink what gets reranked. Our
+documents are already six tokens. The lesson transfers as **do not**, not as
+**do**.
+
 ## 6. bge-m3's argument is cross-lingual recall, not "semantics"
 
 This is the part most easily got wrong, because "add embeddings" is the reflex
 answer and the reflex reason is not the operative one here.
 
-**Postgres full-text search cannot match `Big Walk` against `大步行` at all.** It
-does not segment Chinese usefully under the `simple` configuration, so in a
-mixed English/Cantonese room the lexical channel is structurally blind to a large
-share of the corpus — not weak on it, blind.
+**The lexical channel has two Chinese-shaped gaps, and only one is the dense
+channel's problem.** An earlier draft of this node conflated them.
 
-That gap is the dense channel's job, and it is why the model choice is
-**bge-m3** specifically rather than an embedder generally.
+| gap | example | whose job |
+|---|---|---|
+| a Chinese query does not match Chinese text | `大步行` → `大步行` | **the lexical channel's**, and it is fixable |
+| a query does not match its translation | `Big Walk` → `大步行` | **the dense channel's**, and no lexical scheme can do it |
+
+The first is a tokenisation failure: Postgres does not segment Chinese usefully
+under the `simple` configuration, so a Chinese term produces no useful tokens and
+the row is unfindable by its own words. **That is not a reason to reach for
+embeddings** — it is a reason to fix the tokenisation, and §6.1 says how.
+
+The second is genuine cross-lingual matching, which **no tokenizer at any
+granularity can deliver**, and it is the whole argument for a dense channel here.
+It is also why the model choice is **bge-m3** specifically rather than an embedder
+generally: a strong multilingual embedder is the only thing that closes it.
+
+### 6.1 The tokenisation fix, from prior art that tests it
+
+A production markdown-search tool solves the first gap **without touching the
+tokenizer**, in two coordinated places:
+
+- **at index time**, every run of CJK characters is rewritten with each character
+  spaced into its own token, on the stated grounds that the stock tokenizer *"does
+  not segment CJK text into searchable words"*;
+- **at query time**, a CJK term becomes a **quoted phrase** over those unigrams,
+  requiring adjacency — while Latin terms keep prefix matching.
+
+So `大步行` indexes as three tokens and is queried as the phrase `"大 步 行"`.
+Effectively exact-substring matching riding on the stock engine. It is covered by
+a test that seeds Chinese documents and asserts the right one comes back, paired
+with a regression guard asserting English ranking is unchanged.
+
+**The cost, stated because it is real:** with every character its own term, IDF
+over CJK goes near-degenerate — adjacency carries the ranking, not term weighting.
+For six-token triples that is arguably what we want; a bigram scheme buys better
+IDF at roughly twice the index size.
+
+**Enabling it is a reindex**, not a config flip: existing rows were tokenised the
+old way, so the change requires rebuilding the index. At zero rows that is free
+today, which is the same argument as everywhere else in this bundle.
 
 It also explains the retracted measurement in
 [16-open-items.md](16-open-items.md) §4.1: an English-centric embedder scoring
@@ -140,6 +193,15 @@ probe plus its overhead. Store the vectors in a plain column and adopt pgvector
 if and when the corpus makes an index pay — which converts a deployment change
 into a deferred one.
 
+**The prior art settles this more firmly than the argument does.** The vector
+extension that tool depends on is **brute-force only at every scale** — its own
+maintainers' ANN tracking issue is still open — and the tool additionally
+*prefers* an explicit exact scan below a **20,000-vector** threshold, with the
+threshold existing to stop a small collection being starved by a global top-k,
+not to avoid an index. A widely-used production tool does linear vector search
+throughout, and starts worrying three orders of magnitude above where this tier
+sits.
+
 [16-open-items.md](16-open-items.md) §4.1 cited the same fact as a reason to
 refuse the capability outright. It is a reason to defer the *index*, not the
 *channel*.
@@ -160,11 +222,11 @@ at all until §7's provenance exists.
 
 ## 9. What this node does not decide
 
-- **Where bge-m3 runs.** Nora has **no embedding call path of her own** — every
-  semantic operation today goes through Honcho, against Honcho's corpus and
-  Honcho's unrecorded model. A dense channel over *facts* is a new dependency —
-  a local embedder or a route to one — not a config line. This is the one real
-  cost in this node.
+- **Which embedding runtime.** Nora has **no embedding call path of her own**;
+  every semantic operation today goes through Honcho, against Honcho's corpus
+  and Honcho's unrecorded model — and §8's boundary means facts cannot go
+  there. So a dense channel is a **new in-process dependency**, and §11 records
+  what the prior art establishes about its shape and its one real hazard here.
 - **The verb's exact signature** — arity, filters, result shape. It is a tool on
   the registry seam ([08-state.md](08-state.md) §10), and its shape follows the
   read-tool pattern rather than being invented here.
@@ -172,10 +234,95 @@ at all until §7's provenance exists.
   reason [09-measurement.md](09-measurement.md) §6 gives: sizing before the
   reading is choosing values for knobs not known to be connected.
 
+## 10. What to copy from the prior art, and what not to
+
+A markdown-search tool with the same three-channel shape was studied for this
+node. Four mechanisms transfer; its numbers do not.
+
+**Copy the shape.** Reciprocal-rank fusion with a fixed constant; list weights
+assigned by **provenance** rather than insertion order, so a derived list cannot
+inherit the original query's boost; retrieval trusted at the head of the ranking
+and the reranker at the tail; the cheap-channel short-circuit in §4.
+
+**Copy the staleness fingerprint — this one is a gift.** It hashes the model
+identity and every parameter that affects an embedding into a short value stored
+**on each vector row**. One predicate — *fingerprint is not the current one* —
+then names exactly which rows are stale. Change the model, change a prompt
+prefix, change any input to the embedding, and the affected rows identify
+themselves.
+
+Without it, swapping an embedding model silently leaves a store where some
+vectors are comparable and some are not, with **no way to tell which** — a
+corpus that returns confident nonsense and cannot be audited. That is the
+`unavailable`-as-`nothing_found` failure at the storage layer, and it costs a
+column. It is also exactly the provenance discipline the spine already
+demands.
+
+**Consider the context prefix.** That tool embeds a chunk together with its
+title rather than alone. The analogue is embedding a triple with its subject and
+predicate rather than the bare object string. Worth an A/B; not obviously a win
+at six tokens.
+
+**Do NOT copy its constants.** Its fusion weights, rank bonuses and blend
+thresholds are unmeasured, and the one test that could detect a regression in
+them is **skipped in CI** by an environment guard while the lexical floors run.
+One is incoherent on inspection: a top-rank bonus larger than any single list's
+entire maximum fusion contribution, so the bonus dominates the ranking it was
+meant to nudge. Its published speed figures trace to a house style instructing
+release authors to *"include numbers"*, and at least one is arithmetic over two
+config constants rather than a measurement.
+
+Derive every constant against our own triples.
+
+## 11. The embedding runtime, and the hazard that is ours alone
+
+The prior art runs its embedder **locally and in-process** — GGUF weights loaded
+into the running process, no remote API, with lazy loading, an idle-unload timer,
+bounded contexts, and a memory budget. It never considers a hosted embedding
+service, so it offers no evidence either way on that choice.
+
+**Two differences make its arrangement not directly portable.** It is a CLI that
+starts, answers and exits, so its engineering problem is amortising a cold load.
+Nora is a **long-lived async service**, which makes loading easier — once, at
+startup — and introduces the hazard that tool never faces:
+
+> **In-process embedding inference will block the event loop** unless it is run
+> in a thread or executor.
+
+A synchronous embed on the reply path stalls every other conversation in flight.
+This is the same class as the hung-Dreamer finding already in this bundle, where
+a blocked call was invisible because nothing was waiting on it — except here
+someone is waiting, in front of the group.
+
+bge-m3 is also materially larger than the small model that tool defaults to, so
+resident memory is a real number to check rather than assume.
+
+## 12. Measuring this, so a broken channel is not a quiet one
+
+That tool's own benchmark harness **returns all-zero scores with a real latency
+number when a backend throws**. A channel that is broken is therefore
+indistinguishable from a channel that correctly found nothing — in the
+measurement layer of the reference implementation.
+
+That is precisely this repo's R-27 failure, and it is the one thing from the
+study to treat as a warning rather than a pattern:
+
+> In any retrieval eval built here, an exception is an **ERROR**. Never a
+> zero-score PASS, and never folded into "found nothing".
+
+Two further traps from the same audit, both cheap to avoid: a metric named
+*precision* that divides by the number of expected results rather than by `k`
+(making it recall under a precision label), and loose suffix matching that counts
+a near-miss as a hit. Name the metric for what it computes, and match on
+identity.
+
 ## Status / Checkpoint
 
 2026-08-23 — written after the operator chose bge-m3 + lexical and asked whether
-a reranker is needed. It **retracts** [16-open-items.md](16-open-items.md) §4.1's
+a reranker is needed; §6, §10, §11 and §12 added after a source study of a
+production three-channel search tool, which **corrected §6**: an earlier draft
+treated "cannot match Chinese text" and "cannot match across languages" as one
+gap. They are two, and only the second needs embeddings. It **retracts** [16-open-items.md](16-open-items.md) §4.1's
 refusal of a semantic index for this tier: the measurement's instrument was never
 recorded, the Honcho leg is a category error against ADR-0001, the pgvector leg
 is an index concern rather than a capability one, and the corpus-size leg was
