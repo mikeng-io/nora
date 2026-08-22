@@ -42,6 +42,7 @@ members:
   - 17-failure-classes.md
   - 18-flows.md
   - 19-between-tiers.md
+  - 20-knowledge-tier.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -85,8 +86,12 @@ edges:
   - {src: 19-between-tiers, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 19-between-tiers, dst: 12-self-correction, rel: depends_on, provenance: asserted}
   - {src: 19-between-tiers, dst: 08-state, rel: depends_on, provenance: asserted}
+  - {src: 20-knowledge-tier, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 20-knowledge-tier, dst: 12-self-correction, rel: corrects, provenance: asserted}
+  - {src: 20-knowledge-tier, dst: 19-between-tiers, rel: extends, provenance: asserted}
 scope:
   v1:
+    - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"
     - "Transport: the Dreamer gets its own, verified against the wire rather than inherited"
     - "Trigger: an adaptor declares its condition and a floor between passes; the period is NOT fixed and the shape is event-driven; did-not-fire is a third outcome"
     - "Loop: termination is a structured act whose absence fails closed; partial progress survives a bounded run"

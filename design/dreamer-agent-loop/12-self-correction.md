@@ -89,6 +89,10 @@ The fact-tier spec states the stake plainly:
 > fragments into near-duplicates that can never contradict each other — **a
 > fact tier that cannot contradict itself is decoration**."*
 
+> **See [20-knowledge-tier.md](20-knowledge-tier.md).** This section states the
+> dependency; that node states what the tier actually is, and why this one column
+> is what four separate problems bottom out in.
+
 **And the shared registry already exists — it is simply empty.** This is the
 part that reframes the item from *build something* to *populate something*:
 

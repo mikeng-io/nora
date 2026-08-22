@@ -142,6 +142,16 @@ signal. There is also a measured warning against assuming a retrieval primitive
 works: a similarity operator returned **0 of 3000 rows that all contained the
 string** ([09-measurement.md](09-measurement.md) §3.2).
 
+**4.2 Do we need a graph engine? Answered — but its precondition is unbuilt.**
+
+The store choice was made carefully and re-verified at source; its grounds are
+specific and still hold. **This bundle does not reopen it.** What it records is
+that the decision's own safety claim — *a canonical entity table keeps a later
+migration an `INSERT … SELECT`* — **was not implemented**: subjects are written
+as free text and the entity table is empty, which is the shape that decision says
+forecloses a graph permanently. See
+[20-knowledge-tier.md](20-knowledge-tier.md) §4.
+
 **5. Entity resolution.** The shared dependency of both tiers
 ([12-self-correction.md](12-self-correction.md) §4). Its absence bounds how
 useful any search tool can be, and the fact tier is on course to reproduce the

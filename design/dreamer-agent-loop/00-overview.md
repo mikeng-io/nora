@@ -107,6 +107,7 @@ such rather than dressed as decisions.
 | **D8** | decision | Doctrine becomes shape-aware; the audience field stops being decorative | [13](13-doctrine.md) |
 | **D9** | deferral | The language tier's absence of supersession is a **designed cost**; reversing it needs its own argument | [12](12-self-correction.md) |
 | **D10** | sequencing | Phase 3 is how the objective-text freeze legitimately lifts | [14](14-migration-and-governance.md) |
+| **D11** | decision | **This is the knowledge tier.** The schema is already a bitemporal knowledge graph with four warrants; one corner ships, and the name followed the implementation | [20](20-knowledge-tier.md) |
 
 **D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
 the second half is the load-bearing part: an extractor that suppresses claims it
@@ -122,14 +123,23 @@ has seen before destroys the signal that decides what is worth researching.
 
 **Execution** — [14](14-migration-and-governance.md) sequencing, numbers, tests · [15](15-roadmap.md) every tier's state and owner · [16](16-open-items.md) what is unresolved
 
-**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate
+**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is
 
 > **If you only read two nodes:** [18](18-flows.md) to see how a tier actually
 > runs, then [01](01-live-state.md) for what it has actually produced. The gap
 > between those two is the whole bundle.
+>
+> **If you only build one thing:** [20](20-knowledge-tier.md). Four of the
+> problems argued separately across these nodes are one missing column, it costs
+> nothing at zero rows, and it is the only thing keeping the store choice
+> reversible.
 
 ## 7. The critical path
 
+0. **Write canonical entity ids** ([20](20-knowledge-tier.md)). Zero rows exist,
+   so it costs nothing today and is a cleaning project later. Four separate
+   problems in this bundle bottom out in this one column, and it is the only
+   thing keeping the store choice reversible.
 1. **Measure the transport** ([16](16-open-items.md) §0 and §1, one run). Does it
    sustain tool calls and carry reasoning between turns; which ceiling actually
    binds. **Everything else is downstream of this** — and if the answer is no,

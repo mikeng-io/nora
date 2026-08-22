@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Docs only. Adds design/dreamer-agent-loop/20-knowledge-tier.md — the fact schema is already a bitemporal knowledge graph with four warrant kinds, its only writer implements one corner, and the canonical-entity column that the store choice's own reversibility argument depends on was never written. Renames the tier in design; code identifiers unchanged. No code, no behaviour change."
+}

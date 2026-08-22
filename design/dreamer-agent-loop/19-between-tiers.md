@@ -106,6 +106,11 @@ assumes, and what nothing populates
 > **The entity registry is not a deduplication convenience. It is the mechanism
 > by which the system can observe its own inconsistency.**
 
+It is also the **relevance function** — ranking by distance from a focal node
+has nothing to compute over without it, which is why §5's block is a recency
+slice rather than a scoped one. And it is what keeps the store choice
+reversible. See [20-knowledge-tier.md](20-knowledge-tier.md) §5.
+
 Which makes three of this bundle's open threads one thread: the registry, the
 cross-tier semantic index that might populate it
 ([16-open-items.md](16-open-items.md) §4.1), and cross-tier conflict detection
