@@ -87,7 +87,42 @@ Adjudication is a work queue wearing a clock's clothing. Synthesis, if it
 lands, wants to run rarely. One tick currently serves all three
 ([06-trigger.md](06-trigger.md) §2).
 
-**4.1 A cross-tier semantic index — and whether it dissolves item 5.**
+**4.1 A cross-tier semantic index — INVESTIGATED, and refused.**
+
+*Measured, not argued.* Embeddings do **not** subsume entity resolution; on this
+room's own terms they invert it:
+
+| pair | cosine distance |
+|---|---|
+| `Big Walk` / `大步行` — a true alias | 0.2173 |
+| **`Big Walk` / `a big walk`** — the literal misreading | **0.1401** |
+| `Chi Ming` / `Grant Carver` — the room's own nickname | 0.6689 |
+| **`Chi Ming` / `Miles Novak`** — the wrong person | **0.5811** |
+
+**No threshold separates a true alias from the literal misreading**, and the
+misreading — the exact wrong sense that caused the failure — ranks *nearer* than
+the translation. On the room's real nickname, nearest-neighbour returns the wrong
+person, though the transcript records the mapping outright.
+
+Three further reasons it is refused:
+
+- **Honcho already provides the capability**, running, with the corpus embedded
+  and Nora already a client carrying a calibrated distance floor. A second index
+  would be a second thing to keep in sync.
+- **`pgvector` is not installable in the deployed image**, so adopting it is a
+  deployment change, not a code change.
+- **The corpus is single-digit rows.** A sequential scan beats an index probe
+  plus an embedding call.
+
+The mature prior art agrees: the one system that solved this uses embeddings for
+**recall only**, then exact normalisation, then lexical similarity, then model
+adjudication — **defaulting to split** on any uncertainty.
+
+**What survives:** the *capability* — a read verb over the tier's own state — is
+still right, on [08-state.md](08-state.md) §1's argument. It simply needs
+deterministic matching, not a vector index.
+
+**~~Whether it dissolves item 5.~~ It does not.**
 
 The wrong-gloss failure is that **the open web does not know what this room means
 by a term**, while the room's own accumulated state does. The proposal is one
