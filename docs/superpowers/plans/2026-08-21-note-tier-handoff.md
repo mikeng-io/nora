@@ -11,7 +11,7 @@ derives_from:
   - docs/superpowers/specs/2026-08-20-dreamer-as-an-agent-design.md
 ---
 
-> **PARTLY SUPERSEDED (2026-08-22) — check `design/dreamer-agent-loop/14-roadmap.md` §3 and §7.**
+> **PARTLY SUPERSEDED (2026-08-22) — check `design/dreamer-agent-loop/15-roadmap.md` §3 and §7.**
 >
 > Its task-level guidance stands. Its **state** claims do not: it calls the
 > curator and revisitor "UNBLOCKED", which is true at code level and false at

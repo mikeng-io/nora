@@ -122,6 +122,8 @@ has seen before destroys the signal that decides what is worth researching.
 
 **Execution** — [14](14-migration-and-governance.md) sequencing, numbers, tests · [15](15-roadmap.md) every tier's state and owner · [16](16-open-items.md) what is unresolved
 
+**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor
+
 ## 7. The critical path
 
 1. **Measure the transport** ([16](16-open-items.md) §0 and §1, one run). Does it
