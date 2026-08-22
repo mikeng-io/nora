@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design-only: records that the shipped fact-adjudication objective's worked example folds the object into the predicate name, the anti-pattern 21-substrate-contract §8.3 argues against. No code or objective change."
+}
