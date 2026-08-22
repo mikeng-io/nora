@@ -104,8 +104,14 @@ three gates above encode, and precisely what a clock cannot express.
 
 ## 4. The design
 
-**An adaptor declares its own trigger, and the runtime evaluates it before any
-input is rendered.**
+**An adaptor declares its own trigger condition, and the runtime evaluates it
+before any input is rendered. The period is not fixed.**
+
+That second sentence is the decision, not a consequence of the first. A fixed
+clock is what the Dreamer has, and no amount of declaring conditions helps if
+every condition is still asked every 300 seconds for every adaptor. The tick, if
+one survives at all, becomes the thing that *asks*; what decides is the
+adaptor's own condition plus its floor.
 
 Four properties: three earned from §2, the fourth from §3.
 
@@ -128,13 +134,16 @@ Four properties: three earned from §2, the fourth from §3.
    the first (weakly) and not the second at all, which is why a busy room can
    drive a failing adaptor at full tick rate indefinitely.
 
-**Cadence then belongs to the adaptor, not the clock.** The tick becomes the
-thing that *asks*, not the thing that decides — and on the evidence of §3 it
-should ask far less often than every five minutes, or stop being a clock at all
-and become event-driven. Extraction can want new messages; adjudication can want
-queue depth; synthesis can want accumulation plus quiet plus a floor. None of
-those is expressible today, and the third is exactly what the dependency next
-door already implements.
+**Cadence belongs to the adaptor, and the shape it should take is
+event-driven.** Extraction wants new messages; adjudication wants queue depth;
+synthesis wants accumulation *plus* quiet *plus* a floor. None of those is a
+period, and none is expressible today — while the third is precisely what the
+dependency next door already runs.
+
+The honest end state is that the clock stops being the scheduler and becomes at
+most a cheap poll over declared conditions — or disappears entirely in favour of
+the signal that already exists, since a message arriving is exactly the event
+that should be asking the question.
 
 **What this does not change:** per-adaptor failure isolation, the in-flight
 lock, and watermark seeding are all correct and stay as they are. The backoff
