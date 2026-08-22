@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design-only: adds design/dreamer-agent-loop/21-substrate-contract.md, the substrate contract for the knowledge tier (what an entity is, entity-vs-literal, predicate vocabulary, resolution placement, assertion provenance). No code, schema or behaviour change; the Dreamer remains disabled."
+}

@@ -43,6 +43,7 @@ members:
   - 18-flows.md
   - 19-between-tiers.md
   - 20-knowledge-tier.md
+  - 21-substrate-contract.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -89,6 +90,8 @@ edges:
   - {src: 20-knowledge-tier, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 20-knowledge-tier, dst: 12-self-correction, rel: corrects, provenance: asserted}
   - {src: 20-knowledge-tier, dst: 19-between-tiers, rel: extends, provenance: asserted}
+  - {src: 21-substrate-contract, dst: 20-knowledge-tier, rel: realizes, provenance: asserted}
+  - {src: 21-substrate-contract, dst: 19-between-tiers, rel: depends_on, provenance: asserted}
 scope:
   v1:
     - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"
