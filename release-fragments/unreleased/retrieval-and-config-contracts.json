@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design-only: adds 22-config.md (per-adaptor operator surface) and 23-retrieval.md (two read surfaces, three channels, no cross-encoder) to design/dreamer-agent-loop, and retracts 16-open-items §4.1's refusal of a semantic index. No code, schema or behaviour change."
+}

@@ -87,10 +87,20 @@ Adjudication is a work queue wearing a clock's clothing. Synthesis, if it
 lands, wants to run rarely. One tick currently serves all three
 ([06-trigger.md](06-trigger.md) §2).
 
-**4.1 A cross-tier semantic index — INVESTIGATED, and refused.**
+**4.1 A cross-tier semantic index — refused in 2026-08, and the refusal has
+since been RETRACTED for the knowledge tier (2026-08-23). See
+[23-retrieval.md](23-retrieval.md).** The four reasons below are kept as
+written, each with what became of it, because the retraction is only legible
+next to what it overturned.
 
-*Measured, not argued.* Embeddings do **not** subsume entity resolution; on this
-room's own terms they invert it:
+*Measured, not argued* — **and the instrument was never recorded.** The four
+numbers below appear in this node and nowhere else in the repo: no script, no
+spec, and **no embedding model is named anywhere in the codebase**. An
+English-centric embedder would produce exactly this result on the
+`Big Walk`/`大步行` pair, which makes the table unusable as evidence until it is
+re-run with the model stated. This node asserted a measurement while failing
+CLAUDE.md's own rule — *never read an instrument's output as evidence without
+first checking it can measure the thing.*
 
 | pair | cosine distance |
 |---|---|
@@ -104,19 +114,36 @@ misreading — the exact wrong sense that caused the failure — ranks *nearer* 
 the translation. On the room's real nickname, nearest-neighbour returns the wrong
 person, though the transcript records the mapping outright.
 
-Three further reasons it is refused:
+Three further reasons it was refused — **none of which survived review**:
 
-- **Honcho already provides the capability**, running, with the corpus embedded
-  and Nora already a client carrying a calibrated distance floor. A second index
-  would be a second thing to keep in sync.
-- **`pgvector` is not installable in the deployed image**, so adopting it is a
-  deployment change, not a code change.
-- **The corpus is single-digit rows.** A sequential scan beats an index probe
-  plus an embedding call.
+- **"Honcho already provides the capability."** A **category error**. Honcho
+  embeds *its own* corpus — inferred disposition about people — not facts.
+  Searching the knowledge tier through it would mean writing facts into Honcho,
+  which `design/adr/0001-honcho-is-interpretation-not-record.md` forbids
+  outright: *Honcho is the interpretation; the SQL store is the record.* The
+  capability is not "already provided"; it is provided for a different corpus.
+- **"`pgvector` is not installable in the deployed image."** True — verified
+  2026-08-23, `vector` is absent from `pg_available_extensions` on
+  `postgres:18-alpine`, while `pg_trgm` is installed and full-text search
+  works. But **pgvector is an index optimisation**, and at this tier's size a
+  brute-force scan beats an index probe. Vectors fit in an ordinary column.
+  This is a deferred optimisation, not a blocker.
+- **"The corpus is single-digit rows."** True when written, and **false by
+  design**: [20-knowledge-tier.md](20-knowledge-tier.md) §6 argues facts are
+  unbounded by design where notes are bounded by design. The refusal was sized
+  against a corpus the tier is specified not to stay at.
 
 The mature prior art agrees: the one system that solved this uses embeddings for
 **recall only**, then exact normalisation, then lexical similarity, then model
 adjudication — **defaulting to split** on any uncertainty.
+
+**That last paragraph is the part that survives**, and it is a claim about
+*entity resolution*, not about retrieval. Both can be true: embeddings must not
+decide whether two names are the same thing
+([21-substrate-contract.md](21-substrate-contract.md) §5 keeps resolution exact
+and fail-closed), and embeddings are the right recall channel for *finding* a
+fact. This node collapsed the two questions into one refusal.
+[23-retrieval.md](23-retrieval.md) separates them.
 
 **What survives:** the *capability* — a read verb over the tier's own state — is
 still right, on [08-state.md](08-state.md) §1's argument. It simply needs
