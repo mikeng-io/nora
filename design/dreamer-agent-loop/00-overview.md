@@ -108,6 +108,7 @@ such rather than dressed as decisions.
 | **D9** | deferral | The language tier's absence of supersession is a **designed cost**; reversing it needs its own argument | [12](12-self-correction.md) |
 | **D10** | sequencing | Phase 3 is how the objective-text freeze legitimately lifts | [14](14-migration-and-governance.md) |
 | **D11** | decision | **This is the knowledge tier.** The schema is already a bitemporal knowledge graph with four warrants; one corner ships, and the name followed the implementation | [20](20-knowledge-tier.md) |
+| **D12** | decision | **The substrate contract is settled before the first write** — eight questions answered together, because four tiers write against them. The object is always a literal and entity-hood is *derived*; the asserter is recorded without the model ever seeing a speaker | [21](21-substrate-contract.md) |
 
 **D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
 the second half is the load-bearing part: an extractor that suppresses claims it
@@ -123,7 +124,7 @@ has seen before destroys the signal that decides what is worth researching.
 
 **Execution** — [14](14-migration-and-governance.md) sequencing, numbers, tests · [15](15-roadmap.md) every tier's state and owner · [16](16-open-items.md) what is unresolved
 
-**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is
+**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is · [21](21-substrate-contract.md) the shape they all write against
 
 > **If you only read two nodes:** [18](18-flows.md) to see how a tier actually
 > runs, then [01](01-live-state.md) for what it has actually produced. The gap
@@ -136,7 +137,8 @@ has seen before destroys the signal that decides what is worth researching.
 
 ## 7. The critical path
 
-0. **Write canonical entity ids** ([20](20-knowledge-tier.md)). Zero rows exist,
+0. **Settle the substrate contract, then write canonical entity ids**
+   ([21](21-substrate-contract.md), [20](20-knowledge-tier.md)). Zero rows exist,
    so it costs nothing today and is a cleaning project later. Four separate
    problems in this bundle bottom out in this one column, and it is the only
    thing keeping the store choice reversible.
@@ -160,8 +162,11 @@ has seen before destroys the signal that decides what is worth researching.
 - **Standing / the debrief** — owned by another session; its roadmap is
   consolidated in [15](15-roadmap.md) §6 with that session's agreement. This
   bundle records it, it does not own it.
-- **Entity resolution** — a shared dependency of three tiers, owned by nobody.
-  Named in [12](12-self-correction.md) §4; its mechanism stays open.
+- **Entity resolution's owner** — closed by [21](21-substrate-contract.md) §5
+  (deterministic in the sink, adjudicated by a Dreamer pass). What stays open is
+  the *alias* half: no measured way to tell a true alias from a literal
+  misreading ([16](16-open-items.md) §4.1), so the contract under-merges on
+  purpose.
 - **Which model the Dreamer runs** — closed by operator decision, carrying a
   falsifiability commitment never discharged because no loop has ever completed
   ([16](16-open-items.md) §9).
