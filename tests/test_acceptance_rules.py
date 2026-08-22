@@ -284,6 +284,16 @@ RULE_TESTS = {
     # argument for the mechanism and the reason the hand-list lives in the TEST
     # while the code derives.
     "R-56": "test_no_act_verb_is_ever_read_only",
+    # R-57: the block on a `where_is`-disclosed address entering `route` used
+    # to live only in `nora/skills/navigation/SKILL.md` prose — unenforced any
+    # turn the skill didn't load (confirmed live: the F1/Fung/Clara trace
+    # that prompted this rule never called `skills` at all). `route`'s R-28
+    # screen catches an identifier, a raw coordinate, a known person's name;
+    # this is the fourth case, and it can only be caught by PROVENANCE — a
+    # plain address is indistinguishable from a typed place by shape — so
+    # `where_is` and `route` now share one turn-scoped set
+    # (`_disclosed_live_addresses`) instead of a single shape screen.
+    "R-57": "test_a_disclosed_live_position_is_refused_as_a_route_argument_in_an_untrusted_room",
     # R-52 (DEC-117): `create_event` fail-closes on ambiguity — spec §3.1's
     # "more than one open event" case — refusing rather than guessing which
     # of two-or-more already-open events is meant.
