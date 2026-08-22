@@ -102,6 +102,46 @@ is not dreaming, it is polling. Consolidation is what happens **after** enough
 has accumulated and the room has gone quiet — which is precisely the shape the
 three gates above encode, and precisely what a clock cannot express.
 
+## 3.1 And Nora's own corpus already specifies one
+
+The Honcho comparison is external. The note tier's curator — specced, unbuilt —
+already declares exactly the trigger this seam argues for, **inside this
+repo**, and goes one better on the property that matters most.
+
+It declares a fire condition of three OR'd clauses (accumulation, change-plus-
+quiet, and age), and singles out the third:
+
+> *retirement is **time-driven, not evidence-driven** … a note whose anchor date
+> has passed needs retiring even if nobody has touched the notebook in a month.*
+
+That is a trigger case a pure accumulation threshold **cannot** express, and it
+is why "an adaptor declares its condition" is stronger than "lengthen the
+period": some passes must fire precisely when nothing has happened.
+
+**And it solves §2's hardest problem — the trigger that costs what it gates.**
+Its reads are in two tiers, and *the cheap one selects*:
+
+| step | reads | cost |
+|---|---|---|
+| merge **detection** | ids, dates and entity sets for every note | **SQL only — zero tokens** |
+| merge **execution** | the full bodies of one colliding group | bounded by collision size |
+| retire | ids, dates, strike counts | **SQL only** |
+
+Detection is a `GROUP BY … HAVING count(*) > 1`, not a judgement — and its own
+criteria table says so in as many words: ***"SQL. The model never decides
+eligibility."***
+
+So the pattern is not "make the trigger cheap" but **split the read**: a
+deterministic selector that costs nothing, and an expensive pass over only what
+it selected. That is the same separation the sibling project's built pipeline
+puts between its deterministic detector and its LLM author
+([07-loop.md](07-loop.md) §5) — arrived at twice, independently, for the same
+reason.
+
+**None of it is expressible today**, and that is the finding: the best-specified
+adaptor in the corpus declares a trigger the runtime has no verb for.
+
+
 ## 4. The design
 
 **An adaptor declares its own trigger condition, and the runtime evaluates it

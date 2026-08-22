@@ -117,6 +117,38 @@ takes the shape and the two failures. It does not take the six roles, because
 the Dreamer does not need a proposer and an executor as separate agents — it has
 one adaptor and a runtime that disposes.
 
+## 5.1 Two things Nora's own note tier already specifies for this seam
+
+**Containment for the failure that is actually killing runs.** The revisit
+adaptor's spec requires that fetched web content is **distilled into a revision
+rather than left prompt-resident** — and states the reason as a property, not a
+preference: *"a note body is bounded and a fetched page is not."*
+
+That is a direct containment for context and output exhaustion — §3's failure —
+and it is stronger than a token cap because it bounds the shape rather than
+trimming the size. Nothing in the fact tier does this: a fetched page stays in
+the loop's context for every subsequent turn, growing the input the model must
+re-read each time.
+
+**An objective can come from the data, not only from a file.** Both existing
+adaptors take a static objective from the corpus. The revisit adaptor takes its
+five fields **from the note it is revisiting** — the objective *is* the note's
+stated uncertainty, and the success criterion *is* its closing condition.
+
+That is a materially different loop shape: one adaptor, an unbounded number of
+objectives, and a termination test supplied per run by the data. It carries its
+own acceptance test, which is the sharpest line in that spec:
+
+> **there is exactly one revisit adaptor.** The day a second is written for a
+> *kind* of note is the day it became the hardcoded scenario engine this
+> constraint exists to prevent.
+
+This bundle does not design that adaptor. It records that the loop seam must not
+assume a per-adaptor static objective, because the most sophisticated adaptor in
+the corpus does not have one — and a runtime that only supports file-backed
+objectives would force exactly the hardcoded scenario engine that spec forbids.
+
+
 ## 6. What transfers, and what would be wrong to copy
 
 **Transfers.**

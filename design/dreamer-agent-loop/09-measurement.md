@@ -64,6 +64,21 @@ that should have recorded it had already been reset.
 none, so its own stated failure-detection is unreadable and a deferred piece of
 work waits on evidence that structurally cannot be collected.
 
+## 3.1 One tier already wrote the rule down
+
+The note curator's spec states the requirement this seam generalises, for its
+own read cap:
+
+> Bodies read per tick are **capped in config and counted when the cap bites**. A
+> silent truncation here reads as *"nothing to do"*, which is the
+> `unavailable`-as-`nothing_found` failure at the pass level.
+
+That is exactly Layer 1's defect stated in advance, by a different author, for a
+different tier — a cap that binds must be distinguishable from having found
+nothing. It is also, notably, the one place in the corpus where a cap is
+specified *with* its instrument rather than as a bare number.
+
+
 ## 4. This bundle's own acceptance — the part it was missing
 
 The design review's sharpest finding was that this bundle asserts the rule and

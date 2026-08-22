@@ -165,6 +165,8 @@ and the classification test is the arbiter
 | room portrait | scope | — | — | — | — | — |
 | fact extraction (Phase A) | scope | ✅ vocabulary + negative cache | ✅ | ✅ | ✅ | — |
 | fact adjudication (Phase B) | workspace | ✅ | **blocked** | **blocked** | ✅ | ✅ |
+| note curator | workspace | ✅ own notebook | — | — | ✅ | — |
+| note revisitor | workspace | ✅ | — | ✅ | ✅ | ✅ |
 
 Three things to read off it:
 
@@ -184,6 +186,13 @@ destroy the signal that decides what is worth adjudicating. The grant is for
 *naming consistency* and for reading the **negative cache** — "we already tried
 and could not settle this" — not for dedup. This is the sharpest constraint on
 the grant and the easiest to get wrong.
+
+**The two note adaptors are in the table because they are Dreamer adaptors**,
+specced in detail and unbuilt — and because every seam in this bundle applies to
+them the moment they land. The revisitor is additionally **spec-blocked**: its
+subset as written contains an act verb ([11-disclosure.md](11-disclosure.md)
+§4.1). Its remaining tools are all reads and all uncontroversial; it is the one
+adaptor whose declared needs already match what this seam proposes.
 
 **The portrait keeps nothing.** Its objective is executed in code, and the
 argument that a third model call would reintroduce the risk the tier removed is
