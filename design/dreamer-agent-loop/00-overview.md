@@ -109,6 +109,8 @@ such rather than dressed as decisions.
 | **D10** | sequencing | Phase 3 is how the objective-text freeze legitimately lifts | [14](14-migration-and-governance.md) |
 | **D11** | decision | **This is the knowledge tier.** The schema is already a bitemporal knowledge graph with four warrants; one corner ships, and the name followed the implementation | [20](20-knowledge-tier.md) |
 | **D12** | decision | **The substrate contract is settled before the first write** — eight questions answered together, because four tiers write against them. The object is always a literal and entity-hood is *derived*; the asserter is recorded without the model ever seeing a speaker | [21](21-substrate-contract.md) |
+| **D13** | decision | **The operator surface is per adaptor** — cadence, floor, effort and enablement keyed on adaptor name, the shape the budget map already uses. Today every adaptor's schedule is read from `[language]` | [22](22-config.md) |
+| **D14** | decision | **Two read surfaces**: a per-turn block carrying the store's *extent* plus turn-anchored facts, and a query verb doing lexical + dense + structural, fused by rank. **No cross-encoder** | [23](23-retrieval.md) |
 
 **D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
 the second half is the load-bearing part: an extractor that suppresses claims it
@@ -124,7 +126,7 @@ has seen before destroys the signal that decides what is worth researching.
 
 **Execution** — [14](14-migration-and-governance.md) sequencing, numbers, tests · [15](15-roadmap.md) every tier's state and owner · [16](16-open-items.md) what is unresolved
 
-**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is · [21](21-substrate-contract.md) the shape they all write against
+**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is · [21](21-substrate-contract.md) the shape they all write against · [22](22-config.md) what the operator can say · [23](23-retrieval.md) how she reads it back
 
 > **If you only read two nodes:** [18](18-flows.md) to see how a tier actually
 > runs, then [01](01-live-state.md) for what it has actually produced. The gap
