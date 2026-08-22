@@ -87,6 +87,26 @@ Adjudication is a work queue wearing a clock's clothing. Synthesis, if it
 lands, wants to run rarely. One tick currently serves all three
 ([06-trigger.md](06-trigger.md) §2).
 
+**4.1 A cross-tier semantic index — and whether it dissolves item 5.**
+
+The wrong-gloss failure is that **the open web does not know what this room means
+by a term**, while the room's own accumulated state does. The proposal is one
+search across facts, notes, lexemes, memory and standing, reached before the web
+rather than instead of it.
+
+The reason it is filed above entity resolution rather than beside it: **it may
+subsume it.** Nearest-neighbour over embeddings would put `Big Walk`,
+`big walk` and a translation near each other with no alias rule authored — which
+would dissolve the blocker in item 5 rather than solve it.
+
+What must be established first, and is under investigation: whether **Honcho
+already provides this** for one tier (Nora depends on it and it does semantic
+search), what it costs at this deployment's size, and whether there is a class of
+alias — a nickname, an abbreviation — where embedding distance is the wrong
+signal. There is also a measured warning against assuming a retrieval primitive
+works: a similarity operator returned **0 of 3000 rows that all contained the
+string** ([09-measurement.md](09-measurement.md) §3.2).
+
 **5. Entity resolution.** The shared dependency of both tiers
 ([12-self-correction.md](12-self-correction.md) §4). Its absence bounds how
 useful any search tool can be, and the fact tier is on course to reproduce the

@@ -91,6 +91,20 @@ Two more properties worth taking:
 | in-flight | process-local set, lost on restart | unique index, survives everything |
 | telemetry | one outcome | why it fired and how it fired, separately |
 
+### Measured against this deployment
+
+| | |
+|---|---|
+| messages per day | **~61** average; 138 on the busiest day |
+| ticks per day | **288** |
+| messages per tick | **~0.21** |
+| **scope-ticks per message** (4 scopes) | **~19** |
+
+**The Dreamer wakes up roughly nineteen times per message that arrives.** That
+is not a cadence a little too fast; it is polling about two orders of magnitude
+above the event rate. The 8-hour floor next door is the same conclusion reached
+from the other side.
+
 **300 seconds against an 8-hour floor is roughly two orders of magnitude.** But
 the interval is the least of it: Nora has **no floor at all**. Nothing anywhere
 says *this adaptor may not run again for N hours*, so the only thing standing

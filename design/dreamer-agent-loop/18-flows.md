@@ -317,6 +317,20 @@ choices.
 10. **Read back by** — `<standing>` in later turns; and whether the position
     ever *changed*, which is the only evidence the fold is doing anything.
 
+**Its reasoning effort is a measurement, not a setting.** The fold is
+integration — read the prior position and the trace, write the revised one — not
+research, so a low or absent reasoning budget is *plausible*. That is exactly the
+class of claim [09-measurement.md](09-measurement.md) forbids asserting.
+
+The spike, and its outcome is decidable without a judge: run the same fold at
+several reasoning budgets over a **fixed set of real traces**, and score whether
+the revised position (a) **preserves what the prior held** and (b) **integrates
+what the trace added**. Both are checkable by comparison. It is the same
+instrument as the transport measurement and should be one run, not two.
+
+One correction to a tempting premise: *off the reply path* does not mean
+latency-free. It still holds a slot and sits under a wall clock.
+
 > **TODAY.** Phase 1 — the trace capture — is complete and gate-green on an
 > unmerged branch. The debrief itself is drafted, zero code. Three blockers are
 > recorded there, and the sharpest is that the re-derivation signature **does not
