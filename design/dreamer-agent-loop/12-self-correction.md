@@ -28,10 +28,23 @@ on **absence**, so it cannot distinguish a wrong-but-recent gloss from a right
 one. That tier's own open-risks list accepts this: *"A generated sense can be
 wrong. The quote beneath makes it visible, not impossible."*
 
+**And resolution alone would not have merged them.** The key includes the
+**sense**, which is free-text model output, so two rows carrying different
+glosses survive a perfect merge of their names. The observed pair is also a
+**canonicalisation inversion** — one run normalised toward lower case, the other
+toward title case — which is a write-path non-determinism, not a resolution gap.
+
+**Nor was the meaning missing.** It was in the transcript: **her own
+correction**, two messages after the one that produced the wrong gloss, naming
+the studio and the genre. The Dreamer cannot see it — the batch excludes her own
+messages **by construction**, for performance and to stop her output becoming her
+own evidence. The ground truth was two rows away and out of scope by design.
+
 **Decision (D6): this is a designed cost, and reversing it is its own decision
-with its own argument — not a patch applied while doing something else.** Any
-proposal to add supersession to the language tier must say what happens to the
-case the compound key was introduced to fix.
+with its own argument — not a patch applied while doing something else.** And
+that argument must now cover three things rather than one: the overwrite bug the
+compound key was introduced to fix, the sense-in-key fragmentation above, and
+whether a background pass may read her own corrections.
 
 ## 2. The asymmetry, stated correctly
 

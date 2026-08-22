@@ -122,7 +122,7 @@ has seen before destroys the signal that decides what is worth researching.
 
 **Execution** — [14](14-migration-and-governance.md) sequencing, numbers, tests · [15](15-roadmap.md) every tier's state and owner · [16](16-open-items.md) what is unresolved
 
-**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the three tiers run end to end
+**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate
 
 > **If you only read two nodes:** [18](18-flows.md) to see how a tier actually
 > runs, then [01](01-live-state.md) for what it has actually produced. The gap
