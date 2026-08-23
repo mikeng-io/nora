@@ -9,6 +9,7 @@ later (`nora.ingest.stages.media`), from the ref this produces.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
 from ...domain.media import MediaRef, label_for, render_placeholder
@@ -24,27 +25,56 @@ log = logging.getLogger("nora.signal.parser")
 PLACEHOLDER = "\ufffc"
 
 
+# signal-cli 0.14.7's JSON-RPC `JsonAttachment` does NOT carry a voice-note
+# flag at all — confirmed 2026-08-23 by decompiling the shipped jar: the
+# internal `MessageEnvelope.Data.Attachment` has `isVoiceNote` (it IS what
+# produces "Flags: voice note" in signal-cli's own text log for a real
+# voice note), but the record actually serialized to Nora over JSON-RPC is
+# only `contentType;filename;id;size;width;height;caption;uploadTimestamp` —
+# the flag is detected internally and then dropped before it ever reaches us.
+# Upstream fixed this on 2026-08-10 (AsamK/signal-cli#2100), but it has not
+# shipped in a tagged release yet, so `att.get("voiceNote")` below is read for
+# forward compatibility but will not fire on the deployed version.
+#
+# Until a release carries that field, fall back to the filename Signal's own
+# app generates for an in-recorder voice note — e.g.
+# `signal-2026-08-23-19-01-25-369.m4a`, a real example from this deployment.
+# A shared audio FILE keeps its original filename, so this is a strong, not
+# proof-certain, signal. Remove this fallback once `voiceNote` is confirmed
+# present in the deployed signal-cli's JSON-RPC output.
+_SIGNAL_APP_VOICE_NOTE_FILENAME = re.compile(
+    r"^signal-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{3}\.\w+$"
+)
+
+
+def _is_voice_note(att: dict, *, filename: str | None) -> bool:
+    if att.get("voiceNote"):
+        return True
+    return bool(filename and _SIGNAL_APP_VOICE_NOTE_FILENAME.match(filename))
+
+
 def _media_ref(att: dict) -> MediaRef:
     """One `JsonAttachment` reduced to what custody and labelling need.
 
     Field names are signal-cli's: `id` (the handle its own store uses, and what
     `getAttachment` takes), `contentType`, `filename`, `size`, `voiceNote`.
 
-    **`voiceNote` is the one field here not verified against a real message**,
-    because no attachment has ever arrived on this deployment — the honest
-    statement of what is and is not known, rather than a claim dressed as a
-    fact. Its failure mode was chosen to be harmless: absent or renamed, an
-    `audio/*` attachment renders `[audio]` instead of `[voice note]`, which is
+    `voiceNote` is read for forward compatibility but is not yet emitted by
+    the deployed signal-cli version — see `_is_voice_note`'s comment above for
+    the confirmed root cause and the filename fallback it uses instead.
+    Either way, the failure mode stays harmless: an `audio/*` attachment this
+    heuristic misses renders `[audio]` instead of `[voice note]`, which is
     still the fix (she can tell somebody sent sound) and is never a wrong
     claim about who said what. `nora.domain.media.label_for` is where that
     fallback lives.
     """
+    filename = str(att["filename"]) if att.get("filename") else None
     return MediaRef(
         platform_id=str(att.get("id") or ""),
         media_type=str(att.get("contentType") or ""),
-        filename=(str(att["filename"]) if att.get("filename") else None),
+        filename=filename,
         size=(int(att["size"]) if isinstance(att.get("size"), int) else None),
-        voice_note=bool(att.get("voiceNote")),
+        voice_note=_is_voice_note(att, filename=filename),
     )
 
 

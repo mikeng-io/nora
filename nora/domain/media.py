@@ -39,9 +39,10 @@ the platform declared no type at all.
 `voice_note` is a SEPARATE axis from `audio/*` and stays that way: a shared song
 and somebody speaking are the same top-level type and different events, and
 calling a song a voice note would put words in a member's mouth. See
-`nora.platform.signal.parser` for the honesty note on that flag — it is read
-from signal-cli's `voiceNote`, which no real message has yet exercised on this
-deployment, and its absence degrades to `[audio]`, never to a wrong claim.
+`nora.platform.signal.parser` for the deployed signal-cli's own gap here — its
+JSON-RPC `voiceNote` field is not yet emitted (confirmed 2026-08-23; the fix
+landed upstream but is unreleased) — and the filename heuristic that stands
+in for it. Either way, absence degrades to `[audio]`, never to a wrong claim.
 
 Standard library only, like every other module under `nora/domain` — this is
 imported by the platform parser, by the ingest stage, and by the infra blob

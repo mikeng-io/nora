@@ -1,0 +1,9 @@
+{
+  "type": "fix",
+  "summary": "Signal voice notes are transcribed again: every real voice note was silently landing as a bare [audio] attachment and never reaching STT, so no reply ever followed.",
+  "detail": "The deployed signal-cli (0.14.7) never emits a voiceNote flag over JSON-RPC at all — confirmed by decompiling the shipped jar: signal-cli detects the flag internally but drops it before serializing the attachment. Every Signal voice note therefore missed transcription entirely, regardless of [speech.stt]'s own health. The parser now falls back to the filename Signal's own recorder generates (signal-YYYY-MM-DD-HH-MM-SS-mmm.<ext>) when the flag is absent, so real voice notes reach the transcriber again.",
+  "limitations": [
+    "The filename fallback is a heuristic, not the real flag: a shared audio file renamed to exactly match the recorder's filename pattern would be misclassified as a voice note, and the fix for this (AsamK/signal-cli#2100) is merged upstream but not yet in a tagged release — revisit once one ships and drop the fallback.",
+    "Discord voice attachments are unaffected; this fix is Signal-parser-only."
+  ]
+}
