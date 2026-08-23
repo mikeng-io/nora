@@ -102,6 +102,60 @@ recency slice in [20-knowledge-tier.md](20-knowledge-tier.md) §6, one tier over
 part of the cached prefix. A row revised every turn inside a cached prefix would
 invalidate the cache every turn.
 
+### 4.0 The cap: 1200 characters, and it is an invariant not a knob
+
+The overflow *mechanism* was designed and **the number never was** — §4 says
+refuse-and-consolidate, and nothing said what it refuses at. A cap mechanism
+with no cap is a branch that never executes.
+
+**`Standing.body` is capped at 1200 characters**, enforced in **two places**,
+exactly as the note tier enforces its own injected fields:
+
+- a **domain constant**, so a malformed fold is refused before the sink;
+- a **DB `CHECK`**, so no writer can bypass it — the shape of
+  `note_title_fits_the_index_check`, and named for the same reason: the cap
+  exists *because* the field is injected.
+
+**Why 1200.** Standing is injected on the volatile tail of **every turn**, so
+its size is a per-turn tax, not a storage question. In English 1200 characters
+is roughly 300 tokens; **in a CJK-heavy room it approaches 1200 tokens**, and
+this room is mixed by default — the cap has to be read against the denser case,
+not the average. For comparison the note index injects 260 characters per note
+with no cap on the count. And a conversational position that cannot be stated in
+1200 characters is a summary, not a position — the tier is *lossy by design*
+(§8), so a cap that never binds would mean it had stopped being lossy.
+
+**Why it is not a config key**, which is the part most easily got wrong:
+
+> **Render caps are configuration; storage caps are invariants.**
+
+`max_rendered_facts` and `max_rendered_lexemes` are config because they decide
+**how much of a store to show**. This decides **what may exist in a row**.
+Making it a knob means raising it silently changes every prompt in every
+conversation with no migration and no gate — and the `CHECK` is what makes the
+invariant true of rows written by any future writer, including one nobody has
+thought of yet.
+
+**The overflow path is the safety, not the cap.** When a fold would exceed
+1200, the write is **refused**, the current inventory is returned, and the model
+is told to consolidate now. That keeps the failure *model-resolvable* rather
+than making the cap a cliff — and it is why the cap can be tight without being
+brittle.
+
+**Counted, never silent.** Overflow refusals are a metric (§6), for the reason
+Phase 1 already established for the trace: a truncation nobody counts is a
+`nothing_found` that was really an `unavailable`. Never firing means the cap is
+not binding; firing constantly means it is too small. Both are readings.
+
+### 4.0.1 What the trace cap already gets right, and Standing inherits
+
+Phase 1's `cap_messages` truncates **assistant narration only and pins human
+turns**, on the stated ground that *intent cannot be reconstructed from the work
+that followed*. The same asymmetry applies to the fold: when Standing must
+shrink, **what the room said outranks what Nora concluded about it.** A position
+is re-derivable from the transcript; the transcript is not re-derivable from the
+position.
+
 ### 4.1 The risk this shape carries, restated
 
 Standing is update-in-place, so **a successful prompt injection persists** until
@@ -236,7 +290,7 @@ turn into a false alarm:
 | **`nora_debrief_seconds`** | §5, with the second-queued case |
 | **folds that read prior state** | the §4 non-negotiable, observable rather than assumed — a fold that read nothing is the failure D19 exists to prevent |
 | **re-derivations, by trigger** | forced-on-ungrounded versus ceiling. If the ceiling dominates, the trigger is a clock wearing a condition |
-| **overflow refusals** | §4's refuse-and-consolidate path firing is healthy; never firing means the cap is not binding, and firing constantly means it is too small |
+| **overflow refusals** | §4.0's refuse-and-consolidate path firing is healthy; never firing means the 1200-character cap is not binding, and firing constantly means it is too small |
 
 `nora_tagtrace_truncations_total` already exists and is properly wired. It is
 the only one that does.
