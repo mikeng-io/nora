@@ -48,6 +48,7 @@ members:
   - 23-retrieval.md
   - 24-embedding-seam.md
   - 25-knowledge-pipeline.md
+  - 26-standing.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -107,6 +108,9 @@ edges:
   - {src: 25-knowledge-pipeline, dst: 21-substrate-contract, rel: depends_on, provenance: asserted}
   - {src: 25-knowledge-pipeline, dst: 23-retrieval, rel: extends, provenance: asserted}
   - {src: 25-knowledge-pipeline, dst: 20-knowledge-tier, rel: realizes, provenance: asserted}
+  - {src: 26-standing, dst: 15-roadmap, rel: realizes, provenance: asserted}
+  - {src: 26-standing, dst: 12-self-correction, rel: depends_on, provenance: asserted}
+  - {src: 26-standing, dst: 19-between-tiers, rel: extends, provenance: asserted}
 scope:
   v1:
     - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"
