@@ -188,8 +188,12 @@ plaintext.
       outside the circle, plus a **startup invariant that alarms the day group ⊄
       circle**. Today circle == group ("Ridgeline") so it holds by construction —
       *verified at startup*, not assumed;
-    - **outbound is still hard-blocked** (design/14 §2.2): a stored position may
-      seed an on-host route computation but must never leave in a tool argument;
+    - **outbound stays blocked except where the room itself is trusted**
+      (design/14 §2.2, amended by R-57): a stored position may always seed an
+      on-host route computation, and may leave in a `route` tool argument ONLY
+      when `Conversation.location` is true for that room — the same flag
+      `where_is`/`saved_places` already answer to, so this adds no new trust
+      surface, it reuses the one the operator already set per room;
     - **staleness always reaches the model** (design/14 §5.3): position is not
       intent, a fix's age is part of every answer, and recording *distinct* fixes
       is what makes "when did they last actually move" answerable.
