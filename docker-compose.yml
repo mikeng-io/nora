@@ -152,6 +152,13 @@ services:
       - MEDIA_ENCRYPTION_KEY=${MEDIA_ENCRYPTION_KEY:-}
       - LIFE360_USERNAME=${LIFE360_USERNAME:-}
       - LIFE360_PASSWORD=${LIFE360_PASSWORD:-}
+      # [media.rustfs] (DEC-136), off by default. Same OPTIONAL posture and
+      # the SAME two values `rustfs:`'s own environment below already
+      # requires (`:?`) whenever this compose file runs at all — reusing them
+      # here costs a deployment that already runs `rustfs` no new secret,
+      # only new wiring, the same as `drop`'s own RustFS client already does.
+      - RUSTFS_ROOT_USER=${RUSTFS_ROOT_USER:-}
+      - RUSTFS_ROOT_PASSWORD=${RUSTFS_ROOT_PASSWORD:-}
       #   NORA_DROP_TOKEN       — minting nora.example.net short links / drop
       #   artifact registration ([shortener]; cut over 2026-08-12 from the
       #   n.example.net Worker's own NORA_SHORTENER_TOKEN to the SAME secret the

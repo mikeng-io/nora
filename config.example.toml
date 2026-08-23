@@ -349,6 +349,20 @@ vision_timeout_seconds = 20.0
 # is the off switch and nothing else has to change.
 sticker_descriptions = true
 
+# WHERE the (always-encrypted) bytes above land (DEC-136). OFF by default: a
+# config.toml written before this existed keeps writing to
+# store.data_dir / "media" exactly as before. On, an S3-compatible object
+# store takes over — bucket/endpoint here, credentials named by env var
+# (DEC-8), same reuse pattern encryption_key_env above already sets. A
+# misconfigured or unreachable RustFS falls back to the filesystem rather
+# than crashing the daemon or turning custody off entirely.
+[media.rustfs]
+enabled = false
+endpoint = ""              # e.g. "http://rustfs:9000"
+bucket = "nora-media"
+access_key_env = "RUSTFS_ROOT_USER"      # same var `drop`'s RustFS client uses
+secret_key_env = "RUSTFS_ROOT_PASSWORD"
+
 # Nora's own link shortener / drop delivery (deploy/drop/, this repo's own
 # compose service — docs/superpowers/specs/2026-08-12-nora-drop-design.md §5).
 # The WHOLE SECTION IS OPTIONAL and every key defaults; off (or an unset token)
