@@ -294,6 +294,15 @@ RULE_TESTS = {
     # `where_is` and `route` now share one turn-scoped set
     # (`_disclosed_live_addresses`) instead of a single shape screen.
     "R-57": "test_a_disclosed_live_position_is_refused_as_a_route_argument_in_an_untrusted_room",
+    # R-58: the deployed signal-cli (0.14.7) never emits `voiceNote` over
+    # JSON-RPC at all (confirmed by decompiling the shipped jar — the fix is
+    # merged upstream but unreleased), so Signal's parser falls back to the
+    # filename Signal's own recorder generates. That fallback is gated on the
+    # resolved media type ALSO being audio/* — `nora/ingest/stages/media.py`
+    # trusts `ref.voice_note` alone to route bytes to local STT (DEC-131), so
+    # a bare filename match would let a sender route ANY attachment there by
+    # naming it right, even one `label_for` still displays as `[file]`.
+    "R-58": "test_a_matching_filename_on_a_non_audio_attachment_is_not_a_voice_note",
     # R-52 (DEC-117): `create_event` fail-closes on ambiguity — spec §3.1's
     # "more than one open event" case — refusing rather than guessing which
     # of two-or-more already-open events is meant.
