@@ -15,6 +15,7 @@ test here, not `TrackSource`'s fidelity to the real yt-dlp boundary
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from nora.domain.ports import ResolvedTrack
@@ -23,15 +24,27 @@ from nora.testing.music import FakeMusicQueueStore
 
 T0 = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
 
+_StubEntry = ResolvedTrack | Sequence[ResolvedTrack] | None
+
 
 class _StubSource:
-    def __init__(self, tracks: dict[str, ResolvedTrack | None]) -> None:
+    """A single `ResolvedTrack` per query is the common case every existing
+    test here uses unchanged; a tuple of several stands in for a playlist
+    link resolving to more than one (`YtDlpSource`'s own playlist-expansion
+    fidelity is `test_ytdlp_source.py`'s job, not this stub's)."""
+
+    def __init__(self, tracks: dict[str, _StubEntry]) -> None:
         self._tracks = tracks
         self.resolved: list[str] = []
 
-    async def resolve(self, *, query_or_url: str) -> ResolvedTrack | None:
+    async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
         self.resolved.append(query_or_url)
-        return self._tracks.get(query_or_url)
+        found = self._tracks.get(query_or_url)
+        if found is None:
+            return ()
+        if isinstance(found, ResolvedTrack):
+            return (found,)
+        return found
 
 
 class _FakeVoiceSession:
@@ -78,7 +91,7 @@ _TRACK_B = ResolvedTrack(
 )
 
 
-def _player(tracks: dict[str, ResolvedTrack | None]) -> tuple[MusicPlayer, _FakeVoiceSession]:
+def _player(tracks: dict[str, _StubEntry]) -> tuple[MusicPlayer, _FakeVoiceSession]:
     voice = _FakeVoiceSession()
     player = MusicPlayer(
         guild_id="guild-1", queue=FakeMusicQueueStore(),
@@ -237,3 +250,38 @@ async def test_set_volume_accepts_the_boundary_values() -> None:
     assert player.set_volume(2.0) is True
 
     assert voice.volume_calls == [0.0, 2.0]
+
+
+async def test_a_playlist_resolve_enqueues_every_track_and_starts_the_first() -> None:
+    player, voice = _player({"playlist url": (_TRACK_A, _TRACK_B)})
+
+    outcome = await player.play(
+        query_or_url="playlist url", requested_by="miles", added_at=T0,
+    )
+
+    assert outcome.status == "playing"
+    assert outcome.queued_count == 2
+    assert outcome.track is not None
+    assert outcome.track.title == "Track A"
+    assert voice.played == ["https://cdn.example/a"]
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track A"
+    assert [t.title for t in status.queue] == ["Track B"]
+
+
+async def test_a_playlist_resolve_while_something_is_playing_only_enqueues_all() -> None:
+    player, voice = _player({
+        "track a": _TRACK_A, "playlist url": (_TRACK_B, _TRACK_B),
+    })
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    outcome = await player.play(
+        query_or_url="playlist url", requested_by="miles", added_at=T0,
+    )
+
+    assert outcome.status == "queued"
+    assert outcome.queued_count == 2
+    assert voice.played == ["https://cdn.example/a"]
+    status = await player.status()
+    assert [t.title for t in status.queue] == ["Track B", "Track B"]

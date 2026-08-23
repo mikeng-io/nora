@@ -62,15 +62,36 @@ Mirrors this codebase's existing narrow, fail-closed provider ports
 result, never raise," not "launch an arbitrary job":
 
 - **Input:** a query or URL string.
-- **Output:** a resolved track (title, duration, the direct stream URL or a
-  short-lived resolver for it, a source identifier) — or a typed "could not
-  resolve" outcome. Never raises; a dead link or an unsupported site is a
-  normal, expected outcome this port must be able to say plainly, same
-  discipline as every other provider port in this file.
+- **Output:** zero or more resolved tracks (title, duration, the direct
+  stream URL, a source identifier) — an empty sequence, never an exception,
+  when nothing resolves. Never raises; a dead link or an unsupported site is
+  a normal, expected outcome this port must be able to say plainly, same
+  discipline as every other provider port in this file. **More than one
+  result means a playlist link expanded** (below) — an ordinary search or a
+  single video URL always resolves to at most one.
 - **One implementation ships now**: `YtDlpSource`, YouTube only (allowlist
   enforced at the source, not left to whatever `yt-dlp` happens to accept —
   a query someone pastes is untrusted input, same category `SearchProvider`
   and `LinkPreviewSource` already treat carefully).
+
+### Playlist-URL expansion is narrow, not "whatever yt-dlp would expand"
+
+A `/playlist?list=...` link — what YouTube's own UI gives you FROM a
+playlist's page — expands into every video it contains, capped at 50 (a
+link shared out of a 500-track "Mix" or someone's personal playlist must
+not flood a guild's queue from one `/music play` call). A `/watch?v=...
+&list=...` link — an ordinary video that happens to carry an incidental
+`list=`/`index=` (sharing a video FROM inside a playlist, or YouTube's
+autoplay "Mix" queue) — resolves to that ONE video only, by construction:
+the `list`/`index`/`start_radio` params are stripped before the URL ever
+reaches `yt-dlp`, so there is nothing left for it to expand. Least-surprise
+is the whole argument: pasting a video link must never silently queue fifty
+unrelated tracks because it happened to be opened from inside a playlist.
+
+`MusicPlayer.play` enqueues every resolved track, in order, before deciding
+whether to start playback — only the FIRST call for an idle guild advances;
+the rest of an expanded playlist just joins the queue behind it, same as if
+they'd been added one at a time (03-state-and-persistence.md).
 
 Per this repo's port convention (`CLAUDE.md`: *"A port never gains a second
 implementation — including a test fake — without a shared contract suite

@@ -53,7 +53,10 @@ reconnect either.
   control surface — `02-control-surface.md`.
 - `yt-dlp` resolves a query/URL to a direct, streamable audio URL; `ffmpeg`
   transcodes it live into Discord's voice socket. No file ever written to
-  disk in the ordinary path — `01-playback-and-source.md`.
+  disk in the ordinary path — `01-playback-and-source.md`. A YouTube
+  playlist link expands into every track it contains (capped at 50); an
+  ordinary video link never does, even one carrying an incidental
+  `list=` — same document.
 - A per-guild in-memory player (voice connection, now-playing, loop mode,
   volume) plus a Postgres-backed session queue that survives a process
   restart (though not a live voice reconnect) — `03-state-and-persistence.md`.

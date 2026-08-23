@@ -1,0 +1,12 @@
+{
+  "type": "feature",
+  "summary": "/music play now expands a YouTube playlist link (a /playlist?list=... URL) into every track it contains, capped at 50, enqueuing them all in order.",
+  "details": [
+    "Only an explicit playlist-page link expands. An ordinary video link never does, even one carrying an incidental list=/index= param from being shared out of a playlist or an autoplay Mix -- those params are stripped so it always resolves to just that one video. Pasting a video link never silently queues fifty unrelated tracks.",
+    "TrackSource.resolve now returns a sequence of tracks instead of at most one; the reply reports \"+N more from the playlist\" when more than one was queued."
+  ],
+  "limitations": [
+    "The 50-track cap is fixed, not configurable.",
+    "SoundCloud playlists are out of scope, same as SoundCloud itself (design/discord-music/01-playback-and-source.md)."
+  ]
+}
