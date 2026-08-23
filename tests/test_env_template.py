@@ -112,6 +112,11 @@ _MAY_DIFFER = {
     # as their neighbours above -- opted in by the operator, INERT in the
     # template until someone decides to.
     "media.rustfs.enabled", "music.enabled",
+    # A tuned value (design/discord-music/05-crossfade-spike.md), not a
+    # universal default -- 0.0 in the template is deliberately "off until
+    # you choose a fade length", not a measurement this deployment drifted
+    # from.
+    "music.crossfade_seconds",
     # Per-deployment policy/cost knobs.
     "doctrine.canary",            # deliberately CHANGE-ME in the template
     "presence.retention_days",    # disk and privacy, the operator's call

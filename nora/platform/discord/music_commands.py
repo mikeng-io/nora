@@ -17,7 +17,9 @@ no other way to verify it.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import math
 
 import discord
 from discord import app_commands
@@ -28,14 +30,13 @@ from nora.platform.discord.voice_session import DiscordVoiceSession
 
 log = logging.getLogger("nora.music")
 
-# Discord rejects a message body over 2000 chars outright (HTTPException
-# 50035) -- a naive one-line-per-track reply blew straight past this once
-# playlist expansion (01-playback-and-source.md) made a 50-track queue
-# routine instead of a "someone pasted an enormous list" edge case. The
-# trailer budget reserves room for the "...and N more." line truncation
-# itself appends, so trimming never pushes the reply back over the limit.
-_DISCORD_MESSAGE_LIMIT = 2000
-_TRUNCATION_TRAILER_BUDGET = 40
+# `/music queue` used to reply with every track in one message, which blew
+# past Discord's 2000-char cap outright (HTTPException 50035) once playlist
+# expansion (01-playback-and-source.md) made a 50-track queue routine
+# instead of a "someone pasted an enormous list" edge case. Real navigation
+# (`_QueuePaginator`, below) replaced the truncate-with-a-trailer fix.
+_QUEUE_PAGE_SIZE = 10
+_QUEUE_VIEW_TIMEOUT_SECONDS = 180.0
 
 
 def _notify_factory(interaction: discord.Interaction):
@@ -48,7 +49,10 @@ def _notify_factory(interaction: discord.Interaction):
 
     async def notify(text: str) -> None:
         if isinstance(channel, discord.abc.Messageable):
-            await channel.send(text)
+            # Silent: a "Now playing" line on every auto-advance is useful
+            # to have in the channel, not worth a push notification/ping
+            # every few minutes.
+            await channel.send(text, silent=True)
 
     return notify
 
@@ -96,28 +100,70 @@ def _reply_for(outcome: PlayOutcome) -> str:
     return f"{verb}: {outcome.track.title} (+{rest} more from the playlist)"
 
 
-def _queue_reply(status: PlayerStatus) -> str:
-    """Caller's job to have already checked `now_playing is not None` --
-    that's what makes it worth showing a queue reply at all."""
-    now_playing = status.now_playing
-    if now_playing is None:
-        return "Nothing is playing."
-    suffix = " (paused)" if status.paused else ""
-    lines = [f"Now playing: {now_playing.title}{suffix}"]
-    budget = _DISCORD_MESSAGE_LIMIT - _TRUNCATION_TRAILER_BUDGET
-    length = len(lines[0])
-    shown = 0
-    for i, track in enumerate(status.queue, start=1):
-        line = f"{i}. {track.title}"
-        length += 1 + len(line)  # +1 for the joining newline
-        if length > budget:
-            break
-        lines.append(line)
-        shown += 1
-    remaining = len(status.queue) - shown
-    if remaining > 0:
-        lines.append(f"...and {remaining} more.")
-    return "\n".join(lines)
+class _QueuePaginator(discord.ui.View):
+    """Pages through a guild's queue, `_QUEUE_PAGE_SIZE` tracks at a time.
+    Re-fetches the guild's LIVE status on every button click rather than
+    reusing the snapshot the view was built from -- the queue keeps
+    changing (tracks finish, get skipped, more get added) while the
+    message just sits in a channel, and a stale page would drift from
+    reality the longer someone waits before clicking Next."""
+
+    def __init__(self, manager: MusicPlayerManager, guild_id: str) -> None:
+        super().__init__(timeout=_QUEUE_VIEW_TIMEOUT_SECONDS)
+        self._manager = manager
+        self._guild_id = guild_id
+        self._page = 0
+        self.message: discord.Message | None = None
+
+    def render_page(self, status: PlayerStatus) -> str:
+        """Caller's job to have already checked `now_playing is not None`
+        -- that's what makes it worth showing a queue reply at all."""
+        now_playing = status.now_playing
+        if now_playing is None:
+            return "Nothing is playing."
+        pages = max(1, math.ceil(len(status.queue) / _QUEUE_PAGE_SIZE))
+        self._page = max(0, min(self._page, pages - 1))
+        start = self._page * _QUEUE_PAGE_SIZE
+        page_tracks = status.queue[start : start + _QUEUE_PAGE_SIZE]
+        suffix = " (paused)" if status.paused else ""
+        lines = [f"Now playing: {now_playing.title}{suffix}"]
+        if status.queue:
+            lines.append(f"Queue (page {self._page + 1}/{pages}):")
+            lines += [f"{start + i + 1}. {t.title}" for i, t in enumerate(page_tracks)]
+        self.previous_page.disabled = self._page <= 0
+        self.next_page.disabled = self._page >= pages - 1
+        return "\n".join(lines)
+
+    @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary)
+    async def previous_page(
+        self, interaction: discord.Interaction, _button: discord.ui.Button,
+    ) -> None:
+        self._page -= 1
+        await self._refresh_page(interaction)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
+    async def next_page(
+        self, interaction: discord.Interaction, _button: discord.ui.Button,
+    ) -> None:
+        self._page += 1
+        await self._refresh_page(interaction)
+
+    async def _refresh_page(self, interaction: discord.Interaction) -> None:
+        status = await self._manager.status(self._guild_id)
+        if status is None or status.now_playing is None:
+            for child in self.children:
+                child.disabled = True  # type: ignore[attr-defined]
+            await interaction.response.edit_message(content="Nothing is playing.", view=self)
+            self.stop()
+            return
+        await interaction.response.edit_message(content=self.render_page(status), view=self)
+
+    async def on_timeout(self) -> None:
+        for child in self.children:
+            child.disabled = True  # type: ignore[attr-defined]
+        if self.message is not None:
+            with contextlib.suppress(discord.HTTPException):
+                await self.message.edit(view=self)
 
 
 class MusicCommands(app_commands.Group):
@@ -192,11 +238,20 @@ class MusicCommands(app_commands.Group):
         if interaction.guild_id is None:
             return
         await interaction.response.defer()
-        status = await self._manager.status(str(interaction.guild_id))
+        guild_id = str(interaction.guild_id)
+        status = await self._manager.status(guild_id)
         if status is None or status.now_playing is None:
             await interaction.followup.send("Nothing is playing.")
             return
-        await interaction.followup.send(_queue_reply(status))
+        view = _QueuePaginator(self._manager, guild_id)
+        content = view.render_page(status)
+        if len(status.queue) <= _QUEUE_PAGE_SIZE:
+            # Fits on one screen -- no buttons that would only ever sit
+            # disabled.
+            await interaction.followup.send(content)
+            return
+        await interaction.followup.send(content, view=view)
+        view.message = await interaction.original_response()
 
     @app_commands.command(name="pause", description="Pause playback.")
     async def pause(self, interaction: discord.Interaction) -> None:
