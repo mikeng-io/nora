@@ -29,8 +29,8 @@ read by conversation, per `SqlTagTraceStore.recent`'s own boundary, matching
 `TagTrace`'s domain type exactly rather than inventing a second scoping axis
 this tier does not have.
 
-Revision ID: 0028_tag_trace
-Revises: 0027_fact_candidate_provenance
+Revision ID: 0030_tag_trace
+Revises: 0029_music_session
 Create Date: 2026-08-22
 """
 
@@ -40,8 +40,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0028_tag_trace"
-down_revision = "0027_fact_candidate_provenance"
+revision = "0030_tag_trace"
+down_revision = "0029_music_session"
 branch_labels = None
 depends_on = None
 

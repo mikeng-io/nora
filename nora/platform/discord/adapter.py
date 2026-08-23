@@ -28,6 +28,9 @@ from ...domain.ports import (
     TextStyle,
 )
 from .listener import DiscordListener
+from .music_commands import register as register_music_commands
+from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
+from .music_manager import MusicPlayerManager
 from .parser import parse_discord_message
 from .react import DiscordReactor
 from .self_id import derive_identity
@@ -37,13 +40,26 @@ from .send import DEFAULT_API_BASE, DiscordSender
 class DiscordAdapter:
     platform = "discord"
 
-    def __init__(self, token: str, *, base_url: str = DEFAULT_API_BASE) -> None:
+    def __init__(
+        self,
+        token: str,
+        *,
+        base_url: str = DEFAULT_API_BASE,
+        music_manager: MusicPlayerManager | None = None,
+        crossfade_seconds: float = 0.0,
+    ) -> None:
         self._token = token
         self._base_url = base_url
         self._sender = DiscordSender(token, base_url=base_url)
         self._reactor = DiscordReactor(token, base_url=base_url)
         self._identity: PlatformIdentity | None = None
         self._own_id = ""
+        # design/discord-music/02-control-surface.md — `None` when
+        # `[music] enabled = false` (nora/app/composition.py), which is what
+        # keeps this adapter unchanged for every deployment that hasn't
+        # turned the feature on.
+        self._music_manager = music_manager
+        self._crossfade_seconds = crossfade_seconds
         # Built fresh in `listen()`, NOT here. A `discord.Client` is single-use:
         # once it closes, `is_closed()` stays True for that instance forever
         # (`_closing_task` is never cleared except by `Client.clear()`), so
@@ -83,7 +99,28 @@ class DiscordAdapter:
         intents.guilds = True
         intents.members = True          # privileged; the roster read needs it
         client = discord.Client(intents=intents)
-        self._listener = DiscordListener(client, self._token)
+
+        async def _register_music_commands() -> None:
+            # `design/discord-music/02-control-surface.md`: the CommandTree
+            # is built fresh alongside `client`, every attempt, same
+            # lifecycle. Not independently testable (a real
+            # `discord.Client`/`CommandTree`) -- `music_commands.py`'s own
+            # docstring is explicit about that boundary.
+            if self._music_manager is not None:
+                await register_music_commands(
+                    client, self._music_manager, crossfade_seconds=self._crossfade_seconds,
+                )
+                # design/discord-music/06-session-persistence.md stage 2 --
+                # safe to run on every on_ready, not just a genuine boot
+                # (resume_persisted_sessions's own guard against clobbering
+                # an already-live player).
+                await resume_persisted_music_sessions(
+                    client, self._music_manager, crossfade_seconds=self._crossfade_seconds,
+                )
+
+        self._listener = DiscordListener(
+            client, self._token, on_ready_extra=_register_music_commands,
+        )
 
         async def _on_discord_message(raw_message: Any) -> None:
             message = parse_discord_message(raw_message, own_id=self._own_id)

@@ -222,7 +222,7 @@ enabled = true
 
 [engagement.queue]
 # Per-conversation FIFO depth beyond which an arriving tag is shed as a flood
-# (R-29). Bounds runaway growth, not waiting — a queued tag keeps its place
+# (R-30). Bounds runaway growth, not waiting — a queued tag keeps its place
 # however long the turn ahead of it takes, and there is no staleness rule.
 max_depth = 16
 
@@ -256,6 +256,22 @@ context_window = 40
 # everything downstream (the transcript window's own past, any consolidator built
 # on the record), and a rolling 500 is not history.
 prune_enabled = false
+
+[music]
+# The Discord music bot (design/discord-music/00-overview.md, PR #28). ON,
+# with [platforms.discord] already enabled above: /music play|skip|queue|
+# pause|resume|stop registers as slash commands. Never verified against a
+# live Discord connection before this deploy — watch the container's logs
+# for a CommandTree.sync() failure at startup (e.g. the bot token missing
+# the applications.commands OAuth scope) and for the first real /music
+# play's outcome.
+enabled = true
+idle_timeout_seconds = 300.0
+# Crossfade spike (design/discord-music/05-crossfade-spike.md, PR #34) —
+# blends the outgoing track's audio into the next for this many seconds
+# instead of a hard cut. Not yet verified by ear against a live voice
+# channel; 3.0s is a reasonable starting point, adjust after listening.
+crossfade_seconds = 3.0
 
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version
@@ -300,7 +316,15 @@ strict = true
 # new subsystem does not switch itself on — [presence]/[search]/[compute]/
 # [language]/[analytics]/[facts] all shipped inert too. Off, no DreamerRuntime
 # is constructed and the existing consolidators run exactly as they do today.
-enabled = true
+#
+# TEMPORARILY OFF (2026-08-21, operator instruction): fact-candidates is stuck
+# in a permanent MaxTokensReachedException retry loop on scope
+# 100000000000000201/100000000000000202 (watermark held at 1180, room's
+# language watermark at 1300 and climbing) while the fact tier's architecture
+# — no read/search/cross-compare tools during reasoning, Phase A pre-fetches
+# nothing — is being rebuilt on fact-tier-agentic-tools. Re-enable once that
+# lands, or once the stuck scope is otherwise resolved.
+enabled = false
 # The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
 # — and the distinction is stated because the earlier version of this comment
 # claimed the opposite while carrying a value nobody had measured.
@@ -544,6 +568,19 @@ sticker_descriptions = true
 # sticker_timeout_seconds = 20.0
 # sticker_description_max_chars = 200
 
+# WHERE the (always-encrypted) bytes above land (DEC-136). Turned ON
+# 2026-08-23 (operator): the 78 blobs already on disk were copied into this
+# bucket first (scripts/migrate_media_to_rustfs.py), non-destructively — the
+# filesystem originals are untouched, so this is a live cutover of which
+# store the ingest pipeline WRITES/READS through, not a data migration in
+# itself. RustFS was already running for `drop`'s own artifacts.
+[media.rustfs]
+enabled = true
+endpoint = "http://rustfs:9000"
+bucket = "nora-media"
+access_key_env = "RUSTFS_ROOT_USER"
+secret_key_env = "RUSTFS_ROOT_PASSWORD"
+
 [shortener]
 # Nora's own link shortener/drop delivery (deploy/drop/, this repo's own
 # compose service — cut over 2026-08-12 from the n.example.net Cloudflare
@@ -733,7 +770,12 @@ max_horizon_days = 365
 # `RecordStore.since` keeps her own words out of the room's lexicon. Turn this
 # back off if the rendered block starts asserting things about people rather
 # than describing how the room talks.
-enabled = true
+# ALL-OFF (2026-08-23, operator instruction: "turn off ALL dreamer").
+# Everything the background tiers have written is wrong or unverified
+# (963 messages -> 2 rows, both wrong), and the substrate contract they
+# write against landed only today (design/dreamer-agent-loop/21).
+# Nothing writes until that contract is built against.
+enabled = false
 # tick_seconds = 300
 # safety_lag = 300
 # quiet_seconds = 1800
@@ -763,7 +805,12 @@ verify_known_entities = true
 # so this section is a flag and three bounds for a future adaptor, not a
 # running subsystem today. Stays off with this first deployment of the
 # schema, the same "off at first" period [language] shipped in.
-enabled = true
+# ALL-OFF (2026-08-23, operator instruction: "turn off ALL dreamer").
+# Everything the background tiers have written is wrong or unverified
+# (963 messages -> 2 rows, both wrong), and the substrate contract they
+# write against landed only today (design/dreamer-agent-loop/21).
+# Nothing writes until that contract is built against.
+enabled = false
 # max_adjudications_per_tick = 10
 # max_rendered_facts = 8
 # retention_days = 180

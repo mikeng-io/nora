@@ -1,0 +1,9 @@
+{
+  "type": "fix",
+  "summary": "Fixed a bug where enabling music crossfade broke auto-advance to the next track after the first one finished.",
+  "details": [
+    "The crossfade timer's early completion signal was reusing the same suppression flag stop()/skip() use, which incorrectly swallowed the genuine final completion signal the first time any crossfade fired -- so playback silently stopped after one track instead of continuing to the next.",
+    "/music skip now also crossfades into the next track (or performs an instant cut if crossfade_seconds is 0), instead of always hard-cutting."
+  ],
+  "limitations": []
+}

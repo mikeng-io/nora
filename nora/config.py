@@ -291,7 +291,7 @@ class ReactionsConfig(BaseModel):
 
 class QueueConfig(BaseModel):
     """The per-conversation FIFO queue that holds tags arriving while a turn is
-    already in flight (R-29). `max_depth` bounds a FLOOD, not waiting: tags
+    already in flight (R-30). `max_depth` bounds a FLOOD, not waiting: tags
     already queued keep their place however long the turn ahead takes, and there
     is deliberately no staleness rule — only the (max_depth + 1)th arrival is
     shed, counted as `nora_tags_dropped_total{reason="queue_full"}`. See
@@ -381,6 +381,36 @@ class DescribersConfig(BaseModel):
     video: DescriberConfig = DescriberConfig()
 
 
+class RustfsBlobConfig(BaseModel):
+    """`[media.rustfs]` — an S3-compatible object-store backend for blob
+    custody, alongside the filesystem default (DEC-136).
+
+    Ships OFF (`enabled = false`): a `config.toml` written before this existed
+    keeps writing to `store.data_dir / "media"` exactly as before, and turning
+    this on is a deliberate operator choice, not a side effect of upgrading.
+    When on AND the credentials resolve, the composition root builds a
+    `RustfsBlobStore` instead of a `FilesystemBlobStore` — same port, same
+    `BlobCipher` sealing the bytes before they leave the process, only WHERE
+    the ciphertext lands changes. A misconfigured RustFS backend (missing
+    endpoint/bucket, or an env var that does not resolve) degrades to the
+    filesystem default rather than to custody OFF — the existing behaviour is
+    always the safe fallback, matching `encryption_key_env`'s own posture.
+
+    `access_key_env`/`secret_key_env` NAME the env vars (DEC-8), never inline
+    credentials — and default to the SAME names `drop`'s own RustFS client
+    already reads (`RUSTFS_ROOT_USER`/`RUSTFS_ROOT_PASSWORD`), so a deployment
+    that already runs `drop` needs no new secret, only new wiring.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    endpoint: str = ""
+    bucket: str = "nora-media"
+    access_key_env: str = "RUSTFS_ROOT_USER"
+    secret_key_env: str = "RUSTFS_ROOT_PASSWORD"  # noqa: S105 — names an env var, not a secret
+
+
 class MediaConfig(BaseModel):
     """Byte custody for attachments (DEC-43).
 
@@ -389,13 +419,15 @@ class MediaConfig(BaseModel):
     loading, and `extra="forbid"` means a required section would be a startup
     failure on upgrade rather than a feature.
 
-    There is deliberately **no path key here.** Media lives under
-    `store.data_dir / "media"` — the record row and the blob it names are one
-    custody boundary, backed up and deleted together. A media-specific root would
-    let them be separated, and the first time that happened the transcript would
-    reference blobs on a volume nobody backed up. (Under SQLite this root was
-    `store.db_path`'s directory; a Postgres URL has no directory, so `data_dir`
-    now carries it — still one key, still one boundary.)
+    There is deliberately **no filesystem path key here.** Media lives under
+    `store.data_dir / "media"` by default — the record row and the blob it
+    names are one custody boundary, backed up and deleted together. A
+    media-specific root would let them be separated, and the first time that
+    happened the transcript would reference blobs on a volume nobody backed
+    up. (Under SQLite this root was `store.db_path`'s directory; a Postgres
+    URL has no directory, so `data_dir` now carries it — still one key, still
+    one boundary.) `rustfs` below is the one exception, and only because an
+    object-store bucket is not a filesystem path in the first place — DEC-136.
 
     `enabled` defaults to True because the A9 fix is the point of the feature —
     but see DEC-43's open question: RETENTION for this data is an operator
@@ -420,6 +452,9 @@ class MediaConfig(BaseModel):
     # Names the env var holding the base64-encoded 32-byte AES-256 key. Empty
     # means no key configured, which — like `enabled = false` — is custody OFF.
     encryption_key_env: str = ""
+    # WHERE the (always-encrypted) bytes land — the filesystem default, or an
+    # S3-compatible object store (DEC-136). See `RustfsBlobConfig`.
+    rustfs: RustfsBlobConfig = RustfsBlobConfig()
     # Signal's own attachment ceiling. A refusal is a policy outcome with its
     # own metric label, never a crash and never a truncated blob.
     max_bytes: int = 100 * 1024 * 1024
@@ -1380,6 +1415,37 @@ class NotesConfig(BaseModel):
     enabled: bool = False
 
 
+class MusicConfig(BaseModel):
+    """The Discord music bot's gate (the `discord-music` design bundle,
+    node 00 — overview and scope).
+
+    `enabled` defaults **False**, same reasoning every other optional
+    subsystem's gate gives: a new capability does not switch itself on. Only
+    load-bearing when `[platforms.discord] enabled` is also true —
+    `nora/app/composition.py` does not build a `MusicPlayerManager` for a
+    platform that isn't running, but this section itself does not know or
+    care which platform is enabled.
+
+    `idle_timeout_seconds` is the bundle's node 03 (state and persistence)
+    disconnect timer 2 (queue empty, nothing playing) — timer 1 (voice
+    channel emptied of humans) has no config, since there is no grace period
+    to size for an event that already means "leave now".
+
+    `crossfade_seconds` — 0 (the default) disables crossfading entirely: a
+    track ends and the next starts with a hard cut, today's behaviour.
+    Above 0, `DiscordVoiceSession` blends the outgoing and incoming tracks'
+    audio for that many seconds before a track's own natural end. Spike
+    (2026-08-24): only a natural track-end crossfades; `/music skip` stays
+    an instant cut on purpose (skipping is "get me out of this NOW", not a
+    DJ transition)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    idle_timeout_seconds: float = 300.0
+    crossfade_seconds: float = 0.0
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1747,6 +1813,11 @@ class Config(BaseModel):
     # index is read from `SqlNoteStore` on every tag — nothing writes a note
     # yet, so it is empty until a curator lands.
     notes: NotesConfig = NotesConfig()
+    # Optional and defaulted — see `MusicConfig`. Ships INERT
+    # (`enabled = false`); off, `AdapterRegistry.from_config` builds no
+    # `MusicPlayerManager` and `DiscordAdapter` gets `music_manager=None`
+    # (its own default), so `/music` commands never get registered.
+    music: MusicConfig = MusicConfig()
     # Optional and defaulted — see `ComputeConfig`. Ships INERT
     # (`enabled = false`); the `ComputeJobStore` is built unconditionally
     # regardless (the `reminders` shape), only the poller's tick loop is gated.

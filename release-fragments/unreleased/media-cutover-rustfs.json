@@ -1,0 +1,8 @@
+{
+  "type": "change",
+  "summary": "Attachment byte custody (photos, stickers, voice notes) now writes to and reads from RustFS instead of the local filesystem.",
+  "detail": "[media.rustfs].enabled turned on 2026-08-23 (operator instruction) now that DEC-136/RustfsBlobStore is merged. The 78 blobs already on disk were copied into the nora-media bucket first (scripts/migrate_media_to_rustfs.py), non-destructively, before the flag was flipped; the filesystem originals were left in place.",
+  "limitations": [
+    "The filesystem originals are not deleted by this change — they are simply no longer read from or written to."
+  ]
+}

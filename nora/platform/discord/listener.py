@@ -57,10 +57,18 @@ class DiscordListener:
         token: str,
         *,
         clock: Callable[[], float] = time.monotonic,
+        on_ready_extra: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._client = client
         self._token = token
         self._clock = clock
+        # Slash-command registration (design/discord-music/
+        # 02-control-surface.md) — `on_ready` only, never `on_resumed`:
+        # `on_ready` fires on a full re-IDENTIFY (a fresh client, per
+        # `DiscordAdapter`'s own per-attempt-client design), and Discord
+        # already has the commands from that same client's earlier
+        # `on_ready` by the time any `on_resumed` fires within its lifetime.
+        self._on_ready_extra = on_ready_extra
         self.connected = False
         self.last_event_at: float | None = None
 
@@ -82,6 +90,8 @@ class DiscordListener:
             # quiet channel.
             self.last_event_at = self._clock()
             log.info("discord gateway connected")
+            if self._on_ready_extra is not None:
+                await self._on_ready_extra()
 
         async def on_resumed() -> None:
             # A RESUME is a live session again, so this is a CONNECTED edge

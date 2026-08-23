@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import boto3
 from openai import AsyncOpenAI
 
 from nora.agent import factory, tool_choice
@@ -62,10 +63,11 @@ from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
-from nora.infra.blobs import FilesystemBlobStore
+from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.compute.docker_backend import LocalDockerBackend
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
+from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
@@ -75,6 +77,8 @@ from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
+from nora.infra.sql.music_queue import SqlMusicQueueStore
+from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
@@ -104,6 +108,7 @@ from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.discord.media import DiscordMediaSource
+from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaSourceRegistry
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
@@ -590,9 +595,25 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # reads the environment once and hands the already-resolved value to
     # whatever constructs the client that needs it (design/discord-integration/).
     discord_token = os.environ.get(cfg.platforms.discord.token_env, "")
+    # design/discord-music/00-overview.md. `spawn=asyncio.ensure_future`
+    # rather than the `BackgroundTasks` instance built further down this
+    # function (out of scope here) — safe because `MusicPlayerManager`
+    # already holds its own strong reference to every task it spawns
+    # (`self._idle_tasks`), the exact GC-mid-flight bug `BackgroundTasks`
+    # exists to prevent for tasks nobody else references.
+    music_manager = (
+        MusicPlayerManager(
+            queue_store=SqlMusicQueueStore(engine), session_store=SqlMusicSessionStore(engine),
+            track_source=YtDlpSource(), idle_timeout_seconds=cfg.music.idle_timeout_seconds,
+            spawn=asyncio.ensure_future,
+        )
+        if cfg.music.enabled
+        else None
+    )
     try:
         registry = await AdapterRegistry.from_config(
             cfg.platforms, metrics=metrics, discord_token=discord_token,
+            music_manager=music_manager, music_crossfade_seconds=cfg.music.crossfade_seconds,
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
@@ -765,7 +786,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # return value rather than widening the pipeline's port to match.
         background.spawn(coro)
 
-    media_sources, blobs = _build_media_custody(cfg)
+    media_sources, blobs = await _build_media_custody(cfg)
 
     tier = cfg.llm
     api_key = os.environ.get(cfg.llm.api_key_env, "")  # presence already checked by config.load
@@ -1925,7 +1946,9 @@ async def _presence_preflight(
             log.exception("presence pre-flight failed for a policy conversation")
 
 
-def _build_media_custody(cfg: Config) -> tuple[MediaSourceRegistry | None, BlobStore | None]:
+async def _build_media_custody(
+    cfg: Config,
+) -> tuple[MediaSourceRegistry | None, BlobStore | None]:
     """The `(sources, blobs)` pair the ingest pipeline takes for byte custody, or
     `(None, None)` when custody is OFF (DEC-43 wiring, DEC-47 encryption).
 
@@ -1985,8 +2008,62 @@ def _build_media_custody(cfg: Config) -> tuple[MediaSourceRegistry | None, BlobS
             max_bytes=media.max_bytes,
         ),
     ])
-    blobs = FilesystemBlobStore(cfg.store.data_dir / "media", cipher=cipher)
+    blobs = await _build_blob_store(cfg, cipher=cipher)
     return sources, blobs
+
+
+async def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
+    """The filesystem default, or RustFS when `[media.rustfs]` is on and its
+    credentials resolve (DEC-136).
+
+    A misconfigured RustFS backend — `enabled = true` with a blank endpoint,
+    or an `access_key_env`/`secret_key_env` that names an unset variable —
+    degrades to the filesystem default rather than to custody OFF, the same
+    posture `_build_media_custody`'s own encryption-key handling takes: the
+    existing, always-working behaviour is the fallback for a bonus feature,
+    never a startup failure and never a silent capability loss beyond the one
+    that was already being configured.
+    """
+    rustfs = cfg.media.rustfs
+    fallback = FilesystemBlobStore(cfg.store.data_dir / "media", cipher=cipher)
+    if not rustfs.enabled:
+        return fallback
+    if not rustfs.endpoint:
+        log.warning(
+            "media.rustfs.enabled is true but media.rustfs.endpoint is unset — "
+            "falling back to the filesystem blob store."
+        )
+        return fallback
+    access_key = os.environ.get(rustfs.access_key_env, "")
+    secret_key = os.environ.get(rustfs.secret_key_env, "")
+    if not access_key or not secret_key:
+        log.warning(
+            "media.rustfs is on but %s/%s did not both resolve in the "
+            "environment — falling back to the filesystem blob store.",
+            rustfs.access_key_env, rustfs.secret_key_env,
+        )
+        return fallback
+    s3 = boto3.client(
+        "s3", endpoint_url=rustfs.endpoint,
+        aws_access_key_id=access_key, aws_secret_access_key=secret_key,
+    )
+    store = RustfsBlobStore(s3_client=s3, bucket=rustfs.bucket, cipher=cipher)
+    try:
+        await asyncio.to_thread(store.ensure_bucket)
+    except Exception:
+        # RustFS unreachable, or misconfigured beyond what the checks above
+        # catch (wrong credentials, wrong bucket permissions). This runs at
+        # STARTUP, before build_dependencies' own per-message protection
+        # (nora.ingest.stages.media._take already degrades a `put` failure to
+        # `store_failed` per message) exists — an unhandled exception HERE
+        # would crash the whole daemon over a bonus feature, exactly what
+        # this section's own "must never take the daemon down" rule forbids.
+        log.exception(
+            "media.rustfs is configured but the bucket could not be reached "
+            "or created — falling back to the filesystem blob store."
+        )
+        return fallback
+    return store
 
 
 def _note_workspace_of(policy: Policy) -> Callable[[str, str], str | None]:

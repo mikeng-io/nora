@@ -2387,6 +2387,13 @@ def build_tool_specs(
     # The person-name set for R-28, built once per tag rather than per call.
     _route_person_names = _known_names(persons)
 
+    # R-57: addresses `where_is` disclosed THIS turn — the only ones `route`'s
+    # trust screen below needs to reason about. A place the person typed
+    # themselves was never a stored position and is untouched by this set.
+    # Shared by closure, not by argument, because both tools are built here
+    # once per tag and the set must not survive past this turn.
+    _disclosed_live_addresses: set[str] = set()
+
     async def route(
         origin: str, destination: str, mode: str = "TRANSIT", arrive_by: str = "",
         by: str = "", prefer: str = "", depart_after: str = "",
@@ -2402,6 +2409,10 @@ def build_tool_specs(
         Give it PLACES, the way the person named them — a mall, a building, a
         station, a restaurant («Yoho Mall», «黃大仙祠», «天水圍站»). It looks
         each place up itself; you do not give it coordinates or a stop code.
+        The one exception: an `address` `where_is` just gave you for someone IN
+        THIS conversation may be the origin, toward a `saved_places`
+        destination, for a real ETA — some rooms don't extend that trust, and
+        this refuses with `untrusted_position` rather than routing it.
 
         If they name a place by a PERSONAL name — «屋企», «home», «阿媽屋企»,
         «Tyler 屋企», «公司» — call `saved_places` FIRST, match their words to
@@ -2474,6 +2485,23 @@ def build_tool_specs(
                     "note": "I can't look up a route from or to a person — tell me "
                             "the actual place (a building, a mall, a stop), not who "
                             "is there.",
+                }
+            # R-57: a position `where_is` disclosed THIS turn may seed a route
+            # only where the room already trusts you with location (the same
+            # `location_trusted` flag `where_is`/`saved_places` already answer
+            # to) — untrusted rooms never had the address to begin with unless
+            # the DisclosureGuard's own subset check passed independently, and
+            # even then it stops here rather than reaching Google.
+            if (
+                not location_trusted
+                and place.strip().casefold() in _disclosed_live_addresses
+            ):
+                _record(metrics, "route", "refused", reason="untrusted_position")
+                return {
+                    "status": "refused",
+                    "note": "That's somebody's live position, not a place I can "
+                            "route from in this room. Give me a place by name, or "
+                            "just report the position without a travel time.",
                 }
         if route_source is None:
             # No client wired (offline/eval compositions, or a deployment with
@@ -2741,7 +2769,13 @@ def build_tool_specs(
             is above walking-jitter and they are not at a saved place).
             These are measurements, not intentions — say «好似向緊屋企方向»,
             «喺車度», or «時速大概 60», never promise where someone will end up
-            or when.
+            or when. That is a GUESS from movement — a real travel-time
+            ESTIMATE is different: you may pass `address` to `route` as the
+            origin toward a `saved_places` destination for one, computed, never
+            invented. Try it if asked how long until they arrive. Some rooms
+            don't extend that trust — if `route` comes back `refused` with
+            `untrusted_position`, don't retry, just answer with the position
+            and its age, exactly as you would have otherwise.
           - `refused` — you may not say here: someone in this conversation is
             outside the location-sharing circle, or you can't confirm who is
             here. Say that in one clause; do not hint at the location.
@@ -2789,6 +2823,13 @@ def build_tool_specs(
             ).locate(person)
             if str(out.get("status", "")) == "ok":
                 _record(metrics, "where_is", "ok", age_seconds=out.get("age_seconds"))
+                # R-57: only `address` (street-level, reverse-geocoded) is a
+                # STORED POSITION `route` must screen for — `place` is this
+                # household's own saved name and was already a legitimate route
+                # argument before this rule existed.
+                address = out.get("address")
+                if isinstance(address, str) and address.strip():
+                    _disclosed_live_addresses.add(address.strip().casefold())
                 return out
             results.append(out)
         answer = next(

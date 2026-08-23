@@ -190,9 +190,14 @@ summary — update-in-place, separate from the Dreamer and Honcho).
   `design/09-decision-index.md` at MERGE time, not at claim time. 2026-08-21:
   two sessions coordinated numbers carefully and a third took DEC-131 anyway;
   it conflicted only because the rows landed on the same line. Check with
-  `grep -oE '^\| DEC-[0-9]+' design/09-decision-index.md | grep -oE '[0-9]+' |
-  sort -n | uniq -d` — and note `uniq -d` exits 0 with no output, so test the
-  string, not the exit code.
+  `grep -oE '^\| DEC-[0-9]+ \|' design/09-decision-index.md | grep -oE '[0-9]+' |
+  sort -n | uniq -d` (and the same with `R-`) — note `uniq -d` exits 0 with no
+  output, so test the string, not the exit code. **The trailing `\|` is
+  load-bearing**: sub-lettered rules (`R-6b`, `R-10c`) otherwise read as their
+  parent number and the check reports 8 duplicates that are not. 2026-08-23: a
+  REAL duplicate — two rows numbered R-29 — sat on master for 15 days, reported
+  and backlogged by the session that found it, because the check that should
+  have caught it cried wolf seven times. A noisy gate is a disabled gate.
 
 ## The five operational constraints (one line each — full text in `docs/CONVENTIONS.md`)
 

@@ -1562,3 +1562,67 @@ IDX_TAG_TRACE_CONVERSATION_CREATED = sa.Index(
     "idx_tag_trace_conversation_created",
     TAG_TRACE.c.conversation_id, TAG_TRACE.c.created_at,
 )
+
+# ── music_queue (design/discord-music/03-state-and-persistence.md) ─────────
+# The upcoming queue's durable half — now-playing/playback position is
+# in-memory only on `MusicPlayer` and deliberately not here (03's own split).
+# No `expires_at`, no foreign key to a "session": this table IS the session's
+# durable half, and a row dies by DELETE (track finished, skipped, queue
+# cleared) rather than by expiry — there is nothing to time out.
+#
+# `position` is a per-guild ordinal, not a global one — a plain incrementing
+# counter (next = max(position)+1 for that guild) that MAY have gaps once
+# rows are deleted; gaps are fine because ordering only ever reads `ORDER BY
+# position`, nothing computes a count or an index from the values themselves.
+# `guild_id`/`added_by_person_id` are `sa.Text`, matching every other
+# platform id in this schema (`reminders.conversation_id`) rather than
+# introducing a bigint nobody else here uses for a Discord snowflake.
+MUSIC_QUEUE = sa.Table(
+    "music_queue",
+    METADATA,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("guild_id", sa.Text, nullable=False),
+    sa.Column("position", sa.Integer, nullable=False),
+    # Which `TrackSource` resolved this row (`nora.domain.ports.
+    # ResolvedTrack.source`) — free text, not a CHECK-constrained enum: the
+    # whole point of the port (01-playback-and-source.md) is a second source
+    # arriving later with no schema change.
+    sa.Column("source", sa.Text, nullable=False),
+    sa.Column("url", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("added_by_person_id", sa.Text, nullable=False),
+    sa.Column("added_at", sa.DateTime(timezone=True), nullable=False),
+    sa.CheckConstraint("position >= 0", name="ck_music_queue_position_non_negative"),
+    # UNIQUE, not a plain index (subagent review, 2026-08-23): the
+    # `MAX(position)+1` subquery `SqlMusicQueueStore.enqueue` runs is NOT
+    # atomic under Postgres's default READ COMMITTED isolation — two
+    # concurrent `/music play` calls for the same guild can both read the
+    # same max and both insert the SAME position. This constraint is what
+    # turns that into a decidable `IntegrityError` `enqueue` retries against
+    # (`_PG_UNIQUE_VIOLATION`, the same translation `SqlReminderStore.create`
+    # already does), rather than two silently-colliding rows.
+    sa.UniqueConstraint("guild_id", "position", name="uq_music_queue_guild_position"),
+)
+
+# One row per guild -- a SNAPSHOT of what `MusicPlayer` holds in memory
+# (design/discord-music/06-session-persistence.md), not an append log like
+# `MUSIC_QUEUE` above. `guild_id` is the primary key itself: there is
+# exactly one session per guild, upserted in place, never multiple rows to
+# order or race over the way `MUSIC_QUEUE.position` does.
+MUSIC_SESSION = sa.Table(
+    "music_session",
+    METADATA,
+    sa.Column("guild_id", sa.Text, primary_key=True),
+    sa.Column("voice_channel_id", sa.Text, nullable=False),
+    sa.Column("notify_channel_id", sa.Text, nullable=False),
+    # All three NULL together means nothing is currently playing (queue
+    # empty, waiting on the idle timer) -- the row still exists because the
+    # voice connection itself is still live.
+    sa.Column("now_playing_source", sa.Text, nullable=True),
+    sa.Column("now_playing_locator", sa.Text, nullable=True),
+    sa.Column("now_playing_title", sa.Text, nullable=True),
+    sa.Column("paused", sa.Boolean, nullable=False),
+    sa.Column("volume", sa.Float, nullable=False),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    sa.CheckConstraint("volume >= 0.0 AND volume <= 2.0", name="ck_music_session_volume_range"),
+)

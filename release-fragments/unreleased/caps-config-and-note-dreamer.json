@@ -1,0 +1,1 @@
+{"type":"change","summary":"Injected-field size caps (Standing body, note title, note description) become operator config bounded by a database ceiling, instead of fixed constants."}

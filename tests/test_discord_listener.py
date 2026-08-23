@@ -140,3 +140,44 @@ async def test_resuming_also_counts_as_liveness():
 
     assert listener.connected is True
     assert listener.last_event_at == 99.0
+
+
+async def test_on_ready_extra_is_awaited_once_the_client_is_ready():
+    """The slash-command registration hook (design/discord-music/
+    02-control-surface.md): only a full re-IDENTIFY needs it, so it lands on
+    `on_ready`, never `on_resumed` — Discord already has the commands from
+    the earlier `on_ready` in the same session."""
+    client = FakeClient()
+    calls = []
+
+    async def extra():
+        calls.append("ready")
+
+    listener = DiscordListener(client, "tok", on_ready_extra=extra)
+
+    async def _on(_m):
+        pass
+
+    await listener.listen(_on)
+    await client.handlers["on_ready"]()
+
+    assert calls == ["ready"]
+
+
+async def test_on_ready_extra_is_not_called_again_on_resume():
+    client = FakeClient()
+    calls = []
+
+    async def extra():
+        calls.append("ready")
+
+    listener = DiscordListener(client, "tok", on_ready_extra=extra)
+
+    async def _on(_m):
+        pass
+
+    await listener.listen(_on)
+    await client.handlers["on_ready"]()
+    await client.handlers["on_resumed"]()
+
+    assert calls == ["ready"]

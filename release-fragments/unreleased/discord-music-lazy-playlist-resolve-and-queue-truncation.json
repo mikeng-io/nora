@@ -1,0 +1,10 @@
+{
+  "type": "fix",
+  "summary": "Expanding a YouTube playlist link with /music play no longer blocks on resolving every track's stream URL upfront, and /music queue no longer silently fails once the queue gets long.",
+  "details": [
+    "A playlist link is now listed with a cheap, flat yt-dlp extraction (title + video ID per entry only); each track's actual stream URL is resolved lazily, right before it plays. Previously a single /music play call on a 50-track playlist synchronously resolved all 50 stream URLs before it could even reply, which could take minutes and looked like the whole playlist was being downloaded.",
+    "A track that's gone stale by the time it's about to play (deleted, region-locked, a dead playlist entry) is skipped automatically instead of failing playback.",
+    "/music queue now truncates its reply to fit Discord's 2000-character message limit, appending \"...and N more.\" when the queue doesn't fit. Previously a queue longer than roughly 30-40 tracks made the command fail outright (HTTPException 50035) with no reply at all."
+  ],
+  "limitations": []
+}

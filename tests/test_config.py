@@ -218,6 +218,19 @@ def test_the_media_section_is_optional_and_defaults_to_custody_on(toml_path, mon
     assert cfg.media.enabled is True
     assert cfg.media.max_bytes == 100 * 1024 * 1024
     assert cfg.media.timeout_seconds == 8.0
+    # DEC-136: ships OFF — a config.toml written before RustFS support
+    # existed keeps writing to the filesystem exactly as before.
+    assert cfg.media.rustfs.enabled is False
+
+
+def test_an_unknown_rustfs_key_is_still_a_startup_failure(toml_path):
+    """`extra="forbid"` on `RustfsBlobConfig` too — a typo here must not
+    silently mean "rustfs off", the same posture `[media]` itself takes."""
+    toml_path.write_text(
+        toml_path.read_text() + '\n[media.rustfs]\nendpointt = "http://rustfs:9000"\n'
+    )
+    with pytest.raises(ConfigError):
+        load(toml_path)
 
 
 def test_media_custody_can_be_switched_off(toml_path):

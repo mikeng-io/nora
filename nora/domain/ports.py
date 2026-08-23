@@ -1627,3 +1627,55 @@ class FactCandidateReader(Protocol):
         it would re-spend a research loop on the claim the tier already
         failed to settle. `limit <= 0` yields `()`."""
         ...
+
+
+@dataclass(frozen=True)
+class ResolvedTrack:
+    """What `TrackSource.resolve` hands back — enough to start playback and
+    enough to persist as a `music_queue` row (design/discord-music/
+    01-playback-and-source.md, 03-state-and-persistence.md). `stream_url`
+    points at the underlying host's own CDN, not anything Nora serves —
+    short-lived by that host's own policy, never persisted past the row's
+    `url` column, which stores `locator` — a resolve INPUT to re-derive from,
+    not a cache of `stream_url`.
+
+    `stream_url` may be empty when this came from a cheap, unresolved
+    listing (a playlist entry `YtDlpSource` only flat-extracted — title and
+    ID, no per-track stream lookup) rather than a full resolve; `locator`
+    is never empty — it is always a `query_or_url` that, handed back into
+    `resolve()`, re-derives THIS track specifically (never a raw search
+    string that could re-resolve to a different top result later)."""
+
+    title: str
+    stream_url: str
+    duration_seconds: int | None
+    source: str
+    source_id: str
+    locator: str
+
+
+@runtime_checkable
+class TrackSource(Protocol):
+    """A query or URL, resolved to zero or more `ResolvedTrack`s — an empty
+    sequence, never `None`, when nothing resolves. NEVER raises, matching
+    `WeatherProvider`/`SearchProvider`'s discipline in this file rather than
+    `ComputeBackend`'s: this resolves a fixed, deterministic lookup, it does
+    not launch a job. A dead link, a private video, or an unresolvable query
+    are all ordinary empty-sequence outcomes an implementation must be able
+    to say plainly, never an exception into the caller.
+
+    **More than one result means a playlist expanded**, not multiple guesses
+    at the same query — an ordinary search or a single video URL always
+    resolves to at most one track. Which URL shapes are treated as a
+    playlist to expand, versus a single video to resolve, is entirely the
+    implementation's call (`YtDlpSource`'s is narrow — an explicit
+    `/playlist?list=...` link only, capped; see `01-playback-and-source.md`).
+
+    `YtDlpSource` is the only implementation today, YouTube-only — an
+    allowlist enforced BY the implementation, not left to whatever
+    `yt-dlp`'s own extractor set happens to accept, because `query_or_url`
+    is untrusted input a person pasted. Per this repo's port convention, a
+    single implementation needs no contract suite; one becomes required the
+    day a second `TrackSource` (a SoundCloud adapter) exists."""
+
+    async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]: ...
