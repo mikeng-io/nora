@@ -1,0 +1,10 @@
+{
+  "type": "feature",
+  "summary": "/music queue now pages through long queues with Previous/Next buttons instead of truncating into one message, and \"Now playing\" auto-advance notifications are sent silently (no push notification).",
+  "details": [
+    "Only attaches the buttons when the queue is longer than one page (10 tracks) -- a short queue still gets a single plain reply.",
+    "Each button click re-fetches the guild's live queue state rather than reusing a stale snapshot, so the page reflects reality even if tracks finished, were skipped, or more were queued while the message sat in the channel.",
+    "The view's buttons disable themselves after 3 minutes of inactivity."
+  ],
+  "limitations": []
+}
