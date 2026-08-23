@@ -472,20 +472,44 @@ an id, the negative cache that breaks silently, and the render paths that print 
 raw uuid. Plus a seventh instrument-blind layer — the tier's one entity metric
 has no call site — and an uncounted parse drop (§8.4).
 
-## 10. What this contract does not decide
+## 10. The remaining rules, decided
 
-Deliberately open, and none of it blocks a first write:
+**Fidelity transitions.** `tentative` on write. **`proven` when a second
+independent asserter corroborates the same edge** — which §7's junction table is
+what makes expressible, and which is the difference between three people saying
+a thing and one person saying it three times. **`deprecated` when superseded**,
+written by the same statement that sets `superseded_at`, so the two can never
+disagree. No separate writer, no pass: both transitions ride existing writes.
 
-- **Fidelity transitions.** `tentative → proven → deprecated` has no writer. A
-  vocabulary with no transitions is inert, not wrong.
-- **Retention of superseded edges.** The knob exists and is commented out.
-  Bitemporality means nothing is deleted today, which is the safe default.
-- **Writers for the remaining three warrants** — `premises`, `observation`,
-  `stated`. One per tier, incrementally, on the shape this node fixes.
-- **The CHECK relaxation** (§6.5) — an operator decision, cheap only now.
-- **The predicate seed list's contents** and the veto list's contents (§6.1) —
-  operator-owned, versioned like an objective so the rule that produced a row
-  stays re-derivable.
+**Retention of superseded edges: keep them, indefinitely.** `retention_days`
+stays commented out and this is the decision, not the absence of one.
+Bitemporality's whole purpose is answering *what did we believe on the 9th*, and
+a retention window silently destroys the transaction-time axis the schema was
+built with. Storage for a few thousand text rows is not a constraint worth
+trading that for. Revisit only if the table crosses a million rows.
+
+**Writers for the three remaining warrants**, one owner each, no ambiguity:
+
+| warrant | writer |
+|---|---|
+| `premises` | **the adjudicator**, when a verdict is deduced from standing facts rather than a page — it already writes `fact_premise` |
+| `observation` | **the promotion pass** ([25](25-knowledge-pipeline.md) §4): an edge recurring across N distinct asserters with no source is warranted by observation, not by a page |
+| `stated` | **the operator**, and only the operator — a claim nobody derived and nobody sourced is a decision someone made, and the tier should not manufacture one |
+
+**The CHECK relaxation (§6.5) — decided: relax it.** `object_literal` becomes
+`NOT NULL` and `object_entity_id` an additive nullable pointer. Three reasons
+and the third is decisive: every shipped read path keeps working; the dedup
+break in §6.4 disappears rather than needing a fix; and **promotion stops being
+destructive**, so the surface form the room actually used survives resolution.
+That last is the property [23](23-retrieval.md) §6.2 depends on — the embedded
+text is the rendered triple, and a triple whose object was eaten by
+canonicalisation embeds something the room never said.
+
+**The predicate seed list and the veto list** remain **operator-owned files**,
+versioned and hashed like an objective. That is not a deferral — it is the same
+call as `change_policy: operator-only` on an objective, and it is *why* the rule
+that produced a row stays re-derivable. Their contents are configuration; their
+existence, ownership and versioning are decided here.
 
 **What would prove this contract wrong.** Its central claim is that entity-hood
 can be derived from the store's own contents rather than judged at write time. It

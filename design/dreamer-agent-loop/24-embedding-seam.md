@@ -298,18 +298,24 @@ Two operational notes that survive whatever model is chosen:
   dimension freedom §7.5 preserves is freedom for a *future* tier's model, not a
   knob on this one.
 
-## 8. What this node does not decide
+## 8. The last three, decided
 
-- ~~The embedder's runtime~~ — **settled by the deployment** (§7): `bge-m3` on
-  Ollama, out of process, over HTTP. What stays open is whether Nora reaches it
-  directly or through a port with a fake for tests — a question the repo's
-  contract-suite convention already answers in shape.
-- **Whether notes join the entity graph**, which would give the note tier a
-  structural channel. It anchors on the same entities already
-  ([21](21-substrate-contract.md) §2); nothing reads that yet.
-- **Thresholds.** `word_similarity`'s 0.3 default was not chosen for this corpus.
-  It is a knob with a measurement attached, not a constant to inherit —
-  [23](23-retrieval.md) §10's rule applied to the channel that costs nothing.
+- **The embedder's runtime — decided:** `bge-m3` on Ollama, out of process,
+  reached **through a port with a fake**, per the convention that no port gains
+  a second implementation without a shared contract suite. A direct HTTP call
+  from the tier would make the contract suite need a live model.
+- **Notes join the entity graph — decided: yes, by writing `note_entity`.** The
+  junction table and its foreign key already exist and are empty because
+  `note.anchor_entity_ids` is written verbatim while resolution has no owner.
+  [21](21-substrate-contract.md) §5 now gives resolution an owner, so the note
+  curator populates `note_entity` through the same sink that promotes fact
+  entities. That is what gives the note tier a structural channel, and it costs
+  one write in a pass that has to run anyway.
+- **Thresholds — decided as defaults**, in [23](23-retrieval.md) §9's table:
+  `word_similarity` at Postgres' own **0.3**, which §2's measurement shows
+  clears the true Cantonese match (0.5) while an unrelated Chinese string scores
+  0. A default with its reasoning is a decision; the first traffic window tunes
+  it.
 
 ## Status / Checkpoint
 

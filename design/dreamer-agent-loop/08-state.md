@@ -94,15 +94,16 @@ superseded. Read-of-ourselves is no longer a category that is refused on
 principle. The tool surface that follows is in
 [08-state.md](08-state.md).
 
-**Does not decide.** Whether a given tool is *safe* to grant is a separate
-question with a separate answer — this rule establishes only that the
-capability is needed. Disclosure is in [11-disclosure.md](11-disclosure.md),
-and it blocks one of the two paths regardless of anything decided here.
+**Decided elsewhere, not left open.** Whether a given tool is *safe* to grant is
+answered in [11-disclosure.md](11-disclosure.md), which blocks one of the two
+paths regardless of anything here. This rule establishes that the capability is
+*needed*; that node establishes which grants may actually be made.
 
-**Does not decide.** The write side. The keystone's refusal of any write verb —
-*"the model proposes; code disposes"* — is untouched and must stay untouched. A
-read tool is a read tool; every mutation continues to leave as a
-schema-validated proposal through a sink.
+**Decided: the write side does not change.** The keystone's refusal of any write
+verb — *"the model proposes; code disposes"* — is untouched and stays untouched.
+A read tool is a read tool; every mutation continues to leave as a
+schema-validated proposal through a sink. That is a decision to preserve an
+invariant, not an unanswered question.
 
 ## 6. Precedent, and a caution
 

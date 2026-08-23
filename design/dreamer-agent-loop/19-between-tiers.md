@@ -210,8 +210,23 @@ deterministic matching is the whole requirement** — the argument that it must 
 a *tool* rather than an input stands on [08-state.md](08-state.md) §1, and needs
 no index to serve it.
 
-## 6. What this node does not decide
+## 6. The block shape, decided
 
-The slice sizes, and whether the three slices are one block or three. Both wait
-on the registry existing at all; sizing a projection of an empty join would be
-choosing numbers for a query that returns nothing.
+**One block, three labelled slices.** Not three blocks: they share a header and
+a provenance line, and three sibling blocks in a prompt read as three unrelated
+systems rather than one store seen from three angles.
+
+**The slices and their caps:**
+
+| slice | cap | why |
+|---|---|---|
+| **room** — facts whose subject is an entity this conversation has touched | **8** | the working set; more than this and the block is competing with the transcript it sits beside |
+| **sender** — facts asserted by the person speaking now | **4** | enough to ground *"you told us…"*, small because it is the narrowest and most often empty |
+| **extent** — counts only, never rows | **1 line** | the whole point of [23-retrieval.md](23-retrieval.md) §3: she is told the size of what she has not been shown |
+
+**The extent line is not optional and not a slice of content.** Without it the
+block reproduces the defect the recency window had — a subset presented as the
+whole, with no signal that the verb exists or is worth reaching for.
+
+These are defaults with their reasoning, adjusted by the same window that tunes
+[09-measurement.md](09-measurement.md) §6. What they are **not** is open.

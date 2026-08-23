@@ -117,11 +117,20 @@ Four properties it must hold:
    because its absence is documented as already-proven-insufficient, and because
    the failure mode it prevents is the one in production.
 
-**What this does not decide:** which model. That question is closed by operator
-decision and carries a falsifiability commitment that has never been discharged
-because no research loop has ever completed — see
-[16-open-items.md](16-open-items.md) §9. Giving the Dreamer its own transport
-makes that question *answerable*; it does not answer it.
+**Which model is already decided** — by the operator, and it stays decided. What
+was left hanging is the **falsifiability commitment** attached to it, undischarged
+only because no research loop has ever completed
+([16-open-items.md](16-open-items.md) §9). Its discharge condition is decided
+here rather than left as an intention:
+
+> The commitment is discharged by the **first window in which loops complete** —
+> the acceptance reading in [09-measurement.md](09-measurement.md) §4. If the
+> wrong-gloss class survives a loop that had the tools, the model choice is
+> implicated and is re-opened by that reading. If it does not, the commitment is
+> discharged and the choice stands.
+
+Giving the Dreamer its own transport is what makes that reading possible; the
+reading, not a later conversation, is what closes the question.
 
 ## 5. Why now rather than after the migration
 
