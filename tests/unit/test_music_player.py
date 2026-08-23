@@ -41,6 +41,7 @@ class _FakeVoiceSession:
         self.paused = 0
         self.resumed = 0
         self.disconnected = 0
+        self.volume_calls: list[float] = []
         self._playing = False
 
     def is_playing(self) -> bool:
@@ -59,6 +60,9 @@ class _FakeVoiceSession:
     def stop(self) -> None:
         self.stopped += 1
         self._playing = False
+
+    def set_volume(self, volume: float) -> None:
+        self.volume_calls.append(volume)
 
     async def disconnect(self) -> None:
         self.disconnected += 1
@@ -195,3 +199,41 @@ async def test_stop_clears_the_queue_stops_playback_and_disconnects() -> None:
     status = await player.status()
     assert status.now_playing is None
     assert status.queue == []
+
+
+async def test_set_volume_applies_immediately_and_reports_true() -> None:
+    player, voice = _player({"track a": _TRACK_A})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    assert player.set_volume(0.5) is True
+
+    assert voice.volume_calls == [0.5]
+
+
+async def test_set_volume_works_with_nothing_playing() -> None:
+    """A setting, not an action on in-progress playback — unlike pause/
+    resume, nothing needs to be playing for this to take effect (it
+    applies to whatever plays next)."""
+    player, voice = _player({})
+
+    assert player.set_volume(0.5) is True
+
+    assert voice.volume_calls == [0.5]
+
+
+async def test_set_volume_refuses_a_value_outside_zero_to_two() -> None:
+    player, voice = _player({})
+
+    assert player.set_volume(-0.1) is False
+    assert player.set_volume(2.1) is False
+
+    assert voice.volume_calls == []
+
+
+async def test_set_volume_accepts_the_boundary_values() -> None:
+    player, voice = _player({})
+
+    assert player.set_volume(0.0) is True
+    assert player.set_volume(2.0) is True
+
+    assert voice.volume_calls == [0.0, 2.0]

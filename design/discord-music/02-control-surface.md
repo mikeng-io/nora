@@ -14,8 +14,9 @@ edges:
 ## Slash commands, not Nora conversation, is the primary interface
 
 `/music play <query>`, `/music skip`, `/music queue`, `/music pause`,
-`/music stop` — registered via `discord.app_commands.CommandTree`, Discord's
-native slash-command mechanism. Typing `/music skip` triggers **no LLM
+`/music resume`, `/music stop`, and `/music volume <percent>` — registered
+via `discord.app_commands.CommandTree`, Discord's native slash-command
+mechanism. Typing `/music skip` triggers **no LLM
 turn**: it is a direct Discord interaction dispatched to a method call on
 the guild's player object (`03-state-and-persistence.md`). This is the
 control surface in full; nothing about playback correctness depends on Nora

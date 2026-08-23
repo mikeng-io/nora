@@ -67,12 +67,20 @@ class DiscordVoiceSession:
         self._audio_source_factory = audio_source_factory
         self._suppress_next_after = False
         self._pending_finish: Future[None] | None = None
+        # Persisted across tracks, not reset on `play()` — setting the
+        # volume once should stay in effect for whatever plays next, the
+        # same "a setting, not an action on this one track" argument
+        # `MusicPlayer.set_volume`'s docstring makes.
+        self._volume: float = 1.0
+        self._current_source: discord.PCMVolumeTransformer[discord.AudioSource] | None = None
 
     def is_playing(self) -> bool:
         return bool(self._voice_client.is_playing())
 
     def play(self, stream_url: str) -> None:
-        source = self._audio_source_factory(stream_url)
+        raw = self._audio_source_factory(stream_url)
+        source = discord.PCMVolumeTransformer(raw, volume=self._volume)
+        self._current_source = source
         self._voice_client.play(source, after=self._after)
 
     def pause(self) -> None:
@@ -80,6 +88,11 @@ class DiscordVoiceSession:
 
     def resume(self) -> None:
         self._voice_client.resume()
+
+    def set_volume(self, volume: float) -> None:
+        self._volume = volume
+        if self._current_source is not None:
+            self._current_source.volume = volume
 
     def stop(self) -> None:
         # Cancel a completion this `stop()` is about to SUPERSEDE — see the

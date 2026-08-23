@@ -53,6 +53,7 @@ class _FakeVoiceSession:
         self.played: list[str] = []
         self.stopped = 0
         self.disconnected = 0
+        self.volume_calls: list[float] = []
 
     def is_playing(self) -> bool:
         return bool(self.played) and self.stopped == 0
@@ -68,6 +69,9 @@ class _FakeVoiceSession:
 
     def stop(self) -> None:
         self.stopped += 1
+
+    def set_volume(self, volume: float) -> None:
+        self.volume_calls.append(volume)
 
     async def disconnect(self) -> None:
         self.disconnected += 1
@@ -290,3 +294,27 @@ async def test_reusing_an_idle_player_cancels_its_timer_before_the_slow_resolve(
 
     assert outcome is not None
     assert outcome.status == "playing"
+
+
+async def test_set_volume_is_none_when_no_player_exists_for_the_guild() -> None:
+    manager = _manager({})
+
+    assert await manager.set_volume("guild-1", 0.5) is None
+
+
+async def test_set_volume_delegates_to_the_player_once_one_exists() -> None:
+    manager = _manager({"track a": _TRACK_A})
+    session = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return session
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+    )
+
+    assert await manager.set_volume("guild-1", 0.5) is True
+    assert session.volume_calls == [0.5]
+
+    assert await manager.set_volume("guild-1", 3.0) is False

@@ -12,7 +12,12 @@ real firing rather than omitting it, per CLAUDE.md's fake-realism rule.
 
 `audio_source_factory` is stubbed out in every test here — the real default
 (`discord.FFmpegPCMAudio(...)`) spawns an actual `ffmpeg` subprocess in its
-constructor, which a unit test must never do.
+constructor, which a unit test must never do. It returns a real
+`discord.AudioSource` subclass (`_FakeAudioSource`), not a bare string:
+`play()` wraps whatever the factory returns in `discord.
+PCMVolumeTransformer`, which raises `TypeError` on anything that isn't
+actually an `AudioSource` — the same fidelity requirement as `_FakeVoiceClient`
+reproducing `stop()`'s real `after`-firing behaviour.
 """
 
 from __future__ import annotations
@@ -20,7 +25,21 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import patch
 
+import discord
+
 from nora.platform.discord.voice_session import DiscordVoiceSession
+
+
+class _FakeAudioSource(discord.AudioSource):
+    """A real `AudioSource` subclass carrying a label so a test can still
+    identify which URL it came from — `read()` is never actually called
+    (nothing here drives real audio)."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+
+    def read(self) -> bytes:
+        return b""
 
 
 class _FakeVoiceClient:
@@ -63,9 +82,9 @@ async def test_play_builds_a_source_from_the_factory_and_hands_it_to_the_voice_c
     voice_client = _FakeVoiceClient()
     built: list[str] = []
 
-    def factory(url: str) -> str:
+    def factory(url: str) -> _FakeAudioSource:
         built.append(url)
-        return f"source-for-{url}"
+        return _FakeAudioSource(f"source-for-{url}")
 
     session = DiscordVoiceSession(
         voice_client, loop=asyncio.get_running_loop(),
@@ -75,14 +94,19 @@ async def test_play_builds_a_source_from_the_factory_and_hands_it_to_the_voice_c
     session.play("https://cdn.example/a")
 
     assert built == ["https://cdn.example/a"]
-    assert voice_client.played_sources == ["source-for-https://cdn.example/a"]
+    # `play()` wraps the factory's output in `PCMVolumeTransformer` (for
+    # volume control) rather than handing it to the voice client bare — the
+    # ORIGINAL factory output survives underneath as `.original`.
+    [played] = voice_client.played_sources
+    assert isinstance(played, discord.PCMVolumeTransformer)
+    assert played.original.label == "source-for-https://cdn.example/a"
 
 
 async def test_is_playing_pause_and_resume_delegate_to_the_voice_client() -> None:
     voice_client = _FakeVoiceClient()
     session = DiscordVoiceSession(
         voice_client, loop=asyncio.get_running_loop(),
-        on_finished=lambda: None, audio_source_factory=lambda url: url,
+        on_finished=lambda: None, audio_source_factory=lambda url: _FakeAudioSource(url),
     )
     session.play("https://cdn.example/a")
 
@@ -103,7 +127,7 @@ async def test_stop_does_not_schedule_on_finished_it_swallows_that_after_call() 
 
     session = DiscordVoiceSession(
         voice_client, loop=asyncio.get_running_loop(),
-        on_finished=on_finished, audio_source_factory=lambda url: url,
+        on_finished=on_finished, audio_source_factory=lambda url: _FakeAudioSource(url),
     )
     session.play("https://cdn.example/a")
 
@@ -123,7 +147,7 @@ async def test_a_natural_after_firing_without_a_preceding_stop_schedules_on_fini
 
     session = DiscordVoiceSession(
         voice_client, loop=asyncio.get_running_loop(),
-        on_finished=on_finished, audio_source_factory=lambda url: url,
+        on_finished=on_finished, audio_source_factory=lambda url: _FakeAudioSource(url),
     )
     session.play("https://cdn.example/a")
 
@@ -150,7 +174,7 @@ async def test_a_pending_natural_finish_is_cancelled_by_a_stop_that_beats_it_to_
 
     session = DiscordVoiceSession(
         voice_client, loop=asyncio.get_running_loop(),
-        on_finished=on_finished, audio_source_factory=lambda url: url,
+        on_finished=on_finished, audio_source_factory=lambda url: _FakeAudioSource(url),
     )
     session.play("https://cdn.example/a")
 
@@ -179,7 +203,7 @@ async def test_a_natural_finish_that_already_ran_is_unaffected_by_a_later_stop()
 
     session = DiscordVoiceSession(
         voice_client, loop=asyncio.get_running_loop(),
-        on_finished=on_finished, audio_source_factory=lambda url: url,
+        on_finished=on_finished, audio_source_factory=lambda url: _FakeAudioSource(url),
     )
     session.play("https://cdn.example/a")
 
@@ -203,7 +227,7 @@ async def test_an_exception_from_on_finished_is_logged_not_swallowed() -> None:
 
     session = DiscordVoiceSession(
         voice_client, loop=asyncio.get_running_loop(),
-        on_finished=on_finished, audio_source_factory=lambda url: url,
+        on_finished=on_finished, audio_source_factory=lambda url: _FakeAudioSource(url),
     )
     session.play("https://cdn.example/a")
 
@@ -219,9 +243,53 @@ async def test_disconnect_delegates_to_the_voice_client() -> None:
     voice_client = _FakeVoiceClient()
     session = DiscordVoiceSession(
         voice_client, loop=asyncio.get_running_loop(),
-        on_finished=lambda: None, audio_source_factory=lambda url: url,
+        on_finished=lambda: None, audio_source_factory=lambda url: _FakeAudioSource(url),
     )
 
     await session.disconnect()
 
     assert voice_client.disconnected == 1
+
+
+async def test_set_volume_before_anything_plays_is_applied_to_the_first_track() -> None:
+    voice_client = _FakeVoiceClient()
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(),
+        on_finished=lambda: None, audio_source_factory=lambda url: _FakeAudioSource(url),
+    )
+
+    session.set_volume(0.5)
+    session.play("https://cdn.example/a")
+
+    [played] = voice_client.played_sources
+    assert isinstance(played, discord.PCMVolumeTransformer)
+    assert played.volume == 0.5
+
+
+async def test_set_volume_while_playing_adjusts_the_live_source() -> None:
+    voice_client = _FakeVoiceClient()
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(),
+        on_finished=lambda: None, audio_source_factory=lambda url: _FakeAudioSource(url),
+    )
+    session.play("https://cdn.example/a")
+
+    session.set_volume(1.5)
+
+    [played] = voice_client.played_sources
+    assert played.volume == 1.5
+
+
+async def test_volume_persists_across_tracks() -> None:
+    voice_client = _FakeVoiceClient()
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(),
+        on_finished=lambda: None, audio_source_factory=lambda url: _FakeAudioSource(url),
+    )
+    session.play("https://cdn.example/a")
+    session.set_volume(0.3)
+
+    voice_client.stop()  # natural end of track A
+    session.play("https://cdn.example/b")  # skip()'s own advance, in effect
+
+    assert [s.volume for s in voice_client.played_sources] == [0.3, 0.3]
