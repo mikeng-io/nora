@@ -1636,14 +1636,22 @@ class ResolvedTrack:
     01-playback-and-source.md, 03-state-and-persistence.md). `stream_url`
     points at the underlying host's own CDN, not anything Nora serves —
     short-lived by that host's own policy, never persisted past the row's
-    `url` column, which is a resolve INPUT to re-derive from, not a cache of
-    this value."""
+    `url` column, which stores `locator` — a resolve INPUT to re-derive from,
+    not a cache of `stream_url`.
+
+    `stream_url` may be empty when this came from a cheap, unresolved
+    listing (a playlist entry `YtDlpSource` only flat-extracted — title and
+    ID, no per-track stream lookup) rather than a full resolve; `locator`
+    is never empty — it is always a `query_or_url` that, handed back into
+    `resolve()`, re-derives THIS track specifically (never a raw search
+    string that could re-resolve to a different top result later)."""
 
     title: str
     stream_url: str
     duration_seconds: int | None
     source: str
     source_id: str
+    locator: str
 
 
 @runtime_checkable
