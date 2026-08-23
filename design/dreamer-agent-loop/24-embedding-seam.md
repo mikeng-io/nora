@@ -103,15 +103,41 @@ tier never will.
 |---|---|---|
 | **knowledge** | **yes** | Nora and the Dreamer both. Unbounded by design ([20](20-knowledge-tier.md) §6) |
 | **note** | **yes, but not for Nora** | the note index is **uncapped and fully injected** on every tag, deliberately — *"a note missing from the index is invisible to her."* Nora needs no search. **The Dreamer does**: an adaptor gets no injected block, so without a verb it cannot see the notebook at all |
-| **language** | **probably not** | six rendered lexemes, bounded by the room's own slang. Building search here is machinery for a corpus that fits in the prompt |
+| **language** | **not today** | six rendered lexemes, bounded by the room's own slang. But the *exchange* corpus has no closing condition, so this is a reading, not a verdict — see §5.1 |
 
 **The note tier's case is the interesting one and it is easy to get backwards.**
 Search there is not a better way to show Nora her notes — it is the *only* way a
 background adaptor can read them. That is a real, non-redundant need, and it is
 why the seam is shared rather than knowledge-tier-private.
 
-The language tier's answer is *no*, and saying so is the point: a shared seam
-that every tier is obliged to adopt is worse than three bespoke ones.
+The language tier's answer is *no today*, and saying so is the point: a shared
+seam that every tier is obliged to adopt is worse than three bespoke ones.
+
+### 5.1 Bounded BY DESIGN is not bounded IN PRACTICE
+
+The rule in §4 keys on a design property, and a design property is a claim about
+a mechanism that must actually exist.
+
+**The note tier is the live counter-example.** It is bounded by design — every
+note carries a closing condition — and **the curator that would close them does
+not exist.** The only references to it in the codebase are docstrings describing
+what it *will* do. `config.toml` says so plainly: *"No curator yet — nothing
+merges, retires or promotes a note… The notebook only grows for now."*
+
+So a tier the design calls bounded is, in the deployment, unbounded. And the
+instrument that comment names as the tell — `nora_note_index_entries` — has
+**zero call sites**. The growth nobody bounded is also growth nobody counts.
+
+**Therefore adoption is a measured transition, not a design-time verdict:**
+
+> A tier joins the seam when its **extent crosses what the prompt can carry** —
+> read from a counter, not decided from a spec.
+
+This is what the extent line in [23-retrieval.md](23-retrieval.md) §3 is
+*actually for*. It reads like a courtesy to Nora — *here is how much I know* —
+and it is simultaneously the instrument that detects the injectable→searchable
+crossing for every tier at once. One number, two jobs, and the second is the one
+that keeps this node from going stale.
 
 ## 6. The fingerprint is the seam's load-bearing discipline
 
@@ -130,37 +156,73 @@ column detects and nothing else would.
 
 ## 7. The cost, measured rather than assumed
 
-The dense channel is an **in-process model on a host that is already full.**
-Measured 2026-08-23: **27 GB total, ~6 GB available**, with the largest
-residents being a crawler (2.7 GB), a speech service (2.7 GB), a model router,
-an observability stack, and a graph database.
+**The bill is already paid.** `bge-m3` is **already running on this host**, on
+Ollama, as a separate service — 1.16 GB, 1024-dimensional, reachable over HTTP,
+and verified 2026-08-23 to embed Cantonese and English in one call.
 
-bge-m3 is materially larger than the small embedders such tools usually default
-to. It fits in the current headroom, but it is **not free**, and this host has no
-slack to discover that later.
+That removes the concern an earlier draft of this node built its
+recommendation on. The dense channel is **not** a new resident model competing
+for the ~6 GB free on a host already carrying a crawler, a speech service, a
+router, an observability stack and a graph database. It is an HTTP call to
+something that is up.
+
+Three consequences follow, and they are better than the in-process ones:
 
 Three consequences, none of them optional:
 
-- **Offload the inference.** Nora is a long-lived async service; a synchronous
-  embed on the reply path stalls every conversation in flight
+- **The event-loop hazard does not arise.** An HTTP call is naturally awaitable
+  and can carry a timeout, which an in-process call cannot
   ([23](23-retrieval.md) §11).
-- **Consider an idle-unload timer**, the pattern the prior art uses, if resident
-  footprint proves tight.
-- **The lexical channel costs nothing and works today.** It needs no model, no
-  memory, and no new dependency — and §2 shows it already answers the Chinese
-  question that motivated the dense channel's urgency. **Ship the lexical channel
-  first, measure what it misses, and let that reading size the dense one.**
+- **It fails in a shape this codebase already speaks.** A service that is down is
+  `unavailable` — never `nothing_found`. An in-process model that OOMs is a
+  process death.
+- **It stays swappable.** The model lives behind a service boundary, so changing
+  it is a pull and a re-embed keyed by §6's fingerprint, not a redeploy of Nora.
 
-That last point is this node's practical recommendation: the two channels are
-separable, and only one of them has a resource bill.
+**The two channels remain separable and should still ship in order** — lexical
+first, because §2 shows it already answers the Chinese question and it needs
+nothing new at all. But the reason is now *sequencing*, not cost.
+
+## 7.5 Designing for the tiers that do not exist yet
+
+Everything above is sized against three tiers that exist. The seam's real test is
+the fourth, and the fifth — Standing, a debrief, whatever follows. Four
+properties decide whether adopting it later is a config change or a migration.
+
+**`kind` is an open string, never an enum.** A closed set means tier five ships
+with a schema change and a `CHECK` constraint edit before it can store its first
+vector. The exchange tier's closed act set is right for *acts*, which are a
+vocabulary; `kind` is a registry, and registries stay open.
+
+**Dimension is per-`kind`, not global.** §3 says one embedder means one
+dimension, and that is true *today* — but a future tier may want a different
+model, and the seam should let it without a migration. **The plain column already
+allows this and pgvector would not**, since a `vector(N)` column fixes N at
+DDL time. That is a second, better argument for the storage choice in
+[23-retrieval.md](23-retrieval.md) §7: it was defended as an index deferral, and
+it is *also* what keeps the model choice per-tier reversible.
+
+**Adoption is declared by the tier, not enumerated by the seam.** The same shape
+D2 gives triggers: a tier says *I am searchable, here are my text columns, here
+is my key*, and the seam serves it. Nothing in the seam holds a list of tier
+names — a list is what §5's table would become if it were code, and it would be
+wrong within one release.
+
+**The searchable projection is the tier's, not the seam's.** Each tier names
+which of its columns are text worth matching. The seam never assumes a table
+shape, which is what lets a tier with a completely different row join without the
+seam learning anything about it.
+
+Together these mean a new tier adopts retrieval by **declaring three things and
+writing no schema**. That is the bar, and it is the reason to build the seam once
+now rather than discover it on the fourth tier.
 
 ## 8. What this node does not decide
 
-- **The embedder's runtime** — in-process bindings versus a small sidecar. The
-  prior art is in-process and never considers an alternative
-  ([23](23-retrieval.md) §11); this host's memory picture may argue for a
-  sidecar that can be stopped. Undecided, and cheap to defer because §7 ships
-  the lexical channel first.
+- ~~The embedder's runtime~~ — **settled by the deployment** (§7): `bge-m3` on
+  Ollama, out of process, over HTTP. What stays open is whether Nora reaches it
+  directly or through a port with a fake for tests — a question the repo's
+  contract-suite convention already answers in shape.
 - **Whether notes join the entity graph**, which would give the note tier a
   structural channel. It anchors on the same entities already
   ([21](21-substrate-contract.md) §2); nothing reads that yet.
@@ -171,7 +233,11 @@ separable, and only one of them has a resource bill.
 ## Status / Checkpoint
 
 2026-08-23 — written after the operator asked what the universal embedding
-architecture is and whether the note and language tiers reuse it. It **corrects
+architecture is and whether the note and language tiers reuse it, then **revised
+the same day** after he pointed out the first answer was sized against *today's*
+row counts rather than the future the seam has to survive. §5.1 and §7.5 are that
+revision; §7's cost argument was retracted outright once `bge-m3` was found
+already running on this host. It **corrects
 [23-retrieval.md](23-retrieval.md) §6.1**: the CJK technique recommended there is
 a workaround for an engine without trigram support, and Postgres solves the same
 problem in one operator — which the note tier had already concluded and shipped
