@@ -100,12 +100,22 @@ class MusicPlayer:
         return PlayOutcome(status="queued", track=queued[0], queued_count=len(queued))
 
     async def skip(self) -> QueuedTrack | None:
-        """Stops whatever is playing (if anything) and immediately advances.
-        Returns the track that was skipped, or `None` if nothing was."""
+        """Advances immediately. Returns the track that was skipped, or
+        `None` if nothing was.
+
+        Deliberately does NOT call `voice.stop()` up front when there IS a
+        next track: `_advance()`'s own `voice.play()` call for it replaces
+        whatever's currently audible (a crossfade if `[music]
+        crossfade_seconds` is set, otherwise `DiscordVoiceSession`'s own
+        live-swap does an instant cut) — the same mechanism a natural
+        track-end crossfade already relies on, just triggered by a command
+        instead of the early-fire timer. Only when the queue is EMPTY is
+        there nothing to supersede the skipped track's still-live audio,
+        so `stop()` is the explicit fallback for that case."""
         skipped = self._now_playing
-        if skipped is not None:
-            self._voice.stop()
         await self._advance()
+        if self._now_playing is None:
+            self._voice.stop()
         return skipped
 
     async def on_track_finished(self) -> None:

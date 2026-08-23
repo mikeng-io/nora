@@ -98,6 +98,15 @@ class DiscordVoiceSession:
         wrapped = discord.PCMVolumeTransformer(mixed, volume=self._volume)
         self._current_source = wrapped
         self._cancel_crossfade_timer()
+        # A completion signal for the track THIS call is replacing may
+        # already be in flight -- e.g. `/music skip` landing right as this
+        # track's own early crossfade timer fired. Cancelling here (not
+        # just in `stop()`) is what keeps that race from double-advancing:
+        # this `play()` call IS the advance now, an already-queued one
+        # must not also run (module docstring's "second, subtler race").
+        if self._pending_finish is not None:
+            self._pending_finish.cancel()
+            self._pending_finish = None
         if already_playing:
             # A live swap, not stop()+play() -- the AudioPlayer thread never
             # sees a gap, which is the whole point: the OLD track (now
@@ -148,13 +157,24 @@ class DiscordVoiceSession:
         audio thread). Signals `on_finished` EARLY so `MusicPlayer._advance`
         resolves and hands the next track to `play()` while this one is
         still audible, which is what makes that next `play()` call a
-        crossfade instead of a plain start. The real `after` callback,
-        which will still fire later at this track's TRUE end, must not
-        double-signal — same suppression `stop()` already relies on."""
+        crossfade instead of a plain start.
+
+        Deliberately does NOT set `_suppress_next_after` — unlike `stop()`,
+        this never calls `voice_client.stop()`, so it never makes the real
+        `after` fire early in the first place. A live `.source` swap does
+        not end the `AudioPlayer` thread's loop either, so the real `after`
+        (registered once, at the very first `play()` of the session) only
+        ever fires when whatever is CURRENTLY assigned to `.source` truly
+        reaches EOF with no further swap incoming — i.e. exactly once, at
+        the genuine end of the whole crossfade chain, and only that firing
+        should ever advance anything. **Bug fixed 2026-08-24**: this used
+        to set the suppression flag here too, which — because it is a
+        single boolean, not a per-track token — permanently swallowed that
+        one genuine final signal the first time ANY early crossfade fired,
+        silently breaking auto-advance after the very next track."""
         self._crossfade_timer = None
         if not self._voice_client.is_playing():
             return  # skipped/stopped already; nothing to crossfade into
-        self._suppress_next_after = True
         self._pending_finish = asyncio.run_coroutine_threadsafe(
             self._run_on_finished(), self._loop,
         )

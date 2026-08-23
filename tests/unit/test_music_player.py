@@ -147,7 +147,11 @@ async def test_play_returns_nothing_found_when_the_source_cannot_resolve() -> No
     assert status.queue == []
 
 
-async def test_skip_stops_current_and_advances_to_the_next_queued_track() -> None:
+async def test_skip_advances_to_the_next_queued_track_without_an_explicit_stop() -> None:
+    """`voice.play()` for the next track (inside `_advance()`) is what
+    replaces the skipped one -- a crossfade if configured, otherwise
+    `DiscordVoiceSession`'s own instant live-swap. No separate `voice.
+    stop()` call is needed (or made) when there IS a next track."""
     player, voice = _player({"track a": _TRACK_A, "track b": _TRACK_B})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
     await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
@@ -156,7 +160,7 @@ async def test_skip_stops_current_and_advances_to_the_next_queued_track() -> Non
 
     assert skipped is not None
     assert skipped.title == "Track A"
-    assert voice.stopped == 1
+    assert voice.stopped == 0
     assert voice.played == ["https://cdn.example/a", "https://cdn.example/b"]
     status = await player.status()
     assert status.now_playing.title == "Track B"
