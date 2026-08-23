@@ -9,6 +9,12 @@ real playlist page returns, with more than one entry), a resolve failure
 RAISES `yt_dlp.utils.DownloadError` (yt-dlp's real exception, not a generic
 one), and a resolved-but-unplayable result (a live stream still buffering)
 omits `url` the same way yt-dlp's own info dict can.
+
+Two extractors are exercised separately (`extractor` vs `flat_extractor`,
+matching `YtDlpSource.__init__`) because a playlist LISTING and a single
+resolve are genuinely different yt-dlp calls now (`extract_flat=True` vs
+not) — a fake that let one instance answer both would hide a regression
+back to eagerly resolving every playlist entry's stream URL.
 """
 
 from __future__ import annotations
@@ -45,6 +51,7 @@ class _FakeExtractor:
 
 
 _VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+_WATCH_URL = _VIDEO_URL  # what a resolved track's `locator` reconstructs to
 _PLAYLIST_URL = "https://www.youtube.com/playlist?list=PL12345"
 
 
@@ -57,6 +64,18 @@ def _info(**overrides: Any) -> dict[str, Any]:
     }
     base.update(overrides)
     return base
+
+
+def _flat_entry(video_id: str, title: str, **overrides: Any) -> dict[str, Any]:
+    """A flat playlist entry has no `url`/stream info at all -- just enough
+    to list it (id, title, maybe duration)."""
+    base: dict[str, Any] = {"id": video_id, "title": title}
+    base.update(overrides)
+    return base
+
+
+def _watch_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
 
 
 async def test_resolves_a_youtube_url_to_a_direct_stream() -> None:
@@ -72,6 +91,7 @@ async def test_resolves_a_youtube_url_to_a_direct_stream() -> None:
             duration_seconds=213,
             source="youtube",
             source_id="dQw4w9WgXcQ",
+            locator=_WATCH_URL,
         ),
     )
     assert extractor.calls == [_VIDEO_URL]
@@ -87,6 +107,10 @@ async def test_resolves_a_bare_search_query_via_ytsearch1() -> None:
 
     assert len(tracks) == 1
     assert tracks[0].title == "Never Gonna Give You Up"
+    # The locator points at the resolved VIDEO, not the search text -- a
+    # later re-resolve of "ytsearch1:..." could land on a different top
+    # result, so re-resolving from the queue must never go back through it.
+    assert tracks[0].locator == _WATCH_URL
     assert extractor.calls == ["ytsearch1:never gonna give you up"]
 
 
@@ -120,33 +144,40 @@ async def test_returns_empty_when_resolved_info_has_no_stream_url() -> None:
     assert tracks == ()
 
 
-async def test_a_playlist_page_url_expands_into_every_track() -> None:
-    extractor = _FakeExtractor(
+async def test_a_playlist_page_url_expands_into_every_track_without_resolving_streams() -> None:
+    flat_extractor = _FakeExtractor(
         by_url={
             _PLAYLIST_URL: {
                 "_type": "playlist",
                 "entries": [
-                    _info(id="a", title="Track A", url="https://cdn.example/a"),
-                    _info(id="b", title="Track B", url="https://cdn.example/b"),
-                    _info(id="c", title="Track C", url="https://cdn.example/c"),
+                    _flat_entry("a", "Track A"),
+                    _flat_entry("b", "Track B"),
+                    _flat_entry("c", "Track C"),
                 ],
             },
         },
     )
-    source = YtDlpSource(extractor=extractor)
+    full_extractor = _FakeExtractor()
+    source = YtDlpSource(extractor=full_extractor, flat_extractor=flat_extractor)
 
     tracks = await source.resolve(query_or_url=_PLAYLIST_URL)
 
     assert [t.title for t in tracks] == ["Track A", "Track B", "Track C"]
-    assert extractor.calls == [_PLAYLIST_URL]
+    assert [t.locator for t in tracks] == [_watch_url("a"), _watch_url("b"), _watch_url("c")]
+    # No per-track stream resolution happened -- the whole point of the flat
+    # listing (module docstring): a `/music play` on a playlist link must
+    # not block on N round-trips before it can even reply.
+    assert [t.stream_url for t in tracks] == ["", "", ""]
+    assert full_extractor.calls == []
+    assert flat_extractor.calls == [_PLAYLIST_URL]
 
 
 async def test_a_playlist_is_capped_so_one_link_cannot_flood_the_queue() -> None:
-    entries = [
-        _info(id=str(i), title=f"Track {i}", url=f"https://cdn.example/{i}") for i in range(60)
-    ]
-    extractor = _FakeExtractor(by_url={_PLAYLIST_URL: {"_type": "playlist", "entries": entries}})
-    source = YtDlpSource(extractor=extractor)
+    entries = [_flat_entry(str(i), f"Track {i}") for i in range(60)]
+    flat_extractor = _FakeExtractor(
+        by_url={_PLAYLIST_URL: {"_type": "playlist", "entries": entries}}
+    )
+    source = YtDlpSource(extractor=_FakeExtractor(), flat_extractor=flat_extractor)
 
     tracks = await source.resolve(query_or_url=_PLAYLIST_URL)
 
@@ -162,33 +193,54 @@ async def test_a_video_url_with_an_incidental_list_param_is_never_expanded() -> 
     list — least-surprise for a pasted VIDEO link."""
     video_with_list = f"{_VIDEO_URL}&list=PLsomeone-elses-mix&index=7"
     extractor = _FakeExtractor(by_url={_VIDEO_URL: _info()})
-    source = YtDlpSource(extractor=extractor)
+    flat_extractor = _FakeExtractor()
+    source = YtDlpSource(extractor=extractor, flat_extractor=flat_extractor)
 
     tracks = await source.resolve(query_or_url=video_with_list)
 
     assert len(tracks) == 1
     assert tracks[0].title == "Never Gonna Give You Up"
-    # The list/index params were stripped before the extractor ever saw it.
+    # The list/index params were stripped before the extractor ever saw it,
+    # and this never went through the flat/playlist path at all.
     assert extractor.calls == [_VIDEO_URL]
+    assert flat_extractor.calls == []
 
 
 async def test_a_playlist_page_with_an_unresolvable_entry_skips_only_that_one() -> None:
-    live_entry = _info(id="live", title="Still buffering")
-    del live_entry["url"]
-    extractor = _FakeExtractor(
+    entry_without_id = {"title": "Removed video"}
+    flat_extractor = _FakeExtractor(
         by_url={
             _PLAYLIST_URL: {
                 "_type": "playlist",
                 "entries": [
-                    _info(id="a", title="Track A", url="https://cdn.example/a"),
-                    live_entry,
-                    _info(id="c", title="Track C", url="https://cdn.example/c"),
+                    _flat_entry("a", "Track A"),
+                    entry_without_id,
+                    _flat_entry("c", "Track C"),
                 ],
             },
         },
     )
-    source = YtDlpSource(extractor=extractor)
+    source = YtDlpSource(extractor=_FakeExtractor(), flat_extractor=flat_extractor)
 
     tracks = await source.resolve(query_or_url=_PLAYLIST_URL)
 
     assert [t.title for t in tracks] == ["Track A", "Track C"]
+
+
+async def test_resolving_a_tracks_locator_later_yields_its_playable_stream() -> None:
+    """The lazy-resolve contract end to end: a flat playlist entry's
+    `locator`, handed back into `resolve()` (what `MusicPlayer._advance`
+    does right before playing it), yields the real stream URL."""
+    flat_extractor = _FakeExtractor(
+        by_url={_PLAYLIST_URL: {"_type": "playlist", "entries": [_flat_entry("a", "Track A")]}},
+    )
+    full_extractor = _FakeExtractor(
+        by_url={_watch_url("a"): _info(id="a", title="Track A", url="https://cdn.example/a")},
+    )
+    source = YtDlpSource(extractor=full_extractor, flat_extractor=flat_extractor)
+
+    [listed] = await source.resolve(query_or_url=_PLAYLIST_URL)
+    [played] = await source.resolve(query_or_url=listed.locator)
+
+    assert played.stream_url == "https://cdn.example/a"
+    assert played.title == "Track A"

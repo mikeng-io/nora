@@ -18,6 +18,7 @@ by a command instead."""
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,6 +26,8 @@ from typing import Literal, Protocol
 
 from nora.domain.music import MusicQueueStore, QueuedTrack
 from nora.domain.ports import TrackSource
+
+log = logging.getLogger("nora.music")
 
 
 class VoiceSession(Protocol):
@@ -86,7 +89,7 @@ class MusicPlayer:
         # is what keeps it that way for a single playlist expansion too.
         queued = [
             await self._queue.enqueue(
-                guild_id=self._guild_id, source=track.source, url=track.stream_url,
+                guild_id=self._guild_id, source=track.source, url=track.locator,
                 title=track.title, added_by_person_id=requested_by, added_at=added_at,
             )
             for track in resolved
@@ -153,7 +156,24 @@ class MusicPlayer:
         return PlayerStatus(now_playing=self._now_playing, paused=self._paused, queue=queue)
 
     async def _advance(self) -> None:
-        self._now_playing = await self._queue.pop_next(self._guild_id)
-        self._paused = False
-        if self._now_playing is not None:
-            self._voice.play(self._now_playing.url)
+        """`QueuedTrack.url` is always a `locator` (`ResolvedTrack`'s own
+        contract, `nora/domain/ports.py`) — a resolve INPUT, never a cached
+        stream URL — so the actual, playable stream is resolved fresh here,
+        right before it's needed. A track that's gone stale by play time (a
+        deleted video, a stale playlist entry) resolves to nothing; that's
+        the same ordinary `nothing_found` outcome `/music play` already
+        treats as unremarkable, so this just moves on to the next track
+        instead of surfacing an error nobody issued a command to see."""
+        while True:
+            self._now_playing = await self._queue.pop_next(self._guild_id)
+            self._paused = False
+            if self._now_playing is None:
+                return
+            resolved = await self._source.resolve(query_or_url=self._now_playing.url)
+            if resolved:
+                self._voice.play(resolved[0].stream_url)
+                return
+            log.warning(
+                "queued track no longer resolves, skipping: %s (%s)",
+                self._now_playing.title, self._now_playing.url,
+            )

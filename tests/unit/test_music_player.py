@@ -31,10 +31,19 @@ class _StubSource:
     """A single `ResolvedTrack` per query is the common case every existing
     test here uses unchanged; a tuple of several stands in for a playlist
     link resolving to more than one (`YtDlpSource`'s own playlist-expansion
-    fidelity is `test_ytdlp_source.py`'s job, not this stub's)."""
+    fidelity is `test_ytdlp_source.py`'s job, not this stub's).
+
+    Every track handed in is ALSO registered under its own `.locator` --
+    `MusicPlayer._advance` resolves that locator again right before playing
+    (the lazy-resolve contract, `nora/domain/ports.py`), so a stub that only
+    answered the ORIGINAL query would make every test's second lookup miss
+    and skip the track as unresolvable."""
 
     def __init__(self, tracks: dict[str, _StubEntry]) -> None:
-        self._tracks = tracks
+        self._tracks: dict[str, _StubEntry] = dict(tracks)
+        for entry in tracks.values():
+            for track in ((entry,) if isinstance(entry, ResolvedTrack) else entry or ()):
+                self._tracks.setdefault(track.locator, track)
         self.resolved: list[str] = []
 
     async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
@@ -83,11 +92,11 @@ class _FakeVoiceSession:
 
 _TRACK_A = ResolvedTrack(
     title="Track A", stream_url="https://cdn.example/a", duration_seconds=200,
-    source="youtube", source_id="a",
+    source="youtube", source_id="a", locator="locator-a",
 )
 _TRACK_B = ResolvedTrack(
     title="Track B", stream_url="https://cdn.example/b", duration_seconds=180,
-    source="youtube", source_id="b",
+    source="youtube", source_id="b", locator="locator-b",
 )
 
 
@@ -285,3 +294,37 @@ async def test_a_playlist_resolve_while_something_is_playing_only_enqueues_all()
     assert voice.played == ["https://cdn.example/a"]
     status = await player.status()
     assert [t.title for t in status.queue] == ["Track B", "Track B"]
+
+
+async def test_advance_re_resolves_the_locator_rather_than_reusing_a_cached_stream() -> None:
+    """The lazy-resolve contract (`nora/domain/ports.py`): `QueuedTrack.url`
+    is a locator, not a cached stream URL, so `_advance` must hand it back
+    into `resolve()` to get something actually playable."""
+    player, voice = _player({"track a": _TRACK_A})
+    source = player._source  # type: ignore[attr-defined]
+
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    assert source.resolved == ["track a", "locator-a"]
+    assert voice.played == ["https://cdn.example/a"]
+
+
+async def test_a_track_that_no_longer_resolves_by_play_time_is_skipped() -> None:
+    """A queued track can go stale between enqueue and play time (deleted,
+    region-locked, a dead playlist entry) -- `_advance` must move on to the
+    next track rather than handing `voice.play` nothing."""
+    player, voice = _player({"track a": _TRACK_A, "track b": _TRACK_B})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
+    # `track a` (now playing) is about to vanish by the time it's re-resolved
+    # on skip; `track b` is still there.
+    del player._source._tracks["locator-a"]  # type: ignore[attr-defined]
+
+    skipped = await player.skip()
+
+    assert skipped is not None and skipped.title == "Track A"
+    assert voice.played == ["https://cdn.example/a", "https://cdn.example/b"]
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+    assert status.queue == []

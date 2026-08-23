@@ -67,6 +67,13 @@ note on this):
   `url`, `title`
 - `added_by_person_id`, `added_at`
 
+`url` holds `ResolvedTrack.locator` — a resolve INPUT to re-derive the exact
+same track from, never a cached playable stream URL (those are short-lived
+by the source host's own policy, and for a playlist-listed track no stream
+URL was even resolved yet — `01-playback-and-source.md`'s flat-listing
+section). `MusicPlayer._advance` re-resolves this column's value right
+before a track plays.
+
 No `expires_at`. No foreign key to a "session" concept — the queue table
 *is* the session's durable half; there is nothing else for a row to point
 at. Migration number is the next one after the current single head

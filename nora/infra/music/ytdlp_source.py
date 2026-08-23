@@ -17,6 +17,18 @@ that ONE video only, by construction: `_target_for` strips those params
 before the URL ever reaches yt-dlp, so there is nothing left for it to
 expand. Least-surprise: pasting a video link never silently queues fifty
 unrelated tracks.
+
+**A playlist listing is flat, not fully resolved.** Expanding a 50-track
+playlist by fully resolving every entry's playable stream URL upfront
+(one `extract_info` per video) makes a single `/music play` call block on
+up to 50 network round-trips before it can even reply. Instead, a
+playlist target is extracted with `extract_flat=True` — title and video
+ID per entry, no per-track stream lookup — and each entry's real stream
+URL is resolved lazily, on demand, right before it plays
+(`MusicPlayer._advance`, `03-state-and-persistence.md`). This is why
+`ResolvedTrack.locator` exists: it is always a re-derivable `query_or_url`
+for that specific track, so a later `resolve()` call gets the actual
+stream URL back.
 """
 
 from __future__ import annotations
@@ -56,6 +68,18 @@ _YDL_OPTS: dict[str, Any] = {
     "skip_download": True,
 }
 
+# A playlist LISTING only needs title + video ID per entry — `extract_flat`
+# skips the per-video format lookup entirely, which is what keeps expanding
+# a 50-track playlist from blocking a single `/music play` call on up to 50
+# network round-trips (module docstring). No `format` option: flat entries
+# never carry a `formats` list to select from.
+_FLAT_YDL_OPTS: dict[str, Any] = {
+    "extract_flat": True,
+    "quiet": True,
+    "no_warnings": True,
+    "skip_download": True,
+}
+
 
 class _Extractor(Protocol):
     def extract_info(self, url: str, *, download: bool) -> Any: ...
@@ -69,22 +93,36 @@ def _default_extractor() -> _Extractor:
     return yt_dlp.YoutubeDL(_YDL_OPTS)  # type: ignore[arg-type]
 
 
+def _default_flat_extractor() -> _Extractor:
+    return yt_dlp.YoutubeDL(_FLAT_YDL_OPTS)  # type: ignore[arg-type]
+
+
 class YtDlpSource:
     """Satisfies `nora.domain.ports.TrackSource`. NEVER raises."""
 
-    def __init__(self, *, extractor: _Extractor | None = None) -> None:
+    def __init__(
+        self, *, extractor: _Extractor | None = None, flat_extractor: _Extractor | None = None,
+    ) -> None:
         self._extractor = extractor if extractor is not None else _default_extractor()
+        self._flat_extractor = (
+            flat_extractor if flat_extractor is not None else _default_flat_extractor()
+        )
 
     async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
         target = _target_for(query_or_url)
         if target is None:
             return ()
+        is_playlist = _is_playlist_page(urlsplit(target))
+        extractor = self._flat_extractor if is_playlist else self._extractor
         try:
-            info = await asyncio.to_thread(self._extractor.extract_info, target, download=False)
+            info = await asyncio.to_thread(extractor.extract_info, target, download=False)
         except Exception:
             log.warning("yt-dlp could not resolve %r", target, exc_info=True)
             return ()
-        return _tracks_from_info(info)
+        if is_playlist:
+            return _tracks_from_flat_playlist(info)
+        track = _track_from_resolved_info(_unwrap_search_result(info))
+        return (track,) if track is not None else ()
 
 
 def _is_playlist_page(parsed: SplitResult) -> bool:
@@ -122,22 +160,58 @@ def _target_for(query_or_url: str) -> str | None:
     return f"ytsearch1:{query_or_url}"
 
 
-def _tracks_from_info(raw: dict[str, Any] | None) -> Sequence[ResolvedTrack]:
+def _watch_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _unwrap_search_result(raw: dict[str, Any] | None) -> dict[str, Any] | None:
+    """`ytsearch1:...` comes back wrapped in the SAME `{"_type": "playlist",
+    "entries": [...]}` shape a real playlist page does, even for a single
+    result — yt-dlp treats every search as a mini-playlist. This is
+    distinct from `_is_playlist_page`'s TARGET-shape check above (a search
+    query is never treated as a playlist link to expand); it only unwraps
+    this one already-known-single-result shape so `_track_from_resolved_
+    info` sees the same plain info dict a direct video URL resolves to."""
+    if raw is not None and raw.get("_type") == "playlist":
+        entries = raw.get("entries") or []
+        return entries[0] if entries else None
+    return raw
+
+
+def _tracks_from_flat_playlist(raw: dict[str, Any] | None) -> Sequence[ResolvedTrack]:
     if raw is None:
         return ()
-    if raw.get("_type") == "playlist":
-        entries = raw.get("entries") or []
-        tracks = []
-        for entry in entries[:_MAX_PLAYLIST_TRACKS]:
-            track = _track_from_single_info(entry)
-            if track is not None:
-                tracks.append(track)
-        return tuple(tracks)
-    track = _track_from_single_info(raw)
-    return (track,) if track is not None else ()
+    entries = raw.get("entries") or []
+    tracks = []
+    for entry in entries[:_MAX_PLAYLIST_TRACKS]:
+        track = _track_from_flat_entry(entry)
+        if track is not None:
+            tracks.append(track)
+    return tuple(tracks)
 
 
-def _track_from_single_info(info: dict[str, Any] | None) -> ResolvedTrack | None:
+def _track_from_flat_entry(entry: dict[str, Any] | None) -> ResolvedTrack | None:
+    """A flat playlist entry carries an ID and a title only — no per-track
+    stream lookup happened (module docstring). `stream_url` stays empty;
+    `locator` is what `MusicPlayer._advance` later hands back to `resolve()`
+    to get the real stream URL, right before this track plays."""
+    if entry is None:
+        return None
+    video_id = entry.get("id")
+    if not video_id:
+        return None
+    video_id = str(video_id)
+    return ResolvedTrack(
+        title=entry.get("title") or video_id,
+        stream_url="",
+        duration_seconds=entry.get("duration"),
+        source="youtube",
+        source_id=video_id,
+        locator=_watch_url(video_id),
+    )
+
+
+def _track_from_resolved_info(info: dict[str, Any] | None) -> ResolvedTrack | None:
     if info is None:
         return None
     stream_url = info.get("url")
@@ -147,10 +221,17 @@ def _track_from_single_info(info: dict[str, Any] | None) -> ResolvedTrack | None
         # "could not resolve a playable stream" is a plain, expected outcome
         # here, not an error.
         return None
+    video_id = str(info.get("id") or "")
+    # The resolved video's own ID, never the original `target` -- a search
+    # query re-resolved later (`ytsearch1:...`) could land on a DIFFERENT
+    # top result; the video this call actually found is what `locator` must
+    # keep pointing at.
+    locator = _watch_url(video_id) if video_id else stream_url
     return ResolvedTrack(
         title=info.get("title") or info.get("id") or "unknown",
         stream_url=stream_url,
         duration_seconds=info.get("duration"),
         source="youtube",
-        source_id=str(info.get("id", "")),
+        source_id=video_id,
+        locator=locator,
     )

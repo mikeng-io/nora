@@ -23,10 +23,19 @@ import discord
 from discord import app_commands
 
 from nora.platform.discord.music_manager import MusicPlayerManager
-from nora.platform.discord.music_player import PlayOutcome
+from nora.platform.discord.music_player import PlayerStatus, PlayOutcome
 from nora.platform.discord.voice_session import DiscordVoiceSession
 
 log = logging.getLogger("nora.music")
+
+# Discord rejects a message body over 2000 chars outright (HTTPException
+# 50035) -- a naive one-line-per-track reply blew straight past this once
+# playlist expansion (01-playback-and-source.md) made a 50-track queue
+# routine instead of a "someone pasted an enormous list" edge case. The
+# trailer budget reserves room for the "...and N more." line truncation
+# itself appends, so trimming never pushes the reply back over the limit.
+_DISCORD_MESSAGE_LIMIT = 2000
+_TRUNCATION_TRAILER_BUDGET = 40
 
 
 def _connect_factory(
@@ -68,6 +77,30 @@ def _reply_for(outcome: PlayOutcome) -> str:
     # the first, so queuing fifty tracks doesn't read as queuing one.
     rest = outcome.queued_count - 1
     return f"{verb}: {outcome.track.title} (+{rest} more from the playlist)"
+
+
+def _queue_reply(status: PlayerStatus) -> str:
+    """Caller's job to have already checked `now_playing is not None` --
+    that's what makes it worth showing a queue reply at all."""
+    now_playing = status.now_playing
+    if now_playing is None:
+        return "Nothing is playing."
+    suffix = " (paused)" if status.paused else ""
+    lines = [f"Now playing: {now_playing.title}{suffix}"]
+    budget = _DISCORD_MESSAGE_LIMIT - _TRUNCATION_TRAILER_BUDGET
+    length = len(lines[0])
+    shown = 0
+    for i, track in enumerate(status.queue, start=1):
+        line = f"{i}. {track.title}"
+        length += 1 + len(line)  # +1 for the joining newline
+        if length > budget:
+            break
+        lines.append(line)
+        shown += 1
+    remaining = len(status.queue) - shown
+    if remaining > 0:
+        lines.append(f"...and {remaining} more.")
+    return "\n".join(lines)
 
 
 class MusicCommands(app_commands.Group):
@@ -141,10 +174,7 @@ class MusicCommands(app_commands.Group):
         if status is None or status.now_playing is None:
             await interaction.followup.send("Nothing is playing.")
             return
-        suffix = " (paused)" if status.paused else ""
-        lines = [f"Now playing: {status.now_playing.title}{suffix}"]
-        lines += [f"{i}. {t.title}" for i, t in enumerate(status.queue, start=1)]
-        await interaction.followup.send("\n".join(lines))
+        await interaction.followup.send(_queue_reply(status))
 
     @app_commands.command(name="pause", description="Pause playback.")
     async def pause(self, interaction: discord.Interaction) -> None:

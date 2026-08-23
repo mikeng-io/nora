@@ -34,9 +34,22 @@ def _as_sequence(found: _StubEntry) -> Sequence[ResolvedTrack]:
     return found
 
 
+def _with_locators_registered(tracks: dict[str, _StubEntry]) -> dict[str, _StubEntry]:
+    """`MusicPlayer._advance` resolves a queued track's `.locator` again
+    right before playing it (the lazy-resolve contract, `nora/domain/
+    ports.py`) -- every track handed to a stub source must also answer to
+    its own locator, or that second lookup misses and the track is treated
+    as gone stale."""
+    registered = dict(tracks)
+    for entry in tracks.values():
+        for track in _as_sequence(entry):
+            registered.setdefault(track.locator, track)
+    return registered
+
+
 class _StubSource:
     def __init__(self, tracks: dict[str, _StubEntry]) -> None:
-        self._tracks = tracks
+        self._tracks = _with_locators_registered(tracks)
 
     async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
         return _as_sequence(self._tracks.get(query_or_url))
@@ -49,7 +62,7 @@ class _GatedSource:
     def __init__(
         self, tracks: dict[str, _StubEntry], *, gated_query: str, gate: asyncio.Event,
     ) -> None:
-        self._tracks = tracks
+        self._tracks = _with_locators_registered(tracks)
         self._gated_query = gated_query
         self._gate = gate
 
@@ -90,7 +103,7 @@ class _FakeVoiceSession:
 
 _TRACK_A = ResolvedTrack(
     title="Track A", stream_url="https://cdn.example/a", duration_seconds=200,
-    source="youtube", source_id="a",
+    source="youtube", source_id="a", locator="locator-a",
 )
 
 

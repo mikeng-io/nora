@@ -93,6 +93,24 @@ whether to start playback — only the FIRST call for an idle guild advances;
 the rest of an expanded playlist just joins the queue behind it, same as if
 they'd been added one at a time (03-state-and-persistence.md).
 
+### A playlist listing is flat; the actual stream is resolved lazily
+
+Fully resolving 50 tracks' playable stream URLs (one `extract_info` call per
+video) before a single `/music play` reply can even be sent made that call
+block for however long 50 sequential yt-dlp round-trips take — discovered
+live 2026-08-23, minutes long, and indistinguishable from Nora being stuck.
+`YtDlpSource` now expands a playlist TARGET with `extract_flat=True` — title
+and video ID per entry only, no per-track format lookup — and
+`ResolvedTrack.locator` carries a re-derivable `query_or_url` for that exact
+track (never the raw search text, which could re-resolve to a different top
+result later). `MusicQueueStore`'s `url` column has always been documented
+as "a resolve INPUT to re-derive from, not a cache" (`ResolvedTrack`'s own
+docstring, `nora/domain/ports.py`) — this closes the gap between that stated
+contract and what `MusicPlayer` actually stored. `MusicPlayer._advance`
+resolves the locator fresh, right before a track plays; a track gone stale
+by then (deleted, region-locked, a dead playlist entry) is skipped rather
+than failing playback.
+
 Per this repo's port convention (`CLAUDE.md`: *"A port never gains a second
 implementation — including a test fake — without a shared contract suite
 both pass"*), a single implementation needs no contract suite yet — an
