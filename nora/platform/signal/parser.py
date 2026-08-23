@@ -12,7 +12,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from ...domain.media import MediaRef, label_for, render_placeholder
+from ...domain.media import MediaRef, label_for, render_placeholder, resolve_media_type
 from ...domain.models import NormalizedMessage, Quote
 
 log = logging.getLogger("nora.signal.parser")
@@ -42,15 +42,29 @@ PLACEHOLDER = "\ufffc"
 # A shared audio FILE keeps its original filename, so this is a strong, not
 # proof-certain, signal. Remove this fallback once `voiceNote` is confirmed
 # present in the deployed signal-cli's JSON-RPC output.
+#
+# R-58: the filename match is gated on the resolved media type ALSO
+# being `audio/*`, deliberately narrower than the flag it stands in for.
+# `nora.ingest.stages.media` gates TRANSCRIPTION on `ref.voice_note` alone,
+# not on MIME type (DEC-131) — that gate trusted `voiceNote` because only
+# signal-cli itself could set it. A bare filename match would let a sender
+# name any attachment `signal-<timestamp>.<unknown-ext>` and have its bytes
+# posted to the local STT endpoint even though `label_for` still displays it
+# as `[file]` — what's shown and what's processed would diverge. Requiring
+# an actual audio type keeps the heuristic sender-shaped but not
+# sender-arbitrary: a `.dat` or other non-audio extension never matches.
 _SIGNAL_APP_VOICE_NOTE_FILENAME = re.compile(
     r"^signal-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{3}\.\w+$"
 )
 
 
-def _is_voice_note(att: dict, *, filename: str | None) -> bool:
+def _is_voice_note(att: dict, *, filename: str | None, media_type: str) -> bool:
     if att.get("voiceNote"):
         return True
-    return bool(filename and _SIGNAL_APP_VOICE_NOTE_FILENAME.match(filename))
+    if not filename or not _SIGNAL_APP_VOICE_NOTE_FILENAME.match(filename):
+        return False
+    resolved = resolve_media_type(declared=media_type, filename=filename)
+    return resolved.startswith("audio/")
 
 
 def _media_ref(att: dict) -> MediaRef:
@@ -61,20 +75,22 @@ def _media_ref(att: dict) -> MediaRef:
 
     `voiceNote` is read for forward compatibility but is not yet emitted by
     the deployed signal-cli version — see `_is_voice_note`'s comment above for
-    the confirmed root cause and the filename fallback it uses instead.
-    Either way, the failure mode stays harmless: an `audio/*` attachment this
+    the confirmed root cause, the filename fallback it uses instead, and why
+    that fallback also requires an audio media type (R-58). Either
+    way, the failure mode stays harmless: an `audio/*` attachment this
     heuristic misses renders `[audio]` instead of `[voice note]`, which is
     still the fix (she can tell somebody sent sound) and is never a wrong
     claim about who said what. `nora.domain.media.label_for` is where that
     fallback lives.
     """
     filename = str(att["filename"]) if att.get("filename") else None
+    media_type = str(att.get("contentType") or "")
     return MediaRef(
         platform_id=str(att.get("id") or ""),
-        media_type=str(att.get("contentType") or ""),
+        media_type=media_type,
         filename=filename,
         size=(int(att["size"]) if isinstance(att.get("size"), int) else None),
-        voice_note=_is_voice_note(att, filename=filename),
+        voice_note=_is_voice_note(att, filename=filename, media_type=media_type),
     )
 
 

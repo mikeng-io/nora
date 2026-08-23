@@ -195,6 +195,22 @@ def test_a_voice_note_is_still_recognised_when_signal_cli_omits_the_flag():
     assert msg.body == "[voice note]"
 
 
+def test_a_matching_filename_on_a_non_audio_attachment_is_not_a_voice_note():
+    """R-58: the filename heuristic is gated on the resolved media
+    type also being audio/*. Without this, a sender could name an arbitrary
+    attachment `signal-<timestamp>.<unknown-ext>` and have its bytes reach
+    the local STT endpoint (`ref.voice_note` alone gates transcription,
+    DEC-131) even though the attachment still renders as `[file]` — what's
+    shown and what's processed diverging is exactly the R-27 shape this
+    guards against."""
+    msg = parse_event(
+        envelope(message=None, attachments=[
+            {"filename": "signal-2026-08-23-19-01-25-369.dat", "id": "att5"},
+        ]), OWN
+    )
+    assert msg.body == "[file]"
+
+
 def test_a_renamed_or_shared_file_is_not_mistaken_for_a_voice_note():
     """The filename fallback is anchored and extension-agnostic but not
     fooled by a near-miss — a shared file that merely starts with `signal-`
