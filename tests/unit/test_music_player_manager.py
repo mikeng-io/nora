@@ -31,6 +31,23 @@ class _StubSource:
         return self._tracks.get(query_or_url)
 
 
+class _GatedSource:
+    """Resolves normally for every query except `gated_query`, which blocks
+    on `gate` first -- lets a test hold a `play()` call open mid-resolve."""
+
+    def __init__(
+        self, tracks: dict[str, ResolvedTrack | None], *, gated_query: str, gate: asyncio.Event,
+    ) -> None:
+        self._tracks = tracks
+        self._gated_query = gated_query
+        self._gate = gate
+
+    async def resolve(self, *, query_or_url: str) -> ResolvedTrack | None:
+        if query_or_url == self._gated_query:
+            await self._gate.wait()
+        return self._tracks.get(query_or_url)
+
+
 class _FakeVoiceSession:
     def __init__(self) -> None:
         self.played: list[str] = []
@@ -82,7 +99,7 @@ def _manager(tracks: dict[str, ResolvedTrack | None]) -> MusicPlayerManager:
     )
 
 
-async def test_play_is_rejected_when_the_requester_is_not_in_voice_and_no_player_exists() -> None:
+async def test_r57_play_refused_when_requester_not_in_voice_and_no_player_exists() -> None:
     manager = _manager({"track a": _TRACK_A})
 
     outcome = await manager.play(
@@ -176,7 +193,7 @@ async def test_a_new_track_before_the_idle_timeout_cancels_the_pending_disconnec
     assert (await manager.status("guild-1")) is not None
 
 
-async def test_on_voice_channel_emptied_leaves_immediately_no_idle_grace() -> None:
+async def test_r58_a_voice_channel_emptied_of_humans_disconnects_immediately() -> None:
     manager = _manager({"track a": _TRACK_A})
     session = _FakeVoiceSession()
 
@@ -192,3 +209,84 @@ async def test_on_voice_channel_emptied_leaves_immediately_no_idle_grace() -> No
 
     assert session.disconnected == 1
     assert await manager.status("guild-1") is None
+
+
+async def test_two_concurrent_first_plays_for_a_guild_connect_only_once() -> None:
+    """The race a subagent review found: `_get_or_create`'s check-then-act
+    ('no existing player, so connect') is not atomic across `await`. Two
+    `/music play` calls landing for the same guild before either has
+    finished connecting must not both open a voice connection — the loser
+    would be silently orphaned (never stopped or disconnected)."""
+    manager = _manager({"track a": _TRACK_A})
+    gate = asyncio.Event()
+    connect_calls = 0
+
+    async def slow_connect() -> _FakeVoiceSession:
+        nonlocal connect_calls
+        connect_calls += 1
+        await gate.wait()
+        return _FakeVoiceSession()
+
+    task1 = asyncio.ensure_future(manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=slow_connect,
+    ))
+    task2 = asyncio.ensure_future(manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=slow_connect,
+    ))
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    gate.set()
+    outcome1, outcome2 = await asyncio.gather(task1, task2)
+
+    assert connect_calls == 1
+    assert outcome1 is not None
+    assert outcome2 is not None
+
+
+async def test_reusing_an_idle_player_cancels_its_timer_before_the_slow_resolve() -> None:
+    """The other race a subagent review found: cancelling the idle timer
+    only in `_after_transition`, at the END of `play()`, leaves it running
+    across the resolve/enqueue await in between -- long enough for it to
+    fire and tear the player down mid-call."""
+    gate = asyncio.Event()
+    source = _GatedSource(
+        {"track a": _TRACK_A, "track b": _TRACK_A}, gated_query="track b", gate=gate,
+    )
+    manager = MusicPlayerManager(
+        # 0.0, not the usual test double: a REAL `asyncio.sleep(0.0)`
+        # resolves on close to the very next loop tick, which is what makes
+        # this a genuine race against the gated resolve below rather than a
+        # timer that could never win regardless of the fix.
+        queue_store=FakeMusicQueueStore(), track_source=source,
+        idle_timeout_seconds=0.0, spawn=asyncio.ensure_future, clock_sleep=asyncio.sleep,
+    )
+    session = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return session
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+    )
+    await manager.on_track_finished("guild-1")  # queue empty -> idle timer scheduled
+
+    play_task = asyncio.ensure_future(manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    ))
+    # Let play_task start (reuse the existing player, cancel its idle timer,
+    # then block on the gated resolve) and give the idle task every
+    # remaining chance to also run.
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    assert session.disconnected == 0, "the idle timer fired despite reuse cancelling it"
+
+    gate.set()
+    outcome = await play_task
+
+    assert outcome is not None
+    assert outcome.status == "playing"

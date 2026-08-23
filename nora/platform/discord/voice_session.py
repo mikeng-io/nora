@@ -11,6 +11,19 @@ transition explicitly and synchronously, so this class must SWALLOW the
 twice (once from `MusicPlayer.skip()`'s own `_advance()`, again from the
 callback it did not expect to see).
 
+**A second, subtler race** (subagent review, 2026-08-23): a track ending
+naturally schedules `on_finished()` via `run_coroutine_threadsafe` — QUEUED
+on the loop, not run yet. If `MusicPlayer.skip()` reaches `voice.stop()`
+before that queued coroutine gets a turn (the common case: `skip()`'s call
+chain has no `await` before `voice.stop()`, so it reliably wins the race
+under Python's cooperative scheduling), the suppression flag above does
+NOT help — it only guards the NEXT `after` invocation `stop()` itself
+causes, not an EARLIER one already scheduled. Left unfixed, both the
+already-queued `on_finished()` and `skip()`'s own explicit advance run,
+advancing the queue twice for one skip. Fixed by keeping the `Future`
+`run_coroutine_threadsafe` returns and cancelling it in `stop()` — before
+the coroutine has started, cancellation prevents it from ever running.
+
 `after` fires from the audio player's OWN THREAD, never the event loop's —
 `asyncio.run_coroutine_threadsafe` is the only safe way back onto it from
 there.
@@ -21,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Coroutine
+from concurrent.futures import Future
 from typing import Any
 
 import discord
@@ -52,6 +66,7 @@ class DiscordVoiceSession:
         self._on_finished = on_finished
         self._audio_source_factory = audio_source_factory
         self._suppress_next_after = False
+        self._pending_finish: Future[None] | None = None
 
     def is_playing(self) -> bool:
         return bool(self._voice_client.is_playing())
@@ -67,6 +82,13 @@ class DiscordVoiceSession:
         self._voice_client.resume()
 
     def stop(self) -> None:
+        # Cancel a completion this `stop()` is about to SUPERSEDE — see the
+        # module docstring's second race. `Future.cancel()` on a not-yet-
+        # started `run_coroutine_threadsafe` future prevents it from ever
+        # running; a no-op if it already ran or was never scheduled.
+        if self._pending_finish is not None:
+            self._pending_finish.cancel()
+            self._pending_finish = None
         self._suppress_next_after = True
         self._voice_client.stop()
 
@@ -81,4 +103,19 @@ class DiscordVoiceSession:
             return
         if error is not None:
             log.warning("voice playback ended with an error: %s", error)
-        asyncio.run_coroutine_threadsafe(self._on_finished(), self._loop)
+        self._pending_finish = asyncio.run_coroutine_threadsafe(
+            self._run_on_finished(), self._loop,
+        )
+
+    async def _run_on_finished(self) -> None:
+        # The `Future` `run_coroutine_threadsafe` returns is otherwise never
+        # awaited by anything — an exception raised inside `on_finished()`
+        # (e.g. a transient DB error in `MusicPlayerManager.on_track_
+        # finished`) would sit unretrieved on that Future forever, logged
+        # nowhere, and playback would just silently stop.
+        try:
+            await self._on_finished()
+        except Exception:
+            log.exception("on_finished handler raised")
+        finally:
+            self._pending_finish = None

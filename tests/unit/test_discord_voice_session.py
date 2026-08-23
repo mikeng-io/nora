@@ -18,6 +18,7 @@ constructor, which a unit test must never do.
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import patch
 
 from nora.platform.discord.voice_session import DiscordVoiceSession
 
@@ -132,6 +133,86 @@ async def test_a_natural_after_firing_without_a_preceding_stop_schedules_on_fini
     await asyncio.sleep(0)
 
     assert finished.is_set() is True
+
+
+async def test_a_pending_natural_finish_is_cancelled_by_a_stop_that_beats_it_to_running() -> None:
+    """The race a subagent review found: `_after` schedules `on_finished`
+    via `run_coroutine_threadsafe` (queued, not yet run) when a track ends
+    naturally; if `MusicPlayer.skip()` reaches `voice.stop()` before that
+    scheduled coroutine gets a turn, the stale notification must never
+    fire — or `skip()`'s own advance and this one both run, skipping two
+    tracks for one skip command."""
+    voice_client = _FakeVoiceClient()
+    calls: list[str] = []
+
+    async def on_finished() -> None:
+        calls.append("finished")
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(),
+        on_finished=on_finished, audio_source_factory=lambda url: url,
+    )
+    session.play("https://cdn.example/a")
+
+    # The track ends naturally -- `_after` schedules `on_finished` but the
+    # loop has not run it yet.
+    voice_client.stop()
+    # `MusicPlayer.skip()`'s own `voice.stop()` call, reaching here with no
+    # intervening `await` -- the exact ordering `skip()` produces in
+    # practice (no yield point before it in the real call chain).
+    session.stop()
+
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert calls == []
+
+
+async def test_a_natural_finish_that_already_ran_is_unaffected_by_a_later_stop() -> None:
+    """The other half of the same fix: a completion that already fired
+    (and was not superseded by anything) must still be delivered."""
+    voice_client = _FakeVoiceClient()
+    calls: list[str] = []
+
+    async def on_finished() -> None:
+        calls.append("finished")
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(),
+        on_finished=on_finished, audio_source_factory=lambda url: url,
+    )
+    session.play("https://cdn.example/a")
+
+    voice_client.stop()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert calls == ["finished"]
+
+    # A later, unrelated stop() must not un-deliver or duplicate it.
+    session.stop()
+    await asyncio.sleep(0)
+
+    assert calls == ["finished"]
+
+
+async def test_an_exception_from_on_finished_is_logged_not_swallowed() -> None:
+    voice_client = _FakeVoiceClient()
+
+    async def on_finished() -> None:
+        raise RuntimeError("boom")
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(),
+        on_finished=on_finished, audio_source_factory=lambda url: url,
+    )
+    session.play("https://cdn.example/a")
+
+    with patch("nora.platform.discord.voice_session.log") as mock_log:
+        voice_client.stop()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    assert mock_log.exception.called
 
 
 async def test_disconnect_delegates_to_the_voice_client() -> None:

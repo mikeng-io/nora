@@ -46,6 +46,15 @@ class MusicPlayerManager:
         self._clock_sleep = clock_sleep
         self._players: dict[str, MusicPlayer] = {}
         self._idle_tasks: dict[str, asyncio.Task[None]] = {}
+        # `play()`'s whole body runs under this — "no existing player, so
+        # connect" is a check-then-act across an `await`, and enqueuing a
+        # track is another; without a lock, two `/music play` calls for the
+        # same guild can both pass the check and both connect (orphaning
+        # the loser's voice connection), or both enqueue at once (subagent
+        # review, 2026-08-23). One lock per guild, created on first use --
+        # `setdefault` is a single synchronous dict operation, so creating
+        # the LOCK itself cannot race the same way.
+        self._guild_locks: dict[str, asyncio.Lock] = {}
 
     async def play(
         self,
@@ -60,15 +69,31 @@ class MusicPlayerManager:
         `connect is None` (the requester is not in any voice channel).
         Reuses an existing player regardless of `connect` — only STARTING a
         session requires the requester to be present
-        (03-state-and-persistence.md's own rule)."""
-        player = await self._get_or_create(guild_id, connect)
-        if player is None:
-            return None
-        outcome = await player.play(
-            query_or_url=query_or_url, requested_by=requested_by, added_at=added_at,
-        )
-        await self._after_transition(guild_id, player)
-        return outcome
+        (03-state-and-persistence.md's own rule).
+
+        The WHOLE method runs under this guild's lock, not just the
+        get-or-create step — Nora is one process, so this is what keeps two
+        `/music play` calls for the same guild from ever reaching
+        `MusicQueueStore.enqueue` at the same time at all (that store's own
+        UNIQUE-constraint-plus-retry is a second, independent line of
+        defence for whatever this lock doesn't cover — a future multi-
+        process deployment, say — not the mechanism this one relies on)."""
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            player = await self._get_or_create(guild_id, connect)
+            if player is None:
+                return None
+            # Cancel BEFORE the slow resolve/enqueue await below, not only
+            # in `_after_transition` at the end — an idle timer left
+            # running across that await can fire and tear the player down
+            # mid-`play()` (subagent review, 2026-08-23: reusing an idle
+            # player raced its own idle-disconnect timer).
+            self._cancel_idle_disconnect(guild_id)
+            outcome = await player.play(
+                query_or_url=query_or_url, requested_by=requested_by, added_at=added_at,
+            )
+            await self._after_transition(guild_id, player)
+            return outcome
 
     async def skip(self, guild_id: str) -> QueuedTrack | None:
         player = self._players.get(guild_id)
@@ -108,6 +133,10 @@ class MusicPlayerManager:
         await self._leave(guild_id)
 
     async def _get_or_create(self, guild_id: str, connect: Connect | None) -> MusicPlayer | None:
+        """Only ever called from `play()`, already holding this guild's
+        lock (`asyncio.Lock` is not re-entrant, so this must NOT also
+        acquire it) — that lock is what makes this method's own
+        check-then-act ("no existing player, so connect") safe."""
         existing = self._players.get(guild_id)
         if existing is not None:
             return existing

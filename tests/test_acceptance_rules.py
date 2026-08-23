@@ -320,6 +320,20 @@ RULE_TESTS = {
     # free-text column, so this is the type-boundary sibling of DEC-120's
     # DB-CHECK guarantee, not a weaker substitute for it).
     "DEC-121": "test_room_portrait_narrative_cannot_reference_a_person",
+    # R-57 (design/discord-music/03-state-and-persistence.md, "Connect
+    # trigger — and its rejection"): starting a NEW music session for a
+    # guild requires the requester to be in a voice channel; an existing
+    # session is never gated this way (only STARTING one names a
+    # destination channel). Next free number after R-55 (R-56 already
+    # claimed, DEC-133's own row).
+    "R-57": "test_r57_play_refused_when_requester_not_in_voice_and_no_player_exists",
+    # R-58 (same document, "Disconnect behavior"): a voice channel emptying
+    # of humans disconnects immediately, no grace period — distinct from
+    # timer 2 (queue empty, nothing playing -> idle-timeout leave), covered
+    # by the sibling tests `test_queue_emptying_schedules_an_idle_
+    # disconnect` and `test_a_new_track_before_the_idle_timeout_cancels_
+    # the_pending_disconnect` in the same file.
+    "R-58": "test_r58_a_voice_channel_emptied_of_humans_disconnects_immediately",
 }
 
 

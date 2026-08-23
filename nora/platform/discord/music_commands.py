@@ -92,10 +92,22 @@ class MusicCommands(app_commands.Group):
         )
 
         await interaction.response.defer()
-        outcome = await self._manager.play(
-            guild_id=guild_id, query_or_url=query, requested_by=str(interaction.user.id),
-            added_at=discord.utils.utcnow(), connect=connect,
-        )
+        try:
+            outcome = await self._manager.play(
+                guild_id=guild_id, query_or_url=query, requested_by=str(interaction.user.id),
+                added_at=discord.utils.utcnow(), connect=connect,
+            )
+        except Exception:
+            # `connect()` (inside `connect`, above) can raise -- a rate
+            # limit, a permission error, a Gateway timeout. Without this,
+            # the already-deferred interaction is left unresolved and
+            # Discord shows "The application did not respond" with nothing
+            # in the logs to explain why.
+            log.exception("music play failed for guild %s", guild_id)
+            await interaction.followup.send(
+                "Couldn't join the voice channel — try again in a moment.", ephemeral=True,
+            )
+            return
         if outcome is None:
             await interaction.followup.send(
                 "Join a voice channel first, then try again.", ephemeral=True,
@@ -107,49 +119,50 @@ class MusicCommands(app_commands.Group):
     async def skip(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        await interaction.response.defer()
         skipped = await self._manager.skip(str(interaction.guild_id))
         if skipped is None:
-            await interaction.response.send_message("Nothing is playing.", ephemeral=True)
+            await interaction.followup.send("Nothing is playing.")
             return
-        await interaction.response.send_message(f"Skipped: {skipped.title}")
+        await interaction.followup.send(f"Skipped: {skipped.title}")
 
     @app_commands.command(name="queue", description="Show what's playing and queued.")
     async def queue(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        await interaction.response.defer()
         status = await self._manager.status(str(interaction.guild_id))
         if status is None or status.now_playing is None:
-            await interaction.response.send_message("Nothing is playing.", ephemeral=True)
+            await interaction.followup.send("Nothing is playing.")
             return
         suffix = " (paused)" if status.paused else ""
         lines = [f"Now playing: {status.now_playing.title}{suffix}"]
         lines += [f"{i}. {t.title}" for i, t in enumerate(status.queue, start=1)]
-        await interaction.response.send_message("\n".join(lines))
+        await interaction.followup.send("\n".join(lines))
 
     @app_commands.command(name="pause", description="Pause playback.")
     async def pause(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        await interaction.response.defer()
         ok = await self._manager.pause(str(interaction.guild_id))
-        await interaction.response.send_message(
-            "Paused." if ok else "Nothing is playing.", ephemeral=not ok,
-        )
+        await interaction.followup.send("Paused." if ok else "Nothing is playing.")
 
     @app_commands.command(name="resume", description="Resume playback.")
     async def resume(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        await interaction.response.defer()
         ok = await self._manager.resume(str(interaction.guild_id))
-        await interaction.response.send_message(
-            "Resumed." if ok else "Not paused.", ephemeral=not ok,
-        )
+        await interaction.followup.send("Resumed." if ok else "Not paused.")
 
     @app_commands.command(name="stop", description="Stop playback, clear the queue, and leave.")
     async def stop(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        await interaction.response.defer()
         await self._manager.stop(str(interaction.guild_id))
-        await interaction.response.send_message("Stopped.")
+        await interaction.followup.send("Stopped.")
 
 
 async def register(client: discord.Client, manager: MusicPlayerManager) -> None:
@@ -175,6 +188,12 @@ async def register(client: discord.Client, manager: MusicPlayerManager) -> None:
         left_channel = before.channel
         if left_channel is None or after.channel == left_channel:
             return  # not "left a channel" (e.g. a mute/deafen toggle)
+        bot_voice_client = left_channel.guild.voice_client
+        if bot_voice_client is None or bot_voice_client.channel != left_channel:
+            # The bot isn't connected to THIS channel — an unrelated voice
+            # channel in the same guild emptying must not tear down a
+            # session that's actively playing somewhere else.
+            return
         if any(not m.bot for m in left_channel.members):
             return  # still has humans
         await manager.on_voice_channel_emptied(str(left_channel.guild.id))

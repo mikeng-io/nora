@@ -8,9 +8,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 from uuid import UUID
+
+from nora.domain.reminders import ensure_utc
+
+__all__ = ["MusicQueueStore", "QueuedTrack", "ensure_utc"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,9 +43,14 @@ class MusicQueueStore(Protocol):
     ) -> QueuedTrack:
         """Appends to the end of `guild_id`'s queue. `position` is assigned
         by the store as one past the current max for that guild (0 for an
-        empty queue) IN THE SAME STATEMENT — never a separate read-then-
-        write, which would race two `/music play` calls landing for the
-        same guild at once onto the same position."""
+        empty queue) — but NOT racily: two `/music play` calls landing for
+        the same guild at once must never both take the same position, and
+        a same-statement subquery is not sufficient to guarantee that
+        (verified live against Postgres, subagent review 2026-08-23: it
+        collides on every run under READ COMMITTED once two transactions
+        genuinely overlap). Whatever mechanism an implementation uses
+        (`SqlMusicQueueStore`: a UNIQUE constraint plus a bounded retry) is
+        this method's problem to solve, not its caller's."""
         ...
 
     async def pop_next(self, guild_id: str) -> QueuedTrack | None:
@@ -66,14 +75,8 @@ class MusicQueueStore(Protocol):
     async def aclose(self) -> None: ...
 
 
-def ensure_utc(value: datetime, *, field: str) -> datetime:
-    """Same rule `nora.domain.reminders.ensure_utc` enforces, restated here
-    rather than imported: a naive `datetime` names no instant, and a
-    `timestamptz` column round-trips whatever offset it is handed, so an
-    HKT `added_at` and a UTC one must produce the SAME stored value. Both
-    `MusicQueueStore` implementations call this — never each computing the
-    offset conversion independently — for the same reason
-    `SqlReminderStore`/`FakeReminderStore` share `plan_successor`."""
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{field} must be timezone-aware; got naive {value!r}")
-    return value.astimezone(UTC)
+# Re-exported, not re-implemented: `nora.domain.events` already established
+# the precedent (imports the same function rather than restating the naive-
+# datetime guard a second time) — a naive `added_at` names no instant for
+# exactly the reason it names no instant for a reminder, and two copies of
+# that check are two copies to keep in sync when it changes.

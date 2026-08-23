@@ -96,6 +96,7 @@ ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
 ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
 ADD CONSTRAINT sticker_index_pkey PRIMARY KEY (platform, fetch_token);
 ADD CONSTRAINT tool_call_log_pkey PRIMARY KEY (id);
+ADD CONSTRAINT uq_music_queue_guild_position UNIQUE (guild_id, "position");
 ADD CONSTRAINT uq_occupancy_bin UNIQUE (subject_id, place_id, hour_of_week);
 ADD CONSTRAINT version_announcements_pkey PRIMARY KEY (version, platform, conversation_id);
 ALTER TABLE ONLY public.alembic_version
@@ -123,6 +124,7 @@ ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.media_descriptions
 ALTER TABLE ONLY public.messages
+ALTER TABLE ONLY public.music_queue
 ALTER TABLE ONLY public.music_queue
 ALTER TABLE ONLY public.note
 ALTER TABLE ONLY public.note
@@ -229,7 +231,6 @@ CREATE INDEX idx_language_observation_scope ON public.language_observation USING
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
 CREATE INDEX idx_messages_dream_lag ON public.messages USING btree (conversation_id, id) WHERE (is_nora = 0);
 CREATE INDEX idx_messages_is_nora ON public.messages USING btree (is_nora);
-CREATE INDEX idx_music_queue_guild_position ON public.music_queue USING btree (guild_id, "position");
 CREATE INDEX idx_note_anchor ON public.note USING btree (workspace, anchor_date) WHERE (retired_at IS NULL);
 CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body public.gin_trgm_ops);
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);

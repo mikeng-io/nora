@@ -11,6 +11,12 @@ see. The column list and its order match
 `nora.infra.sql.schema.MUSIC_QUEUE` exactly; the parity gate fails on any
 drift.
 
+`uq_music_queue_guild_position` is UNIQUE, not a plain index (subagent
+review, 2026-08-23): `SqlMusicQueueStore.enqueue`'s `MAX(position)+1`
+subquery is not atomic under READ COMMITTED, so two concurrent `/music
+play` calls for one guild could otherwise land on the same position. This
+constraint is what `enqueue`'s retry loop catches as `IntegrityError`.
+
 Revision ID: 0028_music_queue
 Revises: 0027_fact_candidate_provenance
 Create Date: 2026-08-23
@@ -38,13 +44,12 @@ def upgrade() -> None:
         sa.Column("title", sa.Text, nullable=False),
         sa.Column("added_by_person_id", sa.Text, nullable=False),
         sa.Column("added_at", sa.DateTime(timezone=True), nullable=False),
-        # The constraint `alembic check` cannot see — the whole reason this
-        # revision is hand-written.
+        # The constraints `alembic check` cannot see — the whole reason
+        # this revision is hand-written.
         sa.CheckConstraint("position >= 0", name="ck_music_queue_position_non_negative"),
+        sa.UniqueConstraint("guild_id", "position", name="uq_music_queue_guild_position"),
     )
-    op.create_index("idx_music_queue_guild_position", "music_queue", ["guild_id", "position"])
 
 
 def downgrade() -> None:
-    op.drop_index("idx_music_queue_guild_position", table_name="music_queue")
     op.drop_table("music_queue")

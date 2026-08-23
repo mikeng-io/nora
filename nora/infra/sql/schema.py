@@ -1561,12 +1561,13 @@ MUSIC_QUEUE = sa.Table(
     sa.Column("added_by_person_id", sa.Text, nullable=False),
     sa.Column("added_at", sa.DateTime(timezone=True), nullable=False),
     sa.CheckConstraint("position >= 0", name="ck_music_queue_position_non_negative"),
-)
-
-#: The queue read every `/music queue` and `play` call makes: this guild's
-#: rows, in order. `(guild_id, position)` rather than `position` alone —
-#: `test_schema_parity.py`'s `idx_messages_conv_ts` precedent is a composite
-#: index for exactly this reason, a guild-scoped ordered scan.
-IDX_MUSIC_QUEUE_GUILD_POSITION = sa.Index(
-    "idx_music_queue_guild_position", MUSIC_QUEUE.c.guild_id, MUSIC_QUEUE.c.position,
+    # UNIQUE, not a plain index (subagent review, 2026-08-23): the
+    # `MAX(position)+1` subquery `SqlMusicQueueStore.enqueue` runs is NOT
+    # atomic under Postgres's default READ COMMITTED isolation — two
+    # concurrent `/music play` calls for the same guild can both read the
+    # same max and both insert the SAME position. This constraint is what
+    # turns that into a decidable `IntegrityError` `enqueue` retries against
+    # (`_PG_UNIQUE_VIOLATION`, the same translation `SqlReminderStore.create`
+    # already does), rather than two silently-colliding rows.
+    sa.UniqueConstraint("guild_id", "position", name="uq_music_queue_guild_position"),
 )
