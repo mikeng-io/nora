@@ -758,7 +758,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # return value rather than widening the pipeline's port to match.
         background.spawn(coro)
 
-    media_sources, blobs = _build_media_custody(cfg)
+    media_sources, blobs = await _build_media_custody(cfg)
 
     tier = cfg.llm
     api_key = os.environ.get(cfg.llm.api_key_env, "")  # presence already checked by config.load
@@ -1914,7 +1914,9 @@ async def _presence_preflight(
             log.exception("presence pre-flight failed for a policy conversation")
 
 
-def _build_media_custody(cfg: Config) -> tuple[MediaSourceRegistry | None, BlobStore | None]:
+async def _build_media_custody(
+    cfg: Config,
+) -> tuple[MediaSourceRegistry | None, BlobStore | None]:
     """The `(sources, blobs)` pair the ingest pipeline takes for byte custody, or
     `(None, None)` when custody is OFF (DEC-43 wiring, DEC-47 encryption).
 
@@ -1974,11 +1976,11 @@ def _build_media_custody(cfg: Config) -> tuple[MediaSourceRegistry | None, BlobS
             max_bytes=media.max_bytes,
         ),
     ])
-    blobs = _build_blob_store(cfg, cipher=cipher)
+    blobs = await _build_blob_store(cfg, cipher=cipher)
     return sources, blobs
 
 
-def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
+async def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
     """The filesystem default, or RustFS when `[media.rustfs]` is on and its
     credentials resolve (DEC-136).
 
@@ -2015,7 +2017,7 @@ def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
     )
     store = RustfsBlobStore(s3_client=s3, bucket=rustfs.bucket, cipher=cipher)
     try:
-        store.ensure_bucket()
+        await asyncio.to_thread(store.ensure_bucket)
     except Exception:
         # RustFS unreachable, or misconfigured beyond what the checks above
         # catch (wrong credentials, wrong bucket permissions). This runs at
