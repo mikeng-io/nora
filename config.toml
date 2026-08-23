@@ -222,7 +222,7 @@ enabled = true
 
 [engagement.queue]
 # Per-conversation FIFO depth beyond which an arriving tag is shed as a flood
-# (R-29). Bounds runaway growth, not waiting — a queued tag keeps its place
+# (R-30). Bounds runaway growth, not waiting — a queued tag keeps its place
 # however long the turn ahead of it takes, and there is no staleness rule.
 max_depth = 16
 
@@ -300,7 +300,15 @@ strict = true
 # new subsystem does not switch itself on — [presence]/[search]/[compute]/
 # [language]/[analytics]/[facts] all shipped inert too. Off, no DreamerRuntime
 # is constructed and the existing consolidators run exactly as they do today.
-enabled = true
+#
+# TEMPORARILY OFF (2026-08-21, operator instruction): fact-candidates is stuck
+# in a permanent MaxTokensReachedException retry loop on scope
+# 100000000000000201/100000000000000202 (watermark held at 1180, room's
+# language watermark at 1300 and climbing) while the fact tier's architecture
+# — no read/search/cross-compare tools during reasoning, Phase A pre-fetches
+# nothing — is being rebuilt on fact-tier-agentic-tools. Re-enable once that
+# lands, or once the stuck scope is otherwise resolved.
+enabled = false
 # The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
 # — and the distinction is stated because the earlier version of this comment
 # claimed the opposite while carrying a value nobody had measured.
@@ -733,7 +741,12 @@ max_horizon_days = 365
 # `RecordStore.since` keeps her own words out of the room's lexicon. Turn this
 # back off if the rendered block starts asserting things about people rather
 # than describing how the room talks.
-enabled = true
+# ALL-OFF (2026-08-23, operator instruction: "turn off ALL dreamer").
+# Everything the background tiers have written is wrong or unverified
+# (963 messages -> 2 rows, both wrong), and the substrate contract they
+# write against landed only today (design/dreamer-agent-loop/21).
+# Nothing writes until that contract is built against.
+enabled = false
 # tick_seconds = 300
 # safety_lag = 300
 # quiet_seconds = 1800
@@ -763,7 +776,12 @@ verify_known_entities = true
 # so this section is a flag and three bounds for a future adaptor, not a
 # running subsystem today. Stays off with this first deployment of the
 # schema, the same "off at first" period [language] shipped in.
-enabled = true
+# ALL-OFF (2026-08-23, operator instruction: "turn off ALL dreamer").
+# Everything the background tiers have written is wrong or unverified
+# (963 messages -> 2 rows, both wrong), and the substrate contract they
+# write against landed only today (design/dreamer-agent-loop/21).
+# Nothing writes until that contract is built against.
+enabled = false
 # max_adjudications_per_tick = 10
 # max_rendered_facts = 8
 # retention_days = 180

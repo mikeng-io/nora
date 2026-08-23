@@ -16,12 +16,13 @@ from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.config import load
 from nora.domain.models import NormalizedMessage
-from nora.infra.blobs import FilesystemBlobStore
+from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.registry import MediaSourceRegistry
 from nora.platform.signal.media import SignalMediaSource
 from nora.policy import load_policy
 from tests.builders import override_config
+from tests.conftest import RUSTFS_TEST_PASSWORD, RUSTFS_TEST_USER
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -264,6 +265,87 @@ async def test_a_valid_key_turns_media_custody_on_with_an_encrypting_store(cfg, 
     assert isinstance(deps.ingest._media_sources, MediaSourceRegistry)
     assert isinstance(deps.ingest._media_sources.for_platform("signal"), SignalMediaSource)
     assert isinstance(deps.ingest._media_sources.for_platform("discord"), DiscordMediaSource)
+    assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
+
+
+async def test_rustfs_disabled_keeps_the_filesystem_store(cfg, monkeypatch):
+    """`[media.rustfs].enabled` defaults False (DEC-136) — a config.toml
+    written before this existed must keep writing to the filesystem exactly
+    as before, with no new failure mode to configure around."""
+    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    deps = await build_dependencies(cfg)
+    assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
+
+
+async def test_rustfs_enabled_with_no_endpoint_falls_back_to_the_filesystem(
+    cfg, monkeypatch,
+):
+    """`enabled = true` with a blank endpoint is a misconfiguration, not a
+    startup failure — media is a bonus (the section's own docstring), so this
+    degrades to the same filesystem store an unset key already degrades to."""
+    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    deps = await build_dependencies(
+        override_config(cfg, {"media.rustfs.enabled": True})
+    )
+    assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
+
+
+async def test_rustfs_enabled_with_unresolved_credentials_falls_back(cfg, monkeypatch):
+    """`endpoint` set but the named credential env vars are not exported —
+    the same "a bonus feature never crashes the daemon" posture as a
+    misconfigured encryption key."""
+    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    deps = await build_dependencies(override_config(cfg, {
+        "media.rustfs.enabled": True,
+        "media.rustfs.endpoint": "http://rustfs:9000",
+    }))
+    assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
+
+
+async def test_rustfs_enabled_and_reachable_wires_a_rustfs_blob_store(
+    cfg, monkeypatch, rustfs_container,
+):
+    """The happy path: a real, reachable RustFS with resolved credentials is
+    what actually wires `RustfsBlobStore` into the pipeline — everything
+    about ITS behaviour (put/get, dedup, encryption-through) is already
+    covered by tests/contract/test_blob_store_contract.py; this test is only
+    about the WIRING decision."""
+    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setenv("RUSTFS_ACCESS_KEY_TEST", RUSTFS_TEST_USER)
+    monkeypatch.setenv("RUSTFS_SECRET_KEY_TEST", RUSTFS_TEST_PASSWORD)
+    endpoint = (
+        f"http://{rustfs_container.get_container_host_ip()}:"
+        f"{rustfs_container.get_exposed_port(9000)}"
+    )
+    deps = await build_dependencies(override_config(cfg, {
+        "media.rustfs.enabled": True,
+        "media.rustfs.endpoint": endpoint,
+        "media.rustfs.bucket": f"composition-test-{uuid.uuid4().hex[:8]}",
+        "media.rustfs.access_key_env": "RUSTFS_ACCESS_KEY_TEST",
+        "media.rustfs.secret_key_env": "RUSTFS_SECRET_KEY_TEST",
+    }))
+    assert isinstance(deps.ingest._blobs, RustfsBlobStore)
+
+
+async def test_rustfs_unreachable_at_startup_falls_back_rather_than_crashing(
+    cfg, monkeypatch,
+):
+    """A fully-configured RustFS that is simply not there (network refused)
+    must degrade the same way a misconfiguration does — this runs BEFORE the
+    ingest pipeline's own per-message protection exists
+    (nora.ingest.stages.media._take), so an unhandled exception here would
+    take the whole daemon down over a bonus feature."""
+    monkeypatch.setenv("NORA_MEDIA_KEY", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.setenv("RUSTFS_ACCESS_KEY_TEST", "irrelevant")
+    monkeypatch.setenv("RUSTFS_SECRET_KEY_TEST", "irrelevant")
+    deps = await build_dependencies(override_config(cfg, {
+        "media.rustfs.enabled": True,
+        # Port 1 on loopback: nothing listens there, so this is a clean
+        # connection-refused rather than a slow timeout — the test stays fast.
+        "media.rustfs.endpoint": "http://127.0.0.1:1",
+        "media.rustfs.access_key_env": "RUSTFS_ACCESS_KEY_TEST",
+        "media.rustfs.secret_key_env": "RUSTFS_SECRET_KEY_TEST",
+    }))
     assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
 
 

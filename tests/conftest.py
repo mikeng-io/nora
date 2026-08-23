@@ -13,13 +13,19 @@ majority of the suite (which uses `FakeRecordStore`) pays nothing for it.
 
 from __future__ import annotations
 
+import time
+import urllib.error
+import urllib.request
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+import boto3
 import psycopg
 import pytest
+from testcontainers.core.container import DockerContainer
 from testcontainers.postgres import PostgresContainer
 
 from nora.agent.registry import ToolRegistry
@@ -93,6 +99,69 @@ class _PgAdmin:
 def _pg_container() -> Iterator[PostgresContainer]:
     with PostgresContainer(PG_IMAGE, driver="psycopg") as pg:
         yield pg
+
+
+# MUST track docker-compose.yml's rustfs image (the same reason PG_IMAGE
+# tracks its `db` image, above).
+RUSTFS_IMAGE = "rustfs/rustfs:1.0.0-rc.1"
+# Test-only credentials for an ephemeral, throwaway container — never the
+# real deployment's RUSTFS_ROOT_USER/PASSWORD, which this fixture never reads.
+RUSTFS_TEST_USER = "contract-test-root"
+RUSTFS_TEST_PASSWORD = "contract-test-password"  # noqa: S105 — a throwaway test credential
+
+
+def _wait_until_rustfs_is_serving(host: str, port: int) -> None:
+    """The same readiness signal `docker-compose.yml`'s own healthcheck
+    settled for: ANY HTTP response means the process is up, because RustFS's
+    IAM subsystem answers every route — health path included — with an
+    unsigned 403 until it finishes initializing (that healthcheck's own
+    comment, verified 2026-08-12). A connection-level failure means "not
+    listening yet" and is retried; an HTTP error status is still "up"."""
+    deadline = time.monotonic() + 30
+    url = f"http://{host}:{port}/"
+    while time.monotonic() < deadline:
+        try:
+            urllib.request.urlopen(url, timeout=2)
+            return
+        except urllib.error.HTTPError:
+            return
+        except OSError:
+            time.sleep(0.5)
+    raise TimeoutError(f"rustfs did not start serving on {url} within 30s")
+
+
+@pytest.fixture(scope="session")
+def rustfs_container() -> Iterator[DockerContainer]:
+    """A REAL `rustfs/rustfs` container, not a mock or a MinIO stand-in — the
+    same "make the fake behave like the real server" posture this file
+    already takes for Postgres. Starts lazily, on the first test that asks
+    for it (or for `rustfs_client` below), exactly like `pg_url` above."""
+    container = (
+        DockerContainer(RUSTFS_IMAGE)
+        .with_env("RUSTFS_ROOT_USER", RUSTFS_TEST_USER)
+        .with_env("RUSTFS_ROOT_PASSWORD", RUSTFS_TEST_PASSWORD)
+        .with_exposed_ports(9000)
+    )
+    with container as c:
+        _wait_until_rustfs_is_serving(
+            c.get_container_host_ip(), int(c.get_exposed_port(9000))
+        )
+        yield c
+
+
+@pytest.fixture(scope="session")
+def rustfs_client(rustfs_container: DockerContainer) -> Any:
+    """A `boto3` S3 client against the session's `rustfs_container` — the same
+    client shape `nora.app.composition._build_blob_store` constructs, so a
+    test using this fixture is exercising the real wire protocol, not an
+    approximation of it."""
+    return boto3.client(
+        "s3",
+        endpoint_url=f"http://{rustfs_container.get_container_host_ip()}:"
+                     f"{rustfs_container.get_exposed_port(9000)}",
+        aws_access_key_id=RUSTFS_TEST_USER,
+        aws_secret_access_key=RUSTFS_TEST_PASSWORD,
+    )
 
 
 @pytest.fixture(scope="session")

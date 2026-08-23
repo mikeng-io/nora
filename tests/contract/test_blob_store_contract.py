@@ -1,12 +1,19 @@
-"""One suite, both `BlobStore`s (DEC-43).
+"""One suite, three `BlobStore`s (DEC-43, DEC-136).
 
-`FilesystemBlobStore` is production; `FakeBlobStore` is what the ingest tests
-run against. Per CLAUDE.md a port gains no second implementation — including a
+`FilesystemBlobStore` and `RustfsBlobStore` are both production, chosen by
+`[media.rustfs].enabled`; `FakeBlobStore` is what the ingest tests run
+against. Per CLAUDE.md a port gains no second implementation — including a
 test fake — without a shared suite both pass, and the property that matters
 most here is the one a lazy fake would break first: **the key is the hash of
 the content.** Dedup, verifiability and the rendered `[image a3f2c1]` handle
 all fall out of that single fact, and a fake handing out counters would make
 all three untestable.
+
+`RustfsBlobStore` runs against a REAL `rustfs/rustfs` container (the same
+image `docker-compose.yml` deploys), not a mock or a MinIO stand-in — the
+same "make the fake behave like the real server" posture `tests/conftest.py`
+already takes for Postgres. `rustfs_client` (`tests/conftest.py`) starts that
+container lazily, on the first test that asks for it, exactly like `pg_url`.
 """
 
 from __future__ import annotations
@@ -16,14 +23,14 @@ import hashlib
 import pytest
 
 from nora.domain.ports import BlobStore
-from nora.infra.blobs import FilesystemBlobStore
+from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.testing import FakeBlobStore
 
 PAYLOAD = b"\x89PNG\r\n\x1a\n not really a png"
 
 
-@pytest.fixture(params=["filesystem", "fake"])
+@pytest.fixture(params=["filesystem", "fake", "rustfs"])
 def store(request, tmp_path) -> BlobStore:
     if request.param == "filesystem":
         # The production store encrypts at rest (DEC-47), so the contract fixture
@@ -34,6 +41,17 @@ def store(request, tmp_path) -> BlobStore:
         # FilesystemBlobStore-specific and lives in tests/unit/test_media_encryption.py,
         # the same split test_media_source_contract.py draws for its Signal-only wire shapes.
         return FilesystemBlobStore(tmp_path / "media", cipher=BlobCipher(bytes(range(32))))
+    if request.param == "rustfs":
+        # getfixturevalue, not a direct parameter, so rustfs_client's session
+        # container is never started for the "filesystem"/"fake" runs — the
+        # same laziness tests/conftest.py's pg_url docstring calls out.
+        client = request.getfixturevalue("rustfs_client")
+        store = RustfsBlobStore(
+            s3_client=client, bucket="contract-test",
+            cipher=BlobCipher(bytes(range(32))),
+        )
+        store.ensure_bucket()
+        return store
     return FakeBlobStore()
 
 

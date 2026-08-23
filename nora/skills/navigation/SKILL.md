@@ -45,8 +45,8 @@ there is space, and what it costs — not the way to the door. Someone without o
 wants the way there. Read which they are before you plan, because the same
 destination answers them differently.
 
-## A seen position is something to say, never a route input
+## A seen position is something to say, and a route input only where trusted
 
-Where someone is now — and how old that sighting is — can settle a plan by itself:
-someone already near the destination needs none. Say it here, age and all. But routes
-run between places people NAME; a seen position, even as an address, never enters one.
+Where someone is now can settle a plan by itself: near the destination needs none — say
+it here, age and all. Routes run between places people NAME; a seen position enters one
+only where the room trusts you with location, the tool's call, not yours.

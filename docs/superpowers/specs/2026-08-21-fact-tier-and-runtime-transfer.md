@@ -4,8 +4,23 @@ title: "Transfer: the fact tier and the Dreamer runtime"
 description: "The fact tier's storage half is built, merged and deployed; its writer is not, because the Dreamer runtime does not exist. This hands both to one session. It carries what is NOT already in the specs: the verified deployed state, the four contract-suite defects and the one rule that subsumes them, the open items with their reasoning, the cross-session conventions that cost four collisions to learn, and the traps that cost a day each when rediscovered."
 tags: [nora, transfer, facts, dreamer, runtime, handoff]
 timestamp: '2026-08-21'
-status: accepted
+superseded_by: design/dreamer-agent-loop/14-roadmap.md
+status: superseded
 ---
+
+> **SUPERSEDED (2026-08-22) — read `design/dreamer-agent-loop/` first.**
+>
+> This document was a session-boundary snapshot and parts of it are now false.
+> Most importantly it describes a **running** Dreamer; `[dreamer] enabled` is
+> `false` as of `5ef8ddc`, so any "unblocked" statement below means *unblocked
+> at code level and inert at deploy level*.
+>
+> The consolidated, maintained picture — all five tiers, what is built, inert,
+> unmerged, unbuilt, owned and orphaned — is
+> `design/dreamer-agent-loop/14-roadmap.md`, whose §7 lists exactly what in this
+> file has gone stale. Kept for its reasoning and its war-stories, which remain
+> good; do not read it for current state.
+
 
 # Transfer: the fact tier and the Dreamer runtime
 

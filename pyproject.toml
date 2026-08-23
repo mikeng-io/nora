@@ -23,6 +23,7 @@ dependencies = [
     "discord-py>=2.7.1",
     "yt-dlp>=2026.8.19",
     "pynacl>=1.6.2",
+    "boto3>=1.43.62",
 ]
 
 [project.optional-dependencies]
@@ -227,6 +228,7 @@ allow_indirect_imports = "True"
 [dependency-groups]
 dev = [
     "aioresponses>=0.7.9",
+    "boto3-stubs[s3]>=1.43.78",
     "import-linter>=2.0",
     "mcp>=1.29.0",
     "mypy>=1.11",

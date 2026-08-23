@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Docs only. Adds design/dreamer-agent-loop/17-failure-classes.md (named failure classes for background agents, gathered from the note tier's spec), threads the cursor-shaped/content-addressed taxonomy and concurrency findings into the seam nodes, and resolves a contradiction between two of the bundle's own nodes over the revisit adaptor's memory grant. Also fixes a broken cross-reference in the note-tier handoff banner. No code, no behaviour change."
+}

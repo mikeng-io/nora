@@ -224,7 +224,7 @@ enabled = true
 
 [engagement.queue]
 # Per-conversation FIFO depth beyond which an arriving tag is shed as a flood
-# (R-29). Bounds runaway growth, not waiting — a queued tag keeps its place
+# (R-30). Bounds runaway growth, not waiting — a queued tag keeps its place
 # however long the turn ahead of it takes, and there is no staleness rule.
 max_depth = 16
 
@@ -348,6 +348,20 @@ vision_timeout_seconds = 20.0
 # level= label on nora_sticker_descriptions_total; if the p99 hurts, this line
 # is the off switch and nothing else has to change.
 sticker_descriptions = true
+
+# WHERE the (always-encrypted) bytes above land (DEC-136). OFF by default: a
+# config.toml written before this existed keeps writing to
+# store.data_dir / "media" exactly as before. On, an S3-compatible object
+# store takes over — bucket/endpoint here, credentials named by env var
+# (DEC-8), same reuse pattern encryption_key_env above already sets. A
+# misconfigured or unreachable RustFS falls back to the filesystem rather
+# than crashing the daemon or turning custody off entirely.
+[media.rustfs]
+enabled = false
+endpoint = ""              # e.g. "http://rustfs:9000"
+bucket = "nora-media"
+access_key_env = "RUSTFS_ROOT_USER"      # same var `drop`'s RustFS client uses
+secret_key_env = "RUSTFS_ROOT_PASSWORD"
 
 # Nora's own link shortener / drop delivery (deploy/drop/, this repo's own
 # compose service — docs/superpowers/specs/2026-08-12-nora-drop-design.md §5).

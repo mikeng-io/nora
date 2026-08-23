@@ -1,0 +1,12 @@
+{
+  "type": "feature",
+  "summary": "Nora can now give a real, computed travel-time estimate for someone whose live position she already sees — 'when will they get home' — in rooms the operator has explicitly trusted with location. Everywhere else she still only reports the position itself, never a guessed arrival time.",
+  "details": [
+    "Reuses the existing per-room location-trust flag (policy.toml's `location = true`, the same one where_is/saved_places already answer to) rather than introducing a new trust surface.",
+    "Closes a gap where the restriction on using a live position as a route input lived only in the navigation skill's prose and was not enforced in code — it could be silently skipped on any turn the skill did not load."
+  ],
+  "limitations": [
+    "Only works when the person's saved 'home' (or other saved place) is resolvable in the same room; there is no fallback estimate when nothing is saved.",
+    "The estimate is a single live routing lookup, not the historical/typical-time figure the presence-analytics work (tracked separately) will eventually provide."
+  ]
+}

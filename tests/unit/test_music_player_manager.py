@@ -99,7 +99,7 @@ def _manager(tracks: dict[str, ResolvedTrack | None]) -> MusicPlayerManager:
     )
 
 
-async def test_r57_play_refused_when_requester_not_in_voice_and_no_player_exists() -> None:
+async def test_r59_play_refused_when_requester_not_in_voice_and_no_player_exists() -> None:
     manager = _manager({"track a": _TRACK_A})
 
     outcome = await manager.play(
@@ -193,7 +193,7 @@ async def test_a_new_track_before_the_idle_timeout_cancels_the_pending_disconnec
     assert (await manager.status("guild-1")) is not None
 
 
-async def test_r58_a_voice_channel_emptied_of_humans_disconnects_immediately() -> None:
+async def test_r60_a_voice_channel_emptied_of_humans_disconnects_immediately() -> None:
     manager = _manager({"track a": _TRACK_A})
     session = _FakeVoiceSession()
 
