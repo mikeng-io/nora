@@ -1,0 +1,40 @@
+kind: design_index
+title: "Discord Music — Voice-Channel Music Bot"
+description: >
+  A deterministic, non-agentic Discord voice music bot on top of the
+  existing DiscordAdapter: yt-dlp resolves a stream URL, ffmpeg transcodes
+  it live into voice (no download, no RustFS), slash commands are the sole
+  control surface, and the session queue persists in Postgres. No saved
+  playlists, no library, no Nora agent tools, no SoundCloud yet — each
+  deferred with an explicit evidence bar.
+status: proposed
+governance: pre-governance-input
+timestamp: '2026-08-23'
+origin: "brainstorming session with miles, 2026-08-23"
+members:
+  - 00-overview.md
+  - 01-playback-and-source.md
+  - 02-control-surface.md
+  - 03-state-and-persistence.md
+  - 04-deferred.md
+edges:
+  - {src: 01-playback-and-source, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 02-control-surface, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 02-control-surface, dst: 03-state-and-persistence, rel: depends_on, provenance: asserted}
+  - {src: 03-state-and-persistence, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 03-state-and-persistence, dst: 01-playback-and-source, rel: depends_on, provenance: asserted}
+  - {src: 04-deferred, dst: 00-overview, rel: motivated_by, provenance: asserted}
+scope:
+  v1:
+    - "Discord slash commands (/music play|skip|queue|pause|stop) as the sole control surface"
+    - "yt-dlp resolves a direct stream URL; ffmpeg transcodes live into Discord voice — no disk, no RustFS"
+    - "Per-guild in-memory MusicPlayer (voice connection, now-playing, loop, volume)"
+    - "Session queue persisted in a new Postgres table (music_queue), not Valkey"
+    - "Auto-disconnect on empty voice channel or idle timeout"
+  deferred:
+    - "Saved/named playlists"
+    - "Persistent audio library / cache"
+    - "SoundCloud (both the cheap yt-dlp flip and an official-API adapter)"
+    - "Nora agent tools (play_music, skip_music, etc.)"
+    - "Auto-resume after a Gateway-reconnect voice drop"
+    - "Containerizing the yt-dlp/ffmpeg subprocess (hardening pass, not a blocker)"
