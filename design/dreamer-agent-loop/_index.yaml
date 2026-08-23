@@ -46,6 +46,7 @@ members:
   - 21-substrate-contract.md
   - 22-config.md
   - 23-retrieval.md
+  - 24-embedding-seam.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -100,6 +101,8 @@ edges:
   - {src: 23-retrieval, dst: 20-knowledge-tier, rel: realizes, provenance: asserted}
   - {src: 23-retrieval, dst: 21-substrate-contract, rel: depends_on, provenance: asserted}
   - {src: 23-retrieval, dst: 16-open-items, rel: corrects, provenance: asserted}
+  - {src: 24-embedding-seam, dst: 23-retrieval, rel: extends, provenance: asserted}
+  - {src: 24-embedding-seam, dst: 19-between-tiers, rel: depends_on, provenance: asserted}
 scope:
   v1:
     - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"
