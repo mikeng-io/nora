@@ -50,6 +50,7 @@ members:
   - 25-knowledge-pipeline.md
   - 26-standing.md
   - 27-note-dreamer.md
+  - 28-language-tier.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -115,6 +116,9 @@ edges:
   - {src: 27-note-dreamer, dst: 15-roadmap, rel: realizes, provenance: asserted}
   - {src: 27-note-dreamer, dst: 17-failure-classes, rel: depends_on, provenance: asserted}
   - {src: 27-note-dreamer, dst: 13-doctrine, rel: extends, provenance: asserted}
+  - {src: 28-language-tier, dst: 12-self-correction, rel: depends_on, provenance: asserted}
+  - {src: 28-language-tier, dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {src: 28-language-tier, dst: 09-measurement, rel: extends, provenance: asserted}
 scope:
   v1:
     - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"

@@ -149,6 +149,9 @@ the repo rather than to Standing alone.
 | `note.title` | `[notes] max_title_chars` | **60** | **120** |
 | `note.description` | `[notes] max_description_chars` | **200** | **400** |
 | `note_revision.body` | `[notes] max_body_chars` | **8000** | **32000** |
+| `fact.predicate` | `[facts] max_predicate_chars` | **100** | **200** |
+| `fact.subject_id` / `object_literal` | `[facts] max_term_chars` | **200** | **800** |
+| `room_lexeme` gloss | `[language] max_gloss_chars` | **200** | **800** |
 
 The body is the sharper case: it has **no bound at all today**, only
 `length(btrim(body)) > 0` ([27](27-note-dreamer.md) §5.2), and the curator's
