@@ -91,7 +91,7 @@ async def main() -> int:
         aws_access_key_id=access_key, aws_secret_access_key=secret_key,
     )
     dest = RustfsBlobStore(s3_client=s3, bucket=bucket, cipher=cipher)
-    dest.ensure_bucket()
+    await asyncio.to_thread(dest.ensure_bucket)
 
     keys = list(_iter_keys(media_root))
     print(f"found {len(keys)} blobs under {media_root}")
