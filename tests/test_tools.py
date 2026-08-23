@@ -105,6 +105,8 @@ def test_every_declared_tool_is_built(wiring):
         "media_fetch",
         "web_search", "web_fetch",
         "weather",
+        # Discord-only music (design/discord-music/07-agent-tool.md).
+        "play_music", "skip_music", "stop_music", "music_status",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "create_event", "update_event", "rsvp_event", "cancel_event",
@@ -134,11 +136,12 @@ def test_read_peer_card_is_gone_from_the_table_and_the_capability_block():
     assert "read_peer_card" not in ToolRegistry().capability()
 
 
-def test_exactly_six_tools_are_cacheable():
+def test_exactly_seven_tools_are_cacheable():
     from nora.agent.tools import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
         "place_info", "route", "web_search", "web_fetch", "weather", "transit",
+        "music_status",
     }
 
 

@@ -539,6 +539,15 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         # substitution this classification exists to prevent. Move them when
         # the note tier's curator adaptor lands and the wiring is real.
         "note_read", "note_search",
+        # `music_status` (design/discord-music/07-agent-tool.md) reports on
+        # ONE Discord conversation's voice session — the exact shape
+        # `load_transcript`/`where_is` are room-scoped for, not a
+        # workspace-wide fact like `weather`. It also refuses on
+        # `room.platform != "discord"`, which the Dreamer's synthetic room
+        # (`RegistryToolSource`) never satisfies today — classified here,
+        # fail-closed, the same "not yet actually reachable" reasoning
+        # `note_read`/`note_search` are.
+        "music_status",
     }
     unclassified = ToolRegistry().read_only_tools() - WORKSPACE_SAFE_TOOLS - room_scoped
     assert unclassified == set(), (

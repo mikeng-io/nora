@@ -106,8 +106,10 @@ from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
+from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.discord.music_manager import MusicPlayerManager
+from nora.platform.discord.music_tool_bridge import DiscordMusicToolBridge
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaSourceRegistry
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
@@ -1330,6 +1332,30 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         policy=allowlist, speak=_relay_speak, slots=slots,
         occasion_for=relay_occasion, metrics=metrics,
     )
+    # `DiscordMusicToolBridge` (design/discord-music/07-agent-tool.md) — the
+    # four music agent tools' own collaborator. Built ONLY when BOTH a
+    # Discord adapter and a music manager exist: `music_manager` is already
+    # `None` under `cfg.music.enabled = false` (its own construction above),
+    # and `"discord" in registry` is the same narrowing `rosters["discord"]`
+    # below uses. Shares the SAME `music_manager` and Discord adapter every
+    # slash command already uses — never a second mutation path.
+    music_bridge: DiscordMusicToolBridge | None = None
+    if music_manager is not None and "discord" in registry:
+        discord_adapter = registry.get("discord")
+        # The same defensive narrowing `signal_adapter` above needs, for the
+        # identical reason: `AdapterRegistry.get` returns the port type, and
+        # the bridge needs `DiscordAdapter.current_client()`, which the port
+        # does not declare.
+        if isinstance(discord_adapter, DiscordAdapter):
+            music_bridge = DiscordMusicToolBridge(
+                adapter=discord_adapter, manager=music_manager,
+                crossfade_seconds=cfg.music.crossfade_seconds,
+            )
+        else:
+            log.error(
+                "internal error: registry's 'discord' entry is not a DiscordAdapter "
+                "— music agent tools stay unavailable"
+            )
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client, describe_models=_describe_models(cfg),
         blobs=blobs, descriptions=media_descriptions, search=search_client,
@@ -1393,6 +1419,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         note_workspace=_note_workspace_of(allowlist),
         versions=version_manifest,
         giphy=giphy_client,
+        music=music_bridge,
         # `[llm.budgets]`, the per-deployment delta over the table. Threaded
         # here for the same reason `reminder_caps` is: `nora.agent` may not
         # import `nora.config`, so the composition root is the conversion

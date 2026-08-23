@@ -1,0 +1,12 @@
+{
+  "type": "feature",
+  "summary": "Nora can play, skip, stop and check Discord music conversationally, not just via /music commands.",
+  "details": [
+    "Four new Discord-only agent tools: play_music, skip_music, stop_music, music_status. Ask her directly (\"play apt\", \"skip this\", \"what's playing\") or hand her a link; for a vaguer request (\"play some kpop\") she can search the web for a real playlist first, then play it -- ordinary multi-tool reasoning, no new plumbing.",
+    "Every tool refuses outside Discord, with no guessing: off-platform, with music not configured, or when she can't resolve who's asking to a real Discord account, she says she can't play music rather than pretending to.",
+    "play_music still requires being in a voice channel to START a fresh session -- the same rule the /music play slash command already enforces (R-59), never bypassed by this new surface."
+  ],
+  "limitations": [
+    "Pause/resume/volume stay slash-command-only for now; promoted the same way play/skip/stop/status were, if asked for conversationally often enough."
+  ]
+}

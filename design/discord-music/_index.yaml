@@ -1,12 +1,13 @@
 kind: design_index
 title: "Discord Music — Voice-Channel Music Bot"
 description: >
-  A deterministic, non-agentic Discord voice music bot on top of the
-  existing DiscordAdapter: yt-dlp resolves a stream URL, ffmpeg transcodes
-  it live into voice (no download, no RustFS), slash commands are the sole
-  control surface, and the session queue persists in Postgres. No saved
-  playlists, no library, no Nora agent tools, no SoundCloud yet — each
-  deferred with an explicit evidence bar.
+  A Discord voice music bot on top of the existing DiscordAdapter: yt-dlp
+  resolves a stream URL, ffmpeg transcodes it live into voice (no download,
+  no RustFS), slash commands are the primary control surface, the whole
+  session persists in Postgres and resumes on restart, and four Discord-only
+  Nora agent tools (play/skip/stop/status) add conversational control on
+  top of the same deterministic state machine. No saved playlists, no
+  library, no SoundCloud yet — each deferred with an explicit evidence bar.
 status: proposed
 governance: pre-governance-input
 timestamp: '2026-08-23'
@@ -19,6 +20,7 @@ members:
   - 04-deferred.md
   - 05-crossfade-spike.md
   - 06-session-persistence.md
+  - 07-agent-tool.md
 edges:
   - {src: 01-playback-and-source, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-control-surface, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -29,17 +31,19 @@ edges:
   - {src: 05-crossfade-spike, dst: 01-playback-and-source, rel: extends, provenance: asserted}
   - {src: 05-crossfade-spike, dst: 03-state-and-persistence, rel: extends, provenance: asserted}
   - {src: 06-session-persistence, dst: 03-state-and-persistence, rel: extends, provenance: asserted}
+  - {src: 07-agent-tool, dst: 02-control-surface, rel: extends, provenance: asserted}
 scope:
   v1:
-    - "Discord slash commands (/music play|skip|queue|pause|resume|stop|volume) as the sole control surface"
+    - "Discord slash commands (/music play|skip|queue|pause|resume|stop|volume) as the primary control surface"
     - "yt-dlp resolves a direct stream URL; ffmpeg transcodes live into Discord voice — no disk, no RustFS"
-    - "Per-guild in-memory MusicPlayer (voice connection, now-playing, loop, volume)"
+    - "Per-guild MusicPlayer (voice connection, now-playing, loop, volume), persisted in Postgres and resumed on restart"
     - "Session queue persisted in a new Postgres table (music_queue), not Valkey"
     - "Auto-disconnect on empty voice channel or idle timeout"
+    - "Discord-only Nora agent tools (play_music/skip_music/stop_music/music_status) for conversational control"
   deferred:
     - "Saved/named playlists"
     - "Persistent audio library / cache"
     - "SoundCloud (both the cheap yt-dlp flip and an official-API adapter)"
-    - "Nora agent tools (play_music, skip_music, etc.)"
-    - "Auto-resume after a Gateway-reconnect voice drop"
+    - "Nora agent tools for pause/resume/volume (play/skip/stop/status are built; these stay slash-command-only)"
+    - "Auto-resume after a Gateway-reconnect voice drop (distinct from the built restart-resume)"
     - "Containerizing the yt-dlp/ffmpeg subprocess (hardening pass, not a blocker)"
