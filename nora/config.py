@@ -1381,7 +1381,8 @@ class NotesConfig(BaseModel):
 
 
 class MusicConfig(BaseModel):
-    """The Discord music bot's gate (design/discord-music/00-overview.md).
+    """The Discord music bot's gate (the `discord-music` design bundle,
+    node 00 — overview and scope).
 
     `enabled` defaults **False**, same reasoning every other optional
     subsystem's gate gives: a new capability does not switch itself on. Only
@@ -1390,10 +1391,10 @@ class MusicConfig(BaseModel):
     platform that isn't running, but this section itself does not know or
     care which platform is enabled.
 
-    `idle_timeout_seconds` is `03-state-and-persistence.md`'s disconnect
-    timer 2 (queue empty, nothing playing) — timer 1 (voice channel emptied
-    of humans) has no config, since there is no grace period to size for an
-    event that already means "leave now"."""
+    `idle_timeout_seconds` is the bundle's node 03 (state and persistence)
+    disconnect timer 2 (queue empty, nothing playing) — timer 1 (voice
+    channel emptied of humans) has no config, since there is no grace period
+    to size for an event that already means "leave now"."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
