@@ -1429,12 +1429,21 @@ class MusicConfig(BaseModel):
     `idle_timeout_seconds` is the bundle's node 03 (state and persistence)
     disconnect timer 2 (queue empty, nothing playing) — timer 1 (voice
     channel emptied of humans) has no config, since there is no grace period
-    to size for an event that already means "leave now"."""
+    to size for an event that already means "leave now".
+
+    `crossfade_seconds` — 0 (the default) disables crossfading entirely: a
+    track ends and the next starts with a hard cut, today's behaviour.
+    Above 0, `DiscordVoiceSession` blends the outgoing and incoming tracks'
+    audio for that many seconds before a track's own natural end. Spike
+    (2026-08-24): only a natural track-end crossfades; `/music skip` stays
+    an instant cut on purpose (skipping is "get me out of this NOW", not a
+    DJ transition)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     idle_timeout_seconds: float = 300.0
+    crossfade_seconds: float = 0.0
 
 
 class DoctrineConfig(BaseModel):

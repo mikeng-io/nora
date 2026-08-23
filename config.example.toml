@@ -817,6 +817,11 @@ enabled = false
 # (voice channel emptied of humans) has no setting — that one means leave
 # immediately, no grace period to size.
 idle_timeout_seconds = 300.0
+# 0 (default) = hard cut between tracks, today's behaviour. Above 0, blends
+# the outgoing/incoming tracks' audio for this many seconds before a
+# track's natural end (spike, 2026-08-24) — /music skip stays an instant
+# cut regardless.
+crossfade_seconds = 0.0
 
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version

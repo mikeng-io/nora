@@ -39,6 +39,8 @@ from typing import Any
 
 import discord
 
+from nora.platform.discord.crossfade import CrossfadeSource
+
 log = logging.getLogger("nora.music")
 
 AudioSourceFactory = Callable[[str], discord.AudioSource]
@@ -60,11 +62,13 @@ class DiscordVoiceSession:
         loop: asyncio.AbstractEventLoop,
         on_finished: Callable[[], Coroutine[Any, Any, None]],
         audio_source_factory: AudioSourceFactory = _default_audio_source,
+        crossfade_seconds: float = 0.0,
     ) -> None:
         self._voice_client = voice_client
         self._loop = loop
         self._on_finished = on_finished
         self._audio_source_factory = audio_source_factory
+        self._crossfade_seconds = crossfade_seconds
         self._suppress_next_after = False
         self._pending_finish: Future[None] | None = None
         # Persisted across tracks, not reset on `play()` — setting the
@@ -73,15 +77,38 @@ class DiscordVoiceSession:
         # `MusicPlayer.set_volume`'s docstring makes.
         self._volume: float = 1.0
         self._current_source: discord.PCMVolumeTransformer[discord.AudioSource] | None = None
+        # The RAW (pre-volume-wrapped) source currently playing -- what a
+        # later `play()` call mixes AGAINST if a crossfade starts before
+        # this one's own natural end (`crossfade.py`).
+        self._current_raw: discord.AudioSource | None = None
+        self._crossfade_timer: asyncio.TimerHandle | None = None
 
     def is_playing(self) -> bool:
         return bool(self._voice_client.is_playing())
 
-    def play(self, stream_url: str) -> None:
+    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
         raw = self._audio_source_factory(stream_url)
-        source = discord.PCMVolumeTransformer(raw, volume=self._volume)
-        self._current_source = source
-        self._voice_client.play(source, after=self._after)
+        mixed: discord.AudioSource = raw
+        already_playing = self._voice_client.is_playing()
+        if already_playing and self._crossfade_seconds > 0 and self._current_raw is not None:
+            mixed = CrossfadeSource(
+                self._current_raw, raw, duration_seconds=self._crossfade_seconds,
+            )
+        self._current_raw = raw
+        wrapped = discord.PCMVolumeTransformer(mixed, volume=self._volume)
+        self._current_source = wrapped
+        self._cancel_crossfade_timer()
+        if already_playing:
+            # A live swap, not stop()+play() -- the AudioPlayer thread never
+            # sees a gap, which is the whole point: the OLD track (now
+            # inside `mixed`) keeps being heard, blending into the new one.
+            self._voice_client.source = wrapped
+        else:
+            self._voice_client.play(wrapped, after=self._after)
+        if self._crossfade_seconds > 0 and duration_seconds is not None:
+            delay = duration_seconds - self._crossfade_seconds
+            if delay > 0:
+                self._crossfade_timer = self._loop.call_later(delay, self._on_crossfade_due)
 
     def pause(self) -> None:
         self._voice_client.pause()
@@ -99,14 +126,38 @@ class DiscordVoiceSession:
         # module docstring's second race. `Future.cancel()` on a not-yet-
         # started `run_coroutine_threadsafe` future prevents it from ever
         # running; a no-op if it already ran or was never scheduled.
+        self._cancel_crossfade_timer()
         if self._pending_finish is not None:
             self._pending_finish.cancel()
             self._pending_finish = None
         self._suppress_next_after = True
+        self._current_raw = None
         self._voice_client.stop()
 
     async def disconnect(self) -> None:
         await self._voice_client.disconnect()
+
+    def _cancel_crossfade_timer(self) -> None:
+        if self._crossfade_timer is not None:
+            self._crossfade_timer.cancel()
+            self._crossfade_timer = None
+
+    def _on_crossfade_due(self) -> None:
+        """Fires `crossfade_seconds` before the current track's expected
+        end (runs on the event loop, scheduled by `call_later` — NOT the
+        audio thread). Signals `on_finished` EARLY so `MusicPlayer._advance`
+        resolves and hands the next track to `play()` while this one is
+        still audible, which is what makes that next `play()` call a
+        crossfade instead of a plain start. The real `after` callback,
+        which will still fire later at this track's TRUE end, must not
+        double-signal — same suppression `stop()` already relies on."""
+        self._crossfade_timer = None
+        if not self._voice_client.is_playing():
+            return  # skipped/stopped already; nothing to crossfade into
+        self._suppress_next_after = True
+        self._pending_finish = asyncio.run_coroutine_threadsafe(
+            self._run_on_finished(), self._loop,
+        )
 
     def _after(self, error: Exception | None) -> None:
         """Called on the audio player's own thread — never `await` or touch

@@ -55,6 +55,7 @@ def _notify_factory(interaction: discord.Interaction):
 
 def _connect_factory(
     manager: MusicPlayerManager, guild_id: str, channel: discord.VoiceChannel,
+    *, crossfade_seconds: float,
 ):
     """Built only when the invoker IS in a voice channel — `None` reaching
     `MusicPlayerManager.play` is what triggers the design's join-rejection,
@@ -68,6 +69,7 @@ def _connect_factory(
 
         return DiscordVoiceSession(
             voice_client, loop=asyncio.get_running_loop(), on_finished=_on_finished,
+            crossfade_seconds=crossfade_seconds,
         )
 
     return connect
@@ -125,9 +127,10 @@ class MusicCommands(app_commands.Group):
     (`02-control-surface.md`'s "the command tree lives where the client
     lives" note)."""
 
-    def __init__(self, manager: MusicPlayerManager) -> None:
+    def __init__(self, manager: MusicPlayerManager, *, crossfade_seconds: float = 0.0) -> None:
         super().__init__(name="music", description="Play music in a voice channel.")
         self._manager = manager
+        self._crossfade_seconds = crossfade_seconds
 
     @app_commands.command(
         name="play", description="Play a track, or queue it if one's already playing.",
@@ -142,7 +145,10 @@ class MusicCommands(app_commands.Group):
         guild_id = str(interaction.guild_id)
         channel = _requester_voice_channel(interaction)
         connect = (
-            _connect_factory(self._manager, guild_id, channel) if channel is not None else None
+            _connect_factory(
+                self._manager, guild_id, channel, crossfade_seconds=self._crossfade_seconds,
+            )
+            if channel is not None else None
         )
 
         await interaction.response.defer()
@@ -238,7 +244,9 @@ class MusicCommands(app_commands.Group):
         await interaction.followup.send(f"Volume set to {percent}%.")
 
 
-async def register(client: discord.Client, manager: MusicPlayerManager) -> None:
+async def register(
+    client: discord.Client, manager: MusicPlayerManager, *, crossfade_seconds: float = 0.0,
+) -> None:
     """Built and synced fresh inside `DiscordAdapter.listen()`, same
     lifecycle as `client` itself — a fresh `discord.Client` per connection
     attempt (`adapter.py`'s own reasoning), so a fresh `CommandTree` every
@@ -248,7 +256,7 @@ async def register(client: discord.Client, manager: MusicPlayerManager) -> None:
     enough to matter (design/discord-music/04-deferred.md's evidence-bar
     pattern, applied here rather than pre-optimized)."""
     tree = app_commands.CommandTree(client)
-    tree.add_command(MusicCommands(manager))
+    tree.add_command(MusicCommands(manager, crossfade_seconds=crossfade_seconds))
     await tree.sync()
 
     async def on_voice_state_update(

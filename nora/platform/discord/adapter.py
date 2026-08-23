@@ -45,6 +45,7 @@ class DiscordAdapter:
         *,
         base_url: str = DEFAULT_API_BASE,
         music_manager: MusicPlayerManager | None = None,
+        crossfade_seconds: float = 0.0,
     ) -> None:
         self._token = token
         self._base_url = base_url
@@ -57,6 +58,7 @@ class DiscordAdapter:
         # keeps this adapter unchanged for every deployment that hasn't
         # turned the feature on.
         self._music_manager = music_manager
+        self._crossfade_seconds = crossfade_seconds
         # Built fresh in `listen()`, NOT here. A `discord.Client` is single-use:
         # once it closes, `is_closed()` stays True for that instance forever
         # (`_closing_task` is never cleared except by `Client.clear()`), so
@@ -104,7 +106,9 @@ class DiscordAdapter:
             # `discord.Client`/`CommandTree`) -- `music_commands.py`'s own
             # docstring is explicit about that boundary.
             if self._music_manager is not None:
-                await register_music_commands(client, self._music_manager)
+                await register_music_commands(
+                    client, self._music_manager, crossfade_seconds=self._crossfade_seconds,
+                )
 
         self._listener = DiscordListener(
             client, self._token, on_ready_extra=_register_music_commands,
