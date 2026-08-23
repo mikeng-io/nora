@@ -232,3 +232,7 @@ The second branch is not a failure state — it is the pipeline this tier alread
 is ([03-no-agent-loop.md](03-no-agent-loop.md)), chosen deliberately and sized
 for, instead of arrived at by accident. **The measurement picks a branch; it does
 not leave the design open.**
+
+## Status / Checkpoint
+
+2026-08-24 — §7 now designs **both branches** of the transport question, so the measurement selects a design rather than starting one. No open item.

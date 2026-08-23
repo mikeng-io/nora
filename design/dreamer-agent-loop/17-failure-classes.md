@@ -169,3 +169,7 @@ it is a convention rather than a rule.
 
 That gap is itself the point: **cross-session agreement is evidence; a rule is
 real when it has an entry and a test.**
+
+## Status / Checkpoint
+
+2026-08-24 — Ten named classes, true of any adaptor. §7's route-to-a-human is what [27](27-note-dreamer.md) §3 builds the enqueue/deliver distinction on.

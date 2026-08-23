@@ -143,3 +143,7 @@ point. The cost of not doing it is that the error propagates to every adaptor
 built afterwards, and becomes indistinguishable from intent — which is precisely
 what happened to the tool subsets
 ([04-designed-vs-shipped.md](04-designed-vs-shipped.md)).
+
+## Status / Checkpoint
+
+2026-08-24 — D1. §4 now carries the discharge condition for the model-choice falsifiability commitment, so nothing here waits on a later conversation.

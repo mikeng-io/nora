@@ -177,3 +177,7 @@ Recorded so the revision does not present them as new:
 - **Premise cardinality.** A fact warranted by other facts is not required by
   anything to actually have any.
 - **Two warrant kinds have no writer at all.**
+
+## Status / Checkpoint
+
+2026-08-24 — D9 recorded the language tier's missing supersession as a designed cost. **[16](16-open-items.md) §7 reverses it (D19)**: the cost consumed 100% of the tier's output.

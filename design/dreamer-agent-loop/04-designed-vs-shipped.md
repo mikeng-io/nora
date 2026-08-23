@@ -186,3 +186,7 @@ tick, and has never once succeeded. See
 [08-state.md](08-state.md) for the replacement argument and
 [14-migration-and-governance.md](14-migration-and-governance.md) for the test
 that pins it and must be replaced rather than deleted.
+
+## Status / Checkpoint
+
+2026-08-24 — The drift catalogue. Gained two instances since: this bundle's own stale scope line about Standing, and the language tier being cited in eleven nodes while owned by none ([28](28-language-tier.md) §1).

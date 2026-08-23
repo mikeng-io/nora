@@ -282,3 +282,7 @@ that contradicts from one that merely does not cover, that reopens the
   claim. Reopen by giving those tools a classification surface.
 - **Transitive supersession, premise cardinality, two writerless warrant
   kinds.** [12-self-correction.md](12-self-correction.md) §6.
+
+## Status / Checkpoint
+
+2026-08-24 — **All ten items closed**, each with the reading that would reopen it. §4.1's semantic-index refusal was retracted for retrieval and confirmed for resolution, with the instrument finally named.

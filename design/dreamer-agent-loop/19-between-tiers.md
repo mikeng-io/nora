@@ -230,3 +230,7 @@ whole, with no signal that the verb exists or is worth reaching for.
 
 These are defaults with their reasoning, adjusted by the same window that tunes
 [09-measurement.md](09-measurement.md) §6. What they are **not** is open.
+
+## Status / Checkpoint
+
+2026-08-24 — §6 now decides the block shape — one block, three slices, caps 8/4/one line — rather than waiting on a registry.

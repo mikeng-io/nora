@@ -304,3 +304,7 @@ substitute for a population bound.
 The trigger is what makes that bound expressible. Until an adaptor can say
 whether it wants to run, the runtime is choosing a concurrency limit for a set
 whose size it learns only by doing the work.
+
+## Status / Checkpoint
+
+2026-08-24 — D2. Its config surface is [22](22-config.md); the finding that every adaptor's schedule is read from `[language]` is §3 there.

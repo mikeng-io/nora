@@ -201,3 +201,7 @@ governs is the **budgets** in [05-transport.md](05-transport.md) — because the
 observed generation exceeded every cap Nora configures, so those numbers are not
 known to be connected to anything. That is a wiring question, not a sizing one,
 and [07-loop.md](07-loop.md) §7 decides both branches of it.
+
+## Status / Checkpoint
+
+2026-08-24 — D7. §6's rollback thresholds are now defaults with reasoning rather than pending readings.

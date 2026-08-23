@@ -136,3 +136,7 @@ those fixtures are deleted. See
 [14-migration-and-governance.md](14-migration-and-governance.md).
 
 The two fact objectives are **not** fixture-pinned and can move first.
+
+## Status / Checkpoint
+
+2026-08-24 — D8. [27](27-note-dreamer.md) §5 extends it with the three-corpora distinction and why an adaptor's objective is not a skill.
