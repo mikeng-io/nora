@@ -1,0 +1,9 @@
+{
+  "type": "fix",
+  "summary": "Fixed the real cause of crossfade always sounding like a hard cut: reassigning the old track's audio wrapper let it get garbage-collected mid-fade, which killed the outgoing track's audio pipe before any blending happened.",
+  "details": [
+    "The PCMVolumeTransformer wrapping the outgoing track lost its last reference the moment play() reassigned it to the new wrapper. CPython's refcounting ran its __del__ synchronously right then, cascading into cleanup() on the outgoing track's raw source -- poisoning it before the crossfade mixer ever read a frame from it. The mixer then crashed silently on its first or second read, and discord.py's audio thread just stopped, which is why every crossfade sounded exactly like an instant cut.",
+    "The old wrapper is now explicitly kept alive for as long as the crossfade needs its underlying source."
+  ],
+  "limitations": []
+}

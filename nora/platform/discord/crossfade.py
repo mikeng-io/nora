@@ -42,12 +42,29 @@ class CrossfadeSource(discord.AudioSource):
 
     def __init__(
         self, old: discord.AudioSource, new: discord.AudioSource, *, duration_seconds: float,
+        keep_alive: object | None = None,
     ) -> None:
         self._old = old
         self._new = new
         self._total_frames = max(1, round(duration_seconds / _FRAME_SECONDS))
         self._frame = 0
         self._old_exhausted = False
+        # `keep_alive` is the `PCMVolumeTransformer` that used to wrap `old`
+        # for playback (`DiscordVoiceSession._current_source`, BEFORE the
+        # caller reassigns it to the new wrapper around this mixer). It is
+        # never read -- held ONLY so its refcount doesn't hit zero.
+        # **Real bug, verified live 2026-08-24**: without this, the moment
+        # the caller reassigns `_current_source`, CPython drops that
+        # wrapper's last reference and immediately runs its `__del__`
+        # (`AudioSource.__del__` -> `PCMVolumeTransformer.cleanup()` ->
+        # `old.cleanup()`), which sets `old`'s underlying ffmpeg pipe to
+        # discord.py's `MISSING` sentinel. The crossfade then died on its
+        # first or second `old.read()` with `'_MissingSentinel' object has
+        # no attribute 'read'` -- silently, with `AudioPlayer.run()`
+        # catching the exception and just stopping, which is exactly why
+        # crossfading sounded like (and effectively was) a hard cut despite
+        # this class's own logic being correct.
+        self._keep_alive = keep_alive
         log.info(
             "crossfade started: %s frames budgeted (%.2fs)",
             self._total_frames, duration_seconds,
