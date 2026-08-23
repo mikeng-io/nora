@@ -112,6 +112,92 @@ The design markets that persistence as the feature — it is the same property
 that makes a position *hold*. Escaping is necessary and **not obviously
 sufficient**. Accepted, with a named review point, and not solved.
 
+## 4.2 What the debrief is actually shown — the rendering contract
+
+The type carries everything; **nothing renders it yet**, and that gap is how the
+fact tier failed — identity present on the row, dropped at the prompt, noticed
+months later ([21-substrate-contract.md](21-substrate-contract.md) §7.1). The
+contract is therefore stated here rather than discovered by whoever writes the
+stage.
+
+**What the fold receives:**
+
+```
+TagTrace
+  tag_id · conversation_id · outcome · created_at
+  messages    = agent.messages[baseline:]     the model exchange
+  transcript  = (TranscriptRow, ...)          the room's own messages
+prior: Standing                               the fold's SECOND argument
+```
+
+`outcome` is one of `send_reply · recovered · silent · vetoed · timeout ·
+llm_error`, and `prior` is deliberately not a `TagTrace` field: the type is
+built at the extraction boundary, which has no storage access.
+
+**A worked render**, in the shape the stage must produce:
+
+```
+<standing_prior>
+  They are planning dinner for the 9th; venue undecided between three.
+  Grant is travelling and replies late.
+</standing_prior>
+
+<turn outcome="silent" at="2026-08-23 21:04 HKT">
+  <transcript>
+    [21:02] Miles: 邊個做嘅大步行?
+    [21:03] Grant (replying to 21:02): House House 啊
+    [21:04] Nora: (no reply sent — R-5)
+  </transcript>
+  <reasoning>
+    ...the model exchange, tool calls and results...
+  </reasoning>
+</turn>
+```
+
+**Six mappings a renderer must not get wrong**, each one a defect this bundle
+has already seen in another tier:
+
+| field | the requirement | the failure it prevents |
+|---|---|---|
+| `ts` | rendered as **local wall-clock time**, never the raw bigint | the model reasoning about `1756012345`. *"You are not even including the timestamp"* is the fact tier's critique verbatim |
+| `is_nora` | **always rendered**, as a distinct speaker | the fact tier's exact defect — a batch where nobody can tell who said what |
+| `sender_name` / `person_name` | the **display name**, never `person_id` | §4.3 |
+| `quoted_ts` | rendered as a reply relation | *"yeah that one"* becomes unresolvable, and the debrief mis-reads what a turn was about |
+| `outcome` | **always**, including *why* silent | §2 makes silence the case most worth reviewing; a render that omits it defeats the stage's own purpose |
+| `prior` | **always present**, even when empty | §4's non-negotiable. A fold that cannot see the prior position cannot correct it |
+
+### 4.3 The trace holds identifiers, and Standing is injected forever
+
+**The sanitizer strips synthetic artifacts and caps length. It does not redact
+identifiers, coordinates or addresses** — and that is correct for a *record*.
+
+But `messages` holds raw tool results, and a `where_is` result contains **a live
+position**. So there is a path:
+
+> `where_is` result → `tag_trace.messages` → the debrief prompt → `Standing` →
+> **injected into every subsequent turn**
+
+§4.1 records injection *persistence* as the carried risk. **This is a different
+one and it was not recorded**: a coordinate or an identifier entering Standing
+through the trace, and then persisting **by design** rather than by attack.
+
+The guards do not cover it. R-18/R-28 screen **egress from a reply**; Standing
+is not a reply, it is an **input**, re-injected indefinitely.
+
+**Two rules follow, and they belong to this stage:**
+
+- **The debrief's transcript render uses display names and never `person_id`.**
+  The identifier is available for the code-side join; it has no reason to be in
+  a prompt whose output persists.
+- **`Standing` passes the disclosure subset before it is written**, not before
+  it is read. Screening at read time is the mistake F3 already refuted for room
+  access — the gate belongs where the content class changes, and that is the
+  write.
+
+This is the same shape as [11-disclosure.md](11-disclosure.md)'s finding, one
+tier over: **a read that looks safe because something downstream screens it, and
+the screen is on the wrong side of the persistence boundary.**
+
 ## 5. Latency is a design constraint, not an operational one
 
 Because the debrief holds the slot, its cost is **user-visible — but not to the
