@@ -35,6 +35,7 @@ from ..domain.ports import (
     ComputeBackend,
     GifSource,
     MediaDescriptionStore,
+    MusicToolBridge,
     SearchProvider,
     WeatherProvider,
 )
@@ -115,6 +116,7 @@ class ToolRegistry:
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
         giphy: GifSource | None = None,
+        music: MusicToolBridge | None = None,
         budget_overrides: Mapping[str, int] | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
@@ -279,6 +281,15 @@ class ToolRegistry:
         # test-seam policy forbids.
         self._versions = versions if versions is not None else VersionManifest()
         self._giphy = giphy
+        # `MusicToolBridge` (design/discord-music/07-agent-tool.md), wired the
+        # identical honest way `events`/`compute_backend` are: NOT
+        # default-constructed — there is no bridgeless default, and every
+        # composition that has not wired `DiscordMusicToolBridge` (offline,
+        # eval, `[music] enabled = false`, or Discord itself disabled) leaves
+        # this None and all four music tools answer `unavailable` (R-5). The
+        # Discord-only gate is a SEPARATE check each tool makes on
+        # `room.platform` before ever touching this collaborator.
+        self._music = music
 
     def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
@@ -598,6 +609,7 @@ class ToolRegistry:
             giphy_source=self._giphy,
             compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,
             tool_call_log_store=self._tool_call_log_store,
+            music=self._music,
         )
 
     def build(

@@ -70,6 +70,8 @@ def test_the_registry_exposes_every_declared_tool():
         "media_fetch",
         "web_search", "web_fetch",
         "weather",
+        # Discord-only music (design/discord-music/07-agent-tool.md).
+        "play_music", "skip_music", "stop_music", "music_status",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "create_event", "update_event", "rsvp_event", "cancel_event",
@@ -145,6 +147,10 @@ def test_budgets_match_todays_table():
         # 9-day forecast on a flag. 2 — one HKO round usually answers, a second
         # covers a follow-up.
         "weather": 2,
+        # Discord-only music (design/discord-music/07-agent-tool.md), all 2
+        # like `weather`: one call is the ordinary shape for each verb, a
+        # second covers "no, the other one" after a bad match.
+        "play_music": 2, "skip_music": 2, "stop_music": 2, "music_status": 2,
         # The three reminder verbs (DEC-70), all 2 and sized by the
         # CONVERSATION rather than by cost: none leaves the host or the
         # database, so a call is one model round trip, and one message can
@@ -500,7 +506,8 @@ def test_no_override_leaves_the_table_exactly_as_it_is():
 def test_cacheable_tools_matches_the_declared_set():
     from nora.agent.registry import ToolRegistry
     assert ToolRegistry().cacheable_tools() == frozenset(
-        {"place_info", "route", "web_search", "web_fetch", "weather", "transit"}
+        {"place_info", "route", "web_search", "web_fetch", "weather", "transit",
+         "music_status"}
     )
 
 
@@ -527,6 +534,9 @@ ACT_VERBS = frozenset({
     # verb that forgets the flag fails the classification test by name; these
     # two are acts and belong here.
     "note_create", "note_update",
+    # Discord-only music (design/discord-music/07-agent-tool.md) — three of
+    # the four verbs mutate the voice session; `music_status` is the read.
+    "play_music", "skip_music", "stop_music",
 })
 
 # The full read-only set as declared today. Pinned so that ADDING a tool is a
@@ -541,6 +551,7 @@ READ_ONLY = frozenset({
     "web_search", "web_fetch", "weather", "list_reminders", "list_events",
     "suggest_venue", "version", "search_gifs",
     "note_read", "note_search",
+    "music_status",
 })
 
 

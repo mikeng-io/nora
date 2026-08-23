@@ -202,7 +202,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from nora.domain.facts import Fact as Fact
 from nora.domain.facts import FactCandidate as FactCandidate
@@ -1679,3 +1679,44 @@ class TrackSource(Protocol):
     day a second `TrackSource` (a SoundCloud adapter) exists."""
 
     async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]: ...
+
+
+@dataclass(frozen=True)
+class MusicToolOutcome:
+    """What a Nora agent music tool hands back (design/discord-music/
+    07-agent-tool.md) — this file's R-27 three-state discipline: `ok` /
+    `nothing_found` / `unavailable`, never conflated. `title`/`url` are only
+    meaningful on `ok`."""
+
+    status: Literal["ok", "nothing_found", "unavailable"]
+    title: str | None = None
+    url: str | None = None
+    note: str = ""
+
+
+@runtime_checkable
+class MusicToolBridge(Protocol):
+    """What a Nora agent tool needs to control Discord music
+    (design/discord-music/07-agent-tool.md), without `nora.agent` ever
+    importing `discord.py` directly — `nora.agent` and `nora.platform` are
+    PEERS in this repo's layered-architecture contract, neither may import
+    the other, so this port is the seam. NEVER raises, matching
+    `TrackSource`/`WeatherProvider`'s discipline in this file.
+
+    Discord-only by construction, not by a platform check the CALLER has
+    to remember: every method resolves `conversation_id` (a Discord tag's
+    own `"<guild_id>/<channel_id>"` shape) and `sender_id` to a live guild
+    member currently in a voice channel. On any other platform, a member
+    not currently in ANY voice channel, or no live Discord connection
+    right now, every method answers `unavailable` or `nothing_found` —
+    never guesses a channel, and never silently no-ops."""
+
+    async def play(
+        self, *, conversation_id: str, sender_id: str, query_or_url: str,
+    ) -> MusicToolOutcome: ...
+
+    async def skip(self, *, conversation_id: str) -> MusicToolOutcome: ...
+
+    async def stop(self, *, conversation_id: str) -> MusicToolOutcome: ...
+
+    async def status(self, *, conversation_id: str) -> MusicToolOutcome: ...

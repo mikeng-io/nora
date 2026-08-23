@@ -74,7 +74,15 @@ from ..domain.events import (
 from ..domain.media import HANDLE_CHARS, GifCandidate
 from ..domain.models import WeatherObservation
 from ..domain.notes import Note, NoteRevision, StaleNoteHeadError
-from ..domain.ports import ComputeBackend, GifSource, JobStatus, MessageHits, Recollection
+from ..domain.ports import (
+    ComputeBackend,
+    GifSource,
+    JobStatus,
+    MessageHits,
+    MusicToolBridge,
+    MusicToolOutcome,
+    Recollection,
+)
 from ..domain.reminders import (
     Recurrence,
     RecurrenceRule,
@@ -508,6 +516,24 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                           "any warnings in force (typhoon signal, rainstorm, very hot), "
                           "today's outlook, and the multi-day forecast when asked",
                           source_tier="confirmed", cacheable=True, read_only=True),
+    # design/discord-music/07-agent-tool.md. Discord-only by construction — every
+    # body checks `room.platform != "discord"` first and answers `unavailable`,
+    # never guessing a channel on a platform with no voice concept at all.
+    # Budget 2, matching `weather`'s reasoning: one call is the ordinary shape,
+    # a second covers "no, the other one" after a bad match. `terminal=False`
+    # on all four — playing/skipping/stopping a track is the middle of a turn,
+    # she still has to say what happened.
+    "play_music": NativeTool(2, "play something in the Discord voice channel you're "
+                              "already in — a search term, a video link, or a "
+                              "playlist link"),
+    "skip_music": NativeTool(2, "skip the track currently playing in this Discord "
+                              "voice channel"),
+    "stop_music": NativeTool(2, "stop the music and leave the Discord voice channel"),
+    # `read_only`/`cacheable`, like `weather`: a live status read that acts on
+    # nothing and discloses nothing per-person.
+    "music_status": NativeTool(2, "what's currently playing in this Discord voice "
+                                "channel", source_tier="confirmed", cacheable=True,
+                                read_only=True),
     # The three reminder verbs (design spec §7). All 2, and the number is sized
     # by the CONVERSATION rather than by cost: none of the three leaves the host
     # or the database, so a call is one model round trip and nothing else, and
@@ -1342,6 +1368,31 @@ _WEATHER_OFF: Mapping[str, object] = {
     "note": "I couldn't reach the weather service just now. Say you couldn't check "
             "— don't invent a temperature or forecast.",
 }
+# design/discord-music/07-agent-tool.md — the platform gate every music tool
+# checks FIRST, before ever touching `music`/`room.tagger`. Signal (or any
+# future platform) never resolves a guild, never constructs a voice-channel
+# lookup — this is the honest "music doesn't exist here" answer, not a
+# wiring gap, so it reads the same as `_MUSIC_OFF` to the model on purpose:
+# either way she must say she can't play music, never guess.
+_MUSIC_NOT_DISCORD: Mapping[str, object] = {
+    "status": "unavailable",
+    "note": "Music only works in a Discord voice channel. Say you can't play music "
+            "here — don't pretend to.",
+}
+# No `music` collaborator wired (composition never built a
+# `DiscordMusicToolBridge`) — the ordinary state for the offline/eval
+# compositions and any deployment with `[music] enabled = false`.
+_MUSIC_OFF: Mapping[str, object] = {
+    "status": "unavailable",
+    "note": "I can't reach the music player right now.",
+}
+# `room.tagger` is None, or identity.toml maps them to no Discord account at
+# all — `_member_voice_channel`'s `(conversation_id, sender_id)` pair needs a
+# REAL Discord id, never guessed from a display name.
+_MUSIC_NO_TAGGER: Mapping[str, object] = {
+    "status": "unavailable",
+    "note": "I couldn't tell who's asking, so I can't check your voice channel.",
+}
 # The «no build stamp» payload for `version` (DEC-97). A source checkout has no
 # `nora/version.json` (it is generated at build time and gitignored), so this is
 # the ordinary state outside a built image — and it is `unavailable`, NEVER
@@ -1388,6 +1439,20 @@ def _weather_result(obs: WeatherObservation) -> dict[str, object]:
             }
             for d in obs.forecast_days
         ]
+    return result
+
+
+def _music_result(outcome: MusicToolOutcome) -> dict[str, object]:
+    """Render a `MusicToolOutcome` into the model-facing tool result — only
+    the fields the bridge actually set, the same sparse-dict discipline
+    `_weather_result` follows."""
+    result: dict[str, object] = {"status": outcome.status}
+    if outcome.title is not None:
+        result["title"] = outcome.title
+    if outcome.url is not None:
+        result["url"] = outcome.url
+    if outcome.note:
+        result["note"] = outcome.note
     return result
 
 
@@ -1545,6 +1610,7 @@ def build_tool_specs(
     events: EventsCollaborator | None = None,
     notes: NoteCollaborator | None = None,
     note_workspace: Callable[[str, str], str | None] | None = None,
+    music: MusicToolBridge | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -1599,6 +1665,13 @@ def build_tool_specs(
     boundary §3's scope decision exists to hold, and DEC-105/R-49 hold for
     `send_to`. So it takes `(platform, conversation_id)` and answers `None` for
     a room policy cannot name, which is `unavailable` rather than a guess.
+
+    `music` is `MusicToolBridge` (`nora.domain.ports`, design/discord-music/
+    07-agent-tool.md) — `None` in every composition that has not wired
+    `DiscordMusicToolBridge`, the same honest wiring-gap shape every other
+    optional collaborator above uses. All four music tools ALSO refuse on
+    `room.platform != "discord"` before ever touching it, so a non-Discord
+    room never reaches this collaborator at all.
     """
     caps = reminder_caps or ReminderCaps()
     now_fn = clock or utc_now
@@ -3297,6 +3370,134 @@ def build_tool_specs(
         _record(metrics, "weather", "ok", forecast=forecast, warned=bool(obs.warnings))
         return _weather_result(obs)
 
+    def _music_sender_id() -> str | None:
+        """The tagger's raw Discord id — `MusicToolBridge.play`'s
+        `sender_id`, which must resolve a REAL guild member, never a name.
+        `persons.platform_ids` is the reverse of the resolution `room.tagger`
+        already went through once; picking any one id a person presents on
+        this platform is fine here the same way it is fine for `send_to`'s
+        mention resolution — nobody plays music from two Discord accounts in
+        two different voice channels at once."""
+        tagger = room.tagger
+        if tagger is None:
+            return None
+        return next(iter(persons.platform_ids(room.platform, tagger.person_id)), None)
+
+    async def play_music(query: str) -> dict:
+        """Play something in the Discord voice channel you're already in.
+
+        Call this when someone asks Nora to play music — a direct request
+        ("play apt", "play some jazz") or a link they shared. `query` takes
+        either a plain search term (the top YouTube match plays) or a URL (a
+        single video, or a playlist link — a playlist queues every track).
+        For a vaguer request ("play some kpop"), use `web_search` FIRST to
+        find a real, curated playlist link, then pass that URL here —
+        ordinary multi-tool reasoning in one turn, not a separate step.
+
+        You must already be in a Discord voice channel for a FIRST track to
+        start a session; adding to an already-playing session works from
+        anywhere in the server. `status`: `ok` (now playing or queued —
+        `title` names it), `nothing_found` (couldn't resolve `query` to
+        anything playable), or `unavailable` (music isn't available here, or
+        you're not in a voice channel and nothing is playing yet — say so,
+        don't guess a channel).
+
+        Args:
+            query: what to play — a search term, a video URL, or a playlist URL.
+        """
+        if room.platform != "discord":
+            _record(metrics, "play_music", "unavailable")
+            return dict(_MUSIC_NOT_DISCORD)
+        if music is None:
+            _record(metrics, "play_music", "unavailable")
+            return dict(_MUSIC_OFF)
+        sender_id = _music_sender_id()
+        if sender_id is None:
+            _record(metrics, "play_music", "unavailable")
+            return dict(_MUSIC_NO_TAGGER)
+        try:
+            outcome = await music.play(
+                conversation_id=conversation_id, sender_id=sender_id, query_or_url=query,
+            )
+        except Exception:  # a tool never raises into the loop (R-5)
+            log.exception("play_music failed")
+            outcome = None
+        if outcome is None:
+            _record(metrics, "play_music", "unavailable")
+            return dict(_MUSIC_OFF)
+        _record(metrics, "play_music", outcome.status)
+        return _music_result(outcome)
+
+    async def skip_music() -> dict:
+        """Skip the track currently playing in this Discord voice channel.
+
+        `status`: `ok` (`title` names what was skipped), `nothing_found`
+        (nothing is playing), or `unavailable` (music isn't available here).
+        """
+        if room.platform != "discord":
+            _record(metrics, "skip_music", "unavailable")
+            return dict(_MUSIC_NOT_DISCORD)
+        if music is None:
+            _record(metrics, "skip_music", "unavailable")
+            return dict(_MUSIC_OFF)
+        try:
+            outcome = await music.skip(conversation_id=conversation_id)
+        except Exception:  # a tool never raises into the loop (R-5)
+            log.exception("skip_music failed")
+            outcome = None
+        if outcome is None:
+            _record(metrics, "skip_music", "unavailable")
+            return dict(_MUSIC_OFF)
+        _record(metrics, "skip_music", outcome.status)
+        return _music_result(outcome)
+
+    async def stop_music() -> dict:
+        """Stop the music and leave the Discord voice channel.
+
+        `status`: `ok` (stopped), `nothing_found` (nothing was playing, so
+        there was nothing to stop), or `unavailable` (music isn't available
+        here).
+        """
+        if room.platform != "discord":
+            _record(metrics, "stop_music", "unavailable")
+            return dict(_MUSIC_NOT_DISCORD)
+        if music is None:
+            _record(metrics, "stop_music", "unavailable")
+            return dict(_MUSIC_OFF)
+        try:
+            outcome = await music.stop(conversation_id=conversation_id)
+        except Exception:  # a tool never raises into the loop (R-5)
+            log.exception("stop_music failed")
+            outcome = None
+        if outcome is None:
+            _record(metrics, "stop_music", "unavailable")
+            return dict(_MUSIC_OFF)
+        _record(metrics, "stop_music", outcome.status)
+        return _music_result(outcome)
+
+    async def music_status() -> dict:
+        """What's currently playing in this Discord voice channel.
+
+        `status`: `ok` (`title` names the now-playing track), `nothing_found`
+        (nothing is playing), or `unavailable` (music isn't available here).
+        """
+        if room.platform != "discord":
+            _record(metrics, "music_status", "unavailable")
+            return dict(_MUSIC_NOT_DISCORD)
+        if music is None:
+            _record(metrics, "music_status", "unavailable")
+            return dict(_MUSIC_OFF)
+        try:
+            outcome = await music.status(conversation_id=conversation_id)
+        except Exception:  # a tool never raises into the loop (R-5)
+            log.exception("music_status failed")
+            outcome = None
+        if outcome is None:
+            _record(metrics, "music_status", "unavailable")
+            return dict(_MUSIC_OFF)
+        _record(metrics, "music_status", outcome.status)
+        return _music_result(outcome)
+
     async def remind(
         when: str, text: str, repeat: str = "none",
         times: int | None = None, until: str | None = None,
@@ -4738,6 +4939,10 @@ def build_tool_specs(
         _spec("web_search", web_search),
         _spec("web_fetch", web_fetch),
         _spec("weather", weather),
+        _spec("play_music", play_music),
+        _spec("skip_music", skip_music),
+        _spec("stop_music", stop_music),
+        _spec("music_status", music_status),
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),
         _spec("cancel_reminder", cancel_reminder),

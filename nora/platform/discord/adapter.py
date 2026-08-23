@@ -72,6 +72,12 @@ class DiscordAdapter:
         # the supervisor's restart into a silent no-op; a per-attempt client is
         # what makes the restart real.
         self._listener: DiscordListener | None = None
+        # design/discord-music/07-agent-tool.md — the ONE thing an agent
+        # tool needs that `NormalizedMessage`/`TagContext` never carry: a
+        # live client to resolve a guild member's current voice channel.
+        # Same per-attempt lifecycle as `_listener` above; `current_client()`
+        # is the accessor, never read directly by anything outside this class.
+        self._current_client: discord.Client | None = None
 
     async def resolve_identity(self) -> PlatformIdentity:
         """Memoized after the first call — same rationale as
@@ -99,6 +105,7 @@ class DiscordAdapter:
         intents.guilds = True
         intents.members = True          # privileged; the roster read needs it
         client = discord.Client(intents=intents)
+        self._current_client = client
 
         async def _register_music_commands() -> None:
             # `design/discord-music/02-control-surface.md`: the CommandTree
@@ -143,6 +150,14 @@ class DiscordAdapter:
             # on the ordinary path too.
             with contextlib.suppress(Exception):
                 await client.close()
+            self._current_client = None
+
+    def current_client(self) -> discord.Client | None:
+        """`None` whenever there is no live connection attempt right now
+        (between attempts, or before the first) — an agent tool built on
+        top of this must treat that as `unavailable`, the same as any
+        other wiring gap this codebase's provider ports already do."""
+        return self._current_client
 
     async def send(
         self,

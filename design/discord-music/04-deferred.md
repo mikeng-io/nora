@@ -52,13 +52,17 @@ keeps them distinct on purpose):
   `tests/contract/test_track_source_contract.py`, not optional once a
   second implementation exists.
 
-## Nora agent tools (`play_music`, `skip_music`, `music_status`, ...)
-**Deferred.** Slash commands are a complete interface on their own
-(`02-control-surface.md`).
-**Evidence bar:** people are shown to prefer asking Nora conversationally
-("play some jazz") over the slash command often enough that the redundancy
-is worth the tool budget. If built, it wraps the identical `MusicPlayer`
-methods the slash commands call — never a second mutation path.
+## Nora agent tools — pause/resume/volume only
+**`play_music`/`skip_music`/`stop_music`/`music_status` are BUILT**
+(`07-agent-tool.md`) — the operator's own evidence arrived directly
+("play some kpop", "play apt" conversationally). Pause/resume/volume
+remain deferred: slash commands are a complete interface for those on
+their own (`02-control-surface.md`).
+**Evidence bar:** someone asks Nora conversationally to pause/resume/adjust
+volume often enough that the redundancy is worth the added tool budget. If
+built, same rule `07-agent-tool.md` already followed: wraps the identical
+`MusicPlayerManager` methods the slash commands call, never a second
+mutation path.
 
 ## Auto-resume after a Gateway-reconnect voice drop
 **Deferred**, named explicitly as a known gap in `02-control-surface.md`
