@@ -48,6 +48,10 @@ class CrossfadeSource(discord.AudioSource):
         self._total_frames = max(1, round(duration_seconds / _FRAME_SECONDS))
         self._frame = 0
         self._old_exhausted = False
+        log.info(
+            "crossfade started: %s frames budgeted (%.2fs)",
+            self._total_frames, duration_seconds,
+        )
 
     def is_opus(self) -> bool:
         return False
@@ -63,12 +67,17 @@ class CrossfadeSource(discord.AudioSource):
             # duration_seconds yt-dlp got slightly wrong) -- nothing left
             # to blend, just hand off to `new` early rather than mixing
             # against silence for the remaining frames.
+            log.info(
+                "crossfade: old exhausted early at frame %s/%s (new_chunk_len=%s)",
+                self._frame, self._total_frames, len(new_chunk),
+            )
             self._old_exhausted = True
             self._old.cleanup()
             return new_chunk
         self._frame += 1
         progress = min(1.0, self._frame / self._total_frames)
         if self._frame >= self._total_frames:
+            log.info("crossfade complete at frame %s/%s", self._frame, self._total_frames)
             self._old_exhausted = True
             self._old.cleanup()
         new_scaled = (
