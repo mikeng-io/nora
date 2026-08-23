@@ -257,6 +257,17 @@ context_window = 40
 # on the record), and a rolling 500 is not history.
 prune_enabled = false
 
+[music]
+# The Discord music bot (design/discord-music/00-overview.md, PR #28). ON,
+# with [platforms.discord] already enabled above: /music play|skip|queue|
+# pause|resume|stop registers as slash commands. Never verified against a
+# live Discord connection before this deploy — watch the container's logs
+# for a CommandTree.sync() failure at startup (e.g. the bot token missing
+# the applications.commands OAuth scope) and for the first real /music
+# play's outcome.
+enabled = true
+idle_timeout_seconds = 300.0
+
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version
 # baked into this image has not been announced in a room yet, Nora relays the
