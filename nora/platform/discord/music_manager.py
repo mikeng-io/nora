@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from datetime import datetime
 from typing import Any
 
-from nora.domain.music import MusicQueueStore, MusicSessionStore, QueuedTrack
+from nora.domain.music import MusicQueueStore, MusicSession, MusicSessionStore, QueuedTrack
 from nora.domain.ports import TrackSource
 from nora.platform.discord.music_player import MusicPlayer, PlayerStatus, PlayOutcome, VoiceSession
 
@@ -172,6 +172,54 @@ class MusicPlayerManager:
         """The channel's human count dropped to zero — leaves immediately,
         no idle grace period (03's disconnect-timer rules, trigger 1)."""
         await self._leave(guild_id)
+
+    async def persisted_sessions(self) -> Sequence[MusicSession]:
+        """Every session a PRIOR process left behind — the boot-time
+        resume scan's input (design/discord-music/06-session-persistence
+        .md stage 2). The Discord platform layer owns deciding whether
+        each one is actually resumable (channel still exists, still has
+        humans in it); this just hands back what's on record."""
+        return await self._session_store.all()
+
+    async def discard_persisted_session(self, guild_id: str) -> None:
+        """The boot-time scan's "not resumable" outcome (channel gone, or
+        emptied while Nora was down) — deletes the stale row without ever
+        constructing a `MusicPlayer` or opening a voice connection for it."""
+        await self._session_store.delete(guild_id)
+
+    async def resume_persisted_session(
+        self, session: MusicSession, *, connect: Connect, notify: Notify,
+    ) -> None:
+        """Boot-time resume ONLY — never called from a slash command.
+        Builds a fresh `MusicPlayer` directly from a persisted row rather
+        than through `play()`'s query-resolving flow: there is no new
+        query here, just an already-known track to restart from position
+        0 (`MusicPlayer.resume_from_persisted`'s own limitation)."""
+        if session.guild_id in self._players:
+            return  # already has a live player; do not clobber it
+        voice = await connect()
+        player = MusicPlayer(
+            guild_id=session.guild_id, queue=self._queue_store, source=self._track_source,
+            voice=voice, session=self._session_store,
+            voice_channel_id=session.voice_channel_id,
+            notify_channel_id=session.notify_channel_id,
+        )
+        self._players[session.guild_id] = player
+        self._notify[session.guild_id] = notify
+        resumed = False
+        if session.now_playing_source is not None and session.now_playing_locator is not None:
+            resumed = await player.resume_from_persisted(
+                source=session.now_playing_source, locator=session.now_playing_locator,
+                title=session.now_playing_title or "", paused=session.paused,
+                volume=session.volume,
+            )
+        if not resumed:
+            # Either nothing was playing when this was persisted, or the
+            # persisted track no longer resolves -- either way, fall
+            # through to whatever the ACTUAL queue has next (or idle).
+            await player.on_track_finished()
+        status = await self._after_transition(session.guild_id, player)
+        await self._notify_now_playing(session.guild_id, status)
 
     async def _get_or_create(
         self, guild_id: str, connect: Connect | None,

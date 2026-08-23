@@ -29,6 +29,7 @@ from ...domain.ports import (
 )
 from .listener import DiscordListener
 from .music_commands import register as register_music_commands
+from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
 from .music_manager import MusicPlayerManager
 from .parser import parse_discord_message
 from .react import DiscordReactor
@@ -107,6 +108,13 @@ class DiscordAdapter:
             # docstring is explicit about that boundary.
             if self._music_manager is not None:
                 await register_music_commands(
+                    client, self._music_manager, crossfade_seconds=self._crossfade_seconds,
+                )
+                # design/discord-music/06-session-persistence.md stage 2 --
+                # safe to run on every on_ready, not just a genuine boot
+                # (resume_persisted_sessions's own guard against clobbering
+                # an already-live player).
+                await resume_persisted_music_sessions(
                     client, self._music_manager, crossfade_seconds=self._crossfade_seconds,
                 )
 
