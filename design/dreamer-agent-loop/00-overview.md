@@ -171,10 +171,11 @@ with its reasoning**, and where an empirical fact is genuinely unknown **both
 branches are designed** ([07](07-loop.md) §7). Implementation is progressive;
 the design is not.
 
+**Standing and the debrief are IN scope.** They were consolidated into this
+bundle on 2026-08-22 and their decisions are closed in [15](15-roadmap.md) §6.3.
+
 What sits **outside the scope**, which is a boundary rather than an open item:
 
-- **Standing / the debrief** — owned by another session, with its agreement. Its
-  roadmap is recorded in [15](15-roadmap.md) §6; this bundle does not own it.
 - **Doctrine's content** — the operator's, always. This bundle decides doctrine's
   *shape* ([13](13-doctrine.md)), never its words.
 - **The predicate seed list and the object veto list** — operator-owned files,

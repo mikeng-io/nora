@@ -213,21 +213,58 @@ ships, or early folds are unrecoverable.**
 - **Phase 4** — fact proposals from the debrief. **Now unblocked** (its stated
   blocker, the fact tier merging, is satisfied). Depends on Phase 2 first.
 
-**Three Phase-2 blockers exist only on that branch**, including the one that
-matters most here: *the fold must read the current Standing before writing a
-new one, or it reproduces the language tier's exact failure* — two contradictory
-positions coexisting, neither able to correct the other
-([12-self-correction.md](12-self-correction.md) §3). The re-derivation
-signature does not yet take the prior state and must gain it **before**
-implementation, not during.
+**Three Phase-2 blockers, all decided:**
 
-**Six operator decisions remain open**, none blocking Phase 1, each changing
-what gets built.
+1. **The fold must read the current Standing before writing a new one**, or it
+   reproduces the language tier's exact failure — two contradictory positions
+   coexisting, neither able to correct the other
+   ([12-self-correction.md](12-self-correction.md) §3). **The re-derivation
+   signature takes the prior state**, and that is a signature change made
+   *before* implementation, not during. Non-negotiable: this is the same defect
+   D19 reverses for the language tier, and shipping it twice would be a choice.
+2. **The debrief is a plain completion call, not a tools-less agent.** Grounded
+   in the production incident this bundle documents: a tools-less adaptor is a
+   completion wearing an agent's construction
+   ([03-no-agent-loop.md](03-no-agent-loop.md)), and it inherited the loop
+   machinery's failure modes for none of its benefits.
+3. **`tool_choice="required"` reliability** is the same question as
+   [07-loop.md](07-loop.md) §7, answered by the same reading — the eval harness
+   driving the real pipeline, never another single-shot probe. Both branches of
+   that fork are already designed, so this blocks implementation ordering, not
+   design.
+
+**Six operator decisions — CLOSED, 2026-08-23.** They are adopted as their
+branch's own recommendations, which were argued rather than guessed; §6.3 states
+each with its reasoning.
 
 **Carried risk, stated not solved:** Standing is update-in-place, so a
 successful prompt injection **persists** until a later fold drops it — and the
 design markets that persistence as the feature. Escaping is necessary and not
 obviously sufficient.
+
+## 6.3 The six Standing decisions, closed
+
+Adopted 2026-08-23 as the branch's own recommendations — each was argued from
+existing repo shape rather than guessed, and adopting a reasoned recommendation
+is a decision. Where one is wrong the operator overrides it; what does not
+remain is a list of open questions.
+
+| # | question | **decided** | why |
+|---|---|---|---|
+| **S1** | Do the four non-tag slot holders (`heartbeat`, `announce`, `compute_poller`, lost-jobs) debrief? | **Yes, except `announce`** | Those turns reason and assert; excluding them silently loses that. `announce` defers to the next boot, so a longer hold is not a free retry there |
+| **S2** | Re-derivation trigger — fold count, elapsed time, or forced when `grounded` is false? | **Forced on `grounded=false`, plus a fold-count ceiling** | Time alone re-derives healthy conversations for nothing. The ceiling bounds drift; the forced case catches the turn that actually went wrong |
+| **S3** | Debrief window — the same 40 rows as `context_window`, or its own? | **Its own, smaller** | The debrief revises a position; it does not need the full reply context. A shared number here would be [05-transport.md](05-transport.md)'s inheritance error in another seam |
+| **S4** | `Standing` key — `conversation_id` or `(platform, conversation_id)`? | **`(platform, conversation_id)`** | Every lock, queue and slot already keys that way, and the `messages` table carries the platform column. A different key here is a join nobody can make |
+| **S5** | Does `<standing>` render on the fire path (reminder/announce/relay)? | **Yes** | `build_prefill` is shared and parameterised only by `header=`. Suppressing it there is the special case that would need justification, not including it |
+| **S6** | Corroborate `grounded` with `tool_call_log`, which knows deterministically which tools ran? | **Yes** | A deterministic corroborator beside a model verdict is exactly this repo's fail-closed shape — the same argument as R-27's three states |
+
+**The carried risk is not closed by these, and is restated rather than
+softened:** Standing is update-in-place, so a successful prompt injection
+**persists** until a later fold drops it, and the design markets that persistence
+as the feature. Every other untrusted block is rebuilt from the store each turn,
+so an injection there lasts one turn. Escaping is necessary and **not obviously
+sufficient**. This is a known, accepted risk with a named review point at Phase
+2.7 — not an oversight, and not solved.
 
 ## 6.1 Two stores the tier table omits, and the boundary they reveal
 
