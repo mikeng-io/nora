@@ -146,6 +146,13 @@ generally: a strong multilingual embedder is the only thing that closes it.
 
 ### 6.1 The tokenisation fix, from prior art that tests it
 
+> **SUPERSEDED by [24-embedding-seam.md](24-embedding-seam.md) §2** (2026-08-23).
+> The technique below is a workaround for an engine with no trigram operator.
+> Postgres has one, and `word_similarity` was measured solving the same problem
+> in a single expression — which the note tier had already concluded and shipped.
+> Kept because the *problem* it describes is real and the comparison is what
+> justifies the choice.
+
 A production markdown-search tool solves the first gap **without touching the
 tokenizer**, in two coordinated places:
 
