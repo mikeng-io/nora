@@ -20,9 +20,14 @@ dependencies = [
     "psycopg[binary]>=3.3.4",
     "docker>=7.2.0",
     "requests>=2.34.2",
-    "discord-py>=2.7.1",
+    # [voice] pulls PyNaCl AND davey -- discord.py 2.7.1's VoiceClient.__init__
+    # raises RuntimeError unconditionally without EITHER (verified live,
+    # 2026-08-23: "davey library needed in order to use voice" on the very
+    # first real /music play -- pinning PyNaCl alone, as this line originally
+    # did, was not sufficient and the voice-support warning at startup
+    # ("davey is not installed") was wrongly read as harmless).
+    "discord-py[voice]>=2.7.1",
     "yt-dlp>=2026.8.19",
-    "pynacl>=1.6.2",
     "boto3>=1.43.62",
 ]
 
