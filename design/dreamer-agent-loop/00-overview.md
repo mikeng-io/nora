@@ -117,6 +117,8 @@ such rather than dressed as decisions.
 | **D18** | decision | **Multi-hop is depth 2**, fan-out 8 per node per hop, no expansion through an entity of degree > 30, distance **decays** rather than gates | [25](25-knowledge-pipeline.md) §7 |
 | **D19** | decision | **D9 is reversed**: the language tier gets supersession. Its "designed cost" already consumed 100% of the tier's output — two contradictory glosses, both live | [16](16-open-items.md) §7 |
 | **D20** | decision | **Standing is a tag-path STAGE, not an adaptor** — a second model reviewing the finished exchange, on every completed turn including silences. Per-conversation row revised in place; per-turn row never rewritten | [26](26-standing.md) |
+| **D21** | decision | **No adaptor may hold a verb that DELIVERS; one may hold a verb that ENQUEUES.** The delivery path re-applies every guard, which unblocks the note revisitor without widening background reach | [27](27-note-dreamer.md) §3 |
+| **D22** | decision | **Adaptors are not skills.** A skill is chosen by the model mid-turn; an objective is dispatched by code — so which objective ran stays a *fact*, not a choice, which provenance requires | [27](27-note-dreamer.md) §4 |
 
 **D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
 the second half is the load-bearing part: an extractor that suppresses claims it
@@ -132,7 +134,7 @@ has seen before destroys the signal that decides what is worth researching.
 
 **Execution** — [14](14-migration-and-governance.md) sequencing, numbers, tests · [15](15-roadmap.md) every tier's state and owner · [16](16-open-items.md) what is unresolved
 
-**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is · [21](21-substrate-contract.md) the shape they all write against · [22](22-config.md) what the operator can say · [23](23-retrieval.md) how she reads it back · [24](24-embedding-seam.md) the seam all three tiers share · [25](25-knowledge-pipeline.md) the pipeline end to end, and multi-hop · [26](26-standing.md) the debrief, and the roll
+**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is · [21](21-substrate-contract.md) the shape they all write against · [22](22-config.md) what the operator can say · [23](23-retrieval.md) how she reads it back · [24](24-embedding-seam.md) the seam all three tiers share · [25](25-knowledge-pipeline.md) the pipeline end to end, and multi-hop · [26](26-standing.md) the debrief, and the roll · [27](27-note-dreamer.md) the curator, the revisitor, and the instruction corpora
 
 > **If you only read two nodes:** [18](18-flows.md) to see how a tier actually
 > runs, then [01](01-live-state.md) for what it has actually produced. The gap

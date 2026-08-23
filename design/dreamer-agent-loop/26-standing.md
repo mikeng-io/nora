@@ -125,16 +125,26 @@ with no cap on the count. And a conversational position that cannot be stated in
 1200 characters is a summary, not a position — the tier is *lossy by design*
 (§8), so a cap that never binds would mean it had stopped being lossy.
 
-**Why it is not a config key**, which is the part most easily got wrong:
+**It is a config key, with the `CHECK` as an absolute ceiling** (operator
+decision, 2026-08-24). An earlier draft of this node argued the opposite — that
+a storage cap is an invariant and therefore must not be a knob. The operator
+overrode it, and the reconciliation is better than either pure position:
 
-> **Render caps are configuration; storage caps are invariants.**
+| layer | value | role |
+|---|---|---|
+| **`[standing] max_chars`** | **1200** | the operating cap. Tunable without a migration, because the right size is a judgement about prompts, and judgements about prompts change |
+| **DB `CHECK`** | **4000** | an absolute ceiling no writer can pass, config included. Not the operating value — a backstop against a config typo or a future writer nobody has thought of |
 
-`max_rendered_facts` and `max_rendered_lexemes` are config because they decide
-**how much of a store to show**. This decides **what may exist in a row**.
-Making it a knob means raising it silently changes every prompt in every
-conversation with no migration and no gate — and the `CHECK` is what makes the
-invariant true of rows written by any future writer, including one nobody has
-thought of yet.
+The `CHECK` cannot be a knob — a constraint is DDL — so the two layers do
+different jobs rather than duplicating one. **Config must stay at or below the
+ceiling**, and a config that exceeds it fails at startup rather than at the
+first oversized fold: the refuse-to-start shape this repo already uses for
+`policy.toml`.
+
+This is the general rule, and it corrects §4.0's earlier framing across the
+bundle: **a render cap is config; a storage cap is config *bounded by* a
+constraint.** The invariant is that some ceiling exists and is enforced in the
+database — not that the operator may never choose the working value.
 
 **The overflow path is the safety, not the cap.** When a fold would exceed
 1200, the write is **refused**, the current inventory is returned, and the model
