@@ -1415,6 +1415,28 @@ class NotesConfig(BaseModel):
     enabled: bool = False
 
 
+class MusicConfig(BaseModel):
+    """The Discord music bot's gate (the `discord-music` design bundle,
+    node 00 — overview and scope).
+
+    `enabled` defaults **False**, same reasoning every other optional
+    subsystem's gate gives: a new capability does not switch itself on. Only
+    load-bearing when `[platforms.discord] enabled` is also true —
+    `nora/app/composition.py` does not build a `MusicPlayerManager` for a
+    platform that isn't running, but this section itself does not know or
+    care which platform is enabled.
+
+    `idle_timeout_seconds` is the bundle's node 03 (state and persistence)
+    disconnect timer 2 (queue empty, nothing playing) — timer 1 (voice
+    channel emptied of humans) has no config, since there is no grace period
+    to size for an event that already means "leave now"."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    idle_timeout_seconds: float = 300.0
+
+
 class DoctrineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1782,6 +1804,11 @@ class Config(BaseModel):
     # index is read from `SqlNoteStore` on every tag — nothing writes a note
     # yet, so it is empty until a curator lands.
     notes: NotesConfig = NotesConfig()
+    # Optional and defaulted — see `MusicConfig`. Ships INERT
+    # (`enabled = false`); off, `AdapterRegistry.from_config` builds no
+    # `MusicPlayerManager` and `DiscordAdapter` gets `music_manager=None`
+    # (its own default), so `/music` commands never get registered.
+    music: MusicConfig = MusicConfig()
     # Optional and defaulted — see `ComputeConfig`. Ships INERT
     # (`enabled = false`); the `ComputeJobStore` is built unconditionally
     # regardless (the `reminders` shape), only the poller's tick loop is gated.

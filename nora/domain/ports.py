@@ -1627,3 +1627,40 @@ class FactCandidateReader(Protocol):
         it would re-spend a research loop on the claim the tier already
         failed to settle. `limit <= 0` yields `()`."""
         ...
+
+
+@dataclass(frozen=True)
+class ResolvedTrack:
+    """What `TrackSource.resolve` hands back — enough to start playback and
+    enough to persist as a `music_queue` row (design/discord-music/
+    01-playback-and-source.md, 03-state-and-persistence.md). `stream_url`
+    points at the underlying host's own CDN, not anything Nora serves —
+    short-lived by that host's own policy, never persisted past the row's
+    `url` column, which is a resolve INPUT to re-derive from, not a cache of
+    this value."""
+
+    title: str
+    stream_url: str
+    duration_seconds: int | None
+    source: str
+    source_id: str
+
+
+@runtime_checkable
+class TrackSource(Protocol):
+    """A query or URL, resolved to a `ResolvedTrack` — or `None`. NEVER
+    raises, matching `WeatherProvider`/`SearchProvider`'s discipline in this
+    file rather than `ComputeBackend`'s: this resolves a fixed, deterministic
+    lookup, it does not launch a job. A dead link, a private video, or an
+    unresolvable query are all ordinary `None` outcomes an implementation
+    must be able to say plainly, never an exception into the caller.
+
+    `YtDlpSource` is the only implementation today (design/discord-music/
+    01-playback-and-source.md), YouTube-only — an allowlist enforced BY the
+    implementation, not left to whatever `yt-dlp`'s own extractor set
+    happens to accept, because `query_or_url` is untrusted input a person
+    pasted. Per this repo's port convention, a single implementation needs
+    no contract suite; one becomes required the day a second `TrackSource`
+    (a SoundCloud adapter) exists."""
+
+    async def resolve(self, *, query_or_url: str) -> ResolvedTrack | None: ...

@@ -23,7 +23,7 @@ def test_config_example_exists_and_parses():
         "analytics", "shortener", "compute",
         "search", "weather", "preview", "heartbeat", "reminders", "language",
         "speech",
-        "facts", "notes",
+        "facts", "notes", "music",
         "version", "engagement", "doctrine", "dreamer", "identity_file", "policy_file",
         "obs", "evals", "tools",
     }

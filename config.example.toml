@@ -805,6 +805,19 @@ enabled = false
 # the domain type (title <= 60 chars, description <= 200) and by the curator
 # retiring closed notes.
 
+[music]
+# The Discord music bot's gate (design/discord-music/00-overview.md). ON,
+# and with [platforms.discord] enabled, DiscordAdapter registers /music
+# play|skip|queue|pause|resume|stop as slash commands — a deterministic
+# per-guild player, never LLM-mediated. OFF (default), no MusicPlayerManager
+# is built and the commands never get registered.
+enabled = false
+# Disconnect timer 2 (design/discord-music/03-state-and-persistence.md):
+# queue empty and nothing playing -> leave after this many seconds. Timer 1
+# (voice channel emptied of humans) has no setting — that one means leave
+# immediately, no grace period to size.
+idle_timeout_seconds = 300.0
+
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version
 # baked into this image has not been announced in a room yet, Nora relays the

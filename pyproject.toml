@@ -21,6 +21,8 @@ dependencies = [
     "docker>=7.2.0",
     "requests>=2.34.2",
     "discord-py>=2.7.1",
+    "yt-dlp>=2026.8.19",
+    "pynacl>=1.6.2",
     "boto3>=1.43.62",
 ]
 
@@ -240,4 +242,5 @@ dev = [
     "tomli-w>=1.0",
     "types-docker>=7.2.0.20260813",
     "types-pyyaml>=6.0.12.20260724",
+    "types-yt-dlp>=2026.8.19.20260823",
 ]
