@@ -14,7 +14,12 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from nora.domain.music import QueuedTrack
-from nora.platform.discord.music_commands import _QUEUE_PAGE_SIZE, _QueuePaginator, _reply_for
+from nora.platform.discord.music_commands import (
+    _QUEUE_PAGE_SIZE,
+    _NowPlayingControls,
+    _QueuePaginator,
+    _reply_for,
+)
 from nora.platform.discord.music_player import PlayerStatus, PlayOutcome
 
 T0 = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
@@ -33,6 +38,17 @@ def _paginator() -> _QueuePaginator:
     # click does, and that's the not-unit-tested `Interaction`-facing half
     # this module's docstring already excludes.
     return _QueuePaginator(manager=None, guild_id="guild-1")  # type: ignore[arg-type]
+
+
+class _StubManager:
+    """Only `.status()` -- the one method `_NowPlayingControls.render()`
+    calls without going through an `Interaction`-facing button handler."""
+
+    def __init__(self, status: PlayerStatus | None) -> None:
+        self._status = status
+
+    async def status(self, guild_id: str) -> PlayerStatus | None:
+        return self._status
 
 
 def test_reply_for_nothing_found() -> None:
@@ -115,3 +131,35 @@ def test_render_page_clamps_an_out_of_range_page_back_into_bounds() -> None:
 
     assert "page 1/1" in reply
     assert view.next_page.disabled is True
+
+
+async def test_controls_render_shows_now_playing_with_a_pause_label() -> None:
+    status = PlayerStatus(now_playing=_track("Track A"), paused=False, queue=[])
+    view = _NowPlayingControls(_StubManager(status), "guild-1")  # type: ignore[arg-type]
+
+    content = await view.render()
+
+    assert content == "Now playing: Track A"
+    assert view.pause_resume.label == "⏸ Pause"
+
+
+async def test_controls_render_shows_resume_label_when_paused() -> None:
+    status = PlayerStatus(now_playing=_track("Track A"), paused=True, queue=[])
+    view = _NowPlayingControls(_StubManager(status), "guild-1")  # type: ignore[arg-type]
+
+    content = await view.render()
+
+    assert content == "Now playing: Track A (paused)"
+    assert view.pause_resume.label == "▶ Resume"
+
+
+async def test_controls_render_with_nothing_playing_disables_and_stops() -> None:
+    view = _NowPlayingControls(_StubManager(None), "guild-1")  # type: ignore[arg-type]
+
+    content = await view.render()
+
+    assert content == "Nothing is playing."
+    assert view.skip.disabled is True
+    assert view.pause_resume.disabled is True
+    assert view.stop_playback.disabled is True
+    assert view.is_finished() is True
