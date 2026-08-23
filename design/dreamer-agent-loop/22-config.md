@@ -138,6 +138,43 @@ parallel mechanism — one place an operator looks per adaptor, not two.
 That also fixes §3 without a migration: an adaptor with no cadence block keeps
 today's inherited behaviour, and naming one overrides it.
 
+## 5.1 Storage caps are config, bounded by a constraint
+
+Operator decision, 2026-08-24, and it applies to **every** injected-field cap in
+the repo rather than to Standing alone.
+
+| field | config key | operating value | DB `CHECK` ceiling |
+|---|---|---|---|
+| `Standing.body` | `[standing] max_chars` | **1200** | **4000** |
+| `note.title` | `[notes] max_title_chars` | **60** | **120** |
+| `note.description` | `[notes] max_description_chars` | **200** | **400** |
+
+The note tier currently enforces 60 and 200 as **domain constants plus a
+`CHECK`** and offers no key at all — `note_title_fits_the_index_check`. That was
+the right instinct for the wrong reason: the cap exists because the field is
+**injected on every tag**, and how much prompt to spend is exactly the kind of
+judgement an operator revises without a migration.
+
+**The two layers do different jobs, and neither replaces the other:**
+
+- **config is the operating value** — the size someone chose for these prompts,
+  changeable at a restart;
+- **the `CHECK` is an absolute ceiling** — a constraint is DDL, so it cannot be
+  a knob, and it exists to stop a config typo or a future writer nobody has
+  thought of, not to express the intended size.
+
+**A config value above its ceiling refuses to start**, rather than failing at
+the first oversized row — the shape `policy.toml` already uses. The failure
+belongs at boot, where someone is watching, not at 3 a.m. on the write that
+happens to be long.
+
+The general rule, replacing the earlier *"render caps are config, storage caps
+are invariants"*:
+
+> **A render cap is config. A storage cap is config, bounded by a constraint.**
+> The invariant is that a ceiling exists and the database enforces it — not that
+> the operator may never choose the working value.
+
 ## 6. The naming, decided
 
 **`[language]`'s cadence keys move to `[dreamer.cadence.<adaptor>]`, and
