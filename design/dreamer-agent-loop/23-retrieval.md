@@ -182,12 +182,42 @@ It also explains the retracted measurement in
 for such a model, not a finding about embeddings. The instrument was never
 recorded, so the table cannot distinguish those two readings.
 
-**What must be measured before the dense channel is load-bearing**, stated so it
-is not skipped again: re-run those pairs with **the model named in the result**,
-and state what a passing reading looks like first. The claim to test is narrow —
-*does bge-m3 rank a true cross-lingual alias above a same-language literal
-misreading?* If it does not, the dense channel is recall-only at best and the
-lexical channel carries the tier.
+### 6.2 Measured, 2026-08-23 — and the two questions come out opposite ways
+
+Run against `bge-m3` on the Ollama instance already deployed on this host.
+
+**Resolution — bare name against bare name. FAILS.**
+[16-open-items.md](16-open-items.md) §4.1's table reproduces to four decimal
+places on this model. A cross-lingual alias sits *further* than a same-language
+literal misreading. **The dense channel must never decide whether two names are
+the same thing**, which is [21-substrate-contract.md](21-substrate-contract.md)
+§5's rule, now measured with the instrument named.
+
+**Retrieval — query against triple. WORKS, including from Cantonese.**
+
+| query | top result | distance |
+|---|---|---|
+| `大步行` | `big walk │ made_by │ House House` | 0.3404 |
+| `邊個做嘅大步行` | `big walk │ made_by │ House House` | 0.3310 |
+| `who made big walk` | `big walk │ made_by │ House House` | 0.2814 |
+| `big walk` (baseline) | `big walk │ made_by │ House House` | 0.2412 |
+
+Every query put the three `big walk` triples above every unrelated one, and both
+natural-language questions ranked `made_by` above `released_in` — the predicate
+the question actually asked for.
+
+**Why the same model succeeds at one and fails at the other:** a triple carries
+its own context. `big walk │ made_by │ House House` is a sentence-shaped thing;
+`Big Walk` alone is two tokens where surface-word overlap with `a big walk`
+dominates everything else.
+
+**This also closes the context-prefix question** ([§10](#10-what-to-copy-from-the-prior-art-and-what-not-to)):
+the prior art prefixes a chunk with its document title to give the embedder
+context. **A triple is already in that shape** — embedding the whole row rather
+than the object string is the same technique, arriving for free.
+
+So the split this node asserted in §8 on principle is now the measured result:
+**exact and fail-closed for resolution, dense for retrieval.**
 
 ## 7. Vectors do not need pgvector
 
@@ -283,6 +313,12 @@ Derive every constant against our own triples.
 
 ## 11. The embedding runtime, and the hazard that is ours alone
 
+> **ANSWERED 2026-08-23: `bge-m3` is already running on this host, on Ollama, as
+> a separate service.** 1.16 GB, 1024-dimensional, reachable over HTTP. The
+> in-process question below is therefore moot for this deployment — kept because
+> it names the hazard that the chosen arrangement *avoids*, and a future move
+> in-process would reintroduce it.
+
 The prior art runs its embedder **locally and in-process** — GGUF weights loaded
 into the running process, no remote API, with lazy loading, an idle-unload timer,
 bounded contexts, and a memory budget. It never considers a hosted embedding
@@ -301,8 +337,11 @@ This is the same class as the hung-Dreamer finding already in this bundle, where
 a blocked call was invisible because nothing was waiting on it — except here
 someone is waiting, in front of the group.
 
-bge-m3 is also materially larger than the small model that tool defaults to, so
-resident memory is a real number to check rather than assume.
+**The deployed arrangement sidesteps this entirely.** An HTTP call to a separate
+service is naturally awaitable, carries no resident weights in Nora's process,
+and can be given a timeout — which the in-process form cannot. It also inherits
+the failure mode Nora already knows how to express: a service that is down is
+`unavailable`, never `nothing_found`.
 
 ## 12. Measuring this, so a broken channel is not a quiet one
 

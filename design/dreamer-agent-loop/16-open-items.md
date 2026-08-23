@@ -93,14 +93,21 @@ since been RETRACTED for the knowledge tier (2026-08-23). See
 written, each with what became of it, because the retraction is only legible
 next to what it overturned.
 
-*Measured, not argued* — **and the instrument was never recorded.** The four
-numbers below appear in this node and nowhere else in the repo: no script, no
-spec, and **no embedding model is named anywhere in the codebase**. An
-English-centric embedder would produce exactly this result on the
-`Big Walk`/`大步行` pair, which makes the table unusable as evidence until it is
-re-run with the model stated. This node asserted a measurement while failing
-CLAUDE.md's own rule — *never read an instrument's output as evidence without
-first checking it can measure the thing.*
+*Measured, not argued.* The instrument was **not recorded when written** — a
+real defect against CLAUDE.md's own rule — but it has since been **identified and
+the table reproduced exactly**.
+
+**2026-08-23: re-run against `bge-m3` (Ollama, 1024-dim). All four values
+reproduce to four decimal places.** The instrument was the strongest multilingual
+embedder available, not a weak English-centric one, and it still inverts. **The
+finding stands, and is now stronger than when written** — the obvious rebuttal
+(*"you used the wrong model"*) is closed.
+
+What the table does **not** show, and was wrongly read as showing, is that
+embeddings are useless to this tier. These pairs are **bare names of two or three
+tokens with no context**, which is the *resolution* question. Measured the same
+day, the *retrieval* question comes out the opposite way — see
+[23-retrieval.md](23-retrieval.md) §6.2.
 
 | pair | cosine distance |
 |---|---|
