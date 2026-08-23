@@ -210,6 +210,30 @@ after it.
 | embedding | rows re-embedded and **why** — model change or promotion — because one is expected and the other is a rewrite storm |
 | retrieval | per channel: candidates returned, and whether the channel was *reachable*. `nora_fact_entity_unresolved_total` finally gets a call site |
 
+## 9.1 The tier's caps, gathered
+
+Scattered across code and config, and never stated together — which is how the
+note body came to have none at all.
+
+| field / knob | value | layer |
+|---|---|---|
+| `predicate` | **100** chars | domain constant today; becomes `[facts] max_predicate_chars`, ceiling **200** |
+| `subject_id` / `object_literal` | **uncapped today** | become `[facts] max_term_chars`, operating **200**, ceiling **800** |
+| promotion veto length | **64** chars | §4 / [21](21-substrate-contract.md) §6.1 — a string longer than this is a sentence, not a thing |
+| `max_adjudications_per_tick` | 10 | config, exists |
+| `max_rendered_facts` | 8 | render cap, config, exists |
+| `retention_days` | **none — keep indefinitely** | [21](21-substrate-contract.md) §10 |
+
+**`subject_id` and `object_literal` being uncapped is the same defect as the
+note body**, and it bites harder here: the subject is a **join key**
+([21](21-substrate-contract.md) §6.2), so an unbounded subject is an unbounded
+index entry on the one column every read path uses.
+
+**200 characters, because the promotion veto already says 64.** A term that will
+never be promoted still has to be stored and matched; 200 leaves room for a
+descriptive object while keeping the index key small, and anything approaching
+it is a claim the extractor should have split.
+
 ## 10. Nothing here is deferred
 
 The decay constant is **0.6 per hop** ([23](23-retrieval.md) §9). The veto list

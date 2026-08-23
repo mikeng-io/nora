@@ -1,0 +1,180 @@
+---
+type: contract
+title: "The Language Tier — The Most Complete in Code, The Least Designed Here"
+description: "Three adaptors, four tables, a real lifecycle and five wired metrics — and no node in this bundle ever owned it. Its caps, mechanism, transit, storage, measurement and tool surface, plus the coverage matrix that found the gap."
+tags: [nora, language-tier, lexeme, exchange, portrait, coverage, cms]
+timestamp: '2026-08-24'
+edges:
+  - {dst: 12-self-correction, rel: depends_on, provenance: asserted}
+  - {dst: 01-live-state, rel: motivated_by, provenance: asserted}
+  - {dst: 09-measurement, rel: extends, provenance: asserted}
+---
+
+# The Language Tier
+
+## 1. The inversion that found this node
+
+This bundle cites the language tier in **eleven nodes** — the two contradictory
+lexeme rows, the tools-less completion, the missing supersession, the
+`[language]`-named cadence. It cites it as **evidence** every time and as a
+**subject** never. There was no design node for it.
+
+Meanwhile it is, in code, **the most complete tier in the repo**: three
+adaptors, four tables, a real scoring function, a three-state lifecycle, and
+**five metrics that are actually wired** — where the note tier declares ten and
+ships zero.
+
+**Most built, least designed.** That is [04-designed-vs-shipped.md](04-designed-vs-shipped.md)'s
+pattern in its purest form: the thing everyone points at and nobody owns.
+
+## 2. Three adaptors, one tier
+
+| adaptor | objective | job |
+|---|---|---|
+| **room-language** | `room-language.md` | extract lexeme candidates from a message batch |
+| **room-language-verification** | `room-language-verification.md` | check a candidate against known entities before it becomes a gloss |
+| **room-exchange** | `room-exchange.md` | observe an exchange — who said what to whom, and what kind of act it was |
+
+**All three are tools-less**, which is F1: with no tools the stopping condition
+is satisfied on pass one, so each is a **single completion**, not a loop
+([03-no-agent-loop.md](03-no-agent-loop.md)).
+
+## 3. Storage — four tables
+
+| table | holds |
+|---|---|
+| `room_lexeme` | a word or phrase the room uses, with its gloss and its counts |
+| `exchange_observation` | one observed exchange, with `message_ids` and `participants` (both `>= 2` by `CHECK`) |
+| `room_exchange` | the consolidated act between two people |
+| `room_portrait` | the room's synthesised character, injected on the tag path |
+
+`room_portrait` is the one with a stated identity rule: its narrative **cannot
+reference a person** — enforced at the type boundary, because a `CHECK` cannot
+forbid *"contains a person's id"* in a free-text column.
+
+## 4. Mechanism — watermark, score, decay
+
+**The pass**: watermark-driven over new messages, `batch_limit = 400`, on a
+`tick_seconds = 300` clock with `safety_lag = 300`, `quiet_seconds = 1800` and
+`max_age_seconds = 86400` (which fires at `lag == 0` on purpose, so a dormant
+room does not buy a model call a day for nothing).
+
+**The score** is the tier's real mechanism and the one thing this bundle should
+have been reusing all along:
+
+> `score = f(occurrences, log1p(distinct_speakers))`
+
+**Spread is logarithmic, count is not.** One person saying a word ten times and
+five people saying it twice are not the same signal, and the log is what stops a
+single enthusiastic speaker minting room vocabulary. **This is the precedent
+[21-substrate-contract.md](21-substrate-contract.md) §6.1 cites for
+promotion-by-arithmetic**, and it is worth naming that the pattern was invented
+here first.
+
+**The lifecycle** is age-based, not score-based: `live` → `fading` → `stale`,
+and **a stale entry stops rendering entirely.** The docstring is careful that
+this is *"rendering state, NOT a permission to use the word — there is no
+per-word generation gate."*
+
+## 5. Caps
+
+| cap | value | where |
+|---|---|---|
+| `batch_limit` | 400 | messages per pass |
+| `max_rendered_lexemes` | **6** | the render cap — how many reach the prompt |
+| `verify_max_candidates` | 10 | candidates the verification pass will check |
+| `timeout_seconds` | 120 | per call |
+
+**No storage cap on a gloss.** A lexeme's gloss is free text with no length
+bound — the same gap [27-note-dreamer.md](27-note-dreamer.md) §5.2 found on the
+note body, and it lands the same way: `max_rendered_lexemes = 6` bounds the
+*count* that reaches the prompt and nothing bounds the *size* of each.
+
+**Decided, on the established pattern:** `[language] max_gloss_chars`, operating
+**200**, ceiling **800**. Two hundred matches the note description's budget,
+which is the closest comparable — both are a short line injected on every tag.
+
+## 6. Transit — how a word becomes a rendered gloss
+
+```
+messages (watermark)
+   → room-language          candidate lexeme + gloss
+   → room-language-verification    checked against known entities
+   → rescore                occurrences, distinct_speakers, last_seen
+   → state_for              live | fading | stale
+   → render                 top max_rendered_lexemes, live only
+```
+
+**The break is between verification and rescore**, and it is D19's subject: a
+second observation of the same lexeme **does not supersede the first**. Both
+rows stand, both render if both are live, and the room gets two contradictory
+glosses side by side with no marker that they disagree
+([01-live-state.md](01-live-state.md)).
+
+**With supersession** (D19), the second observation supersedes the first, both
+rows remain readable for the transaction-time question, and **only standing rows
+render**. The compound key keeps them distinct; supersession decides which one
+speaks.
+
+## 7. Tools — none, and that is the finding not the design
+
+The tier holds **no tools at all**, in either direction:
+
+- **no tools for its adaptors** — F1's tools-less completion;
+- **no read tool for Nora.** She sees `max_rendered_lexemes = 6` in her prompt
+  and has no verb to ask about the rest.
+
+The second is the same shape as the knowledge tier's extent problem
+([20-knowledge-tier.md](20-knowledge-tier.md) §6) — **and it resolves the other
+way.** Lexemes are bounded by the room's own slang and decay out of the corpus
+by age, so this tier is **injectable**, and six is a reasonable working set. It
+does **not** join the retrieval seam ([24-embedding-seam.md](24-embedding-seam.md)
+§5), and that decision is unchanged by this node.
+
+What it does owe is an **extent line**, for the same reason Standing and the
+knowledge tier do: six rendered out of how many is a fact Nora currently cannot
+see.
+
+## 8. Measurement — five wired, and the two that are missing
+
+**Wired today**, which is more than any other tier can say:
+
+`nora_language_candidates_dropped_total` · `nora_language_parse_failures_total` ·
+`nora_exchange_candidates_dropped_total` · `nora_exchange_parse_failures_total` ·
+`nora_language_verification_total`
+
+**Missing, and both are the tier's own failures:**
+
+- **supersessions applied** — D19's whole point. A tier that gains supersession
+  and never counts one has not gained it; this is
+  [09-measurement.md](09-measurement.md)'s Self-correction row, which currently
+  *"the language tier structurally cannot do and nobody would currently
+  notice."*
+- **lexemes by lifecycle state** — `live` / `fading` / `stale`. Without it,
+  "nothing rendered" and "everything went stale" are the same observation, which
+  is `unavailable` wearing `nothing_found`.
+
+## 9. The coverage matrix, which is why this node exists
+
+The operator asked whether every dreamer had been taken through caps, mechanism,
+measurement, transit, storage and tools. **The audit said no.**
+
+| tier | design node | caps | mechanism | measurement | transit | storage | tools |
+|---|---|---|---|---|---|---|---|
+| **knowledge** | [25](25-knowledge-pipeline.md) | §9.1 | yes | yes | yes | yes | yes |
+| **Standing** | [26](26-standing.md) | yes | yes | yes | yes | yes | yes |
+| **note** | [27](27-note-dreamer.md) | yes | yes | yes | yes | yes | yes |
+| **language** | **this node** | §5 | §4 | §8 | §6 | §3 | §7 |
+
+Before this node the last row was empty in every column. **The gap was not that
+the language tier was undecided — it is the most decided tier in the repo. The
+gap was that nothing in the design owned it**, so its rules lived only in code
+and its defects were quoted as anecdotes about other tiers.
+
+## Status / Checkpoint
+
+2026-08-24 — written after a coverage audit against the operator's own list
+(caps, mechanism, measurement, transit, storage, tools) found three tiers
+covered and this one absent. It adds no new mechanism: §4's score, §3's tables
+and §8's five metrics all already exist. What it adds is **ownership**, one cap
+(§5), one extent line (§7) and two counters (§8).
