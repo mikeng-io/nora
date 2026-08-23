@@ -34,6 +34,7 @@ from typing import Protocol
 
 from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
 from nora.platform.discord.adapter import DiscordAdapter
+from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.signal.account import AccountError, derive_account
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.self_id import MetricsSink
@@ -109,6 +110,7 @@ class AdapterRegistry:
         *,
         metrics: MetricsSink,
         discord_token: str = "",
+        music_manager: MusicPlayerManager | None = None,
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform: Signal and, now, Discord —
         each one more `if platforms.<x>.enabled:` block, not a rewrite of this
@@ -126,7 +128,11 @@ class AdapterRegistry:
 
         `metrics` is threaded to each adapter so `resolve_identity()`'s
         enrichment can count its own degradation (R-17). It is required for the
-        reason `SignalAdapter.__init__` gives."""
+        reason `SignalAdapter.__init__` gives.
+
+        `music_manager` (design/discord-music/00-overview.md) is `None` unless
+        `[music] enabled` — composition builds it, this module only threads it
+        through to `DiscordAdapter`, same shape as `discord_token`."""
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
@@ -158,7 +164,7 @@ class AdapterRegistry:
                     f"${discord_cfg.token_env} — refusing to start with a "
                     "platform that cannot authenticate"
                 )
-            discord_adapter = DiscordAdapter(discord_token)
+            discord_adapter = DiscordAdapter(discord_token, music_manager=music_manager)
             try:
                 discord_identity = await discord_adapter.resolve_identity()
             except Exception as exc:

@@ -66,6 +66,7 @@ from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.compute.docker_backend import LocalDockerBackend
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
+from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
@@ -75,6 +76,7 @@ from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
+from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
@@ -103,6 +105,7 @@ from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.discord.media import DiscordMediaSource
+from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaSourceRegistry
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
@@ -582,9 +585,25 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # reads the environment once and hands the already-resolved value to
     # whatever constructs the client that needs it (design/discord-integration/).
     discord_token = os.environ.get(cfg.platforms.discord.token_env, "")
+    # design/discord-music/00-overview.md. `spawn=asyncio.ensure_future`
+    # rather than the `BackgroundTasks` instance built further down this
+    # function (out of scope here) — safe because `MusicPlayerManager`
+    # already holds its own strong reference to every task it spawns
+    # (`self._idle_tasks`), the exact GC-mid-flight bug `BackgroundTasks`
+    # exists to prevent for tasks nobody else references.
+    music_manager = (
+        MusicPlayerManager(
+            queue_store=SqlMusicQueueStore(engine), track_source=YtDlpSource(),
+            idle_timeout_seconds=cfg.music.idle_timeout_seconds,
+            spawn=asyncio.ensure_future,
+        )
+        if cfg.music.enabled
+        else None
+    )
     try:
         registry = await AdapterRegistry.from_config(
             cfg.platforms, metrics=metrics, discord_token=discord_token,
+            music_manager=music_manager,
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
