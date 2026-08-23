@@ -137,7 +137,91 @@ objective says what this run is for. **One file cannot do both without becoming
 the union of every pass's instructions**, which is how a shared prompt acquires
 a clause for a tier that is not running.
 
+## 5.1 The field convention, which was purpose without shape
+
+The tier documents **how** the caps are enforced and never **what the fields
+should say**. The enforcement half is right and worth keeping: title and
+description are validated in `__post_init__`, **not in the renderer**, because
+*"a renderer that truncates loses content silently, and the whole tier is built
+on the index being a complete listing of what exists."*
+
+The content half says only that the index is *"enough to know a note exists;
+nowhere near enough to revise it."* That is a purpose, not a convention — and a
+model given a purpose invents a shape per note.
+
+**The convention follows from the note's own schema.** A note is
+`(anchor, uncertainty, closing condition, body)`, so:
+
+| field | carries | cap |
+|---|---|---|
+| **title** | the **anchor, in words** — the occasion this note is about | 60 |
+| **description** | the **uncertainty and its closing condition** — what is undecided, and what would settle it | 200 |
+| **body** | the **arrangement** — the thing that has to survive | §5.2 |
+
+**Why the description is uncertainty-plus-closing-condition and not a summary:**
+the index exists so Nora can decide *whether to read the body on this turn*.
+"Dinner on the 9th" tells her a note exists. "Three restaurants proposed, nobody
+has picked one" tells her whether it **bears on what is being said right now** —
+which is the only question the index is asked.
+
+A summary answers *what is this about*, which the title already did.
+
+## 5.2 The body has no cap at all
+
+`note_revision.body` is constrained only by `length(btrim(body)) > 0`. **There
+is no upper bound**, in the domain or the database.
+
+That is a different risk from the injected fields, and it is easy to miss
+because the body is **not** injected — it is read on demand. The exposure is the
+**curator**, which reads bodies per tick against a cap that is *"capped in
+config and counted when the cap bites."* A read budget in rows is only a budget
+if a row has a bounded size; one unbounded body can consume a whole tick's
+allowance, and the tier's own rule then reports it as *nothing to do* — the
+`unavailable`-as-`nothing_found` failure at the pass level, which that same spec
+names in advance.
+
+**Decided, on §5.1's pattern:** `[notes] max_body_chars`, operating value
+**8000**, database ceiling **32000**. Eight thousand is roughly a long page —
+enough for an arrangement with its history, and small enough that the curator's
+per-tick row budget means something.
+
+## 5.3 Does Nora need a note SKILL?
+
+**No — and the reason is a chicken-and-egg the skill mechanism cannot escape.**
+
+A skill is activated **by name, by the model, mid-turn**. So it can only help
+once she has already decided she needs it:
+
+> **A skill you must know you need before you can load it cannot teach you to
+> recognise the need.**
+
+Splitting the question along that line answers it:
+
+| what | where it belongs | why |
+|---|---|---|
+| **recognition** — *this conversation has an undecided plan with no home* | **doctrine**, always present | it must be true before she reaches for anything. A skill here is unreachable by construction |
+| **procedure** — *how to write the title, revise versus create* | **the tool descriptions** | they are already in front of her whenever the tool is |
+| **the read-before-write rule** | **the guard, which already enforces it** | the veto *names the remedy* — "read it first" — so the procedure is taught by the failure, at the moment it matters |
+
+That last row is the repo's own pattern and it is why a procedure skill would be
+redundant: **the latch does not document the rule, it makes the rule
+unavoidable**, and it explains itself on the one path where explanation is
+needed.
+
+What doctrine owes is therefore one or two lines of *recognition*, not a manual.
+[13-doctrine.md](13-doctrine.md)'s shape-awareness is what makes that affordable
+— the tag path's doctrine carries it; no adaptor pays for it.
+
 ## 6. What each owes its instrument
+
+**The tier declares TEN metrics and ships ZERO.** Verified 2026-08-24: ten
+`nora_note_*` names appear in its spec, and `nora/obs/metric_specs.py` contains
+none of them. This is the tier [09-measurement.md](09-measurement.md) §3 means
+by *"one tier declares ten and ships none"* — now named.
+
+That is why the curator's own justification is currently unmeasurable: the
+notebook only grows, and `nora_note_index_entries` — the metric `config.toml`
+calls **"the tell"** — is not merely uncounted, it **does not exist**.
 
 | reading | why |
 |---|---|
