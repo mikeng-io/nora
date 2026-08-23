@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 
 from nora.domain.ports import ResolvedTrack
 from nora.platform.discord.music_manager import MusicPlayerManager
-from nora.testing.music import FakeMusicQueueStore
+from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
 
 T0 = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
 
@@ -133,9 +133,9 @@ class _FakeScheduler:
 def _manager(tracks: dict[str, _StubEntry]) -> MusicPlayerManager:
     scheduler = _FakeScheduler()
     return MusicPlayerManager(
-        queue_store=FakeMusicQueueStore(), track_source=_StubSource(tracks),
-        idle_timeout_seconds=300.0, spawn=asyncio.ensure_future,
-        clock_sleep=scheduler.clock_sleep,
+        queue_store=FakeMusicQueueStore(), session_store=FakeMusicSessionStore(),
+        track_source=_StubSource(tracks), idle_timeout_seconds=300.0,
+        spawn=asyncio.ensure_future, clock_sleep=scheduler.clock_sleep,
     )
 
 
@@ -160,6 +160,7 @@ async def test_play_joins_via_the_connect_factory_when_no_player_exists() -> Non
     outcome = await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     )
 
     assert outcome is not None
@@ -177,6 +178,7 @@ async def test_an_existing_player_is_reused_even_when_connect_is_none() -> None:
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     )
     # Second call: no connect factory (requester not currently in voice),
     # but a player already exists for this guild -- must not be rejected.
@@ -199,6 +201,7 @@ async def test_queue_emptying_schedules_an_idle_disconnect() -> None:
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     )
     await manager.on_track_finished("guild-1")  # queue was empty -> now_playing is None
 
@@ -219,6 +222,7 @@ async def test_a_new_track_before_the_idle_timeout_cancels_the_pending_disconnec
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     )
     await manager.on_track_finished("guild-1")  # schedules the idle disconnect
     await manager.play(
@@ -243,6 +247,7 @@ async def test_r60_a_voice_channel_emptied_of_humans_disconnects_immediately() -
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     )
 
     await manager.on_voice_channel_emptied("guild-1")
@@ -270,10 +275,12 @@ async def test_two_concurrent_first_plays_for_a_guild_connect_only_once() -> Non
     task1 = asyncio.ensure_future(manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=slow_connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     ))
     task2 = asyncio.ensure_future(manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=slow_connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     ))
     await asyncio.sleep(0)
     await asyncio.sleep(0)
@@ -299,8 +306,9 @@ async def test_reusing_an_idle_player_cancels_its_timer_before_the_slow_resolve(
         # resolves on close to the very next loop tick, which is what makes
         # this a genuine race against the gated resolve below rather than a
         # timer that could never win regardless of the fix.
-        queue_store=FakeMusicQueueStore(), track_source=source,
-        idle_timeout_seconds=0.0, spawn=asyncio.ensure_future, clock_sleep=asyncio.sleep,
+        queue_store=FakeMusicQueueStore(), session_store=FakeMusicSessionStore(),
+        track_source=source, idle_timeout_seconds=0.0,
+        spawn=asyncio.ensure_future, clock_sleep=asyncio.sleep,
     )
     session = _FakeVoiceSession()
 
@@ -310,6 +318,7 @@ async def test_reusing_an_idle_player_cancels_its_timer_before_the_slow_resolve(
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     )
     await manager.on_track_finished("guild-1")  # queue empty -> idle timer scheduled
 
@@ -348,6 +357,7 @@ async def test_set_volume_delegates_to_the_player_once_one_exists() -> None:
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     )
 
     assert await manager.set_volume("guild-1", 0.5) is True
@@ -367,7 +377,8 @@ async def test_the_first_play_does_not_notify_the_channel_that_started_it() -> N
 
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
-        added_at=T0, connect=connect, notify=notify,
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
     )
 
     assert notify.messages == []
@@ -384,7 +395,8 @@ async def test_a_track_finishing_naturally_notifies_the_channel_that_started_the
 
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
-        added_at=T0, connect=connect, notify=notify,
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
     )
     await manager.play(
         guild_id="guild-1", query_or_url="track b", requested_by="miles",
@@ -405,7 +417,8 @@ async def test_skip_notifies_what_is_now_playing() -> None:
 
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
-        added_at=T0, connect=connect, notify=notify,
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
     )
     await manager.play(
         guild_id="guild-1", query_or_url="track b", requested_by="miles",
@@ -427,7 +440,8 @@ async def test_a_track_finishing_with_an_empty_queue_does_not_notify() -> None:
 
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
-        added_at=T0, connect=connect, notify=notify,
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
     )
 
     await manager.on_track_finished("guild-1")
@@ -449,6 +463,7 @@ async def test_reusing_a_session_from_another_channel_keeps_the_original_notify(
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
         added_at=T0, connect=connect, notify=original_channel,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     )
     await manager.play(
         guild_id="guild-1", query_or_url="track b", requested_by="miles",
@@ -470,7 +485,8 @@ async def test_leaving_stops_further_notifications_for_that_guild() -> None:
 
     await manager.play(
         guild_id="guild-1", query_or_url="track a", requested_by="miles",
-        added_at=T0, connect=connect, notify=notify,
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
     )
     await manager.stop("guild-1")
 

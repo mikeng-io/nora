@@ -1,0 +1,12 @@
+{
+  "type": "feature",
+  "summary": "Discord music session state (now playing, paused, volume, which channels) now persists in Postgres, not just the upcoming queue -- groundwork for surviving a restart.",
+  "details": [
+    "New music_session table, one row per guild, upserted on every play/pause/resume/volume-change/track-advance, deleted on /music stop.",
+    "This is stage 1 (write-through) only -- Nora does not yet reconnect and resume sessions on boot. A restart still drops active sessions exactly as before; the state to resume FROM now survives it, ready for a follow-up to read."
+  ],
+  "limitations": [
+    "Playback position within a track is never persisted or resumed -- only which track, paused-or-not, volume, and which channels.",
+    "Boot-time auto-resume is not built yet (design/discord-music/06-session-persistence.md's stage 2)."
+  ]
+}
