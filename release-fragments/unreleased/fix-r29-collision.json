@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Internal: resolves the duplicate R-29 in design/09-decision-index.md (the FIFO-queue rule becomes R-30, matching RULE_TESTS and the code, which already said R-30 everywhere), fixes the three stale R-29 comments, and repairs CLAUDE.md's duplicate-number check, which reported 8 duplicates of which 7 were sub-lettered false positives."
+}
