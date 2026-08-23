@@ -1,0 +1,1 @@
+{"type":"none","reason":"Design-only: decides Standing's size cap (1200 characters, domain constant + DB CHECK, not a config key) in 26-standing §4.0, closing an overflow mechanism that had no number."}
