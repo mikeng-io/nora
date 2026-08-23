@@ -78,6 +78,7 @@ from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
+from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
@@ -594,8 +595,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # exists to prevent for tasks nobody else references.
     music_manager = (
         MusicPlayerManager(
-            queue_store=SqlMusicQueueStore(engine), track_source=YtDlpSource(),
-            idle_timeout_seconds=cfg.music.idle_timeout_seconds,
+            queue_store=SqlMusicQueueStore(engine), session_store=SqlMusicSessionStore(engine),
+            track_source=YtDlpSource(), idle_timeout_seconds=cfg.music.idle_timeout_seconds,
             spawn=asyncio.ensure_future,
         )
         if cfg.music.enabled

@@ -1,8 +1,12 @@
-"""The Discord music bot's upcoming-queue (design/discord-music/
-03-state-and-persistence.md). `MusicQueueStore` is the persisted half only
-— now-playing/playback position lives in-memory on `MusicPlayer` and is
-never expressed here; a `QueuedTrack` is, by construction, a track that has
-not started playing yet."""
+"""The Discord music bot's persisted state (design/discord-music/
+03-state-and-persistence.md, 06-session-persistence.md). Two stores, two
+different shapes:
+
+- `MusicQueueStore` — an append/pop LOG, one row per upcoming track.
+- `MusicSessionStore` — a snapshot, one row per GUILD, holding what
+  `MusicPlayer` currently has in memory (now-playing, paused, volume,
+  which channels) so a process restart can rejoin and pick back up
+  instead of losing the session outright."""
 
 from __future__ import annotations
 
@@ -14,7 +18,7 @@ from uuid import UUID
 
 from nora.domain.reminders import ensure_utc
 
-__all__ = ["MusicQueueStore", "QueuedTrack", "ensure_utc"]
+__all__ = ["MusicQueueStore", "MusicSession", "MusicSessionStore", "QueuedTrack", "ensure_utc"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +74,49 @@ class MusicQueueStore(Protocol):
     async def clear(self, guild_id: str) -> int:
         """Deletes every row for `guild_id` (`/music stop`). Returns how
         many rows were removed."""
+        ...
+
+    async def aclose(self) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class MusicSession:
+    """One row per guild -- a snapshot of what `MusicPlayer` holds right
+    now, not an append log (contrast `QueuedTrack`). `voice_channel_id`/
+    `notify_channel_id` are captured once, at session start, and never
+    change for this row's lifetime; everything else is overwritten on
+    every transition. `now_playing_*` are all `None` together exactly when
+    nothing is currently playing (queue empty, waiting on the idle timer)
+    -- the row still exists (the voice connection is still live), it's
+    just idle."""
+
+    guild_id: str
+    voice_channel_id: str
+    notify_channel_id: str
+    now_playing_source: str | None
+    now_playing_locator: str | None
+    now_playing_title: str | None
+    paused: bool
+    volume: float
+    updated_at: datetime
+
+
+@runtime_checkable
+class MusicSessionStore(Protocol):
+    async def upsert(self, session: MusicSession) -> None:
+        """Replaces `session.guild_id`'s row wholesale, or creates it if
+        none exists yet."""
+        ...
+
+    async def get(self, guild_id: str) -> MusicSession | None: ...
+
+    async def all(self) -> Sequence[MusicSession]:
+        """Every persisted session -- the boot-time resume scan's input."""
+        ...
+
+    async def delete(self, guild_id: str) -> None:
+        """A no-op, not an error, if `guild_id` has no row (`MusicPlayer.
+        stop()` calls this unconditionally on the way out)."""
         ...
 
     async def aclose(self) -> None: ...
