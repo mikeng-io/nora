@@ -91,6 +91,15 @@ class DiscordVoiceSession:
         mixed: discord.AudioSource = raw
         already_playing = self._voice_client.is_playing()
         current_raw = self._current_raw
+        # Captured BEFORE `self._current_source` is reassigned below, and
+        # handed to `CrossfadeSource` as `keep_alive` -- see that class's
+        # docstring for why this isn't optional: dropping the old
+        # `PCMVolumeTransformer`'s last reference here, without this,
+        # triggers CPython's refcounting `__del__` -> `cleanup()` ->
+        # `current_raw.cleanup()` cascade IMMEDIATELY, poisoning the
+        # crossfade's own `old` source before it ever reads a single
+        # frame from it (verified live, 2026-08-24).
+        old_wrapper = self._current_source
         log.info(
             "voice play() called: already_playing=%s crossfade_seconds=%s "
             "has_current_raw=%s",
@@ -99,6 +108,7 @@ class DiscordVoiceSession:
         if already_playing and self._crossfade_seconds > 0 and current_raw is not None:
             mixed = CrossfadeSource(
                 current_raw, raw, duration_seconds=self._crossfade_seconds,
+                keep_alive=old_wrapper,
             )
         self._current_raw = raw
         wrapped = discord.PCMVolumeTransformer(mixed, volume=self._volume)

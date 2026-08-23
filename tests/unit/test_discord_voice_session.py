@@ -363,6 +363,58 @@ async def test_crossfade_fires_early_and_live_swaps_into_the_next_track() -> Non
     assert len(voice_client.played_sources) == 1
 
 
+class _RealisticFFmpegLikeSource(discord.AudioSource):
+    """Reproduces the exact hazard real `discord.player.FFmpegAudio.
+    cleanup()` creates: it replaces the underlying pipe with discord.py's
+    own `MISSING` sentinel, so a `.read()` call after cleanup raises
+    `AttributeError` -- `_FakeAudioSource` above doesn't reproduce this
+    (its `cleanup()` is a no-op), which is exactly why the ORIGINAL test
+    suite for crossfading passed while a real, live bug shipped."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+        self._cleaned_up = False
+
+    def read(self) -> bytes:
+        if self._cleaned_up:
+            raise AttributeError("'_MissingSentinel' object has no attribute 'read'")
+        return b"\x00" * 3840
+
+    def cleanup(self) -> None:
+        self._cleaned_up = True
+
+
+async def test_reassigning_current_source_does_not_kill_the_crossfading_old_track() -> None:
+    """**Regression test for a real bug** (2026-08-24, caught live): a
+    `PCMVolumeTransformer` wrapping the outgoing track's raw source
+    (`DiscordVoiceSession._current_source`) loses its LAST reference the
+    moment `play()` reassigns it to the new wrapper. CPython's refcounting
+    runs its `__del__` synchronously right then -- `AudioSource.__del__` ->
+    `PCMVolumeTransformer.cleanup()` -> the old raw source's `cleanup()` --
+    poisoning it before `CrossfadeSource` ever gets to read a single frame
+    from it. This is why crossfading always sounded exactly like a hard
+    cut: the mixer crashed on its first or second read, discord.py's
+    `AudioPlayer.run()` silently caught the exception and just stopped."""
+    import gc
+
+    voice_client = _FakeVoiceClient()
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        audio_source_factory=lambda url: _RealisticFFmpegLikeSource(url),
+        crossfade_seconds=0.02,
+    )
+    session.play("https://cdn.example/a", duration_seconds=10.0)  # long: no early timer firing
+    session.play("https://cdn.example/b", duration_seconds=10.0)  # skip()'s own advance, in effect
+
+    gc.collect()  # force any premature __del__ to fire NOW rather than whenever CPython feels like
+
+    mixer = voice_client.live_swaps[-1]
+    assert isinstance(mixer, discord.PCMVolumeTransformer)
+    # Must not raise -- if it does, the old source was cleaned up out from
+    # under the still-in-progress crossfade.
+    mixer.read()
+
+
 async def test_a_second_track_also_crossfades_and_the_chain_keeps_advancing() -> None:
     """**Regression test for a real bug** (2026-08-24, caught live): an
     earlier version of `_on_crossfade_due` set the same suppression flag
