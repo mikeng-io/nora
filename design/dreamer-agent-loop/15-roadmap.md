@@ -191,11 +191,27 @@ completes, and none ever has.
 **On master: nothing.** No Standing type, no debrief, no trace table.
 
 **On branch `standing-debrief` (unmerged): Phase 1, complete.** Thirteen
-commits, a self-attested gate-green run (recorded against a head the branch has
-since moved past), and migration `0028_tag_trace` whose parent is the current
-**migration** head — **no collision**, and it is the only unmerged migration in
-the repo. Note the invariant is the migration head, not the git head: a git
-commit landing changes nothing about whether two revisions share a parent.
+commits, a self-attested gate-green run recorded against a head the branch has
+since moved past, and migration `0028_tag_trace`.
+
+> **COLLISION, found 2026-08-24 — it must be rebased before it merges.**
+>
+> When this was written `0028_tag_trace`'s parent *was* the migration head and
+> there was no collision. Master has since gained `0028_music_queue` and
+> `0029_music_session`. Both `0028_music_queue` and `0028_tag_trace` now declare
+> `down_revision = "0027_fact_candidate_provenance"`, so `0027` would have **two
+> children** and `upgrade "head"` would refuse.
+>
+> **The filenames differ, so git merges both without a conflict**, and every
+> test that does not actually migrate stays green — which is exactly the failure
+> CLAUDE.md's own war-story names. **Fix before merge:** renumber to
+> `0030_tag_trace` with `down_revision = "0029_music_session"`, then confirm
+> `uv run alembic heads` prints **one** line.
+
+Note the invariant is the **migration** head, not the git head: a git commit
+landing changes nothing about whether two revisions share a parent — and this
+row is the demonstration, because it was accurate when written and became false
+without anyone touching the branch.
 
 Phase 1 is the *recording* layer only: every completed tag turn — success,
 silence, veto, timeout alike — has its real reasoning captured, sanitized and
