@@ -1,0 +1,12 @@
+{
+  "type": "feature",
+  "summary": "Nora now posts a \"Now playing\" notification (with a link to the video) whenever a track auto-advances, in the channel /music play was started from.",
+  "details": [
+    "Previously, a track finishing naturally and the next one starting was silent in Discord -- only explicit commands (/music play, /music skip) got a reply. That transition now posts \"Now playing: <title> — <url>\" to the channel the session's first /music play was invoked from.",
+    "/music skip gets the same notification for the new now-playing track, alongside its existing \"Skipped: X\" reply.",
+    "The notification channel is captured once, when a guild's session actually starts (the first /music play that connects to voice) -- a later /music play reusing the session from a different channel does not move where notifications land."
+  ],
+  "limitations": [
+    "If the session's original channel is deleted or Nora loses permission to post there, the notification silently fails to send -- there is no fallback channel."
+  ]
+}

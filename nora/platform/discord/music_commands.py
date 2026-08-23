@@ -38,6 +38,21 @@ _DISCORD_MESSAGE_LIMIT = 2000
 _TRUNCATION_TRAILER_BUDGET = 40
 
 
+def _notify_factory(interaction: discord.Interaction):
+    """Captures the channel `/music play` was invoked FROM -- the manager
+    only actually uses this the moment it starts a fresh session (`03-
+    state-and-persistence.md`'s "where it started"), so a no-op fallback
+    here for the rare non-messageable channel is fine: nothing calls it in
+    the ordinary case anyway."""
+    channel = interaction.channel
+
+    async def notify(text: str) -> None:
+        if isinstance(channel, discord.abc.Messageable):
+            await channel.send(text)
+
+    return notify
+
+
 def _connect_factory(
     manager: MusicPlayerManager, guild_id: str, channel: discord.VoiceChannel,
 ):
@@ -135,6 +150,7 @@ class MusicCommands(app_commands.Group):
             outcome = await self._manager.play(
                 guild_id=guild_id, query_or_url=query, requested_by=str(interaction.user.id),
                 added_at=discord.utils.utcnow(), connect=connect,
+                notify=_notify_factory(interaction),
             )
         except Exception:
             # `connect()` (inside `connect`, above) can raise -- a rate
