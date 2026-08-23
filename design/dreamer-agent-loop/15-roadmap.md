@@ -242,6 +242,41 @@ successful prompt injection **persists** until a later fold drops it — and the
 design markets that persistence as the feature. Escaping is necessary and not
 obviously sufficient.
 
+## 6.2b What Phase 1 measures, and the one it is missing
+
+**Phase 1 adds exactly one metric: `nora_tagtrace_truncations_total`** — and it
+is properly wired, three call sites rather than a declaration nobody increments.
+That is better than several instruments this bundle catalogues.
+
+**It is also the only one, and it counts the wrong thing first.**
+
+| question | counter today |
+|---|---|
+| how often does a trace lose content? | **`nora_tagtrace_truncations_total`** |
+| **was a trace written at all, per turn taken?** | **none** |
+| what was the outcome mix — success, silence, veto, timeout? | none, though `outcome` is a column |
+| what did sanitization remove? | none |
+
+The second row is the one that matters, and the reason is Phase 1's own
+argument. Retention exists **so that later folds are recoverable**: *"retention
+must exist before the first debrief ships, or early folds are unrecoverable."*
+A recording layer that silently stops writing therefore fails in the one way
+nobody notices — **the discovery point is the first fold**, which is exactly
+when the missing traces can no longer be reconstructed.
+
+**Required before Phase 2, not after:** a written-versus-turns-taken reading, so
+`traces_written / tags_completed` is a ratio someone can look at. `tag_trace` is
+written in a `finally` on every exit path — success, silence, veto and timeout
+alike — which makes the expected ratio **1.0**, and any sustained departure a
+defect rather than a judgement call.
+
+The outcome distribution is the cheap second: the column is already written, so
+counting it is a label on a counter that must exist anyway.
+
+**This is [09-measurement.md](09-measurement.md)'s rule applied to the tier that
+most depends on it** — a seam whose entire justification is *record before you
+fold* must be able to show that it recorded.
+
 ## 6.3 The six Standing decisions, closed
 
 Adopted 2026-08-23 as the branch's own recommendations — each was argued from
