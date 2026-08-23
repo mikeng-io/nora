@@ -363,10 +363,17 @@ async def test_crossfade_fires_early_and_live_swaps_into_the_next_track() -> Non
     assert len(voice_client.played_sources) == 1
 
 
-async def test_the_real_eof_after_an_early_crossfade_does_not_double_notify() -> None:
-    """The suppression this spike reuses from the existing stop() race fix:
-    once the early timer has already signalled completion, the REAL `after`
-    firing later (true EOF) must not signal it again."""
+async def test_a_second_track_also_crossfades_and_the_chain_keeps_advancing() -> None:
+    """**Regression test for a real bug** (2026-08-24, caught live): an
+    earlier version of `_on_crossfade_due` set the same suppression flag
+    `stop()` uses, which -- because it's a single boolean, not a per-track
+    token -- silently swallowed the genuine final completion signal the
+    FIRST time any early crossfade fired, breaking auto-advance after the
+    very next track. A live `.source` swap never ends the `AudioPlayer`
+    thread's loop, so the real `after` (registered once, at the session's
+    first `play()`) only fires once, at the true end of the WHOLE chain --
+    it must never be suppressed by an early crossfade fire, only by an
+    actual `stop()`."""
     voice_client = _FakeVoiceClient()
     calls: list[str] = []
 
@@ -378,16 +385,25 @@ async def test_the_real_eof_after_an_early_crossfade_does_not_double_notify() ->
         audio_source_factory=lambda url: _FakeAudioSource(url), crossfade_seconds=0.02,
     )
     session.play("https://cdn.example/a", duration_seconds=0.03)
-    await asyncio.sleep(0.05)  # let the early timer fire
+    await asyncio.sleep(0.05)  # let track A's early timer fire
     assert calls == ["finished"]
 
-    # The real AudioPlayer thread reaching true EOF on the (now-mixed)
-    # source, some time later.
+    # `MusicPlayer._advance()`'s response to that signal, in effect: the
+    # next track starts (and crossfades, since the old one is still live).
+    session.play("https://cdn.example/b", duration_seconds=0.03)
+    await asyncio.sleep(0.05)  # let track B's OWN early timer fire too
+    assert calls == ["finished", "finished"], (
+        "the second track's own crossfade boundary must still signal "
+        "completion -- this is exactly what the bug silently broke"
+    )
+
+    # Nothing further was queued for track B -- its real, true end (no
+    # further swap) must still fire normally, exactly once.
     voice_client.stop()
     await asyncio.sleep(0)
     await asyncio.sleep(0)
 
-    assert calls == ["finished"]
+    assert calls == ["finished", "finished", "finished"]
 
 
 async def test_no_crossfade_timer_when_duration_is_unknown() -> None:
