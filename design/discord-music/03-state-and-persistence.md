@@ -85,9 +85,26 @@ Two independent timers/events on the manager, neither an LLM decision:
    codebase already holds timeouts in `config.toml` rather than hardcoding
    them.
 
-## Connect trigger
+## Connect trigger — and its rejection
 
-On the first successful `play` (via slash command; `02-control-surface.md`)
-for a guild with no active voice connection: join the invoking user's
-current voice channel. No separate "connect" step a user has to remember to
-run first.
+On the first `play` (via slash command; `02-control-surface.md`) for a guild
+with no active voice connection: join the **invoking user's own current
+voice channel** — never a fixed/configured channel, never "wherever the bot
+already is" (there's nothing to already be in, by this branch's own
+precondition). No separate "connect" step to remember to run first.
+
+**If the invoker is not in ANY voice channel, the command is refused before
+anything else happens** — no join attempt, no `MusicPlayer` constructed, no
+track resolved. This check is `interaction.user.voice is None` in
+`discord.py` terms, and it belongs to the **manager** (the not-yet-built
+per-guild `MusicPlayer` lookup/construction layer), strictly BEFORE it ever
+builds a `VoiceSession` or a `MusicPlayer` — `MusicPlayer` itself has no
+concept of "which channel" at all (it's handed an already-connected
+`VoiceSession`), so this is not that class's job to enforce.
+
+This only applies to the FIRST `play` for a guild. Once a `MusicPlayer`
+exists and is connected, `play`/`skip`/`queue`/etc. all act on the existing
+session regardless of whether the invoker is currently in that channel or
+any channel at all — matching ordinary Discord music bot behavior (anyone
+in the server can control an already-playing session; only STARTING one
+requires being present to name the destination channel).
