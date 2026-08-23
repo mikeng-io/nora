@@ -1,11 +1,14 @@
 """`MusicPlayer` — the per-guild state machine (design/discord-music/
-03-state-and-persistence.md). Every action here is deterministic; no LLM
-judgment is involved in resolving a play request or deciding what plays
-next (design/discord-music/00-overview.md).
+03-state-and-persistence.md, 06-session-persistence.md). Every action here
+is deterministic; no LLM judgment is involved in resolving a play request or
+deciding what plays next (design/discord-music/00-overview.md).
 
-Now-playing/playback position live ONLY in this object's own attributes —
-never persisted (03's "two different lifetimes" split). Only the upcoming
-queue, held by the injected `MusicQueueStore`, survives a restart.
+The upcoming queue (`MusicQueueStore`) and the session snapshot
+(`MusicSessionStore`) are both persisted; only PLAYBACK POSITION within the
+current track never is (06's own scope: resuming mid-frame is not
+attempted, only "what track, paused-or-not, what volume, which channels").
+Every transition that changes what a restart would need to know writes
+through to `self._session` before returning.
 
 `VoiceSession` deliberately does NOT take an `after` callback the way
 `discord.py`'s real `VoiceClient.play(source, after=...)` does — that
@@ -19,12 +22,12 @@ by a command instead."""
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal, Protocol
 
-from nora.domain.music import MusicQueueStore, QueuedTrack
+from nora.domain.music import MusicQueueStore, MusicSession, MusicSessionStore, QueuedTrack
 from nora.domain.ports import TrackSource
 
 log = logging.getLogger("nora.music")
@@ -61,13 +64,31 @@ class PlayerStatus:
 class MusicPlayer:
     def __init__(
         self, *, guild_id: str, queue: MusicQueueStore, source: TrackSource, voice: VoiceSession,
+        session: MusicSessionStore, voice_channel_id: str, notify_channel_id: str,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._guild_id = guild_id
         self._queue = queue
         self._source = source
         self._voice = voice
+        self._session = session
+        self._voice_channel_id = voice_channel_id
+        self._notify_channel_id = notify_channel_id
+        self._clock = clock
         self._now_playing: QueuedTrack | None = None
         self._paused = False
+        self._volume = 1.0
+
+    async def _persist_session(self) -> None:
+        now_playing = self._now_playing
+        await self._session.upsert(MusicSession(
+            guild_id=self._guild_id, voice_channel_id=self._voice_channel_id,
+            notify_channel_id=self._notify_channel_id,
+            now_playing_source=now_playing.source if now_playing else None,
+            now_playing_locator=now_playing.url if now_playing else None,
+            now_playing_title=now_playing.title if now_playing else None,
+            paused=self._paused, volume=self._volume, updated_at=self._clock(),
+        ))
 
     async def play(
         self, *, query_or_url: str, requested_by: str, added_at: datetime,
@@ -125,21 +146,23 @@ class MusicPlayer:
         `voice.stop()` again."""
         await self._advance()
 
-    def pause(self) -> bool:
+    async def pause(self) -> bool:
         if self._now_playing is None or self._paused:
             return False
         self._voice.pause()
         self._paused = True
+        await self._persist_session()
         return True
 
-    def resume(self) -> bool:
+    async def resume(self) -> bool:
         if self._now_playing is None or not self._paused:
             return False
         self._voice.resume()
         self._paused = False
+        await self._persist_session()
         return True
 
-    def set_volume(self, volume: float) -> bool:
+    async def set_volume(self, volume: float) -> bool:
         """`volume` is a linear multiplier — 1.0 unchanged, 0.0 silent, 2.0
         double (`discord.PCMVolumeTransformer`'s own range). Refused
         (`False`) outside `[0.0, 2.0]` rather than clamped, so a caller's
@@ -150,16 +173,21 @@ class MusicPlayer:
         if not 0.0 <= volume <= 2.0:
             return False
         self._voice.set_volume(volume)
+        self._volume = volume
+        await self._persist_session()
         return True
 
     async def stop(self) -> None:
         """Clears the whole queue, stops playback, and leaves the voice
-        channel — `/music stop`."""
+        channel — `/music stop`. Deletes the persisted session row too:
+        this is the one transition that actually ENDS the session, as
+        opposed to every other one just changing what's in it."""
         await self._queue.clear(self._guild_id)
         self._now_playing = None
         self._paused = False
         self._voice.stop()
         await self._voice.disconnect()
+        await self._session.delete(self._guild_id)
 
     async def status(self) -> PlayerStatus:
         queue = await self._queue.queue_for(self._guild_id)
@@ -178,12 +206,14 @@ class MusicPlayer:
             self._now_playing = await self._queue.pop_next(self._guild_id)
             self._paused = False
             if self._now_playing is None:
+                await self._persist_session()
                 return
             resolved = await self._source.resolve(query_or_url=self._now_playing.url)
             if resolved:
                 self._voice.play(
                     resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds,
                 )
+                await self._persist_session()
                 return
             log.warning(
                 "queued track no longer resolves, skipping: %s (%s)",

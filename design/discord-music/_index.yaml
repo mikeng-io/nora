@@ -18,6 +18,7 @@ members:
   - 03-state-and-persistence.md
   - 04-deferred.md
   - 05-crossfade-spike.md
+  - 06-session-persistence.md
 edges:
   - {src: 01-playback-and-source, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-control-surface, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -27,6 +28,7 @@ edges:
   - {src: 04-deferred, dst: 00-overview, rel: motivated_by, provenance: asserted}
   - {src: 05-crossfade-spike, dst: 01-playback-and-source, rel: extends, provenance: asserted}
   - {src: 05-crossfade-spike, dst: 03-state-and-persistence, rel: extends, provenance: asserted}
+  - {src: 06-session-persistence, dst: 03-state-and-persistence, rel: extends, provenance: asserted}
 scope:
   v1:
     - "Discord slash commands (/music play|skip|queue|pause|resume|stop|volume) as the sole control surface"

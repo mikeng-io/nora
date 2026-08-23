@@ -1571,3 +1571,26 @@ MUSIC_QUEUE = sa.Table(
     # already does), rather than two silently-colliding rows.
     sa.UniqueConstraint("guild_id", "position", name="uq_music_queue_guild_position"),
 )
+
+# One row per guild -- a SNAPSHOT of what `MusicPlayer` holds in memory
+# (design/discord-music/06-session-persistence.md), not an append log like
+# `MUSIC_QUEUE` above. `guild_id` is the primary key itself: there is
+# exactly one session per guild, upserted in place, never multiple rows to
+# order or race over the way `MUSIC_QUEUE.position` does.
+MUSIC_SESSION = sa.Table(
+    "music_session",
+    METADATA,
+    sa.Column("guild_id", sa.Text, primary_key=True),
+    sa.Column("voice_channel_id", sa.Text, nullable=False),
+    sa.Column("notify_channel_id", sa.Text, nullable=False),
+    # All three NULL together means nothing is currently playing (queue
+    # empty, waiting on the idle timer) -- the row still exists because the
+    # voice connection itself is still live.
+    sa.Column("now_playing_source", sa.Text, nullable=True),
+    sa.Column("now_playing_locator", sa.Text, nullable=True),
+    sa.Column("now_playing_title", sa.Text, nullable=True),
+    sa.Column("paused", sa.Boolean, nullable=False),
+    sa.Column("volume", sa.Float, nullable=False),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    sa.CheckConstraint("volume >= 0.0 AND volume <= 2.0", name="ck_music_session_volume_range"),
+)

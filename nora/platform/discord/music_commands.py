@@ -260,12 +260,15 @@ class MusicCommands(app_commands.Group):
             if channel is not None else None
         )
 
+        notify_channel_id = str(interaction.channel_id) if interaction.channel_id else None
         await interaction.response.defer()
         try:
             outcome = await self._manager.play(
                 guild_id=guild_id, query_or_url=query, requested_by=str(interaction.user.id),
                 added_at=discord.utils.utcnow(), connect=connect,
                 notify=_notify_factory(interaction),
+                voice_channel_id=str(channel.id) if channel is not None else None,
+                notify_channel_id=notify_channel_id,
             )
         except Exception:
             # `connect()` (inside `connect`, above) can raise -- a rate

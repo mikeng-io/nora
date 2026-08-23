@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 
 from nora.domain.ports import ResolvedTrack
 from nora.platform.discord.music_player import MusicPlayer
-from nora.testing.music import FakeMusicQueueStore
+from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
 
 T0 = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
 
@@ -100,17 +100,21 @@ _TRACK_B = ResolvedTrack(
 )
 
 
-def _player(tracks: dict[str, _StubEntry]) -> tuple[MusicPlayer, _FakeVoiceSession]:
+def _player(
+    tracks: dict[str, _StubEntry],
+) -> tuple[MusicPlayer, _FakeVoiceSession, FakeMusicSessionStore]:
     voice = _FakeVoiceSession()
+    session = FakeMusicSessionStore()
     player = MusicPlayer(
         guild_id="guild-1", queue=FakeMusicQueueStore(),
-        source=_StubSource(tracks), voice=voice,
+        source=_StubSource(tracks), voice=voice, session=session,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
     )
-    return player, voice
+    return player, voice, session
 
 
 async def test_play_with_an_empty_queue_starts_playback_immediately() -> None:
-    player, voice = _player({"track a": _TRACK_A})
+    player, voice, _session = _player({"track a": _TRACK_A})
 
     outcome = await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
 
@@ -123,7 +127,7 @@ async def test_play_with_an_empty_queue_starts_playback_immediately() -> None:
 
 
 async def test_play_while_something_is_already_playing_only_enqueues() -> None:
-    player, voice = _player({"track a": _TRACK_A, "track b": _TRACK_B})
+    player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
 
     outcome = await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
@@ -136,7 +140,7 @@ async def test_play_while_something_is_already_playing_only_enqueues() -> None:
 
 
 async def test_play_returns_nothing_found_when_the_source_cannot_resolve() -> None:
-    player, voice = _player({})
+    player, voice, _session = _player({})
 
     outcome = await player.play(query_or_url="silence", requested_by="miles", added_at=T0)
 
@@ -152,7 +156,7 @@ async def test_skip_advances_to_the_next_queued_track_without_an_explicit_stop()
     replaces the skipped one -- a crossfade if configured, otherwise
     `DiscordVoiceSession`'s own instant live-swap. No separate `voice.
     stop()` call is needed (or made) when there IS a next track."""
-    player, voice = _player({"track a": _TRACK_A, "track b": _TRACK_B})
+    player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
     await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
 
@@ -168,7 +172,7 @@ async def test_skip_advances_to_the_next_queued_track_without_an_explicit_stop()
 
 
 async def test_skip_with_nothing_queued_stops_and_leaves_nothing_playing() -> None:
-    player, voice = _player({"track a": _TRACK_A})
+    player, voice, _session = _player({"track a": _TRACK_A})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
 
     skipped = await player.skip()
@@ -182,7 +186,7 @@ async def test_skip_with_nothing_queued_stops_and_leaves_nothing_playing() -> No
 async def test_on_track_finished_advances_without_calling_voice_stop() -> None:
     """The real voice client already stopped on its own before this fires —
     `MusicPlayer` must not call `voice.stop()` a second time."""
-    player, voice = _player({"track a": _TRACK_A, "track b": _TRACK_B})
+    player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
     await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
 
@@ -194,27 +198,27 @@ async def test_on_track_finished_advances_without_calling_voice_stop() -> None:
 
 
 async def test_pause_returns_false_when_nothing_is_playing() -> None:
-    player, voice = _player({})
+    player, voice, _session = _player({})
 
-    assert player.pause() is False
+    assert await player.pause() is False
     assert voice.paused == 0
 
 
 async def test_pause_then_resume_round_trip_and_call_voice_once_each() -> None:
-    player, voice = _player({"track a": _TRACK_A})
+    player, voice, _session = _player({"track a": _TRACK_A})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
 
-    assert player.pause() is True
+    assert await player.pause() is True
     assert voice.paused == 1
     assert (await player.status()).paused is True
 
-    assert player.resume() is True
+    assert await player.resume() is True
     assert voice.resumed == 1
     assert (await player.status()).paused is False
 
 
 async def test_stop_clears_the_queue_stops_playback_and_disconnects() -> None:
-    player, voice = _player({"track a": _TRACK_A, "track b": _TRACK_B})
+    player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
     await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
 
@@ -228,10 +232,10 @@ async def test_stop_clears_the_queue_stops_playback_and_disconnects() -> None:
 
 
 async def test_set_volume_applies_immediately_and_reports_true() -> None:
-    player, voice = _player({"track a": _TRACK_A})
+    player, voice, _session = _player({"track a": _TRACK_A})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
 
-    assert player.set_volume(0.5) is True
+    assert await player.set_volume(0.5) is True
 
     assert voice.volume_calls == [0.5]
 
@@ -240,33 +244,33 @@ async def test_set_volume_works_with_nothing_playing() -> None:
     """A setting, not an action on in-progress playback — unlike pause/
     resume, nothing needs to be playing for this to take effect (it
     applies to whatever plays next)."""
-    player, voice = _player({})
+    player, voice, _session = _player({})
 
-    assert player.set_volume(0.5) is True
+    assert await player.set_volume(0.5) is True
 
     assert voice.volume_calls == [0.5]
 
 
 async def test_set_volume_refuses_a_value_outside_zero_to_two() -> None:
-    player, voice = _player({})
+    player, voice, _session = _player({})
 
-    assert player.set_volume(-0.1) is False
-    assert player.set_volume(2.1) is False
+    assert await player.set_volume(-0.1) is False
+    assert await player.set_volume(2.1) is False
 
     assert voice.volume_calls == []
 
 
 async def test_set_volume_accepts_the_boundary_values() -> None:
-    player, voice = _player({})
+    player, voice, _session = _player({})
 
-    assert player.set_volume(0.0) is True
-    assert player.set_volume(2.0) is True
+    assert await player.set_volume(0.0) is True
+    assert await player.set_volume(2.0) is True
 
     assert voice.volume_calls == [0.0, 2.0]
 
 
 async def test_a_playlist_resolve_enqueues_every_track_and_starts_the_first() -> None:
-    player, voice = _player({"playlist url": (_TRACK_A, _TRACK_B)})
+    player, voice, _session = _player({"playlist url": (_TRACK_A, _TRACK_B)})
 
     outcome = await player.play(
         query_or_url="playlist url", requested_by="miles", added_at=T0,
@@ -284,7 +288,7 @@ async def test_a_playlist_resolve_enqueues_every_track_and_starts_the_first() ->
 
 
 async def test_a_playlist_resolve_while_something_is_playing_only_enqueues_all() -> None:
-    player, voice = _player({
+    player, voice, _session = _player({
         "track a": _TRACK_A, "playlist url": (_TRACK_B, _TRACK_B),
     })
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
@@ -304,7 +308,7 @@ async def test_advance_re_resolves_the_locator_rather_than_reusing_a_cached_stre
     """The lazy-resolve contract (`nora/domain/ports.py`): `QueuedTrack.url`
     is a locator, not a cached stream URL, so `_advance` must hand it back
     into `resolve()` to get something actually playable."""
-    player, voice = _player({"track a": _TRACK_A})
+    player, voice, _session = _player({"track a": _TRACK_A})
     source = player._source  # type: ignore[attr-defined]
 
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
@@ -317,7 +321,7 @@ async def test_a_track_that_no_longer_resolves_by_play_time_is_skipped() -> None
     """A queued track can go stale between enqueue and play time (deleted,
     region-locked, a dead playlist entry) -- `_advance` must move on to the
     next track rather than handing `voice.play` nothing."""
-    player, voice = _player({"track a": _TRACK_A, "track b": _TRACK_B})
+    player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
     await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
     # `track a` (now playing) is about to vanish by the time it's re-resolved
@@ -332,3 +336,67 @@ async def test_a_track_that_no_longer_resolves_by_play_time_is_skipped() -> None
     assert status.now_playing is not None
     assert status.now_playing.title == "Track B"
     assert status.queue == []
+
+
+async def test_play_persists_a_session_row_for_a_restart_to_read_back() -> None:
+    player, _voice, session = _player({"track a": _TRACK_A})
+
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    row = await session.get("guild-1")
+    assert row is not None
+    assert row.guild_id == "guild-1"
+    assert row.voice_channel_id == "voice-channel-1"
+    assert row.notify_channel_id == "notify-channel-1"
+    assert row.now_playing_title == "Track A"
+    assert row.now_playing_locator == "locator-a"
+    assert row.now_playing_source == "youtube"
+    assert row.paused is False
+    assert row.volume == 1.0
+
+
+async def test_pause_and_resume_update_the_persisted_session() -> None:
+    player, _voice, session = _player({"track a": _TRACK_A})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    await player.pause()
+    assert (await session.get("guild-1")).paused is True  # type: ignore[union-attr]
+
+    await player.resume()
+    assert (await session.get("guild-1")).paused is False  # type: ignore[union-attr]
+
+
+async def test_set_volume_updates_the_persisted_session() -> None:
+    player, _voice, session = _player({"track a": _TRACK_A})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    await player.set_volume(0.5)
+
+    row = await session.get("guild-1")
+    assert row is not None
+    assert row.volume == 0.5
+
+
+async def test_advancing_to_an_empty_queue_persists_no_now_playing_but_keeps_the_row() -> None:
+    """The session isn't OVER just because nothing's playing right now --
+    the voice connection is still live, waiting on the idle timer. Only
+    `stop()` actually ends the session."""
+    player, _voice, session = _player({"track a": _TRACK_A})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    await player.skip()  # nothing queued -> now_playing goes back to None
+
+    row = await session.get("guild-1")
+    assert row is not None
+    assert row.now_playing_title is None
+    assert row.now_playing_locator is None
+    assert row.now_playing_source is None
+
+
+async def test_stop_deletes_the_persisted_session_row() -> None:
+    player, _voice, session = _player({"track a": _TRACK_A})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    await player.stop()
+
+    assert await session.get("guild-1") is None

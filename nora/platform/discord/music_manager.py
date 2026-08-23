@@ -18,7 +18,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from datetime import datetime
 from typing import Any
 
-from nora.domain.music import MusicQueueStore, QueuedTrack
+from nora.domain.music import MusicQueueStore, MusicSessionStore, QueuedTrack
 from nora.domain.ports import TrackSource
 from nora.platform.discord.music_player import MusicPlayer, PlayerStatus, PlayOutcome, VoiceSession
 
@@ -39,12 +39,14 @@ class MusicPlayerManager:
         self,
         *,
         queue_store: MusicQueueStore,
+        session_store: MusicSessionStore,
         track_source: TrackSource,
         idle_timeout_seconds: float,
         spawn: Spawn,
         clock_sleep: ClockSleep = asyncio.sleep,
     ) -> None:
         self._queue_store = queue_store
+        self._session_store = session_store
         self._track_source = track_source
         self._idle_timeout_seconds = idle_timeout_seconds
         self._spawn = spawn
@@ -71,6 +73,8 @@ class MusicPlayerManager:
         added_at: datetime,
         connect: Connect | None,
         notify: Notify | None = None,
+        voice_channel_id: str | None = None,
+        notify_channel_id: str | None = None,
     ) -> PlayOutcome | None:
         """`None` is the rejection: no existing player for `guild_id` AND
         `connect is None` (the requester is not in any voice channel).
@@ -78,10 +82,14 @@ class MusicPlayerManager:
         session requires the requester to be present
         (03-state-and-persistence.md's own rule).
 
-        `notify` is captured ONLY when this call actually creates the
-        player (a fresh session) — a later `/music play` reusing an
-        existing session does not move the now-playing notification
-        channel, matching "the channel where it started".
+        `notify`/`voice_channel_id`/`notify_channel_id` are captured ONLY
+        when this call actually creates the player (a fresh session) — a
+        later `/music play` reusing an existing session does not move the
+        now-playing notification channel, matching "the channel where it
+        started" (design/discord-music/06-session-persistence.md).
+        `voice_channel_id`/`notify_channel_id` are the raw Discord IDs, not
+        derivable from `connect`/`notify` (opaque closures) -- persisted so
+        a restart can reconnect to the right channels.
 
         The WHOLE method runs under this guild's lock, not just the
         get-or-create step — Nora is one process, so this is what keeps two
@@ -93,7 +101,9 @@ class MusicPlayerManager:
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
             is_new_session = guild_id not in self._players
-            player = await self._get_or_create(guild_id, connect)
+            player = await self._get_or_create(
+                guild_id, connect, voice_channel_id, notify_channel_id,
+            )
             if player is None:
                 return None
             if is_new_session and notify is not None:
@@ -135,11 +145,11 @@ class MusicPlayerManager:
 
     async def pause(self, guild_id: str) -> bool:
         player = self._players.get(guild_id)
-        return False if player is None else player.pause()
+        return False if player is None else await player.pause()
 
     async def resume(self, guild_id: str) -> bool:
         player = self._players.get(guild_id)
-        return False if player is None else player.resume()
+        return False if player is None else await player.resume()
 
     async def set_volume(self, guild_id: str, volume: float) -> bool | None:
         """`None` — no player exists for this guild at all, distinct from
@@ -147,7 +157,7 @@ class MusicPlayerManager:
         distinction `pause`/`resume`'s bare `False` doesn't need, because
         those have only one way to fail."""
         player = self._players.get(guild_id)
-        return None if player is None else player.set_volume(volume)
+        return None if player is None else await player.set_volume(volume)
 
     async def status(self, guild_id: str) -> PlayerStatus | None:
         player = self._players.get(guild_id)
@@ -163,7 +173,10 @@ class MusicPlayerManager:
         no idle grace period (03's disconnect-timer rules, trigger 1)."""
         await self._leave(guild_id)
 
-    async def _get_or_create(self, guild_id: str, connect: Connect | None) -> MusicPlayer | None:
+    async def _get_or_create(
+        self, guild_id: str, connect: Connect | None,
+        voice_channel_id: str | None, notify_channel_id: str | None,
+    ) -> MusicPlayer | None:
         """Only ever called from `play()`, already holding this guild's
         lock (`asyncio.Lock` is not re-entrant, so this must NOT also
         acquire it) — that lock is what makes this method's own
@@ -171,11 +184,13 @@ class MusicPlayerManager:
         existing = self._players.get(guild_id)
         if existing is not None:
             return existing
-        if connect is None:
+        if connect is None or voice_channel_id is None or notify_channel_id is None:
             return None
         voice = await connect()
         player = MusicPlayer(
             guild_id=guild_id, queue=self._queue_store, source=self._track_source, voice=voice,
+            session=self._session_store, voice_channel_id=voice_channel_id,
+            notify_channel_id=notify_channel_id,
         )
         self._players[guild_id] = player
         return player

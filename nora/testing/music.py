@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from nora.domain.music import QueuedTrack, ensure_utc
+from nora.domain.music import MusicSession, QueuedTrack, ensure_utc
 
 
 class FakeMusicQueueStore:
@@ -69,6 +69,30 @@ class FakeMusicQueueStore:
         for track_id in to_remove:
             del self._rows[track_id]
         return len(to_remove)
+
+    async def aclose(self) -> None:
+        return None
+
+
+class FakeMusicSessionStore:
+    """In-memory `MusicSessionStore`. One row per guild, upserted in
+    place — no ordering/position concerns the way the queue store has, so
+    this is a plain dict keyed by `guild_id`."""
+
+    def __init__(self) -> None:
+        self._rows: dict[str, MusicSession] = {}
+
+    async def upsert(self, session: MusicSession) -> None:
+        self._rows[session.guild_id] = session
+
+    async def get(self, guild_id: str) -> MusicSession | None:
+        return self._rows.get(guild_id)
+
+    async def all(self) -> Sequence[MusicSession]:
+        return list(self._rows.values())
+
+    async def delete(self, guild_id: str) -> None:
+        self._rows.pop(guild_id, None)
 
     async def aclose(self) -> None:
         return None

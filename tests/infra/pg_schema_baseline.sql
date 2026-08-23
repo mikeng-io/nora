@@ -46,6 +46,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -72,6 +73,7 @@ ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT media_descriptions_pkey PRIMARY KEY (sha256);
 ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
 ADD CONSTRAINT music_queue_pkey PRIMARY KEY (id);
+ADD CONSTRAINT music_session_pkey PRIMARY KEY (guild_id);
 ADD CONSTRAINT note_candidate_pkey PRIMARY KEY (id);
 ADD CONSTRAINT note_candidate_probe_key UNIQUE (workspace, probe);
 ADD CONSTRAINT note_entity_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES public.fact_entity(id);
@@ -126,6 +128,7 @@ ALTER TABLE ONLY public.media_descriptions
 ALTER TABLE ONLY public.messages
 ALTER TABLE ONLY public.music_queue
 ALTER TABLE ONLY public.music_queue
+ALTER TABLE ONLY public.music_session
 ALTER TABLE ONLY public.note
 ALTER TABLE ONLY public.note
 ALTER TABLE ONLY public.note_candidate
@@ -177,6 +180,7 @@ CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'
 CONSTRAINT ck_event_rsvps_response CHECK ((response = ANY (ARRAY['yes'::text, 'no'::text, 'maybe'::text])))
 CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['proposed'::text, 'confirmed'::text, 'cancelled'::text])))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
+CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_reminders_recurrence CHECK ((((recurrence = 'none'::text) AND (recurrence_tz IS NULL) AND (recurrence_count IS NULL) AND (recurrence_until IS NULL) AND (series_id IS NULL) AND (series_anchor_at IS NULL) AND (occurrence = 0)) OR ((recurrence <> 'none'::text) AND (recurrence_tz IS NOT NULL) AND (recurrence_count >= 1) AND (series_id IS NOT NULL) AND (series_anchor_at IS NOT NULL) AND (occurrence >= 0) AND (occurrence < recurrence_count)))),
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
@@ -259,6 +263,7 @@ CREATE TABLE public.language_observation (
 CREATE TABLE public.media_descriptions (
 CREATE TABLE public.messages (
 CREATE TABLE public.music_queue (
+CREATE TABLE public.music_session (
 CREATE TABLE public.note (
 CREATE TABLE public.note_candidate (
 CREATE TABLE public.note_entity (
@@ -421,6 +426,7 @@ first_seen_ts bigint NOT NULL,
 fix_count integer NOT NULL,
 fix_count integer NOT NULL,
 guild_id text NOT NULL,
+guild_id text NOT NULL,
 head_revision_id uuid NOT NULL,
 hits integer DEFAULT 0 NOT NULL
 hour_of_week integer NOT NULL,
@@ -497,6 +503,10 @@ name text NOT NULL,
 narrative text NOT NULL,
 note_id uuid NOT NULL,
 note_id uuid NOT NULL,
+notify_channel_id text NOT NULL,
+now_playing_locator text,
+now_playing_source text,
+now_playing_title text,
 object text NOT NULL,
 object_entity_id text,
 object_literal text,
@@ -517,6 +527,7 @@ parent_revision_id uuid,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
+paused boolean NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,
@@ -630,6 +641,7 @@ ts bigint NOT NULL,
 uncertainty text NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
+updated_at timestamp with time zone NOT NULL,
 updated_ms bigint NOT NULL
 updated_ts bigint NOT NULL
 updated_ts bigint NOT NULL,
@@ -647,6 +659,8 @@ venue_resolved_at timestamp with time zone,
 venue_text text,
 version text NOT NULL,
 version_num character varying(32) NOT NULL
+voice_channel_id text NOT NULL,
+volume double precision NOT NULL,
 warrant_kind text DEFAULT 'source'::text NOT NULL,
 wire_state text NOT NULL,
 workspace text NOT NULL,
