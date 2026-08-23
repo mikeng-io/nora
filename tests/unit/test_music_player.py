@@ -69,7 +69,7 @@ class _FakeVoiceSession:
     def is_playing(self) -> bool:
         return self._playing
 
-    def play(self, stream_url: str) -> None:
+    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
         self.played.append(stream_url)
         self._playing = True
 

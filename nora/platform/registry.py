@@ -111,6 +111,7 @@ class AdapterRegistry:
         metrics: MetricsSink,
         discord_token: str = "",
         music_manager: MusicPlayerManager | None = None,
+        music_crossfade_seconds: float = 0.0,
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform: Signal and, now, Discord —
         each one more `if platforms.<x>.enabled:` block, not a rewrite of this
@@ -164,7 +165,10 @@ class AdapterRegistry:
                     f"${discord_cfg.token_env} — refusing to start with a "
                     "platform that cannot authenticate"
                 )
-            discord_adapter = DiscordAdapter(discord_token, music_manager=music_manager)
+            discord_adapter = DiscordAdapter(
+                discord_token, music_manager=music_manager,
+                crossfade_seconds=music_crossfade_seconds,
+            )
             try:
                 discord_identity = await discord_adapter.resolve_identity()
             except Exception as exc:

@@ -604,7 +604,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     try:
         registry = await AdapterRegistry.from_config(
             cfg.platforms, metrics=metrics, discord_token=discord_token,
-            music_manager=music_manager,
+            music_manager=music_manager, music_crossfade_seconds=cfg.music.crossfade_seconds,
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc

@@ -82,7 +82,7 @@ class _FakeVoiceSession:
     def is_playing(self) -> bool:
         return bool(self.played) and self.stopped == 0
 
-    def play(self, stream_url: str) -> None:
+    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
         self.played.append(stream_url)
 
     def pause(self) -> None:

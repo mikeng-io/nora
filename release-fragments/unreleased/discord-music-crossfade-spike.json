@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Discord music can now crossfade between tracks (blending audio, not just a hard cut) -- off by default, enable with [music] crossfade_seconds in config.toml.",
+  "details": [
+    "Spike, not a hardened feature: a track's outgoing audio blends into the next track's incoming audio for the configured number of seconds, via a live-mixed audio source. Only a natural track end crossfades -- /music skip stays an instant cut on purpose.",
+    "0.0 (default) means no behaviour change at all -- crossfading is entirely config-gated."
+  ],
+  "limitations": [
+    "Uses the stdlib audioop module for audio mixing, which is deprecated and removed in Python 3.13 -- needs replacing before any Python upgrade past 3.12 if this becomes permanent.",
+    "Linear (not equal-power) gain ramp -- may not sound as smooth as a polished crossfade.",
+    "A track with no known duration (yt-dlp couldn't determine one) falls back to a hard cut for that boundary.",
+    "Not yet verified for real audio quality against a live Discord voice channel -- only unit-tested against synthetic timing."
+  ]
+}

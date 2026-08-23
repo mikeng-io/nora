@@ -32,7 +32,7 @@ log = logging.getLogger("nora.music")
 
 class VoiceSession(Protocol):
     def is_playing(self) -> bool: ...
-    def play(self, stream_url: str) -> None: ...
+    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None: ...
     def pause(self) -> None: ...
     def resume(self) -> None: ...
     def stop(self) -> None: ...
@@ -171,7 +171,9 @@ class MusicPlayer:
                 return
             resolved = await self._source.resolve(query_or_url=self._now_playing.url)
             if resolved:
-                self._voice.play(resolved[0].stream_url)
+                self._voice.play(
+                    resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds,
+                )
                 return
             log.warning(
                 "queued track no longer resolves, skipping: %s (%s)",

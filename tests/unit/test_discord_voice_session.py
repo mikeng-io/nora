@@ -45,16 +45,32 @@ class _FakeAudioSource(discord.AudioSource):
 class _FakeVoiceClient:
     def __init__(self) -> None:
         self.played_sources: list[object] = []
+        # Real `discord.VoiceClient.source` has a setter that swaps the
+        # live `AudioPlayer`'s source without stopping it -- a distinct
+        # path from `play()`, tracked separately here so a test can tell a
+        # crossfade swap apart from a fresh `play()` call.
+        self.live_swaps: list[object] = []
         self.paused = 0
         self.resumed = 0
         self.disconnected = 0
         self._playing = False
         self._after = None
+        self._source: object = None
 
     def play(self, source: object, *, after) -> None:
         self.played_sources.append(source)
+        self._source = source
         self._after = after
         self._playing = True
+
+    @property
+    def source(self) -> object:
+        return self._source
+
+    @source.setter
+    def source(self, value: object) -> None:
+        self._source = value
+        self.live_swaps.append(value)
 
     def is_playing(self) -> bool:
         return self._playing
@@ -293,3 +309,123 @@ async def test_volume_persists_across_tracks() -> None:
     session.play("https://cdn.example/b")  # skip()'s own advance, in effect
 
     assert [s.volume for s in voice_client.played_sources] == [0.3, 0.3]
+
+
+async def test_crossfade_disabled_by_default_never_live_swaps() -> None:
+    """`crossfade_seconds=0.0` (the config default) must reproduce today's
+    behaviour exactly: no timer, no live swap, even when `duration_seconds`
+    is supplied."""
+    voice_client = _FakeVoiceClient()
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(),
+        on_finished=lambda: None, audio_source_factory=lambda url: _FakeAudioSource(url),
+    )
+
+    session.play("https://cdn.example/a", duration_seconds=0.05)
+    await asyncio.sleep(0.08)
+
+    assert voice_client.live_swaps == []
+    assert len(voice_client.played_sources) == 1
+
+
+async def test_crossfade_fires_early_and_live_swaps_into_the_next_track() -> None:
+    """The core spike mechanic: with crossfading on, the completion signal
+    fires `crossfade_seconds` BEFORE the track's real end, and the next
+    `play()` call -- landing while the old one is still technically
+    "playing" -- live-swaps in a mixer instead of a fresh `play()`."""
+    voice_client = _FakeVoiceClient()
+    finished = asyncio.Event()
+
+    async def on_finished() -> None:
+        finished.set()
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=on_finished,
+        audio_source_factory=lambda url: _FakeAudioSource(url), crossfade_seconds=0.02,
+    )
+
+    session.play("https://cdn.example/a", duration_seconds=0.06)
+    await asyncio.wait_for(finished.wait(), timeout=1.0)
+    # The early fire must land BEFORE the track's own true end -- the voice
+    # client was never told to stop.
+    assert voice_client.is_playing() is True
+
+    session.play("https://cdn.example/b", duration_seconds=0.06)
+
+    assert voice_client.live_swaps, "expected a live source swap, not a fresh play() call"
+    mixer = voice_client.live_swaps[-1]
+    assert isinstance(mixer, discord.PCMVolumeTransformer)
+    from nora.platform.discord.crossfade import CrossfadeSource
+    assert isinstance(mixer.original, CrossfadeSource)
+    # Only the FIRST play() ever called `voice_client.play()` -- everything
+    # after is a live swap, never a second `.play()` (which real discord.py
+    # raises `ClientException` for while already playing).
+    assert len(voice_client.played_sources) == 1
+
+
+async def test_the_real_eof_after_an_early_crossfade_does_not_double_notify() -> None:
+    """The suppression this spike reuses from the existing stop() race fix:
+    once the early timer has already signalled completion, the REAL `after`
+    firing later (true EOF) must not signal it again."""
+    voice_client = _FakeVoiceClient()
+    calls: list[str] = []
+
+    async def on_finished() -> None:
+        calls.append("finished")
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=on_finished,
+        audio_source_factory=lambda url: _FakeAudioSource(url), crossfade_seconds=0.02,
+    )
+    session.play("https://cdn.example/a", duration_seconds=0.03)
+    await asyncio.sleep(0.05)  # let the early timer fire
+    assert calls == ["finished"]
+
+    # The real AudioPlayer thread reaching true EOF on the (now-mixed)
+    # source, some time later.
+    voice_client.stop()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert calls == ["finished"]
+
+
+async def test_no_crossfade_timer_when_duration_is_unknown() -> None:
+    """A track `yt-dlp` couldn't determine a duration for (a live stream)
+    must not crash the timer math -- it just plays with a hard cut, same
+    as crossfading being off."""
+    voice_client = _FakeVoiceClient()
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        audio_source_factory=lambda url: _FakeAudioSource(url), crossfade_seconds=0.02,
+    )
+
+    session.play("https://cdn.example/a", duration_seconds=None)
+    await asyncio.sleep(0.05)
+
+    assert voice_client.live_swaps == []
+
+
+async def test_stop_cancels_a_pending_crossfade_timer() -> None:
+    """`/music skip`/`/music stop` stay an instant cut regardless of
+    crossfade config -- a timer left running past `stop()` could fire an
+    early "finished" signal for a track that isn't playing anymore."""
+    voice_client = _FakeVoiceClient()
+    calls: list[str] = []
+
+    async def on_finished() -> None:
+        calls.append("finished")
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=on_finished,
+        audio_source_factory=lambda url: _FakeAudioSource(url), crossfade_seconds=0.02,
+    )
+    session.play("https://cdn.example/a", duration_seconds=0.05)
+
+    session.stop()
+    await asyncio.sleep(0.08)
+
+    # `stop()` itself suppresses its own `after` firing (already covered
+    # above) -- the thing THIS test guards is the early timer specifically
+    # not also firing on top of that.
+    assert calls == []
