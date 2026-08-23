@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Discord Music — Session Persistence"
-description: "Extends persistence from just the upcoming queue to the whole session (now-playing, paused, volume, channels) via a new music_session table — stage 1: write-through. Boot-time resume is a deliberate follow-up, not built here."
+description: "Extends persistence from just the upcoming queue to the whole session (now-playing, paused, volume, channels) via a new music_session table — stage 1 write-through, stage 2 boot-time resume. Both built."
 tags: [nora, discord, music, postgres, persistence, session]
 timestamp: '2026-08-24'
 edges:
@@ -10,11 +10,11 @@ edges:
 
 # Discord Music — Session Persistence
 
-**Status: stage 1 of 2.** This lands the write-through half — every state
-transition `MusicPlayer` makes is now persisted to Postgres — but does NOT
-yet make Nora reconnect and resume on boot. A restart still drops active
-sessions exactly as before; the difference is the state to resume FROM now
-survives the restart, ready for stage 2 to read.
+**Status: both stages built.** Stage 1 is the write-through half — every
+state transition `MusicPlayer` makes is persisted to Postgres. Stage 2
+(below) makes Nora actually reconnect and resume on boot, guarded by the
+same "only if a human is still there" rule the empty-channel disconnect
+already uses.
 
 ## What changed from `03-state-and-persistence.md`'s original split
 
@@ -78,20 +78,33 @@ invisible to `alembic check`. Contract-suite-covered
 port convention — `SqlMusicSessionStore` and `FakeMusicSessionStore` both
 pass it.
 
-## Stage 2 (not built here): boot-time resume
+## Stage 2: boot-time resume
 
-On boot, scan `MusicSessionStore.all()`; for each row, reconnect to
-`voice_channel_id` ONLY IF it currently has human members (operator's own
-call, mirroring the existing "leave when a channel empties of humans"
-rule symmetrically — a deploy must not make Nora silently rejoin and play
-into an empty room). If reconnecting: restart the persisted now-playing
-track from position 0 (operator's own call — never attempt mid-frame
-resume), re-apply `paused`/`volume`, and let the already-persisted queue
-continue normally from there. If the channel has no humans (or the row's
-`voice_channel_id` no longer exists): delete the stale row, do not
-reconnect.
+`resume_persisted_sessions` (`music_commands.py`) scans
+`MusicPlayerManager.persisted_sessions()` (a thin wrapper over
+`MusicSessionStore.all()`) and, for each row, reconnects to
+`voice_channel_id` ONLY IF it currently has human members — mirrors the
+existing "leave when a channel empties of humans" rule symmetrically, so a
+deploy never makes Nora silently rejoin and play into an empty room. A
+channel that's gone entirely (`client.get_channel`/`fetch_channel` both
+come up empty), or has no humans in it right now, gets its row discarded
+via `MusicPlayerManager.discard_persisted_session` — no `MusicPlayer` or
+voice connection is ever constructed for it.
 
-This needs the Discord platform layer to run channel-membership checks and
-drive reconnects at boot — real, separate work (a new hook off
-`DiscordAdapter`'s `on_ready`, likely alongside `_register_music_commands`)
-— deliberately scoped OUT of this PR to keep it reviewable.
+`MusicPlayerManager.resume_persisted_session` builds the `MusicPlayer`
+directly from the persisted row (not through `play()`'s query-resolving
+flow — there's no new query, just an already-known track). It calls
+`MusicPlayer.resume_from_persisted`, which restarts that track from
+position 0 (never mid-frame — the one limitation from stage 1 that
+`03-state-and-persistence.md`'s original reasoning still holds) and
+re-applies `paused`/`volume`. If the persisted track no longer resolves
+(deleted, region-locked), it falls back to `on_track_finished()`'s normal
+advance — picking up wherever the ACTUAL queue continues, or staying idle
+if it's empty — exactly like a stale queued track already does elsewhere
+in this bundle.
+
+**Idempotent against re-running.** `resume_persisted_session` refuses to
+touch a guild that already has a live `MusicPlayer`, so wiring the scan
+into `on_ready` (which can fire more than once per process, per
+`02-control-surface.md`'s own note about reconnects) is safe — it only
+ever does real work the first time a given guild's session gets resumed.

@@ -26,6 +26,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, Protocol
+from uuid import uuid4
 
 from nora.domain.music import MusicQueueStore, MusicSession, MusicSessionStore, QueuedTrack
 from nora.domain.ports import TrackSource
@@ -174,6 +175,38 @@ class MusicPlayer:
             return False
         self._voice.set_volume(volume)
         self._volume = volume
+        await self._persist_session()
+        return True
+
+    async def resume_from_persisted(
+        self, *, source: str, locator: str, title: str, paused: bool, volume: float,
+    ) -> bool:
+        """Boot-time resume (design/discord-music/06-session-persistence.md
+        stage 2) — restarts the track a restart interrupted, from position
+        0 (never mid-frame, same limitation `_advance`'s lazy-resolve
+        already has). Returns `False` if the persisted track no longer
+        resolves (deleted, region-locked); the caller falls back to
+        `on_track_finished()` to pick up wherever the ACTUAL queue
+        continues, exactly like a stale queued track already does."""
+        self._volume = volume
+        self._voice.set_volume(volume)
+        resolved = await self._source.resolve(query_or_url=locator)
+        if not resolved:
+            return False
+        # Not popped from `self._queue` — this track already WAS popped,
+        # before the restart. `added_by_person_id`/`position` carry no
+        # meaningful value for a resumed track; left blank/sentinel rather
+        # than guessed.
+        self._now_playing = QueuedTrack(
+            id=uuid4(), guild_id=self._guild_id, position=-1, source=source,
+            url=resolved[0].locator, title=title or resolved[0].title,
+            added_by_person_id="", added_at=self._clock(),
+        )
+        self._paused = False
+        self._voice.play(resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds)
+        if paused:
+            self._voice.pause()
+            self._paused = True
         await self._persist_session()
         return True
 

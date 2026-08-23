@@ -400,3 +400,51 @@ async def test_stop_deletes_the_persisted_session_row() -> None:
     await player.stop()
 
     assert await session.get("guild-1") is None
+
+
+async def test_resume_from_persisted_restarts_the_track_from_the_top() -> None:
+    """Boot-time resume (design/discord-music/06-session-persistence.md
+    stage 2) -- never mid-frame, always position 0."""
+    player, voice, session = _player({"track a": _TRACK_A})
+
+    resumed = await player.resume_from_persisted(
+        source="youtube", locator="locator-a", title="Track A", paused=False, volume=0.7,
+    )
+
+    assert resumed is True
+    assert voice.played == ["https://cdn.example/a"]
+    assert voice.volume_calls == [0.7]
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track A"
+    row = await session.get("guild-1")
+    assert row is not None
+    assert row.volume == 0.7
+    assert row.paused is False
+
+
+async def test_resume_from_persisted_reapplies_a_paused_state() -> None:
+    player, voice, _session = _player({"track a": _TRACK_A})
+
+    resumed = await player.resume_from_persisted(
+        source="youtube", locator="locator-a", title="Track A", paused=True, volume=1.0,
+    )
+
+    assert resumed is True
+    assert voice.paused == 1
+    assert (await player.status()).paused is True
+
+
+async def test_resume_from_persisted_returns_false_when_the_track_no_longer_resolves() -> None:
+    """The persisted track vanished (deleted, region-locked) since it was
+    last playing -- the manager falls back to whatever the ACTUAL queue
+    has next, same as a stale queued track already does in `_advance`."""
+    player, voice, _session = _player({})
+
+    resumed = await player.resume_from_persisted(
+        source="youtube", locator="locator-gone", title="Gone", paused=False, volume=1.0,
+    )
+
+    assert resumed is False
+    assert voice.played == []
+    assert (await player.status()).now_playing is None

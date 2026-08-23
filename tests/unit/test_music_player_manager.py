@@ -17,6 +17,7 @@ import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from nora.domain.music import MusicSession
 from nora.domain.ports import ResolvedTrack
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
@@ -24,6 +25,17 @@ from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
 T0 = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
 
 _StubEntry = ResolvedTrack | Sequence[ResolvedTrack] | None
+
+
+def _persisted_session(**kw) -> MusicSession:
+    base = {
+        "guild_id": "guild-1", "voice_channel_id": "voice-channel-1",
+        "notify_channel_id": "notify-channel-1", "now_playing_source": None,
+        "now_playing_locator": None, "now_playing_title": None,
+        "paused": False, "volume": 1.0, "updated_at": T0,
+    }
+    base.update(kw)
+    return MusicSession(**base)
 
 
 def _as_sequence(found: _StubEntry) -> Sequence[ResolvedTrack]:
@@ -495,3 +507,99 @@ async def test_leaving_stops_further_notifications_for_that_guild() -> None:
     await manager.on_track_finished("guild-1")
 
     assert notify.messages == []
+
+
+async def test_persisted_sessions_reflects_the_session_store() -> None:
+    manager = _manager({"track a": _TRACK_A})
+    session_store = manager._session_store  # type: ignore[attr-defined]
+    await session_store.upsert(_persisted_session(guild_id="guild-9"))
+
+    sessions = await manager.persisted_sessions()
+
+    assert [s.guild_id for s in sessions] == ["guild-9"]
+
+
+async def test_discard_persisted_session_removes_it_without_ever_connecting() -> None:
+    manager = _manager({"track a": _TRACK_A})
+    session_store = manager._session_store  # type: ignore[attr-defined]
+    await session_store.upsert(_persisted_session(guild_id="guild-9"))
+
+    await manager.discard_persisted_session("guild-9")
+
+    assert await session_store.get("guild-9") is None
+
+
+async def test_resume_persisted_session_reconnects_and_restarts_the_track() -> None:
+    manager = _manager({"track a": _TRACK_A})
+    voice = _FakeVoiceSession()
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    persisted = _persisted_session(
+        guild_id="guild-1", now_playing_source="youtube", now_playing_locator="locator-a",
+        now_playing_title="Track A", paused=False, volume=1.0,
+    )
+
+    await manager.resume_persisted_session(persisted, connect=connect, notify=notify)
+
+    assert voice.played == ["https://cdn.example/a"]
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track A"
+    assert notify.messages == ["Now playing: Track A — locator-a"]
+
+
+async def test_resume_persisted_session_with_nothing_playing_advances_the_real_queue() -> None:
+    """The session was persisted with nothing playing (queue empty at the
+    time) -- resume just picks up whatever's queued now, or stays idle."""
+    manager = _manager({"track b": _TRACK_B})
+    voice = _FakeVoiceSession()
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    # Simulate a track having been queued for this guild in the meantime.
+    await manager._queue_store.enqueue(  # type: ignore[attr-defined]
+        guild_id="guild-1", source="youtube", url="locator-b", title="Track B",
+        added_by_person_id="miles", added_at=T0,
+    )
+    persisted = _persisted_session(
+        guild_id="guild-1", now_playing_source=None, now_playing_locator=None,
+        now_playing_title=None,
+    )
+
+    await manager.resume_persisted_session(persisted, connect=connect, notify=notify)
+
+    assert voice.played == ["https://cdn.example/b"]
+    assert notify.messages == ["Now playing: Track B — locator-b"]
+
+
+async def test_resume_persisted_session_never_clobbers_an_already_live_player() -> None:
+    manager = _manager({"track a": _TRACK_A})
+    session = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return session
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    connect_calls = 0
+
+    async def resume_connect() -> _FakeVoiceSession:
+        nonlocal connect_calls
+        connect_calls += 1
+        return _FakeVoiceSession()
+
+    persisted = _persisted_session(guild_id="guild-1")
+    await manager.resume_persisted_session(
+        persisted, connect=resume_connect, notify=_RecordingNotify(),
+    )
+
+    assert connect_calls == 0
