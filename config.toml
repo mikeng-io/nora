@@ -552,6 +552,19 @@ sticker_descriptions = true
 # sticker_timeout_seconds = 20.0
 # sticker_description_max_chars = 200
 
+# WHERE the (always-encrypted) bytes above land (DEC-136). Turned ON
+# 2026-08-23 (operator): the 78 blobs already on disk were copied into this
+# bucket first (scripts/migrate_media_to_rustfs.py), non-destructively — the
+# filesystem originals are untouched, so this is a live cutover of which
+# store the ingest pipeline WRITES/READS through, not a data migration in
+# itself. RustFS was already running for `drop`'s own artifacts.
+[media.rustfs]
+enabled = true
+endpoint = "http://rustfs:9000"
+bucket = "nora-media"
+access_key_env = "RUSTFS_ROOT_USER"
+secret_key_env = "RUSTFS_ROOT_PASSWORD"
+
 [shortener]
 # Nora's own link shortener/drop delivery (deploy/drop/, this repo's own
 # compose service — cut over 2026-08-12 from the n.example.net Cloudflare
