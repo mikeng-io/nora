@@ -27,6 +27,11 @@ log = logging.getLogger("nora.music")
 Connect = Callable[[], Awaitable[VoiceSession]]
 Spawn = Callable[[Coroutine[Any, Any, None]], "asyncio.Task[None]"]
 ClockSleep = Callable[[float], Awaitable[None]]
+# Posts a plain-text message to whatever channel a guild's session was
+# STARTED from -- captured once, at the `/music play` that actually creates
+# the `MusicPlayer` (never updated on a later reuse from a different
+# channel, matching "the channel where it started").
+Notify = Callable[[str], Awaitable[None]]
 
 
 class MusicPlayerManager:
@@ -46,6 +51,7 @@ class MusicPlayerManager:
         self._clock_sleep = clock_sleep
         self._players: dict[str, MusicPlayer] = {}
         self._idle_tasks: dict[str, asyncio.Task[None]] = {}
+        self._notify: dict[str, Notify] = {}
         # `play()`'s whole body runs under this — "no existing player, so
         # connect" is a check-then-act across an `await`, and enqueuing a
         # track is another; without a lock, two `/music play` calls for the
@@ -64,12 +70,18 @@ class MusicPlayerManager:
         requested_by: str,
         added_at: datetime,
         connect: Connect | None,
+        notify: Notify | None = None,
     ) -> PlayOutcome | None:
         """`None` is the rejection: no existing player for `guild_id` AND
         `connect is None` (the requester is not in any voice channel).
         Reuses an existing player regardless of `connect` — only STARTING a
         session requires the requester to be present
         (03-state-and-persistence.md's own rule).
+
+        `notify` is captured ONLY when this call actually creates the
+        player (a fresh session) — a later `/music play` reusing an
+        existing session does not move the now-playing notification
+        channel, matching "the channel where it started".
 
         The WHOLE method runs under this guild's lock, not just the
         get-or-create step — Nora is one process, so this is what keeps two
@@ -80,9 +92,12 @@ class MusicPlayerManager:
         process deployment, say — not the mechanism this one relies on)."""
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
+            is_new_session = guild_id not in self._players
             player = await self._get_or_create(guild_id, connect)
             if player is None:
                 return None
+            if is_new_session and notify is not None:
+                self._notify[guild_id] = notify
             # Cancel BEFORE the slow resolve/enqueue await below, not only
             # in `_after_transition` at the end — an idle timer left
             # running across that await can fire and tear the player down
@@ -100,7 +115,11 @@ class MusicPlayerManager:
         if player is None:
             return None
         skipped = await player.skip()
-        await self._after_transition(guild_id, player)
+        status = await self._after_transition(guild_id, player)
+        # Skip's own reply already names what was skipped
+        # (`music_commands.py`) -- this announces what's now playing next,
+        # the same notification a natural track-end gets.
+        await self._notify_now_playing(guild_id, status)
         return skipped
 
     async def on_track_finished(self, guild_id: str) -> None:
@@ -108,7 +127,11 @@ class MusicPlayerManager:
         if player is None:
             return
         await player.on_track_finished()
-        await self._after_transition(guild_id, player)
+        status = await self._after_transition(guild_id, player)
+        # This is the ONE transition with no slash-command reply of its own
+        # — a track ending naturally and the next one auto-starting is
+        # otherwise silent in Discord.
+        await self._notify_now_playing(guild_id, status)
 
     async def pause(self, guild_id: str) -> bool:
         player = self._players.get(guild_id)
@@ -157,12 +180,22 @@ class MusicPlayerManager:
         self._players[guild_id] = player
         return player
 
-    async def _after_transition(self, guild_id: str, player: MusicPlayer) -> None:
+    async def _after_transition(self, guild_id: str, player: MusicPlayer) -> PlayerStatus:
         status = await player.status()
         if status.now_playing is None:
             self._schedule_idle_disconnect(guild_id)
         else:
             self._cancel_idle_disconnect(guild_id)
+        return status
+
+    async def _notify_now_playing(self, guild_id: str, status: PlayerStatus) -> None:
+        now_playing = status.now_playing
+        if now_playing is None:
+            return
+        notify = self._notify.get(guild_id)
+        if notify is None:
+            return
+        await notify(f"Now playing: {now_playing.title} — {now_playing.url}")
 
     def _schedule_idle_disconnect(self, guild_id: str) -> None:
         """03's disconnect-timer rule 2: queue empty and nothing playing ->
@@ -183,6 +216,7 @@ class MusicPlayerManager:
 
     async def _leave(self, guild_id: str) -> None:
         self._cancel_idle_disconnect(guild_id)
+        self._notify.pop(guild_id, None)
         player = self._players.pop(guild_id, None)
         if player is not None:
             await player.stop()

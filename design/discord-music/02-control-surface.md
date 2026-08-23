@@ -52,6 +52,23 @@ this bundle, both accepted rather than solved:
    queue) as a candidate once it's shown to actually happen often enough to
    annoy someone, the same evidence bar the rest of this bundle holds to.
 
+## Auto-advance posts a "Now playing" notification, to the channel it started in
+
+Every slash command already replies in Discord (`/music play`, `/music
+skip`, ...) — the one transition with no reply of its own is a track
+finishing NATURALLY and the next one auto-starting (`MusicPlayer.
+on_track_finished`), which was silent: nothing in Discord ever named what
+started playing next. `MusicPlayerManager` now posts `Now playing: <title>
+— <url>` (the `<url>` is `ResolvedTrack.locator`, `01-playback-and-
+source.md` — always the canonical watch link, never a throwaway CDN
+stream URL) to whichever text channel the session's **first** `/music
+play` was invoked from — captured once, at session start, not updated by
+a later `/music play` reusing the session from a different channel
+(`03-state-and-persistence.md`'s "where it started"). `/music skip` gets
+the same notification for what's now playing, alongside its own existing
+"Skipped: X" reply, so skipping to a track never leaves the queue's new
+head unannounced either.
+
 ## No Nora agent tools in v1
 
 The command surface above is a **complete, working bot** on its own —

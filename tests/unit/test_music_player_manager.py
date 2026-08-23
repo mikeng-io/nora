@@ -105,6 +105,18 @@ _TRACK_A = ResolvedTrack(
     title="Track A", stream_url="https://cdn.example/a", duration_seconds=200,
     source="youtube", source_id="a", locator="locator-a",
 )
+_TRACK_B = ResolvedTrack(
+    title="Track B", stream_url="https://cdn.example/b", duration_seconds=180,
+    source="youtube", source_id="b", locator="locator-b",
+)
+
+
+class _RecordingNotify:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    async def __call__(self, text: str) -> None:
+        self.messages.append(text)
 
 
 class _FakeScheduler:
@@ -342,3 +354,128 @@ async def test_set_volume_delegates_to_the_player_once_one_exists() -> None:
     assert session.volume_calls == [0.5]
 
     assert await manager.set_volume("guild-1", 3.0) is False
+
+
+async def test_the_first_play_does_not_notify_the_channel_that_started_it() -> None:
+    """The slash command's own reply already says "Now playing" -- a
+    separate notification for the very same transition would double-post."""
+    manager = _manager({"track a": _TRACK_A})
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect, notify=notify,
+    )
+
+    assert notify.messages == []
+
+
+async def test_a_track_finishing_naturally_notifies_the_channel_that_started_the_session() -> None:
+    """The one transition with no slash-command reply of its own -- a track
+    ending and the next auto-starting is otherwise silent in Discord."""
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B})
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect, notify=notify,
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+
+    await manager.on_track_finished("guild-1")
+
+    assert notify.messages == ["Now playing: Track B — locator-b"]
+
+
+async def test_skip_notifies_what_is_now_playing() -> None:
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B})
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect, notify=notify,
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+
+    await manager.skip("guild-1")
+
+    assert notify.messages == ["Now playing: Track B — locator-b"]
+
+
+async def test_a_track_finishing_with_an_empty_queue_does_not_notify() -> None:
+    """Nothing plays next -- there is nothing to announce."""
+    manager = _manager({"track a": _TRACK_A})
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect, notify=notify,
+    )
+
+    await manager.on_track_finished("guild-1")
+
+    assert notify.messages == []
+
+
+async def test_reusing_a_session_from_another_channel_keeps_the_original_notify() -> None:
+    """"The channel where it started" means the FIRST `/music play` for this
+    session, not the most recent one -- a later reuse must not move where
+    now-playing notifications land."""
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B})
+    original_channel = _RecordingNotify()
+    other_channel = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect, notify=original_channel,
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None, notify=other_channel,
+    )
+
+    await manager.on_track_finished("guild-1")
+
+    assert other_channel.messages == []
+    assert original_channel.messages == ["Now playing: Track B — locator-b"]
+
+
+async def test_leaving_stops_further_notifications_for_that_guild() -> None:
+    manager = _manager({"track a": _TRACK_A})
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect, notify=notify,
+    )
+    await manager.stop("guild-1")
+
+    # A stale callback firing after the session ended (shouldn't happen in
+    # practice, since the player is gone) must still not notify.
+    await manager.on_track_finished("guild-1")
+
+    assert notify.messages == []
