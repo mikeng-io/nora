@@ -374,3 +374,7 @@ Three things fall out that no single flow shows:
    have no tools — its read is a single known row — which is what makes it
    evidence that [08-state.md](08-state.md) §1 is a real rule rather than a
    licence to grant everything.
+
+## Status / Checkpoint
+
+2026-08-24 — Four flows end to end. Its note-revisitor caveat is resolved by [27](27-note-dreamer.md) §3.

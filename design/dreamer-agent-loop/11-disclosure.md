@@ -230,3 +230,7 @@ split across **two string fields** of one item, and the fact renderer does emit
 two such fields as prose in the same block. Low severity today; it should be
 stated in the screen's own reasoning rather than left as a gap between what the
 docstring claims and what it checks.
+
+## Status / Checkpoint
+
+2026-08-24 — F3. Its argument recurs in [26](26-standing.md) §4.3 — a screen on the wrong side of a persistence boundary — which is the same finding one tier over.

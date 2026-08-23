@@ -359,3 +359,7 @@ Two riders, both load-bearing:
 - **The startup refusal stays.** An adaptor declaring a tool outside the
   ceiling refuses to start, and the per-run re-check stays beside it so a
   hot-reloaded subset cannot slip through.
+
+## Status / Checkpoint
+
+2026-08-24 — D3, D4, D5. Its two scope statements are decided-elsewhere pointers, not deferrals.

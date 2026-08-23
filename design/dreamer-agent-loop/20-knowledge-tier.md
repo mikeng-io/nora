@@ -165,3 +165,7 @@ project against free-text subjects.
 
 The design already committed to this column. It is cheaper to install now than
 it will ever be again.
+
+## Status / Checkpoint
+
+2026-08-24 — D11, the reframe. Its four-problems-one-column argument is discharged by [21](21-substrate-contract.md); its retrieval half by [23](23-retrieval.md) and [25](25-knowledge-pipeline.md).

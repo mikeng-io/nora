@@ -148,24 +148,40 @@ has seen before destroys the signal that decides what is worth researching.
 
 ## 7. The critical path
 
-0. **Settle the substrate contract, then write canonical entity ids**
-   ([21](21-substrate-contract.md), [20](20-knowledge-tier.md)). Zero rows exist,
-   so it costs nothing today and is a cleaning project later. Four separate
-   problems in this bundle bottom out in this one column, and it is the only
-   thing keeping the store choice reversible.
-1. **Measure the transport** ([16](16-open-items.md) §0 and §1, one run). Does it
-   sustain tool calls and carry reasoning between turns; which ceiling actually
-   binds. **Everything else is downstream of this** — and if the answer is no,
-   the loop's shape changes rather than its numbers.
-2. **Give the Dreamer its own transport** ([05](05-transport.md)) sized against
-   that reading.
-3. **Declare triggers** ([06](06-trigger.md)), which is what makes a concurrency
-   bound expressible at all.
-4. **Wire the tier read tools** ([08](08-state.md)) and the scope-keyed room
-   access ([10](10-room-access.md)).
-5. **Turn it on for one scope**, with the acceptance reading from
-   [09](09-measurement.md) §4 and the rollback condition from §5 in place before
-   the flag flips, not after.
+**The design is closed; this is the build order.** Step 0 of the earlier version
+— *settle the substrate contract* — is done ([21](21-substrate-contract.md)),
+and what follows is sequenced by what each step unblocks, not by what is still
+undecided.
+
+1. **Measure the transport** ([16](16-open-items.md) §0/§1, one run, via the
+   eval harness on the real pipeline). It selects between [07](07-loop.md) §7's
+   two designed branches. **Everything downstream is shaped by which.**
+2. **The Dreamer's own transport and per-adaptor config**
+   ([05](05-transport.md), [22](22-config.md)) — cadence, floor,
+   `reasoning_effort`, a concurrency bound, and per-adaptor enablement, sized
+   against step 1.
+3. **The caps, everywhere** ([22](22-config.md) §5.1). Config plus a database
+   ceiling for every injected or joined field: Standing's body, the note body,
+   fact terms and predicates, the lexeme gloss. Cheapest now — three of the five
+   tables are empty.
+4. **Entity ids and the promotion pass** ([21](21-substrate-contract.md) §6,
+   [25](25-knowledge-pipeline.md) §4). Zero rows today; a cleaning project at a
+   thousand. Four problems bottom out here and traversal is impossible without
+   it.
+5. **The lexical channel** ([24](24-embedding-seam.md) §2) — `pg_trgm`
+   `word_similarity`, no model, no new dependency, and it already answers the
+   Chinese question. Then the dense channel and `pgvector` on
+   `pgvector/pgvector:pg18` ([23](23-retrieval.md) §7), sized by what lexical
+   misses.
+6. **Supersession for the language tier** ([16](16-open-items.md) §7, D19). Its
+   absence is the only defect in this bundle currently visible in production —
+   two contradictory glosses, both live.
+7. **Turn one adaptor on, for one scope**, with [09](09-measurement.md) §4's
+   acceptance reading and §6's rollback thresholds in place **before** the flag
+   flips.
+
+**The instruments come first inside every step**, not after it — that is D7, and
+[02](02-instrument-blindness.md) is the eight-instance argument for why.
 
 ## 8. Scope, not deferral
 

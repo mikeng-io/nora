@@ -127,3 +127,7 @@ per-tool. The loop's only global bounds are turns, tokens and the wall clock.
 That sizing belongs with the rest of the budget work in
 [06-trigger.md](06-trigger.md), and it should land in the same
 change as the grant rather than after it.
+
+## Status / Checkpoint
+
+2026-08-24 — D6. Unchanged; Path B remains blocked by the disclosure condition [16](16-open-items.md) §2 now settles as a startup check.

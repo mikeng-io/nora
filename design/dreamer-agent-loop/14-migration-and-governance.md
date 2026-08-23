@@ -158,3 +158,7 @@ suite both pass. For the fact readers specifically, it must pin:
 function-scoped database fixture across a contract suite has already degraded
 an unrelated wall-clock test in another directory by 10×, and the cost landed
 nowhere near its cause.
+
+## Status / Checkpoint
+
+2026-08-24 — D10. Its §2 records why the bundle merges with no `design/09-decision-index.md` entry — the numbers land when code does, not when prose does.

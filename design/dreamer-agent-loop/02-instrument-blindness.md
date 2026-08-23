@@ -153,3 +153,7 @@ This is the negative half of the repo's own `measure` verb, applied to the
 subsystems that most need it and currently have it least. Layer 6 is the reason
 to state it as a repo-wide discipline rather than a Dreamer fix: a tier written
 by a different session, at a different time, reproduced it exactly.
+
+## Status / Checkpoint
+
+2026-08-24 — Six layers when written. **Now eight**: `nora_fact_entity_unresolved_total` has no call site ([21](21-substrate-contract.md) §6.4), and the note tier declares ten metrics and ships zero ([27](27-note-dreamer.md) §6). The pattern kept finding new instances as later nodes were written, which is the finding.

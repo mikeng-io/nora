@@ -113,3 +113,7 @@ own state ([08-state.md](08-state.md),
 
 The output of such a loop over that batch is not sixty-five triples. It is two
 or three grounded, attributed claims and a decision that the rest was chatter.
+
+## Status / Checkpoint
+
+2026-08-24 — The mechanism behind F1, unchanged. Cited by [28](28-language-tier.md) §2 — all three language adaptors are tools-less, so each is a single completion.

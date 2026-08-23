@@ -178,3 +178,7 @@ The keystone's §1 "measured against HEAD" table has drifted:
 The prompt-substrate lift already happened. What remains true, and is the real
 defect, is that the two observers **bypass the runtime entirely** and therefore
 never receive the doctrine at all — see [13-doctrine.md](13-doctrine.md).
+
+## Status / Checkpoint
+
+2026-08-24 — Forensic. Independently reproduced during the 2026-08-22 review and unchanged since — the 963-messages-to-two-wrong-rows accounting still holds, and §4's reconstruction is what every later node's evidence rests on.
