@@ -112,6 +112,10 @@ such rather than dressed as decisions.
 | **D13** | decision | **The operator surface is per adaptor** — cadence, floor, effort and enablement keyed on adaptor name, the shape the budget map already uses. Today every adaptor's schedule is read from `[language]` | [22](22-config.md) |
 | **D14** | decision | **Two read surfaces**: a per-turn block carrying the store's *extent* plus turn-anchored facts, and a query verb doing lexical + dense + structural, fused by rank. **No cross-encoder** | [23](23-retrieval.md) |
 | **D15** | decision | **Retrieval is one shared seam, not one per tier** — `pg_trgm` `word_similarity` for lexical (measured on Cantonese *and* English), one Embedder, one vector table keyed by kind. The language tier does **not** adopt it | [24](24-embedding-seam.md) |
+| **D16** | decision | **pgvector is adopted** on `pgvector/pgvector:pg18`. The size argument was about the *index*, never the extension; ship with no ANN index and build HNSW at 50k vectors or 50 ms p95 | [23](23-retrieval.md) §7 |
+| **D17** | decision | **No graph database.** Bounded traversal is a recursive CTE, verified present. No AGE, no Neo4j — with the path shapes that would reverse it named | [25](25-knowledge-pipeline.md) §8 |
+| **D18** | decision | **Multi-hop is depth 2**, fan-out 8 per node per hop, no expansion through an entity of degree > 30, distance **decays** rather than gates | [25](25-knowledge-pipeline.md) §7 |
+| **D19** | decision | **D9 is reversed**: the language tier gets supersession. Its "designed cost" already consumed 100% of the tier's output — two contradictory glosses, both live | [16](16-open-items.md) §7 |
 
 **D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
 the second half is the load-bearing part: an extractor that suppresses claims it
@@ -127,7 +131,7 @@ has seen before destroys the signal that decides what is worth researching.
 
 **Execution** — [14](14-migration-and-governance.md) sequencing, numbers, tests · [15](15-roadmap.md) every tier's state and owner · [16](16-open-items.md) what is unresolved
 
-**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is · [21](21-substrate-contract.md) the shape they all write against · [22](22-config.md) what the operator can say · [23](23-retrieval.md) how she reads it back · [24](24-embedding-seam.md) the seam all three tiers share
+**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is · [21](21-substrate-contract.md) the shape they all write against · [22](22-config.md) what the operator can say · [23](23-retrieval.md) how she reads it back · [24](24-embedding-seam.md) the seam all three tiers share · [25](25-knowledge-pipeline.md) the pipeline end to end, and multi-hop
 
 > **If you only read two nodes:** [18](18-flows.md) to see how a tier actually
 > runs, then [01](01-live-state.md) for what it has actually produced. The gap
@@ -159,20 +163,38 @@ has seen before destroys the signal that decides what is worth researching.
    [09](09-measurement.md) §4 and the rollback condition from §5 in place before
    the flag flips, not after.
 
-## 8. What this bundle does not decide
+## 8. Scope, not deferral
 
-- **The fact tier's store** — owned elsewhere, unchanged here.
-- **Standing / the debrief** — owned by another session; its roadmap is
-  consolidated in [15](15-roadmap.md) §6 with that session's agreement. This
-  bundle records it, it does not own it.
-- **Entity resolution's owner** — closed by [21](21-substrate-contract.md) §5
-  (deterministic in the sink, adjudicated by a Dreamer pass). What stays open is
-  the *alias* half: no measured way to tell a true alias from a literal
-  misreading ([16](16-open-items.md) §4.1), so the contract under-merges on
-  purpose.
-- **Which model the Dreamer runs** — closed by operator decision, carrying a
-  falsifiability commitment never discharged because no loop has ever completed
-  ([16](16-open-items.md) §9).
+**This bundle decides everything inside its scope.** There is no "later" list —
+where a number could not be chosen from first principles it ships as a **default
+with its reasoning**, and where an empirical fact is genuinely unknown **both
+branches are designed** ([07](07-loop.md) §7). Implementation is progressive;
+the design is not.
+
+What sits **outside the scope**, which is a boundary rather than an open item:
+
+- **Standing / the debrief** — owned by another session, with its agreement. Its
+  roadmap is recorded in [15](15-roadmap.md) §6; this bundle does not own it.
+- **Doctrine's content** — the operator's, always. This bundle decides doctrine's
+  *shape* ([13](13-doctrine.md)), never its words.
+- **The predicate seed list and the object veto list** — operator-owned files,
+  versioned and hashed like an objective ([21](21-substrate-contract.md) §10).
+  Their existence and governance are decided here; their contents are
+  configuration.
+
+And three questions that were open earlier in this bundle's life and are now
+**closed**, recorded here because their earlier framing is still cited:
+
+- **The store** — Postgres with `pg_trgm` and `pgvector`, on
+  `pgvector/pgvector:pg18`. **No AGE, no graph database**
+  ([25](25-knowledge-pipeline.md) §8), with the reading that would reverse it
+  stated.
+- **Entity resolution** — deterministic in the sink, adjudicated by a Dreamer
+  pass, **defaulting to split** ([21](21-substrate-contract.md) §5). The alias
+  half is not open: under-merging *is* the decision, because a wrong merge is
+  the irreversible direction.
+- **Which model** — the operator's, with its falsifiability commitment given a
+  discharge condition in [05](05-transport.md) §4.
 
 ## Status / Checkpoint
 
