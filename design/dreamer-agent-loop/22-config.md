@@ -148,6 +148,11 @@ the repo rather than to Standing alone.
 | `Standing.body` | `[standing] max_chars` | **1200** | **4000** |
 | `note.title` | `[notes] max_title_chars` | **60** | **120** |
 | `note.description` | `[notes] max_description_chars` | **200** | **400** |
+| `note_revision.body` | `[notes] max_body_chars` | **8000** | **32000** |
+
+The body is the sharper case: it has **no bound at all today**, only
+`length(btrim(body)) > 0` ([27](27-note-dreamer.md) §5.2), and the curator's
+per-tick read budget is only a budget if a row has a bounded size.
 
 The note tier currently enforces 60 and 200 as **domain constants plus a
 `CHECK`** and offers no key at all — `note_title_fits_the_index_check`. That was

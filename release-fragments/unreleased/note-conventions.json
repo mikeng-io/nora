@@ -1,0 +1,1 @@
+{"type":"change","summary":"Note fields gain a stated convention (title = the anchor, description = the uncertainty and its closing condition) and the note body gains a size cap, configurable and bounded by a database ceiling."}
