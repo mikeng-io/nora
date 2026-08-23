@@ -212,10 +212,23 @@ objectives would force exactly the hardcoded scenario engine that spec forbids.
   is a loop that stalls silently. Its equivalent is to **refuse and count**, not
   to escalate.
 
-## 7. What this seam does not decide
+## 7. The one empirical fork, and both branches are designed
 
-The turn and token numbers. Every one of them waits on the measurement in
-[16-open-items.md](16-open-items.md) §0 and §1 — and §0 is the sharper
-dependency: if the transport does not honour tool calls or carry reasoning
-between turns, then §1's shape is wrong rather than merely unsized, and the
-structured terminal act in §2 is the first thing that would break.
+Nothing here is deferred. The turn and token **defaults are already in
+`[dreamer.budgets.<adaptor>]`** (2/6/10 turns, 20k/40k/120k total), and a
+default is a decision — the measurement adjusts it, it does not author it.
+
+What genuinely cannot be known without running it is **binary**: does the
+transport honour tool calls and carry reasoning between turns? That is a fact
+about a provider, not a choice. Both branches are decided here so the reading
+selects a design rather than starting one.
+
+| reading | the loop | what moves |
+|---|---|---|
+| **honours tool calls** | as designed — multi-turn, tools between turns, structured terminal act (§2) | nothing; the numbers tune |
+| **does not** | **degrades to one call per pass**, with everything the adaptor needs *pre-fetched into inputs* | D3's line moves: what would have been a mid-reasoning tool becomes a rendered input, and the terminal act becomes the envelope's own shape rather than a declared verb |
+
+The second branch is not a failure state — it is the pipeline this tier already
+is ([03-no-agent-loop.md](03-no-agent-loop.md)), chosen deliberately and sized
+for, instead of arrived at by accident. **The measurement picks a branch; it does
+not leave the design open.**

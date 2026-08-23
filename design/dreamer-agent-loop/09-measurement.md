@@ -178,11 +178,26 @@ Turn it off again when, over a bounded observation window:
 The thresholds are for whoever builds this; the point is that each is a reading
 someone can take, and that the first one is the failure that already happened.
 
-## 6. What this seam does not decide
+## 6. The thresholds, decided as defaults
 
-Which numbers. Every threshold above, and every budget in
-[05-transport.md](05-transport.md), waits on the measurement in
-[16-open-items.md](16-open-items.md) §1 — because the observed generation
-exceeded every cap Nora configures, so no number currently in the file was in
-force. Sizing before that measurement would be choosing values for knobs not
-known to be connected.
+The rollback conditions in §5 are useless without numbers, and "waits on a
+measurement" is how a rollback rule never acquires one. **These are the
+defaults. They ship, and the first window of real traffic adjusts them.**
+
+| condition | default | reasoning |
+|---|---|---|
+| watermark does not advance across N consecutive fires | **N = 3** | the ratchet signature. One stall is a quiet room; three is a stuck scope — the failure that ran three hours unnoticed |
+| `unavailable` share of runs, per adaptor | **> 20% over 24h** | below that is a flaky provider; above it the tier is not doing its job and a null result cannot be trusted |
+| loop cost over budget | **> 10% of runs, sustained over 24h** | occasional is a long batch; one run in ten is a budget that does not fit the work |
+| a granted tool is never called | **0 calls in 100 runs** | the grant is a cost with no benefit, and D4's decision to make it should be revisited rather than the flag left on |
+
+Every one is a reading someone can take from a counter that §2 already requires.
+They are **defaults, not measurements dressed as decisions** — the distinction
+this bundle keeps insisting on, applied to itself: a number chosen with its
+reasoning stated is a decision; a number chosen and presented as evidence is not.
+
+What the transport measurement in [16-open-items.md](16-open-items.md) §1 still
+governs is the **budgets** in [05-transport.md](05-transport.md) — because the
+observed generation exceeded every cap Nora configures, so those numbers are not
+known to be connected to anything. That is a wiring question, not a sizing one,
+and [07-loop.md](07-loop.md) §7 decides both branches of it.

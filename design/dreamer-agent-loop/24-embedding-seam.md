@@ -217,18 +217,105 @@ Together these mean a new tier adopts retrieval by **declaring three things and
 writing no schema**. That is the bar, and it is the reason to build the seam once
 now rather than discover it on the fourth tier.
 
-## 8. What this node does not decide
+## 7.6 The model is bge-m3, and the bake-off is why
 
-- ~~The embedder's runtime~~ — **settled by the deployment** (§7): `bge-m3` on
-  Ollama, out of process, over HTTP. What stays open is whether Nora reaches it
-  directly or through a port with a fake for tests — a question the repo's
-  contract-suite convention already answers in shape.
-- **Whether notes join the entity graph**, which would give the note tier a
-  structural channel. It anchors on the same entities already
-  ([21](21-substrate-contract.md) §2); nothing reads that yet.
-- **Thresholds.** `word_similarity`'s 0.3 default was not chosen for this corpus.
-  It is a knob with a measurement attached, not a constant to inherit —
-  [23](23-retrieval.md) §10's rule applied to the channel that costs nothing.
+The operator asked whether bge-m3 — early 2024 — has been superseded. **On
+published benchmarks, comprehensively. On this corpus, no.**
+
+### 7.6.1 What the literature says
+
+| model | Retrieval | BitextMining | Ollama size |
+|---|---|---|---|
+| bge-m3 | **54.6** — last in class | **79.1** — near-best | 1.2 GB |
+| Qwen3-Embedding-0.6B | **64.7** (+10.1) | **72.2** (−6.9) | 639 MB |
+| EmbeddingGemma-300m | 62.5 (+7.9) | **64.4** (−14.7) | 239 MB |
+| harrier-oss-v1-270m | **66.4** (+11.8) | **81.5** (+2.4) | not on Ollama |
+
+**BitextMining is sentence-level cross-lingual matching** — the closest published
+proxy for *a Chinese string retrieving the English one that names the same
+thing*, at roughly this store's document length. Most models that beat bge-m3 on
+retrieval **do it by losing cross-lingual alignment**. That is a conflict in the
+evidence, not a gap in it.
+
+### 7.6.2 What this corpus says — measured, 2026-08-23
+
+Eight queries against eleven triples, including Cantonese questions,
+mixed-script (`Grant 婚禮喺邊度`), Cantonese slang, and **near-duplicate
+triples differing only in the object** (`gourds_required | five` versus `six`).
+
+| model | retrieval |
+|---|---|
+| **bge-m3** | **7 / 8** |
+| qwen3-embedding:0.6b, raw | 2 / 8 |
+| qwen3-embedding:0.6b, **with its documented instruction prefix** | **2 / 8** |
+
+The instructed run matters: Qwen3 is instruction-tuned (+5.09 on instruction
+retrieval) where bge-m3 is *negative* (−3.11), so running both raw would have
+measured Qwen3 wrongly. It was re-run with `Instruct: {task}\nQuery: {q}` and
+documents unprefixed, per its model card. **The result did not move.**
+
+A model the literature puts **+10 ahead on retrieval finished 5 queries behind on
+this data.** §7.5 predicted exactly this: the benchmarks measure neither
+Cantonese, nor traditional script, nor six-token triples, and all three are what
+this tier is made of.
+
+**Decision: stay on bge-m3.** Not because it is modern — it is not — but because
+the one axis it leads on is the one this corpus is built from, and the local
+measurement agrees with that leg of the literature rather than the other.
+
+### 7.6.3 The one failure, and it is not the model's
+
+bge-m3's single miss was `打風` — Cantonese slang for *typhoon* — which returned
+a `big walk` triple instead of `hong kong observatory | reports | typhoon signal
+8`.
+
+**Neither channel can close this.** Lexical cannot: `打風` shares no characters
+with the English triple. Dense did not: the slang term is too far from the
+formal English rendering.
+
+This is **the alias problem, not the retrieval problem** — the same shape as
+`Big Walk`/`大步行`, and it belongs to the entity registry
+([21-substrate-contract.md](21-substrate-contract.md) §2), where a room's own
+slang becomes an alias of a canonical entity. It is worth recording because it
+is the clearest evidence in this bundle that **the entity graph is not an
+optimisation of retrieval — it reaches cases retrieval structurally cannot.**
+
+### 7.6.4 The honest limit of this reading
+
+**n = 8.** This is a screening test, not a procurement decision. It is enough to
+refuse a switch — a 7/8 versus 2/8 margin is not a close call — and **not**
+enough to rank two models that finish near each other. A real comparison needs
+100–200 gold pairs drawn from the room's actual traffic, which does not exist
+until the tier does.
+
+Two operational notes that survive whatever model is chosen:
+
+- **Ollama has an open, unresolved ~5× throughput gap versus TEI** on this model
+  family, and a history of `/api/embed` breaking across version bumps. **Pin the
+  version and re-verify after any upgrade** — a silently changed embedding is
+  §6's fingerprint case, arriving through the runtime rather than the config.
+- **bge-m3 has no Matryoshka.** 1024 dimensions is fixed, so the per-kind
+  dimension freedom §7.5 preserves is freedom for a *future* tier's model, not a
+  knob on this one.
+
+## 8. The last three, decided
+
+- **The embedder's runtime — decided:** `bge-m3` on Ollama, out of process,
+  reached **through a port with a fake**, per the convention that no port gains
+  a second implementation without a shared contract suite. A direct HTTP call
+  from the tier would make the contract suite need a live model.
+- **Notes join the entity graph — decided: yes, by writing `note_entity`.** The
+  junction table and its foreign key already exist and are empty because
+  `note.anchor_entity_ids` is written verbatim while resolution has no owner.
+  [21](21-substrate-contract.md) §5 now gives resolution an owner, so the note
+  curator populates `note_entity` through the same sink that promotes fact
+  entities. That is what gives the note tier a structural channel, and it costs
+  one write in a pass that has to run anyway.
+- **Thresholds — decided as defaults**, in [23](23-retrieval.md) §9's table:
+  `word_similarity` at Postgres' own **0.3**, which §2's measurement shows
+  clears the true Cantonese match (0.5) while an unrelated Chinese string scores
+  0. A default with its reasoning is a decision; the first traffic window tunes
+  it.
 
 ## Status / Checkpoint
 
@@ -237,7 +324,9 @@ architecture is and whether the note and language tiers reuse it, then **revised
 the same day** after he pointed out the first answer was sized against *today's*
 row counts rather than the future the seam has to survive. §5.1 and §7.5 are that
 revision; §7's cost argument was retracted outright once `bge-m3` was found
-already running on this host. It **corrects
+already running on this host. §7.6 records the model bake-off that followed —
+the literature says bge-m3 is superseded, this corpus says otherwise, and the
+corpus wins. It **corrects
 [23-retrieval.md](23-retrieval.md) §6.1**: the CJK technique recommended there is
 a workaround for an engine without trigram support, and Postgres solves the same
 problem in one operator — which the note tier had already concluded and shipped

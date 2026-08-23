@@ -138,17 +138,34 @@ parallel mechanism — one place an operator looks per adaptor, not two.
 That also fixes §3 without a migration: an adaptor with no cadence block keeps
 today's inherited behaviour, and naming one overrides it.
 
-## 6. What this node does not decide
+## 6. The naming, decided
 
-- **The numbers.** Every value waits on [16-open-items.md](16-open-items.md) §1's
-  transport measurement, for [09-measurement.md](09-measurement.md) §6's reason:
-  the observed generation exceeded every cap Nora configures, so no number
-  currently in the file was in force.
-- **Key names.** Build detail; tests arbitrate.
-- **Whether `[language]`'s cadence keys are renamed or kept as the fallback.**
-  Keeping them costs a confusing name; renaming them is a breaking config change
-  for a running deployment. An operator decision, and cheap either way while the
-  Dreamer is off.
+**`[language]`'s cadence keys move to `[dreamer.cadence.<adaptor>]`, and
+`[language]`'s remain as a deprecated fallback for exactly one release.**
+
+The alternative — keep them where they are — permanently leaves the knob that
+governs the fact adaptor named after a different tier, which is §3's finding
+made permanent. The migration cost is one release of dual-read, and **the
+Dreamer is off right now**, which is the cheapest this will ever be.
+
+Concretely: an adaptor's cadence resolves from its own block, then from
+`[language]`, then from the defaults. When the fallback is removed, a config
+that never set the new keys keeps working on defaults rather than failing to
+start — the same shape every other section in this file already uses.
+
+**The defaults**, so the surface is complete rather than a shape awaiting
+numbers:
+
+| key | default | reasoning |
+|---|---|---|
+| `tick_seconds` | **300** | today's value, kept — it is the *ceiling* on how often an adaptor may run, not a schedule |
+| `floor_seconds` | **28800** (8h) | D2's floor, and the cadence a comparable dreamer in a dependency this project already runs uses. [00-overview.md](00-overview.md) §3: a pass every five minutes is polling, not dreaming |
+| `quiet_seconds` | **1800** | inherited from `[language]`, unchanged in meaning |
+| `max_concurrent` | **2** | bounds adaptor runs in flight. Two lets a slow adjudication overlap a cheap extraction without the host carrying four models at once |
+| `reasoning_effort` | **"high"** | the missing key. Research is the work; the chat tier's `"low"` is what this seam exists to stop inheriting |
+
+**Key names are still build detail** — tests arbitrate the spelling. What is
+decided is that each name exists, what it means, and what it defaults to.
 
 ## Status / Checkpoint
 

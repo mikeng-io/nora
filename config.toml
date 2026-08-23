@@ -222,7 +222,7 @@ enabled = true
 
 [engagement.queue]
 # Per-conversation FIFO depth beyond which an arriving tag is shed as a flood
-# (R-29). Bounds runaway growth, not waiting — a queued tag keeps its place
+# (R-30). Bounds runaway growth, not waiting — a queued tag keeps its place
 # however long the turn ahead of it takes, and there is no staleness rule.
 max_depth = 16
 

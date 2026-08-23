@@ -219,29 +219,59 @@ than the object string is the same technique, arriving for free.
 So the split this node asserted in §8 on principle is now the measured result:
 **exact and fail-closed for resolution, dense for retrieval.**
 
-## 7. Vectors do not need pgvector
+## 7. pgvector, on the image that ships it
 
-Verified 2026-08-23: `vector` is **absent** from `pg_available_extensions` on the
-deployed `postgres:18-alpine`; `pg_trgm` is installed and full-text search works.
+**Decision: adopt pgvector. Store vectors as `vector(1024)`, on
+`pgvector/pgvector:pg18`.**
 
-**This is not a blocker, because pgvector is an index optimisation.** At this
-tier's expected size a brute-force scan over an ordinary column beats an index
-probe plus its overhead. Store the vectors in a plain column and adopt pgvector
-if and when the corpus makes an index pay — which converts a deployment change
-into a deferred one.
+An earlier draft of this node said the opposite — store vectors in a plain
+column and adopt pgvector "if and when the corpus makes an index pay." **That
+was wrong, and the error is worth naming because it is a category confusion:**
+it treated *"we do not need an ANN index at this size"* as *"we do not need the
+extension."* Those are different things.
 
-**The prior art settles this more firmly than the argument does.** The vector
-extension that tool depends on is **brute-force only at every scale** — its own
-maintainers' ANN tracking issue is still open — and the tool additionally
-*prefers* an explicit exact scan below a **20,000-vector** threshold, with the
-threshold existing to stop a small collection being starved by a global top-k,
-not to avoid an index. A widely-used production tool does linear vector search
-throughout, and starts worrying three orders of magnitude above where this tier
-sits.
+Without an ANN index, pgvector still gives:
 
-[16-open-items.md](16-open-items.md) §4.1 cited the same fact as a reason to
-refuse the capability outright. It is a reason to defer the *index*, not the
-*channel*.
+| | plain `float4[]` | `vector(1024)` |
+|---|---|---|
+| distance | hand-rolled in SQL or Python | `<=>` in C, SIMD |
+| storage | array overhead per row | packed, 4 bytes per dimension |
+| exact search | a manual scan you wrote | `ORDER BY v <=> $1 LIMIT k` — still a sequential scan, done properly |
+| index later | a data migration | `CREATE INDEX`, no rewrite of the column |
+
+**Brute force through pgvector is still brute force** — it is the same
+sequential scan, expressed in the type system and executed in C rather than
+reimplemented. The size argument was always about the *index*, never about the
+extension, and nothing about it justified hand-rolling a vector type.
+
+**The deployment cost is one line.** The current image is `postgres:18-alpine`,
+where `vector` is absent from `pg_available_extensions` (verified 2026-08-23,
+`pg_trgm` present). `pgvector/pgvector:pg18` exists and is a drop-in for the
+same major version — no dump, no restore, no downgrade. Two pgvector images are
+already pulled on this host for a neighbouring project.
+
+### 7.1 The index policy, decided now
+
+**Ship with no ANN index.** Exact search over a few thousand 1024-d vectors is
+sub-millisecond, and an approximate index at that size trades recall for a
+speedup nobody can measure.
+
+**Build an HNSW index when either reading fires**, and both are readings someone
+takes rather than a feeling:
+
+- **row count crosses 50,000 vectors** in one workspace, or
+- **p95 query latency on the dense channel exceeds 50 ms.**
+
+Whichever comes first. `CREATE INDEX … USING hnsw (embedding vector_cosine_ops)`
+against the column that already exists — which is exactly the property this
+decision buys and the plain column would not have.
+
+**Per-`kind` dimension survives this.** `vector(N)` fixes N per column, so
+[24-embedding-seam.md](24-embedding-seam.md) §7.5's per-kind freedom is
+expressed as *one column per dimension*, not one column holding mixed widths.
+A tier wanting a different model gets its own column; the seam's `kind`
+discriminator is what routes to it. That is a real constraint and it is cheaper
+than a hand-rolled type.
 
 ## 8. Retrieval and resolution are different questions
 
@@ -257,19 +287,44 @@ The asymmetry is the whole point: **resolution writes and retrieval reads.** A
 ranking mistake is recoverable by the reader; a merge mistake is not recoverable
 at all until §7's provenance exists.
 
-## 9. What this node does not decide
+## 9. The verb and the numbers, decided
 
-- **Which embedding runtime.** Nora has **no embedding call path of her own**;
-  every semantic operation today goes through Honcho, against Honcho's corpus
-  and Honcho's unrecorded model — and §8's boundary means facts cannot go
-  there. So a dense channel is a **new in-process dependency**, and §11 records
-  what the prior art establishes about its shape and its one real hazard here.
-- **The verb's exact signature** — arity, filters, result shape. It is a tool on
-  the registry seam ([08-state.md](08-state.md) §10), and its shape follows the
-  read-tool pattern rather than being invented here.
-- **Thresholds and `top_k`.** Every number waits on §6's measurement, for the
-  reason [09-measurement.md](09-measurement.md) §6 gives: sizing before the
-  reading is choosing values for knobs not known to be connected.
+**The embedding runtime is settled** — `bge-m3` on the Ollama service already
+running here, reached through a **port with a fake**, per the repo's
+contract-suite convention. Not a direct HTTP call from the tier: a port is what
+lets the contract suite run without a model, and what makes a service that is
+down report `unavailable` rather than raise.
+
+**The verb.** One tool, on the registry seam ([08-state.md](08-state.md) §10),
+granted to Nora and to Dreamer adaptors alike:
+
+```
+search_knowledge(query: str, limit: int = 8, hops: int = 1) -> Result
+```
+
+- **`query`** is natural language. There is no structured-filter argument: a
+  predicate filter would demand the caller know the predicate vocabulary, which
+  §8.1's open vocabulary does not guarantee.
+- **`limit`** caps returned edges; **8** matches [19](19-between-tiers.md) §6's
+  room slice so the verb and the block speak in the same unit.
+- **`hops`** is 1 or 2 ([25](25-knowledge-pipeline.md) §7). Default 1 — the
+  cheap answer — with 2 available when the caller wants what is *related to* a
+  thing rather than what *mentions* it.
+- **Returns** edges with their warrant, their asserter, and their distance from
+  the focal node. Three states, R-27: rows, `nothing_found`, or `unavailable`.
+
+**The numbers**, as defaults with reasoning rather than pending readings:
+
+| knob | default | reasoning |
+|---|---|---|
+| `top_k` per channel before fusion | **20** | enough that fusion has something to fuse; small enough that a hop-2 expansion off it stays inside §7.2's cap |
+| RRF constant | **60** | the standard value, and the one the prior art uses; the shape is what transfers, not the tuning |
+| dense distance floor | **0.5** | the value Nora's existing semantic client already calibrated for this model family, reused rather than reinvented |
+| `word_similarity` threshold | **0.3** | Postgres' own default, and §2's measurement shows the true Cantonese match at 0.5 clears it while an unrelated string scores 0 |
+| hop decay | **0.6 per hop** | a hop-2 edge must be materially stronger than a hop-1 edge to outrank it, without being excluded |
+
+Each is a starting value with its reasoning stated, adjusted by the first window
+of real traffic — which is what a default is. None of them is open.
 
 ## 10. What to copy from the prior art, and what not to
 

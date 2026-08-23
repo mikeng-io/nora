@@ -1,6 +1,6 @@
 ---
 type: analysis
-title: "Open Items"
+title: "Open Items — All Closed, With What Would Reopen Each"
 description: "What this bundle does not answer, ranked by what blocks what. The gateway probe blocks all budget sizing; the disclosure question blocks workspace room access."
 tags: [nora, dreamer, open-questions, backlog]
 timestamp: '2026-08-22'
@@ -70,9 +70,19 @@ in the refuse-to-start shape, with a named test. Another withdraws its own
 room-gate on the opposite reading: *"the workspace key already **is** the
 gate."* The startup check the first implies was cut.
 
-So the work is to pick one and record why, not to research an open question.
-The check-at-startup reading is the one that turns a borrowed argument into a
-guard, and it is the one with a test already written for it.
+**DECIDED (2026-08-23): the startup check, in the refuse-to-start shape.**
+
+The two readings are *"a fact has no second gate, so the workspace must be
+stated"* and *"the workspace key already **is** the gate."* The second borrows
+its safety from a key's shape; the first turns it into a guard. This tier
+**refuses to start** when a workspace's person set is not stated — the same
+shape `policy.toml` already uses, and the reading with a test already written
+for it.
+
+A borrowed argument is what [11-disclosure.md](11-disclosure.md) F3 refuted once
+already in this bundle: the egress screen does not make a read safe. The same
+error in the other direction — a key shape standing in for an authorisation —
+gets the same answer.
 
 **3. A global concurrency bound.**
 
@@ -80,7 +90,7 @@ None exists. Ten concurrent units today, eighteen after the migration, each
 potentially issuing several network calls, all on one client. The bound should
 be chosen before the migration lands, not discovered after.
 
-## Open, not blocking
+## Closed here, with the reading that would reopen each
 
 **4. Cadence per adaptor.** Extraction is watermark-driven and suits a clock.
 Adjudication is a work queue wearing a clock's clothing. Synthesis, if it
@@ -196,19 +206,52 @@ that it is shared, not fact-tier-local.
 
 Two runs over identical instruction text — one with a fetch tool, one without —
 can write different rows. The provenance column cannot distinguish them, and
-this work **changes tool subsets**, so it walks straight into the gap. The
-substrate spec left it open and noted that if the answer is "more", it is a
-second column rather than a different one — so today's stamp stays correct
-either way. Still owed an answer.
+this work **changes tool subsets**, so it walks straight into the gap.
 
-**7. Language-tier supersession.** Deliberately not decided here
-([12-self-correction.md](12-self-correction.md) §1). Any proposal must say what
-happens to the overwrite bug the compound key was introduced to fix.
+**DECIDED: yes — a second column, `tool_set_sha256`.** Not a change to the
+existing digest, which stays correct.
 
-**8. What `<facts>` renders.** Currently the workspace's most recent standing
-facts with no subject filter. Whether it becomes query-relevant, becomes a tool
-Nora calls, or both, is a tag-path cost question
-([08-state.md](08-state.md) §11).
+Two runs over identical instruction text, one holding `web_fetch` and one not,
+can write different rows, and provenance that cannot distinguish them defeats
+re-derivability — *"reconstructed and checked without trusting the producer"* is
+the whole claim. D4 and D5 both change tool grants, so the gap is not
+hypothetical here; it is this bundle's own change walking into it.
+
+One additive column, written by the same sink that writes the digest.
+
+**7. Language-tier supersession. DECIDED: it gets supersession, and D9 is
+reversed.**
+
+D9 called its absence a *designed cost*. **That cost has already materialised,
+and it is the tier's entire production output:** two lexeme rows, contradictory
+glosses of one phrase, **both live**, rendered side by side into Nora's prompt
+with no marker that they disagree ([01-live-state.md](01-live-state.md)). A cost
+that consumed 100% of what a tier ever produced is not a trade-off, it is the
+defect.
+
+**The mechanism is the knowledge tier's, unchanged:** `superseded_at` /
+`superseded_by`. The compound key stays exactly as it is — it is the row's
+*identity*, and it was never the thing that decided overwrites.
+
+**What happens to the overwrite bug it was introduced to fix:** the bug was a
+second observation *replacing* the first, losing what was believed before. The
+compound key stopped the replacement by making the rows distinct — and thereby
+produced the current state, where both survive and neither wins. Supersession
+resolves it properly: the second observation **supersedes** the first, both rows
+remain readable for the transaction-time question, and **the render shows only
+standing rows**. The compound key keeps them distinct; supersession decides
+which one speaks.
+
+**8. What `<facts>` renders. DECIDED: both, and the block stops being a slice
+of content.**
+
+One block with three labelled slices — room, sender, and an **extent line that
+is counts, not rows** ([19-between-tiers.md](19-between-tiers.md) §6) — plus
+`search_knowledge` as the verb ([23-retrieval.md](23-retrieval.md) §9).
+
+The recency slice it renders today is the defect: it tells Nora *"we have eight
+facts"* and leaves her blind to the rest. The extent line is what makes reaching
+for the verb a reasonable act rather than a guess.
 
 **9. Was the model ever the problem?**
 
