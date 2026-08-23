@@ -14,6 +14,7 @@ never double-scheduled) without waiting on a real clock.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from nora.domain.ports import ResolvedTrack
@@ -22,13 +23,23 @@ from nora.testing.music import FakeMusicQueueStore
 
 T0 = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
 
+_StubEntry = ResolvedTrack | Sequence[ResolvedTrack] | None
+
+
+def _as_sequence(found: _StubEntry) -> Sequence[ResolvedTrack]:
+    if found is None:
+        return ()
+    if isinstance(found, ResolvedTrack):
+        return (found,)
+    return found
+
 
 class _StubSource:
-    def __init__(self, tracks: dict[str, ResolvedTrack | None]) -> None:
+    def __init__(self, tracks: dict[str, _StubEntry]) -> None:
         self._tracks = tracks
 
-    async def resolve(self, *, query_or_url: str) -> ResolvedTrack | None:
-        return self._tracks.get(query_or_url)
+    async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
+        return _as_sequence(self._tracks.get(query_or_url))
 
 
 class _GatedSource:
@@ -36,16 +47,16 @@ class _GatedSource:
     on `gate` first -- lets a test hold a `play()` call open mid-resolve."""
 
     def __init__(
-        self, tracks: dict[str, ResolvedTrack | None], *, gated_query: str, gate: asyncio.Event,
+        self, tracks: dict[str, _StubEntry], *, gated_query: str, gate: asyncio.Event,
     ) -> None:
         self._tracks = tracks
         self._gated_query = gated_query
         self._gate = gate
 
-    async def resolve(self, *, query_or_url: str) -> ResolvedTrack | None:
+    async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
         if query_or_url == self._gated_query:
             await self._gate.wait()
-        return self._tracks.get(query_or_url)
+        return _as_sequence(self._tracks.get(query_or_url))
 
 
 class _FakeVoiceSession:
@@ -94,7 +105,7 @@ class _FakeScheduler:
         return None
 
 
-def _manager(tracks: dict[str, ResolvedTrack | None]) -> MusicPlayerManager:
+def _manager(tracks: dict[str, _StubEntry]) -> MusicPlayerManager:
     scheduler = _FakeScheduler()
     return MusicPlayerManager(
         queue_store=FakeMusicQueueStore(), track_source=_StubSource(tracks),

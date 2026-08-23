@@ -1648,19 +1648,26 @@ class ResolvedTrack:
 
 @runtime_checkable
 class TrackSource(Protocol):
-    """A query or URL, resolved to a `ResolvedTrack` — or `None`. NEVER
-    raises, matching `WeatherProvider`/`SearchProvider`'s discipline in this
-    file rather than `ComputeBackend`'s: this resolves a fixed, deterministic
-    lookup, it does not launch a job. A dead link, a private video, or an
-    unresolvable query are all ordinary `None` outcomes an implementation
-    must be able to say plainly, never an exception into the caller.
+    """A query or URL, resolved to zero or more `ResolvedTrack`s — an empty
+    sequence, never `None`, when nothing resolves. NEVER raises, matching
+    `WeatherProvider`/`SearchProvider`'s discipline in this file rather than
+    `ComputeBackend`'s: this resolves a fixed, deterministic lookup, it does
+    not launch a job. A dead link, a private video, or an unresolvable query
+    are all ordinary empty-sequence outcomes an implementation must be able
+    to say plainly, never an exception into the caller.
 
-    `YtDlpSource` is the only implementation today (design/discord-music/
-    01-playback-and-source.md), YouTube-only — an allowlist enforced BY the
-    implementation, not left to whatever `yt-dlp`'s own extractor set
-    happens to accept, because `query_or_url` is untrusted input a person
-    pasted. Per this repo's port convention, a single implementation needs
-    no contract suite; one becomes required the day a second `TrackSource`
-    (a SoundCloud adapter) exists."""
+    **More than one result means a playlist expanded**, not multiple guesses
+    at the same query — an ordinary search or a single video URL always
+    resolves to at most one track. Which URL shapes are treated as a
+    playlist to expand, versus a single video to resolve, is entirely the
+    implementation's call (`YtDlpSource`'s is narrow — an explicit
+    `/playlist?list=...` link only, capped; see `01-playback-and-source.md`).
 
-    async def resolve(self, *, query_or_url: str) -> ResolvedTrack | None: ...
+    `YtDlpSource` is the only implementation today, YouTube-only — an
+    allowlist enforced BY the implementation, not left to whatever
+    `yt-dlp`'s own extractor set happens to accept, because `query_or_url`
+    is untrusted input a person pasted. Per this repo's port convention, a
+    single implementation needs no contract suite; one becomes required the
+    day a second `TrackSource` (a SoundCloud adapter) exists."""
+
+    async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]: ...

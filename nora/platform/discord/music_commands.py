@@ -61,7 +61,13 @@ def _reply_for(outcome: PlayOutcome) -> str:
     if outcome.status == "nothing_found" or outcome.track is None:
         return "Couldn't find that."
     verb = "Now playing" if outcome.status == "playing" else "Queued"
-    return f"{verb}: {outcome.track.title}"
+    if outcome.queued_count <= 1:
+        return f"{verb}: {outcome.track.title}"
+    # A playlist link expanded into more than one track
+    # (01-playback-and-source.md) -- name the first and the total, not just
+    # the first, so queuing fifty tracks doesn't read as queuing one.
+    rest = outcome.queued_count - 1
+    return f"{verb}: {outcome.track.title} (+{rest} more from the playlist)"
 
 
 class MusicCommands(app_commands.Group):

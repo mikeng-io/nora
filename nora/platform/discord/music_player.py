@@ -40,7 +40,12 @@ class VoiceSession(Protocol):
 @dataclass(frozen=True, slots=True)
 class PlayOutcome:
     status: Literal["playing", "queued", "nothing_found"]
+    # The FIRST track — what's now playing, or the first of what got queued.
+    # `queued_count` is 1 for an ordinary play/search and >1 only when
+    # `query_or_url` resolved to a playlist (design/discord-music/
+    # 01-playback-and-source.md's playlist expansion).
     track: QueuedTrack | None
+    queued_count: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,17 +69,32 @@ class MusicPlayer:
     async def play(
         self, *, query_or_url: str, requested_by: str, added_at: datetime,
     ) -> PlayOutcome:
+        """More than one resolved track means `query_or_url` was a playlist
+        link — every one of them is enqueued, in order, before this decides
+        whether to start playback (matching the single-track path: only the
+        FIRST call for an idle guild advances; the rest of a playlist just
+        joins the queue behind it, same as if they'd been added one at a
+        time)."""
         resolved = await self._source.resolve(query_or_url=query_or_url)
-        if resolved is None:
+        if not resolved:
             return PlayOutcome(status="nothing_found", track=None)
-        queued = await self._queue.enqueue(
-            guild_id=self._guild_id, source=resolved.source, url=resolved.stream_url,
-            title=resolved.title, added_by_person_id=requested_by, added_at=added_at,
-        )
+        # Sequential `await`s, deliberately not `asyncio.gather` — firing a
+        # playlist's enqueues concurrently would race on position assignment
+        # the same way two concurrent `/music play` calls did before the
+        # per-guild lock (subagent review, 2026-08-23); one guild's plays are
+        # already serialized by that lock, so this loop staying sequential
+        # is what keeps it that way for a single playlist expansion too.
+        queued = [
+            await self._queue.enqueue(
+                guild_id=self._guild_id, source=track.source, url=track.stream_url,
+                title=track.title, added_by_person_id=requested_by, added_at=added_at,
+            )
+            for track in resolved
+        ]
         if self._now_playing is None:
             await self._advance()
-            return PlayOutcome(status="playing", track=queued)
-        return PlayOutcome(status="queued", track=queued)
+            return PlayOutcome(status="playing", track=queued[0], queued_count=len(queued))
+        return PlayOutcome(status="queued", track=queued[0], queued_count=len(queued))
 
     async def skip(self) -> QueuedTrack | None:
         """Stops whatever is playing (if anything) and immediately advances.
