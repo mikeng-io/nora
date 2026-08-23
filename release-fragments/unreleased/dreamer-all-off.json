@@ -1,4 +1,4 @@
 {
-  "type": "behaviour",
+  "type": "change",
   "summary": "All background writing tiers are off: the Dreamer runtime, the fact tier's dream adaptors, and the language consolidator. Nothing writes to the knowledge, lexeme or exchange stores until the substrate contract is built against. Nora's room portrait and lexeme blocks are consequently absent from her prompt; the note tools stay reachable."
 }

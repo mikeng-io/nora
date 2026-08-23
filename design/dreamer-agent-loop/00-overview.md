@@ -182,7 +182,10 @@ has seen before destroys the signal that decides what is worth researching.
 forensic nodes 01–04 were independently reproduced and survive; the design half
 was rewritten rather than patched.
 
-Merged with **no** `design/09-decision-index.md` entry: DEC-135 and R-57 remain
-reserved and unclaimed, and R-57's text is still undrafted — see
-[14](14-migration-and-governance.md) §2. `[dreamer] enabled = false`; the loop
+Merged with **no** `design/09-decision-index.md` entry — see
+[14](14-migration-and-governance.md) §2. **DEC-135 remains unclaimed; R-57 does
+NOT** — another session landed it on 2026-08-23 (route may take a
+`where_is`-disclosed position only where the room trusts it), fully drafted with
+three named tests. The next free numbers are **DEC-135** and **R-58**, and
+CLAUDE.md's rule applies: re-read the index at MERGE time, not at claim time. `[dreamer] enabled = false`; the loop
 reports `0 adaptor(s)`.
