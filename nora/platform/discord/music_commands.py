@@ -164,6 +164,27 @@ class MusicCommands(app_commands.Group):
         await self._manager.stop(str(interaction.guild_id))
         await interaction.followup.send("Stopped.")
 
+    @app_commands.command(name="volume", description="Set playback volume (0-200%).")
+    @app_commands.describe(percent="Volume as a percentage, 0-200 (100 = normal)")
+    async def volume(
+        self, interaction: discord.Interaction, percent: app_commands.Range[int, 0, 200],
+    ) -> None:
+        if interaction.guild_id is None:
+            return
+        await interaction.response.defer()
+        # Discord's own UI already enforces 0-200 via Range above; the
+        # manager's own [0.0, 2.0] check is defense-in-depth, not the
+        # primary guard -- kept because this class must not be the only
+        # thing standing between a malformed value and MusicPlayer.
+        result = await self._manager.set_volume(str(interaction.guild_id), percent / 100.0)
+        if result is None:
+            await interaction.followup.send("Nothing is playing.")
+            return
+        if not result:
+            await interaction.followup.send("Volume must be between 0 and 200.")
+            return
+        await interaction.followup.send(f"Volume set to {percent}%.")
+
 
 async def register(client: discord.Client, manager: MusicPlayerManager) -> None:
     """Built and synced fresh inside `DiscordAdapter.listen()`, same

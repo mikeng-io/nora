@@ -26,7 +26,7 @@ edges:
   - {src: 04-deferred, dst: 00-overview, rel: motivated_by, provenance: asserted}
 scope:
   v1:
-    - "Discord slash commands (/music play|skip|queue|pause|stop) as the sole control surface"
+    - "Discord slash commands (/music play|skip|queue|pause|resume|stop|volume) as the sole control surface"
     - "yt-dlp resolves a direct stream URL; ffmpeg transcodes live into Discord voice — no disk, no RustFS"
     - "Per-guild in-memory MusicPlayer (voice connection, now-playing, loop, volume)"
     - "Session queue persisted in a new Postgres table (music_queue), not Valkey"

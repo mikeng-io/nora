@@ -118,6 +118,14 @@ class MusicPlayerManager:
         player = self._players.get(guild_id)
         return False if player is None else player.resume()
 
+    async def set_volume(self, guild_id: str, volume: float) -> bool | None:
+        """`None` — no player exists for this guild at all, distinct from
+        `False` (a player exists but `volume` was out of range) — the same
+        distinction `pause`/`resume`'s bare `False` doesn't need, because
+        those have only one way to fail."""
+        player = self._players.get(guild_id)
+        return None if player is None else player.set_volume(volume)
+
     async def status(self, guild_id: str) -> PlayerStatus | None:
         player = self._players.get(guild_id)
         return None if player is None else await player.status()

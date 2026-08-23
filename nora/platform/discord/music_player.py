@@ -33,6 +33,7 @@ class VoiceSession(Protocol):
     def pause(self) -> None: ...
     def resume(self) -> None: ...
     def stop(self) -> None: ...
+    def set_volume(self, volume: float) -> None: ...
     async def disconnect(self) -> None: ...
 
 
@@ -103,6 +104,19 @@ class MusicPlayer:
             return False
         self._voice.resume()
         self._paused = False
+        return True
+
+    def set_volume(self, volume: float) -> bool:
+        """`volume` is a linear multiplier — 1.0 unchanged, 0.0 silent, 2.0
+        double (`discord.PCMVolumeTransformer`'s own range). Refused
+        (`False`) outside `[0.0, 2.0]` rather than clamped, so a caller's
+        mistake is visible rather than silently reinterpreted. Unlike
+        `pause`/`resume`, nothing needs to be playing for this to succeed —
+        it's a setting, not an action on in-progress playback, and applies
+        to whatever plays next either way."""
+        if not 0.0 <= volume <= 2.0:
+            return False
+        self._voice.set_volume(volume)
         return True
 
     async def stop(self) -> None:

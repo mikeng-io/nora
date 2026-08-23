@@ -49,7 +49,7 @@ reconnect either.
 
 ## What v1 is
 
-- Discord slash commands (`/music play|skip|queue|pause|stop`) as the sole
+- Discord slash commands (`/music play|skip|queue|pause|resume|stop|volume`) as the sole
   control surface — `02-control-surface.md`.
 - `yt-dlp` resolves a query/URL to a direct, streamable audio URL; `ffmpeg`
   transcodes it live into Discord's voice socket. No file ever written to
