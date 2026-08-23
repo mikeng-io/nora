@@ -77,6 +77,10 @@ _MAY_DIFFER = {
     "presence.refresh_url", "shortener.base_url",
     # Env-var NAMES are the operator's choice of what to call a secret.
     "media.encryption_key_env",
+    # RustFS's own address, live here since 2026-08-23 (DEC-136 cutover) --
+    # topology, the same bucket `llm.base_url` is in above, not an opt-in
+    # flag (that one's a few lines down).
+    "media.rustfs.endpoint",
     # The template ships every optional feature INERT — reaching a service,
     # holding a key, or speaking on a timer is an operator decision, never
     # something a copied file makes. The live deployment has opted in.
@@ -103,6 +107,11 @@ _MAY_DIFFER = {
     # claims into a block every tagged turn reads. A copied file must not do
     # either without somebody deciding to.
     "dreamer.enabled", "facts.enabled",
+    # RustFS media custody (DEC-136) and the Discord music bot (design/
+    # discord-music/), both live here since 2026-08-23 for the same reason
+    # as their neighbours above -- opted in by the operator, INERT in the
+    # template until someone decides to.
+    "media.rustfs.enabled", "music.enabled",
     # Per-deployment policy/cost knobs.
     "doctrine.canary",            # deliberately CHANGE-ME in the template
     "presence.retention_days",    # disk and privacy, the operator's call
