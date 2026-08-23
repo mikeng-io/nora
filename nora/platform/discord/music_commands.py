@@ -406,3 +406,52 @@ async def register(
         await manager.on_voice_channel_emptied(str(left_channel.guild.id))
 
     client.event(on_voice_state_update)
+
+
+async def resume_persisted_sessions(
+    client: discord.Client, manager: MusicPlayerManager, *, crossfade_seconds: float,
+) -> None:
+    """Boot-time resume (design/discord-music/06-session-persistence.md
+    stage 2): reconnects a guild's session ONLY if its voice channel still
+    has a human in it right now -- symmetric with the existing "leave when
+    a channel empties of humans" rule (`on_voice_state_update`, above): a
+    deploy must not make Nora silently rejoin and play into an empty room.
+    A channel that's gone entirely, or emptied while Nora was down, gets
+    its stale row discarded instead of a reconnect attempt.
+
+    Safe to run on every `on_ready`, not just a genuine process boot --
+    `MusicPlayerManager.resume_persisted_session` already refuses to
+    clobber a guild that already has a live player."""
+    for session in await manager.persisted_sessions():
+        channel = client.get_channel(int(session.voice_channel_id))
+        if channel is None:
+            try:
+                channel = await client.fetch_channel(int(session.voice_channel_id))
+            except discord.HTTPException:
+                channel = None
+        if not isinstance(channel, discord.VoiceChannel) or not any(
+            not member.bot for member in channel.members
+        ):
+            log.info(
+                "not resuming music session for guild %s (channel gone or empty)",
+                session.guild_id,
+            )
+            await manager.discard_persisted_session(session.guild_id)
+            continue
+
+        notify_channel = client.get_channel(int(session.notify_channel_id))
+
+        async def notify(text: str, *, _channel=notify_channel) -> None:
+            if isinstance(_channel, discord.abc.Messageable):
+                await _channel.send(text, silent=True)
+
+        try:
+            await manager.resume_persisted_session(
+                session,
+                connect=_connect_factory(
+                    manager, session.guild_id, channel, crossfade_seconds=crossfade_seconds,
+                ),
+                notify=notify,
+            )
+        except Exception:
+            log.exception("failed to resume music session for guild %s", session.guild_id)
