@@ -90,9 +90,15 @@ class DiscordVoiceSession:
         raw = self._audio_source_factory(stream_url)
         mixed: discord.AudioSource = raw
         already_playing = self._voice_client.is_playing()
-        if already_playing and self._crossfade_seconds > 0 and self._current_raw is not None:
+        current_raw = self._current_raw
+        log.info(
+            "voice play() called: already_playing=%s crossfade_seconds=%s "
+            "has_current_raw=%s",
+            already_playing, self._crossfade_seconds, current_raw is not None,
+        )
+        if already_playing and self._crossfade_seconds > 0 and current_raw is not None:
             mixed = CrossfadeSource(
-                self._current_raw, raw, duration_seconds=self._crossfade_seconds,
+                current_raw, raw, duration_seconds=self._crossfade_seconds,
             )
         self._current_raw = raw
         wrapped = discord.PCMVolumeTransformer(mixed, volume=self._volume)
