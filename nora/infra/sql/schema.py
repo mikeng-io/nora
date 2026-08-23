@@ -1530,3 +1530,43 @@ IDX_NOTE_REVISION_BODY_TRGM = sa.Index(
     "idx_note_revision_body_trgm", NOTE_REVISION.c.body,
     postgresql_using="gin", postgresql_ops={"body": "gin_trgm_ops"},
 )
+
+# ── music_queue (design/discord-music/03-state-and-persistence.md) ─────────
+# The upcoming queue's durable half — now-playing/playback position is
+# in-memory only on `MusicPlayer` and deliberately not here (03's own split).
+# No `expires_at`, no foreign key to a "session": this table IS the session's
+# durable half, and a row dies by DELETE (track finished, skipped, queue
+# cleared) rather than by expiry — there is nothing to time out.
+#
+# `position` is a per-guild ordinal, not a global one — a plain incrementing
+# counter (next = max(position)+1 for that guild) that MAY have gaps once
+# rows are deleted; gaps are fine because ordering only ever reads `ORDER BY
+# position`, nothing computes a count or an index from the values themselves.
+# `guild_id`/`added_by_person_id` are `sa.Text`, matching every other
+# platform id in this schema (`reminders.conversation_id`) rather than
+# introducing a bigint nobody else here uses for a Discord snowflake.
+MUSIC_QUEUE = sa.Table(
+    "music_queue",
+    METADATA,
+    sa.Column("id", sa.Uuid, primary_key=True),
+    sa.Column("guild_id", sa.Text, nullable=False),
+    sa.Column("position", sa.Integer, nullable=False),
+    # Which `TrackSource` resolved this row (`nora.domain.ports.
+    # ResolvedTrack.source`) — free text, not a CHECK-constrained enum: the
+    # whole point of the port (01-playback-and-source.md) is a second source
+    # arriving later with no schema change.
+    sa.Column("source", sa.Text, nullable=False),
+    sa.Column("url", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("added_by_person_id", sa.Text, nullable=False),
+    sa.Column("added_at", sa.DateTime(timezone=True), nullable=False),
+    sa.CheckConstraint("position >= 0", name="ck_music_queue_position_non_negative"),
+)
+
+#: The queue read every `/music queue` and `play` call makes: this guild's
+#: rows, in order. `(guild_id, position)` rather than `position` alone —
+#: `test_schema_parity.py`'s `idx_messages_conv_ts` precedent is a composite
+#: index for exactly this reason, a guild-scoped ordered scan.
+IDX_MUSIC_QUEUE_GUILD_POSITION = sa.Index(
+    "idx_music_queue_guild_position", MUSIC_QUEUE.c.guild_id, MUSIC_QUEUE.c.position,
+)

@@ -3,8 +3,13 @@
 # host actually runs, so that's what we validate the container against).
 FROM python:3.12-slim
 
+# ffmpeg is the Discord Music design's playback transcoder (design/discord-music/
+# 01-playback-and-source.md) -- discord.py's FFmpegPCMAudio shells out to whatever
+# `ffmpeg` it finds on PATH, it doesn't bundle one. Same package deploy/stt/Dockerfile
+# already installs it for, for the same underlying reason (a universal decoder for
+# audio this process didn't produce itself).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir uv==0.11.18
 
