@@ -244,3 +244,59 @@ async def test_resolving_a_tracks_locator_later_yields_its_playable_stream() -> 
 
     assert played.stream_url == "https://cdn.example/a"
     assert played.title == "Track A"
+
+
+async def test_related_resolves_a_mix_seeded_from_the_locators_video() -> None:
+    seed_id = "dQw4w9WgXcQ"
+    mix_url = f"{_watch_url(seed_id)}&list=RD{seed_id}"
+    flat_extractor = _FakeExtractor(
+        by_url={
+            mix_url: {
+                "_type": "playlist",
+                "entries": [
+                    _flat_entry(seed_id, "Never Gonna Give You Up"),  # the Mix's own seed
+                    _flat_entry("next1", "Related Track One"),
+                    _flat_entry("next2", "Related Track Two"),
+                ],
+            },
+        },
+    )
+    source = YtDlpSource(extractor=_FakeExtractor(), flat_extractor=flat_extractor)
+
+    tracks = await source.related(locator=_watch_url(seed_id))
+
+    # The seed video itself is excluded -- autoplay must offer something NEW.
+    assert [t.title for t in tracks] == ["Related Track One", "Related Track Two"]
+    assert [t.locator for t in tracks] == [_watch_url("next1"), _watch_url("next2")]
+    assert flat_extractor.calls == [mix_url]
+
+
+async def test_related_is_empty_when_the_locator_has_no_video_id() -> None:
+    source = YtDlpSource(extractor=_FakeExtractor(), flat_extractor=_FakeExtractor())
+
+    tracks = await source.related(locator="not a youtube watch url")
+
+    assert tracks == ()
+
+
+async def test_related_returns_empty_rather_than_raising_when_yt_dlp_fails() -> None:
+    flat_extractor = _FakeExtractor(raises=DownloadError("boom"))
+    source = YtDlpSource(extractor=_FakeExtractor(), flat_extractor=flat_extractor)
+
+    tracks = await source.related(locator=_VIDEO_URL)
+
+    assert tracks == ()
+
+
+async def test_related_with_no_mix_available_is_empty() -> None:
+    """yt-dlp resolving the Mix URL to nothing (no entries, or `None`) is an
+    ordinary empty outcome, not an error -- same discipline as an
+    unresolvable `resolve()` call."""
+    seed_id = "dQw4w9WgXcQ"
+    mix_url = f"{_watch_url(seed_id)}&list=RD{seed_id}"
+    flat_extractor = _FakeExtractor(by_url={mix_url: {"_type": "playlist", "entries": []}})
+    source = YtDlpSource(extractor=_FakeExtractor(), flat_extractor=flat_extractor)
+
+    tracks = await source.related(locator=_watch_url(seed_id))
+
+    assert tracks == ()

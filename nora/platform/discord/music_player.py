@@ -28,7 +28,13 @@ from datetime import UTC, datetime
 from typing import Literal, Protocol
 from uuid import uuid4
 
-from nora.domain.music import MusicQueueStore, MusicSession, MusicSessionStore, QueuedTrack
+from nora.domain.music import (
+    AUTOPLAY_PERSON_ID,
+    MusicQueueStore,
+    MusicSession,
+    MusicSessionStore,
+    QueuedTrack,
+)
 from nora.domain.ports import TrackSource
 
 log = logging.getLogger("nora.music")
@@ -67,6 +73,7 @@ class MusicPlayer:
         self, *, guild_id: str, queue: MusicQueueStore, source: TrackSource, voice: VoiceSession,
         session: MusicSessionStore, voice_channel_id: str, notify_channel_id: str,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        autoplay_enabled: bool = False,
     ) -> None:
         self._guild_id = guild_id
         self._queue = queue
@@ -76,6 +83,7 @@ class MusicPlayer:
         self._voice_channel_id = voice_channel_id
         self._notify_channel_id = notify_channel_id
         self._clock = clock
+        self._autoplay_enabled = autoplay_enabled
         self._now_playing: QueuedTrack | None = None
         self._paused = False
         self._volume = 1.0
@@ -257,9 +265,21 @@ class MusicPlayer:
         treats as unremarkable, so this just moves on to the next track
         instead of surfacing an error nobody issued a command to see."""
         while True:
+            # Captured before `pop_next` overwrites it -- the SEED autoplay
+            # recommends from, once the queue turns out empty below
+            # (design/discord-music/08-autoplay.md). `None` on the very
+            # first track of a session (nothing has played yet to seed
+            # from), which is the correct "nothing to autoplay from" case,
+            # not a bug.
+            previous = self._now_playing
             self._now_playing = await self._queue.pop_next(self._guild_id)
             self._paused = False
             if self._now_playing is None:
+                if (
+                    self._autoplay_enabled and previous is not None
+                    and await self._enqueue_autoplay_pick(previous)
+                ):
+                    continue  # `pop_next` above picks it right back up
                 await self._persist_session()
                 return
             resolved = await self._source.resolve(query_or_url=self._now_playing.url)
@@ -273,3 +293,20 @@ class MusicPlayer:
                 "queued track no longer resolves, skipping: %s (%s)",
                 self._now_playing.title, self._now_playing.url,
             )
+
+    async def _enqueue_autoplay_pick(self, previous: QueuedTrack) -> bool:
+        """`True` only if a track was actually enqueued -- `related()`
+        answering empty (no Mix, nothing new in it, or the lookup failed)
+        is the ordinary "nothing to offer" outcome (`TrackSource.related`'s
+        own NEVER-raises discipline), not an error, and this falls straight
+        through to the caller's existing idle behaviour rather than
+        retrying or guessing a track."""
+        related = await self._source.related(locator=previous.url)
+        if not related:
+            return False
+        pick = related[0]
+        await self._queue.enqueue(
+            guild_id=self._guild_id, source=pick.source, url=pick.locator, title=pick.title,
+            added_by_person_id=AUTOPLAY_PERSON_ID, added_at=self._clock(),
+        )
+        return True

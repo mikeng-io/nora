@@ -1680,6 +1680,23 @@ class TrackSource(Protocol):
 
     async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]: ...
 
+    async def related(self, *, locator: str) -> Sequence[ResolvedTrack]:
+        """Tracks to autoplay after `locator` finishes with nothing queued
+        behind it — YouTube's own "Mix"/autoplay-radio recommendations
+        seeded from that one track, in `YtDlpSource`. An empty sequence
+        (never an exception, same discipline as `resolve`) covers every
+        reason there is nothing to offer: the source has no notion of
+        recommendations at all, the seed track has none, or the lookup
+        failed — the caller's only correct response to an empty sequence is
+        to fall through to its ordinary "queue is empty" behaviour, never to
+        retry or guess a track.
+
+        `locator` is a previously-resolved `ResolvedTrack.locator` (what
+        `QueuedTrack.url` already holds for the just-finished track) —
+        never a raw search query; recommending from an unresolved guess
+        would compound one uncertain match into another."""
+        ...
+
 
 @dataclass(frozen=True)
 class MusicToolOutcome:

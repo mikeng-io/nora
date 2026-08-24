@@ -1,0 +1,13 @@
+{
+  "type": "feature",
+  "summary": "Discord music autoplay: when the queue empties, Nora seeds a YouTube Mix recommendation instead of going idle.",
+  "details": [
+    "New [music] autoplay_enabled config flag (default false; on for this deployment). When on, MusicPlayer._advance seeds ONE track from TrackSource.related() -- YouTube's own 'Mix' recommendations for whatever just finished -- before falling back to the existing idle-timeout behaviour.",
+    "TrackSource gained a related(locator) method, implemented for YtDlpSource via YouTube's well-known list=RD<video_id> Mix trick, flat-extracted like an ordinary playlist and with the Mix's own seed track filtered out.",
+    "An autoplayed track is enqueued through the same MusicQueueStore.enqueue every /music play uses -- no second mutation path -- and is announced as 'Autoplaying: <title>' rather than 'Now playing:' so it's clear nobody requested it."
+  ],
+  "limitations": [
+    "One track at a time, reseeded from whatever most recently played -- not a multi-track lookahead queue.",
+    "No per-guild opt-out; today it is one deployment-wide flag like every other [music] setting."
+  ]
+}

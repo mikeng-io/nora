@@ -18,7 +18,13 @@ from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from datetime import datetime
 from typing import Any
 
-from nora.domain.music import MusicQueueStore, MusicSession, MusicSessionStore, QueuedTrack
+from nora.domain.music import (
+    AUTOPLAY_PERSON_ID,
+    MusicQueueStore,
+    MusicSession,
+    MusicSessionStore,
+    QueuedTrack,
+)
 from nora.domain.ports import TrackSource
 from nora.platform.discord.music_player import MusicPlayer, PlayerStatus, PlayOutcome, VoiceSession
 
@@ -44,6 +50,7 @@ class MusicPlayerManager:
         idle_timeout_seconds: float,
         spawn: Spawn,
         clock_sleep: ClockSleep = asyncio.sleep,
+        autoplay_enabled: bool = False,
     ) -> None:
         self._queue_store = queue_store
         self._session_store = session_store
@@ -51,6 +58,7 @@ class MusicPlayerManager:
         self._idle_timeout_seconds = idle_timeout_seconds
         self._spawn = spawn
         self._clock_sleep = clock_sleep
+        self._autoplay_enabled = autoplay_enabled
         self._players: dict[str, MusicPlayer] = {}
         self._idle_tasks: dict[str, asyncio.Task[None]] = {}
         self._notify: dict[str, Notify] = {}
@@ -223,6 +231,7 @@ class MusicPlayerManager:
             voice=voice, session=self._session_store,
             voice_channel_id=session.voice_channel_id,
             notify_channel_id=session.notify_channel_id,
+            autoplay_enabled=self._autoplay_enabled,
         )
         self._players[session.guild_id] = player
         self._notify[session.guild_id] = notify
@@ -258,7 +267,7 @@ class MusicPlayerManager:
         player = MusicPlayer(
             guild_id=guild_id, queue=self._queue_store, source=self._track_source, voice=voice,
             session=self._session_store, voice_channel_id=voice_channel_id,
-            notify_channel_id=notify_channel_id,
+            notify_channel_id=notify_channel_id, autoplay_enabled=self._autoplay_enabled,
         )
         self._players[guild_id] = player
         return player
@@ -278,7 +287,13 @@ class MusicPlayerManager:
         notify = self._notify.get(guild_id)
         if notify is None:
             return
-        await notify(f"Now playing: {now_playing.title} — {now_playing.url}")
+        # Tells apart a track someone actually queued from one autoplay
+        # picked (`AUTOPLAY_PERSON_ID`, design/discord-music/08-autoplay.md)
+        # -- otherwise a listener has no way to tell why a track nobody
+        # requested just started.
+        is_autoplay = now_playing.added_by_person_id == AUTOPLAY_PERSON_ID
+        verb = "Autoplaying" if is_autoplay else "Now playing"
+        await notify(f"{verb}: {now_playing.title} — {now_playing.url}")
 
     def _schedule_idle_disconnect(self, guild_id: str) -> None:
         """03's disconnect-timer rule 2: queue empty and nothing playing ->

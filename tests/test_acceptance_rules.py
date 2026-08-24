@@ -366,6 +366,13 @@ RULE_TESTS = {
     # underneath (`DiscordMusicToolBridge` calls the identical
     # `MusicPlayerManager.play`), never re-implemented or bypassed here.
     "R-61": "test_play_music_is_unavailable_off_discord",
+    # R-62 (design/discord-music/08-autoplay.md): when a Discord music
+    # queue empties with nothing next, MusicPlayer._advance may seed ONE
+    # autoplay pick from TrackSource.related() before falling back to the
+    # ordinary idle-timeout behaviour, gated by [music] autoplay_enabled
+    # (default false). related() returning empty falls straight through to
+    # idle -- never retried or substituted with a guess.
+    "R-62": "test_autoplay_enqueues_and_plays_a_related_track_when_the_queue_empties",
 }
 
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from nora.domain.music import AUTOPLAY_PERSON_ID
 from nora.domain.ports import ResolvedTrack
 from nora.platform.discord.music_player import MusicPlayer
 from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
@@ -39,12 +40,17 @@ class _StubSource:
     answered the ORIGINAL query would make every test's second lookup miss
     and skip the track as unresolvable."""
 
-    def __init__(self, tracks: dict[str, _StubEntry]) -> None:
+    def __init__(
+        self, tracks: dict[str, _StubEntry], *,
+        related: dict[str, Sequence[ResolvedTrack]] | None = None,
+    ) -> None:
         self._tracks: dict[str, _StubEntry] = dict(tracks)
         for entry in tracks.values():
             for track in ((entry,) if isinstance(entry, ResolvedTrack) else entry or ()):
                 self._tracks.setdefault(track.locator, track)
+        self._related = dict(related or {})
         self.resolved: list[str] = []
+        self.related_calls: list[str] = []
 
     async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
         self.resolved.append(query_or_url)
@@ -54,6 +60,10 @@ class _StubSource:
         if isinstance(found, ResolvedTrack):
             return (found,)
         return found
+
+    async def related(self, *, locator: str) -> Sequence[ResolvedTrack]:
+        self.related_calls.append(locator)
+        return self._related.get(locator, ())
 
 
 class _FakeVoiceSession:
@@ -105,7 +115,7 @@ _TRACK_C = ResolvedTrack(
 
 
 def _player(
-    tracks: dict[str, _StubEntry],
+    tracks: dict[str, _StubEntry], *, autoplay_enabled: bool = False,
 ) -> tuple[MusicPlayer, _FakeVoiceSession, FakeMusicSessionStore]:
     voice = _FakeVoiceSession()
     session = FakeMusicSessionStore()
@@ -113,6 +123,7 @@ def _player(
         guild_id="guild-1", queue=FakeMusicQueueStore(),
         source=_StubSource(tracks), voice=voice, session=session,
         voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+        autoplay_enabled=autoplay_enabled,
     )
     return player, voice, session
 
@@ -266,6 +277,84 @@ async def test_top_out_of_range_returns_none_and_leaves_the_queue_untouched() ->
     assert await player.top(5) is None
     status = await player.status()
     assert [t.title for t in status.queue] == ["Track B"]
+
+
+async def test_autoplay_enqueues_and_plays_a_related_track_when_the_queue_empties() -> None:
+    voice = _FakeVoiceSession()
+    session = FakeMusicSessionStore()
+    source = _StubSource(
+        # `_TRACK_B` here (not just in `related=`) is what makes it
+        # LAZY-RESOLVABLE by its own locator, once autoplay enqueues it and
+        # `_advance` re-resolves it right before playing -- same contract
+        # every ordinary queued track already has.
+        {"track a": _TRACK_A, "locator-b": _TRACK_B}, related={"locator-a": (_TRACK_B,)},
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=voice,
+        session=session, voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=True,
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+    assert status.now_playing.added_by_person_id == AUTOPLAY_PERSON_ID
+    assert source.related_calls == ["locator-a"]
+    assert voice.played == ["https://cdn.example/a", "https://cdn.example/b"]
+
+
+async def test_autoplay_disabled_goes_idle_exactly_like_before() -> None:
+    voice = _FakeVoiceSession()
+    session = FakeMusicSessionStore()
+    source = _StubSource(
+        {"track a": _TRACK_A}, related={"locator-a": (_TRACK_B,)},
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=voice,
+        session=session, voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=False,
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is None
+    assert source.related_calls == []
+
+
+async def test_autoplay_with_nothing_related_falls_back_to_idle() -> None:
+    """`related()` answering empty is the ordinary "nothing to offer"
+    outcome, not an error -- must not loop or crash, just fall through to
+    the same idle behaviour a disabled autoplay already has."""
+    player, voice, _session = _player({"track a": _TRACK_A}, autoplay_enabled=True)
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is None
+    assert voice.stopped == 0  # on_track_finished never calls voice.stop() itself
+
+
+async def test_autoplay_never_seeds_from_nothing_on_the_very_first_track() -> None:
+    """The first `/music play` in a session has no PREVIOUS track to seed
+    from -- autoplay must not fire off whatever `related()` happens to
+    return for an empty/undefined locator."""
+    source = _StubSource({"track a": _TRACK_A})
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=_FakeVoiceSession(),
+        session=FakeMusicSessionStore(), voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=True,
+    )
+
+    outcome = await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    assert outcome.status == "playing"
+    assert source.related_calls == []
 
 
 async def test_pause_returns_false_when_nothing_is_playing() -> None:
