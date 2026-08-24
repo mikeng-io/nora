@@ -104,6 +104,31 @@ closing conditions, supersession in all four tiers — is a variation on one loo
 it is visible.* The two wrong lexeme rows are the fixture; nothing better will
 ever be available.
 
+### 2.1.2 Where the loop applies — and the three places it does not
+
+It is **not universal**, and the exclusions are what keep it small. The loop
+needs three things: something **asserted**, **persisted past the turn**, and
+**rendered**. That is exactly two tiers.
+
+| tier | applies | why |
+|---|---|---|
+| **language** | **yes** | a gloss is asserted, persists, and renders every turn — the motivating case |
+| **knowledge** | **yes** | a fact is asserted *with a warrant*; identical shape, same two states |
+| **note** | **differently** | a note is a **question**, not a claim. You do not correct a question's truth. Its *body* is already corrected by the existing append-with-CAS path; a dispute means *the question is wrong or stale*, which maps to **retirement**, not supersession |
+| **Standing** | **no suppression needed** | rewritten every turn by construction, so a correction reaches the next fold as input. Suppressing it would suppress something already scheduled for replacement |
+| **Honcho** | **explicitly not** | it re-infers forever. A correction written there goes into a process built to change its mind ([29](29-authority.md) §3). The response is to **stop consulting it** for that question |
+
+> **Anything asserted and persisted gets `disputed` plus priority adjudication.
+> Two tiers, one new state.**
+
+**Nothing in the domain carries a `disputed` state today** — verified — so this
+is a boolean on `fact` and `room_lexeme`, not a subsystem.
+
+**The three exclusions each fail a different premise**: notes are not
+*assertions*, Standing is not *persisted* in the sense that matters, Honcho is
+not *ours to correct*. Three different reasons is the check that the rule was
+drawn from the tiers rather than around the answer.
+
 ### 2.2 This resolves who mints `stated`
 
 `stated` is **a person deciding, deliberately** — through operator config, *or*
@@ -269,12 +294,30 @@ invented there first.
 its own lifecycle, and gives up its own entity identity and its own supersession
 implementation.
 
-**OPERATOR-2 — build order: the correction loop before passes 3–5?**
-The architecture review's single insistence: close the loop end-to-end on the
-two wrong rows *before* building entity promotion, embeddings and traversal —
-*"if you cannot correct two wrong rows, bitemporal multi-hop retrieval is
-decoration."* That reorders [00](00-overview.md) §7. The counter-argument is
-that the caps and entity ids are free only while the tables are empty.
+**OPERATOR-2 — RESOLVED (operator, 2026-08-24): the loop first, but the cut is
+not at the pass boundary.**
+
+The reviewer's insistence was *close the loop before building passes 3–5*. The
+wrinkle is that **§2.1.1's step 4 needs entity ids**, which are pass 3's output:
+`Big Walk` and `big walk` cannot supersede each other until they resolve to one
+entity. So the loop and pass 3 are not separable.
+
+**The cut is inside pass 3, not before it:**
+
+| | when |
+|---|---|
+| **entity ids + promotion** (pass 3) | **first** — the loop depends on it, and it is free only while the tables are empty |
+| **the correction loop** (§2) | **with it** — `disputed`, priority adjudication, supersession, and a counter at each step |
+| **embedding** (pass 4) | **after the loop closes once** |
+| **retrieval / multi-hop** (pass 5) | **after** |
+
+**Why this and not the reviewer's line:** passes 4 and 5 exist to *feed* the
+loop — they make more things findable so more things can be corrected. Building
+them before the loop closes is building the feed for a mechanism that has never
+run. Pass 3 is different: it is not a feed, it is the **identity** the loop
+needs to know that two rows are about one thing.
+
+This reorders [00](00-overview.md) §7 accordingly.
 
 ## 9. What the reviewers endorsed
 

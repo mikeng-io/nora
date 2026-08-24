@@ -125,6 +125,7 @@ such rather than dressed as decisions.
 | **D26** | decision | **A sixth pass: revalidation.** `valid_to` was schema-deep and pipeline-absent — the tier where the world changes fastest had no time-driven lifecycle | [30](30-review-response.md) §3 |
 | **D27** | correction | **Validity outranks warrant**, and the warrant ranking is an adjudication *prior*, not a truth rule | [30](30-review-response.md) §3.2–3.3 |
 | **D28** | decision | **The language tier builds ON the knowledge substrate** — shared entity identity and one supersession pattern; it keeps its own store, lifecycle and scoring. Not a fold-in, not a peer | [30](30-review-response.md) §8, [28](28-language-tier.md) §5.2 |
+| **D29** | decision | **The correction loop is not universal** — it applies to what is *asserted and persisted*: knowledge and language. Notes retire, Standing self-replaces, Honcho is not ours to correct | [30](30-review-response.md) §2.1.2 |
 
 **D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
 the second half is the load-bearing part: an extractor that suppresses claims it
@@ -153,39 +154,39 @@ has seen before destroys the signal that decides what is worth researching.
 
 ## 7. The critical path
 
-**The design is closed; this is the build order.** Step 0 of the earlier version
-— *settle the substrate contract* — is done ([21](21-substrate-contract.md)),
-and what follows is sequenced by what each step unblocks, not by what is still
-undecided.
+**The design is closed; this is the build order.** Reordered 2026-08-24 after
+external review ([30](30-review-response.md) §8): the **correction loop** moves
+to the front, because every other mechanism here exists to feed a loop that has
+never once closed in production.
 
-1. **Measure the transport** ([16](16-open-items.md) §0/§1, one run, via the
-   eval harness on the real pipeline). It selects between [07](07-loop.md) §7's
-   two designed branches. **Everything downstream is shaped by which.**
-2. **The Dreamer's own transport and per-adaptor config**
+1. **Entity ids and the promotion pass** ([21](21-substrate-contract.md) §6,
+   [25](25-knowledge-pipeline.md) §4). First, because the loop **depends** on
+   it — `Big Walk` and `big walk` cannot correct each other until they resolve
+   to one entity — and because it is free only while the tables are empty.
+2. **The correction loop** ([30](30-review-response.md) §2), end to end on the
+   two wrong lexeme rows: `disputed` on contradiction, priority adjudication,
+   supersession, and **a counter at every step**. This is the acceptance test
+   for the whole bundle.
+3. **Measure the transport** ([16](16-open-items.md) §0/§1) via the eval harness
+   on the real pipeline. It selects between [07](07-loop.md) §7's two designed
+   branches, and step 2's adjudication is the first thing that needs the answer.
+4. **The Dreamer's own transport and per-adaptor config**
    ([05](05-transport.md), [22](22-config.md)) — cadence, floor,
-   `reasoning_effort`, a concurrency bound, and per-adaptor enablement, sized
-   against step 1.
-3. **The caps, everywhere** ([22](22-config.md) §5.1). Config plus a database
-   ceiling for every injected or joined field: Standing's body, the note body,
-   fact terms and predicates, the lexeme gloss. Cheapest now — three of the five
-   tables are empty.
-4. **Entity ids and the promotion pass** ([21](21-substrate-contract.md) §6,
-   [25](25-knowledge-pipeline.md) §4). Zero rows today; a cleaning project at a
-   thousand. Four problems bottom out here and traversal is impossible without
-   it.
-5. **The lexical channel** ([24](24-embedding-seam.md) §2) — `pg_trgm`
-   `word_similarity`, no model, no new dependency, and it already answers the
-   Chinese question. Then the dense channel and `pgvector` on
-   `pgvector/pgvector:pg18` ([23](23-retrieval.md) §7), sized by what lexical
-   misses.
-6. **Supersession for the language tier** ([16](16-open-items.md) §7, D19). Its
-   absence is the only defect in this bundle currently visible in production —
-   two contradictory glosses, both live.
-7. **Turn one adaptor on, for one scope**, with [09](09-measurement.md) §4's
+   `reasoning_effort`, a concurrency bound, per-adaptor enablement.
+5. **The caps, everywhere** ([22](22-config.md) §5.1), config plus a database
+   ceiling, validated at write time. Cheapest now — most tables are still empty.
+6. **Revalidation** ([30](30-review-response.md) §3.1) — the sixth pass, so
+   `valid_to` stops being schema-deep and pipeline-absent.
+7. **The lexical channel** ([24](24-embedding-seam.md) §2), which needs no model
+   and already answers the Chinese question. **Then** embedding and `pgvector`
+   ([23](23-retrieval.md) §7), and **then** multi-hop
+   ([25](25-knowledge-pipeline.md) §7) — passes 4 and 5 exist to *feed* the
+   loop, so they follow it rather than precede it.
+8. **Turn one adaptor on, for one scope**, with [09](09-measurement.md) §4's
    acceptance reading and §6's rollback thresholds in place **before** the flag
    flips.
 
-**The instruments come first inside every step**, not after it — that is D7, and
+**The instruments come first inside every step**, not after it — D7, and
 [02](02-instrument-blindness.md) is the eight-instance argument for why.
 
 ## 8. Scope, not deferral
