@@ -3390,9 +3390,20 @@ def build_tool_specs(
         ("play apt", "play some jazz") or a link they shared. `query` takes
         either a plain search term (the top YouTube match plays) or a URL (a
         single video, or a playlist link — a playlist queues every track).
-        For a vaguer request ("play some kpop"), use `web_search` FIRST to
-        find a real, curated playlist link, then pass that URL here —
-        ordinary multi-tool reasoning in one turn, not a separate step.
+
+        **A "playlist" request needs an ACTUAL playlist URL** — one shaped
+        like `youtube.com/playlist?list=...`, the link YouTube's own UI gives
+        you from a playlist's page. A regular video URL only ever queues as
+        ONE track, no matter how long it runs or what its title claims — a
+        3-hour "KPOP PLAYLIST 2026 MIX" video is still a single track here,
+        not a playlist somebody can skip through. When they ask for a
+        playlist or a vague genre ("play some kpop"), use `web_search` FIRST
+        and specifically look for a real playlist page (try appending
+        `site:youtube.com/playlist` to the search, or open a promising
+        `web_fetch` result to confirm its URL is actually `/playlist?
+        list=...` before using it) — ordinary multi-tool reasoning in one
+        turn, not a separate step. Only fall back to a single video if no
+        real playlist turns up.
 
         You must already be in a Discord voice channel for a FIRST track to
         start a session; adding to an already-playing session works from
