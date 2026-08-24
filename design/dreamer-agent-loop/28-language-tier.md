@@ -94,6 +94,38 @@ note body, and it lands the same way: `max_rendered_lexemes = 6` bounds the
 **200**, ceiling **800**. Two hundred matches the note description's budget,
 which is the closest comparable — both are a short line injected on every tag.
 
+## 5.2 It builds ON the knowledge substrate — decided
+
+Operator decision, 2026-08-24. The tier keeps its own store; it gives up its own
+**entity identity** and its own **supersession implementation**.
+
+| what it borrows | from |
+|---|---|
+| entity identity — `canonical_form` resolves to a `fact_entity` row | [21](21-substrate-contract.md) §5 |
+| the supersession pattern — `superseded_at` / `superseded_by` | [20](20-knowledge-tier.md) §1 |
+| the retrieval seam's lexical channel, if its extent ever outgrows the prompt | [24](24-embedding-seam.md) §5.1 |
+
+| what stays its own | why |
+|---|---|
+| the `live → fading → stale` lifecycle | a gloss is a **rendering** concern; a fact has no such state |
+| the occurrence × log1p(speakers) score | §4 — invented here, and the precedent the knowledge tier borrows back |
+| its own block and render cap | six lexemes is a working set, not a slice of a store |
+
+**The live failure is the argument.** `Big Walk` and `big walk` are two rows
+that **cannot see each other**, which is why neither can supersede the other and
+both render. Resolving both to one entity is the precondition for the fix — and
+it is the same column the knowledge tier needs for four other reasons
+([20](20-knowledge-tier.md) §5).
+
+**And it makes a gloss checkable.** Once a lexeme points at an entity, the edges
+about that entity are evidence about the gloss: `Big Walk │ made_by │ House
+House` is what turns *"a walking activity, maybe at night"* from doubted into
+**refuted** — which is what [30](30-review-response.md) §2.1.1's step 6 acts on.
+
+**Not a fold-in.** [30](30-review-response.md) §8 records why: the objection was
+duplicated supersession, not duplicated storage, and folding would have cost the
+scoring function and the lifecycle for nothing.
+
 ## 6. Transit — how a word becomes a rendered gloss
 
 ```
