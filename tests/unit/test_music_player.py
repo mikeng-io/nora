@@ -139,6 +139,43 @@ async def test_play_while_something_is_already_playing_only_enqueues() -> None:
     assert [t.title for t in status.queue] == ["Track B"]
 
 
+async def test_play_reports_what_actually_started_when_the_queue_had_a_leftover_track() -> None:
+    """Found live 2026-08-24: a guild with a leftover queue row from an
+    earlier, since-ended session (`MusicPlayerManager.discard_persisted_
+    session` not clearing the queue was the root cause; this covers the
+    OTHER half — `play()`'s own reporting must never assume `queued[0]`
+    is what's playing). `_advance()` pops the FRONT of the queue, which is
+    the STALE track here, not the one this call just resolved and enqueued
+    behind it — `PlayOutcome.track` must say so, not claim the new request
+    is what's now audible."""
+    queue = FakeMusicQueueStore()
+    await queue.enqueue(
+        guild_id="guild-1", source="youtube", url="stale-locator", title="Stale Leftover",
+        added_by_person_id="miles", added_at=T0,
+    )
+    voice = _FakeVoiceSession()
+    session = FakeMusicSessionStore()
+    source = _StubSource({"track a": _TRACK_A})
+    source._tracks["stale-locator"] = ResolvedTrack(
+        title="Stale Leftover", stream_url="https://cdn.example/stale", duration_seconds=100,
+        source="youtube", source_id="stale", locator="stale-locator",
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=queue, source=source, voice=voice, session=session,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+
+    outcome = await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    assert outcome.status == "playing"
+    assert outcome.track is not None
+    assert outcome.track.title == "Stale Leftover"
+    assert voice.played == ["https://cdn.example/stale"]
+    status = await player.status()
+    assert status.now_playing.title == "Stale Leftover"
+    assert [t.title for t in status.queue] == ["Track A"]
+
+
 async def test_play_returns_nothing_found_when_the_source_cannot_resolve() -> None:
     player, voice, _session = _player({})
 

@@ -529,6 +529,28 @@ async def test_discard_persisted_session_removes_it_without_ever_connecting() ->
     assert await session_store.get("guild-9") is None
 
 
+async def test_discard_persisted_session_also_clears_its_orphaned_queue() -> None:
+    """Found live 2026-08-24: discarding an unresumable session used to
+    leave its `music_queue` rows behind. A guild's next, unrelated `play()`
+    call then had `_advance()` pop that stale leftover instead of the
+    freshly requested track — while still reporting the new request as
+    playing. `MusicPlayer.stop()` already clears the queue on an explicit
+    `/music stop`; the boot-time "this session is dead" path needs the
+    same symmetry."""
+    manager = _manager({"track a": _TRACK_A})
+    session_store = manager._session_store  # type: ignore[attr-defined]
+    queue_store = manager._queue_store  # type: ignore[attr-defined]
+    await session_store.upsert(_persisted_session(guild_id="guild-9"))
+    await queue_store.enqueue(
+        guild_id="guild-9", source="youtube", url="stale-locator", title="Stale Leftover",
+        added_by_person_id="miles", added_at=T0,
+    )
+
+    await manager.discard_persisted_session("guild-9")
+
+    assert await queue_store.pop_next("guild-9") is None
+
+
 async def test_resume_persisted_session_reconnects_and_restarts_the_track() -> None:
     manager = _manager({"track a": _TRACK_A})
     voice = _FakeVoiceSession()

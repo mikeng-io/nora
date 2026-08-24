@@ -184,7 +184,19 @@ class MusicPlayerManager:
     async def discard_persisted_session(self, guild_id: str) -> None:
         """The boot-time scan's "not resumable" outcome (channel gone, or
         emptied while Nora was down) — deletes the stale row without ever
-        constructing a `MusicPlayer` or opening a voice connection for it."""
+        constructing a `MusicPlayer` or opening a voice connection for it.
+
+        Clears the guild's queue too, not just the session row: those rows
+        belonged to the session being discarded, and leaving them behind
+        orphans them in `music_queue` forever — silently jumping the line
+        ahead of whatever a future, unrelated `play()` call actually asks
+        for once someone starts a fresh session in this guild. This is the
+        same cleanup `MusicPlayer.stop()` already does for an explicit
+        `/music stop`; the boot-time "this session is dead" path needs the
+        same symmetry (found live 2026-08-24 — a K-pop batch orphaned by an
+        earlier un-resumed session silently played instead of a fresh
+        "play apt" request, while the reply claimed APT was playing)."""
+        await self._queue_store.clear(guild_id)
         await self._session_store.delete(guild_id)
 
     async def resume_persisted_session(
