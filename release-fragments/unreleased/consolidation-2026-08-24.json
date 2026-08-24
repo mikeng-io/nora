@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Internal consolidation: merges the three remaining unmerged branches (TagTrace Phase 1 with its migration renumbered to 0030, the engagement trigger toggle, and the Event abstraction design bundle) and resolves their conflicts. No new user-facing behaviour beyond what those branches already carried."
+}
