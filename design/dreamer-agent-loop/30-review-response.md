@@ -259,7 +259,7 @@ deliberately, one level up.
 | **candidate TTL** | pending candidates **expire**. The negative cache handles *unsettleable*; nothing handled *stale*, so the queue accumulates the unresearchable forever |
 | **erasure** | *"forget me"* is a supported operation. The asserter junction makes the knowledge-tier half easy; the design simply never asked. For a system that profiles friends, a deletion path is table stakes |
 
-## 8. What needs the operator
+## 8. The two operator questions — both answered
 
 **OPERATOR-1 — RESOLVED (operator, 2026-08-24): the language tier does NOT
 fold in. It builds ON TOP of the knowledge substrate.**
