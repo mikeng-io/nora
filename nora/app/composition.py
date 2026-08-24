@@ -607,7 +607,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         MusicPlayerManager(
             queue_store=SqlMusicQueueStore(engine), session_store=SqlMusicSessionStore(engine),
             track_source=YtDlpSource(), idle_timeout_seconds=cfg.music.idle_timeout_seconds,
-            spawn=asyncio.ensure_future,
+            spawn=asyncio.ensure_future, autoplay_enabled=cfg.music.autoplay_enabled,
         )
         if cfg.music.enabled
         else None

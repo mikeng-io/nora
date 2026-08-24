@@ -124,6 +124,30 @@ class YtDlpSource:
         track = _track_from_resolved_info(_unwrap_search_result(info))
         return (track,) if track is not None else ()
 
+    async def related(self, *, locator: str) -> Sequence[ResolvedTrack]:
+        video_id = _video_id_from_locator(locator)
+        if video_id is None:
+            return ()
+        # YouTube's own "Mix" — a `list=RD<id>` on that video's own watch URL
+        # is the well-known trick for the SAME autoplay queue YouTube's own
+        # UI offers, seeded from this one track. Flat, like an ordinary
+        # playlist listing (module docstring) — an autoplay pick that turns
+        # out unresolvable by play time is exactly `_advance`'s existing
+        # "skip to the next queued track" case, not worth resolving streams
+        # for upfront.
+        target = f"{_watch_url(video_id)}&list=RD{video_id}"
+        try:
+            info = await asyncio.to_thread(
+                self._flat_extractor.extract_info, target, download=False,
+            )
+        except Exception:
+            log.warning("yt-dlp could not resolve related tracks for %r", locator, exc_info=True)
+            return ()
+        tracks = _tracks_from_flat_playlist(info)
+        # A Mix always lists its own seed video first -- autoplay must offer
+        # something NEW, never re-queue the track that just finished.
+        return tuple(t for t in tracks if t.source_id != video_id)
+
 
 def _is_playlist_page(parsed: SplitResult) -> bool:
     """True only for `/playlist?list=...` — the link YouTube's own UI gives
@@ -162,6 +186,15 @@ def _target_for(query_or_url: str) -> str | None:
 
 def _watch_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _video_id_from_locator(locator: str) -> str | None:
+    """`ResolvedTrack.locator` for `source="youtube"` is always exactly
+    `_watch_url(video_id)` (`_track_from_flat_entry`/`_track_from_resolved_
+    info`, both above) — never a search string or a stripped-but-still-
+    query-bearing URL — so the `v` param round-trips cleanly back to it."""
+    values = parse_qs(urlsplit(locator).query).get("v")
+    return values[0] if values else None
 
 
 def _unwrap_search_result(raw: dict[str, Any] | None) -> dict[str, Any] | None:

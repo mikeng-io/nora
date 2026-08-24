@@ -1437,13 +1437,23 @@ class MusicConfig(BaseModel):
     audio for that many seconds before a track's own natural end. Spike
     (2026-08-24): only a natural track-end crossfades; `/music skip` stays
     an instant cut on purpose (skipping is "get me out of this NOW", not a
-    DJ transition)."""
+    DJ transition).
+
+    `autoplay_enabled` — False (default) means the bundle's ordinary
+    idle-timeout behaviour: the queue empties, nothing next, leave after
+    `idle_timeout_seconds`. True (the autoplay design node under
+    design/discord-music/) has `MusicPlayer._advance` seed one YouTube
+    "Mix" recommendation from whatever just finished before falling back
+    to idle — the operator's own evidence: "i expect after it FINISH it
+    will continue to add
+    recommend/related song NOT stop"."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     idle_timeout_seconds: float = 300.0
     crossfade_seconds: float = 0.0
+    autoplay_enabled: bool = False
 
 
 class DoctrineConfig(BaseModel):

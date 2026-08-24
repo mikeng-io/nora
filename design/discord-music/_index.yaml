@@ -21,6 +21,7 @@ members:
   - 05-crossfade-spike.md
   - 06-session-persistence.md
   - 07-agent-tool.md
+  - 08-autoplay.md
 edges:
   - {src: 01-playback-and-source, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-control-surface, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -32,6 +33,8 @@ edges:
   - {src: 05-crossfade-spike, dst: 03-state-and-persistence, rel: extends, provenance: asserted}
   - {src: 06-session-persistence, dst: 03-state-and-persistence, rel: extends, provenance: asserted}
   - {src: 07-agent-tool, dst: 02-control-surface, rel: extends, provenance: asserted}
+  - {src: 08-autoplay, dst: 01-playback-and-source, rel: extends, provenance: asserted}
+  - {src: 08-autoplay, dst: 03-state-and-persistence, rel: extends, provenance: asserted}
 scope:
   v1:
     - "Discord slash commands (/music play|skip|queue|pause|resume|stop|volume) as the primary control surface"
@@ -39,7 +42,8 @@ scope:
     - "Per-guild MusicPlayer (voice connection, now-playing, loop, volume), persisted in Postgres and resumed on restart"
     - "Session queue persisted in a new Postgres table (music_queue), not Valkey"
     - "Auto-disconnect on empty voice channel or idle timeout"
-    - "Discord-only Nora agent tools (play_music/skip_music/stop_music/music_status) for conversational control"
+    - "Discord-only Nora agent tools (play_music/skip_music/top_music/stop_music/music_status) for conversational control"
+    - "Autoplay: seed YouTube's own Mix recommendations when the queue empties, config-gated (08-autoplay.md)"
   deferred:
     - "Saved/named playlists"
     - "Persistent audio library / cache"

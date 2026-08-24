@@ -60,11 +60,18 @@ def _with_locators_registered(tracks: dict[str, _StubEntry]) -> dict[str, _StubE
 
 
 class _StubSource:
-    def __init__(self, tracks: dict[str, _StubEntry]) -> None:
+    def __init__(
+        self, tracks: dict[str, _StubEntry], *,
+        related: dict[str, Sequence[ResolvedTrack]] | None = None,
+    ) -> None:
         self._tracks = _with_locators_registered(tracks)
+        self._related = dict(related or {})
 
     async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
         return _as_sequence(self._tracks.get(query_or_url))
+
+    async def related(self, *, locator: str) -> Sequence[ResolvedTrack]:
+        return self._related.get(locator, ())
 
 
 class _GatedSource:
@@ -142,12 +149,17 @@ class _FakeScheduler:
         return None
 
 
-def _manager(tracks: dict[str, _StubEntry]) -> MusicPlayerManager:
+def _manager(
+    tracks: dict[str, _StubEntry], *,
+    related: dict[str, Sequence[ResolvedTrack]] | None = None,
+    autoplay_enabled: bool = False,
+) -> MusicPlayerManager:
     scheduler = _FakeScheduler()
     return MusicPlayerManager(
         queue_store=FakeMusicQueueStore(), session_store=FakeMusicSessionStore(),
-        track_source=_StubSource(tracks), idle_timeout_seconds=300.0,
+        track_source=_StubSource(tracks, related=related), idle_timeout_seconds=300.0,
         spawn=asyncio.ensure_future, clock_sleep=scheduler.clock_sleep,
+        autoplay_enabled=autoplay_enabled,
     )
 
 
@@ -450,6 +462,57 @@ async def test_a_track_finishing_naturally_notifies_the_channel_that_started_the
     await manager.on_track_finished("guild-1")
 
     assert notify.messages == ["Now playing: Track B — locator-b"]
+
+
+async def test_autoplay_enqueues_a_related_track_and_notifies_it_as_autoplaying() -> None:
+    manager = _manager(
+        # `locator-b` here (not just in `related=`) is what makes it
+        # LAZY-RESOLVABLE by its own locator, once autoplay enqueues it and
+        # `_advance` re-resolves it right before playing.
+        {"track a": _TRACK_A, "locator-b": _TRACK_B},
+        related={"locator-a": (_TRACK_B,)}, autoplay_enabled=True,
+    )
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
+    )
+
+    await manager.on_track_finished("guild-1")
+
+    # Distinct wording from an ordinary auto-advance -- nobody asked for
+    # this track, autoplay picked it.
+    assert notify.messages == ["Autoplaying: Track B — locator-b"]
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+
+
+async def test_autoplay_disabled_by_default_goes_idle_and_never_calls_related() -> None:
+    manager = _manager({"track a": _TRACK_A}, related={"locator-a": (_TRACK_B,)})
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
+    )
+
+    await manager.on_track_finished("guild-1")
+
+    assert notify.messages == []
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is None
 
 
 async def test_skip_notifies_what_is_now_playing() -> None:

@@ -18,7 +18,17 @@ from uuid import UUID
 
 from nora.domain.reminders import ensure_utc
 
-__all__ = ["MusicQueueStore", "MusicSession", "MusicSessionStore", "QueuedTrack", "ensure_utc"]
+__all__ = [
+    "AUTOPLAY_PERSON_ID", "MusicQueueStore", "MusicSession", "MusicSessionStore",
+    "QueuedTrack", "ensure_utc",
+]
+
+# `QueuedTrack.added_by_person_id` sentinel for a track `MusicPlayer._advance`
+# enqueued itself (design/discord-music/08-autoplay.md) rather than a real
+# person asking for it -- reuses the existing free-text field instead of a
+# schema change, and lets `MusicPlayerManager._notify_now_playing` tell the
+# two cases apart without threading a separate flag through `QueuedTrack`.
+AUTOPLAY_PERSON_ID = "nora-autoplay"
 
 
 @dataclass(frozen=True, slots=True)

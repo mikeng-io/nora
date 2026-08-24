@@ -117,6 +117,9 @@ _MAY_DIFFER = {
     # you choose a fade length", not a measurement this deployment drifted
     # from.
     "music.crossfade_seconds",
+    # ON in this deployment (design/discord-music/08-autoplay.md, operator's
+    # own instruction) -- OFF in the template like every other opt-in above.
+    "music.autoplay_enabled",
     # Per-deployment policy/cost knobs.
     "doctrine.canary",            # deliberately CHANGE-ME in the template
     "presence.retention_days",    # disk and privacy, the operator's call
