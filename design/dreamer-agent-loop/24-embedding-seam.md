@@ -197,10 +197,14 @@ vocabulary; `kind` is a registry, and registries stay open.
 **Dimension is per-`kind`, not global.** §3 says one embedder means one
 dimension, and that is true *today* — but a future tier may want a different
 model, and the seam should let it without a migration. **The plain column already
-allows this and pgvector would not**, since a `vector(N)` column fixes N at
+allowed this and a single `vector(N)` column would not**, since `vector(N)` fixes N at
 DDL time. That is a second, better argument for the storage choice in
-[23-retrieval.md](23-retrieval.md) §7: it was defended as an index deferral, and
-it is *also* what keeps the model choice per-tier reversible.
+[23-retrieval.md](23-retrieval.md) §7. **Resolved there, not here:** with
+pgvector adopted, per-kind dimension is expressed as **one column per
+dimension**, routed by the seam's `kind` discriminator — so a new tier with a
+different model adds a column rather than a type, and the "declaring three
+things and writing no schema" bar in this section holds only for a tier reusing
+an existing dimension. A tier bringing its own model brings a column.
 
 **Adoption is declared by the tier, not enumerated by the seam.** The same shape
 D2 gives triggers: a tier says *I am searchable, here are my text columns, here

@@ -72,7 +72,7 @@ Both are *about Grant*, and **subject is not what separates them.**
 |---|---|---|
 | **transcript** | the messages that show it | 「我下星期五返嚟」 — a line someone typed |
 | **Honcho** | **yes** — `(observer, observed)`, a pattern inferred from behaviour, re-inferable, and it may stop being true without anyone saying so | **no** — a schedule is not a disposition |
-| **knowledge tier** | **no** — no warrant fits. Said ten times, `observation` still warrants *"the room says this"*, not *"this is so"* | **yes** — `grant │ away_until │ 2026-09-05`, warrant **`stated`**: he said it himself |
+| **knowledge tier** | **no** — no warrant fits. Said ten times, `observation` still warrants *"the room says this"*, not *"this is so"* | **yes** — `grant │ away_until │ 2026-09-05`, warrant **`source`**: the message is the source ([30](30-review-response.md) §2.2 — `stated` is reserved for a deliberate correction, not for anything extracted) |
 
 **So a fact ABOUT a person is not a claim about their CHARACTER**, and that is
 the line the person-exclusion actually draws. [21](21-substrate-contract.md) §2
@@ -106,6 +106,15 @@ with what it independently inferred, which is §3's case.
 
 Not a tier ranking. A **warrant** ranking — and the machinery already exists,
 because `warrant_kind` is a column ([21](21-substrate-contract.md) §1).
+
+> **Validity is checked first.** A claim that is not currently valid outranks
+> nothing, whatever its warrant ([30](30-review-response.md) §3.2). The ranking
+> below orders what remains.
+
+> And the ranking is **the adjudication prior and the rendering order — not a
+> rule that decides truth** ([30](30-review-response.md) §3.3). The person beats
+> the web about their own plans; the web beats the person about a game mechanic.
+> That is per-predicate policy, and the adjudicator is where it belongs.
 
 | rank | warrant | why it sits here |
 |---|---|---|

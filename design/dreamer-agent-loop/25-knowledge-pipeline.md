@@ -135,8 +135,8 @@ query property.
 | bound | value | why this and not more |
 |---|---|---|
 | **depth** | **2** | On a workspace this size, hop 3 reaches most of the graph, and a filter that returns everything is not a filter. Hop 2 answers the questions worth asking — *what else did House House make*, *who else is at that wedding* |
-| **fan-out** | **8 edges per node per hop** | Bounds the worst case at 1 + 8 + 64 rows before ranking. Ordered by the fused score of the parent, so the cap drops the least relevant branch, not an arbitrary one |
-| **dense-node guard** | **do not expand through an entity of degree > 30** | The super-node problem. A hub — a person, a recurring venue — connects to everything, so expanding through it returns the workspace. Related prior art calls a node dense at 50+ and warns the condition is not reversible; 30 is the conservative form at this scale |
+| **fan-out** | **8 edges per node per hop** | Bounds the worst case at 1 + 8 + 64 rows before ranking. Ordered by **the child edge's own fused score**, computed before expansion, ties broken deterministically on `(predicate, object)`. An earlier draft ordered by the *parent's* score — every edge of one parent shares it, so the sort tied and the engine returned an arbitrary eight ([30](30-review-response.md) §5) |
+| **dense-node guard** | **do not expand along a PREDICATE whose fan-out exceeds 30** | The super-node problem. A hub — a person, a recurring venue — connects to everything, so expanding through it returns the workspace. Related prior art calls a node dense at 50+ and warns the condition is not reversible; 30 is the conservative form at this scale |
 | **cycle** | visited set carried in the CTE | `A → B → A` otherwise recurs to the depth bound and returns duplicates dressed as results |
 
 ### 7.3 Distance decays, it does not gate

@@ -1,0 +1,235 @@
+---
+type: decision
+title: "External Review — What Two Reviewers Found, and What Changes"
+description: "An adversarial audit and an architecture review, run cold against the whole bundle. Four contradictions confirmed and fixed; the correction loop named as the missing centre; time wired into both the pipeline and precedence."
+tags: [nora, review, audit, correction-loop, bitemporal, concurrency, lifecycle]
+timestamp: '2026-08-24'
+edges:
+  - {dst: 00-overview, rel: corrects, provenance: asserted}
+  - {dst: 21-substrate-contract, rel: corrects, provenance: asserted}
+  - {dst: 29-authority, rel: corrects, provenance: asserted}
+---
+
+# External Review — Response
+
+Two reviewers, cold, on the whole bundle: an **adversarial audit** (find the
+contradictions and the edge cases) and an **architecture review** (is this the
+right design). Non-overlapping briefs, and they converged on the same centre
+from opposite directions.
+
+Everything below is a decision. Two items genuinely need the operator and are
+marked **OPERATOR** rather than guessed.
+
+## 1. Four contradictions, confirmed and fixed
+
+Each was verified in the files before being accepted, and each was introduced by
+a later node correcting an earlier one **without sweeping the corpus**.
+
+| | fixed in |
+|---|---|
+| *"No write tool, ever"* / *"act verbs are unreachable"* versus [27](27-note-dreamer.md) §3's `schedule_reminder` grant | [08](08-state.md) §12 now carries the **enqueue** carve-out explicitly |
+| [18](18-flows.md) Flow B: *"the batch, **WITH speaker + time**"* versus [21](21-substrate-contract.md) §7.1's deliberately speaker-less `id: body` | [18](18-flows.md) corrected — the fact flow renders `id: body` |
+| [24](24-embedding-seam.md) §7.5: *"pgvector would not"* allow per-kind dimensions — written before pgvector was adopted | reconciled: **one column per dimension**, routed by `kind` |
+| [21](21-substrate-contract.md) §10: `stated` is *"the operator, and only the operator"* versus [29](29-authority.md) §2.0 giving `stated` to something a member typed in chat | §2 below — and the resolution is a whole missing mechanism, not a wording fix |
+
+**The pattern is the finding.** Every one is a *stale restatement* left behind by
+a correction, which is exactly [04](04-designed-vs-shipped.md)'s catalogued
+failure committed by the bundle about that failure. A correction that does not
+sweep for its own restatements is half a correction.
+
+## 2. The correction loop — the missing centre
+
+Both reviewers arrived here. The audit reached it as a contradiction about who
+writes `stated`; the architecture review named it outright as the largest hole
+and the thing to build **before** passes 3–5.
+
+**The gap:** a member says *"no, Big Walk is a video game."* Today that message
+enters a candidate queue ranked on recurrence, behind an adjudication pass with
+an 8-hour floor — indistinguishable from any other chatter. Meanwhile the wrong
+row keeps rendering.
+
+**This is not an edge case for this deployment. It is the primary trust loop.**
+A friends' bot's first real interactions with memory are corrections — and
+pranks.
+
+### 2.1 Decided
+
+> **A member contradicting a standing row, in the room, addressed to Nora, is a
+> first-class event: it marks the row `disputed` immediately, and the row stops
+> rendering while disputed.**
+
+- **Immediate effect is a *suppression*, not a rewrite.** The tag path may set
+  `disputed`; it may not decide what is true. Propose/dispose is untouched — a
+  correction proposes, and the flag it sets is the one thing a proposal may do
+  synchronously, because *stopping* a wrong answer needs no adjudication.
+- **Adjudication then runs at high priority**, ahead of recurrence, and resolves
+  to a supersession or a dismissal.
+- **`disputed` is visible to Nora**, so she can say *"someone's told me that's
+  wrong, I haven't confirmed it yet."* Silence beats a wrong answer; a marked
+  dispute beats silence ([19](19-between-tiers.md) §4).
+
+### 2.2 This resolves who mints `stated`
+
+`stated` is **a person deciding, deliberately** — through operator config, *or*
+through a correction in the room. Not the extractor, ever.
+
+**And the [29](29-authority.md) §2.0 example was wrong**: *"Grant is in Japan
+until the 5th,"* extracted from a message, is **`source`-warranted** — the
+message is the source — not `stated`. `stated` is reserved for *"I am telling
+you this is so"*, which is what a correction is. The example is corrected there.
+
+### 2.3 Abuse is a design input, not an afterthought
+
+*"Nora, remember Grant owes me $500."* The substrate already carries the
+answer: [21](21-substrate-contract.md) §7's **asserter junction** means every
+`stated` row names who stated it, so a claim is always attributable and a
+sender-scoped view can show what one person has been asserting. **A `stated`
+fact renders with its asserter** — never as a bare claim — which makes a prank
+legible rather than authoritative.
+
+## 3. Time was schema-deep and pipeline-absent
+
+The sharpest architectural finding, and it verifies: **`valid_to` appears
+nowhere in [25](25-knowledge-pipeline.md)'s five passes.** Notes get a
+revisitor, lexemes decay by age, and the tier where the world changes fastest
+has no time-driven lifecycle at all.
+
+> A bitemporal schema with one of its two times unwired.
+
+### 3.1 Decided: a sixth pass — revalidation
+
+Keyed on `valid_to` and on age, on the Dreamer's clock, mirroring the note
+revisitor's shape:
+
+- a fact whose `valid_to` has **passed** stops being standing — that is arithmetic,
+  no model needed;
+- a fact with no `valid_to`, older than a threshold, in a class where the world
+  moves (a venue, a schedule, a status) becomes a **revalidation candidate**;
+- expiry is **counted**, because a tier that silently keeps stale rows and one
+  that has no stale rows look identical.
+
+This is [06](06-trigger.md) §3.1's own principle — *time-driven work must fire
+precisely when nothing has happened* — applied to the tier that skipped it.
+
+### 3.2 Decided: precedence is validity-first, then warrant
+
+[29](29-authority.md) §3's ranking ignored time, so a July `stated` would beat
+October evidence. Corrected:
+
+> **A claim that is not currently valid outranks nothing.** Validity is checked
+> first; the warrant ranking orders what remains.
+
+### 3.3 Decided: warrant rank is a prior, not an authority
+
+Also from [29](29-authority.md) §3, and the reviewer is right that it overstated
+itself. *The person beats the web about their own plans; the web beats the
+person about a game mechanic.* That is per-predicate policy, not a global truth.
+
+**So the ranking is (a) the adjudication prior and (b) the rendering order — not
+a rule that decides truth.** Which is what the node's own §6 instrumentation
+already assumed.
+
+## 4. Atomicity, concurrency and recovery
+
+Four findings, one shape: **the pipeline is specified as an ordered prose list
+where it needs transaction boundaries.**
+
+| finding | decided |
+|---|---|
+| **adjudication has no atomic boundary** — write the fact, die before retiring the candidate → re-adjudicated forever; retire first, die → the claim is lost | **one transaction**: fact write + candidate retirement + provenance rows + supersession. Promotion and embedding are *downstream and idempotent*, keyed off the fingerprint, never inside it |
+| **concurrent supersession is last-writer-wins** — two adjudicators contradict the same row, both read it standing, both update | **compare-and-swap on `superseded_at IS NULL`**. The loser does not retry blindly; it becomes a candidate carrying both proposals. The note tier's CAS-on-head-revision is the precedent |
+| **promotion races ingestion** and is `O(table)` per write at scale | promotion is **incremental** — re-evaluate degree only for objects the write touched — and **idempotent**, so a concurrent re-run converges. Alias accumulation is a set union, never a replace |
+| **no durable lease** — a hung worker holds a scope forever; the in-flight set dies on restart | a **claimed-work row with an owner token and an expiry**, not a process-local set. [06](06-trigger.md) already names the DB unique index as prior art and stops short of the lease |
+
+**And a corrected past is now defined.** A source revising *"away Aug 1–5"* to
+*"Aug 2–6"* **closes the old validity interval and inserts a new row** —
+`superseded_by` links them, so *"what did we believe on the 3rd"* and *"what was
+valid on the 3rd"* are answered by the two different axes, which is the entire
+reason the schema is bitemporal.
+
+## 5. Retrieval defects
+
+**The multi-hop fan-out cap could not work as written.** *"Ordered by the fused
+score of the parent"* — every edge of one parent shares the parent's score, so
+the sort ties and Postgres returns an arbitrary eight. **Corrected: the cap
+orders on the child edge's own fused score**, computed before expansion; ties
+break deterministically on `(predicate, object)` so a plan change cannot change
+results.
+
+**The dense-node guard amputates people.** Degree > 30 blocks expansion — and
+people are the natural hubs of a social knowledge graph, so the structural
+channel would refuse exactly where it is most valuable. **Corrected: the guard
+is per-predicate, not per-node.** A person with 200 edges is still expandable
+along `attending` or `works_at`; it is one *predicate* fanning out past the
+bound that gets cut.
+
+**Caps must bind at write time.** The config-plus-ceiling scheme only refused a
+config *above* its ceiling. **Every writer validates against the current
+operating value**, and lowering a cap below existing rows is a startup refusal
+naming the offending rows — not a silent state where oversized rows satisfy the
+`CHECK` and defeat the prompt budget.
+
+**The terminal act is not self-certifying.** A model can call it early. **The
+sink validates completion preconditions** — the envelope is accepted on its
+contents, never on the fact that the call was made last.
+
+## 6. The seam erases content class
+
+The best cross-cutting finding. [11](11-disclosure.md) F3 refutes *"the read is
+safe because the output is screened"* — and the shared retrieval seam then makes
+note bodies, fact triples and eventually Standing rows **uniformly searchable
+through one verb**, with `search_knowledge` granted to Nora and every adaptor
+alike and no per-kind policy anywhere.
+
+**Decided: the seam carries a per-`kind` disclosure policy at the port**, and a
+caller is granted kinds, not the verb. A tier joining the seam declares its
+content class alongside its text columns ([24](24-embedding-seam.md) §7.5's
+declaration list gains a third field). Without it the seam is F3's leak rebuilt
+deliberately, one level up.
+
+## 7. Lifecycle — six things the design never had
+
+| | decided |
+|---|---|
+| **cold start** | a **backfill pass** over existing history, using the watermark seeding the trigger seam already has. 963 messages are sitting there. Without it the verb returns `nothing_found` for weeks and Nora *learns it is useless* — a lesson she will not unlearn |
+| **run-scoped rollback** | `established_by` already makes *"void everything run X wrote"* expressible; it becomes a supported operation. A subsystem whose writer is a model with no human in the loop needs an undo |
+| **global cost governor** | a **fleet-wide daily ceiling** plus a degradation ladder — drop the dense channel, then lexical-only, then stop. Per-adaptor budgets bound one pass; nothing bounded the sum |
+| **dormancy** | the floor **stretches after N quiet days** instead of holding at 8 hours. The design modelled accumulation and never modelled decline |
+| **candidate TTL** | pending candidates **expire**. The negative cache handles *unsettleable*; nothing handled *stale*, so the queue accumulates the unresearchable forever |
+| **erasure** | *"forget me"* is a supported operation. The asserter junction makes the knowledge-tier half easy; the design simply never asked. For a system that profiles friends, a deletion path is table stakes |
+
+## 8. What needs the operator
+
+**OPERATOR-1 — does the language tier fold into the knowledge tier?**
+[20](20-knowledge-tier.md) §3 argues a lexeme **is** a knowledge edge with
+`warrant = observation` — *"the same relation with a different warrant"* — and
+then [28](28-language-tier.md) keeps it in separate storage with its own
+supersession and its own lifecycle. **Both cannot be right.** Folding means the
+language tier dissolves into a `kind`, keeping only its scoring function; not
+folding means §3's argument is rhetoric. This changes the tier count and is not
+mine to decide.
+
+**OPERATOR-2 — build order: the correction loop before passes 3–5?**
+The architecture review's single insistence: close the loop end-to-end on the
+two wrong rows *before* building entity promotion, embeddings and traversal —
+*"if you cannot correct two wrong rows, bitemporal multi-hop retrieval is
+decoration."* That reorders [00](00-overview.md) §7. The counter-argument is
+that the caps and entity ids are free only while the tables are empty.
+
+## 9. What the reviewers endorsed
+
+Recorded because a review that only lists faults is not calibrated: the
+five-seam diagnosis and the instrument-first discipline, the trigger analysis,
+propose/dispose, the negative cache, the read-before-write latch, the embedding
+fingerprint, default-to-split, and the no-graph-database decision with its
+stated reversal conditions — all confirmed as correct by the architecture
+reviewer, which is also what makes §2 and §3 worth taking seriously.
+
+## Status / Checkpoint
+
+2026-08-24 — written after two external reviews run cold against all 30 nodes.
+Four contradictions confirmed **in the files** before acceptance and fixed in
+place; the rest decided here. Two items marked OPERATOR. The bundle's central
+critique — *it measured a glossary failure and designed a knowledge graph* — is
+answered by §2 and §3, not deflected: the correction loop and the revalidation
+pass are what make the rest load-bearing rather than decorative.

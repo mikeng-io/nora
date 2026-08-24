@@ -1,0 +1,1 @@
+{"type":"change","summary":"External review response: a member contradicting a stored claim now marks it disputed and stops it rendering, stale claims stop outranking fresh evidence, and the knowledge store gains a revalidation pass so expired facts stop standing."}

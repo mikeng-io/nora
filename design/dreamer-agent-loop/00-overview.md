@@ -121,6 +121,9 @@ such rather than dressed as decisions.
 | **D22** | decision | **Adaptors are not skills.** A skill is chosen by the model mid-turn; an objective is dispatched by code — so which objective ran stays a *fact*, not a choice, which provenance requires | [27](27-note-dreamer.md) §4 |
 | **D23** | decision | **Every tier owns a node covering caps, mechanism, measurement, transit, storage and tools.** A coverage audit found the language tier — the most complete in code — had none | [28](28-language-tier.md) §9 |
 | **D24** | decision | **Authority follows the WARRANT, not the tier.** Honcho holds what someone is *like* and has no warrant by design; a disagreement becomes an adjudication candidate, never a silent overwrite; Standing never wins | [29](29-authority.md) |
+| **D25** | decision | **A member contradicting a standing row marks it `disputed` immediately, and it stops rendering.** The correction loop is the primary trust loop, and it is what mints `stated` | [30](30-review-response.md) §2 |
+| **D26** | decision | **A sixth pass: revalidation.** `valid_to` was schema-deep and pipeline-absent — the tier where the world changes fastest had no time-driven lifecycle | [30](30-review-response.md) §3 |
+| **D27** | correction | **Validity outranks warrant**, and the warrant ranking is an adjudication *prior*, not a truth rule | [30](30-review-response.md) §3.2–3.3 |
 
 **D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
 the second half is the load-bearing part: an extractor that suppresses claims it
@@ -136,7 +139,7 @@ has seen before destroys the signal that decides what is worth researching.
 
 **Execution** — [14](14-migration-and-governance.md) sequencing, numbers, tests · [15](15-roadmap.md) every tier's state and owner · [16](16-open-items.md) what is unresolved
 
-**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is · [21](21-substrate-contract.md) the shape they all write against · [22](22-config.md) what the operator can say · [23](23-retrieval.md) how she reads it back · [24](24-embedding-seam.md) the seam all three tiers share · [25](25-knowledge-pipeline.md) the pipeline end to end, and multi-hop · [26](26-standing.md) the debrief, and the roll · [27](27-note-dreamer.md) the curator, the revisitor, and the instruction corpora · [28](28-language-tier.md) the tier nothing owned · [29](29-authority.md) which tier wins, and why
+**Cross-cutting** — [17](17-failure-classes.md) named failure classes, true of any adaptor · [18](18-flows.md) the tiers run end to end · [19](19-between-tiers.md) how they relate · [20](20-knowledge-tier.md) what the tier actually is · [21](21-substrate-contract.md) the shape they all write against · [22](22-config.md) what the operator can say · [23](23-retrieval.md) how she reads it back · [24](24-embedding-seam.md) the seam all three tiers share · [25](25-knowledge-pipeline.md) the pipeline end to end, and multi-hop · [26](26-standing.md) the debrief, and the roll · [27](27-note-dreamer.md) the curator, the revisitor, and the instruction corpora · [28](28-language-tier.md) the tier nothing owned · [29](29-authority.md) which tier wins, and why · [30](30-review-response.md) what two external reviewers found
 
 > **If you only read two nodes:** [18](18-flows.md) to see how a tier actually
 > runs, then [01](01-live-state.md) for what it has actually produced. The gap

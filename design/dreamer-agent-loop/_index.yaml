@@ -52,6 +52,7 @@ members:
   - 27-note-dreamer.md
   - 28-language-tier.md
   - 29-authority.md
+  - 30-review-response.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -123,6 +124,9 @@ edges:
   - {src: 29-authority, dst: 19-between-tiers, rel: extends, provenance: asserted}
   - {src: 29-authority, dst: 21-substrate-contract, rel: depends_on, provenance: asserted}
   - {src: 29-authority, dst: 26-standing, rel: depends_on, provenance: asserted}
+  - {src: 30-review-response, dst: 00-overview, rel: corrects, provenance: asserted}
+  - {src: 30-review-response, dst: 21-substrate-contract, rel: corrects, provenance: asserted}
+  - {src: 30-review-response, dst: 29-authority, rel: corrects, provenance: asserted}
 scope:
   v1:
     - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"
