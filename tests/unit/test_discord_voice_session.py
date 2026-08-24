@@ -26,6 +26,7 @@ import asyncio
 from unittest.mock import patch
 
 import discord
+import pytest
 
 from nora.platform.discord.voice_session import DiscordVoiceSession
 
@@ -43,7 +44,7 @@ class _FakeAudioSource(discord.AudioSource):
 
 
 class _FakeVoiceClient:
-    def __init__(self) -> None:
+    def __init__(self, *, connected: bool = True) -> None:
         self.played_sources: list[object] = []
         # Real `discord.VoiceClient.source` has a setter that swaps the
         # live `AudioPlayer`'s source without stopping it -- a distinct
@@ -57,8 +58,26 @@ class _FakeVoiceClient:
         self._playing = False
         self._after = None
         self._source: object = None
+        # Real `discord.VoiceClient.is_connected()` -- toggled by a test to
+        # reproduce a voice websocket that dropped and never rejoined, while
+        # `is_playing()` keeps reporting whatever it last reported (the real
+        # hazard: `AudioPlayer`'s thread state and the voice connection's
+        # own state are two different things, found live 2026-08-24 as
+        # "the music is NOT playing again after it reply start play").
+        self.connected = connected
+
+    def is_connected(self) -> bool:
+        return self.connected
 
     def play(self, source: object, *, after) -> None:
+        # Real `discord.VoiceClient.play()` checks connection state BEFORE
+        # `is_playing()` and raises rather than silently doing nothing --
+        # this fake must reproduce that shape, not just the happy path
+        # (CLAUDE.md's fake-realism rule).
+        if not self.connected:
+            raise discord.ClientException("Not connected to voice.")
+        if self._playing:
+            raise discord.ClientException("Already playing audio.")
         self.played_sources.append(source)
         self._source = source
         self._after = after
@@ -376,6 +395,43 @@ async def test_crossfade_fires_early_and_live_swaps_into_the_next_track() -> Non
     # after is a live swap, never a second `.play()` (which real discord.py
     # raises `ClientException` for while already playing).
     assert len(voice_client.played_sources) == 1
+
+
+async def test_play_does_not_silently_live_swap_onto_a_disconnected_voice_client() -> None:
+    """**Regression test for a real bug** (found live 2026-08-24, reported
+    as "the music is NOT playing again after it reply start play"): a voice
+    websocket drop (Discord close code 1006) left `voice_client.is_playing()`
+    stuck reporting `True` while the connection itself never came back
+    (`is_connected()` False, and no further "Voice handshake complete" ever
+    logged). The old code decided "already playing" from `is_playing()`
+    alone and did a live `.source` swap -- which does nothing when there is
+    no live `AudioPlayer` actually attached to a real connection. The tool
+    call still reported `status=ok` and Nora's reply claimed playback
+    started, while nothing was audible.
+
+    The fix: `is_connected()` gates the live-swap/crossfade path too. When
+    the voice client is not actually connected, this must fall through to a
+    real `voice_client.play()` call -- which, same as real discord.py,
+    raises rather than silently doing nothing, so the failure is visible to
+    the caller instead of masquerading as success."""
+    voice_client = _FakeVoiceClient()
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        audio_source_factory=lambda url: _FakeAudioSource(url), crossfade_seconds=3.0,
+    )
+    session.play("https://cdn.example/a")
+    assert voice_client.is_playing() is True
+
+    # The websocket drops; discord.py's reconnect never completes, but the
+    # stale `AudioPlayer` thread state still reports "playing".
+    voice_client.connected = False
+
+    with pytest.raises(discord.ClientException):
+        session.play("https://cdn.example/b")
+
+    # No live swap happened -- the broken connection never got a fake
+    # "success" playing a queued track nobody can hear.
+    assert voice_client.live_swaps == []
 
 
 class _RealisticFFmpegLikeSource(discord.AudioSource):

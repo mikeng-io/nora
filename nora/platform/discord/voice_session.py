@@ -89,7 +89,19 @@ class DiscordVoiceSession:
     def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
         raw = self._audio_source_factory(stream_url)
         mixed: discord.AudioSource = raw
-        already_playing = self._voice_client.is_playing()
+        # `is_playing()` reflects the `AudioPlayer` THREAD's own state, not
+        # the voice connection -- after a voice websocket drop whose
+        # reconnect stalls or fails, that thread's last-known state can
+        # stay "playing" indefinitely with no live connection behind it
+        # (found live 2026-08-24: "the music is NOT playing again after it
+        # reply start play" -- a live `.source` swap onto a dead connection
+        # silently produced no audio while the tool call reported success).
+        # Gating on `is_connected()` too means a stale "playing" flag with
+        # no real connection falls through to `voice_client.play()` below,
+        # which -- like real discord.py -- raises rather than doing nothing,
+        # so the failure is visible to the caller instead of masquerading
+        # as success.
+        already_playing = self._voice_client.is_playing() and self._voice_client.is_connected()
         current_raw = self._current_raw
         # Captured BEFORE `self._current_source` is reassigned below, and
         # handed to `CrossfadeSource` as `keep_alive` -- see that class's
