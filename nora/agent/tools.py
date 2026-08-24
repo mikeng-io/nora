@@ -3370,18 +3370,22 @@ def build_tool_specs(
         _record(metrics, "weather", "ok", forecast=forecast, warned=bool(obs.warnings))
         return _weather_result(obs)
 
-    def _music_sender_id() -> str | None:
-        """The tagger's raw Discord id — `MusicToolBridge.play`'s
-        `sender_id`, which must resolve a REAL guild member, never a name.
+    def _music_sender_ids() -> frozenset[str]:
+        """The tagger's raw Discord ids — `MusicToolBridge.play`'s
+        `sender_ids`, which must resolve a REAL guild member, never a name.
         `persons.platform_ids` is the reverse of the resolution `room.tagger`
-        already went through once; picking any one id a person presents on
-        this platform is fine here the same way it is fine for `send_to`'s
-        mention resolution — nobody plays music from two Discord accounts in
-        two different voice channels at once."""
+        already went through once; the FULL set is handed to the bridge
+        rather than an arbitrary pick, because identity.toml can map one
+        person to more than one Discord account (found live 2026-08-24: a
+        real person with two) — only the bridge, which can see who is
+        actually sitting in a voice channel right now, is in a position to
+        say which one is real for this request, the same
+        intersect-against-what-the-platform-asserts principle
+        `nora.agent.outbound` already uses for mention resolution."""
         tagger = room.tagger
         if tagger is None:
-            return None
-        return next(iter(persons.platform_ids(room.platform, tagger.person_id)), None)
+            return frozenset()
+        return persons.platform_ids(room.platform, tagger.person_id)
 
     async def play_music(query: str) -> dict:
         """Play something in the Discord voice channel you're already in.
@@ -3422,13 +3426,13 @@ def build_tool_specs(
         if music is None:
             _record(metrics, "play_music", "unavailable")
             return dict(_MUSIC_OFF)
-        sender_id = _music_sender_id()
-        if sender_id is None:
+        sender_ids = _music_sender_ids()
+        if not sender_ids:
             _record(metrics, "play_music", "unavailable")
             return dict(_MUSIC_NO_TAGGER)
         try:
             outcome = await music.play(
-                conversation_id=conversation_id, sender_id=sender_id, query_or_url=query,
+                conversation_id=conversation_id, sender_ids=sender_ids, query_or_url=query,
             )
         except Exception:  # a tool never raises into the loop (R-5)
             log.exception("play_music failed")

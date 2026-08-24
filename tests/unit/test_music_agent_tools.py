@@ -33,9 +33,9 @@ class _FakeBridge:
         self.status_outcome = status_outcome
         self.play_calls: list[dict] = []
 
-    async def play(self, *, conversation_id, sender_id, query_or_url):
+    async def play(self, *, conversation_id, sender_ids, query_or_url):
         self.play_calls.append(
-            {"conversation_id": conversation_id, "sender_id": sender_id,
+            {"conversation_id": conversation_id, "sender_ids": sender_ids,
              "query_or_url": query_or_url},
         )
         return self.play_outcome
@@ -111,8 +111,30 @@ async def test_play_music_passes_the_taggers_discord_id_and_the_query():
     out = await tools["play_music"](query="apt")
     assert out == {"status": "ok", "title": "APT.", "url": "https://y/1"}
     assert bridge.play_calls == [
-        {"conversation_id": "g1/c1", "sender_id": "9999", "query_or_url": "apt"},
+        {"conversation_id": "g1/c1", "sender_ids": frozenset({"9999"}), "query_or_url": "apt"},
     ]
+
+
+async def test_play_music_passes_every_discord_id_the_person_has_not_just_one():
+    """Found live 2026-08-24: a real person mapped to TWO Discord accounts in
+    identity.toml. Picking an arbitrary one of the two here (rather than
+    handing the bridge the full set) had them sitting in a voice channel on
+    one account while the tool checked the other, and refused them although
+    they were plainly already in the channel -- only `MusicToolBridge`,
+    which can see who is actually in a voice channel right now, is in a
+    position to pick the right one."""
+    bridge = _FakeBridge(
+        play_outcome=MusicToolOutcome(status="ok", title="APT.", url="https://y/1"),
+    )
+    tools = _specs(
+        platform="discord", music=bridge, tagger=_MILES,
+        persons=_FakePersons(frozenset({"9999", "8888"})),
+    )
+
+    await tools["play_music"](query="apt")
+
+    [call] = bridge.play_calls
+    assert call["sender_ids"] == frozenset({"9999", "8888"})
 
 
 async def test_skip_music_reports_nothing_found():

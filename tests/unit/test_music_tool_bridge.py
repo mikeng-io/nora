@@ -75,7 +75,7 @@ async def test_play_with_no_live_discord_connection_is_unavailable() -> None:
     bridge = _bridge(_StubManager(), adapter=_DisconnectedAdapter())
 
     outcome = await bridge.play(
-        conversation_id="1234/5678", sender_id="9999", query_or_url="apt",
+        conversation_id="1234/5678", sender_ids=frozenset({"9999"}), query_or_url="apt",
     )
 
     assert outcome.status == "unavailable"
