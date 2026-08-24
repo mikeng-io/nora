@@ -160,7 +160,23 @@ class DiscordVoiceSession:
         self._voice_client.stop()
 
     async def disconnect(self) -> None:
-        await self._voice_client.disconnect()
+        """`force=True`, not discord.py's default: `VoiceConnectionState.
+        disconnect(force=False, ...)` returns EARLY, before ever calling
+        `voice_client.cleanup()`, whenever the underlying voice websocket
+        is already not connected (Discord's own voice server can drop an
+        idle connection silently, independent of anything this class
+        does). `cleanup()` is what unregisters `guild.voice_client` --
+        skip it and the guild is left permanently "already connected" in
+        discord.py's own bookkeeping, so the next real `channel.connect()`
+        raises `ClientException` forever, with no live player or audio to
+        show for it (found live 2026-08-24: an idle-timeout disconnect
+        silently hit this path, and a later `/music play`-equivalent could
+        not rejoin for over an hour until the process restarted). This
+        method is only ever called because NORA decided the session is
+        over (idle timeout, `/music stop`, an emptied channel) -- local
+        state must end up clean regardless of whether the remote side
+        already agrees, which is exactly what `force=True` guarantees."""
+        await self._voice_client.disconnect(force=True)
 
     def _cancel_crossfade_timer(self) -> None:
         if self._crossfade_timer is not None:

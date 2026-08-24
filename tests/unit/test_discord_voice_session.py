@@ -53,6 +53,7 @@ class _FakeVoiceClient:
         self.paused = 0
         self.resumed = 0
         self.disconnected = 0
+        self.disconnect_force_calls: list[bool] = []
         self._playing = False
         self._after = None
         self._source: object = None
@@ -92,6 +93,7 @@ class _FakeVoiceClient:
 
     async def disconnect(self, *, force: bool = False) -> None:
         self.disconnected += 1
+        self.disconnect_force_calls.append(force)
 
 
 async def test_play_builds_a_source_from_the_factory_and_hands_it_to_the_voice_client() -> None:
@@ -255,7 +257,19 @@ async def test_an_exception_from_on_finished_is_logged_not_swallowed() -> None:
     assert mock_log.exception.called
 
 
-async def test_disconnect_delegates_to_the_voice_client() -> None:
+async def test_disconnect_delegates_to_the_voice_client_with_force_true() -> None:
+    """`force=True`, not discord.py's default `False`: real
+    `VoiceConnectionState.disconnect(force=False, ...)` returns EARLY,
+    skipping `voice_client.cleanup()`, whenever the underlying voice
+    websocket is already not connected -- Discord's own voice server can
+    drop an idle connection silently, independent of anything this class
+    does. Skipping cleanup leaves `guild.voice_client` registered forever,
+    so the next real `channel.connect()` for that guild raises
+    `ClientException('Already connected to a voice channel.')` with no
+    live player or audio to show for it (found live 2026-08-24: an
+    idle-timeout disconnect hit exactly this path, and a later play
+    request could not rejoin the guild for over an hour until the process
+    restarted)."""
     voice_client = _FakeVoiceClient()
     session = DiscordVoiceSession(
         voice_client, loop=asyncio.get_running_loop(),
@@ -265,6 +279,7 @@ async def test_disconnect_delegates_to_the_voice_client() -> None:
     await session.disconnect()
 
     assert voice_client.disconnected == 1
+    assert voice_client.disconnect_force_calls == [True]
 
 
 async def test_set_volume_before_anything_plays_is_applied_to_the_first_track() -> None:
