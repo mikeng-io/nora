@@ -42,15 +42,21 @@ class _DisconnectedAdapter:
 
 class _StubManager:
     def __init__(
-        self, *, skip_result=None, stop_status=None, status_result=None,
+        self, *, skip_result=None, stop_status=None, status_result=None, top_result=None,
     ) -> None:
         self._skip_result = skip_result
         self._stop_status = stop_status
         self._status_result = status_result
+        self._top_result = top_result
         self.stopped_guilds: list[str] = []
+        self.top_calls: list[tuple[str, int]] = []
 
     async def skip(self, guild_id: str):
         return self._skip_result
+
+    async def top(self, guild_id: str, position: int):
+        self.top_calls.append((guild_id, position))
+        return self._top_result
 
     async def status(self, guild_id: str):
         return self._status_result if self._stop_status is None else self._stop_status
@@ -96,6 +102,25 @@ async def test_skip_reports_the_skipped_track() -> None:
 
     assert outcome.status == "ok"
     assert outcome.title == "Track A"
+
+
+async def test_top_with_nothing_queued_at_that_position_is_nothing_found() -> None:
+    bridge = _bridge(_StubManager(top_result=None))
+
+    outcome = await bridge.top(conversation_id="1234/5678", position=3)
+
+    assert outcome.status == "nothing_found"
+
+
+async def test_top_reports_the_moved_track_and_forwards_the_position() -> None:
+    manager = _StubManager(top_result=_track("Track C"))
+    bridge = _bridge(manager)
+
+    outcome = await bridge.top(conversation_id="1234/5678", position=3)
+
+    assert outcome.status == "ok"
+    assert outcome.title == "Track C"
+    assert manager.top_calls == [("1234", 3)]
 
 
 async def test_stop_with_nothing_playing_is_nothing_found_and_never_calls_stop() -> None:

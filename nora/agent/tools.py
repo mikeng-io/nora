@@ -528,6 +528,12 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                               "playlist link"),
     "skip_music": NativeTool(2, "skip the track currently playing in this Discord "
                               "voice channel"),
+    # `position` is the same 1-based number `/music queue` already displays
+    # next to each track — never guess it, only use one someone actually
+    # named or that a prior `music_status`/queue listing in this
+    # conversation showed.
+    "top_music": NativeTool(2, "move a track already in the Discord voice channel's "
+                             "queue to play next, by its position number"),
     "stop_music": NativeTool(2, "stop the music and leave the Discord voice channel"),
     # `read_only`/`cacheable`, like `weather`: a live status read that acts on
     # nothing and discloses nothing per-person.
@@ -3466,6 +3472,40 @@ def build_tool_specs(
         _record(metrics, "skip_music", outcome.status)
         return _music_result(outcome)
 
+    async def top_music(position: int) -> dict:
+        """Move a track already queued in this Discord voice channel to
+        play next.
+
+        `position` is the number `/music queue` (or a prior `music_status`
+        mention of the queue in this conversation) shows next to the track —
+        1 is whatever already plays next, so there's rarely a reason to call
+        this with `1`. Only use a number someone actually named or that you
+        can see was shown; never guess one.
+
+        `status`: `ok` (`title` names the track now playing next),
+        `nothing_found` (nothing is queued at that position), or
+        `unavailable` (music isn't available here).
+
+        Args:
+            position: the queue position to move to the front, 1-based.
+        """
+        if room.platform != "discord":
+            _record(metrics, "top_music", "unavailable")
+            return dict(_MUSIC_NOT_DISCORD)
+        if music is None:
+            _record(metrics, "top_music", "unavailable")
+            return dict(_MUSIC_OFF)
+        try:
+            outcome = await music.top(conversation_id=conversation_id, position=position)
+        except Exception:  # a tool never raises into the loop (R-5)
+            log.exception("top_music failed")
+            outcome = None
+        if outcome is None:
+            _record(metrics, "top_music", "unavailable")
+            return dict(_MUSIC_OFF)
+        _record(metrics, "top_music", outcome.status)
+        return _music_result(outcome)
+
     async def stop_music() -> dict:
         """Stop the music and leave the Discord voice channel.
 
@@ -4956,6 +4996,7 @@ def build_tool_specs(
         _spec("weather", weather),
         _spec("play_music", play_music),
         _spec("skip_music", skip_music),
+        _spec("top_music", top_music),
         _spec("stop_music", stop_music),
         _spec("music_status", music_status),
         _spec("remind", remind),

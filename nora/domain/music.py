@@ -76,6 +76,22 @@ class MusicQueueStore(Protocol):
         many rows were removed."""
         ...
 
+    async def move_to_front(self, guild_id: str, *, position: int) -> QueuedTrack | None:
+        """`/music top` / the `top_music` agent tool: moves the `position`-th
+        queued track (1-based, matching what `/music queue` displays — 1 is
+        the track that plays next) to the front of `guild_id`'s queue, ahead
+        of everything else. `None` if `position` is out of range (including
+        an empty queue); the already-at-the-front track for `position == 1`
+        is a no-op that still returns it.
+
+        An implementation must reassign every OTHER track's position too
+        (not just the target's), atomically, so `uq_music_queue_guild_position`
+        is never transiently violated by a caller landing between two
+        separate updates — `queue_for` immediately after this call must
+        reflect the target as the new lowest-`position` row and every other
+        track's relative order otherwise unchanged."""
+        ...
+
     async def aclose(self) -> None: ...
 
 

@@ -71,7 +71,7 @@ def test_the_registry_exposes_every_declared_tool():
         "web_search", "web_fetch",
         "weather",
         # Discord-only music (design/discord-music/07-agent-tool.md).
-        "play_music", "skip_music", "stop_music", "music_status",
+        "play_music", "skip_music", "top_music", "stop_music", "music_status",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "create_event", "update_event", "rsvp_event", "cancel_event",
@@ -150,7 +150,7 @@ def test_budgets_match_todays_table():
         # Discord-only music (design/discord-music/07-agent-tool.md), all 2
         # like `weather`: one call is the ordinary shape for each verb, a
         # second covers "no, the other one" after a bad match.
-        "play_music": 2, "skip_music": 2, "stop_music": 2, "music_status": 2,
+        "play_music": 2, "skip_music": 2, "top_music": 2, "stop_music": 2, "music_status": 2,
         # The three reminder verbs (DEC-70), all 2 and sized by the
         # CONVERSATION rather than by cost: none leaves the host or the
         # database, so a call is one model round trip, and one message can
@@ -534,9 +534,9 @@ ACT_VERBS = frozenset({
     # verb that forgets the flag fails the classification test by name; these
     # two are acts and belong here.
     "note_create", "note_update",
-    # Discord-only music (design/discord-music/07-agent-tool.md) — three of
-    # the four verbs mutate the voice session; `music_status` is the read.
-    "play_music", "skip_music", "stop_music",
+    # Discord-only music (design/discord-music/07-agent-tool.md) — every verb
+    # but `music_status` mutates the voice session or its queue.
+    "play_music", "skip_music", "top_music", "stop_music",
 })
 
 # The full read-only set as declared today. Pinned so that ADDING a tool is a

@@ -356,9 +356,9 @@ RULE_TESTS = {
     # the_pending_disconnect` in the same file. Renumbered from R-58 on the
     # same merge as R-59, for the same collision.
     "R-60": "test_r60_a_voice_channel_emptied_of_humans_disconnects_immediately",
-    # R-61 (design/discord-music/07-agent-tool.md): the four Nora agent music
-    # tools (play_music/skip_music/stop_music/music_status) are Discord-only
-    # and never guess an identity to act on. Off Discord, with no
+    # R-61 (design/discord-music/07-agent-tool.md): Nora's agent music tools
+    # (play_music/skip_music/top_music/stop_music/music_status) are
+    # Discord-only and never guess an identity to act on. Off Discord, with no
     # `MusicToolBridge` wired, or with a tagger identity.toml maps to no
     # Discord account at all, every one answers `unavailable` before ever
     # touching `MusicPlayerManager` — R-59's own "requester must be in a

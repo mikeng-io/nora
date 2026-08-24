@@ -33,6 +33,9 @@ _UNAVAILABLE_NOT_IN_VOICE = MusicToolOutcome(
     status="unavailable", note="You need to be in a voice channel first.",
 )
 _NOTHING_PLAYING = MusicToolOutcome(status="nothing_found", note="Nothing is playing.")
+_NOTHING_QUEUED_AT_POSITION = MusicToolOutcome(
+    status="nothing_found", note="Nothing queued at that position.",
+)
 
 
 class DiscordMusicToolBridge:
@@ -146,6 +149,12 @@ class DiscordMusicToolBridge:
         if skipped is None:
             return _NOTHING_PLAYING
         return MusicToolOutcome(status="ok", title=skipped.title, url=skipped.url)
+
+    async def top(self, *, conversation_id: str, position: int) -> MusicToolOutcome:
+        moved = await self._manager.top(self._guild_id(conversation_id), position)
+        if moved is None:
+            return _NOTHING_QUEUED_AT_POSITION
+        return MusicToolOutcome(status="ok", title=moved.title, url=moved.url)
 
     async def stop(self, *, conversation_id: str) -> MusicToolOutcome:
         guild_id = self._guild_id(conversation_id)

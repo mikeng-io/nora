@@ -98,6 +98,10 @@ _TRACK_B = ResolvedTrack(
     title="Track B", stream_url="https://cdn.example/b", duration_seconds=180,
     source="youtube", source_id="b", locator="locator-b",
 )
+_TRACK_C = ResolvedTrack(
+    title="Track C", stream_url="https://cdn.example/c", duration_seconds=210,
+    source="youtube", source_id="c", locator="locator-c",
+)
 
 
 def _player(
@@ -232,6 +236,36 @@ async def test_on_track_finished_advances_without_calling_voice_stop() -> None:
     assert voice.stopped == 0
     status = await player.status()
     assert status.now_playing.title == "Track B"
+
+
+async def test_top_moves_a_later_queued_track_to_play_next() -> None:
+    player, voice, _session = _player(
+        {"track a": _TRACK_A, "track b": _TRACK_B, "track c": _TRACK_C},
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
+    await player.play(query_or_url="track c", requested_by="miles", added_at=T0)
+
+    moved = await player.top(2)
+
+    assert moved is not None
+    assert moved.title == "Track C"
+    status = await player.status()
+    assert [t.title for t in status.queue] == ["Track C", "Track B"]
+    # Reordering the upcoming queue must not touch what's already playing.
+    assert status.now_playing.title == "Track A"
+    assert voice.stopped == 0
+
+
+async def test_top_out_of_range_returns_none_and_leaves_the_queue_untouched() -> None:
+    player, _voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
+
+    assert await player.top(0) is None
+    assert await player.top(5) is None
+    status = await player.status()
+    assert [t.title for t in status.queue] == ["Track B"]
 
 
 async def test_pause_returns_false_when_nothing_is_playing() -> None:

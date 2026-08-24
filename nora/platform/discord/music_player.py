@@ -231,6 +231,18 @@ class MusicPlayer:
         await self._voice.disconnect()
         await self._session.delete(self._guild_id)
 
+    async def top(self, position: int) -> QueuedTrack | None:
+        """`/music top` / the `top_music` agent tool: moves the `position`-th
+        queued track (1-based, matching `/music queue`'s own display) to the
+        front so it plays next. `None` for an out-of-range `position`
+        (including an empty queue) — never guesses which track was meant.
+
+        Never touches `self._now_playing` or `self._voice` — reordering the
+        UPCOMING queue doesn't affect what's currently playing, the same way
+        `skip()` leaves the rest of the queue's order alone until
+        `_advance()` runs."""
+        return await self._queue.move_to_front(self._guild_id, position=position)
+
     async def status(self) -> PlayerStatus:
         queue = await self._queue.queue_for(self._guild_id)
         return PlayerStatus(now_playing=self._now_playing, paused=self._paused, queue=queue)
