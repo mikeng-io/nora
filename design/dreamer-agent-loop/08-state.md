@@ -350,7 +350,11 @@ Two riders, both load-bearing:
 
 ## 12. What does not change
 
-- **No write tool, ever.** The model proposes; code disposes. Every mutation
+- **No write tool, ever** — with one narrow, later-drawn exception: a verb that
+  **enqueues for delivery** is not a write to a tier and is permitted, because
+  the delivery path re-applies every guard a reply passes
+  ([27-note-dreamer.md](27-note-dreamer.md) §3). Nothing else. The model
+  proposes; code disposes. Every mutation
   leaves as a schema-validated proposal through a sink. A write verb pointed at
   the database is an act verb, and it would also defeat the screen — if the
   model writes directly there is no sink left to screen at.

@@ -44,7 +44,7 @@ new messages ──▶ [watermark: lag / quiet / age]
                       │
                       ▼
        ┌──── model ────────────────────────────────┐
-       │  sees:  the batch, WITH speaker + time     │
+       │  sees:  the batch as `id: body` — NO speaker│
        │  tools: search own lexicon · web · memory  │
        │  ends:  terminal call carrying candidates  │
        └────────────────────────────────────────────┘
@@ -107,7 +107,7 @@ on cost.
 new messages ──▶ [watermark]                    ┌── candidates pending? ──┐
        │  A: EXTRACT (scope, cheap)             │  B: ADJUDICATE (workspace)
        ▼                                        ▼
-  batch WITH speaker/time                  pending claims
+  batch as `id: body`, no speaker          pending claims
        │                                        + standing facts for them
        ▼                                        │
   model: name the claims                        ▼
@@ -356,7 +356,7 @@ escaping is necessary and not obviously sufficient.
 | **shape** | cursor | cursor, then **work queue** | cursor **and** content-addressed | per-turn |
 | **selector** | the batch | the batch, then a ranked cap | **SQL, zero tokens** | none — one turn |
 | **speaker in the prompt** | ✅ today | ❌ today | n/a — her own turn | n/a — her own turn |
-| **can supersede itself** | ❌ by design | ✅ built | ✅ built (CAS) | ✅ by rewriting in place |
+| **can supersede itself** | ❌ today — **D19 reverses this** ([16](16-open-items.md) §7) | ✅ built | ✅ built (CAS) | ✅ by rewriting in place |
 | **no-progress breaker** | the cursor | the negative cache | cursor / **strike** | none needed — one turn in, one out |
 | **live?** | ✅ producing, wrongly | ❌ flag off, never completed | ⚠️ live, untested | ❌ capture built, fold unbuilt |
 

@@ -494,7 +494,7 @@ trading that for. Revisit only if the table crosses a million rows.
 |---|---|
 | `premises` | **the adjudicator**, when a verdict is deduced from standing facts rather than a page — it already writes `fact_premise` |
 | `observation` | **the promotion pass** ([25](25-knowledge-pipeline.md) §4): an edge recurring across N distinct asserters with no source is warranted by observation, not by a page |
-| `stated` | **the operator**, and only the operator — a claim nobody derived and nobody sourced is a decision someone made, and the tier should not manufacture one |
+| `stated` | **a person, deliberately** — the operator through config, or a member correcting Nora in the room ([30](30-review-response.md) §2). A claim nobody derived and nobody sourced is a decision *somebody made*; what the tier must never do is manufacture one itself |
 
 **The CHECK relaxation (§6.5) — decided: relax it.** `object_literal` becomes
 `NOT NULL` and `object_entity_id` an additive nullable pointer. Three reasons
