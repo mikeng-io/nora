@@ -124,6 +124,7 @@ such rather than dressed as decisions.
 | **D25** | decision | **A member contradicting a standing row marks it `disputed` immediately, and it stops rendering.** The correction loop is the primary trust loop, and it is what mints `stated` | [30](30-review-response.md) §2 |
 | **D26** | decision | **A sixth pass: revalidation.** `valid_to` was schema-deep and pipeline-absent — the tier where the world changes fastest had no time-driven lifecycle | [30](30-review-response.md) §3 |
 | **D27** | correction | **Validity outranks warrant**, and the warrant ranking is an adjudication *prior*, not a truth rule | [30](30-review-response.md) §3.2–3.3 |
+| **D28** | decision | **The language tier builds ON the knowledge substrate** — shared entity identity and one supersession pattern; it keeps its own store, lifecycle and scoring. Not a fold-in, not a peer | [30](30-review-response.md) §8, [28](28-language-tier.md) §5.2 |
 
 **D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
 the second half is the load-bearing part: an extractor that suppresses claims it

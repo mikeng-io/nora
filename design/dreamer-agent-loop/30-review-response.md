@@ -68,6 +68,42 @@ pranks.
   wrong, I haven't confirmed it yet."* Silence beats a wrong answer; a marked
   dispute beats silence ([19](19-between-tiers.md) §4).
 
+### 2.1.1 The loop, step by step, on the rows that are live right now
+
+```
+1  RENDER      "big walk — 群內約定俗成嘅散步活動，可能係夜晚出去行街"
+2  CONTRADICT  a member: "no, big walk is a video game"
+3  RECOGNISE   a member contradicting a claim Nora just rendered
+4  SUPPRESS    row -> disputed.  IT STOPS RENDERING THIS TURN.
+5  PROPOSE     candidate: warrant = stated, asserter = that member
+6  ADJUDICATE  high priority, ahead of recurrence. Tools: search the web,
+               read the page -> House House, August 2026
+7  SUPERSEDE   old row gets superseded_at / superseded_by -> the new gloss
+8  RENDER      "big walk — the video game by House House"
+9  COUNT       a counter moved at every step above
+```
+
+**Steps 4 and 6 are the design.** Step 4 is **synchronous, on the tag path, and
+a suppression only** — propose/dispose is untouched, because *stopping* a wrong
+answer requires no judgement about what is true. Step 6 is **the Dreamer, with
+tools, on its own clock**.
+
+That split is what makes it safe. If step 4 rewrote, the tag path would be
+deciding truth under social pressure — precisely what this bundle refuses
+([26](26-standing.md) §1's impartiality argument, one path over).
+
+**Step 9 is not bookkeeping.** This bundle's entire forensic case is that this
+loop has **never closed once** in production. A counter at each step is how
+anyone knows it did — and [09](09-measurement.md)'s rule says a change whose
+effect cannot be read back is not done.
+
+**Why this is the acceptance test for everything else.** Every other mechanism
+in these 31 nodes — adjudication, warrant precedence, Standing folds, note
+closing conditions, supersession in all four tiers — is a variation on one loop:
+*the system believes something, someone says otherwise, the belief changes, and
+it is visible.* The two wrong lexeme rows are the fixture; nothing better will
+ever be available.
+
 ### 2.2 This resolves who mints `stated`
 
 `stated` is **a person deciding, deliberately** — through operator config, *or*
@@ -200,14 +236,38 @@ deliberately, one level up.
 
 ## 8. What needs the operator
 
-**OPERATOR-1 — does the language tier fold into the knowledge tier?**
-[20](20-knowledge-tier.md) §3 argues a lexeme **is** a knowledge edge with
-`warrant = observation` — *"the same relation with a different warrant"* — and
-then [28](28-language-tier.md) keeps it in separate storage with its own
-supersession and its own lifecycle. **Both cannot be right.** Folding means the
-language tier dissolves into a `kind`, keeping only its scoring function; not
-folding means §3's argument is rhetoric. This changes the tier count and is not
-mine to decide.
+**OPERATOR-1 — RESOLVED (operator, 2026-08-24): the language tier does NOT
+fold in. It builds ON TOP of the knowledge substrate.**
+
+A third option, and better than either the review offered. The reviewer's
+objection was never *two stores* — it was **two supersession mechanisms for what
+[20](20-knowledge-tier.md) §3 proved is one relation**. Building on top removes
+the duplication without collapsing the tier.
+
+| | fold in | separate (today) | **on top — decided** |
+|---|---|---|---|
+| entity identity | shared | **duplicated** | **shared** — a lexeme's `canonical_form` resolves to `fact_entity` |
+| supersession | shared | **duplicated** | **one shared pattern**, one implementation |
+| scoring + decay | **lost** | kept | **kept** — genuinely the language tier's own |
+| render | merged | own block | own block |
+
+**What it buys, in the live failure:** `Big Walk` and `big walk` resolve to **one
+entity**, so they stop being two rows that cannot see each other — which is the
+precondition for either ever superseding the other. And once a lexeme points at
+an entity, the knowledge tier's edges about that entity become **evidence about
+the gloss**: `Big Walk │ made_by │ House House` is what makes *"a walking
+activity, maybe at night"* checkable rather than merely doubted.
+
+**What stays the language tier's:** a gloss is a **rendering** concern with a
+`live → fading → stale` lifecycle that facts do not have, and the
+occurrence × log1p(speakers) score that [28](28-language-tier.md) §4 records as
+invented there first.
+
+> **Consumer of the substrate — not a peer store, and not a `kind`.**
+
+[28](28-language-tier.md) is amended accordingly: it keeps its own storage and
+its own lifecycle, and gives up its own entity identity and its own supersession
+implementation.
 
 **OPERATOR-2 — build order: the correction loop before passes 3–5?**
 The architecture review's single insistence: close the loop end-to-end on the
