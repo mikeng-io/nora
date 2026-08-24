@@ -42,7 +42,7 @@ composition root (`nora.app`, which is allowed to import everything).
 
 Everything the bridge needs beyond what `MusicPlayerManager` already
 does is a single thing: resolve a Discord guild member's CURRENT voice
-channel from `(conversation_id, sender_id)` alone, since
+channel from `(conversation_id, sender_ids)` alone, since
 `NormalizedMessage`/`TagContext` never carry live Discord state (a Signal
 message and a Discord message are both flattened to the same shape by
 the time a tool sees them). That needs a live `discord.Client`, which
@@ -51,6 +51,16 @@ the time a tool sees them). That needs a live `discord.Client`, which
 `listen()` already builds, read through a new `current_client()` accessor
 (`None` whenever there's no live connection attempt right now, same
 "wiring gap = unavailable" discipline as everywhere else).
+
+**`sender_ids` is a set, not one id** (found live 2026-08-24): identity.toml
+can map one person to more than one Discord account, and the tool-layer
+side (`nora.agent.tools._music_sender_ids`) has no way to know which one
+is real for this request — only the bridge, which can see who is
+ACTUALLY sitting in a voice channel right now, is in a position to say.
+`_member_voice_channel` tries every candidate id against the guild's
+member list rather than accepting an arbitrary pick, the same
+intersect-against-what-the-platform-asserts principle
+`nora.agent.outbound` already uses for resolving a mention recipient.
 
 The bridge reuses `_connect_factory` (`music_commands.py`) VERBATIM for
 actually joining a voice channel, and calls the exact same

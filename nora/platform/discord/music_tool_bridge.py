@@ -51,26 +51,43 @@ class DiscordMusicToolBridge:
         return guild_id
 
     def _member_voice_channel(
-        self, conversation_id: str, sender_id: str,
+        self, conversation_id: str, sender_ids: frozenset[str],
     ) -> discord.VoiceChannel | None:
         """`None` covers every reason a fresh session can't start: no live
-        Discord connection right now, the guild/member isn't resolvable
-        from the cache, or the member simply isn't in a voice channel —
-        `MusicPlayerManager.play`'s own rejection (a `None` `connect`)
-        already treats all of these identically, the same way the slash
-        command's `_requester_voice_channel` does."""
+        Discord connection right now, the guild isn't resolvable from the
+        cache, or none of `sender_ids` is both a real member AND in a voice
+        channel — `MusicPlayerManager.play`'s own rejection (a `None`
+        `connect`) already treats all of these identically, the same way
+        the slash command's `_requester_voice_channel` does.
+
+        Tries every candidate id, not just one: identity.toml can map one
+        person to more than one Discord account (`MusicToolBridge`'s own
+        docstring), and only the platform itself — who is ACTUALLY sitting
+        in a voice channel right now — can say which one is real for this
+        request. Found live 2026-08-24: picking an arbitrary one of a
+        person's two mapped accounts had them sitting in a channel on one
+        account while this looked up the other, and got told to join a
+        channel they were already in."""
         client = self._adapter.current_client()
         if client is None:
             return None
         try:
             guild = client.get_guild(int(self._guild_id(conversation_id)))
-            member = guild.get_member(int(sender_id)) if guild is not None else None
         except ValueError:
             return None  # conversation_id wasn't Discord-shaped at all
-        if member is None or member.voice is None:
+        if guild is None:
             return None
-        channel = member.voice.channel
-        return channel if isinstance(channel, discord.VoiceChannel) else None
+        for sender_id in sender_ids:
+            try:
+                member = guild.get_member(int(sender_id))
+            except ValueError:
+                continue
+            if member is None or member.voice is None:
+                continue
+            channel = member.voice.channel
+            if isinstance(channel, discord.VoiceChannel):
+                return channel
+        return None
 
     def _notify(self, conversation_id: str):
         _guild_id, _, channel_id = conversation_id.partition("/")
@@ -89,13 +106,13 @@ class DiscordMusicToolBridge:
         return notify
 
     async def play(
-        self, *, conversation_id: str, sender_id: str, query_or_url: str,
+        self, *, conversation_id: str, sender_ids: frozenset[str], query_or_url: str,
     ) -> MusicToolOutcome:
         client = self._adapter.current_client()
         if client is None:
             return _UNAVAILABLE_DISCONNECTED
         guild_id = self._guild_id(conversation_id)
-        channel = self._member_voice_channel(conversation_id, sender_id)
+        channel = self._member_voice_channel(conversation_id, sender_ids)
         connect = (
             _connect_factory(
                 self._manager, guild_id, channel, crossfade_seconds=self._crossfade_seconds,
@@ -103,9 +120,14 @@ class DiscordMusicToolBridge:
             if channel is not None else None
         )
         _, _, notify_channel_id = conversation_id.partition("/")
+        # Attribution only (who gets credit for queuing the track) -- unlike
+        # the voice-channel lookup above, this doesn't need to be the
+        # platform-confirmed account, so an arbitrary member of the set is
+        # fine here.
+        requested_by = next(iter(sender_ids), "")
         try:
             outcome = await self._manager.play(
-                guild_id=guild_id, query_or_url=query_or_url, requested_by=sender_id,
+                guild_id=guild_id, query_or_url=query_or_url, requested_by=requested_by,
                 added_at=datetime.now(UTC), connect=connect, notify=self._notify(conversation_id),
                 voice_channel_id=str(channel.id) if channel is not None else None,
                 notify_channel_id=notify_channel_id or None,

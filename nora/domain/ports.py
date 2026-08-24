@@ -1705,14 +1705,24 @@ class MusicToolBridge(Protocol):
 
     Discord-only by construction, not by a platform check the CALLER has
     to remember: every method resolves `conversation_id` (a Discord tag's
-    own `"<guild_id>/<channel_id>"` shape) and `sender_id` to a live guild
+    own `"<guild_id>/<channel_id>"` shape) and `sender_ids` to a live guild
     member currently in a voice channel. On any other platform, a member
     not currently in ANY voice channel, or no live Discord connection
     right now, every method answers `unavailable` or `nothing_found` —
-    never guesses a channel, and never silently no-ops."""
+    never guesses a channel, and never silently no-ops.
+
+    `sender_ids` is a SET, not one id, for the reason `nora.persons.
+    Persons.platform_ids`'s own docstring gives: identity.toml may map one
+    person to more than one account on a platform (found live 2026-08-24 —
+    a real person with two Discord accounts), and choosing which one to
+    trust is not the caller's decision to make blind. `nora.agent.outbound`
+    resolves the same ambiguity by intersecting every candidate id against
+    the platform's own live roster; this port's equivalent is trying each
+    candidate against who the platform confirms is ACTUALLY in a voice
+    channel right now, never an arbitrary pick from the set."""
 
     async def play(
-        self, *, conversation_id: str, sender_id: str, query_or_url: str,
+        self, *, conversation_id: str, sender_ids: frozenset[str], query_or_url: str,
     ) -> MusicToolOutcome: ...
 
     async def skip(self, *, conversation_id: str) -> MusicToolOutcome: ...
