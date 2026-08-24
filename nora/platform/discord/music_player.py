@@ -118,7 +118,16 @@ class MusicPlayer:
         ]
         if self._now_playing is None:
             await self._advance()
-            return PlayOutcome(status="playing", track=queued[0], queued_count=len(queued))
+            # NOT `queued[0]`: `_advance()` pops from the FRONT of the
+            # persisted queue, which is `queued[0]` only when the queue was
+            # empty before this call. A guild carrying leftover tracks from
+            # an earlier session (e.g. a boot-time-discarded session whose
+            # queue wasn't drained) would otherwise have this claim the
+            # just-resolved track is playing while a stale one actually
+            # started (found live 2026-08-24: "play apt" reported APT
+            # while an orphaned K-pop queue entry played instead).
+            # `self._now_playing` is what `_advance()` actually started.
+            return PlayOutcome(status="playing", track=self._now_playing, queued_count=len(queued))
         return PlayOutcome(status="queued", track=queued[0], queued_count=len(queued))
 
     async def skip(self) -> QueuedTrack | None:
