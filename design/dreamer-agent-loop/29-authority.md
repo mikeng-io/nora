@@ -61,6 +61,37 @@ That is why *facts beat memory* is false as a general rule and true wherever
 both actually speak: they rarely both speak, and where they do, one of them is
 carrying evidence.
 
+### 2.0 The worked example: same person, two statements, opposite homes
+
+> **"Grant replies late."**
+> **"Grant is in Japan until the 5th."**
+
+Both are *about Grant*, and **subject is not what separates them.**
+
+| | replies late | in Japan until the 5th |
+|---|---|---|
+| **transcript** | the messages that show it | 「我下星期五返嚟」 — a line someone typed |
+| **Honcho** | **yes** — `(observer, observed)`, a pattern inferred from behaviour, re-inferable, and it may stop being true without anyone saying so | **no** — a schedule is not a disposition |
+| **knowledge tier** | **no** — no warrant fits. Said ten times, `observation` still warrants *"the room says this"*, not *"this is so"* | **yes** — `grant │ away_until │ 2026-09-05`, warrant **`stated`**: he said it himself |
+
+**So a fact ABOUT a person is not a claim about their CHARACTER**, and that is
+the line the person-exclusion actually draws. [21](21-substrate-contract.md) §2
+already needed it: Grant is an **entity**, so an edge may point at him, while
+what he is **like** stays Honcho's.
+
+**Both failure modes are real, and they are opposites.** Put *in Japan until the
+5th* in Honcho and it sits **at the mercy of a process built to keep changing
+its mind** — the wedding-venue argument that opens
+[20-knowledge-tier.md](20-knowledge-tier.md). Put *replies late* in the
+knowledge tier and you have minted a **warranted claim about someone's
+character** out of a pattern nobody ever asserted.
+
+**The practical tell is ADR-0001's, unchanged:** *could she have read this in
+the buffer?* The travel date — yes, someone typed it, so the transcript holds it
+and the fact tier can warrant it. The reply-lateness — no; nobody ever said it,
+and it exists only as an inference across many messages. **That is precisely the
+work Honcho is for**, and why the two are not interchangeable.
+
 ### 2.1 Nothing writes structured claims into Honcho
 
 Worth stating because it removes a whole class of imagined conflict. Honcho is
