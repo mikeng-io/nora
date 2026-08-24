@@ -91,6 +91,10 @@ def _requester_voice_channel(interaction: discord.Interaction) -> discord.VoiceC
     return channel if isinstance(channel, discord.VoiceChannel) else None
 
 
+def _who(interaction: discord.Interaction) -> str:
+    return f"{interaction.user}({interaction.user.id})"
+
+
 def _reply_for(outcome: PlayOutcome) -> str:
     if outcome.status == "nothing_found" or outcome.track is None:
         return "Couldn't find that."
@@ -129,6 +133,7 @@ class _NowPlayingControls(discord.ui.View):
 
     @discord.ui.button(label="⏭ Skip", style=discord.ButtonStyle.secondary)
     async def skip(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        log.info("music control: skip clicked guild=%s user=%s", self._guild_id, _who(interaction))
         await self._manager.skip(self._guild_id)
         await interaction.response.edit_message(content=await self.render(), view=self)
 
@@ -138,8 +143,14 @@ class _NowPlayingControls(discord.ui.View):
     ) -> None:
         status = await self._manager.status(self._guild_id)
         if status is not None and status.paused:
+            log.info(
+                "music control: resume clicked guild=%s user=%s", self._guild_id, _who(interaction),
+            )
             await self._manager.resume(self._guild_id)
         else:
+            log.info(
+                "music control: pause clicked guild=%s user=%s", self._guild_id, _who(interaction),
+            )
             await self._manager.pause(self._guild_id)
         await interaction.response.edit_message(content=await self.render(), view=self)
 
@@ -147,6 +158,7 @@ class _NowPlayingControls(discord.ui.View):
     async def stop_playback(
         self, interaction: discord.Interaction, _button: discord.ui.Button,
     ) -> None:
+        log.info("music control: stop clicked guild=%s user=%s", self._guild_id, _who(interaction))
         await self._manager.stop(self._guild_id)
         self._disable_all()
         await interaction.response.edit_message(content="Stopped.", view=self)
@@ -252,6 +264,10 @@ class MusicCommands(app_commands.Group):
             )
             return
         guild_id = str(interaction.guild_id)
+        log.info(
+            "music command: /music play guild=%s user=%s query=%r",
+            guild_id, _who(interaction), query,
+        )
         channel = _requester_voice_channel(interaction)
         connect = (
             _connect_factory(
@@ -282,10 +298,15 @@ class MusicCommands(app_commands.Group):
             )
             return
         if outcome is None:
+            log.info(
+                "music command: /music play guild=%s -> rejected (not in a voice channel)",
+                guild_id,
+            )
             await interaction.followup.send(
                 "Join a voice channel first, then try again.", ephemeral=True,
             )
             return
+        log.info("music command: /music play guild=%s -> %s", guild_id, outcome.status)
         if outcome.status == "nothing_found":
             await interaction.followup.send(_reply_for(outcome))
             return
@@ -297,8 +318,10 @@ class MusicCommands(app_commands.Group):
     async def skip(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        guild_id = str(interaction.guild_id)
+        log.info("music command: /music skip guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
-        skipped = await self._manager.skip(str(interaction.guild_id))
+        skipped = await self._manager.skip(guild_id)
         if skipped is None:
             await interaction.followup.send("Nothing is playing.")
             return
@@ -328,24 +351,30 @@ class MusicCommands(app_commands.Group):
     async def pause(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        guild_id = str(interaction.guild_id)
+        log.info("music command: /music pause guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
-        ok = await self._manager.pause(str(interaction.guild_id))
+        ok = await self._manager.pause(guild_id)
         await interaction.followup.send("Paused." if ok else "Nothing is playing.")
 
     @app_commands.command(name="resume", description="Resume playback.")
     async def resume(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        guild_id = str(interaction.guild_id)
+        log.info("music command: /music resume guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
-        ok = await self._manager.resume(str(interaction.guild_id))
+        ok = await self._manager.resume(guild_id)
         await interaction.followup.send("Resumed." if ok else "Not paused.")
 
     @app_commands.command(name="stop", description="Stop playback, clear the queue, and leave.")
     async def stop(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
+        guild_id = str(interaction.guild_id)
+        log.info("music command: /music stop guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
-        await self._manager.stop(str(interaction.guild_id))
+        await self._manager.stop(guild_id)
         await interaction.followup.send("Stopped.")
 
     @app_commands.command(name="volume", description="Set playback volume (0-200%).")
@@ -355,12 +384,17 @@ class MusicCommands(app_commands.Group):
     ) -> None:
         if interaction.guild_id is None:
             return
+        guild_id = str(interaction.guild_id)
+        log.info(
+            "music command: /music volume guild=%s user=%s percent=%s",
+            guild_id, _who(interaction), percent,
+        )
         await interaction.response.defer()
         # Discord's own UI already enforces 0-200 via Range above; the
         # manager's own [0.0, 2.0] check is defense-in-depth, not the
         # primary guard -- kept because this class must not be the only
         # thing standing between a malformed value and MusicPlayer.
-        result = await self._manager.set_volume(str(interaction.guild_id), percent / 100.0)
+        result = await self._manager.set_volume(guild_id, percent / 100.0)
         if result is None:
             await interaction.followup.send("Nothing is playing.")
             return
@@ -403,7 +437,9 @@ async def register(
             return
         if any(not m.bot for m in left_channel.members):
             return  # still has humans
-        await manager.on_voice_channel_emptied(str(left_channel.guild.id))
+        guild_id = str(left_channel.guild.id)
+        log.info("music control: voice channel emptied, leaving guild=%s", guild_id)
+        await manager.on_voice_channel_emptied(guild_id)
 
     client.event(on_voice_state_update)
 
