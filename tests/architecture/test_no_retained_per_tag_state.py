@@ -35,6 +35,7 @@ from nora.domain.ports import (
     PlatformIdentity,
     SendResult,
 )
+from nora.domain.tag_trace import TagTrace
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
@@ -96,7 +97,7 @@ class _ReplyingRunner:
     `ReplyGuard` and `Deliverer` are genuinely constructed and exercised on every
     tag — not just allocated and immediately discarded unused."""
 
-    async def invoke(self, *, tools, guard, ctx, **_kwargs) -> tuple[str | None, str]:
+    async def invoke(self, *, tools, guard, ctx, **_kwargs) -> tuple[str | None, str, TagTrace]:
         tools_by_name = {t.tool_name: t for t in tools}
         args = {"text": "ok"}
         if guard.evaluate("send_reply", args) is None:
@@ -104,10 +105,16 @@ class _ReplyingRunner:
             if hasattr(result, "__await__"):
                 await result
             guard.record("send_reply")
-        # `(stop_reason, final_text)` since DEC-93. The empty text is the point:
-        # this double SENDS through the tool, so there is no un-routed prose to
-        # recover and the recovery path must stay untaken.
-        return "end_turn", ""
+        # `(stop_reason, final_text, trace)` since DEC-93/Task 4. The empty
+        # text is the point: this double SENDS through the tool, so there is
+        # no un-routed prose to recover and the recovery path must stay
+        # untaken. `trace` is blank — this test is about `ReplyGuard`
+        # lifecycle, not reasoning continuity.
+        trace = TagTrace(
+            tag_id=ctx.tag_id, conversation_id=ctx.message.conversation_id,
+            messages=(), transcript=(), outcome="send_reply", created_at=0,
+        )
+        return "end_turn", "", trace
 
 
 def _build_pipeline() -> tuple[EngagementPipeline, BackgroundTasks]:

@@ -23,6 +23,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from nora.domain.tag_trace import TagTrace
+
 
 def group_event(*, body: str, sender: str = "+852111", conv: str = "g1",
                  name: str = "Miles", ts: int = 1,
@@ -324,9 +326,9 @@ class FakeAgentRunner:
         self.models: list[ScriptedModel] = []
         self.tool_choices: list = []
 
-    async def invoke(self, **kwargs) -> tuple[str | None, str]:
-        """Replay the script and return `(stop_reason, final_text)` — what the
-        real loop would.
+    async def invoke(self, **kwargs) -> tuple[str | None, str, TagTrace]:
+        """Replay the script and return `(stop_reason, final_text, trace)` —
+        what the real loop would.
 
         `final_text` is `ScriptedTurn.final_text` for the LAST turn replayed,
         and it is what makes DEC-93 reproducible here: a scenario whose script
@@ -341,6 +343,13 @@ class FakeAgentRunner:
         raised, and a scenario that spends nothing gets `end_turn` — the fake
         does not answer every turn the same way, which is the only way this
         seam can catch R-23 regressing.
+
+        `trace` is a blank, valid `TagTrace` (`messages=()`, `transcript=()`)
+        — scripted mode has no `agent.messages` to extract from, the same
+        shape `evals/harness.py` already has for the analogous `tool_calls`
+        field ("scripted mode has no script to read tool intent from"). The
+        real extraction is `nora.app.agent_runner.LiveAgentRunner`'s, over a
+        real Strands `agent`.
         """
         self.invocations += 1
         if self._on_call is not None:
@@ -349,6 +358,16 @@ class FakeAgentRunner:
             await asyncio.sleep(self.delay)
         if self.raises:
             raise self.raises
+        # `ctx` is optional here, not required: a fidelity test exercising
+        # this double below the `invoke.run` seam (e.g.
+        # `tests/test_scripted_agent_fidelity.py`) never had to supply one
+        # before this trace existed, and still shouldn't have to.
+        ctx = kwargs.get("ctx")
+        trace = TagTrace(
+            tag_id=ctx.tag_id if ctx is not None else "",
+            conversation_id=ctx.message.conversation_id if ctx is not None else "",
+            messages=(), transcript=(), outcome="send_reply", created_at=0,
+        )
         tools_by_name = {t.tool_name: t for t in kwargs["tools"]}
         guard = kwargs["guard"]
         tool_call_log = kwargs.get("tool_call_log")
@@ -373,7 +392,7 @@ class FakeAgentRunner:
                 # tests (pre-deploy review 2026-08-10). CLAUDE.md's rule, in the
                 # one shape it mattered: make the fake behave like the real
                 # server, INCLUDING its wrong-call shapes.
-                return "end_turn", cancel if isinstance(cancel, str) else ""
+                return "end_turn", cancel if isinstance(cancel, str) else "", trace
             # Recorded AFTER the hooks, because that is when the SDK reads the
             # model's config to build the request — a value sampled before them
             # would miss the relaxation this line exists to make visible.
@@ -396,11 +415,12 @@ class FakeAgentRunner:
                 # The cycle ended `end_turn`, so the loop stops here and never
                 # reaches the top-of-cycle check — a one-shot answer cannot
                 # trip a cap however much it spent. See `limit_stop_reason`.
-                return "end_turn", turn.final_text or ""
+                return "end_turn", turn.final_text or "", trace
             stop = limit_stop_reason(
                 cycles=cycles, total_tokens=total_tokens,
                 output_tokens=output_tokens, limits=limits,
             )
             if stop is not None:
-                return stop, ""
-        return "end_turn", (self.turns[-1].final_text or "") if self.turns else ""
+                return stop, "", trace
+        final = (self.turns[-1].final_text or "") if self.turns else ""
+        return "end_turn", final, trace

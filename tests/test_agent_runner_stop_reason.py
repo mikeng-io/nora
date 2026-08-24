@@ -130,7 +130,7 @@ async def _run(
 ) -> tuple[str | None, _StubModel]:
     model = _StubModel(tokens_per_call=tokens_per_call, tool_use_calls=tool_use_calls)
     runner = LiveAgentRunner(models=FixedModelSource(model), retry=RETRY)
-    stop_reason, _final_text = await runner.invoke(
+    stop_reason, _final_text, _trace = await runner.invoke(
         doctrine=_doctrine(), tools=[_tool()], pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
                          metrics=Metrics()),
@@ -228,14 +228,15 @@ def test_final_text_degrades_to_empty_on_an_unexpected_result_shape():
 
 async def test_the_live_runner_still_returns_the_promoted_final_text():
     """The promotion's own regression: `LiveAgentRunner.invoke` returns
-    `(stop_reason, final_text)`, and the second element is now produced by a
-    function in another package. An import that resolved but was never CALLED —
-    or a runner that went back to returning "" — would leave every other test in
-    this file green, because they all discard the second element.
+    `(stop_reason, final_text, trace)`, and the second element is now produced
+    by a function in another package. An import that resolved but was never
+    CALLED — or a runner that went back to returning "" — would leave every
+    other test in this file green, because they all discard the second
+    element.
 
     The stub model ends its last cycle with a `text` block ("ok"), which is
     exactly DEC-93's shape: prose the model wrote instead of calling a tool."""
-    stop_reason, text = await _run_returning_text(
+    stop_reason, text, _trace = await _run_returning_text(
         tokens_per_call=10,
         limits={"turns": 8, "output_tokens": 12_000, "total_tokens": 64_000},
     )
@@ -243,7 +244,9 @@ async def test_the_live_runner_still_returns_the_promoted_final_text():
     assert text == "ok"
 
 
-async def _run_returning_text(*, tokens_per_call: int, limits: dict) -> tuple[str | None, str]:
+async def _run_returning_text(
+    *, tokens_per_call: int, limits: dict,
+) -> tuple[str | None, str, Any]:
     model = _StubModel(tokens_per_call=tokens_per_call, tool_use_calls=1)
     runner = LiveAgentRunner(models=FixedModelSource(model), retry=RETRY)
     return await runner.invoke(

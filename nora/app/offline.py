@@ -51,6 +51,7 @@ def build_offline_pipeline(
     metrics: Metrics | None = None,
     roster_source: RosterSource | None = None,
     tool_registry: ToolRegistry | None = None,
+    tag_trace_store: Any = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -124,6 +125,12 @@ def build_offline_pipeline(
         slots=ConversationSlots(
             maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
         ),
+        # `None` by default (Task 6): most offline/eval scenarios have no
+        # retention store and don't need one — `EngagementPipeline` treats it
+        # as fully inert, matching every other optional collaborator here. A
+        # caller that wants to assert on retained `TagTrace`s (e.g. the
+        # integration suite) passes its own.
+        tag_trace_store=tag_trace_store,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
     return dispatcher, engagement, background

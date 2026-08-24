@@ -41,6 +41,7 @@ module's test suite for the probe that proves both.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import time
 from collections.abc import Callable, Coroutine, Mapping
@@ -63,6 +64,7 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
+from nora.domain.tag_trace import TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.persons import Persons
@@ -118,6 +120,7 @@ class EngagementPipeline:
         tool_call_log_store: ToolCallLogStore | None = None,
         room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
         room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
+        tag_trace_store: Any = None,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
         # SAME platform the tag arrived on. Nora reached a second platform
@@ -189,6 +192,17 @@ class EngagementPipeline:
         # `None` store as fully inert, same shape as `roster_source`/
         # `preview_source` above.
         self._tool_call_log_store = tool_call_log_store
+        # The reasoning-continuity retention store (spec
+        # docs/superpowers/specs/2026-08-20-reflection-reasoning-continuity-design.md
+        # §6/§7.4, Task 6). `None` in every offline/eval composition and any
+        # deployment that has not wired it — the SAME optional-collaborator
+        # shape `preview_source`/`tool_call_log_store` already have above:
+        # `_run_admitted`'s `finally` treats a `None` store as fully inert
+        # (nothing to save into), never a reason to fail the turn. Production
+        # wiring (`composition.py`) is unconditional — retention must exist
+        # and be provably working BEFORE Phase 2's `[debrief]` flag has
+        # anything to gate.
+        self._tag_trace_store = tag_trace_store
         # `build_prefill`'s RENDER cap for the room-language block (Task 11).
         # Defaults to `DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES` — the same value
         # `build_prefill` itself defaults to — so a caller that does not pass
@@ -334,6 +348,16 @@ class EngagementPipeline:
         # a local would be one more thing to remember to increment now that
         # DEC-40 has made the count able to exceed 1.
         handle: deliver.DeliveryHandle | None = None
+        # Bound BEFORE the `try` for the same reason `handle` is: the
+        # `finally` saves whatever `invoke.run` handed back (Task 6, §7.4 —
+        # "debrief runs on every completed turn") on EVERY exit path,
+        # including the two (`ok=False`) where `_run_admitted` returns before
+        # reaching this method's own `completed = True`. `None` here means
+        # `invoke.run` never returned at all (a fault before it was ever
+        # called) — the outer `except BaseException` case, which has no
+        # `agent.messages` and no `ctx.transcript` window to attribute a
+        # trace to, so nothing is saved for it.
+        trace: TagTrace | None = None
         # Every log line emitted for the rest of this tag — across every stage
         # this method calls into — carries tag_id without any of them naming
         # it explicitly (nora.obs.logging's contextvar bridge).
@@ -479,7 +503,16 @@ class EngagementPipeline:
                 ctx, tagger_name=tagger_name, display_name=self._display_name,
             )
 
-            ok, llm_elapsed, stop_reason, final_text = await invoke.run(
+            # `invoke.run` hands back a `TagTrace` (Task 4) with a PROVISIONAL
+            # `outcome` — `LiveAgentRunner`'s own docstring calls it out as a
+            # placeholder on the `ok=True` path. Bound to the method-level
+            # `trace` (not a local `_trace`) so the `finally` can save it on
+            # every exit this `try` takes from here on, including the
+            # `not ok` early return two lines down — on THAT path the trace
+            # already carries the real outcome (`"timeout"`/`"llm_error"`,
+            # `invoke.run`'s own `_blank_trace`), so there is nothing to
+            # correct.
+            ok, llm_elapsed, stop_reason, final_text, trace = await invoke.run(
                 runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
                 tag_message=tag_message, limits=self._limits, ctx=ctx,
@@ -518,6 +551,13 @@ class EngagementPipeline:
                 stop_reason in deliver.BUDGET_STOP_REASONS
                 and not handle.deliverer.delivered
             )
+            # The local record of WHICH branch below fires (Task 6):
+            # `deliverer.delivered` alone cannot tell "her own words,
+            # recovered" apart from "the tool called it" or "the canned
+            # fallback" — all three leave it True. Bound here, before either
+            # branch, so it is a real `False` on the tool-called-normally path
+            # too (neither branch runs at all).
+            recovered_delivered = False
             if cut_off_before_reply and await handle.deliverer.deliver(
                 _EXHAUSTED_FALLBACK, source="fallback"
             ):
@@ -571,6 +611,7 @@ class EngagementPipeline:
                 and final_text.strip()
                 and await handle.deliverer.deliver(final_text, source="recovered")
             ):
+                recovered_delivered = True
                 self._metrics.inc("nora_recovered_replies_total", platform=msg.platform)
                 log.warning(
                     "recovered a reply the model wrote WITHOUT calling send_reply "
@@ -586,6 +627,27 @@ class EngagementPipeline:
                 deliverer=handle.deliverer, tag_id=request.tag_id, platform=msg.platform,
                 stop_reason=stop_reason, llm_state=self._llm_state, metrics=self._metrics,
             )
+            # Task 6: correct `trace`'s placeholder `outcome` now that the
+            # turn's real disposition is known — mirroring `check_outcome`'s
+            # OWN delivered/called split (deliver.py:222-238) rather than
+            # inventing a second one. `check_outcome` itself only returns a
+            # bool; the finer send_reply/recovered split reuses
+            # `recovered_delivered`, the SAME local flag the branch above just
+            # set, so this reads off state that already exists rather than
+            # re-deriving it a third way. `deliverer.called` — True the moment
+            # ANY `deliver()` call was attempted, whether by the tool or by
+            # this method's own fallback/recovery attempts — is exactly
+            # `check_outcome`'s own `if not deliverer.called` branch
+            # (deliver.py:231): it distinguishes a guard-refused attempt
+            # ("vetoed" — she or the pipeline tried and R-2/R-4/R-6/R-18
+            # blocked every attempt) from a turn that never tried at all
+            # ("silent", R-5's deliberate silence).
+            real_outcome = (
+                ("recovered" if recovered_delivered else "send_reply")
+                if delivered
+                else ("vetoed" if handle.deliverer.called else "silent")
+            )
+            trace = dataclasses.replace(trace, outcome=real_outcome)
             if not delivered:
                 return                       # `finally` still resolves the indicator
 
@@ -617,6 +679,25 @@ class EngagementPipeline:
                 "nora_silent_failures_total", reason="handler_error",
                 platform=msg.platform, audience="tag",
             )
+            # Task 6 fix (review finding 1): `trace` may already be bound here
+            # — a fault inside the never-silent-fallback delivery, the DEC-93
+            # recovery delivery, or `check_outcome` itself lands in THIS
+            # `except`, having reached `invoke.run`'s return but never the
+            # `dataclasses.replace` correction a few lines above. Left alone,
+            # the `finally`'s unconditional save would persist that trace with
+            # its STILL-PLACEHOLDER `"send_reply"` outcome — a turn that
+            # actually crashed and delivered nothing would be retained as if
+            # it succeeded normally, a false positive Phase 2's fold would
+            # read as fact. This branch cannot know for certain what (if
+            # anything) reached the group before the crash, and a WRONG label
+            # is worse than no label at all — the same argument
+            # `check_outcome`'s own docstring makes about a mislabelled
+            # `nora_silent_failures_total` reason aiming the next
+            # investigation at the wrong thing. So this crashed turn joins
+            # the "fault before `invoke.run` ever returned" case: no
+            # attributable trace, no save (the `finally`'s `trace is not
+            # None` guard skips it).
+            trace = None
         finally:
             # Resolved here, not after `check_outcome`, so that EVERY exit path
             # a tag has — timeout, llm_error, guard veto, no_send_call, and the
@@ -638,6 +719,28 @@ class EngagementPipeline:
             # runs on EVERY exit path, so a turn that timed out or faulted still
             # lets the people queued behind it be answered.
             self._slots.release_and_dispatch(key)
+            # Task 6 (spec §7.4 — "debrief runs on every completed turn"):
+            # retain the raw `TagTrace`, unconditionally — deliberately NOT
+            # gated on `if sent and ctx.tagger is not None` the way
+            # `feedback.run`'s spawn below is. That gate is `feedback.run`'s
+            # own reason (an unmapped sender's self-model); a silent, vetoed
+            # or timed-out turn still produces reasoning worth retaining, and
+            # inheriting the gate here would lose exactly those turns.
+            # `trace` is `None` only when `invoke.run` itself never returned
+            # (a fault before the model was ever invoked — the outer
+            # `except BaseException` case, with no `agent.messages` and no
+            # transcript window to attribute a trace to). `self._tag_trace_
+            # store` is `None` in every offline/eval composition and any
+            # deployment that has not wired one — see `__init__`'s docstring.
+            # SPAWNED, never awaited: `BackgroundTasks._on_done` logs (and
+            # swallows) a save failure exactly the way it already does for
+            # `feedback.run`'s Honcho write earlier in this method, so a
+            # DB-down retention store can never take down an
+            # otherwise-successful tag turn, and the write never delays
+            # `release_and_dispatch` (already run, above) or this turn's own
+            # latency observation (right below).
+            if trace is not None and self._tag_trace_store is not None:
+                self._spawn(self._tag_trace_store.save(trace))
             total = time.perf_counter() - started
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))

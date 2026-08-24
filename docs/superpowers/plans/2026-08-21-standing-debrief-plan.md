@@ -60,6 +60,170 @@ succeeded.
 **Gate:** a turn's reasoning is demonstrably captured and stored, with a
 red-on-revert test that deletes the reasoning blocks and fails.
 
+## Phase 1 status (2026-08-22): COMPLETE
+
+All 7 tasks done, reviewed clean, `make gate` green (4309 passed), single
+migration head (`0028_tag_trace`). Branch `standing-debrief`, worktree
+`/tmp/wt-standing-debrief`, head `c1bc2f4`. Not yet merged.
+
+## Phase 2 blockers, found 2026-08-22 — read before writing any Phase 2 code
+
+Two findings from live investigation (probes + a real Langfuse trace +
+cross-session sync with nora-cc, who was independently debugging the
+Dreamer's stuck `fact-candidates` adaptor at the same time) change how Phase
+2 must be built. Neither is closed on trust — see the evidence cited.
+
+**1. `tool_choice="required"` is not reliably enforced by the current
+OmniRoute/Ollama Cloud route.** A live probe against the real doctrine and
+`send_reply` schema (not a hand-rolled stand-in) got 2/6 (33%) compliance
+under `"required"`, contradicting `nora/agent/factory.py`'s
+`create_model_provider` docstring claim ("produces the call every time").
+**Caveat, stated plainly**: that probe made a single completion call, not
+the real multi-turn Strands `Agent` loop — it is not conclusive on its own,
+and production's observed reliability (Nora replies essentially every turn)
+is the stronger, longer-running signal. Before drawing any conclusion,
+re-test properly using `evals.harness.run_case(case, live=True)`, which
+already drives the REAL pipeline end to end (real doctrine, real tool
+registry, real multi-turn loop) — not another single-shot probe. This
+matters for Phase 2 because the debrief's own reliability will face the same
+question and deserves the same properly-instrumented answer, not an assumed
+one.
+
+**2. The debrief must NOT be built as a tools-less Strands `Agent`
+(`create_dream_agent`-style construction) — build it as a plain
+`chat.completions.create` call instead.** Grounded in a real production
+incident: the Dreamer's `fact-candidates` adaptor (`tools=frozenset()`) got
+stuck in a `MaxTokensReachedException` loop on one scope
+(`docs/superpowers/specs` cross-session trail; trace
+`b782c5afba571f7ec47cf706eb6ebe18`, 2026-08-21, verified via the real
+Langfuse API: input 3201 tokens / output 4096 tokens, mid-generation cut).
+**Root cause — CORRECTED 2026-08-22, cross-session (nora-cc).** The first
+version of this note got the mechanism backwards. `tools=[]` under
+`tool_choice="auto"` does not prevent the Dreamer's stop condition
+("the model declines to call anything") from being reached — it satisfies
+it *trivially, on the first pass*, because there is nothing else the model
+could do. There is no loop at all in this case: it is **one single
+generation** that ran away to 4096 tokens *within itself*. Confirmed against
+the actual trace pulled from Langfuse (`b782c5afba571f7ec47cf706eb6ebe18`):
+exactly one `GENERATION` observation (`chat`, `ollamacloud/deepseek-v4-flash`,
+input=3201/output=4096), not several — a multi-turn loop would show more
+than one.
+
+**What that means: the Strands `Agent`-vs-raw-completion choice buys NO
+protection from this failure by itself.** A raw `chat.completions.create`
+with the same prompt and the same output ceiling runs away identically —
+and *worse*, because it fails silently (`finish_reason="length"`, a
+truncated body) rather than raising. The actual causes are the ones already
+found and are independent of the SDK wrapper: a research-framed doctrine on
+a task with no research, no stated expected output size, and an unbounded
+input.
+
+**The real design rule, and it decides both the debrief's shape AND why
+Standing needs no tool for `prior` (ties directly to blocker 3, below):**
+
+> If the selection is knowable *before* the call, it is an input. If the
+> selection depends on what the model concludes *mid-reasoning*, it must be
+> a tool.
+
+`Standing.state`, the current `TagTrace`, and the debrief's whole input set
+are all knowable in advance — the debrief needs no tool, full stop, not
+merely "probably doesn't need one." The fact tier's `FactCandidateAdaptor`/
+`FactAdaptor` are the other case: *"what do we already call this thing?"*
+isn't answerable until the model has read the batch and formed a
+hypothesis — Python cannot pre-select it, which is exactly why two
+contradictory `big walk` rows exist. **The one thing that would flip
+Standing onto the tool side**: if a debrief should ever ask *"have I
+concluded something like this before, in another conversation?"* — that is
+discovery, not a known-row read, and would need nora-cc's read-tool seam.
+Worth checking which side of that line any future addition falls on, rather
+than assuming a plain completion stays sufficient forever.
+
+The fix (still three parts — unaffected by the correction above, since the
+underlying causes were always these, not the SDK wrapper), all before Phase
+2 ships:
+- Build the debrief as a raw `chat.completions.create` call, matching the
+  OLD one-shot `_LanguageModelClient` pattern
+  (`nora/app/composition.py:150-204`) — not a Strands `Agent` construction.
+- Set `response_format={"type":"json_object"}` on that call — the wire-level
+  lever `_LanguageModelClient` already uses (added because prompt-only JSON
+  enforcement was proven insufficient once before) and that the Dreamer's
+  agentic path never sets at all.
+- Check `finish_reason` explicitly; map `"length"` (the raw-completion
+  equivalent of `MaxTokensReachedException` — it doesn't raise, it silently
+  truncates) to `unavailable`. Never let a truncated body reach the JSON
+  parser, which could partially or wrongly succeed — the R-27 substitution
+  this whole architecture exists to prevent, one layer down.
+
+**Why Standing/debrief is structurally safer than the Dreamer's failure, and
+how to keep it that way**: the Dreamer's bug is a *ratchet* — a persistent
+watermark held on failure, so a stuck batch only grows and never recovers.
+The debrief is per-turn (one `TagTrace` in, one debrief out), which has no
+such accumulating cursor. **This safety only holds if Phase 2 stays
+per-turn.** If any later refinement makes the debrief read "all traces since
+X" and hold X on a failure, the same ratchet reappears. Keep it per-turn, or
+add an explicit skip-with-a-counter so a permanently-too-large input cannot
+block forward progress forever.
+
+**3. The fold MUST read the current `Standing` row before writing a new
+one, or it will reproduce the Dreamer's exact failure — confirmed live.**
+Cross-session finding (nora-cc, 2026-08-22), grounded in production data:
+across 963 processed messages, the Dreamer's entire output is 2 rows, both
+wrong, both calling `Big Walk` (a co-op puzzle video game) a real-world
+walking activity. The second run got *closer* to the truth — it knew about
+gourds, knew they "play" it — but had no way to read the first row, so it
+wrote a SECOND wrong gloss beside the first instead of correcting it. Both
+are `live` simultaneously. **The tier accretes contradictions instead of
+resolving them, specifically because nothing in the write path can see what
+is already written.**
+
+This is not a new requirement — §6.1 already scoped it: *"`prior` is not a
+[`TagTrace`] field — it is the fold's second argument."* The debrief was
+always meant to read the current `Standing.state` and hand it to the model
+alongside the new `TagTrace` before producing a revision. **What's missing
+is that `nora/domain/tag_trace_rederive.py`'s Phase-1 stub,
+`rebuild_state(traces: Sequence[TagTrace]) -> str`, does not yet take
+`prior` — Phase 2 must add it to the signature before implementing the fold,
+not discover the omission while implementing.**
+
+Two ways to deliver `prior`, and this plan's lean is the first:
+
+- **Read in code, inject as prompt text** — a plain `SELECT` against
+  `Standing` before the debrief's completion call, same shape as the fact
+  tier's "standing facts... an input, never a tool" (§4.2): *"selection
+  stays in code where it can be capped and counted."* Sufficient because
+  Standing's read is always exactly one row, known in advance — never a
+  search. Consistent with building the debrief as a plain
+  `chat.completions.create` call (blocker 2, above) rather than reopening a
+  tool loop.
+- **A callable read tool**, matching nora-cc's proposed general seam — "a
+  tier contributes its own read tools so its agent can consult its own
+  prior output," precedented by the note tier's
+  `ToolRegistry(notes=..., note_workspace=...)`. The right shape for an
+  adaptor that needs to *search/discover* prior state mid-reasoning
+  (`NoteRevisitor`, `FactAdaptor`) — not obviously needed for Standing's
+  single, known-in-advance lookup, and adopting it would mean reintroducing
+  a tool-bearing agent loop this plan otherwise avoids (blocker 2). Worth
+  revisiting if Standing's needs turn out to be less trivial than "read one
+  row" once Phase 2 is actually built — nora-cc is sharing the seam's shape
+  once their investigation lands, in case it's needed.
+
+Two smaller findings from the same investigation, carried forward:
+
+- **Provenance direction.** `Fact.established_by` (and by extension
+  anything Phase 4 writes) records which *Dreamer run* produced a row, not
+  which *human* asserted the claim — provenance about the machine, not the
+  belief. If `Standing` or the Phase 4 fact-proposal path records
+  provenance, record the turn **and** the people in it, not just the run.
+- **Input shape** (defensive note, not a Standing defect today): the fact
+  tier's `FactCandidateAdaptor.inputs()` renders `f"{row.id}: {row.body}"` —
+  no sender, no timestamp, no reply-threading — even though `TranscriptRow`
+  already carries `person_name`/`ts`/`quoted_ts`. When Phase 2 builds the
+  debrief's actual prompt from `ctx.transcript` (§6.2), use its already-
+  rehydrated sender/threading info (`MentionRenderer`, DEC-34) rather than a
+  stripped text dump — `ctx.transcript` already carries this, unlike the raw
+  batch the fact tier was handed, so this is a "don't regress it away"
+  check, not new work.
+
 ## Phase 2 — the `debrief` stage and `Standing`
 
 | # | task | notes |
@@ -73,6 +237,37 @@ red-on-revert test that deletes the reasoning blocks and fails.
 | 2.7 | `<standing>` injection | §6.7. `escape()`d, `untrusted="true"`, **volatile tail only** — never `_context_header`'s cached prefix. |
 | 2.8 | latency separation | §7.5. Observed in the `finally` **after** the debrief; must be excluded from `nora_tag_latency_seconds` or §14.3's SLO gate measures against a series this change broke. |
 | 2.9 | overflow as a model-resolvable error | §6.6. Refuse the write, return the inventory, "consolidate now". Silent eviction is the failure mode. |
+| 2.10 | `NoteProposal` — the debrief's fourth output | Not in the spec's §6.3 schema (`Standing`/`TurnVerdict`/`Fact` only) — added here 2026-08-21, operator decision. See below. |
+
+**2.10, stated plainly.** `note_create`/`note_update` are Nora's own tools,
+callable only inside her turn — `ReplyGuard._before_model` cancels the next
+model call once `send_reply`'s terminal budget is spent (`nora/agent/guards.py`
+~line 1006), so nothing in her own loop runs after the reply. `Standing`
+already has an after-the-reply path because it was designed to be a SEPARATE
+model reviewing the finished exchange (§9 — impartiality, not just cost). Notes
+do not have that path yet. This task gives them one, on the same debrief call
+that produces `Standing`/`TurnVerdict`/`Fact` — not a new stage.
+
+- **Sink**: the note tier's `DreamSink`-shaped port (`propose`/`supersede`),
+  the same interface `NoteCurator`/`NoteRevisitor` will use — never
+  `note_create`/`note_update`, whose R-55 read-before-write latch is an
+  in-turn rule with no meaning against a transcript reviewed after the fact.
+  **Dependency**: this needs the note store joined to
+  `tests/contract/test_dream_sink_contract.py`'s `IMPLEMENTATIONS` — not yet
+  done as of 2026-08-21 (only `fake`/`sql`/`candidate` are joined). That join
+  is nora-cc's Part 1b scope (`docs/superpowers/specs/2026-08-21-note-tier-design.md`
+  §15.2); sync with them before wiring the sink rather than duplicating it.
+- **Open sub-decision, to resolve when this task is actually built, not
+  guessed here**: `Proposal.payload` for a note covers two shapes the fact
+  tier's single-shape payload does not — a brand-new note (title,
+  description, uncertainty, closing_condition, anchor) vs. a revision to one
+  read this turn (body, parent_revision_id). Whether that is one payload type
+  with an optional discriminant or two, and how `note_read`'s in-turn miss
+  cache (§4.5) avoids the debrief re-proposing a note the tag path already
+  considered and rejected, are both undecided.
+- **Budget discipline carries over unchanged**: the debrief proposes,
+  append-only; it never adjudicates (§9's argument against in-slot judgment
+  under social pressure applies here exactly as it does to facts).
 
 **Gate:** §14.3 — debrief latency on `nora_debrief_seconds`, with the
 **second-queued-tag** case explicit, against p95 ≤ 5s

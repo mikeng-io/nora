@@ -37,13 +37,25 @@ defensive parser; see that function's docstring for the full argument.
 
 from __future__ import annotations
 
+import dataclasses
+import time
 from pathlib import Path
 from typing import Any
 
 from nora.agent import factory
 from nora.agent.guards import ReplyGuard
+from nora.agent.tag_trace_extract import extract_tag_trace
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import TagContext
+from nora.domain.tag_trace import TagTrace
+from nora.obs.metrics import Metrics
+
+# The default cap on how many characters of `agent.messages` a `TagTrace`
+# captures (`nora.agent.tag_trace_extract.cap_messages`'s `max_chars`).
+# Spec §6.5 leaves the number itself unspecified for Phase 1 (a real `[debrief]`
+# config knob is future work, gated on §14) — this constant is that stand-in,
+# sized the same as `nora.agent.tag_trace_extract`'s own test fixtures.
+DEFAULT_MAX_TRACE_CHARS = 10_000
 
 
 class LiveAgentRunner:
@@ -53,6 +65,8 @@ class LiveAgentRunner:
         self, *, models: Any, retry: factory.RetryPolicy,
         skills_dir: Path | None = None,
         agent_name: str = factory.DEFAULT_AGENT_NAME,
+        max_trace_chars: int = DEFAULT_MAX_TRACE_CHARS,
+        metrics: Metrics | None = None,
     ) -> None:
         self._models = models
         # The agent's machine name (cfg.agent.name) — its Strands agent_id and
@@ -69,6 +83,15 @@ class LiveAgentRunner:
         # per tag over this operator directory. Held as the resolved path so the
         # per-tag construction stays a pure hand-off, no config object below.
         self._skills_dir = skills_dir
+        # `TagTrace` extraction (spec §6.1/§8.1) — cap and metrics sink for
+        # `nora.agent.tag_trace_extract.extract_tag_trace`.
+        self._max_trace_chars = max_trace_chars
+        # Falls back to a private registry when the caller has none to share.
+        # Every production caller (the composition root) passes the process
+        # metrics so `nora_tagtrace_truncations_total` lands where `/metrics`
+        # actually reads it; a fallback instance is only ever read by tests
+        # and evals that do not assert on that counter.
+        self._metrics = metrics if metrics is not None else Metrics()
 
     async def invoke(
         self,
@@ -82,8 +105,9 @@ class LiveAgentRunner:
         limits: dict[str, Any],
         ctx: TagContext,
         trace_attributes: dict[str, Any],
-    ) -> tuple[str | None, str]:
-        """Run the turn and return Strands' `stop_reason` (R-23).
+    ) -> tuple[str | None, str, TagTrace]:
+        """Run the turn and return Strands' `stop_reason` (R-23) plus a
+        `TagTrace` of what happened.
 
         This method used to `await factory.invoke(...)` and DISCARD the
         `AgentResult` it returned, so `stop_reason` — the SDK's only signal
@@ -94,6 +118,23 @@ class LiveAgentRunner:
         speak. The value is returned as a plain `str | None` rather than the
         SDK's `StopReason` literal for the same reason `model` above is `Any`
         — this module does not import `strands`.
+
+        `baseline` is captured BEFORE `factory.invoke` runs — `agent.messages`
+        already holds the system prompt and pre-fill by the time
+        `factory.create_agent` returns, and `extract_tag_trace` slices from
+        `baseline` onward, so a baseline taken after the call would miss
+        nothing structural but a baseline taken any later (e.g. after a retry
+        rebuilt the agent) would. `transcript` is left empty here: this class
+        has no access to the assembled window, only `nora.engagement.stages.
+        invoke.run` does (via `ctx`), and fills it in. `outcome` is
+        PROVISIONAL — `"send_reply"` — because this layer has no visibility
+        into delivery, recovery or veto; that decision belongs to
+        `nora.engagement.pipeline`, made after `deliver.check_outcome` runs
+        downstream, and corrects this via `dataclasses.replace` once the real
+        outcome is known — the same handoff Task 3 left for `created_at`,
+        which IS corrected here (frozen dataclass, so `dataclasses.replace`
+        rather than field assignment) because the real timestamp is already
+        knowable at this point.
         """
         agent = factory.create_agent(
             # ONE MODEL PER TAG. See this module's docstring: `tool_choice` is
@@ -109,13 +150,28 @@ class LiveAgentRunner:
             skills_dir=self._skills_dir,
             agent_name=self._agent_name,
         )
+        baseline = len(agent.messages)
         result = await factory.invoke(agent, tag_message, invocation_state={}, limits=limits)
         # `isinstance`, not a cast: `factory.invoke` is typed `Any` to keep
         # `strands` out of this module, and an unchecked `Any` returned from a
         # `str | None` signature is precisely what mypy's `warn_return_any`
         # exists to stop. A shape that is not a string is not a stop reason.
         stop_reason = getattr(result, "stop_reason", None)
+        stop_reason = stop_reason if isinstance(stop_reason, str) else None
+        trace = extract_tag_trace(
+            agent, baseline=baseline, tag_id=ctx.tag_id,
+            conversation_id=ctx.message.conversation_id, transcript=(),
+            outcome="send_reply", max_chars=self._max_trace_chars,
+            metrics=self._metrics,
+        )
+        # `TagTrace` is frozen (`nora/domain/tag_trace.py`) — `dataclasses.
+        # replace` produces a corrected instance rather than mutating a field
+        # that does not allow it. Stamped here, not left at Task 3's `0`
+        # placeholder: this is the earliest point the real clock is knowable
+        # and the trace must carry it before going anywhere persistent.
+        trace = dataclasses.replace(trace, created_at=int(time.time() * 1000))
         return (
-            stop_reason if isinstance(stop_reason, str) else None,
+            stop_reason,
             factory.final_text(result),
+            trace,
         )
