@@ -81,3 +81,17 @@ find a real curated playlist link, then pass that URL to `play_music` —
 ordinary multi-tool reasoning in one turn, not new plumbing. The tool's
 own description carries this guidance; no separate skill or doctrine
 mechanism is needed, same as every other native tool in this codebase.
+
+**"Playlist" in the request means the URL must actually be one.**
+`YtDlpSource`'s playlist expansion is narrow by design
+(`01-playback-and-source.md`) — only `/playlist?list=...` (the link
+YouTube's own UI gives you FROM a playlist's page) expands into every
+track; a `/watch?v=...` link resolves to exactly one, however long it runs
+or however its title reads. Found live 2026-08-24: asked for "some kpop
+playlist," the model `web_search`ed, found a single multi-hour "KPOP
+PLAYLIST" MIX video, and queued it as one track — technically correct
+(the tool did exactly what a single-video URL means) but not what was
+asked for. `play_music`'s docstring now spells out the distinction
+explicitly and nudges the search itself (`site:youtube.com/playlist`,
+confirming the URL shape via `web_fetch` before using it) rather than
+trusting a video's title as proof of what it is.
