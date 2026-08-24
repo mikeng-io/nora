@@ -25,13 +25,15 @@ class _FakePersons:
 
 
 class _FakeBridge:
-    def __init__(self, *, play_outcome=None, skip_outcome=None,
+    def __init__(self, *, play_outcome=None, skip_outcome=None, top_outcome=None,
                  stop_outcome=None, status_outcome=None) -> None:
         self.play_outcome = play_outcome
         self.skip_outcome = skip_outcome
+        self.top_outcome = top_outcome
         self.stop_outcome = stop_outcome
         self.status_outcome = status_outcome
         self.play_calls: list[dict] = []
+        self.top_calls: list[dict] = []
 
     async def play(self, *, conversation_id, sender_ids, query_or_url):
         self.play_calls.append(
@@ -42,6 +44,10 @@ class _FakeBridge:
 
     async def skip(self, *, conversation_id):
         return self.skip_outcome
+
+    async def top(self, *, conversation_id, position):
+        self.top_calls.append({"conversation_id": conversation_id, "position": position})
+        return self.top_outcome
 
     async def stop(self, *, conversation_id):
         return self.stop_outcome
@@ -142,6 +148,30 @@ async def test_skip_music_reports_nothing_found():
     tools = _specs(platform="discord", music=bridge)
     out = await tools["skip_music"]()
     assert out == {"status": "nothing_found"}
+
+
+async def test_top_music_is_unavailable_off_discord():
+    tools = _specs(platform="signal")
+    out = await tools["top_music"](position=2)
+    assert out["status"] == "unavailable"
+
+
+async def test_top_music_reports_nothing_found():
+    bridge = _FakeBridge(top_outcome=MusicToolOutcome(status="nothing_found"))
+    tools = _specs(platform="discord", music=bridge)
+    out = await tools["top_music"](position=5)
+    assert out == {"status": "nothing_found"}
+
+
+async def test_top_music_passes_the_position_and_reports_the_moved_track():
+    bridge = _FakeBridge(top_outcome=MusicToolOutcome(status="ok", title="Track C"))
+    tools = _specs(platform="discord", music=bridge)
+
+    out = await tools["top_music"](position=3)
+
+    assert out == {"status": "ok", "title": "Track C"}
+    [call] = bridge.top_calls
+    assert call["position"] == 3
 
 
 async def test_stop_music_reports_ok():

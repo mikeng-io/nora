@@ -1,0 +1,9 @@
+{
+  "type": "feature",
+  "summary": "Added /music top and a top_music agent tool to move a queued track to play next.",
+  "details": [
+    "/music top <position> and the conversational top_music tool take the same 1-based position /music queue already displays next to each track, and move that track to the front of the queue so it plays next -- without touching whatever is currently playing.",
+    "MusicQueueStore gained move_to_front(guild_id, position=...), implemented for both SqlMusicQueueStore and the in-memory test fake, and covered by the shared contract suite. The SQL implementation reorders inside one transaction (shift every row out of the way, then assign final 0..N-1 positions) so the guild's position UNIQUE constraint is never transiently violated."
+  ],
+  "limitations": []
+}

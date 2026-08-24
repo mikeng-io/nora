@@ -151,6 +151,14 @@ class MusicPlayerManager:
         player = self._players.get(guild_id)
         return False if player is None else await player.resume()
 
+    async def top(self, guild_id: str, position: int) -> QueuedTrack | None:
+        """`None` covers both "no player for this guild" and "`position` is
+        out of range" — same single-outcome shape `pause`/`resume` already
+        use for their one way to fail; a caller wanting the distinction has
+        `status()` to check first."""
+        player = self._players.get(guild_id)
+        return None if player is None else await player.top(position)
+
     async def set_volume(self, guild_id: str, volume: float) -> bool | None:
         """`None` — no player exists for this guild at all, distinct from
         `False` (a player exists but `volume` was out of range) — the same

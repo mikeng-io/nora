@@ -106,7 +106,7 @@ def test_every_declared_tool_is_built(wiring):
         "web_search", "web_fetch",
         "weather",
         # Discord-only music (design/discord-music/07-agent-tool.md).
-        "play_music", "skip_music", "stop_music", "music_status",
+        "play_music", "skip_music", "top_music", "stop_music", "music_status",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "create_event", "update_event", "rsvp_event", "cancel_event",

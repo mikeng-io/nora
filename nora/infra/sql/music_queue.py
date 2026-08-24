@@ -149,5 +149,47 @@ class SqlMusicQueueStore:
             result = await conn.execute(stmt)
         return int(result.rowcount or 0)
 
+    async def move_to_front(self, guild_id: str, *, position: int) -> QueuedTrack | None:
+        # A direct swap of two rows' `position` values would transiently
+        # violate `uq_music_queue_guild_position` mid-statement (Postgres
+        # checks the unique index per row, not once for the whole UPDATE) --
+        # so this shifts every row for the guild into a range no ordinary
+        # queue ever reaches first, then assigns final 0..N-1 positions one
+        # row at a time. Both phases run inside one transaction, so a
+        # concurrent `queue_for`/`pop_next` never observes the shifted,
+        # not-yet-final state.
+        shift = 1_000_000
+        async with self._engine.begin() as conn:
+            rows = (
+                await conn.execute(
+                    sa.select(MUSIC_QUEUE)
+                    .where(MUSIC_QUEUE.c.guild_id == guild_id)
+                    .order_by(MUSIC_QUEUE.c.position.asc())
+                )
+            ).all()
+            tracks = [_row_to_track(row) for row in rows]
+            if position < 1 or position > len(tracks):
+                return None
+            target = tracks[position - 1]
+            if position == 1:
+                return target
+            reordered = [target] + [t for t in tracks if t.id != target.id]
+            await conn.execute(
+                sa.update(MUSIC_QUEUE)
+                .where(MUSIC_QUEUE.c.guild_id == guild_id)
+                .values(position=MUSIC_QUEUE.c.position + shift)
+            )
+            for new_position, track in enumerate(reordered):
+                await conn.execute(
+                    sa.update(MUSIC_QUEUE)
+                    .where(MUSIC_QUEUE.c.id == track.id)
+                    .values(position=new_position)
+                )
+        return QueuedTrack(
+            id=target.id, guild_id=target.guild_id, position=0, source=target.source,
+            url=target.url, title=target.title, added_by_person_id=target.added_by_person_id,
+            added_at=target.added_at,
+        )
+
     async def aclose(self) -> None:
         await self._engine.dispose()

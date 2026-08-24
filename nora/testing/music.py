@@ -70,6 +70,20 @@ class FakeMusicQueueStore:
             del self._rows[track_id]
         return len(to_remove)
 
+    async def move_to_front(self, guild_id: str, *, position: int) -> QueuedTrack | None:
+        queue = self._for_guild(guild_id)
+        if position < 1 or position > len(queue):
+            return None
+        target = queue[position - 1]
+        reordered = [target] + [t for t in queue if t.id != target.id]
+        for new_position, track in enumerate(reordered):
+            self._rows[track.id] = QueuedTrack(
+                id=track.id, guild_id=track.guild_id, position=new_position,
+                source=track.source, url=track.url, title=track.title,
+                added_by_person_id=track.added_by_person_id, added_at=track.added_at,
+            )
+        return self._rows[target.id]
+
     async def aclose(self) -> None:
         return None
 

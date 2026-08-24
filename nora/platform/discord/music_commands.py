@@ -327,6 +327,27 @@ class MusicCommands(app_commands.Group):
             return
         await interaction.followup.send(f"Skipped: {skipped.title}")
 
+    @app_commands.command(
+        name="top", description="Move a queued track to play next.",
+    )
+    @app_commands.describe(position="The queue position shown by /music queue (1 = plays next)")
+    async def top(
+        self, interaction: discord.Interaction, position: app_commands.Range[int, 1, 500],
+    ) -> None:
+        if interaction.guild_id is None:
+            return
+        guild_id = str(interaction.guild_id)
+        log.info(
+            "music command: /music top guild=%s user=%s position=%s",
+            guild_id, _who(interaction), position,
+        )
+        await interaction.response.defer()
+        moved = await self._manager.top(guild_id, position)
+        if moved is None:
+            await interaction.followup.send("Nothing queued at that position.")
+            return
+        await interaction.followup.send(f"Now next: {moved.title}")
+
     @app_commands.command(name="queue", description="Show what's playing and queued.")
     async def queue(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:

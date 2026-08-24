@@ -378,6 +378,38 @@ async def test_set_volume_delegates_to_the_player_once_one_exists() -> None:
     assert await manager.set_volume("guild-1", 3.0) is False
 
 
+async def test_top_is_none_when_no_player_exists_for_the_guild() -> None:
+    manager = _manager({})
+
+    assert await manager.top("guild-1", 1) is None
+
+
+async def test_top_delegates_to_the_player_once_one_exists() -> None:
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B})
+    session = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return session
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+
+    moved = await manager.top("guild-1", 1)
+
+    assert moved is not None
+    assert moved.title == "Track B"
+    # Out of range delegates through to the player's own None, not a crash.
+    assert await manager.top("guild-1", 99) is None
+
+
 async def test_the_first_play_does_not_notify_the_channel_that_started_it() -> None:
     """The slash command's own reply already says "Now playing" -- a
     separate notification for the very same transition would double-post."""

@@ -115,6 +115,75 @@ async def test_added_at_round_trips_as_utc(store):
     assert row.added_at == T0 + timedelta(hours=1)
 
 
+async def test_move_to_front_reorders_the_target_track_ahead_of_the_rest(store):
+    await _enqueue(store, title="First")
+    second = await _enqueue(store, title="Second")
+    await _enqueue(store, title="Third")
+
+    moved = await store.move_to_front("guild-1", position=2)
+
+    assert moved is not None
+    assert moved.id == second.id
+    titles = [t.title for t in await store.queue_for("guild-1")]
+    assert titles == ["Second", "First", "Third"]
+
+
+async def test_move_to_front_at_position_one_is_a_no_op(store):
+    first = await _enqueue(store, title="First")
+    await _enqueue(store, title="Second")
+
+    moved = await store.move_to_front("guild-1", position=1)
+
+    assert moved is not None
+    assert moved.id == first.id
+    titles = [t.title for t in await store.queue_for("guild-1")]
+    assert titles == ["First", "Second"]
+
+
+async def test_move_to_front_out_of_range_returns_none_and_leaves_the_queue_alone(store):
+    await _enqueue(store, title="Only track")
+
+    assert await store.move_to_front("guild-1", position=0) is None
+    assert await store.move_to_front("guild-1", position=2) is None
+    titles = [t.title for t in await store.queue_for("guild-1")]
+    assert titles == ["Only track"]
+
+
+async def test_move_to_front_on_an_empty_queue_returns_none(store):
+    assert await store.move_to_front("guild-1", position=1) is None
+
+
+async def test_move_to_front_is_scoped_to_its_guild(store):
+    await _enqueue(store, guild_id="guild-1", title="Guild 1 first")
+    await _enqueue(store, guild_id="guild-1", title="Guild 1 second")
+    guild_2_track = await _enqueue(store, guild_id="guild-2", title="Guild 2 only")
+
+    # Position 1 in guild-2 is that guild's own only track, never guild-1's.
+    moved = await store.move_to_front("guild-2", position=1)
+
+    assert moved is not None
+    assert moved.id == guild_2_track.id
+    assert [t.title for t in await store.queue_for("guild-1")] == [
+        "Guild 1 first", "Guild 1 second",
+    ]
+
+
+async def test_move_to_front_leaves_positions_contiguous_from_zero(store):
+    """A later `enqueue`'s `MAX(position)+1` must keep working after a
+    reorder -- this asserts the store never leaves a gap or a duplicate
+    behind that a future insert could collide with."""
+    await _enqueue(store, title="First")
+    await _enqueue(store, title="Second")
+    await _enqueue(store, title="Third")
+
+    await store.move_to_front("guild-1", position=3)
+    fresh = await _enqueue(store, title="Fourth")
+
+    positions = [t.position for t in await store.queue_for("guild-1")]
+    assert positions == [0, 1, 2, 3]
+    assert fresh.position == 3
+
+
 async def test_concurrent_enqueues_for_one_guild_never_collide_on_position(store):
     """A subagent review found `SqlMusicQueueStore.enqueue`'s `MAX(position)
     +1` subquery is not atomic under READ COMMITTED: two concurrent
