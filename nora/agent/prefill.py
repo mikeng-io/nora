@@ -210,6 +210,9 @@ def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
         "Notation: (2h ago) is how long ago a line was sent. "
         "[A ↳ B「…」] means A was replying to B, with the start of B's message "
         "quoted so you can tell which one.\n"
+        "This is your material, not just scenery. Quote what they said, point "
+        "at what you remember, use the room's own words — a reply that uses "
+        "none of it is a thin reply.\n"
         "</context_header>"
     )
 
