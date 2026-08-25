@@ -4863,7 +4863,7 @@ def build_tool_specs(
         call this, nothing is sent; it always goes to the conversation you were tagged
         in — you do not choose where.
 
-        Read `text` back before you send it, and fix these three:
+        Read `text` back before you send it, and fix these:
           - **Too long.** One or two sentences answers almost everything. However much
             you looked up, that is not content — cut it to the part that answers the
             question. No headings, no per-item paragraphs, no bold labels. A judgement
