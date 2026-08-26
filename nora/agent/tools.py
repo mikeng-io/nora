@@ -3213,11 +3213,13 @@ def build_tool_specs(
     async def generate_image(
         prompt: str,
         reference: str | None = None,
+        reference_2: str | None = None,
+        reference_3: str | None = None,
         size: str | None = None,
         aspect: str | None = None,
         quality: str | None = None,
     ) -> dict:
-        """Make an image from a text prompt, and optionally from a photo already
+        """Make an image from a text prompt, and optionally from photos already
         in this conversation.
 
         Call this when somebody asks you to make, draw, or generate a picture —
@@ -3225,15 +3227,19 @@ def build_tool_specs(
         into a watercolour". The provider is chosen for you; the prompt is
         what matters.
 
-        A reference photo: pass its marker code (`a3f2c1` from `[image a3f2c1]`)
-        in `reference`. The photo must ALREADY be in this conversation — you
-        cannot fetch an image from elsewhere to edit it, and you should say
-        plainly in your reply when a generated image used a reference photo.
-        When the transformation depends on what the photo shows, call
-        `media_fetch` on the marker FIRST and read its description, then write
-        the prompt as: [what the photo shows] + [what to change] + [what to
-        keep]. Never guess what is in a photo you cannot see; if the change
-        needs content you don't know, call `media_fetch` or say you can't.
+        Reference photos: pass their marker codes (`a3f2c1` from
+        `[image a3f2c1]`) in `reference` (one photo), `reference_2` (a
+        second) and `reference_3` (a third) — UP TO 3 PHOTOS in one call,
+        in any order (the first that is set is not special). Multi-photo
+        edits combine subjects, transfer styles, and compose scenes. Each
+        photo must ALREADY be in this conversation — you cannot fetch an
+        image from elsewhere to edit it, and you should say plainly in your
+        reply when a generated image used reference photos. When the
+        transformation depends on what the photos show, call `media_fetch`
+        on each marker FIRST and read its description, then write the prompt
+        as: [what the photos show] + [what to change] + [what to keep].
+        Never guess what is in a photo you cannot see; if the change needs
+        content you don't know, call `media_fetch` or say you can't.
         Do NOT put names, phone numbers, addresses or other identifiers into
         the prompt — it goes to an outside service.
 
@@ -3246,7 +3252,7 @@ def build_tool_specs(
             there is NO url and NO link to share. The transcript shows
             `[image <handle>]`. Do not paste any URL, and never re-use a
             drop/upload link from an earlier message — those links are stale.
-          - `nothing_found` — the provider refused the prompt, or the
+          - `nothing_found` — the provider refused the prompt, or a
             reference code is not in view here. Do not guess why; say it
             could not be made.
           - `unavailable` — could not make it right now; `note` says why
@@ -3256,6 +3262,8 @@ def build_tool_specs(
         Args:
             prompt: The image you are asked to make, with the conventions above.
             reference: Optional marker code of a photo already in this conversation.
+            reference_2: Optional second marker code, for multi-photo edits (up to 3).
+            reference_3: Optional third marker code, for multi-photo edits (up to 3).
             size: Optional "small" | "medium" | "large".
             aspect: Optional "1:1" | "16:9" | "9:16" | "3:2" | "2:3".
             quality: Optional "standard" | "quality".
@@ -3266,7 +3274,8 @@ def build_tool_specs(
                 "note": "I can't make images right now. Say so — do not invent "
                         "one and do not say there is no such thing.",
             }
-        if reference is not None and not image_refs_allowed:
+        wanted_refs = [r for r in (reference, reference_2, reference_3) if r is not None]
+        if wanted_refs and not image_refs_allowed:
             return {
                 "status": "unavailable",
                 "note": "I can't edit a photo you send me right now — that "
@@ -3275,15 +3284,18 @@ def build_tool_specs(
             }
 
         refs: tuple[ImageReference, ...] = ()
-        if reference is not None:
-            marker = _handle_hex(reference)
-            if len(marker) < HANDLE_CHARS:
-                return {
-                    "status": "nothing_found",
-                    "note": "I can't find a photo with that code here. Say you "
-                            "can't use it rather than guessing.",
-                }
-            refs = (ImageReference(marker_code=marker),)
+        if wanted_refs:
+            markers: list[str] = []
+            for code in wanted_refs:
+                marker = _handle_hex(code)
+                if len(marker) < HANDLE_CHARS:
+                    return {
+                        "status": "nothing_found",
+                        "note": "I can't find a photo with that code here. Say you "
+                                "can't use it rather than guessing.",
+                    }
+                markers.append(marker)
+            refs = tuple(ImageReference(marker_code=m) for m in markers)
 
         image_size = None
         if size is not None or aspect is not None:

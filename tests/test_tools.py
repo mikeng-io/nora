@@ -962,6 +962,45 @@ async def test_generate_image_references_passed_as_custody_handle(wiring):
     assert refs[0].marker_code == "a3f2c1"
 
 
+async def test_generate_image_three_references_travel_in_call_order(wiring):
+    """Up to 3 photos in one call (grok-imagine-image-2.0's multi-image
+    edits): `reference_2`/`reference_3` join `reference` as handles, in the
+    order passed — the first slot is not special."""
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
+    result = await _call(
+        tools["generate_image"],
+        prompt="combine these", reference="111aaa",
+        reference_2="222bbb", reference_3="333ccc",
+    )
+    assert result["status"] == "ok"
+    refs = gen.calls[0].get("reference_images") or ()
+    assert [r.marker_code for r in refs] == ["111aaa", "222bbb", "333ccc"]
+
+
+async def test_generate_image_gap_in_reference_slots_is_ignored(wiring):
+    """`reference_2` alone (no `reference`) still works — each slot is
+    independent; the tool does not require the first to be set."""
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
+    result = await _call(tools["generate_image"], prompt="edit", reference_2="222bbb")
+    assert result["status"] == "ok"
+    refs = gen.calls[0].get("reference_images") or ()
+    assert [r.marker_code for r in refs] == ["222bbb"]
+
+
+async def test_generate_image_bad_second_reference_is_nothing_found(wiring):
+    """A short/garbled marker in ANY slot fails the whole call as
+    `nothing_found` — never a partial edit with half the references."""
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
+    result = await _call(
+        tools["generate_image"], prompt="edit", reference="a3f2c1", reference_2="??",
+    )
+    assert result["status"] == "nothing_found"
+    assert gen.calls == []
+
+
 async def test_generate_image_quota_maps_to_a_plain_note(wiring):
     gen = _ImageGenerator(result=ImageResult(status="unavailable", reason="quota", provider="xai"))
     tools = _with_image_tools(wiring, generator=gen)

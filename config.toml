@@ -618,7 +618,9 @@ provider = "xai"
 # off. `media_fetch` (describe-only) is unaffected. When enabled, the model
 # can only reference a photo NORA ALREADY HOLDS (a marker code from THIS
 # conversation's own media window) — never an arbitrary external URL.
-allow_reference_images = false
+# 2026-08-27: ON — operator enabled for the reference/edits lane
+# (grok-imagine-image-2.0 supports up to 3 reference images per request).
+allow_reference_images = true
 
 [image_gen.xai]
 # xAI adapter knobs. `model`/`quality_model` mirror the names Hermes'
