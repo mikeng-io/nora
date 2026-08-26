@@ -117,6 +117,7 @@ class MusicPlayer:
         # (after a skip/stop already advanced past that track) must discard
         # its result, never enqueue it.
         self._prewarmed: ResolvedTrack | None = None
+        self._prewarm_done = False
         self._prewarm_task: asyncio.Task[None] | None = None
         self._prewarm_for_locator: str | None = None
         self._prewarm_timer: asyncio.TimerHandle | None = None
@@ -271,7 +272,24 @@ class MusicPlayer:
         # or the first autoplay pick after a restart could repeat it.
         self._played_locators.add(self._now_playing.url)
         self._paused = False
-        self._voice.play(resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds)
+        try:
+            self._voice.play(resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds)
+        except Exception:
+            # External audit Codex MAJOR-3 (2026-08-26): the same dead-voice
+            # teardown as `_advance` — a boot-time resume into a voice
+            # connection that reconnect said was up but actually isn't must
+            # not strand a zombie player in the manager (it was inserted
+            # into `_players` before this call). Mark dead so the caller's
+            # `_after_transition` evicts it and the persisted row gets
+            # re-scanned next boot instead of blocking a fresh join.
+            log.exception(
+                "voice connection dead for guild %s during persisted-session resume; "
+                "tearing down",
+                self._guild_id,
+            )
+            self._now_playing = None
+            self._session_dead = True
+            return False
         if paused:
             self._voice.pause()
             self._paused = True
@@ -393,7 +411,16 @@ class MusicPlayer:
                         await self._voice.disconnect()
                     except Exception:
                         log.warning("voice disconnect after dead voice failed", exc_info=True)
-                    await self._session.delete(self._guild_id)
+                    try:
+                        await self._session.delete(self._guild_id)
+                    except Exception:
+                        # External audit Codex MAJOR-4 (2026-08-26): a
+                        # transient DB failure here must not prevent the
+                        # `_session_dead` flag below — the manager's
+                        # `_after_transition` evicts the player on it, and a
+                        # stranded session row is recovered by the next
+                        # boot-time resume scan instead of leaving a zombie.
+                        log.warning("session delete after dead voice failed", exc_info=True)
                     # External audit MAJOR-2 (2026-08-26): mark the player
                     # dead so the manager drops it from `_players` on this
                     # transition — otherwise a `/music play` before the idle
@@ -439,6 +466,7 @@ class MusicPlayer:
         # it belonged to this one (a `related()` answer for the OLD seed
         # would seed the next autoplay from the wrong track).
         self._prewarmed = None
+        self._prewarm_done = False
         self._prewarm_for_locator = now.url
         self._prewarm_timer = self._loop.call_later(delay, self._start_prewarm)
 
@@ -453,6 +481,7 @@ class MusicPlayer:
         task = self._prewarm_task
         self._prewarm_task = None
         self._prewarmed = None
+        self._prewarm_done = False
         self._prewarm_streams.clear()
         if self._prewarm_timer is not None:
             self._prewarm_timer.cancel()
@@ -478,6 +507,7 @@ class MusicPlayer:
         if self._now_playing is None or self._now_playing.url != self._prewarm_for_locator:
             return  # the track it was scheduled for ended/skipped meanwhile
         self._prewarmed = pick
+        self._prewarm_done = True
         if pick is not None:
             # Resolve the STREAM now, not at track-end. A stale stream URL
             # by play time is `_advance`'s ordinary unresolvable-track
@@ -493,7 +523,12 @@ class MusicPlayer:
                 # Nothing playable arrived; a later `_advance` will fall
                 # back to its own resolve, exactly like a stale queued
                 # track today. The stale-pick guard above still applies.
+                # NOT an empty answer -- an unresolvable pick is retried at
+                # track end so `_advance` can re-resolve it live (the
+                # R-62 no-retry rule is about `related()` answering empty,
+                # not about a pick whose early stream resolve failed).
                 self._prewarmed = None
+                self._prewarm_done = False
 
     async def _autoplay_pick(self, previous: QueuedTrack) -> ResolvedTrack | None:
         """The next autoplay pick: a prewarmed pick is consumed first
@@ -504,8 +539,18 @@ class MusicPlayer:
         all-repeats Mix returns `None` exactly like an empty one — never
         retried, never substituted with a guess."""
         prewarmed = self._prewarmed
+        if self._prewarm_done and prewarmed is None:
+            # A completed prewarm answered EMPTY — that is the FINAL answer
+            # for this track (external audit Codex MAJOR-1, 2026-08-26):
+            # `related()` was already consulted once. R-62's discipline is
+            # "never retried, never guessed"; re-calling `related()` here
+            # would RETRY the empty answer and could later autoplay a track
+            # instead of falling through to idle.
+            self._prewarm_done = False
+            return None
         if prewarmed is not None:
             self._prewarmed = None
+            self._prewarm_done = False
             if prewarmed.locator not in self._played_locators:
                 return prewarmed
             # The prewarmed pick was played in the meantime (a skip, a

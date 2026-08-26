@@ -871,3 +871,89 @@ async def test_scheduling_a_new_prewarm_cancels_the_previous_timer_and_task() ->
     assert old_timer.cancelled(), "the earlier prewarm timer must be cancelled"
     assert player._prewarm_timer is not None  # type: ignore[attr-defined]
     player._cancel_prewarm()  # type: ignore[attr-defined]
+
+
+async def test_an_empty_prewarm_is_not_retried_at_track_end() -> None:
+    """Codex MAJOR-1 (2026-08-26): a completed prewarm that answered empty
+    (R-62's ordinary 'nothing to offer' — `related()` returned nothing)
+    must be the FINAL answer. Re-calling `related()` at track end would
+    RETRY an empty Mix and could later autoplay a track instead of
+    falling through to idle, violating R-62's 'never retried' rule."""
+    source = _StubSource(
+        {"track a": _TRACK_A, "locator-b": _TRACK_B},
+        related={"locator-a": ()},  # empty Mix: nothing to offer
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source,
+        voice=_FakeVoiceSession(), session=FakeMusicSessionStore(),
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+        autoplay_enabled=True, autoplay_prewarm_seconds=20.0,
+        loop=asyncio.get_running_loop(),
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    player._start_prewarm()  # type: ignore[attr-defined]
+    await asyncio.sleep(0)  # let the background task complete
+    assert player._prewarm_done is True  # type: ignore[attr-defined]
+    assert player._prewarmed is None  # type: ignore[attr-defined]
+
+    # Track ends naturally: the empty answer must NOT be retried.
+    related_before = len(source.related_calls)
+    await player.on_track_finished()
+
+    assert len(source.related_calls) == related_before
+    status = await player.status()
+    assert status.now_playing is None  # fell through to idle, not autoplay
+
+
+async def test_resume_from_persisted_into_a_dead_voice_marks_the_session_dead() -> None:
+    """Codex MAJOR-3 (2026-08-26): a boot-time resume whose `voice.play()`
+    raises (dead voice connection that reconnect claimed was up) must mark
+    the player dead so the manager's `_after_transition` evicts it -- a
+    zombie would sit in `_players` and a later `/music play` would reuse
+    it instead of joining fresh."""
+    voice = _FakeVoiceSession(fail_on_play=True)
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(),
+        source=_StubSource({"locator-a": _TRACK_A}), voice=voice,
+        session=FakeMusicSessionStore(), voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1",
+    )
+
+    resumed = await player.resume_from_persisted(
+        source="youtube", locator="locator-a", title="Track A", paused=False, volume=1.0,
+    )
+
+    assert resumed is False
+    assert player._session_dead is True  # type: ignore[attr-defined]
+    assert (await player.status()).now_playing is None
+
+
+class _FailingDeleteSessionStore(FakeMusicSessionStore):
+    async def delete(self, guild_id: str) -> None:
+        raise RuntimeError("db down")
+
+
+async def test_a_failed_session_delete_does_not_block_dead_voice_teardown() -> None:
+    """Codex MAJOR-4 (2026-08-26): a transient DB failure deleting the
+    session row during dead-voice teardown must not prevent `_session_dead`
+    from being set -- the manager's `_after_transition` evicts on that
+    flag; a stranded row is cleaned up by the next boot-time resume scan."""
+    voice = _FakeVoiceSession()
+    queue = FakeMusicQueueStore()
+    source = _StubSource({"track a": _TRACK_A, "locator-b": _TRACK_B})
+    await queue.enqueue(
+        guild_id="guild-1", source="youtube", url="locator-b", title="Track B",
+        added_by_person_id="miles", added_at=T0,
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=queue, source=source, voice=voice,
+        session=_FailingDeleteSessionStore(), voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1",
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    voice._fail_on_play = True  # type: ignore[attr-defined]
+
+    await player.on_track_finished()
+
+    assert player._session_dead is True  # type: ignore[attr-defined]
+    assert voice.disconnected == 1

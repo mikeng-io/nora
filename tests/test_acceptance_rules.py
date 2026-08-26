@@ -388,6 +388,18 @@ RULE_TESTS = {
     # while a track is loaded, and on two consecutive dead observations
     # signals on_voice_death so the session is torn down like a stop.
     "R-66": "test_the_voice_death_monitor_signals_death_after_two_dead_ticks",
+    # R-67: a completed prewarm that answered EMPTY is the final answer for
+    # that track -- `related()` is never re-consulted at track end (R-62's
+    # "never retried" discipline under prewarm, external audit Codex MAJOR-1).
+    "R-67": "test_an_empty_prewarm_is_not_retried_at_track_end",
+    # R-68: every transition that can touch a guild's MusicPlayer runs under
+    # that guild's lock -- skip/stop/channel-empty/idle-timeout join
+    # play()/on_track_finished()/on_voice_death() so a natural track-end,
+    # the voice-death monitor, and a user command can never interleave
+    # (external audit Codex MAJOR-2). resume_from_persisted's voice.play()
+    # and the dead-voice teardown's session delete are both exception-safe
+    # (Codex MAJOR-3/4).
+    "R-68": "test_a_dead_voice_connection_tears_down_the_session",
 }
 
 

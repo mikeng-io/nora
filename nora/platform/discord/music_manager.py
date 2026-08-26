@@ -131,11 +131,19 @@ class MusicPlayerManager:
             return outcome
 
     async def skip(self, guild_id: str) -> QueuedTrack | None:
-        player = self._players.get(guild_id)
-        if player is None:
-            return None
-        skipped = await player.skip()
-        status = await self._after_transition(guild_id, player)
+        # Same per-guild lock as `play()`/`on_track_finished` — a skip can
+        # race a natural track-end's `_advance` (or the monitor's
+        # `on_voice_death`): without serialization a skip could advance a
+        # player the finish path is mid-`pop_next` on, or hold a stale
+        # reference to a player a teardown already removed (external audit
+        # Codex MAJOR-2, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            player = self._players.get(guild_id)
+            if player is None:
+                return None
+            skipped = await player.skip()
+            status = await self._after_transition(guild_id, player)
         # Skip's own reply already names what was skipped
         # (`music_commands.py`) -- this announces what's now playing next,
         # the same notification a natural track-end gets.
@@ -192,12 +200,21 @@ class MusicPlayerManager:
     async def stop(self, guild_id: str) -> None:
         """`/music stop` — same shape as leaving, an explicit command
         rather than a timer/event triggering it."""
-        await self._leave(guild_id)
+        # Same per-guild lock as `play()` — a stop can race a natural
+        # track-end's `_advance` or the monitor's `on_voice_death`; without
+        # serialization a post-stop advance could resurrect persisted state
+        # or double-teardown (external audit Codex MAJOR-2, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            await self._leave(guild_id)
 
     async def on_voice_channel_emptied(self, guild_id: str) -> None:
         """The channel's human count dropped to zero — leaves immediately,
         no idle grace period (03's disconnect-timer rules, trigger 1)."""
-        await self._leave(guild_id)
+        # Same per-guild lock (Codex MAJOR-2, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            await self._leave(guild_id)
 
     async def on_voice_death(self, guild_id: str) -> None:
         """The voice connection died while a track was supposedly audible —
@@ -351,7 +368,11 @@ class MusicPlayerManager:
 
     async def _idle_disconnect_after_timeout(self, guild_id: str) -> None:
         await self._clock_sleep(self._idle_timeout_seconds)
-        await self._leave(guild_id)
+        # Same per-guild lock (Codex MAJOR-2, 2026-08-26): the idle timer can
+        # fire while a track-end `_advance` or a `/music play` is mid-flight.
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            await self._leave(guild_id)
 
     async def _leave(self, guild_id: str) -> None:
         self._cancel_idle_disconnect(guild_id)
