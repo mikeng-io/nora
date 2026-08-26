@@ -58,18 +58,23 @@ class ImageGenerator(Protocol):
 
 Where:
 
-- `ImageReference` — a reference image for editing/conditioning (a URL, or a
-  handle Nora already holds). NOT the raw bytes: providers differ on what they
-  accept, and Nora's media custody (DEC-43/47) already gives her encrypted
-  blobs — the adapter is responsible for turning a stored blob into whatever
-  the provider wants (upload to a short-lived URL, base64 data URI, file_id).
-- `ImageSize` — a small enum (`small`/`medium`/`large` or explicit
-  width/height) that maps per-provider. The model-facing tool only ever names
-  a size word; the adapter translates.
+- `ImageReference` — a reference image for editing/conditioning: **a handle Nora
+  already holds** (a blob from her media custody, DEC-43/47), never an
+  arbitrary external URL. NOT the raw bytes: providers differ on what they
+  accept, and Nora's media custody already gives her encrypted blobs — the
+  adapter is responsible for turning a stored blob into whatever the provider
+  wants (upload to a short-lived URL, base64 data URI, file_id).
+- `ImageSize` — a resolution tier + aspect ratio, mapped per-provider:
+  `tier: small|medium|large` and `aspect_ratio: "1:1"|"16:9"|"9:16"|"3:2"|"2:3"`
+  (default `1:1`). The model-facing tool names the size word and aspect; the
+  adapter translates (xAI's API takes `aspect_ratio` + `resolution` 1k/2k
+  directly; another provider may map to width/height).
 - `ImageResult` — `ok | nothing_found | unavailable` three-state, the R-27
   shape this repo's signatures demand. Plus the artifact handle (URL / local
-  path / drop slug) and a `provider` tag so the reply can be honest about
-  what made the image.
+  path / drop slug), a `provider` tag so the reply can be honest about what
+  made the image, and a `reason: str = ""` field so the model can distinguish
+  quota-exhausted from auth-expired from provider-down (the same note-carrying
+  shape `MusicToolOutcome` already has — ports.py:1701-1712).
 
 ### The contract suite
 
@@ -115,23 +120,38 @@ Why A over the alternatives:
 - New CLI: `nora xai-login` — device-code flow against `https://auth.x.ai`
   (same endpoints Hermes uses: `POST /oauth2/device/code` →
   `POST /oauth2/device/token`), Miles approves in browser once.
-- The CLI **writes the tokens into `.env`** (`XAI_OAUTH_REFRESH_TOKEN` +
-  `XAI_OAUTH_ACCESS_TOKEN` + `XAI_OAUTH_TOKEN_TYPE`, the same shape every
-  other secret takes), then tells the operator to
-  `docker compose up -d nora` — the same "edit .env, recreate" loop the
-  deployment already uses. `docker-compose.yml` gains the two new
-  `environment:` entries (and a bind-mount for the refresh state, below).
+- Scopes requested: `openid profile email offline_access api:access` — the
+  full OIDC set xAI's own device-flow client documents. `offline_access` is
+  what causes a refresh token to be issued (without it, no refresh_token, and
+  the whole proactive-refresh design dies silently); `api:access` is what
+  entitles image generation through the subscription lane. `grok-cli:access`
+  is NOT a documented scope — do not request it (a rejected scope has shipped
+  real login failures). The CLI validates the returned scope list at login so
+  a rejected scope fails the CLI, not the daemon later.
+- The CLI **writes only the refresh token into `.env`**
+  (`XAI_OAUTH_REFRESH_TOKEN` — the long-lived secret, same shape every other
+  secret takes), then tells the operator to `docker compose up -d nora` —
+  the same "edit .env, recreate" loop the deployment already uses.
+  `docker-compose.yml` gains the one new `environment:` entry (plus a
+  bind-mount for the refresh state, below).
+- Access token: **never lives in `.env`.** It lives solely in the
+  container-writable state file `./state/xai-oauth.json` (the same repo-tree
+  state pattern `./state/signal-cli` already uses). Boot precedence is
+  explicit: read the state file; only if it is absent or corrupt, the adapter
+  derives an initial access token by refreshing with the `.env` refresh token.
+  One secret, one place — no two-source-of-truth restart race.
 - Refresh: standard OIDC `POST /oauth2/token` with `grant_type=refresh_token`,
   reusing the same skew policy Hermes uses (proactive refresh before expiry,
-  not on-401). The **access token updates are written back to a small
-  container-writable state file** (`./state/xai-oauth.json`, the same
-  repo-tree state pattern `./state/signal-cli` already uses — `DEC-8`'s
-  "one place to look" rule), seeded from `.env` at first boot. The
-  refresh_token itself stays in `.env` as the long-lived source of truth.
-- The adapter refreshes lazily under a lock, single-flight, and **fails
-  closed** to `unavailable` if the refresh_token itself is dead (which
+  not on-401). The adapter refreshes lazily under a lock, single-flight, and
+  **fails closed** to `unavailable` if the refresh_token itself is dead (which
   means: re-run `nora xai-login`, not "retry forever").
-- The access token is a JWT with scopes `grok-cli:access api:access` — the
+- Refresh flakiness: xAI's refresh endpoint is intermittently blocked by a
+  Cloudflare challenge (403 on the refresh call while the token is still
+  valid). The adapter treats a Cloudflare-challenged refresh as a **retryable**
+  bucket (bounded backoff), not a terminal auth failure — otherwise a
+  transient challenge forces a manual `xai-login` for a token that was never
+  dead.
+- The access token is a JWT with scopes `api:access` (plus OIDC claims) — the
   `api:access` scope is what entitles image generation through the
   subscription lane. This is confirmed working: Hermes' own `xai-oauth`
   credential pool resolves today and its image plugin calls
@@ -152,6 +172,7 @@ Why A over the alternatives:
 [image_gen]
 enabled = false            # inert by default, DEC-43 posture
 provider = "xai"           # port selector
+allow_reference_images = false   # privacy gate — see §5.1
 [image_gen.xai]
 model = "grok-imagine-image"
 quality_model = "grok-imagine-image-quality"
@@ -187,10 +208,12 @@ Reference images are third-party content (a friend's photo) uploaded to xAI's
 cloud. That deserves an explicit gate, not an implicit default:
 
 - **`[image_gen] allow_reference_images = false` by default.**
-- When `true`, the tool's `when` clause requires the reference image to be
-  already in the conversation (came in via `media_fetch`, i.e. Nora already
-  holds it) — Nora never fetches an external image *because* the user asked to
-  edit it; the user must have already sent it.
+- When `true`, the **adapter enforces** — not the model's compliance — that
+  every reference image is a Nora-held handle (a blob already in her media
+  custody, i.e. came in via `media_fetch`). `ImageReference` admits no raw
+  external URL: the port rejects any reference that is not a Nora-held
+  custody handle. Nora never fetches an external image *because* the user
+  asked to edit it; the user must have already sent it.
 - The tool docstring tells the model to state plainly when a generated image
   used a reference photo, so the group knows the image was edited, not
   invented.
@@ -218,12 +241,20 @@ budget mechanism (DEC-10) enforces it; `NATIVE_TOOL_BUDGETS` in
 | Prompt invalid / refused by provider | `nothing_found` | "generate 唔到，可能 prompt 有問題" |
 | Quota exhausted (subscription) | `unavailable` + reason | "今日 quota 用晒" |
 | Token expired, refresh failed | `unavailable` + reason | "auth 過期，要 Miles 重新 login" |
-| Provider down / timeout | `unavailable` | "服務暫時唔得" |
+| Rate limited (429) | `unavailable` (retryable) | "服務暫時唔得，過陣再試" |
+| Provider down / timeout | `unavailable` (retryable) | "服務暫時唔得" |
 | Success | `ok` + URL | "整好咗：<url>" |
 
 `unavailable` never retries blindly — the adapter distinguishes retryable
-(timeout, 5xx) from terminal (quota, auth) and only the former retries, once,
-bounded.
+(timeout, 5xx, 429) from terminal (quota, auth) and only the former retries,
+once, bounded.
+
+**403 is ambiguous — classify by response body, not status alone.** On the
+OAuth/subscription lane, BOTH subscription-quota exhaustion and entitlement
+failures surface as HTTP 403 ("403 subscription/resource error"), so the
+adapter must parse the response body / `error.code` to map quota vs auth vs
+unknown. If the body does not disambiguate, fail closed to `unavailable` with
+a generic reason — never guess "quota" or "auth" from the status code alone.
 
 ## 8. Out of scope (this proposal)
 
@@ -249,11 +280,11 @@ nora/infra/imagegen/__init__.py          # provider factory from config
 nora/config.py                           # [image_gen] section
 nora/agent/tools.py                      # + generate_image NativeTool + wiring
 nora/cli.py                              # + xai-login command
-tests/contract/test_image_generator_contract.py        # shared suite
+tests/contract/test_image_generator_contract.py        # shared suite (incl. reason-distinguishes-quota-vs-auth case, reference-custody rejection case)
 tests/test_config.py                     # [image_gen] keys, forbid/optional cases
 config.toml                              # [image_gen] block (enabled = false)
-docker-compose.yml                       # + XAI_OAUTH_* env entries, ./state/xai-oauth.json bind-mount
-.env (operator, gitignored)              # + XAI_OAUTH_REFRESH_TOKEN/ACCESS_TOKEN/TOKEN_TYPE
+docker-compose.yml                       # + XAI_OAUTH_REFRESH_TOKEN env entry, ./state/xai-oauth.json bind-mount
+.env (operator, gitignored)              # + XAI_OAUTH_REFRESH_TOKEN only (access token lives in ./state/xai-oauth.json)
 design/09-decision-index.md              # DEC-137 row
 ```
 
@@ -261,4 +292,4 @@ design/09-decision-index.md              # DEC-137 row
 
 | ID | Statement | Enforcing test |
 |---|---|---|
-| DEC-137 | **Image generation is a provider-agnostic port (`ImageGenerator`), never a native binding to xAI/Grok; the first implementation is the xAI subscription lane through Nora's OWN OAuth tokens (Option A — no host Hermes credential proxy).** The port's contract suite is shared by the xAI adapter and a fake; the model-facing tool never names a provider; reference-image editing goes through `/v1/images/edits` gated by `allow_reference_images` (default false). | `tests/contract/test_image_generator_contract.py` (xai + fake params), `tests/test_tools.py` (tool docstring contains no provider name), `tests/test_config.py` (unknown `[image_gen]` key is a startup failure; `enabled=false` keeps the tool `unavailable`), `tests/test_composition.py` (provider factory honors config selector) |
+| DEC-137 | **Image generation is a provider-agnostic port (`ImageGenerator`), never a native binding to xAI/Grok; the first implementation is the xAI subscription lane through Nora's OWN OAuth tokens (Option A — no host Hermes credential proxy).** The port's contract suite is shared by the xAI adapter and a fake; the model-facing tool never names a provider; reference-image editing goes through `/v1/images/edits` gated by `allow_reference_images` (default false); `ImageResult.reason` distinguishes quota/auth/down; reference images are adapter-enforced Nora-held custody handles only. | `tests/contract/test_image_generator_contract.py` (xai + fake params; reason-distinguishes-quota-vs-auth case; external-URL reference rejected), `tests/test_tools.py` (tool docstring contains no provider name), `tests/test_config.py` (unknown `[image_gen]` key is a startup failure; `enabled=false` keeps the tool `unavailable`), `tests/test_composition.py` (provider factory honors config selector) |
