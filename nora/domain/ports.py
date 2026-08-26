@@ -1703,11 +1703,15 @@ class MusicToolOutcome:
     """What a Nora agent music tool hands back (design/discord-music/
     07-agent-tool.md) — this file's R-27 three-state discipline: `ok` /
     `nothing_found` / `unavailable`, never conflated. `title`/`url` are only
-    meaningful on `ok`."""
+    meaningful on `ok`; `queued` distinguishes "started playing" from
+    "added to the queue behind something already playing" (same
+    distinction `/music play`'s reply carries as `Now playing` vs
+    `Queued`)."""
 
     status: Literal["ok", "nothing_found", "unavailable"]
     title: str | None = None
     url: str | None = None
+    queued: bool = False
     note: str = ""
 
 

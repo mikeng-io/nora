@@ -827,6 +827,15 @@ crossfade_seconds = 0.0
 # seeds a YouTube "Mix" recommendation from whatever just finished instead
 # of going idle — an opt-in, not this template's default.
 autoplay_enabled = false
+# 0 (default) = the next autoplay pick is decided only after the current
+# track ends (two fresh network calls — the Mix lookup, then the stream —
+# make the gap between tracks audible). Above 0, MusicPlayer resolves the
+# next pick while the current track is still playing, so the next track
+# starts instantly at track-end. Only meaningful when autoplay_enabled is
+# also true. 12.0 is a reasonable starting point: enough lead to cover
+# both lookups on a slow network, small enough to never collide with a
+# 3-second crossfade.
+autoplay_prewarm_seconds = 0.0
 
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version

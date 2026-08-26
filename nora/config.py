@@ -1446,7 +1446,15 @@ class MusicConfig(BaseModel):
     "Mix" recommendation from whatever just finished before falling back
     to idle — the operator's own evidence: "i expect after it FINISH it
     will continue to add
-    recommend/related song NOT stop"."""
+    recommend/related song NOT stop".
+
+    `autoplay_prewarm_seconds` — 0 (default) means the next autoplay pick
+    is decided after the current track ends, the pre-R-64 behaviour.
+    Above 0, `MusicPlayer` resolves the next pick (its Mix lookup AND its
+    playable stream) while the current track is still audible, so the
+    gap between track-end and the next track starting is instant rather
+    than two fresh network calls. Only meaningful when `autoplay_enabled`
+    is also True; ignored otherwise."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1454,6 +1462,7 @@ class MusicConfig(BaseModel):
     idle_timeout_seconds: float = 300.0
     crossfade_seconds: float = 0.0
     autoplay_enabled: bool = False
+    autoplay_prewarm_seconds: float = 0.0
 
 
 class DoctrineConfig(BaseModel):

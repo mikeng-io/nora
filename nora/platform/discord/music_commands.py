@@ -24,6 +24,7 @@ import math
 import discord
 from discord import app_commands
 
+from nora.domain.music import QueuedTrack
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_player import PlayerStatus, PlayOutcome
 from nora.platform.discord.voice_session import DiscordVoiceSession
@@ -75,9 +76,19 @@ def _connect_factory(
         async def _on_finished() -> None:
             await manager.on_track_finished(guild_id)
 
+        async def _on_voice_death() -> None:
+            # The voice connection died while a track was supposedly
+            # audible (a silent voice-websocket drop Discord never surfaces
+            # as a state change — R-66, found live 2026-08-26: "now its NOT
+            # even playing" after a `discord gateway resumed`). The player
+            # still believes it is playing; end the session like a stop so
+            # a fresh `/music play` joins a clean connection instead of
+            # streaming into a dead socket.
+            await manager.on_voice_death(guild_id)
+
         return DiscordVoiceSession(
             voice_client, loop=asyncio.get_running_loop(), on_finished=_on_finished,
-            crossfade_seconds=crossfade_seconds,
+            on_voice_death=_on_voice_death, crossfade_seconds=crossfade_seconds,
         )
 
     return connect
@@ -95,17 +106,28 @@ def _who(interaction: discord.Interaction) -> str:
     return f"{interaction.user}({interaction.user.id})"
 
 
+def _now_playing_line(track: QueuedTrack, *, paused: bool = False) -> str:
+    """The ONE canonical \"what's playing\" line every surface uses
+    (slash replies, controls, queue view, track-finish/autoplay
+    notifications): `Now playing: {title} — {url}`, with the URL always
+    present so a listener can click through, and the autoplay verb chosen
+    by the caller. Kept as one helper so the surfaces cannot drift
+    (message-consistency pass, 2026-08-26)."""
+    suffix = " (paused)" if paused else ""
+    return f"Now playing: {track.title} — {track.url}{suffix}"
+
+
 def _reply_for(outcome: PlayOutcome) -> str:
     if outcome.status == "nothing_found" or outcome.track is None:
         return "Couldn't find that."
     verb = "Now playing" if outcome.status == "playing" else "Queued"
     if outcome.queued_count <= 1:
-        return f"{verb}: {outcome.track.title}"
+        return f"{verb}: {outcome.track.title} — {outcome.track.url}"
     # A playlist link expanded into more than one track
     # (01-playback-and-source.md) -- name the first and the total, not just
     # the first, so queuing fifty tracks doesn't read as queuing one.
     rest = outcome.queued_count - 1
-    return f"{verb}: {outcome.track.title} (+{rest} more from the playlist)"
+    return f"{verb}: {outcome.track.title} — {outcome.track.url} (+{rest} more from the playlist)"
 
 
 class _NowPlayingControls(discord.ui.View):
@@ -128,8 +150,7 @@ class _NowPlayingControls(discord.ui.View):
             self.stop()
             return "Nothing is playing."
         self.pause_resume.label = "▶ Resume" if status.paused else "⏸ Pause"
-        suffix = " (paused)" if status.paused else ""
-        return f"Now playing: {status.now_playing.title}{suffix}"
+        return _now_playing_line(status.now_playing, paused=status.paused)
 
     @discord.ui.button(label="⏭ Skip", style=discord.ButtonStyle.secondary)
     async def skip(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
@@ -200,8 +221,7 @@ class _QueuePaginator(discord.ui.View):
         self._page = max(0, min(self._page, pages - 1))
         start = self._page * _QUEUE_PAGE_SIZE
         page_tracks = status.queue[start : start + _QUEUE_PAGE_SIZE]
-        suffix = " (paused)" if status.paused else ""
-        lines = [f"Now playing: {now_playing.title}{suffix}"]
+        lines = [_now_playing_line(now_playing, paused=status.paused)]
         if status.queue:
             lines.append(f"Queue (page {self._page + 1}/{pages}):")
             lines += [f"{start + i + 1}. {t.title}" for i, t in enumerate(page_tracks)]

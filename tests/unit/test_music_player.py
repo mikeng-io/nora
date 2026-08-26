@@ -15,10 +15,12 @@ test here, not `TrackSource`'s fidelity to the real yt-dlp boundary
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from uuid import uuid4
 
-from nora.domain.music import AUTOPLAY_PERSON_ID
+from nora.domain.music import AUTOPLAY_PERSON_ID, QueuedTrack
 from nora.domain.ports import ResolvedTrack
 from nora.platform.discord.music_player import MusicPlayer
 from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
@@ -67,7 +69,7 @@ class _StubSource:
 
 
 class _FakeVoiceSession:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_on_play: bool = False) -> None:
         self.played: list[str] = []
         self.stopped = 0
         self.paused = 0
@@ -75,11 +77,17 @@ class _FakeVoiceSession:
         self.disconnected = 0
         self.volume_calls: list[float] = []
         self._playing = False
+        self._fail_on_play = fail_on_play
 
     def is_playing(self) -> bool:
         return self._playing
 
     def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+        if self._fail_on_play:
+            # Stands in for `discord.errors.ClientException: Not connected
+            # to voice.` -- the live failure of 2026-08-26, when a dropped
+            # voice websocket made every subsequent advance raise.
+            raise RuntimeError("Not connected to voice.")
         self.played.append(stream_url)
         self._playing = True
 
@@ -116,6 +124,8 @@ _TRACK_C = ResolvedTrack(
 
 def _player(
     tracks: dict[str, _StubEntry], *, autoplay_enabled: bool = False,
+    autoplay_prewarm_seconds: float = 0.0,
+    loop: asyncio.AbstractEventLoop | None = None,
 ) -> tuple[MusicPlayer, _FakeVoiceSession, FakeMusicSessionStore]:
     voice = _FakeVoiceSession()
     session = FakeMusicSessionStore()
@@ -124,6 +134,8 @@ def _player(
         source=_StubSource(tracks), voice=voice, session=session,
         voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
         autoplay_enabled=autoplay_enabled,
+        autoplay_prewarm_seconds=autoplay_prewarm_seconds,
+        loop=loop,
     )
     return player, voice, session
 
@@ -355,6 +367,125 @@ async def test_autoplay_never_seeds_from_nothing_on_the_very_first_track() -> No
 
     assert outcome.status == "playing"
     assert source.related_calls == []
+
+
+async def test_autoplay_skips_tracks_already_played_this_session() -> None:
+    """Played-history dedup (design/discord-music/08-autoplay.md, found
+    live 2026-08-26 -- \"it keep repeating some of the songs\"): a Mix
+    only excludes its own seed, so a chain that keeps reseeding from the
+    latest pick drifts into the same few tracks. Once a track has played
+    this session, autoplay must skip it and take the next fresh one from
+    the Mix instead."""
+    voice = _FakeVoiceSession()
+    session = FakeMusicSessionStore()
+    source = _StubSource(
+        {
+            "track a": _TRACK_A,
+            "locator-b": _TRACK_B,
+            "locator-c": _TRACK_C,
+        },
+        related={
+            # Both B and C offered after A. B is skipped (already played)
+            # so C plays next.
+            "locator-a": (_TRACK_B, _TRACK_C),
+            # After B, its Mix offers C: fresh, picked.
+            "locator-b": (_TRACK_C,),
+            # After C, the Mix offers C's own seed plus B and A -- all
+            # already played -- so autoplay falls to idle.
+            "locator-c": (_TRACK_C, _TRACK_B, _TRACK_A),
+        },
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=voice,
+        session=session, voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=True,
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    # A finishes -> B and C offered; B (locator-b) already played? No --
+    # A played, B is fresh. B is picked.
+    await player.on_track_finished()
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+    # B finishes -> related(B) yields (C,): C fresh, picked.
+    await player.on_track_finished()
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track C"
+    # C finishes -> its Mix is all repeats -> idle, no fourth track.
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is None
+    assert voice.played == [
+        "https://cdn.example/a", "https://cdn.example/b", "https://cdn.example/c",
+    ]
+
+
+async def test_autoplay_with_an_all_repeats_mix_falls_back_to_idle() -> None:
+    """A Mix whose every entry has already played this session offers
+    nothing new -- must fall through to the same idle behaviour as an
+    empty one, never retried and never substituted with a guess."""
+    source = _StubSource(
+        {"track a": _TRACK_A, "locator-b": _TRACK_B},
+        related={"locator-a": (_TRACK_B,), "locator-b": (_TRACK_A,)},
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=_FakeVoiceSession(),
+        session=FakeMusicSessionStore(), voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=True,
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    # A -> autoplay B (fresh) -> B's Mix has only A (already played) -> idle.
+    await player.on_track_finished()
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is None
+
+
+async def test_user_play_of_the_same_track_twice_is_not_deduped() -> None:
+    """Dedup is autoplay's pick selection only: the played-history set
+    never filters what a PERSON explicitly queues. `related()` (and the
+    autoplay path) is the only reader of `_played_locators`; an ordinary
+    `/music play` resolving to a track that already played still plays."""
+    player, voice, _session = _player({"track a": _TRACK_A})
+
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    await player.on_track_finished()  # A finished; no autoplay configured
+    second = await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    assert second.status == "playing"
+    assert voice.played == ["https://cdn.example/a", "https://cdn.example/a"]
+
+
+async def test_resumed_persisted_track_occupies_a_dedup_slot() -> None:
+    """`resume_from_persisted` restarts the interrupted track from
+    position 0 -- it HAS played this session, so the first autoplay pick
+    after a restart must not be able to repeat it."""
+    session = FakeMusicSessionStore()
+    source = _StubSource(
+        {"locator-a": _TRACK_A, "locator-b": _TRACK_B},
+        related={"locator-a": (_TRACK_A, _TRACK_B)},
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=_FakeVoiceSession(),
+        session=session, voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=True,
+    )
+
+    resumed = await player.resume_from_persisted(
+        source="youtube", locator="locator-a", title="Track A", paused=False, volume=1.0,
+    )
+    assert resumed is True
+    # A -> autoplay: Mix offers A (already resumed) and B (fresh) -> B.
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
 
 
 async def test_pause_returns_false_when_nothing_is_playing() -> None:
@@ -608,3 +739,221 @@ async def test_resume_from_persisted_returns_false_when_the_track_no_longer_reso
     assert resumed is False
     assert voice.played == []
     assert (await player.status()).now_playing is None
+
+
+async def test_prewarm_resolves_the_next_autoplay_pick_before_the_track_ends() -> None:
+    """R-64: with `autoplay_prewarm_seconds` set, the next autoplay pick
+    (its Mix lookup AND its playable stream) is resolved while the current
+    track is still audible, so `on_track_finished` costs zero network
+    calls: the prewarmed stream is played directly."""
+    voice = _FakeVoiceSession()
+    session = FakeMusicSessionStore()
+    source = _StubSource(
+        {"track a": _TRACK_A, "locator-b": _TRACK_B}, related={"locator-a": (_TRACK_B,)},
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=voice,
+        session=session, voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=True,
+        autoplay_prewarm_seconds=20.0, loop=asyncio.get_running_loop(),
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    # The timer would fire 180s in; in a test, drive the prewarm directly.
+    # (`_schedule_prewarm` scheduled the timer; `_start_prewarm` is what a
+    # real loop calls.)
+    assert player._prewarm_timer is not None  # type: ignore[attr-defined]
+    player._start_prewarm()  # type: ignore[attr-defined]
+    await asyncio.sleep(0)  # let the background task complete
+    assert player._prewarmed is not None  # type: ignore[attr-defined]
+    assert player._prewarmed.locator == "locator-b"  # type: ignore[attr-defined]
+    assert "locator-b" in player._prewarm_streams  # type: ignore[attr-defined]
+
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+    assert voice.played == ["https://cdn.example/a", "https://cdn.example/b"]
+    # The track-end advance resolved from the prewarm cache: the second
+    # `resolve()` for locator-b was never made.
+    assert source.resolved.count("locator-b") == 1
+
+
+async def test_autoplay_pick_refuses_a_prewarmed_pick_already_played() -> None:
+    """R-63 + R-64 together: the prewarmed pick is refused when its locator
+    has since played (a skip/user re-queue made it start), and the fresh
+    `related()` fallback supplies a deduped pick instead."""
+    player, _voice, _session = _player(
+        {"locator-a": _TRACK_A, "locator-c": _TRACK_C}, autoplay_enabled=True,
+    )
+    source = player._source  # type: ignore[attr-defined]
+    source._related["locator-a"] = (_TRACK_C,)  # type: ignore[attr-defined]
+    player._prewarmed = _TRACK_B  # type: ignore[attr-defined]
+    player._played_locators.add("locator-b")  # type: ignore[attr-defined]
+    previous = QueuedTrack(
+        id=uuid4(), guild_id="guild-1", position=0, source="youtube",
+        url="locator-a", title="Track A", added_by_person_id="miles", added_at=T0,
+    )
+
+    pick = await player._autoplay_pick(previous)  # type: ignore[attr-defined]
+
+    assert pick is not None
+    assert pick.locator == "locator-c"
+
+
+async def test_a_dead_voice_connection_tears_down_the_session() -> None:
+    """Live incident 2026-08-26: a dropped voice websocket made every
+    `voice.play()` raise `Not connected to voice.` mid-`_advance`, which
+    previously escaped into the `on_finished` handler and stranded
+    `_now_playing` claiming a track was audible when nothing was. The
+    player must tear the session down (queue + session row cleared, voice
+    disconnected) so a fresh `/music play` can join cleanly."""
+    voice = _FakeVoiceSession()
+    session = FakeMusicSessionStore()
+    queue = FakeMusicQueueStore()
+    source = _StubSource({"track a": _TRACK_A, "locator-b": _TRACK_B})
+    await queue.enqueue(
+        guild_id="guild-1", source="youtube", url="locator-b", title="Track B",
+        added_by_person_id="miles", added_at=T0,
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=queue, source=source, voice=voice, session=session,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    assert (await session.get("guild-1")) is not None
+    # The voice connection dies now (the live 2026-08-26 failure): the
+    # NEXT advance's `voice.play()` raises.
+    voice._fail_on_play = True  # type: ignore[attr-defined]
+
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is None
+    assert voice.disconnected == 1
+    assert await session.get("guild-1") is None
+    assert await queue.queue_for("guild-1") == []
+    # External audit MAJOR-2 (2026-08-26): the player marks itself dead so
+    # `MusicPlayerManager._after_transition` drops it from `_players` --
+    # without this the manager would keep the zombie and a `/music play`
+    # before the idle timeout would reuse the dead player.
+    assert player._session_dead is True  # type: ignore[attr-defined]
+
+
+async def test_scheduling_a_new_prewarm_cancels_the_previous_timer_and_task() -> None:
+    """External audit MAJOR-1 (2026-08-26): `_schedule_prewarm` must cancel
+    the previous timer/task before arming the new one. Left alone, an old
+    timer fires after a skip/advance, sees `_prewarm_for_locator` already
+    updated to the NEW track, spawns a duplicate `_prewarm_pick` for it and
+    races to fill `_prewarm_streams` -- a wasted `related()` network call
+    per advance."""
+    player, _voice, _session = _player(
+        {"locator-a": _TRACK_A}, autoplay_enabled=True,
+        autoplay_prewarm_seconds=20.0, loop=asyncio.get_running_loop(),
+    )
+    player._now_playing = QueuedTrack(  # type: ignore[attr-defined]
+        id=uuid4(), guild_id="guild-1", position=0, source="youtube",
+        url="locator-a", title="Track A", added_by_person_id="miles", added_at=T0,
+    )
+    player._schedule_prewarm(200.0)  # type: ignore[attr-defined]
+    old_timer = player._prewarm_timer  # type: ignore[attr-defined]
+    assert old_timer is not None
+    assert not old_timer.cancelled()
+
+    # An advance for a second track re-arms prewarm -- the old timer must
+    # be cancelled, not left to fire.
+    player._now_playing = QueuedTrack(  # type: ignore[attr-defined]
+        id=uuid4(), guild_id="guild-1", position=0, source="youtube",
+        url="locator-b", title="Track B", added_by_person_id="miles", added_at=T0,
+    )
+    player._schedule_prewarm(180.0)  # type: ignore[attr-defined]
+
+    assert old_timer.cancelled(), "the earlier prewarm timer must be cancelled"
+    assert player._prewarm_timer is not None  # type: ignore[attr-defined]
+    player._cancel_prewarm()  # type: ignore[attr-defined]
+
+
+async def test_an_empty_prewarm_is_not_retried_at_track_end() -> None:
+    """Codex MAJOR-1 (2026-08-26): a completed prewarm that answered empty
+    (R-62's ordinary 'nothing to offer' — `related()` returned nothing)
+    must be the FINAL answer. Re-calling `related()` at track end would
+    RETRY an empty Mix and could later autoplay a track instead of
+    falling through to idle, violating R-62's 'never retried' rule."""
+    source = _StubSource(
+        {"track a": _TRACK_A, "locator-b": _TRACK_B},
+        related={"locator-a": ()},  # empty Mix: nothing to offer
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source,
+        voice=_FakeVoiceSession(), session=FakeMusicSessionStore(),
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+        autoplay_enabled=True, autoplay_prewarm_seconds=20.0,
+        loop=asyncio.get_running_loop(),
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    player._start_prewarm()  # type: ignore[attr-defined]
+    await asyncio.sleep(0)  # let the background task complete
+    assert player._prewarm_done is True  # type: ignore[attr-defined]
+    assert player._prewarmed is None  # type: ignore[attr-defined]
+
+    # Track ends naturally: the empty answer must NOT be retried.
+    related_before = len(source.related_calls)
+    await player.on_track_finished()
+
+    assert len(source.related_calls) == related_before
+    status = await player.status()
+    assert status.now_playing is None  # fell through to idle, not autoplay
+
+
+async def test_resume_from_persisted_into_a_dead_voice_marks_the_session_dead() -> None:
+    """Codex MAJOR-3 (2026-08-26): a boot-time resume whose `voice.play()`
+    raises (dead voice connection that reconnect claimed was up) must mark
+    the player dead so the manager's `_after_transition` evicts it -- a
+    zombie would sit in `_players` and a later `/music play` would reuse
+    it instead of joining fresh."""
+    voice = _FakeVoiceSession(fail_on_play=True)
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(),
+        source=_StubSource({"locator-a": _TRACK_A}), voice=voice,
+        session=FakeMusicSessionStore(), voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1",
+    )
+
+    resumed = await player.resume_from_persisted(
+        source="youtube", locator="locator-a", title="Track A", paused=False, volume=1.0,
+    )
+
+    assert resumed is False
+    assert player._session_dead is True  # type: ignore[attr-defined]
+    assert (await player.status()).now_playing is None
+
+
+class _FailingDeleteSessionStore(FakeMusicSessionStore):
+    async def delete(self, guild_id: str) -> None:
+        raise RuntimeError("db down")
+
+
+async def test_a_failed_session_delete_does_not_block_dead_voice_teardown() -> None:
+    """Codex MAJOR-4 (2026-08-26): a transient DB failure deleting the
+    session row during dead-voice teardown must not prevent `_session_dead`
+    from being set -- the manager's `_after_transition` evicts on that
+    flag; a stranded row is cleaned up by the next boot-time resume scan."""
+    voice = _FakeVoiceSession()
+    queue = FakeMusicQueueStore()
+    source = _StubSource({"track a": _TRACK_A, "locator-b": _TRACK_B})
+    await queue.enqueue(
+        guild_id="guild-1", source="youtube", url="locator-b", title="Track B",
+        added_by_person_id="miles", added_at=T0,
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=queue, source=source, voice=voice,
+        session=_FailingDeleteSessionStore(), voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1",
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    voice._fail_on_play = True  # type: ignore[attr-defined]
+
+    await player.on_track_finished()
+
+    assert player._session_dead is True  # type: ignore[attr-defined]
+    assert voice.disconnected == 1

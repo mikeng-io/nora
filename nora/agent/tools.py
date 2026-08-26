@@ -1457,6 +1457,8 @@ def _music_result(outcome: MusicToolOutcome) -> dict[str, object]:
         result["title"] = outcome.title
     if outcome.url is not None:
         result["url"] = outcome.url
+    if outcome.queued:
+        result["queued"] = True
     if outcome.note:
         result["note"] = outcome.note
     return result
@@ -3421,7 +3423,10 @@ def build_tool_specs(
         `title` names it), `nothing_found` (couldn't resolve `query` to
         anything playable), or `unavailable` (music isn't available here, or
         you're not in a voice channel and nothing is playing yet — say so,
-        don't guess a channel).
+        don't guess a channel). When `status` is `ok` the result also
+        carries `queued` — `true` when the track was added BEHIND something
+        already playing, `false` when it actually started playing — so say
+        "queued" or "now playing" accurately instead of guessing.
 
         Args:
             query: what to play — a search term, a video URL, or a playlist URL.

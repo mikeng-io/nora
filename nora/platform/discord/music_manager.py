@@ -51,6 +51,7 @@ class MusicPlayerManager:
         spawn: Spawn,
         clock_sleep: ClockSleep = asyncio.sleep,
         autoplay_enabled: bool = False,
+        autoplay_prewarm_seconds: float = 0.0,
     ) -> None:
         self._queue_store = queue_store
         self._session_store = session_store
@@ -59,6 +60,7 @@ class MusicPlayerManager:
         self._spawn = spawn
         self._clock_sleep = clock_sleep
         self._autoplay_enabled = autoplay_enabled
+        self._autoplay_prewarm_seconds = autoplay_prewarm_seconds
         self._players: dict[str, MusicPlayer] = {}
         self._idle_tasks: dict[str, asyncio.Task[None]] = {}
         self._notify: dict[str, Notify] = {}
@@ -129,11 +131,19 @@ class MusicPlayerManager:
             return outcome
 
     async def skip(self, guild_id: str) -> QueuedTrack | None:
-        player = self._players.get(guild_id)
-        if player is None:
-            return None
-        skipped = await player.skip()
-        status = await self._after_transition(guild_id, player)
+        # Same per-guild lock as `play()`/`on_track_finished` — a skip can
+        # race a natural track-end's `_advance` (or the monitor's
+        # `on_voice_death`): without serialization a skip could advance a
+        # player the finish path is mid-`pop_next` on, or hold a stale
+        # reference to a player a teardown already removed (external audit
+        # Codex MAJOR-2, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            player = self._players.get(guild_id)
+            if player is None:
+                return None
+            skipped = await player.skip()
+            status = await self._after_transition(guild_id, player)
         # Skip's own reply already names what was skipped
         # (`music_commands.py`) -- this announces what's now playing next,
         # the same notification a natural track-end gets.
@@ -141,11 +151,19 @@ class MusicPlayerManager:
         return skipped
 
     async def on_track_finished(self, guild_id: str) -> None:
-        player = self._players.get(guild_id)
-        if player is None:
-            return
-        await player.on_track_finished()
-        status = await self._after_transition(guild_id, player)
+        # Under the same per-guild lock as `play()` — the monitor's
+        # `on_voice_death` can fire while a natural track-end is mid-
+        # `_advance`; without serialization the two transitions would
+        # interleave `stop()`/`queue.clear()`/`session.delete()` with
+        # `pop_next()`/`resolve()`/`voice.play()` on the same `MusicPlayer`
+        # (external audit MAJOR-3, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            player = self._players.get(guild_id)
+            if player is None:
+                return
+            await player.on_track_finished()
+            status = await self._after_transition(guild_id, player)
         # This is the ONE transition with no slash-command reply of its own
         # — a track ending naturally and the next one auto-starting is
         # otherwise silent in Discord.
@@ -182,12 +200,37 @@ class MusicPlayerManager:
     async def stop(self, guild_id: str) -> None:
         """`/music stop` — same shape as leaving, an explicit command
         rather than a timer/event triggering it."""
-        await self._leave(guild_id)
+        # Same per-guild lock as `play()` — a stop can race a natural
+        # track-end's `_advance` or the monitor's `on_voice_death`; without
+        # serialization a post-stop advance could resurrect persisted state
+        # or double-teardown (external audit Codex MAJOR-2, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            await self._leave(guild_id)
 
     async def on_voice_channel_emptied(self, guild_id: str) -> None:
         """The channel's human count dropped to zero — leaves immediately,
         no idle grace period (03's disconnect-timer rules, trigger 1)."""
-        await self._leave(guild_id)
+        # Same per-guild lock (Codex MAJOR-2, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            await self._leave(guild_id)
+
+    async def on_voice_death(self, guild_id: str) -> None:
+        """The voice connection died while a track was supposedly audible —
+        a silent voice-websocket drop that discord.py's `is_connected()`
+        never reflects (R-66, found live 2026-08-26: "now its NOT even
+        playing" after a `discord gateway resumed`, while every subsequent
+        `voice.play()` raised `Not connected to voice.`). The player still
+        believes it is playing; end the session like a stop so a fresh
+        `/music play` joins a clean connection instead of streaming into a
+        dead socket."""
+        # Same per-guild lock as `play()`/`on_track_finished` — the monitor
+        # can fire while a natural track-end is mid-`_advance` (external
+        # audit MAJOR-3, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            await self._leave(guild_id)
 
     async def persisted_sessions(self) -> Sequence[MusicSession]:
         """Every session a PRIOR process left behind — the boot-time
@@ -232,6 +275,8 @@ class MusicPlayerManager:
             voice_channel_id=session.voice_channel_id,
             notify_channel_id=session.notify_channel_id,
             autoplay_enabled=self._autoplay_enabled,
+            autoplay_prewarm_seconds=self._autoplay_prewarm_seconds,
+            loop=asyncio.get_running_loop(),
         )
         self._players[session.guild_id] = player
         self._notify[session.guild_id] = notify
@@ -268,12 +313,25 @@ class MusicPlayerManager:
             guild_id=guild_id, queue=self._queue_store, source=self._track_source, voice=voice,
             session=self._session_store, voice_channel_id=voice_channel_id,
             notify_channel_id=notify_channel_id, autoplay_enabled=self._autoplay_enabled,
+            autoplay_prewarm_seconds=self._autoplay_prewarm_seconds,
+            loop=asyncio.get_running_loop(),
         )
         self._players[guild_id] = player
         return player
 
     async def _after_transition(self, guild_id: str, player: MusicPlayer) -> PlayerStatus:
         status = await player.status()
+        if getattr(player, "_session_dead", False):
+            # R-65: `_advance` already tore the session down (queue cleared,
+            # session row deleted, voice disconnected) but cannot remove
+            # itself from `_players` — drop the dead player entirely so the
+            # next `/music play` joins a clean connection and the idle timer
+            # is not armed for a zombie (external audit MAJOR-2, 2026-08-26).
+            # `_leave` re-runs `player.stop()`, which is safe on the torn
+            # state (clear/stop/disconnect on empty/already-left are
+            # idempotent no-ops in `DiscordVoiceSession`).
+            await self._leave(guild_id)
+            return status
         if status.now_playing is None:
             self._schedule_idle_disconnect(guild_id)
         else:
@@ -310,7 +368,11 @@ class MusicPlayerManager:
 
     async def _idle_disconnect_after_timeout(self, guild_id: str) -> None:
         await self._clock_sleep(self._idle_timeout_seconds)
-        await self._leave(guild_id)
+        # Same per-guild lock (Codex MAJOR-2, 2026-08-26): the idle timer can
+        # fire while a track-end `_advance` or a `/music play` is mid-flight.
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            await self._leave(guild_id)
 
     async def _leave(self, guild_id: str) -> None:
         self._cancel_idle_disconnect(guild_id)

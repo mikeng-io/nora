@@ -23,6 +23,7 @@ description.
 | `16-multi-message-replies.md` | relaxing R-2 so one tag can send several messages | mechanism measured; nothing built |
 | `18-context-budget-and-handles.md` | rationing fetched content per turn; message handles | **contested** — a review argued the budget is a component where a constant would do, and that the live `limit_total_tokens` counter should be read first. Its cheap half (the `↳` snippet) shipped in `624955d`; the rest is deferred. |
 | `27-presence-analytics.md` | the DERIVED layer of the presence stack as a consumer-neutral substrate, plus the six-tier programme above it | **P0 spec written** (`docs/superpowers/specs/2026-08-18-presence-analytics-substrate-design.md`); Tiers 1–2 ready to build, Tier 4 blocked on 4–8 weeks of episodes, Tier 6 speculative |
+| `28-relevance-classifier.md` | A3 true-ambient: single cheap flash completion on the ambient path deciding engage yes/no; off-path bounded queue; shadow mode first | **brief only** — nothing built; replaces `VoiceNotePolicy` for untagged voice notes when it lands |
 
 Each carries corrections applied after an adversarial review on the day it was
 written. Read the corrections — several are recorded as struck-through claims

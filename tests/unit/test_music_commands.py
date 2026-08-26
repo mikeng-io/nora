@@ -57,12 +57,16 @@ def test_reply_for_nothing_found() -> None:
 
 def test_reply_for_a_single_track_has_no_playlist_suffix() -> None:
     outcome = PlayOutcome(status="playing", track=_track("Track A"), queued_count=1)
-    assert _reply_for(outcome) == "Now playing: Track A"
+    assert _reply_for(outcome) == (
+        "Now playing: Track A — https://www.youtube.com/watch?v=x"
+    )
 
 
 def test_reply_for_a_playlist_expansion_names_the_first_and_the_total() -> None:
     outcome = PlayOutcome(status="queued", track=_track("Track A"), queued_count=5)
-    assert _reply_for(outcome) == "Queued: Track A (+4 more from the playlist)"
+    assert _reply_for(outcome) == (
+        "Queued: Track A — https://www.youtube.com/watch?v=x (+4 more from the playlist)"
+    )
 
 
 def test_render_page_lists_every_track_when_it_fits() -> None:
@@ -73,13 +77,18 @@ def test_render_page_lists_every_track_when_it_fits() -> None:
 
     reply = _paginator().render_page(status)
 
-    assert reply == "Now playing: Now Playing\nQueue (page 1/1):\n1. Track 1\n2. Track 2"
+    assert reply == (
+        "Now playing: Now Playing — https://www.youtube.com/watch?v=x\n"
+        "Queue (page 1/1):\n1. Track 1\n2. Track 2"
+    )
 
 
 def test_render_page_marks_paused() -> None:
     status = PlayerStatus(now_playing=_track("Now Playing"), paused=True, queue=[])
 
-    assert _paginator().render_page(status) == "Now playing: Now Playing (paused)"
+    assert _paginator().render_page(status) == (
+        "Now playing: Now Playing — https://www.youtube.com/watch?v=x (paused)"
+    )
 
 
 def test_render_page_nothing_playing_reports_that_plainly() -> None:
@@ -139,7 +148,7 @@ async def test_controls_render_shows_now_playing_with_a_pause_label() -> None:
 
     content = await view.render()
 
-    assert content == "Now playing: Track A"
+    assert content == "Now playing: Track A — https://www.youtube.com/watch?v=x"
     assert view.pause_resume.label == "⏸ Pause"
 
 
@@ -149,7 +158,7 @@ async def test_controls_render_shows_resume_label_when_paused() -> None:
 
     content = await view.render()
 
-    assert content == "Now playing: Track A (paused)"
+    assert content == "Now playing: Track A — https://www.youtube.com/watch?v=x (paused)"
     assert view.pause_resume.label == "▶ Resume"
 
 

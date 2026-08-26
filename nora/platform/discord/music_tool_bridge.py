@@ -142,7 +142,10 @@ class DiscordMusicToolBridge:
             return _UNAVAILABLE_NOT_IN_VOICE
         if outcome.status == "nothing_found" or outcome.track is None:
             return MusicToolOutcome(status="nothing_found", note="Couldn't find that.")
-        return MusicToolOutcome(status="ok", title=outcome.track.title, url=outcome.track.url)
+        return MusicToolOutcome(
+            status="ok", title=outcome.track.title, url=outcome.track.url,
+            queued=outcome.status == "queued",
+        )
 
     async def skip(self, *, conversation_id: str) -> MusicToolOutcome:
         skipped = await self._manager.skip(self._guild_id(conversation_id))

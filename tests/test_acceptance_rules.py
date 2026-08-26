@@ -373,6 +373,33 @@ RULE_TESTS = {
     # (default false). related() returning empty falls straight through to
     # idle -- never retried or substituted with a guess.
     "R-62": "test_autoplay_enqueues_and_plays_a_related_track_when_the_queue_empties",
+    "R-63": "test_autoplay_skips_tracks_already_played_this_session",
+    # R-64 (design/discord-music/08-autoplay.md): with [music]
+    # autoplay_prewarm_seconds above 0, MusicPlayer resolves the NEXT
+    # autoplay pick (Mix lookup AND its playable stream) before the
+    # current track ends, so the track-end advance plays the prewarmed
+    # stream directly -- zero network calls at the gap. A prewarmed pick
+    # already played this session is refused (R-63 dedup still applies).
+    "R-64": "test_prewarm_resolves_the_next_autoplay_pick_before_the_track_ends",
+    # R-65: a dead voice connection tears the session down like a stop
+    # instead of stranding now-playing state.
+    "R-65": "test_a_dead_voice_connection_tears_down_the_session",
+    # R-66: DiscordVoiceSession monitors the voice websocket + audio thread
+    # while a track is loaded, and on two consecutive dead observations
+    # signals on_voice_death so the session is torn down like a stop.
+    "R-66": "test_the_voice_death_monitor_signals_death_after_two_dead_ticks",
+    # R-67: a completed prewarm that answered EMPTY is the final answer for
+    # that track -- `related()` is never re-consulted at track end (R-62's
+    # "never retried" discipline under prewarm, external audit Codex MAJOR-1).
+    "R-67": "test_an_empty_prewarm_is_not_retried_at_track_end",
+    # R-68: every transition that can touch a guild's MusicPlayer runs under
+    # that guild's lock -- skip/stop/channel-empty/idle-timeout join
+    # play()/on_track_finished()/on_voice_death() so a natural track-end,
+    # the voice-death monitor, and a user command can never interleave
+    # (external audit Codex MAJOR-2). resume_from_persisted's voice.play()
+    # and the dead-voice teardown's session delete are both exception-safe
+    # (Codex MAJOR-3/4).
+    "R-68": "test_a_dead_voice_connection_tears_down_the_session",
 }
 
 

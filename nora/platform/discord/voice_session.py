@@ -38,6 +38,7 @@ from concurrent.futures import Future
 from typing import Any
 
 import discord
+from discord.utils import MISSING
 
 from nora.platform.discord.crossfade import CrossfadeSource
 
@@ -52,6 +53,20 @@ def _default_audio_source(stream_url: str) -> discord.AudioSource:
     )
 
 
+def _voice_connection_ws(voice_client: discord.VoiceClient) -> Any:
+    """The underlying `DiscordVoiceWebSocket` of a `VoiceClient`'s
+    `VoiceConnectionState` (`discord.voice_state.VoiceConnectionState.ws`),
+    or `MISSING` if this discord.py shape ever changes. Probed read-only —
+    the VOICE websocket is a different socket from the gateway websocket
+    the listener's `connected` flag tracks, and Discord can drop it
+    silently (found live 2026-08-26: a `discord gateway resumed` left the
+    voice side dead while every is_connected() kept reporting True)."""
+    state = getattr(voice_client, "_connection", None)
+    if state is None:
+        return MISSING
+    return getattr(state, "ws", MISSING)
+
+
 class DiscordVoiceSession:
     """Satisfies `nora.platform.discord.music_player.VoiceSession`."""
 
@@ -61,14 +76,19 @@ class DiscordVoiceSession:
         *,
         loop: asyncio.AbstractEventLoop,
         on_finished: Callable[[], Coroutine[Any, Any, None]],
+        on_voice_death: Callable[[], Coroutine[Any, Any, None]] | None = None,
         audio_source_factory: AudioSourceFactory = _default_audio_source,
         crossfade_seconds: float = 0.0,
+        monitor_interval_seconds: float = 5.0,
     ) -> None:
         self._voice_client = voice_client
         self._loop = loop
         self._on_finished = on_finished
+        self._on_voice_death = on_voice_death
         self._audio_source_factory = audio_source_factory
         self._crossfade_seconds = crossfade_seconds
+        self._monitor_interval_seconds = monitor_interval_seconds
+        self._monitor_task: asyncio.Task[None] | None = None
         self._suppress_next_after = False
         self._pending_finish: Future[None] | None = None
         # Persisted across tracks, not reset on `play()` — setting the
@@ -82,6 +102,7 @@ class DiscordVoiceSession:
         # this one's own natural end (`crossfade.py`).
         self._current_raw: discord.AudioSource | None = None
         self._crossfade_timer: asyncio.TimerHandle | None = None
+        self._dead_consecutive = 0
 
     def is_playing(self) -> bool:
         return bool(self._voice_client.is_playing())
@@ -126,6 +147,7 @@ class DiscordVoiceSession:
         wrapped = discord.PCMVolumeTransformer(mixed, volume=self._volume)
         self._current_source = wrapped
         self._cancel_crossfade_timer()
+        self._ensure_monitor()
         # A completion signal for the track THIS call is replacing may
         # already be in flight -- e.g. `/music skip` landing right as this
         # track's own early crossfade timer fired. Cancelling here (not
@@ -164,6 +186,7 @@ class DiscordVoiceSession:
         # started `run_coroutine_threadsafe` future prevents it from ever
         # running; a no-op if it already ran or was never scheduled.
         self._cancel_crossfade_timer()
+        self._cancel_monitor()
         if self._pending_finish is not None:
             self._pending_finish.cancel()
             self._pending_finish = None
@@ -231,6 +254,16 @@ class DiscordVoiceSession:
             return
         if error is not None:
             log.warning("voice playback ended with an error: %s", error)
+        # A NATURAL track end clears the loaded-track marker right here, on
+        # the thread that observed it (plain attribute writes; no asyncio
+        # state). Without this the voice-death monitor (R-66) would see
+        # `is_playing() == False` while a source is still loaded and, after
+        # two 5s ticks, tear the session down ~10s after the final track
+        # ends instead of respecting `idle_timeout_seconds` (external audit
+        # CRITICAL-1, 2026-08-26). `play()`/crossfade re-populate both
+        # fields for the next track; `stop()` clears them itself.
+        self._current_raw = None
+        self._current_source = None
         self._pending_finish = asyncio.run_coroutine_threadsafe(
             self._run_on_finished(), self._loop,
         )
@@ -247,3 +280,77 @@ class DiscordVoiceSession:
             log.exception("on_finished handler raised")
         finally:
             self._pending_finish = None
+
+    # -- voice-death monitor (R-66) ---------------------------------------
+
+    def _ensure_monitor(self) -> None:
+        """Starts the voice-death monitor on first `play()` of a session.
+        The monitor only runs while a track is EXPECTED to be audible; once
+        the session ends (`stop()`/`disconnect()`) it cancels itself."""
+        if self._monitor_task is None:
+            self._monitor_task = self._loop.create_task(self._monitor_loop())
+            log.info(
+                "voice-death monitor started for %s",
+                getattr(self._voice_client, "guild", "<unknown>"),
+            )
+
+    def _cancel_monitor(self) -> None:
+        task = self._monitor_task
+        self._monitor_task = None
+        # Never cancel the CURRENT task: the monitor calls `_signal_voice_death`
+        # -> `on_voice_death` -> `MusicPlayerManager.stop` -> `voice.stop()` ->
+        # `_cancel_monitor()` while still inside its own await stack. Cancelling
+        # itself would throw `CancelledError` into the middle of the handler
+        # coroutine and abort the teardown it just started.
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+
+    async def _monitor_loop(self) -> None:
+        """Every `monitor_interval_seconds`, check whether the voice
+        connection is still genuinely alive. Discord's gateway and voice
+        websockets are independent; a gateway resume does not touch the
+        voice side, and discord.py's `VoiceClient.is_connected()` only
+        reflects a state flag that a silent voice-websocket drop never
+        updates (found live 2026-08-26: \"now its NOT even playing\" after
+        a `discord gateway resumed` — every is_connected() kept reporting
+        True while the audio thread was already dead)."""
+        try:
+            while True:
+                await asyncio.sleep(self._monitor_interval_seconds)
+                if self._current_raw is None:
+                    continue  # nothing expected to be audible; idle
+                ws = _voice_connection_ws(self._voice_client)
+                ws_dead = ws is not MISSING and getattr(ws, "closed", False)
+                if not ws_dead and self._voice_client.is_playing():
+                    self._dead_consecutive = 0
+                    continue
+                # Either the voice WS closed, or discord.py stopped
+                # claiming it is playing while a track is still loaded —
+                # the two death signals a dead voice connection leaves
+                # behind. Require TWO consecutive observations so a brief
+                # blip (a reconnect in flight, a momentary thread pause)
+                # doesn't tear a live session down.
+                self._dead_consecutive += 1
+                if self._dead_consecutive < 2:
+                    continue
+                log.warning(
+                    "voice connection dead for guild %s (ws_closed=%s playing=%s); "
+                    "signalling on_voice_death",
+                    getattr(self._voice_client, "guild", "<unknown>"),
+                    ws_dead, self._voice_client.is_playing(),
+                )
+                self._dead_consecutive = 0
+                await self._signal_voice_death()
+                return
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            log.exception("voice-death monitor crashed")
+
+    async def _signal_voice_death(self) -> None:
+        if self._on_voice_death is None:
+            return
+        try:
+            await self._on_voice_death()
+        except Exception:
+            log.exception("on_voice_death handler raised")
