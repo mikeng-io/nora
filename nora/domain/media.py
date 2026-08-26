@@ -177,6 +177,38 @@ class MediaBlob:
 
 
 @dataclass(frozen=True)
+class GeneratedImage:
+    """One row of Nora's generated-image library (migration 0031).
+
+    `sha256` is the content address of the bytes in the SAME `blob_store`
+    (rustfs) the inbound media pipeline uses — a generated image is
+    custody-first. The prompt/title/description are what make a later
+    lookup meaningful: Nora searches by text and pulls bytes by sha256, so
+    she can resend or reuse an image days later without regenerating it.
+
+    `platform`/`conversation_id`/`created_at_ms` record where the image was
+    born — the audit trail (Miles 2026-08-26: "auditability + observability").
+    """
+
+    sha256: str
+    prompt: str
+    title: str
+    description: str
+    provider: str
+    model: str
+    media_type: str
+    size: int
+    platform: str
+    conversation_id: str
+    created_at_ms: int
+    aspect_ratio: str | None = None
+
+    @property
+    def handle(self) -> str:
+        return self.sha256[:HANDLE_CHARS]
+
+
+@dataclass(frozen=True)
 class MediaBytes:
     """The result of asking a platform for one attachment's bytes.
 

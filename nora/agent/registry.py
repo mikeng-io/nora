@@ -33,6 +33,7 @@ from ..domain.compute import ComputeJobStore
 from ..domain.ports import (
     BlobStore,
     ComputeBackend,
+    GeneratedImageStore,
     GifSource,
     MediaDescriptionStore,
     MusicToolBridge,
@@ -120,6 +121,7 @@ class ToolRegistry:
         music: MusicToolBridge | None = None,
         image_generator: ImageGenerator | None = None,
         image_refs_allowed: bool = False,
+        image_store: GeneratedImageStore | None = None,
         budget_overrides: Mapping[str, int] | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
@@ -299,6 +301,7 @@ class ToolRegistry:
         # `unavailable` — the wiring-gap state, never `nothing_found`.
         self._image_generator = image_generator
         self._image_refs_allowed = image_refs_allowed
+        self._image_store = image_store
 
     def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
@@ -621,6 +624,7 @@ class ToolRegistry:
             music=self._music,
             image_generator=self._image_generator,
             image_refs_allowed=self._image_refs_allowed,
+            image_store=self._image_store,
         )
 
     def build(

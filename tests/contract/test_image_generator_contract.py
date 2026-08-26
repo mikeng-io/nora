@@ -496,27 +496,11 @@ async def test_resolution_is_sent(server_factory):
     assert captured["resolution"] == "2k"
 
 
-async def test_drop_wired_failure_is_unavailable(tmp_path):
-    """M2: a wired `drop` that fails must surface as `unavailable/hosting`,
-    never a silent data-URI success."""
-    class _FailDrop:
-        async def register(self, **kw):
-            raise ConnectionError("drop down")
-
-    base = await _server_factory_for_drop()
-    gen = XaiImageGenerator(
-        oauth=_CannedOAuth(refresh_token="rt", state_file=Path("no-state")),  # noqa: S106
-        base_url=base, timeout_seconds=5.0,
-        drop=_FailDrop(),  # type: ignore[arg-type]
-    )
-    result = await gen.generate(prompt="a cat")
-    assert result.status == "unavailable"
-    assert result.reason == "hosting"
-
-
-async def _server_factory_for_drop():
-    """Ad-hoc aiohttp server for the drop-failure test (the shared
-    server_factory fixture only registers the two image endpoints)."""
+async def test_drop_is_not_involved(tmp_path):
+    """Miles 2026-08-26: the generate lane does NOT use `drop` at all — the
+    adapter returns raw bytes for Nora's OWN custody (rustfs), never uploads
+    to an external host. There is no drop parameter to wire, and the raw
+    bytes ride along on the result."""
 
     async def _ok(_request: web.Request) -> web.Response:
         return _json({"data": [{"b64_json": "aGVsbG8="}]})
@@ -526,5 +510,13 @@ async def _server_factory_for_drop():
     server = TestServer(app)
     await server.start_server()
     base = str(server.make_url("/")).rstrip("/")
-    # keep the server alive for the caller; it closes with the event loop
-    return base
+
+    gen = XaiImageGenerator(
+        oauth=_CannedOAuth(refresh_token="rt", state_file=Path("no-state")),  # noqa: S106
+        base_url=base, timeout_seconds=5.0,
+    )
+    result = await gen.generate(prompt="a cat")
+    assert result.status == "ok"
+    assert result.raw is not None
+    assert result.raw == b"hello"
+    assert result.media_type == "image/png"

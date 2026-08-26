@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nora.domain.ports import ArtifactIngest, ImageGenerator
+from nora.domain.ports import ImageGenerator
 
 from .xai_adapter import XaiImageGenerator
 from .xai_oauth import XaiOAuth
@@ -27,7 +27,6 @@ def build_image_generator(
     model: str = "grok-imagine-image",
     quality_model: str = "grok-imagine-image-quality",
     timeout_seconds: float = 90.0,
-    drop: ArtifactIngest | None = None,
 ) -> ImageGenerator | None:
     """Build the `ImageGenerator` the config selects.
 
@@ -54,7 +53,6 @@ def build_image_generator(
             model=model,
             quality_model=quality_model,
             timeout_seconds=timeout_seconds,
-            drop=drop,
         )
     # M6 (Kimi audit): an unknown provider must DEGRADE, not crash the
     # production daemon at boot — the same fail-soft posture every sibling

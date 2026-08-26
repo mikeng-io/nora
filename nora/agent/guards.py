@@ -21,6 +21,7 @@ from strands.hooks import (
 )
 
 from ..doctrine.loader import Doctrine
+from ..domain.media import MediaBlob
 from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
 from ..domain.ports import OutboundAttachment, SendResult, Styled
 from ..obs.metrics import Metrics
@@ -268,6 +269,7 @@ class Deliverer:
         attachments: tuple[OutboundAttachment, ...] = (),
         record_text: str | None = None,
         record_metadata: Mapping[str, Any] | None = None,
+        media_blobs: tuple[MediaBlob, ...] = (),
     ) -> bool:
         self._send_calls += 1
         if self.exhausted:                                     # R-2
@@ -421,6 +423,7 @@ class Deliverer:
             raw={"tag_id": self._tag_id, "source": source,
                  "doctrine_sha256": self._doctrine_sha256,
                  **({} if record_metadata is None else dict(record_metadata))},
+            media_blobs=media_blobs,
         )
         try:                                                   # record-first
             row_id = await self._store.append(

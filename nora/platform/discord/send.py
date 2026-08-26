@@ -20,16 +20,19 @@ that into a real `<@id>` ping: it looks up the target guild's live member
 list and splices the id in, server-side, right here, before the POST. See
 that module's docstring for the full reasoning and the fail-closed contract.
 
-**`attachments` is NOT among them, and is REFUSED rather than ignored.** It
-carries the message's payload, not its ornament — a GIF, a rendered map, a
-generated file. Dropping it and answering `ok=True` would have the audit row,
-the model, the ✅ and `nora_replies_total{status="sent"}` all assert a delivery
-the channel never received (found by review, 2026-08-14). Until multipart
-upload lands, an attachment send fails honestly.
+**`attachments` is the payload and IS supported: a multipart upload.**
+When `attachments` are present, the message is sent as a Discord multipart
+form — `payload_json` carries the message fields, `files[i]` carries each
+attachment's bytes — one request, Discord's documented shape. Before this
+landed (2026-08-26, image-gen direct-send), attachments were REFUSED rather
+than silently dropped: dropping them and answering `ok=True` would have the
+audit row, the model, the ✅ and `nora_replies_total{status="sent"}` all
+assert a delivery the channel never received.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 
 import aiohttp
@@ -69,24 +72,6 @@ class DiscordSender:
                 target.conversation_type,
             )
             return SendResult(ok=False)
-        if attachments:
-            # `attachments` is NOT decoration, whatever the docstring below
-            # groups it with: it is the payload. Discord needs a multipart
-            # upload for it, which v1 does not implement — and sending the
-            # caption alone while answering `ok=True` is the worst available
-            # outcome. `Deliverer` would write the audit row as SENT with its
-            # media metadata, `send_gif` would tell the model it succeeded,
-            # `nora_replies_total{status="sent"}` would tick, and the ✅ would
-            # go up — while the group saw a caption pointing at nothing.
-            # Refusing is honest and loud (R-5), and it is recoverable: the
-            # tool reports the failure to the model, which can answer in words.
-            log.error(
-                "refusing to send %d attachment(s) to channel %s — the Discord "
-                "sender has no multipart upload, and delivering the caption "
-                "alone would report a success the channel never saw",
-                len(attachments), target.conversation_id,
-            )
-            return SendResult(ok=False)
         # conversation_id is "<guild_id>/<channel_id>" (policy.example.toml);
         # the REST endpoint below addresses the channel alone. The guild half
         # is only needed below, for the member lookup a '@Name' in the text
@@ -108,37 +93,56 @@ class DiscordSender:
         # them for real. Restricting to exactly the ids this module spliced
         # is what makes a literal "@everyone" in a reply inert instead of a
         # mass ping nobody asked for.
-        payload = {
+        message = {
             "content": resolved_text,
             "allowed_mentions": {"parse": [], "users": list(allowed_users)},
         }
         try:
-            async with (
-                aiohttp.ClientSession(timeout=self._timeout) as session,
-                session.post(
-                    f"{self._base_url}/channels/{channel_id}/messages",
-                    headers=headers,
-                    json=payload,
-                ) as resp,
-            ):
-                if resp.status == 429:
+            async with aiohttp.ClientSession(timeout=self._timeout) as session:
+                if attachments:
+                    # Multipart upload: `payload_json` carries the message
+                    # fields; `files[0]` carries the attachment bytes. One
+                    # request, Discord's documented shape.
+                    form = aiohttp.FormData(quote_fields=False)
+                    form.add_field("payload_json", json.dumps(message))
+                    for i, a in enumerate(attachments):
+                        form.add_field(
+                            f"files[{i}]",
+                            a.content,
+                            filename=a.filename,
+                            content_type=a.media_type,
+                        )
+                    resp = await session.post(
+                        f"{self._base_url}/channels/{channel_id}/messages",
+                        headers=headers,
+                        data=form,
+                    )
+                else:
+                    resp = await session.post(
+                        f"{self._base_url}/channels/{channel_id}/messages",
+                        headers=headers,
+                        json=message,
+                    )
+                async with resp:
+                    if resp.status == 429:
+                        body = await resp.json()
+                        retry_after = body.get("retry_after") if isinstance(body, dict) else None
+                        log.error(
+                            "send rate-limited: HTTP 429 (channel=%s, id=%s)",
+                            channel_id, request_id,
+                        )
+                        return SendResult(
+                            ok=False,
+                            retryable=True,
+                            retry_after=float(retry_after) if retry_after is not None else None,
+                        )
+                    if resp.status not in (200, 201):
+                        log.error(
+                            "send failed: HTTP %s (channel=%s, id=%s)",
+                            resp.status, channel_id, request_id,
+                        )
+                        return SendResult(ok=False)
                     body = await resp.json()
-                    retry_after = body.get("retry_after") if isinstance(body, dict) else None
-                    log.error(
-                        "send rate-limited: HTTP 429 (channel=%s, id=%s)", channel_id, request_id
-                    )
-                    return SendResult(
-                        ok=False,
-                        retryable=True,
-                        retry_after=float(retry_after) if retry_after is not None else None,
-                    )
-                if resp.status not in (200, 201):
-                    log.error(
-                        "send failed: HTTP %s (channel=%s, id=%s)",
-                        resp.status, channel_id, request_id,
-                    )
-                    return SendResult(ok=False)
-                body = await resp.json()
         except Exception as exc:  # noqa: BLE001 — a send failure is never fatal
             log.error(
                 "send failed: %s (channel=%s, id=%s)", type(exc).__name__, channel_id, request_id

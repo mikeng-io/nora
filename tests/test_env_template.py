@@ -75,6 +75,11 @@ _MAY_DIFFER = {
     "obs.tracing.endpoint", "obs.tracing.exporter", "obs.tracing.headers_env",
     "evals.langfuse.host", "evals.langfuse.headers_env",
     "presence.refresh_url", "shortener.base_url",
+    # image_gen.enabled is the LIVE operator decision (2026-08-26: enabled
+    # after live smoke on the subscription lane); the template stays the
+    # ships-OFF default (DEC-43 posture) so a fresh deployment is inert by
+    # default.
+    "image_gen.enabled",
     # Env-var NAMES are the operator's choice of what to call a secret.
     "media.encryption_key_env",
     # RustFS's own address, live here since 2026-08-23 (DEC-136 cutover) --

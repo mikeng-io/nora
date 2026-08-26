@@ -71,11 +71,12 @@ from ..domain.events import (
     RSVPResponse,
     VenueSuggestions,
 )
-from ..domain.media import HANDLE_CHARS, GifCandidate
+from ..domain.media import HANDLE_CHARS, GeneratedImage, GifCandidate, MediaBlob
 from ..domain.models import WeatherObservation
 from ..domain.notes import Note, NoteRevision, StaleNoteHeadError
 from ..domain.ports import (
     ComputeBackend,
+    GeneratedImageStore,
     GifSource,
     ImageGenerator,
     ImageReference,
@@ -84,6 +85,7 @@ from ..domain.ports import (
     MessageHits,
     MusicToolBridge,
     MusicToolOutcome,
+    OutboundAttachment,
     Recollection,
 )
 from ..domain.reminders import (
@@ -503,6 +505,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                     "optionally from a photo already in this "
                                     "conversation — say plainly when you used "
                                     "one)", read_only=False),
+    # images_lookup / images_resend (generated-image library, 2026-08-26):
+    # READ side of Nora's OWN stored images — no provider call, no quota.
+    # lookup is read-only; resend delivers a stored attachment (an act verb,
+    # like send_gif). Budget 2 each: one lookup + one resend per turn.
+    "images_lookup": NativeTool(2, "find a previously generated image in Nora's "
+                                    "own library by prompt/title words",
+                                read_only=True),
+    "images_resend": NativeTool(2, "send a previously generated image (from "
+                                    "images_lookup) to this chat",
+                                read_only=False),
     # search returns ranked results WITH a content snippet each in a single
     # call (DEC-73, Tavily). Budget 4, sized by MODEL ROUND TRIPS — a turn may
     # search, then refine once or twice — but the doctrine tells her a couple is
@@ -1636,6 +1648,7 @@ def build_tool_specs(
     music: MusicToolBridge | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
+    image_store: GeneratedImageStore | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -3346,10 +3359,84 @@ def build_tool_specs(
                 "image_gen: generated via %s",
                 result.provider or "?",
             )
+            if result.raw:
+                # Image library (Miles 2026-08-26): store the bytes in Nora's
+                # OWN custody first — the same content-addressed blob_store
+                # (rustfs) the inbound media pipeline uses — then record the
+                # metadata (prompt/title/description) so a later lookup can
+                # find and resend this image WITHOUT regenerating it. A
+                # failed store costs the library entry, never the delivery:
+                # the human is waiting for the picture, and the picture is
+                # still attached.
+                raw: bytes = result.raw
+                sha256 = ""
+                try:
+                    if blob_store is not None:
+                        sha256 = await blob_store.put(data=raw)
+                except Exception:
+                    log.exception("generate_image: blob store put failed")
+                try:
+                    if sha256 and image_store is not None:
+                        await image_store.save(image=GeneratedImage(
+                            sha256=sha256,
+                            prompt=prompt,
+                            title=prompt[:80] or "generated image",
+                            description=prompt,
+                            provider=result.provider,
+                            model="",
+                            media_type=result.media_type or "image/png",
+                            size=len(raw),
+                            platform=room.platform,
+                            conversation_id=conversation_id,
+                            created_at_ms=int(datetime.now(UTC).timestamp() * 1000),
+                            aspect_ratio=image_size.aspect_ratio if image_size else None,
+                        ))
+                except Exception:
+                    log.exception("generate_image: image_store save failed")
+
+                caption = ""
+                media_type = result.media_type or "image/png"
+                filename = f"nora-generated-{int(datetime.now(UTC).timestamp())}.png"
+                # The transcript row carries a MediaBlob (handle) — exactly
+                # like an inbound image — so `media_fetch <handle>` and
+                # `load_transcript` see this image as Nora-held, not as a
+                # disposable outbound attachment.
+                media_blobs: tuple[MediaBlob, ...] = ()
+                if sha256:
+                    media_blobs = (MediaBlob(
+                        sha256=sha256, media_type=media_type, size=len(raw),
+                        filename=filename,
+                    ),)
+                sent = await deliverer.deliver(
+                    caption, source="tool",
+                    attachments=(OutboundAttachment(
+                        content=raw, media_type=media_type, filename=filename,
+                    ),),
+                    record_text=(
+                        f"[image {sha256[:HANDLE_CHARS]}]" if sha256
+                        else "[generated image]"
+                    ),
+                    record_metadata={"media": {"provider": result.provider, "type": "image",
+                                               "sha256": sha256}},
+                    media_blobs=media_blobs,
+                )
+                if not sent:
+                    return {
+                        "status": "unavailable",
+                        "note": "I made the image but couldn't send it to this "
+                                "chat. Say so plainly — do not pretend it "
+                                "arrived.",
+                    }
+                return {
+                    "status": "ok",
+                    "handle": sha256[:HANDLE_CHARS] if sha256 else "",
+                    "sent": True,
+                }
             artifact = result.artifact or ""
-            # M2 (Kimi audit): a data-URI fallback (drop never wired) is
-            # rejected here rather than handed to the model — megabytes of
-            # base64 would blow the agent context and the reply surface.
+            # M2 (audit): a data-URI fallback (provider answered `url`, or
+            # custody never wired) is rejected here rather than handed to the
+            # model — megabytes of base64 would blow the agent context and
+            # the reply surface.
             if artifact.startswith("data:image/"):
                 return {
                     "status": "unavailable",
@@ -3376,6 +3463,131 @@ def build_tool_specs(
                     "in a bit.",
         }.get(reason, "I can't make images right now. Say so plainly.")
         return {"status": "unavailable", "note": note}
+
+    # ---- images_lookup / images_resend (generated-image library) --------
+    #
+    # Miles 2026-08-26: a generated image is NOT a disposable attachment. Every
+    # successful `generate_image` stores bytes in Nora's OWN blob_store
+    # (rustfs) and a metadata row (prompt/title/description) in the
+    # generated_images table. These two tools are the READ side of that
+    # library: search by what the image WAS ("the birthday card for Miles"),
+    # then resend the stored bytes — no regeneration, no quota burn.
+
+    async def images_lookup(query: str = "") -> dict:
+        """Find a previously generated image in Nora's own image library.
+
+        Use this when somebody asks you to resend, reuse, or point at an
+        image you made earlier (even days ago). Search by words from the
+        original prompt or a title/description. The bytes stay in Nora's own
+        storage — no regeneration, no outside service. Say plainly what each
+        result is; never guess an image exists that the search did not return.
+
+        Args:
+            query: Words to search the library by. Empty returns the most
+                recent images.
+
+        Returns:
+            `ok` with a `results` list (handle, title, prompt, age); `ok`
+            with an empty list when nothing matches; `unavailable` when the
+            library cannot be read.
+        """
+        if image_store is None:
+            return {
+                "status": "unavailable",
+                "note": "I can't look up my generated images right now. Say "
+                        "so plainly — do not invent an image.",
+            }
+        try:
+            found = await image_store.search(query=query, limit=10)
+        except Exception:
+            log.exception("images_lookup: store search failed")
+            return {
+                "status": "unavailable",
+                "note": "I can't look up my generated images right now. Say "
+                        "so plainly.",
+            }
+        results = [
+            {
+                "handle": img.handle,
+                "title": img.title,
+                "prompt": img.prompt,
+                "created_at_ms": img.created_at_ms,
+            }
+            for img in found
+        ]
+        return {"status": "ok", "results": results}
+
+    async def images_resend(handle: str) -> dict:
+        """Send a previously generated image (from `images_lookup`) to this chat.
+
+        Args:
+            handle: the image's handle from `images_lookup`.
+
+        Returns:
+            `ok` when the image was sent; `nothing_found` when that handle
+            is not in the library (say you can't find it, don't guess);
+            `unavailable` when the bytes could not be retrieved or delivered.
+        """
+        if image_store is None or blob_store is None:
+            return {
+                "status": "unavailable",
+                "note": "I can't send stored images right now. Say so plainly.",
+            }
+        hex_handle = _handle_hex(handle)
+        if len(hex_handle) < HANDLE_CHARS:
+            return {
+                "status": "nothing_found",
+                "note": "That doesn't look like an image handle I have. Say "
+                        "you can't find it rather than guessing.",
+            }
+        try:
+            rows = await image_store.search(query="", limit=100)
+            meta = next(
+                (img for img in rows if img.sha256.startswith(hex_handle)),
+                None,
+            )
+        except Exception:
+            log.exception("images_resend: store search failed")
+            return {
+                "status": "unavailable",
+                "note": "I can't look up my generated images right now. Say "
+                        "so plainly.",
+            }
+        if meta is None:
+            return {
+                "status": "nothing_found",
+                "note": "I don't have an image with that handle. Say you "
+                        "can't find it rather than guessing.",
+            }
+        try:
+            raw = await blob_store.get(key=meta.sha256)
+        except Exception:
+            log.exception("images_resend: blob get failed")
+            raw = None
+        if raw is None:
+            return {
+                "status": "unavailable",
+                "note": "I found the record but not the image bytes. Say so "
+                        "plainly.",
+            }
+        media_type = meta.media_type or "image/png"
+        filename = f"nora-generated-{meta.handle}.png"
+        sent = await deliverer.deliver(
+            "", source="tool",
+            attachments=(OutboundAttachment(
+                content=raw, media_type=media_type, filename=filename,
+            ),),
+            record_text=f"[image {meta.handle}] (resent)",
+            record_metadata={"media": {"type": "image", "sha256": meta.sha256,
+                                       "resent": True}},
+        )
+        if not sent:
+            return {
+                "status": "unavailable",
+                "note": "I found the image but couldn't send it to this chat. "
+                        "Say so plainly.",
+            }
+        return {"status": "ok", "handle": meta.handle}
 
     # ---- web_search (DEC-73, Tavily) -------------------------------------
     #
@@ -5226,6 +5438,8 @@ def build_tool_specs(
         _spec("recall_lookups", recall_lookups),
         _spec("media_fetch", media_fetch),
         _spec("generate_image", generate_image),
+        _spec("images_lookup", images_lookup),
+        _spec("images_resend", images_resend),
         _spec("web_search", web_search),
         _spec("web_fetch", web_fetch),
         _spec("weather", weather),
@@ -5289,6 +5503,7 @@ def build_tools(
     note_workspace: Callable[[str, str], str | None] | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
+    image_store: GeneratedImageStore | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -5310,5 +5525,6 @@ def build_tools(
         links=links, giphy_source=giphy_source,
         notes=notes, note_workspace=note_workspace,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
+        image_store=image_store,
     )
     return [adapt(spec) for spec in specs]
