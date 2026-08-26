@@ -1145,6 +1145,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `.env` holds only the refresh token).
     image_generator = None
     image_refs_allowed = False
+    # M1 (Kimi audit): generated images go through `drop` (public URL) when
+    # the shortener credential is present — the design's "a public URL is
+    # required by the reply surface". Reuses the SAME base_url/token pair
+    # `LinkShortener` below resolves (and `LocalDockerBackend` above does):
+    # drop's internal listener + NORA_DROP_TOKEN. When shortener is off or
+    # tokenless, drop stays unwired and the adapter falls back to a data URI
+    # (tool-layer rejected on size grounds, never the production default).
+    drop_ingest = None
+    if cfg.shortener.enabled:
+        drop_token = os.environ.get(cfg.shortener.token_env, "")
+        if drop_token:
+            from nora.infra.drop import DropArtifactIngest
+            drop_ingest = DropArtifactIngest(
+                base_url=cfg.shortener.base_url,
+                token=drop_token,
+                timeout_seconds=cfg.shortener.timeout_seconds,
+            )
     if cfg.image_gen.enabled:
         image_refs_allowed = cfg.image_gen.allow_reference_images
         xai_cfg = cfg.image_gen.xai
@@ -1159,7 +1176,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 model=xai_cfg.model,
                 quality_model=xai_cfg.quality_model,
                 timeout_seconds=xai_cfg.timeout_seconds,
+                drop=drop_ingest,
             )
+            if image_generator is None:
+                # M6: unknown provider (or unconstructable lane) degrades
+                # the tool, never crashes the daemon.
+                log.warning(
+                    "image_gen enabled but provider %r could not be built — "
+                    "generate_image stays unavailable",
+                    cfg.image_gen.provider,
+                )
         else:
             log.warning(
                 "image_gen enabled but %s is unset — generate_image stays unavailable",

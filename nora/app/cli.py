@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import os
 import sys
 from datetime import UTC, datetime
@@ -200,7 +201,11 @@ def _persons(cfg: Config) -> Persons:
 def _rewrite_env(env_path: Path, marker: str, refresh_token: str) -> None:
     """Idempotently replace-or-append one `KEY=value` line in `.env`.
     Sync by design — runs under `asyncio.to_thread` from the CLI (never
-    blocks the event loop)."""
+    blocks the event loop). M8 (Kimi audit): the write is ATOMIC — tmp +
+    os.replace — so a crash/interrupt mid-write can never corrupt the whole
+    `.env` (which holds Postgres, Discord, xAI, Life360 secrets). The
+    original file mode is preserved explicitly because os.replace installs
+    the tmp file's inode."""
     try:
         lines = env_path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -215,7 +220,13 @@ def _rewrite_env(env_path: Path, marker: str, refresh_token: str) -> None:
             kept.append(line)
     if not replaced:
         kept.append(f"{marker}{refresh_token}")
-    env_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    mode = 0o600
+    with contextlib.suppress(OSError):
+        mode = env_path.stat().st_mode & 0o777
+    tmp = env_path.with_suffix(env_path.suffix + ".tmp")
+    tmp.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    os.chmod(tmp, mode)
+    os.replace(tmp, env_path)
 
 
 async def cmd_xai_login(args: argparse.Namespace) -> int:

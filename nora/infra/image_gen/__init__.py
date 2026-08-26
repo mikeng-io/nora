@@ -3,9 +3,9 @@
 
 DEC-137: the port is provider-agnostic; the composition root asks for a
 named provider and this module answers. `provider` values other than `xai`
-fail closed with a clear error (config is `extra="forbid"`, so an unknown
-value here is a deliberate, explicit request, not a typo that should
-silently degrade).
+degrade to None (M6): the `generate_image` tool answers `unavailable` with
+a composition-side warning, exactly like an unset token — never a raise at
+boot and never a guessed provider.
 """
 
 from __future__ import annotations
@@ -33,9 +33,11 @@ def build_image_generator(
 
     Pass an existing `oauth` (process-lifetime lane with refresh lock) OR a
     fresh `refresh_token` + `state_file` (for the CLI / one-shot paths).
-    Returns None when the lane cannot be constructed (empty token) — the
-    honest wiring-gap state the tool answers `unavailable` for, never a
-    crash and never a guessed provider.
+    Returns None when the lane cannot be constructed (empty token, or an
+    unknown provider — the honest wiring-gap state the tool answers
+    `unavailable` for, never a crash and never a guessed provider). M6: an
+    unknown provider name degrades to None with a composition-side warning,
+    matching the weather/presence lanes, instead of raising at boot.
     """
     if provider == "xai":
         lane = oauth
@@ -54,7 +56,13 @@ def build_image_generator(
             timeout_seconds=timeout_seconds,
             drop=drop,
         )
-    raise ValueError(f"unknown image_gen provider: {provider!r}")
+    # M6 (Kimi audit): an unknown provider must DEGRADE, not crash the
+    # production daemon at boot — the same fail-soft posture every sibling
+    # lane (weather, presence) takes. A typo'd `provider = "foo"` now leaves
+    # the `generate_image` tool answering `unavailable` with a logged
+    # warning, instead of ValueError taking down the whole agent. The
+    # composition root logs the warning (it owns the config context).
+    return None
 
 
 __all__ = ["XaiImageGenerator", "XaiOAuth", "build_image_generator"]

@@ -3336,10 +3336,27 @@ def build_tool_specs(
             }
 
         if result.status == "ok":
+            # M10 (Kimi audit): the model-facing surface names no provider
+            # (docstring/test enforcement) — the field leaked "xai" to the
+            # model. Keep the provider in logs only, and never log the raw
+            # artifact (a data-URI fallback could be megabytes).
+            log.info(
+                "image_gen: generated via %s",
+                result.provider or "?",
+            )
+            artifact = result.artifact or ""
+            # M2 (Kimi audit): a data-URI fallback (drop never wired) is
+            # rejected here rather than handed to the model — megabytes of
+            # base64 would blow the agent context and the reply surface.
+            if artifact.startswith("data:image/"):
+                return {
+                    "status": "unavailable",
+                    "note": "I made the image but couldn't host it — say "
+                            "so plainly rather than describing it.",
+                }
             return {
                 "status": "ok",
-                "url": result.artifact or "",
-                "provider": result.provider,
+                "url": artifact,
             }
         if result.status == "nothing_found":
             return {

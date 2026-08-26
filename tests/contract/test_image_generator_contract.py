@@ -22,6 +22,8 @@ and report the reason — never guess from the status alone.
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -330,3 +332,199 @@ async def test_device_flow_never_waits_forever(device_server):
             base_url=base,  # type: ignore[arg-type]
         )
     assert started["polls"] > 0
+
+
+# -- refresh path (M11) ------------------------------------------------------
+
+@pytest.fixture
+async def oauth_server():
+    """Local stand-in for the OIDC discovery + refresh token endpoints."""
+    app = web.Application()
+    state: dict = {}
+
+    async def discovery(_request: web.Request) -> web.Response:
+        return _json({"token_endpoint": str(server.make_url("/oauth2/token"))})
+
+    async def token(request: web.Request) -> web.Response:
+        state["refreshes"] = state.get("refreshes", 0) + 1
+        data = await request.post()
+        state["grant_type"] = data.get("grant_type")
+        state["sent_refresh"] = data.get("refresh_token")
+        if state.get("behavior") == "403":
+            return _json({"error": {"code": "challenge"}}, status=403)
+        if state.get("behavior") == "401":
+            return _json({"error": "invalid_grant"}, status=401)
+        body: dict = {"access_token": "at-new", "expires_in": state.get("expires_in", 7200)}
+        if state.get("rotate"):
+            body["refresh_token"] = "rt-rotated"  # noqa: S105 — fake test token
+        return _json(body)
+
+    app.router.add_get("/.well-known/openid-configuration", discovery)
+    app.router.add_post("/oauth2/token", token)
+    server = TestServer(app)
+    await server.start_server()
+    yield str(server.make_url("/")).rstrip("/"), state
+    await server.close()
+
+
+def _oauth(tmp_path: Path, base: str, refresh: str = "rt-boot", **kw):
+    return XaiOAuth(
+        refresh_token=refresh,
+        state_file=tmp_path / "xai-oauth.json",
+        timeout_seconds=5.0,
+        issuer=base,
+        **kw,
+    )
+
+
+async def test_refresh_success_writes_state_atomic(tmp_path, oauth_server):
+    base, state = oauth_server
+    oauth = _oauth(tmp_path, base)
+    result = await oauth.access_token()
+    assert result.status == "ok"
+    assert result.access_token == "at-new"  # noqa: S105 — fake test token
+    assert state["refreshes"] == 1
+    assert state["grant_type"] == "refresh_token"
+    assert state["sent_refresh"] == "rt-boot"
+    # state file exists with 0o600 (M4) and is JSON
+    sf = tmp_path / "xai-oauth.json"
+    assert sf.exists()
+    assert (sf.stat().st_mode & 0o777) == 0o600
+    data = json.loads(sf.read_text())
+    assert data["access_token"] == "at-new"  # noqa: S105 — fake test token
+    assert data["expires_at"] > 0
+
+
+async def test_refresh_rotation_persisted(tmp_path, oauth_server):
+    base, state = oauth_server
+    state["rotate"] = True
+    state["expires_in"] = 1  # short-lived: forces the second call to re-refresh
+    oauth = _oauth(tmp_path, base)
+    result = await oauth.access_token()
+    assert result.status == "ok"
+    sf = tmp_path / "xai-oauth.json"
+    data = json.loads(sf.read_text())
+    assert data["refresh_token"] == "rt-rotated"  # noqa: S105 — fake test token
+    # memory adopted: next refresh uses the rotated token
+    state["rotate"] = False
+    await oauth.access_token()
+    assert state["sent_refresh"] == "rt-rotated"
+
+
+async def test_refresh_403_is_cloudflare(tmp_path, oauth_server):
+    base, state = oauth_server
+    state["behavior"] = "403"
+    oauth = _oauth(tmp_path, base)
+    result = await oauth.access_token()
+    assert result.status == "unavailable"
+    assert result.reason == "cloudflare"
+
+
+async def test_refresh_401_is_auth(tmp_path, oauth_server):
+    base, state = oauth_server
+    state["behavior"] = "401"
+    oauth = _oauth(tmp_path, base)
+    result = await oauth.access_token()
+    assert result.status == "unavailable"
+    assert result.reason == "auth"
+
+
+async def test_refresh_missing_expires_in_defaults_300(tmp_path, oauth_server):
+    base, state = oauth_server
+    state["expires_in"] = 0  # missing/zero → conservative default
+    oauth = _oauth(tmp_path, base)
+    result = await oauth.access_token()
+    assert result.status == "ok"
+    # immediate re-call should NOT hammer the endpoint
+    result2 = await oauth.access_token()
+    assert state["refreshes"] == 1
+    assert result2.status == "ok"
+
+
+async def test_refresh_corrupt_state_recovers(tmp_path, oauth_server):
+    base, state = oauth_server
+    sf = tmp_path / "xai-oauth.json"
+    sf.write_text("{corrupt-json", encoding="utf-8")
+    oauth = _oauth(tmp_path, base)
+    result = await oauth.access_token()
+    assert result.status == "ok"
+    assert state["refreshes"] == 1  # recovered from .env, not from corrupt file
+
+
+async def test_refresh_single_flight(tmp_path, oauth_server):
+    base, state = oauth_server
+    oauth = _oauth(tmp_path, base)
+    r1, r2 = await asyncio.gather(
+        oauth.access_token(), oauth.access_token(),
+    )
+    assert r1.status == "ok" and r2.status == "ok"
+    assert state["refreshes"] == 1  # single flight: concurrent callers share
+
+
+async def test_refresh_boot_precedence_uses_state_file(tmp_path, oauth_server):
+    """Boot precedence (M3): a valid state file is used as-is; the .env
+    refresh token is NOT hit on every boot."""
+    base, state = oauth_server
+    sf = tmp_path / "xai-oauth.json"
+    sf.write_text(
+        json.dumps(
+            {"access_token": "cached-token", "expires_at": 2_000_000_000},
+        ),
+        encoding="utf-8",
+    )
+    oauth = _oauth(tmp_path, base)
+    result = await oauth.access_token()
+    assert result.status == "ok"
+    assert result.access_token == "cached-token"  # noqa: S105 — fake test token
+    assert "refreshes" not in state
+
+
+async def test_resolution_is_sent(server_factory):
+    captured: dict = {}
+
+    async def handler(request: web.Request) -> web.Response:
+        data = await request.json()
+        captured["resolution"] = data.get("resolution")
+        return _json({"data": [{"b64_json": "aGVsbG8="}]})
+
+    base = await server_factory(handler)
+    gen = XaiImageGenerator(
+        oauth=_CannedOAuth(refresh_token="rt", state_file=Path("no-state")),  # noqa: S106
+        base_url=base, timeout_seconds=5.0,
+    )
+    await gen.generate(prompt="a cat", size=ImageSize(tier="large", aspect_ratio="1:1"))
+    assert captured["resolution"] == "2k"
+
+
+async def test_drop_wired_failure_is_unavailable(tmp_path):
+    """M2: a wired `drop` that fails must surface as `unavailable/hosting`,
+    never a silent data-URI success."""
+    class _FailDrop:
+        async def register(self, **kw):
+            raise ConnectionError("drop down")
+
+    base = await _server_factory_for_drop()
+    gen = XaiImageGenerator(
+        oauth=_CannedOAuth(refresh_token="rt", state_file=Path("no-state")),  # noqa: S106
+        base_url=base, timeout_seconds=5.0,
+        drop=_FailDrop(),  # type: ignore[arg-type]
+    )
+    result = await gen.generate(prompt="a cat")
+    assert result.status == "unavailable"
+    assert result.reason == "hosting"
+
+
+async def _server_factory_for_drop():
+    """Ad-hoc aiohttp server for the drop-failure test (the shared
+    server_factory fixture only registers the two image endpoints)."""
+
+    async def _ok(_request: web.Request) -> web.Response:
+        return _json({"data": [{"b64_json": "aGVsbG8="}]})
+
+    app = web.Application()
+    app.router.add_post("/v1/images/generations", _ok)
+    server = TestServer(app)
+    await server.start_server()
+    base = str(server.make_url("/")).rstrip("/")
+    # keep the server alive for the caller; it closes with the event loop
+    return base

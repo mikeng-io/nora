@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -225,6 +226,7 @@ class OAuthState:
 class _TokenState:
     access_token: str
     expires_at: float  # epoch seconds; 0 = unknown
+    refresh_token: str | None = None  # rotated refresh token (M3), if any
 
 
 class XaiOAuth:
@@ -244,6 +246,7 @@ class XaiOAuth:
         scope: str = XAI_OAUTH_SCOPE,
         timeout_seconds: float = 30.0,
         clock: Callable[[], float] | None = None,
+        issuer: str = XAI_OAUTH_ISSUER,
     ) -> None:
         if not refresh_token:
             raise ValueError("XAI_OAUTH_REFRESH_TOKEN must be set")
@@ -255,6 +258,18 @@ class XaiOAuth:
         self._clock = clock or time.time
         self._lock = asyncio.Lock()
         self._cached: _TokenState | None = None
+        # M5: resolve the token endpoint from OIDC discovery ONCE per process
+        # (cached lazily on first refresh; `XAI_OAUTH_TOKEN_URL` is the
+        # fallback when discovery is unreachable). The module docstring's
+        # "absorbed once at boot, not across three call sites" is only true
+        # if the refresh path — the path that runs in production — shares
+        # the discovery. Test seam: `issuer` lets contract tests point at a
+        # local TestServer the same way `XaiImageGenerator.base_url` does.
+        self._issuer = issuer.rstrip("/")
+        self._token_endpoint: str | None = None
+
+    def _discovery_url(self) -> str:
+        return f"{self._issuer}/.well-known/openid-configuration"
 
     # -- state file ---------------------------------------------------------
 
@@ -266,20 +281,36 @@ class XaiOAuth:
             expires = float(data.get("expires_at") or 0)
             if not token:
                 return None
-            return _TokenState(access_token=token, expires_at=expires)
+            refresh = data.get("refresh_token")
+            return _TokenState(
+                access_token=token,
+                expires_at=expires,
+                refresh_token=str(refresh) if isinstance(refresh, str) and refresh else None,
+            )
         except (OSError, ValueError, KeyError, TypeError):
             return None
 
-    def _save_state(self, token: str, expires_at: float) -> None:
+    def _save_state(
+        self, token: str, expires_at: float, refresh_token: str | None = None,
+    ) -> None:
         try:
             self._state_file.parent.mkdir(parents=True, exist_ok=True)
-            self._state_file.write_text(
-                json.dumps(
-                    {"access_token": token, "expires_at": expires_at},
-                    sort_keys=True,
-                ),
+            # M4: atomic write — tmp + os.replace, so a crash mid-write never
+            # leaves a corrupt (or half-written) state file. 0o600: the file
+            # holds a live access token; the default umask is not a policy.
+            payload: dict[str, object] = {
+                "access_token": token,
+                "expires_at": expires_at,
+            }
+            if refresh_token:
+                payload["refresh_token"] = refresh_token
+            tmp = self._state_file.with_suffix(self._state_file.suffix + ".tmp")
+            tmp.write_text(
+                json.dumps(payload, sort_keys=True),
                 encoding="utf-8",
             )
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, self._state_file)
         except OSError:
             log.warning("xai_oauth: could not persist access token state file")
 
@@ -304,7 +335,9 @@ class XaiOAuth:
                 return OAuthState(status="ok", access_token=cached.access_token)
 
             # Boot precedence: state file first; only absent/corrupt → derive
-            # from the .env refresh token.
+            # from the .env refresh token. M3: a rotated refresh token in the
+            # state file (if present) is adopted here, so a restarted lane
+            # keeps using the rotated token, not the stale .env one.
             if cached is None:
                 state = self._load_state()
                 if (
@@ -312,6 +345,8 @@ class XaiOAuth:
                     and state.expires_at > now + XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS
                 ):
                     self._cached = state
+                    if state.refresh_token:
+                        self._refresh_token = state.refresh_token
                     return OAuthState(status="ok", access_token=state.access_token)
 
             result = await self._refresh()
@@ -319,30 +354,72 @@ class XaiOAuth:
                 self._cached = _TokenState(
                     access_token=result.access_token, expires_at=self._clock() + result.expires_in
                 )
-                self._save_state(result.access_token, self._clock() + result.expires_in)
+                self._save_state(
+                    result.access_token,
+                    self._clock() + result.expires_in,
+                    refresh_token=self._refresh_token,
+                )
             return result
 
     async def _refresh(self) -> OAuthState:
         try:
             timeout = aiohttp.ClientTimeout(total=self._timeout.total)
-            async with (
-                aiohttp.ClientSession(timeout=timeout) as session,
-                session.post(
-                    XAI_OAUTH_TOKEN_URL,
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # M5: resolve the token endpoint from discovery once per
+                # process (cached); hardcoded `XAI_OAUTH_TOKEN_URL` is the
+                # fallback when discovery is unreachable, so an xAI endpoint
+                # move is absorbed here exactly as it is in the device flow.
+                if self._token_endpoint is None:
+                    try:
+                        self._token_endpoint = await _discover_token_endpoint(
+                            session, self._discovery_url()
+                        )
+                    except XaiOAuthFlowError:
+                        log.warning(
+                            "xai_oauth: discovery failed; falling back to %s",
+                            XAI_OAUTH_TOKEN_URL,
+                        )
+                        self._token_endpoint = XAI_OAUTH_TOKEN_URL
+                async with session.post(
+                    self._token_endpoint,
                     data={
                         "grant_type": "refresh_token",
                         "refresh_token": self._refresh_token,
                         "client_id": self._client_id,
                     },
-                ) as resp,
-            ):
-                body = await resp.json(content_type=None)
+                ) as resp:
+                    body = await resp.json(content_type=None)
             if resp.status == 200:
                 token = body.get("access_token")
                 if not isinstance(token, str) or not token:
                     return OAuthState("unavailable", reason="auth")
-                expires_in = body.get("expires_in") or 0
-                return OAuthState("ok", access_token=token, reason="", expires_in=float(expires_in))
+                # M3: xAI may rotate the refresh token on use (offline_access).
+                # Adopt it in memory AND persist it to the state file so the
+                # lane survives rotation; `.env` stays the immutable bootstrap
+                # source (DEC-8), the state file the preferred runtime value.
+                rotated = body.get("refresh_token")
+                if isinstance(rotated, str) and rotated and rotated != self._refresh_token:
+                    self._refresh_token = rotated
+                    self._save_state(
+                        token,
+                        self._clock() + float(body.get("expires_in") or 0),
+                        refresh_token=rotated,
+                    )
+                    log.info("xai_oauth: refresh token rotated; state file updated")
+                # M9: `expires_in` may be missing on a 200; a 0-expiry would
+                # re-refresh on every call (endpoint hammering). Conservative
+                # default: treat a missing/invalid value as short-lived but
+                # finite (2h), still fail-safe — and MUST exceed the refresh
+                # skew (3600s) or the fresh-check never passes and every
+                # call re-refreshes.
+                expires_in = body.get("expires_in")
+                try:
+                    expires = float(expires_in) if expires_in not in (None, 0) else 7200.0
+                except (TypeError, ValueError):
+                    expires = 7200.0
+                return OAuthState(
+                    "ok", access_token=token, reason="", expires_in=expires
+                )
             # Cloudflare challenge: 403 while the token is still valid —
             # RETRYABLE, not terminal auth (design §4.2).
             if resp.status == 403:
