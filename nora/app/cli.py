@@ -136,6 +136,23 @@ def add_subcommands(
     )
     members.set_defaults(func=cmd_presence_members)
 
+    # `xai-login` (DEC-137): the ONE command that WRITES — it walks Miles
+    # through the xAI OAuth device flow and appends the refresh token to the
+    # host `.env` (the same "edit .env, recreate" loop every other Nora
+    # credential uses). Deliberately outside the read-only engine guarantees
+    # this module otherwise holds: it never touches the DB, it talks to
+    # `auth.x.ai`, and it fails cleanly (CliError) when the flow is refused
+    # or the token was not issued.
+    xai_login = subparsers.add_parser(
+        "xai-login", parents=[parent],
+        help="xAI OAuth device flow — get XAI_OAUTH_REFRESH_TOKEN for image generation",
+    )
+    xai_login.add_argument(
+        "--env-file", default=".env",
+        help="host .env file to append the refresh token to (default .env)",
+    )
+    xai_login.set_defaults(func=cmd_xai_login)
+
 
 def run(args: argparse.Namespace) -> int:
     """Execute the selected subcommand. Returns a process exit code."""
@@ -178,6 +195,56 @@ def _persons(cfg: Config) -> Persons:
         return load_persons(cfg.identity_file)
     except PersonsError as exc:
         raise CliError(f"person mapping error: {exc}") from exc
+
+
+def _rewrite_env(env_path: Path, marker: str, refresh_token: str) -> None:
+    """Idempotently replace-or-append one `KEY=value` line in `.env`.
+    Sync by design — runs under `asyncio.to_thread` from the CLI (never
+    blocks the event loop)."""
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    kept: list[str] = []
+    replaced = False
+    for line in lines:
+        if line.startswith(marker):
+            kept.append(f"{marker}{refresh_token}")
+            replaced = True
+        else:
+            kept.append(line)
+    if not replaced:
+        kept.append(f"{marker}{refresh_token}")
+    env_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
+async def cmd_xai_login(args: argparse.Namespace) -> int:
+    """Run the xAI OAuth device flow and append the refresh token to `.env`.
+
+    The ONE command in this module that writes — but it never touches the
+    DB: it talks to `auth.x.ai`, then edits the HOST `.env` the operator
+    already owns (the same file every other Nora credential lives in,
+    DEC-8). Idempotent: an existing `XAI_OAUTH_REFRESH_TOKEN` line is
+    replaced, not duplicated. The access token stays out of `.env`
+    entirely — that is the state file's job (design/proposed/29 §4.1).
+    """
+    from nora.infra.image_gen.xai_oauth import (
+        XaiOAuthFlowError,
+        device_flow_login,
+    )
+    try:
+        refresh_token = await device_flow_login()
+    except XaiOAuthFlowError as exc:
+        raise CliError(str(exc)) from exc
+
+    env_path = Path(args.env_file)
+    marker = "XAI_OAUTH_REFRESH_TOKEN="
+    await asyncio.to_thread(_rewrite_env, env_path, marker, refresh_token)
+
+    print(f"ok — refresh token written to {env_path}")
+    print("recreate the container (`docker compose up -d --force-recreate nora`) "
+          "for it to pick up the new env; access tokens refresh automatically.")
+    return 0
 
 
 async def cmd_groups(args: argparse.Namespace) -> int:

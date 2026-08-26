@@ -1136,6 +1136,35 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "presence enabled but identity.toml yields no circle "
                 "([[persons.<id>.life360]] with circle_id) — whereis stays unavailable"
             )
+    # Image generation ([image_gen], DEC-137): enabled AND refresh token
+    # present → build the lane (same `route`-keyless gate the shortener uses).
+    # Off (or tokenless) leaves the `generate_image` tool answering
+    # `unavailable` — never a crash, never `nothing_found` (R-5/R-27). The
+    # access-token state file lives in the same repo-tree state dir
+    # `./state/signal-cli` already uses (container-writable, host-immutable
+    # `.env` holds only the refresh token).
+    image_generator = None
+    image_refs_allowed = False
+    if cfg.image_gen.enabled:
+        image_refs_allowed = cfg.image_gen.allow_reference_images
+        xai_cfg = cfg.image_gen.xai
+        refresh_token = os.environ.get(xai_cfg.refresh_token_env, "")
+        if refresh_token:
+            from nora.infra.image_gen import build_image_generator
+            state_file = Path("/app/state/xai-oauth.json")
+            image_generator = build_image_generator(
+                provider=cfg.image_gen.provider,
+                refresh_token=refresh_token,
+                state_file=state_file,
+                model=xai_cfg.model,
+                quality_model=xai_cfg.quality_model,
+                timeout_seconds=xai_cfg.timeout_seconds,
+            )
+        else:
+            log.warning(
+                "image_gen enabled but %s is unset — generate_image stays unavailable",
+                xai_cfg.refresh_token_env,
+            )
     # The link shortener ([shortener], 2026-08-07): enabled AND token present,
     # the `route`-keyless gate. Off (or tokenless) leaves long URLs in replies —
     # never load-bearing either way.
@@ -1437,6 +1466,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         versions=version_manifest,
         giphy=giphy_client,
         music=music_bridge,
+        image_generator=image_generator,
+        image_refs_allowed=image_refs_allowed,
         # `[llm.budgets]`, the per-deployment delta over the table. Threaded
         # here for the same reason `reminder_caps` is: `nora.agent` may not
         # import `nora.config`, so the composition root is the conversion

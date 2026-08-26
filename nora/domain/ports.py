@@ -1749,3 +1749,88 @@ class MusicToolBridge(Protocol):
     async def stop(self, *, conversation_id: str) -> MusicToolOutcome: ...
 
     async def status(self, *, conversation_id: str) -> MusicToolOutcome: ...
+
+
+@dataclass(frozen=True)
+class ImageReference:
+    """A reference image for editing/conditioning: a Nora-held custody handle.
+
+    Deliberately NOT a URL. The value is the short transcript marker code
+    (the `a3f2c1` part of `[image a3f2c1]`) — the same value `media_fetch`
+    takes — which resolves, inside THIS conversation only, to a blob Nora
+    already holds (R-21/DEC-24 custody). An external URL or raw bytes are
+    refused by the port's implementations: Nora never fetches an image
+    *because* the user asked to edit it; the user must have already sent it
+    (design/proposed/29-image-generation §5.1).
+    """
+
+    marker_code: str
+
+
+# Resolves a marker code to bytes — the custody check. The CALLER (the tool
+# closure) supplies it per turn: it reads the caller's own conversation store,
+# so a code from another conversation resolves to nothing. Domain keeps the
+# alias so the port can type the per-call resolver.
+ReferenceResolver = Callable[[str], Awaitable[bytes | None]]
+
+
+@dataclass(frozen=True)
+class ImageSize:
+    """A resolution tier + aspect ratio, mapped per-provider.
+
+    The model-facing tool names the size word and aspect; the adapter
+    translates (xAI's API takes `aspect_ratio` + `resolution` 1k/2k
+    directly; another provider may map to width/height).
+    """
+
+    tier: Literal["small", "medium", "large"] = "medium"
+    aspect_ratio: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] = "1:1"
+
+
+@dataclass(frozen=True)
+class ImageResult:
+    """Outcome of an image-generation attempt — this file's R-27 three-state
+    discipline: `ok` / `nothing_found` / `unavailable`, never conflated.
+
+    `artifact` (a URL / drop slug / provider handle) and `provider` are only
+    meaningful on `ok`. `reason` distinguishes the failure classes the model
+    must answer differently — quota-exhausted vs auth-expired vs
+    provider-down — mirroring `MusicToolOutcome.note`; the adapter never
+    guesses "quota" or "auth" from a 403 status alone (design/proposed/29-image-generation §7).
+    """
+
+    status: Literal["ok", "nothing_found", "unavailable"]
+    artifact: str | None = None
+    provider: str = ""
+    reason: str = ""
+
+
+@runtime_checkable
+class ImageGenerator(Protocol):
+    """Provider boundary for generating images from text prompts.
+
+    Provider-agnostic by construction: the port's vocabulary (prompt,
+    reference images, size, quality) is deliberately NOT any vendor's —
+    the first implementation is xAI's subscription lane, later providers
+    plug in behind the same seam and the model-facing tool does not change
+    (design/proposed/29, DEC-137). NEVER raises — matching `TrackSource`
+    / `WeatherProvider`'s discipline in this file: every failure is a
+    three-state `ImageResult`, and a wiring gap is `unavailable`, never a
+    raise and never `nothing_found`.
+
+    Reference images are custody handles only (`ImageReference.marker_code`
+    resolved inside the caller's own conversation) — the adapter refuses an
+    external URL (design/proposed/29-image-generation §5.1).
+    """
+
+    async def generate(
+        self,
+        *,
+        prompt: str,
+        reference_images: Sequence[ImageReference] | None = None,
+        size: ImageSize | None = None,
+        quality: Literal["standard", "quality"] | None = None,
+        reference_resolver: ReferenceResolver | None = None,
+    ) -> ImageResult: ...
+
+    async def health(self) -> bool: ...

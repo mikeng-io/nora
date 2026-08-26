@@ -14,6 +14,7 @@ return `True`.
 """
 
 import inspect
+from pathlib import Path
 
 from nora.domain.ports import BlobStore, MediaSource, MemoryStore, PlatformAdapter
 from nora.infra.blobs import FilesystemBlobStore
@@ -233,3 +234,18 @@ def test_tavily_provider_satisfies_the_search_provider_port():
     provider = TavilySearchProvider(api_key="k")
     assert isinstance(provider, SearchProvider)
     assert hasattr(provider, "fetch")
+
+
+def test_the_image_generator_adapter_satisfies_the_port():
+    """`XaiImageGenerator` (DEC-137, design/proposed/29) is `ImageGenerator`'s
+    first implementation — the name-level floor every other port gets. The
+    behavioural contract (3-state result, reason mapping, fail-closed
+    custody) is `tests/contract/test_image_generator_contract.py`; the shape
+    is mypy's.
+    """
+    from nora.domain.ports import ImageGenerator
+    from nora.infra.image_gen.xai_adapter import XaiImageGenerator
+    from nora.infra.image_gen.xai_oauth import XaiOAuth
+
+    oauth = XaiOAuth(refresh_token="k", state_file=Path("no-state"))  # noqa: S106
+    assert isinstance(XaiImageGenerator(oauth=oauth), ImageGenerator)

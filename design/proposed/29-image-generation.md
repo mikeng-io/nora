@@ -51,6 +51,7 @@ class ImageGenerator(Protocol):
         prompt: str,
         reference_images: Sequence[ImageReference] | None = None,
         size: ImageSize | None = None,
+        quality: Literal["standard", "quality"] | None = None,
     ) -> ImageResult: ...
 
     async def health(self) -> bool: ...
@@ -69,6 +70,9 @@ Where:
   (default `1:1`). The model-facing tool names the size word and aspect; the
   adapter translates (xAI's API takes `aspect_ratio` + `resolution` 1k/2k
   directly; another provider may map to width/height).
+- `quality` — `"standard"` | `"quality"` (None = provider default). The
+  model-facing tool may ask for the quality model on a re-run; the adapter
+  maps it (xAI: `grok-imagine-image` vs `grok-imagine-image-quality`).
 - `ImageResult` — `ok | nothing_found | unavailable` three-state, the R-27
   shape this repo's signatures demand. Plus the artifact handle (URL / local
   path / drop slug), a `provider` tag so the reply can be honest about what
@@ -120,14 +124,23 @@ Why A over the alternatives:
 - New CLI: `nora xai-login` — device-code flow against `https://auth.x.ai`
   (same endpoints Hermes uses: `POST /oauth2/device/code` →
   `POST /oauth2/device/token`), Miles approves in browser once.
-- Scopes requested: `openid profile email offline_access api:access` — the
-  full OIDC set xAI's own device-flow client documents. `offline_access` is
-  what causes a refresh token to be issued (without it, no refresh_token, and
-  the whole proactive-refresh design dies silently); `api:access` is what
-  entitles image generation through the subscription lane. `grok-cli:access`
-  is NOT a documented scope — do not request it (a rejected scope has shipped
-  real login failures). The CLI validates the returned scope list at login so
+- Scopes requested: `openid profile email offline_access grok-cli:access
+  api:access` — the exact scope set Hermes' own `hermes_cli/auth.py` uses
+  (`XAI_OAUTH_SCOPE`, verified live: Miles's `hermes auth add xai-oauth`
+  login succeeded with this set on this host). `offline_access` is what
+  causes a refresh token to be issued (without it, no refresh_token, and
+  the whole proactive-refresh design dies silently); `grok-cli:access` +
+  `api:access` together are what entitle image generation through the
+  subscription lane. The CLI validates the returned scope list at login so
   a rejected scope fails the CLI, not the daemon later.
+- Client: the official xAI device-flow client id Hermes uses —
+  `b1a00492-073a-47ea-816f-4c329264a828` — so Miles's single approval covers
+  the same entitlement both sides draw from. Device-code flow against
+  `https://auth.x.ai` (`POST /oauth2/device/code` → `POST /oauth2/device/token`).
+- Refresh skew: **3600 seconds** — the same constant Hermes ships
+  (`XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 3600`): xAI access tokens are
+  short-lived (~6h) and a 120s window is too narrow for a gateway that may
+  sit idle for 30 minutes. Refresh up to an hour early keeps the token warm.
 - The CLI **writes only the refresh token into `.env`**
   (`XAI_OAUTH_REFRESH_TOKEN` — the long-lived secret, same shape every other
   secret takes), then tells the operator to `docker compose up -d nora` —
@@ -191,16 +204,23 @@ URI / file_id**, up to 3 per request, and supports style transfer and
 multi-turn editing. So the answer to "can she use a reference image, or only a
 prompt?" is: **yes, reference images work.**
 
-The pipeline reuses components Nora already has:
+### 5.0 How a chat-history image becomes a reference (the "fetch")
 
-1. `media_fetch` already retrieves a stored image (DEC-56) — a photo a friend
-   sent in the conversation.
-2. Nora's `drop` service already turns bytes into a public URL
-   (`nora.67.zone/drop/<slug>`, via rustfs). The xAI adapter uploads the
-   reference image to drop (or passes a base64 data URI) and calls
-   `/v1/images/edits`.
-3. The generated result also goes through drop → public URL → `send_reply`
-   with the URL (or attachment, per the platform).
+There is **no external fetch** — the image is already Nora's. The marker the
+model sees in the transcript (`[image a3f2c1]`) is the whole resolution path:
+
+1. The model passes the **short marker code** (`a3f2c1`) — the same value
+   `media_fetch` takes — never a URL, never a path.
+2. The xAI adapter resolves it internally, exactly the way `media_fetch`
+   does: `_handle_hex(code)` → `sha256` → `store.recent(conversation_id)` to
+   confirm the handle belongs to THIS conversation (R-21/DEC-24) →
+   `blob_store.get(key=sha256)` → **decrypted bytes**.
+3. The adapter turns bytes into what xAI wants (upload to `drop` → public
+   URL, or a base64 data URI) and calls `/v1/images/edits`.
+
+Custody is structural: the code can only resolve to a blob Nora already
+holds. A code that resolves to nothing, or belongs to another conversation,
+is `nothing_found` — never an attempt to reach out.
 
 ### 5.1 Privacy gate (reference images specifically)
 
@@ -209,14 +229,48 @@ cloud. That deserves an explicit gate, not an implicit default:
 
 - **`[image_gen] allow_reference_images = false` by default.**
 - When `true`, the **adapter enforces** — not the model's compliance — that
-  every reference image is a Nora-held handle (a blob already in her media
-  custody, i.e. came in via `media_fetch`). `ImageReference` admits no raw
-  external URL: the port rejects any reference that is not a Nora-held
-  custody handle. Nora never fetches an external image *because* the user
-  asked to edit it; the user must have already sent it.
+  every reference image is a Nora-held custody handle (came in via
+  `media_fetch`). `ImageReference` admits no raw external URL: the port
+  rejects any reference that is not a Nora-held custody handle. Nora never
+  fetches an external image *because* the user asked to edit it; the user
+  must have already sent it.
 - The tool docstring tells the model to state plainly when a generated image
   used a reference photo, so the group knows the image was edited, not
   invented.
+
+### 5.2 Prompt convention (image → prompt)
+
+A reference image is bytes the MODEL cannot see — the transcript only shows
+the marker. So a good edit prompt needs a convention, not improvisation:
+
+- **Describe before transforming.** When the transformation depends on what
+  the image shows, call `media_fetch` on the marker FIRST and read its
+  `description`; then compose the prompt as:
+  `[what the image shows, from the description] + [the transformation] +
+  [what to keep / not keep]`.
+- **No identifiers in the prompt.** The prompt is uploaded to a third-party
+  cloud (xAI). Names, handles, phone numbers, and other identifiers never go
+  into it (R-18/R-28 — the same screen `media_fetch`'s serve path runs on
+  its own description).
+- **The transformation is the point.** A pure style transfer does not need
+  the description at all — the prompt should say what to apply ("turn this
+  into a watercolour", "add rain at night"), not restate the content. The
+  model should not guess what is in the image it cannot see; if the
+  transformation depends on content it does not know, call `media_fetch`
+  first or say it cannot do that.
+- These rules live in the `generate_image` docstring, so the model sees them
+  at call time — they are practice, not infra.
+
+### 5.3 The pipeline (reuses existing components)
+
+1. `media_fetch` already retrieves a stored image's bytes (DEC-56) — the
+   adapter reuses the same resolution (marker code → blob bytes).
+2. Nora's `drop` service already turns bytes into a public URL
+   (`nora.67.zone/drop/<slug>`, via rustfs). The xAI adapter uploads the
+   reference image to drop (or passes a base64 data URI) and calls
+   `/v1/images/edits`.
+3. The generated result also goes through drop → public URL → `send_reply`
+   with the URL (or attachment, per the platform).
 
 ## 6. The model-facing tool
 
