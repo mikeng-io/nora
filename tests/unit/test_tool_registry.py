@@ -68,6 +68,7 @@ def test_the_registry_exposes_every_declared_tool():
         "place_info", "saved_places",
         "where_is",
         "media_fetch",
+        "generate_image",
         "web_search", "web_fetch",
         "weather",
         # Discord-only music (design/discord-music/07-agent-tool.md).
@@ -136,6 +137,10 @@ def test_budgets_match_todays_table():
         # per-call vision timeout, not this number, is what keeps two describe
         # calls inside the loop budget (DEC-56).
         "media_fetch": 4,
+        # One message can ask for one image, maybe a second take after a bad
+        # first; each call is a slow provider round trip on a quota-bounded
+        # subscription, so 2 is the honest turn ceiling (DEC-137).
+        "generate_image": 2,
         # search (DEC-73, Tavily): sized by model round trips — search, then
         # refine once or twice; the doctrine says a couple is plenty.
         "web_search": 4,
@@ -530,6 +535,9 @@ ACT_VERBS = frozenset({
     "create_event", "update_event", "rsvp_event", "cancel_event",
     "make_artifact",
     "send_reply", "send_to", "send_gif",
+    # DEC-137: generation is an external side effect (provider call +
+    # artifact hosting), never a read — the Dreamer may not generate.
+    "generate_image",
     # The note tier's two write verbs (landed on master 2026-08-21). A read
     # verb that forgets the flag fails the classification test by name; these
     # two are acts and belong here.

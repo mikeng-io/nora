@@ -1137,6 +1137,61 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "presence enabled but identity.toml yields no circle "
                 "([[persons.<id>.life360]] with circle_id) — whereis stays unavailable"
             )
+    # Image generation ([image_gen], DEC-137): enabled AND refresh token
+    # present → build the lane (same `route`-keyless gate the shortener uses).
+    # Off (or tokenless) leaves the `generate_image` tool answering
+    # `unavailable` — never a crash, never `nothing_found` (R-5/R-27). The
+    # access-token state file lives in the same repo-tree state dir
+    # `./state/signal-cli` already uses (container-writable, host-immutable
+    # `.env` holds only the refresh token).
+    image_generator = None
+    image_refs_allowed = False
+    # M1 (Kimi audit): generated images go through `drop` (public URL) when
+    # the shortener credential is present — the design's "a public URL is
+    # required by the reply surface". Reuses the SAME base_url/token pair
+    # `LinkShortener` below resolves (and `LocalDockerBackend` above does):
+    # drop's internal listener + NORA_DROP_TOKEN. When shortener is off or
+    # tokenless, drop stays unwired and the adapter falls back to a data URI
+    # (tool-layer rejected on size grounds, never the production default).
+    drop_ingest = None
+    if cfg.shortener.enabled:
+        drop_token = os.environ.get(cfg.shortener.token_env, "")
+        if drop_token:
+            from nora.infra.drop import DropArtifactIngest
+            drop_ingest = DropArtifactIngest(
+                base_url=cfg.shortener.base_url,
+                token=drop_token,
+                timeout_seconds=cfg.shortener.timeout_seconds,
+            )
+    if cfg.image_gen.enabled:
+        image_refs_allowed = cfg.image_gen.allow_reference_images
+        xai_cfg = cfg.image_gen.xai
+        refresh_token = os.environ.get(xai_cfg.refresh_token_env, "")
+        if refresh_token:
+            from nora.infra.image_gen import build_image_generator
+            state_file = Path("/app/state/xai-oauth.json")
+            image_generator = build_image_generator(
+                provider=cfg.image_gen.provider,
+                refresh_token=refresh_token,
+                state_file=state_file,
+                model=xai_cfg.model,
+                quality_model=xai_cfg.quality_model,
+                timeout_seconds=xai_cfg.timeout_seconds,
+                drop=drop_ingest,
+            )
+            if image_generator is None:
+                # M6: unknown provider (or unconstructable lane) degrades
+                # the tool, never crashes the daemon.
+                log.warning(
+                    "image_gen enabled but provider %r could not be built — "
+                    "generate_image stays unavailable",
+                    cfg.image_gen.provider,
+                )
+        else:
+            log.warning(
+                "image_gen enabled but %s is unset — generate_image stays unavailable",
+                xai_cfg.refresh_token_env,
+            )
     # The link shortener ([shortener], 2026-08-07): enabled AND token present,
     # the `route`-keyless gate. Off (or tokenless) leaves long URLs in replies —
     # never load-bearing either way.
@@ -1438,6 +1493,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         versions=version_manifest,
         giphy=giphy_client,
         music=music_bridge,
+        image_generator=image_generator,
+        image_refs_allowed=image_refs_allowed,
         # `[llm.budgets]`, the per-deployment delta over the table. Threaded
         # here for the same reason `reminder_caps` is: `nora.agent` may not
         # import `nora.config`, so the composition root is the conversion

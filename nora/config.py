@@ -1415,6 +1415,54 @@ class NotesConfig(BaseModel):
     enabled: bool = False
 
 
+class XaiImageGenConfig(BaseModel):
+    """`[image_gen.xai]` — the xAI adapter's own knobs (DEC-137).
+
+    `model` / `quality_model` mirror the same names Hermes' `image_gen/xai`
+    plugin uses (`grok-imagine-image` / `grok-imagine-image-quality`).
+    `refresh_token_env` NAMES the env var holding the long-lived OAuth
+    refresh token (DEC-8) — the value never lands in config.toml.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model: str = "grok-imagine-image"
+    quality_model: str = "grok-imagine-image-quality"
+    timeout_seconds: float = 90.0
+    refresh_token_env: str = "XAI_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+
+
+class ImageGenConfig(BaseModel):
+    """The image-generation tool's gate (design/proposed/29, DEC-137).
+
+    `enabled` defaults **False** — the same reasoning every other optional
+    subsystem's gate gives: a new capability does not switch itself on. A
+    config.toml written before this existed keeps loading unchanged, and a
+    misconfigured lane degrades the tool to `unavailable` rather than
+    crashing the daemon (the DEC-136 RustFS posture).
+
+    `provider` is the port selector — the composition root builds the
+    `ImageGenerator` implementation the name selects; the model-facing tool
+    never names a provider.
+
+    `allow_reference_images` is the privacy gate for the edits API: reference
+    images (a friend's photo) upload to a third-party cloud, so the default
+    is OFF, and when ON the adapter still enforces that every reference is a
+    Nora-held custody handle (never an external URL — §5.1).
+
+    Credential env vars follow the DEC-8 `api_key_env`-style convention:
+    config names the env var, the host's `.env` holds the secret.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    provider: str = "xai"
+    allow_reference_images: bool = False
+
+    xai: XaiImageGenConfig = XaiImageGenConfig()
+
+
 class MusicConfig(BaseModel):
     """The Discord music bot's gate (the `discord-music` design bundle,
     node 00 — overview and scope).
@@ -1841,6 +1889,11 @@ class Config(BaseModel):
     # (`enabled = false`); the `ComputeJobStore` is built unconditionally
     # regardless (the `reminders` shape), only the poller's tick loop is gated.
     compute: ComputeConfig = ComputeConfig()
+    # Optional and defaulted — see `ImageGenConfig`. Ships INERT
+    # (`enabled = false`); a config.toml written before DEC-137 keeps loading
+    # unchanged, and a misconfigured lane degrades the tool to `unavailable`
+    # rather than crashing the daemon.
+    image_gen: ImageGenConfig = ImageGenConfig()
     # Optional and defaulted — see `VersionConfig` for why this one defaults ON
     # where every other optional capability defaults off.
     version: VersionConfig = VersionConfig()

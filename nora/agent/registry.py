@@ -55,6 +55,7 @@ from .tools import (
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
     EventsCollaborator,
+    ImageGenerator,
     NoteCollaborator,
     build_tool_specs,
     utc_now,
@@ -117,6 +118,8 @@ class ToolRegistry:
         versions: VersionManifest | None = None,
         giphy: GifSource | None = None,
         music: MusicToolBridge | None = None,
+        image_generator: ImageGenerator | None = None,
+        image_refs_allowed: bool = False,
         budget_overrides: Mapping[str, int] | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
@@ -290,6 +293,12 @@ class ToolRegistry:
         # Discord-only gate is a SEPARATE check each tool makes on
         # `room.platform` before ever touching this collaborator.
         self._music = music
+        # `ImageGenerator` (DEC-137), wired the same honest way: NOT
+        # default-constructed. `None` (config `[image_gen] enabled = false`)
+        # leaves the `generate_image` tool present in the catalogue answering
+        # `unavailable` — the wiring-gap state, never `nothing_found`.
+        self._image_generator = image_generator
+        self._image_refs_allowed = image_refs_allowed
 
     def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
@@ -610,6 +619,8 @@ class ToolRegistry:
             compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,
             tool_call_log_store=self._tool_call_log_store,
             music=self._music,
+            image_generator=self._image_generator,
+            image_refs_allowed=self._image_refs_allowed,
         )
 
     def build(

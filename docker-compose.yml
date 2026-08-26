@@ -173,6 +173,12 @@ services:
       #   Unset means GIF tools are unavailable; it must be explicitly passed
       #   because Compose does not inherit host .env values into a service.
       - GIPHY_API_KEY=${GIPHY_API_KEY:-}
+      #   XAI_OAUTH_REFRESH_TOKEN — the xAI image-generation lane (DEC-137).
+      #   Written by `nora xai-login` (device flow) into the host `.env`;
+      #   passed through here so the container can refresh access tokens
+      #   against it. Same OPTIONAL posture: `[image_gen].enabled` in
+      #   config.toml PLUS this present is what turns the lane on.
+      - XAI_OAUTH_REFRESH_TOKEN=${XAI_OAUTH_REFRESH_TOKEN:-}
       #   DISCORD_BOT_TOKEN     — the Gateway/REST credential for the Discord
       #   adapter ([platforms.discord] enabled, DEC-102). Passed explicitly for
       #   the same reason as every value above: Compose does not inherit host
@@ -234,6 +240,13 @@ services:
       # comment for why the process needs to know its host-side path at all.
       # Unset behaves exactly as the old `./data` did.
       - ${NORA_DATA_HOST_ROOT:-./data}:/app/data
+      # OAuth state (DEC-137): the xAI access-token state file
+      # (`./state/xai-oauth.json`) lives in the SAME repo-tree state dir
+      # signal-cli's identity keys already use — container-writable (the
+      # access token refreshes through it), while the long-lived refresh
+      # token stays in the host `.env` (immutable, DEC-8). The access token
+      # never rides the `.env` restart race.
+      - ./state:/app/state
       - ./config.toml:/app/config.toml:ro
       - ./identity.toml:/app/identity.toml:ro
       # Deny-by-default: without this Nora refuses to start rather than

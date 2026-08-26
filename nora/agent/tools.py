@@ -53,7 +53,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
-from typing import Protocol
+from typing import Literal, Protocol, cast
 from uuid import UUID
 
 from nora.agent.security import _names_a_person, scan_identifiers
@@ -77,6 +77,9 @@ from ..domain.notes import Note, NoteRevision, StaleNoteHeadError
 from ..domain.ports import (
     ComputeBackend,
     GifSource,
+    ImageGenerator,
+    ImageReference,
+    ImageSize,
     JobStatus,
     MessageHits,
     MusicToolBridge,
@@ -488,6 +491,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "media_fetch": NativeTool(4, "somebody asks about an image already in this "
                                  "conversation — what a photo shows, or what a "
                                  "screenshot says", read_only=True),
+    # generate_image (DEC-137): the one EXPENSIVE, EXTERNAL tool in the set —
+    # a real provider call per generate, potentially with a reference image,
+    # on a subscription lane that is quota-bounded, not metered. Budget 2:
+    # one generate, possibly one re-run with a size/quality tweak — the reply
+    # rides `send_reply`'s own budget. `read_only=False` because it
+    # commits an artifact to external custody (`drop`) — an act verb, never
+    # claimable as read-only (the `media_fetch` cache exemption does NOT
+    # extend here).
+    "generate_image": NativeTool(2, "make an image from a text prompt (and "
+                                    "optionally from a photo already in this "
+                                    "conversation — say plainly when you used "
+                                    "one)", read_only=False),
     # search returns ranked results WITH a content snippet each in a single
     # call (DEC-73, Tavily). Budget 4, sized by MODEL ROUND TRIPS — a turn may
     # search, then refine once or twice — but the doctrine tells her a couple is
@@ -1619,6 +1634,8 @@ def build_tool_specs(
     notes: NoteCollaborator | None = None,
     note_workspace: Callable[[str, str], str | None] | None = None,
     music: MusicToolBridge | None = None,
+    image_generator: ImageGenerator | None = None,
+    image_refs_allowed: bool = False,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -3158,6 +3175,207 @@ def build_tool_specs(
             "status": "ok", "code": sha256[:HANDLE_CHARS],
             "description": description,
         }
+
+    # ---- generate_image (DEC-137, design/proposed/29) --------------------
+    #
+    # Provider-agnostic by construction: this closure knows nothing about xAI
+    # or Grok — it speaks the `ImageGenerator` port and the adapter decides
+    # which provider answers. The docstring names no provider (enforced by
+    # test_tools). Ships INERT: `image_generator=None` (config `[image_gen]
+    # enabled = false`) is the honest wiring-gap state — `unavailable`, never
+    # `nothing_found` (R-27).
+    #
+    # Reference images: `image_refs_allowed` is the `[image_gen]
+    # allow_reference_images` gate (privacy — references upload to a third-
+    # party cloud). When off, a reference request is `unavailable` with a
+    # plain reason, not `nothing_found` (it is a capability gate, not a
+    # lookup miss). When on, each marker code resolves through the SAME
+    # conversation-scoped window `media_fetch` uses — a code that is not in
+    # view is `nothing_found`, never a fetch attempt.
+
+    async def generate_image(
+        prompt: str,
+        reference: str | None = None,
+        size: str | None = None,
+        aspect: str | None = None,
+        quality: str | None = None,
+    ) -> dict:
+        """Make an image from a text prompt, and optionally from a photo already
+        in this conversation.
+
+        Call this when somebody asks you to make, draw, or generate a picture —
+        an illustration, a logo, a birthday card, a meme, "turn this photo
+        into a watercolour". The provider is chosen for you; the prompt is
+        what matters.
+
+        A reference photo: pass its marker code (`a3f2c1` from `[image a3f2c1]`)
+        in `reference`. The photo must ALREADY be in this conversation — you
+        cannot fetch an image from elsewhere to edit it, and you should say
+        plainly in your reply when a generated image used a reference photo.
+        When the transformation depends on what the photo shows, call
+        `media_fetch` on the marker FIRST and read its description, then write
+        the prompt as: [what the photo shows] + [what to change] + [what to
+        keep]. Never guess what is in a photo you cannot see; if the change
+        needs content you don't know, call `media_fetch` or say you can't.
+        Do NOT put names, phone numbers, addresses or other identifiers into
+        the prompt — it goes to an outside service.
+
+        `size` is one of "small", "medium", "large". `aspect` is "1:1",
+        "16:9", "9:16", "3:2", "2:3" (default 1:1). `quality` is "standard"
+        or "quality" (default provider standard).
+
+        `status` tells you what happened:
+          - `ok` — `url` is the generated image; share it.
+          - `nothing_found` — the provider refused the prompt, or the
+            reference code is not in view here. Do not guess why; say it
+            could not be made.
+          - `unavailable` — could not make it right now; `note` says why
+            (quota used up, auth expired, service down). Never report this
+            as "there's nothing".
+
+        Args:
+            prompt: The image you are asked to make, with the conventions above.
+            reference: Optional marker code of a photo already in this conversation.
+            size: Optional "small" | "medium" | "large".
+            aspect: Optional "1:1" | "16:9" | "9:16" | "3:2" | "2:3".
+            quality: Optional "standard" | "quality".
+        """
+        if image_generator is None:
+            return {
+                "status": "unavailable",
+                "note": "I can't make images right now. Say so — do not invent "
+                        "one and do not say there is no such thing.",
+            }
+        if reference is not None and not image_refs_allowed:
+            return {
+                "status": "unavailable",
+                "note": "I can't edit a photo you send me right now — that "
+                        "feature is switched off. I can still make an image "
+                        "from text alone.",
+            }
+
+        refs: tuple[ImageReference, ...] = ()
+        if reference is not None:
+            marker = _handle_hex(reference)
+            if len(marker) < HANDLE_CHARS:
+                return {
+                    "status": "nothing_found",
+                    "note": "I can't find a photo with that code here. Say you "
+                            "can't use it rather than guessing.",
+                }
+            refs = (ImageReference(marker_code=marker),)
+
+        image_size = None
+        if size is not None or aspect is not None:
+            tier: Literal["small", "medium", "large"] = cast(
+                Literal["small", "medium", "large"],
+                size if size in ("small", "medium", "large") else "medium",
+            )
+            ratio: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] = cast(
+                Literal["1:1", "16:9", "9:16", "3:2", "2:3"],
+                aspect if aspect in ("1:1", "16:9", "9:16", "3:2", "2:3") else "1:1",
+            )
+            image_size = ImageSize(tier=tier, aspect_ratio=ratio)
+
+        quality_kind: Literal["standard", "quality"] | None = None
+        if quality == "quality":
+            quality_kind = "quality"
+
+        async def resolve(marker: str) -> bytes | None:
+            """The custody check, conversation-scoped: a code in THIS
+            conversation's own media window resolves to its blob bytes;
+            anything else is None (never a fetch attempt)."""
+            try:
+                rows = await store.recent(
+                    conversation_id=conversation_id, limit=_media_window,
+                )
+            except Exception:
+                log.exception("generate_image could not read the transcript")
+                return None
+            hex_handle = marker
+            matches: dict[str, str] = {}
+            for row in rows:
+                if not row.media_json:
+                    continue
+                try:
+                    blobs = json.loads(row.media_json)
+                except (ValueError, TypeError):
+                    continue
+                for blob in blobs if isinstance(blobs, list) else ():
+                    if not isinstance(blob, dict):
+                        continue
+                    sha = str(blob.get("sha256", ""))
+                    if sha.startswith(hex_handle):
+                        matches.setdefault(sha, str(blob.get("media_type", "")))
+            if len(matches) != 1:
+                # Absent OR ambiguous — both mean "not a resolvable reference
+                # for this edit" (never pick the first).
+                return None
+            if blob_store is None:
+                return None
+            sha256 = next(iter(matches))
+            try:
+                data = await blob_store.get(key=sha256)
+            except Exception:
+                log.exception("generate_image could not open blob %s", sha256[:HANDLE_CHARS])
+                return None
+            return data
+
+        try:
+            result = await image_generator.generate(
+                prompt=prompt,
+                reference_images=refs if refs else None,
+                size=image_size,
+                quality=quality_kind,
+                reference_resolver=resolve if refs else None,
+            )
+        except Exception:
+            log.exception("generate_image raised")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't make that image just now. Say so — do not "
+                        "describe an image that wasn't made.",
+            }
+
+        if result.status == "ok":
+            # M10 (Kimi audit): the model-facing surface names no provider
+            # (docstring/test enforcement) — the field leaked "xai" to the
+            # model. Keep the provider in logs only, and never log the raw
+            # artifact (a data-URI fallback could be megabytes).
+            log.info(
+                "image_gen: generated via %s",
+                result.provider or "?",
+            )
+            artifact = result.artifact or ""
+            # M2 (Kimi audit): a data-URI fallback (drop never wired) is
+            # rejected here rather than handed to the model — megabytes of
+            # base64 would blow the agent context and the reply surface.
+            if artifact.startswith("data:image/"):
+                return {
+                    "status": "unavailable",
+                    "note": "I made the image but couldn't host it — say "
+                            "so plainly rather than describing it.",
+                }
+            return {
+                "status": "ok",
+                "url": artifact,
+            }
+        if result.status == "nothing_found":
+            return {
+                "status": "nothing_found",
+                "note": "I couldn't make that image — the provider turned the "
+                        "prompt away. Try changing the wording.",
+            }
+        reason = result.reason or "unavailable"
+        note = {
+            "quota": "I've used up today's image quota. Say so plainly.",
+            "auth": "My image generation login has expired — Miles needs to "
+                    "re-authorise before I can make more.",
+            "rate_limited": "I'm making too many right now; try again in a bit.",
+            "down": "The image service is having trouble right now; try again "
+                    "in a bit.",
+        }.get(reason, "I can't make images right now. Say so plainly.")
+        return {"status": "unavailable", "note": note}
 
     # ---- web_search (DEC-73, Tavily) -------------------------------------
     #
@@ -5007,6 +5225,7 @@ def build_tool_specs(
         _spec("search_memory", search_memory),
         _spec("recall_lookups", recall_lookups),
         _spec("media_fetch", media_fetch),
+        _spec("generate_image", generate_image),
         _spec("web_search", web_search),
         _spec("web_fetch", web_fetch),
         _spec("weather", weather),
@@ -5068,6 +5287,8 @@ def build_tools(
     links: LinkCarry | None = None,
     notes: NoteCollaborator | None = None,
     note_workspace: Callable[[str, str], str | None] | None = None,
+    image_generator: ImageGenerator | None = None,
+    image_refs_allowed: bool = False,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -5088,5 +5309,6 @@ def build_tools(
         question=question, context_window=context_window, ai_peer=ai_peer,
         links=links, giphy_source=giphy_source,
         notes=notes, note_workspace=note_workspace,
+        image_generator=image_generator, image_refs_allowed=image_refs_allowed,
     )
     return [adapt(spec) for spec in specs]

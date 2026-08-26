@@ -16,7 +16,7 @@ from nora.agent.tools import (
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import GifCandidate
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
-from nora.domain.ports import OutboundAttachment, Roster
+from nora.domain.ports import ImageResult, OutboundAttachment, Roster
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -103,6 +103,7 @@ def test_every_declared_tool_is_built(wiring):
         "place_info", "saved_places",
         "where_is",
         "media_fetch",
+        "generate_image",
         "web_search", "web_fetch",
         "weather",
         # Discord-only music (design/discord-music/07-agent-tool.md).
@@ -737,3 +738,93 @@ async def test_gif_send_failure_raises_so_the_agent_can_send_a_text_reply(wiring
     with pytest.raises(RuntimeError, match="GIF unavailable"):
         await _call(tools["send_gif"], candidate_id="happy-1")
     assert await _call(tools["send_reply"], text="搵唔到張啱嘅 GIF，不過笑死") is True
+
+
+# ---- generate_image (DEC-137, design/proposed/29) -------------------------
+
+
+class _ImageGenerator:
+    """A fake `ImageGenerator` the tool tests inject — no provider, no
+    network. The behavioural contract over the REAL adapter lives in
+    `tests/contract/test_image_generator_contract.py`; these tests pin the
+    tool's own layer: the docstring gate, the wiring-gap state, the
+    reference privacy gate."""
+
+    def __init__(self, result: ImageResult | None = None):
+        self.result = result or ImageResult(
+            status="ok", artifact="data:image/png;base64,AA==", provider="xai"
+        )
+        self.calls: list[dict] = []
+
+    async def generate(self, **kwargs) -> ImageResult:
+        self.calls.append(kwargs)
+        return self.result
+
+
+def _with_image_tools(wiring, *, generator=None, refs_allowed=False):
+    return {tool.tool_name: tool for tool in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        image_generator=generator, image_refs_allowed=refs_allowed,
+    )}
+
+
+async def test_generate_image_wiring_gap_is_unavailable(wiring):
+    """`[image_gen] enabled = false` — the shipped state. The tool exists,
+    and answers `unavailable` with a plain note that does NOT tell the model
+    there is no such image (that would be a fabricated negative)."""
+    tools = _with_image_tools(wiring, generator=None)
+    result = await _call(tools["generate_image"], prompt="a cat")
+    assert result["status"] == "unavailable"
+    # The note states the CAPABILITY gap plainly — and instructs the model
+    # not to claim the image doesn't exist (a fabricated negative).
+    assert "can't make images" in result["note"].lower()
+
+
+async def test_generate_image_ok_returns_the_artifact(wiring):
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen)
+    result = await _call(tools["generate_image"], prompt="a cat")
+    assert result["status"] == "ok"
+    assert result["url"] == "data:image/png;base64,AA=="
+    assert gen.calls[0]["prompt"] == "a cat"
+
+
+async def test_generate_image_reference_respects_the_privacy_gate(wiring):
+    """`allow_reference_images = false` (the shipped default): a reference
+    request is `unavailable` with a capability note — NOT a lookup miss and
+    NOT a network call."""
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=False)
+    result = await _call(tools["generate_image"], prompt="edit this", reference="a3f2c1")
+    assert result["status"] == "unavailable"
+    assert gen.calls == []  # the gate refused before the provider was touched
+
+
+async def test_generate_image_references_passed_as_custody_handle(wiring):
+    """Gate on: the marker code travels as an `ImageReference` handle, not a
+    URL and not raw bytes — custody stays Nora's, adapter-side."""
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
+    result = await _call(tools["generate_image"], prompt="edit this", reference="a3f2c1")
+    assert result["status"] == "ok"
+    refs = gen.calls[0].get("reference_images")
+    assert refs is not None
+    assert refs[0].marker_code == "a3f2c1"
+
+
+async def test_generate_image_quota_maps_to_a_plain_note(wiring):
+    gen = _ImageGenerator(result=ImageResult(status="unavailable", reason="quota", provider="xai"))
+    tools = _with_image_tools(wiring, generator=gen)
+    result = await _call(tools["generate_image"], prompt="a cat")
+    assert result["status"] == "unavailable"
+    assert "quota" in result["note"].lower()
+
+
+async def test_generate_image_auth_maps_to_a_plain_note(wiring):
+    gen = _ImageGenerator(result=ImageResult(status="unavailable", reason="auth", provider="xai"))
+    tools = _with_image_tools(wiring, generator=gen)
+    result = await _call(tools["generate_image"], prompt="a cat")
+    assert result["status"] == "unavailable"
+    assert "re-authorise" in result["note"].lower()

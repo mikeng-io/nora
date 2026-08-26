@@ -588,6 +588,40 @@ bucket = "nora-media"
 access_key_env = "RUSTFS_ROOT_USER"
 secret_key_env = "RUSTFS_ROOT_PASSWORD"
 
+[image_gen]
+# Image generation (design/proposed/29, DEC-137): provider-agnostic
+# `ImageGenerator` port; the first adapter is xAI, on Nora's OWN X Premium
+# subscription OAuth lane — quota-bounded, not metered per-call billing.
+# Ships INERT, exactly like [presence]/[search]/[compute]/[music] before it:
+# a new subsystem does not switch itself on. `enabled = false` leaves the
+# `generate_image` tool present but answering `unavailable` (R-5) — the
+# wiring-gap state, never `nothing_found`.
+#
+# To turn it on: set `enabled = true` AND run `nora xai-login` (device flow;
+# it appends `XAI_OAUTH_REFRESH_TOKEN` to the host `.env`), then recreate
+# the container. The access token is NOT stored in `.env` — it lives in the
+# container-writable `./state/xai-oauth.json` and refreshes automatically
+# from the `.env` refresh token (single source of truth, DEC-8 pattern).
+# 2026-08-26: ON — operator enabled after live smoke (refresh→generate
+# status=ok) on the subscription lane.
+enabled = true
+provider = "xai"
+# Reference images (editing a photo already in this conversation) are a
+# PRIVACY gate: references upload to a third-party cloud, so they default
+# off. `media_fetch` (describe-only) is unaffected. When enabled, the model
+# can only reference a photo NORA ALREADY HOLDS (a marker code from THIS
+# conversation's own media window) — never an arbitrary external URL.
+allow_reference_images = false
+
+[image_gen.xai]
+# xAI adapter knobs. `model`/`quality_model` mirror the names Hermes'
+# image_gen/xai plugin uses; `refresh_token_env` is resolved by NAME from
+# the container env (DEC-8: one name for one secret — the CLI writes it).
+model = "grok-imagine-image"
+quality_model = "grok-imagine-image-quality"
+refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
+timeout_seconds = 90.0
+
 [shortener]
 # Nora's own link shortener/drop delivery (deploy/drop/, this repo's own
 # compose service — cut over 2026-08-12 from the n.example.net Cloudflare
