@@ -89,8 +89,6 @@ class SqlMediaDescriptionStore:
             set_={
                 "description": desc_insert.excluded.description,
                 "describe_model": desc_insert.excluded.describe_model,
-                "media_type": desc_insert.excluded.media_type,
-                "size": desc_insert.excluded.size,
             },
         )
         try:

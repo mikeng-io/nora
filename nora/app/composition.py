@@ -987,6 +987,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         audit=audit, memory=memory, persons=persons,
         policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
         media_sources=media_sources, blobs=blobs,
+        media_store=media_objects,
         stickers=sticker_reader, transcriber=transcriber,
         language=cfg.speech.stt.language,
         max_description_chars=cfg.media.sticker_description_max_chars,
@@ -1433,7 +1434,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # other.
         reminders=reminders,
         # The unified media index store — same engine, same lifecycle.
-        image_store=media_objects,
+        media_store=media_objects,
         # the six event tools (`create_event`/`update_event`/`rsvp_event`/
         # `cancel_event`/`list_events`/`suggest_venue`) answer `unavailable`
         # (R-5) whenever a composition has not wired one; every deployment

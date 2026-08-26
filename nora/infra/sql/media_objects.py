@@ -117,13 +117,16 @@ class SqlMediaObjectStore:
         return None if row is None else _row_to_object(row)
 
     async def by_prefix(
-        self, *, handle: str, limit: int = 20,
+        self, *, handle: str, limit: int = 100,
     ) -> tuple[MediaObject, ...]:
         """Every object whose sha256 starts with the handle. Unlike
         `media_fetch`'s conversation-scoped scan (which can see several
         blobs sharing a 6-hex prefix), this resolves against the WHOLE index
         — the caller must handle >1 result (collision) explicitly, never
-        pick the first silently."""
+        pick the first silently. The limit exists to bound a pathological
+        prefix, not to cap collision detection: `media_send` counts ALL
+        rows sharing the handle, so a window cut short would turn a real
+        collision into a silent default."""
         stmt = (
             sa.select(MEDIA_OBJECTS)
             .where(MEDIA_OBJECTS.c.sha256.like(handle + "%"))
