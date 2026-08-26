@@ -39,9 +39,9 @@ from .xai_oauth import XaiOAuth
 
 log = logging.getLogger("nora.image_gen.xai")
 
-XAI_API_BASE = "https://api.x.ai/v1"
-XAI_GENERATIONS_URL = f"{XAI_API_BASE}/images/generations"
-XAI_EDITS_URL = f"{XAI_API_BASE}/images/edits"
+XAI_API_BASE = "https://api.x.ai"
+XAI_GENERATIONS_URL = f"{XAI_API_BASE}/v1/images/generations"
+XAI_EDITS_URL = f"{XAI_API_BASE}/v1/images/edits"
 
 
 def _hex_handle(raw: str) -> str:
