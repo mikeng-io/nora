@@ -374,6 +374,16 @@ RULE_TESTS = {
     # idle -- never retried or substituted with a guess.
     "R-62": "test_autoplay_enqueues_and_plays_a_related_track_when_the_queue_empties",
     "R-63": "test_autoplay_skips_tracks_already_played_this_session",
+    # R-64 (design/discord-music/08-autoplay.md): with [music]
+    # autoplay_prewarm_seconds above 0, MusicPlayer resolves the NEXT
+    # autoplay pick (Mix lookup AND its playable stream) before the
+    # current track ends, so the track-end advance plays the prewarmed
+    # stream directly -- zero network calls at the gap. A prewarmed pick
+    # already played this session is refused (R-63 dedup still applies).
+    "R-64": "test_prewarm_resolves_the_next_autoplay_pick_before_the_track_ends",
+    # R-65: a dead voice connection tears the session down like a stop
+    # instead of stranding now-playing state.
+    "R-65": "test_a_dead_voice_connection_tears_down_the_session",
 }
 
 

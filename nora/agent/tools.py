@@ -1457,6 +1457,8 @@ def _music_result(outcome: MusicToolOutcome) -> dict[str, object]:
         result["title"] = outcome.title
     if outcome.url is not None:
         result["url"] = outcome.url
+    if outcome.queued:
+        result["queued"] = True
     if outcome.note:
         result["note"] = outcome.note
     return result

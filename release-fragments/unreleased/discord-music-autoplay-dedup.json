@@ -1,14 +1,15 @@
 {
   "type": "fix",
-  "summary": "Discord music autoplay no longer repeats the same few songs: autoplay skips any track already played in the current session.",
+  "summary": "Discord music autoplay no longer repeats the same few songs, starts the next track instantly instead of after a network gap, and survives a dropped voice connection without stranding a fake now-playing state.",
   "details": [
-    "Autoplay reseeds one-at-a-time from whatever just finished, and YouTube's Mix only ever excludes its own seed -- so a long autoplay chain drifted into repeating the same few tracks of one Mix neighborhood.",
-    "MusicPlayer now keeps a session-scoped, in-memory set of locators that actually started playing (_played_locators, recorded in _advance and resume_from_persisted right before the stream starts). Autoplay's pick selection skips anything already in it and takes the next fresh track from the Mix instead.",
-    "A Mix whose every entry has already played falls through to the ordinary idle behaviour exactly like an empty one -- never retried, never substituted with a guess.",
-    "User-requested playback is never deduped: the played-history set is read only by the autoplay pick path, so /music play of a song already played still plays it."
+    "Autoplay reseeds one-at-a-time from whatever just finished, and YouTube's Mix only ever excludes its own seed -- so a long autoplay chain drifted into repeating the same few tracks of one Mix neighborhood. MusicPlayer now keeps a session-scoped, in-memory set of locators that actually started playing (_played_locators). Autoplay's pick selection skips anything already in it and takes the next fresh track from the Mix; an all-repeats Mix falls through to idle exactly like an empty one. User-requested playback is never deduped.",
+    "Autoplay prewarm ([music] autoplay_prewarm_seconds, default 0): the next autoplay pick -- its Mix lookup AND its playable stream -- is resolved by a timer before the current track's expected end, so the track-end advance plays the prewarmed stream directly with zero network calls at the gap. Only armed for the last track in the queue; a stale or already-played prewarmed pick is discarded, never reused.",
+    "A dead voice connection (Discord gateway/voice websocket drop, found live 2026-08-26) no longer escapes into the on_finished handler and strands a fake now-playing state: _advance catches the failed play, clears the queue and session row, disconnects, and a fresh /music play starts cleanly.",
+    "Music messages are now consistent: every surface (slash replies, now-playing controls, queue view, track-end and autoplay notifications) uses the same 'Now playing: {title} — {url}' format, 'Queued:' for added-to-queue, and the play_music agent tool reports a 'queued' flag when a track was queued behind another instead of claiming it is playing."
   ],
   "limitations": [
     "The played history is session-scoped and in-memory: a restart (or deploy) begins a fresh window, so a track played before a restart can be autoplayed again after it.",
+    "Prewarm is only as good as the track duration yt-dlp reported: a track far shorter than expected can outrun the prewarm timer and fall back to the old at-end lookup.",
     "The Mix is still reseeded one track at a time from whatever most recently played -- a multi-track lookahead queue remains deferred."
   ]
 }

@@ -77,5 +77,10 @@ uncertain match into another.
   recently played — one-at-a-time was chosen because it stays closest to
   YouTube's own adaptive behaviour (a skipped autoplay track doesn't leave
   stale queued picks behind) and needed no new "how many" config knob.
+  Prewarm (below) mitigates the main cost of one-at-a-time — the audible
+  gap while the next pick is fetched — without changing the pick model.
+- The prewarm timer's lead time is a fixed `[music]
+  autoplay_prewarm_seconds` (R-64); a track far shorter than yt-dlp's
+  reported duration can outrun it and fall back to the at-end lookup.
 - No per-guild opt-out — today it is one deployment-wide flag, the same
   granularity every other `[music]` setting has.

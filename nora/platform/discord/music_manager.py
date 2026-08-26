@@ -51,6 +51,7 @@ class MusicPlayerManager:
         spawn: Spawn,
         clock_sleep: ClockSleep = asyncio.sleep,
         autoplay_enabled: bool = False,
+        autoplay_prewarm_seconds: float = 0.0,
     ) -> None:
         self._queue_store = queue_store
         self._session_store = session_store
@@ -59,6 +60,7 @@ class MusicPlayerManager:
         self._spawn = spawn
         self._clock_sleep = clock_sleep
         self._autoplay_enabled = autoplay_enabled
+        self._autoplay_prewarm_seconds = autoplay_prewarm_seconds
         self._players: dict[str, MusicPlayer] = {}
         self._idle_tasks: dict[str, asyncio.Task[None]] = {}
         self._notify: dict[str, Notify] = {}
@@ -232,6 +234,8 @@ class MusicPlayerManager:
             voice_channel_id=session.voice_channel_id,
             notify_channel_id=session.notify_channel_id,
             autoplay_enabled=self._autoplay_enabled,
+            autoplay_prewarm_seconds=self._autoplay_prewarm_seconds,
+            loop=asyncio.get_running_loop(),
         )
         self._players[session.guild_id] = player
         self._notify[session.guild_id] = notify
@@ -268,6 +272,8 @@ class MusicPlayerManager:
             guild_id=guild_id, queue=self._queue_store, source=self._track_source, voice=voice,
             session=self._session_store, voice_channel_id=voice_channel_id,
             notify_channel_id=notify_channel_id, autoplay_enabled=self._autoplay_enabled,
+            autoplay_prewarm_seconds=self._autoplay_prewarm_seconds,
+            loop=asyncio.get_running_loop(),
         )
         self._players[guild_id] = player
         return player
