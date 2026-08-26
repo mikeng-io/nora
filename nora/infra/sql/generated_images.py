@@ -62,20 +62,33 @@ class SqlGeneratedImageStore:
 
     async def search(self, *, query: str, limit: int = 20) -> tuple[GeneratedImage, ...]:
         """Text search over prompt/title/description, newest first. Empty
-        query → the most recent `limit` images."""
-        like = f"%{query}%" if query else "%"
-        stmt = (
-            sa.select(GENERATED_IMAGES)
-            .where(
-                sa.or_(
-                    GENERATED_IMAGES.c.prompt.ilike(like),
-                    GENERATED_IMAGES.c.title.ilike(like),
-                    GENERATED_IMAGES.c.description.ilike(like),
-                )
+        query → the most recent `limit` images. Multi-word queries AND all
+        words (each as a substring) — "birthday card miles" matches a prompt
+        containing all three, in any order."""
+        words = [w for w in query.split() if w]
+        if not words:
+            stmt = (
+                sa.select(GENERATED_IMAGES)
+                .order_by(GENERATED_IMAGES.c.created_at_ms.desc())
+                .limit(limit)
             )
-            .order_by(GENERATED_IMAGES.c.created_at_ms.desc())
-            .limit(limit)
-        )
+        else:
+            clauses = sa.or_(
+                *[
+                    sa.or_(
+                        GENERATED_IMAGES.c.prompt.ilike(f"%{w}%"),
+                        GENERATED_IMAGES.c.title.ilike(f"%{w}%"),
+                        GENERATED_IMAGES.c.description.ilike(f"%{w}%"),
+                    )
+                    for w in words
+                ]
+            )
+            stmt = (
+                sa.select(GENERATED_IMAGES)
+                .where(clauses)
+                .order_by(GENERATED_IMAGES.c.created_at_ms.desc())
+                .limit(limit)
+            )
         try:
             async with self._engine.connect() as conn:
                 rows = (await conn.execute(stmt)).all()
