@@ -71,10 +71,10 @@ from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
-from nora.infra.sql.events import SqlEventStore
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
+from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
@@ -126,8 +126,14 @@ from .announce import AnnouncementTarget, VersionAnnouncer
 from .compute_poller import ComputeJobPoller
 from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
-from .events import EventService
-from .fire import FirePath, lost_job_occasion, relay_occasion
+from .fire import (
+    FirePath,
+    gathering_occasion,
+    lost_job_occasion,
+    relay_occasion,
+    reminder_occasion,
+)
+from .gatherings import GatheringService
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .runtime import BackgroundTasks
 
@@ -443,13 +449,13 @@ class Dependencies:
     # several, which is the whole reason a workspace-keyed adaptor could not
     # ride the per-scope schedule.
     workspace_scopes: Callable[[], Sequence[str]]
-    # The SAME `EventService` built above alongside `event_store`/
+    # The SAME `GatheringService` built above alongside `event_store`/
     # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
     # exposed here too so `nora.web.api.register_web_routes`'s read-only
     # `/app/v1/events(/{id})` pair serves from the identical instance the
-    # agent's event tools use, rather than a second `EventService` over the
+    # agent's event tools use, rather than a second `GatheringService` over the
     # same store.
-    events: EventService
+    events: GatheringService
 
 
 async def build_dependencies(cfg: Config) -> Dependencies:
@@ -875,13 +881,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             )
     # §9's caps as the DOMAIN value, extracted to a variable (not built inline
     # at the `ToolRegistry(...)` call below the way it was before Events) so
-    # `EventService` and `ToolRegistry` share the exact SAME `ReminderCaps` —
+    # `GatheringService` and `ToolRegistry` share the exact SAME `ReminderCaps` —
     # an event's linked reminder must respect the identical anti-runaway caps
     # a manually requested one does, and two separately constructed instances
     # read as "the same value" only by coincidence of both reading `cfg.reminders`.
     reminder_caps = ReminderCaps(**cfg.reminders.model_dump())
-    # `EventService` (Event module design spec): the ONE use-case layer for
-    # Event business rules. `event_store` REUSES `engine` for the same reason
+    # `GatheringService` (Gathering module design spec): the ONE use-case layer for
+    # Gathering business rules. `event_store` REUSES `engine` for the same reason
     # `reminders`/`compute_jobs`/`tool_call_log_store` do above — a second
     # `create_sql_engine` would fork the pool. `route_source=route_client` is
     # the SAME `RouteClient` (or `None`) `place_info`/`route` already use —
@@ -889,8 +895,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # client the composition root has no other reason to own. `honcho=memory`
     # and `ai_peer=cfg.memory.ai_peer` are the SAME Honcho client and id
     # already threaded to `TranscriptInjection`/`ToolRegistry` below.
-    event_store = SqlEventStore(engine)
-    events = EventService(
+    event_store = SqlGatheringStore(engine)
+    events = GatheringService(
         store=event_store,
         reminders=reminders,
         reminder_caps=reminder_caps,
@@ -1450,7 +1456,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # `recall_lookups`'s own collaborator, tool-recall-log spec §4.
         tool_call_log_store=tool_call_log_store,
         # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
-        # `EventService` was built with above — see that variable's own
+        # `GatheringService` was built with above — see that variable's own
         # comment for why they must not be two separately constructed copies.
         # `nora.agent` may not import `nora.config` (import-linter's "only app
         # and __main__ read config"), so THAT construction is the conversion
@@ -1654,6 +1660,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             tool_call_log_store=tool_call_log_store,
             room_language_max_entries=cfg.language.max_rendered_lexemes,
             room_exchange_max_entries=cfg.language.max_rendered_exchanges,
+            # The reminder-derived Event registry (DEC-139,
+            # design/event-abstraction/04): kind -> factory, wired here at
+            # the composition root so the domain type stays free of app
+            # wiring. Today the registry has exactly the two kinds whose
+            # Events are PRODUCED BY a due Reminder row; compute/relay/
+            # lost-job call speak directly and are not registry entries.
+            event_registry={
+                "reminder": reminder_occasion,
+                "gathering": gathering_occasion,
+            },
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and

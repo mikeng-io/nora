@@ -64,9 +64,11 @@ from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.heartbeat")
 
-# A TURN's key: one conversation AND one requester. Wider than `Key`, the
-# conversation slot's key, and the difference is deliberate — see `_by_turn`.
-TurnKey = tuple[str, str, str]
+# A TURN's key: one conversation AND one requester AND one kind. Wider than
+# `Key`, the conversation slot's key, and the difference is deliberate — see
+# `_by_turn`. The kind component (DEC-139) keeps a mixed batch from being
+# rendered through the wrong factory.
+TurnKey = tuple[str, str, str, str]
 
 # The ONE outcome that means the group heard something. Everything else the fire
 # path can answer (§8.1: `failed_policy`, `failed_timeout`, `failed_error`) is a
@@ -174,7 +176,7 @@ class HeartbeatLoop:
                 log.exception(
                     "heartbeat: %d reminder(s) for %s in %s failed; "
                     "the rest of the tick continues",
-                    len(rows), turn_key[2], turn_key[1],
+                    len(rows), rows[0].requester_person_id, turn_key[1],
                 )
                 self._metrics.inc("nora_errors_total", stage="heartbeat")
         # Only a tick that got here counts as a tick. A pass that raised leaves
@@ -379,10 +381,11 @@ def _state_for(outcome: str) -> ReminderState:
 
 
 def _by_turn(rows: Sequence[Reminder]) -> dict[TurnKey, list[Reminder]]:
-    """Group into ONE turn per (conversation, requester), preserving `due()`'s
-    order.
+    """Group into ONE turn per (conversation, requester, kind), preserving
+    `due()`'s order.
 
-    §5.2, both halves:
+    §5.2, both halves — plus the kind component (DEC-139,
+    design/event-abstraction/04):
 
     - One CONVERSATION, because a turn has one Room, one policy decision and one
       Deliverer binding. Rows for two conversations sharing a turn would leak
@@ -393,14 +396,26 @@ def _by_turn(rows: Sequence[Reminder]) -> dict[TurnKey, list[Reminder]]:
       the peer card, and the synthetic message's `sender_name`. Two people's
       rows in one turn would put person B's sentence into a turn wearing person
       A's identity, A's memory and A's room.
+    - One KIND, because `FirePath.run` renders the batch through the factory
+      `rows[0].kind` selects — a mixed batch (one plain reminder + one
+      gathering-notify, same person, same conversation, same tick) would have
+      its kind decided by whichever row sorts first and the other row's payload
+      rendered through the wrong factory. Same conversation, same tick, two
+      kinds: two turns, no cross-kind mixing.
 
-    Two requesters due in the same group are therefore two turns. They are safe
-    precisely because they are separate: each takes the conversation slot in
-    turn, so they are serialised exactly as a tag and a fire turn are.
+    Two requesters due in the same group are therefore two turns — as are two
+    kinds for the same requester. They are safe precisely because they are
+    separate: each takes the conversation slot in turn, so they are serialised
+    exactly as a tag and a fire turn are. The deliberate accounting
+    consequence of splitting kinds (turns and per-turn deferrals double;
+    `nora_reminders_fired_total` is per-row and does not move) is documented
+    in design/event-abstraction/04 ("Deliberate accounting consequence").
     """
     groups: dict[TurnKey, list[Reminder]] = {}
     for row in rows:
-        key = (row.platform, row.conversation_id, row.requester_person_id)
+        key = (
+            row.platform, row.conversation_id, row.requester_person_id, row.kind,
+        )
         groups.setdefault(key, []).append(row)
     return groups
 

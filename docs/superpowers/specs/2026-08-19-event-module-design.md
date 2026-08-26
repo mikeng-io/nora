@@ -1,10 +1,18 @@
 ---
 kind: spec
 title: "The Event module — gatherings, RSVP, and chat-derived venue recommendations"
-description: "A new nora/domain/events.py: durable Event/RSVP state, a chat-first tool set that reuses the existing reminders fire path for notifications, on-demand food/venue recommendations from Honcho, and a read-only web surface. No new skills system, no new scheduling, no route recommendations yet."
+description: "A new nora/domain/gatherings.py: durable Gathering/RSVP state, a chat-first tool set that reuses the existing reminders fire path for notifications, on-demand food/venue recommendations from Honcho, and a read-only web surface. No new skills system, no new scheduling, no route recommendations yet."
 tags: [nora, events, domain, tools, web, honcho, design]
 timestamp: '2026-08-19'
 status: proposed
+superseded_naming: >-
+  2026-08-27 — this spec predates the event-abstraction bundle
+  (design/event-abstraction/). Its behaviour remains the Gathering feature's
+  contract, but its NAMING is superseded: the module is now
+  nora/domain/gatherings.Gathering, the linked reminder is kind="gathering"
+  with payload {"title": ...}, and the platform="event" sentinel it described
+  is fixed by DEC-139. See design/event-abstraction/02-naming-rename.md +
+  05-gathering-fold-in.md for the rename + kind authority.
 ---
 
 # The Event module
@@ -41,7 +49,7 @@ Three things this is not:
 
 ## What this change is, and is not
 
-**Is:** a new `nora/domain/events.py` (types + port), an `EventService`
+**Is:** a new `nora/domain/events.py` (types + port), an `GatheringService`
 use-case layer used by exactly one writer (the agent tools) and read by two
 adapters (the agent tools, the web app), four write tools and two read
 tools, a migration for two tables, and read-only `/events` web pages.
@@ -53,31 +61,31 @@ request, not pre-computed).
 
 ## 1. Architecture
 
-    nora/domain/events.py        PURE: Event, RSVP, EventStatus, RSVPResponse,
-                                  EventStore (Protocol port)
-    nora/app/events.py           EventService — the use-case layer. Owns
+    nora/domain/events.py        PURE: Event, RSVP, GatheringStatus, RSVPResponse,
+                                  GatheringStore (Protocol port)
+    nora/app/events.py           GatheringService — the use-case layer. Owns
                                   validation, the open-event lookup rule, and
                                   the RSVP/status state machine. The ONLY
                                   place event business rules are written.
                                   Takes the SAME route_source (PlaceResolver)
                                   nora/agent/tools.py's place_info/route
                                   already use — no second Google client.
-    nora/infra/sql/events.py     Postgres EventStore
+    nora/infra/sql/events.py     Postgres GatheringStore
     nora/agent/tools.py          create_event / update_event / rsvp_event /
                                   cancel_event / list_events / suggest_venue —
                                   thin: parse LLM-facing args, call
-                                  EventService, translate to an R-27 result.
+                                  GatheringService, translate to an R-27 result.
     nora/web/api.py              GET /events, GET /events/{id} — thin: resolve
                                   person_id from session, call
-                                  EventService.list_events / get_event.
+                                  GatheringService.list_events / get_event.
 
 This mirrors the reminders split (`nora/domain/reminders.py` +
 `nora/app/fire.py`) with one deliberate addition: reminders only ever had one
 adapter (chat), so its validation lives inline in the tool closure. Event has
 two adapters from day one (agent tool, web read), so its rules live in
-`EventService` instead, and both adapters call the same functions rather than
+`GatheringService` instead, and both adapters call the same functions rather than
 each re-implementing "what makes an event valid." The web adapter today only
-calls the read half of `EventService`; nothing currently calls the write half
+calls the read half of `GatheringService`; nothing currently calls the write half
 except the agent tools, and this spec does not add a web write path.
 
 ### 1.1 Import boundaries
@@ -122,7 +130,7 @@ migration as originally authored under the stale number.)
       venue_price_level  text, nullable
       venue_maps_url     text, nullable
       venue_resolved_at  timestamptz, nullable
-      status             EventStatus: proposed | confirmed | cancelled
+      status             GatheringStatus: proposed | confirmed | cancelled
       reminder_series_id UUID, nullable — `Series.id` (the reminders table's
                           `series_id` column, per `nora/infra/sql/reminders.py`),
                           shared across every occurrence in the linked series
@@ -151,9 +159,9 @@ not a new geocoder. `place_info` (`nora/agent/tools.py:2262`) already wraps
 Google Places Text Search behind a `PlaceResolver`
 (`nora/infra/routes/places.py:141`) and returns exactly this shape —
 `place_id`, canonical `name`, `address`, `rating`, `price_level`,
-`maps_url` — through the same `route_source` port `EventService` reuses (it
+`maps_url` — through the same `route_source` port `GatheringService` reuses (it
 does not own a second Google client). When `update_event` settles
-`venue_text`, `EventService` calls that resolver once, runs the venue
+`venue_text`, `GatheringService` calls that resolver once, runs the venue
 string through the same R-28 identifier/coordinate screen `place_info`
 already applies, and writes the stable fields to `Event`. Reads (`get_event`,
 `list_events`, the web view) never re-query Google — they read the cached
@@ -167,7 +175,7 @@ caching it risks confidently telling someone a place is open after it
 closed; "is it open right now" stays a fresh, rare, on-demand check, not a
 per-read cost).
 
-## 3. `EventService` — the use-case layer
+## 3. `GatheringService` — the use-case layer
 
     create_event(group_id, requester_person_id, title, when=None, venue_text=None) -> Event
     update_event(event_id, when=None, venue_text=None) -> Event
@@ -189,7 +197,7 @@ doctrine-in-docstring). Behaviour:
 
 - **Zero open events** → `create_event` proceeds.
 - **One open event** → the agent is expected to call `update_event` against
-  it rather than create a new one. `EventService` does not silently merge
+  it rather than create a new one. `GatheringService` does not silently merge
   this itself — the model decides, from context, whether "let's also get
   ramen" is a new event or an update to the one already open, same as any
   other ambiguous-reference resolution she already does.
@@ -223,7 +231,7 @@ subsystem):
    *"food preferences, dietary constraints, and venues previously mentioned
    positively for this person."* A fixed query shape (not a generic one) is
    what makes results comparable across people and stable across repeat
-   calls — this is a prompt-shape decision inside `EventService.suggest_venue`,
+   calls — this is a prompt-shape decision inside `GatheringService.suggest_venue`,
    not new infrastructure.
 3. **Fail-closed per person and per call.** A person with no representation
    contributes nothing (this already happens today —
@@ -270,7 +278,7 @@ The backlogged per-conversation rolling summary (design-backlog issue #4,
 CLAUDE.md's Design backlog section) would let `suggest_venue` check a cheap
 rolling summary before falling back to a full dialectic query. This spec
 does not depend on #4 landing and `suggest_venue` works without it; if #4
-ships first, wiring it in is a query-order change inside `EventService`, not
+ships first, wiring it in is a query-order change inside `GatheringService`, not
 a redesign.
 
 ## 6. Web surface (read-only)
@@ -281,7 +289,7 @@ Shows event details, per-person RSVP status, and venue suggestions once
 populated. **No create/edit/RSVP forms** — per Miles's decision, creation and
 all mutation happen through chat only; the web app is a pure view. Backed by
 `GET /events` / `GET /events/{id}` in `nora/web/api.py`, calling
-`EventService.list_events`/`get_event` directly (same read-passthrough shape
+`GatheringService.list_events`/`get_event` directly (same read-passthrough shape
 as `nora/web/games.py`), proxied through a Next.js API route that resolves
 `person_id` from the NextAuth session before calling through — the same
 pattern `app/src/app/api/memory/route.ts` already uses.
@@ -301,10 +309,10 @@ than the transcript does (§0).
 
 ## 8. Testing, migration, rollout
 
-- **Contract tests**: `EventStore` gets a `tests/contract/` suite (fake +
+- **Contract tests**: `GatheringStore` gets a `tests/contract/` suite (fake +
   Postgres implementation against the same suite), per CLAUDE.md's "a port
   never gains a second implementation without a shared contract suite."
-- **Fakes behave like the real store**: the fake `EventStore` must reproduce
+- **Fakes behave like the real store**: the fake `GatheringStore` must reproduce
   real failure/edge shapes (empty roster, ambiguous open-event set), not
   answer every call the same way.
 - **Acceptance rule**: the open-event doctrine (§3.1) is a named test in

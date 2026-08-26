@@ -36,7 +36,7 @@ computing a calendar independently is two calendars.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
@@ -245,6 +245,13 @@ class Reminder:
     # construction here and by `ck_reminders_recurrence` in the schema; there is
     # no half-set state either side can represent.
     series: Series | None = None
+    # The event-model abstraction (DEC-139): `kind` names WHAT the row is —
+    # the default `"reminder"` is the whole of the pre-DEC-139 table — and
+    # `payload` is the kind's denormalized shape, opaque to Reminder itself
+    # ("Reminder never knows what fires"). Defaulted so every existing row
+    # and every existing call site is byte-identical to today.
+    kind: str = "reminder"
+    payload: Mapping[str, str] | None = None
 
 
 def ensure_utc(value: datetime, *, field: str) -> datetime:

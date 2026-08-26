@@ -669,3 +669,29 @@ async def test_one_undecodable_row_does_not_strand_every_other_reminder(store):
     due = await store.due(now=bad.due_at, limit=10)
 
     assert [r.text for r in due] == ["good one"]      # the healthy row still fires
+
+
+async def test_kind_and_payload_round_trip_through_both_stores(store):
+    """DEC-139: `kind`/`payload` are first-class Reminder fields — both
+    implementations must round-trip them (fake-fidelity rule)."""
+    r = _row(
+        kind="gathering", payload={"title": "Dinner"},
+    )
+    await store.create(r)
+
+    back = await store.get(r.id)
+    assert back is not None
+    assert back.kind == "gathering"
+    assert back.payload == {"title": "Dinner"}
+
+
+async def test_default_kind_is_reminder(store):
+    """A row written with no kind reads back as `"reminder"` — the whole of
+    the pre-DEC-139 table behaves byte-identically after the columns land."""
+    r = _row()
+    await store.create(r)
+
+    back = await store.get(r.id)
+    assert back is not None
+    assert back.kind == "reminder"
+    assert back.payload is None

@@ -6,14 +6,14 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nora.agent.whereis import Circle
-from nora.app.events import EventService
-from nora.domain.events import RSVPResponse
+from nora.app.gatherings import GatheringService
+from nora.domain.gatherings import RSVPResponse
 from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, WireState
 from nora.domain.reminders import ReminderCaps
 from nora.persons import Persons
 from nora.testing import FakeRecordStore
-from nora.testing.events import FakeEventStore
+from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.games import PulseGamesClient
@@ -30,14 +30,17 @@ SAM = PersonRef(person_id="sam", name="Sam", honcho_peer_id="sam")
 NO_SKILLS_DIR = Path("/nonexistent-skills-dir-for-tests")
 
 
-def _fake_events() -> EventService:
-    """A minimal, always-`unavailable`-for-venue-suggestion `EventService`
+def _fake_events() -> GatheringService:
+    """A minimal, always-`unavailable`-for-venue-suggestion `GatheringService`
     (`route_source`/`honcho` both `None`) — these fixtures only exercise
-    routes unrelated to Event, so the real shape doesn't matter, just that
-    `register_web_routes` receives a real `EventService` instance."""
-    return EventService(
-        store=FakeEventStore(), reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(), route_source=None, honcho=None,
+    routes unrelated to Gathering, so the real shape doesn't matter, just that
+    `register_web_routes` receives a real `GatheringService` instance."""
+    return GatheringService(
+        store=FakeGatheringStore(),
+        reminders=FakeReminderStore(),
+        reminder_caps=ReminderCaps(),
+        route_source=None,
+        honcho=None,
         ai_peer="nora",
     )
 
@@ -46,8 +49,12 @@ class FakePresenceReader:
     """Conforms to `nora.agent.whereis.PresenceReader` — the same narrow
     protocol `Whereis` itself programs against, not the concrete SQL store."""
 
-    def __init__(self, *, fixes: dict[str, PresenceFix] | None = None,
-                 windows: dict[str, list[PresenceFix]] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fixes: dict[str, PresenceFix] | None = None,
+        windows: dict[str, list[PresenceFix]] | None = None,
+    ) -> None:
         self._fixes = fixes or {}
         self._windows = windows or {}
 
@@ -67,16 +74,22 @@ class FakePresenceReader:
 async def client(aiohttp_client):
     app = web.Application()
     register_web_routes(
-        app, store=FakeRecordStore(), honcho=FakeHoncho(conclusions={"miles": ["x"]}),
+        app,
+        store=FakeRecordStore(),
+        honcho=FakeHoncho(conclusions={"miles": ["x"]}),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES}, index={}),
-        ai_peer="nora", started_at=0.0,
+        ai_peer="nora",
+        started_at=0.0,
         # `None` — the same "PULSE_API_TOKEN not configured" state
         # composition.py builds for a deployment without that env var. Games
         # routes must degrade to 503, never fabricate 200s.
         games_client=None,
-        presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(), doctrine_store=build_test_doctrine_store(),
+        presence=None,
+        presence_circles=(),
+        skills_dir=NO_SKILLS_DIR,
+        events=_fake_events(),
+        doctrine_store=build_test_doctrine_store(),
     )
     return await aiohttp_client(app)
 
@@ -93,7 +106,12 @@ async def test_doctrine_route_returns_the_shipped_sections_in_order(client):
     assert resp.status == 200
     body = await resp.json()
     assert [section["name"] for section in body] == [
-        "identity", "voice", "silence", "conduct", "capability", "constraints",
+        "identity",
+        "voice",
+        "silence",
+        "conduct",
+        "capability",
+        "constraints",
     ]
     assert set(body[0]) == {"name", "description", "version", "body"}
 
@@ -104,8 +122,11 @@ async def test_memory_route_returns_only_the_requested_person(client):
     body = await resp.json()
     assert body == [
         {
-            "person_id": "miles", "display_name": "Miles", "reachable": True,
-            "identity": [], "episodes": ["x"],
+            "person_id": "miles",
+            "display_name": "Miles",
+            "reachable": True,
+            "identity": [],
+            "episodes": ["x"],
         },
     ]
 
@@ -232,14 +253,27 @@ class _FakePulse:
     def __init__(self) -> None:
         self.servers_body: object = [
             {
-                "id": "abiotic_factor", "displayName": "Abiotic Factor", "color": "#f59e0b",
+                "id": "abiotic_factor",
+                "displayName": "Abiotic Factor",
+                "color": "#f59e0b",
                 "maxPlayers": 12,
                 "current": {
-                    "serverId": "abiotic_factor", "timestamp": 1_755_000_000, "online": True,
-                    "status": "running", "cpuPercent": 47.0, "memoryBytes": 5_800_000_000,
-                    "memoryLimitBytes": 8_000_000_000, "networkRxBytes": 0, "networkTxBytes": 0,
-                    "networkRxBps": 0, "networkTxBps": 0, "blockReadBytes": 0,
-                    "blockWriteBytes": 0, "pids": 12, "restartCount": 0, "playerCount": 0,
+                    "serverId": "abiotic_factor",
+                    "timestamp": 1_755_000_000,
+                    "online": True,
+                    "status": "running",
+                    "cpuPercent": 47.0,
+                    "memoryBytes": 5_800_000_000,
+                    "memoryLimitBytes": 8_000_000_000,
+                    "networkRxBytes": 0,
+                    "networkTxBytes": 0,
+                    "networkRxBps": 0,
+                    "networkTxBps": 0,
+                    "blockReadBytes": 0,
+                    "blockWriteBytes": 0,
+                    "pids": 12,
+                    "restartCount": 0,
+                    "playerCount": 0,
                 },
             }
         ]
@@ -295,15 +329,23 @@ async def client_with_games(aiohttp_client, pulse_server):
     _fake, base_url = pulse_server
     app = web.Application()
     register_web_routes(
-        app, store=FakeRecordStore(), honcho=FakeHoncho(),
+        app,
+        store=FakeRecordStore(),
+        honcho=FakeHoncho(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES}, index={}),
-        ai_peer="nora", started_at=0.0,
+        ai_peer="nora",
+        started_at=0.0,
         games_client=PulseGamesClient(
-            token="test-token", base_url=base_url, timeout_seconds=5.0,  # noqa: S106
+            token="test-token",  # noqa: S106
+            base_url=base_url,
+            timeout_seconds=5.0,
         ),
-        presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(), doctrine_store=build_test_doctrine_store(),
+        presence=None,
+        presence_circles=(),
+        skills_dir=NO_SKILLS_DIR,
+        events=_fake_events(),
+        doctrine_store=build_test_doctrine_store(),
     )
     return await aiohttp_client(app)
 
@@ -317,7 +359,8 @@ async def test_games_servers_route_proxies_pulses_real_response(client_with_game
 
 
 async def test_games_servers_route_is_503_when_pulse_answers_a_non_200(
-    client_with_games, pulse_server,
+    client_with_games,
+    pulse_server,
 ):
     """The mount is configured and reachable but Pulse itself errors (e.g.
     the game adapter is down) — still an honest 503, not a crash and not a
@@ -353,9 +396,7 @@ async def test_games_progress_route_proxies_pulses_real_response(client_with_gam
 
 
 async def test_games_save_history_route_forwards_hours(client_with_games):
-    resp = await client_with_games.get(
-        "/app/v1/games/servers/big_walk/save-history?hours=72"
-    )
+    resp = await client_with_games.get("/app/v1/games/servers/big_walk/save-history?hours=72")
     assert resp.status == 200
     body = await resp.json()
     assert body["query"] == {"hours": "72"}
@@ -438,25 +479,43 @@ async def test_presence_history_route_is_404_when_presence_is_disabled(client):
 async def client_with_presence(aiohttp_client):
     circle = Circle(circle_id="c1", person_ids=frozenset({"miles", "ada"}), people=(MILES, ADA))
     fix = PresenceFix(
-        circle_id="c1", person_id="miles", ts=1_755_000_000_000, lat=22.3, lng=114.2,
-        wire_state=WireState.LIVE, recorded_at=1_755_000_000_000, battery=80.0,
+        circle_id="c1",
+        person_id="miles",
+        ts=1_755_000_000_000,
+        lat=22.3,
+        lng=114.2,
+        wire_state=WireState.LIVE,
+        recorded_at=1_755_000_000_000,
+        battery=80.0,
     )
     older = PresenceFix(
-        circle_id="c1", person_id="miles", ts=1_754_999_000_000, lat=22.30001, lng=114.20001,
-        wire_state=WireState.LIVE, recorded_at=1_754_999_000_000,
+        circle_id="c1",
+        person_id="miles",
+        ts=1_754_999_000_000,
+        lat=22.30001,
+        lng=114.20001,
+        wire_state=WireState.LIVE,
+        recorded_at=1_754_999_000_000,
     )
     reader = FakePresenceReader(
-        fixes={"miles": fix}, windows={"miles": [older, fix]},
+        fixes={"miles": fix},
+        windows={"miles": [older, fix]},
     )
     app = web.Application()
     register_web_routes(
-        app, store=FakeRecordStore(), honcho=FakeHoncho(),
+        app,
+        store=FakeRecordStore(),
+        honcho=FakeHoncho(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES, "ada": ADA}, index={}),
-        ai_peer="nora", started_at=0.0,
+        ai_peer="nora",
+        started_at=0.0,
         games_client=None,
-        presence=reader, presence_circles=(circle,), skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(), doctrine_store=build_test_doctrine_store(),
+        presence=reader,
+        presence_circles=(circle,),
+        skills_dir=NO_SKILLS_DIR,
+        events=_fake_events(),
+        doctrine_store=build_test_doctrine_store(),
     )
     return await aiohttp_client(app)
 
@@ -508,36 +567,50 @@ async def test_presence_places_route_returns_empty_list_when_presence_is_disable
 
 @pytest.fixture
 async def client_with_events(aiohttp_client):
-    """Same fixture shape as `client`, but wired with a real `EventService`
-    over a NON-empty `FakeEventStore` — one seeded event with a real RSVP —
+    """Same fixture shape as `client`, but wired with a real `GatheringService`
+    over a NON-empty `FakeGatheringStore` — one seeded event with a real RSVP —
     so the events routes exercise the actual request -> handler -> service
     -> store path, not a fixture whose store is always empty regardless of
-    what a test asks for (CLAUDE.md's fake-fidelity rule; FakeEventStore's
+    what a test asks for (CLAUDE.md's fake-fidelity rule; FakeGatheringStore's
     own docstring makes the same commitment for its store-level contract)."""
-    events_service = EventService(
-        store=FakeEventStore(), reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(), route_source=None, honcho=None,
+    events_service = GatheringService(
+        store=FakeGatheringStore(),
+        reminders=FakeReminderStore(),
+        reminder_caps=ReminderCaps(),
+        route_source=None,
+        honcho=None,
         ai_peer="nora",
     )
     event = await events_service.create_event(
-        conversation_id="signal:group-1", requester_person_id="miles",
+        conversation_id="signal:group-1",
+        requester_person_id="miles",
         title="Dinner",
+        platform="signal",
     )
     await events_service.rsvp(
-        event_id=event.id, conversation_id="signal:group-1",
-        person_id="daisy", response=RSVPResponse.YES,
+        event_id=event.id,
+        conversation_id="signal:group-1",
+        person_id="daisy",
+        response=RSVPResponse.YES,
     )
     app = web.Application()
     register_web_routes(
-        app, store=FakeRecordStore(), honcho=FakeHoncho(),
+        app,
+        store=FakeRecordStore(),
+        honcho=FakeHoncho(),
         reminders=FakeReminderStore(),
         persons=Persons(
-            by_person={"miles": MILES, "daisy": DAISY, "sam": SAM}, index={},
+            by_person={"miles": MILES, "daisy": DAISY, "sam": SAM},
+            index={},
         ),
-        ai_peer="nora", started_at=0.0,
+        ai_peer="nora",
+        started_at=0.0,
         games_client=None,
-        presence=None, presence_circles=(), skills_dir=NO_SKILLS_DIR,
-        events=events_service, doctrine_store=build_test_doctrine_store(),
+        presence=None,
+        presence_circles=(),
+        skills_dir=NO_SKILLS_DIR,
+        events=events_service,
+        doctrine_store=build_test_doctrine_store(),
     )
     web_client = await aiohttp_client(app)
     return web_client, event

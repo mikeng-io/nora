@@ -12,7 +12,7 @@ That split is not tidiness. R-1b
 exactly two callers, so a module that wanted to post its own announcement could
 not — every guard, the audit-first write, the Honcho feed and the Langfuse trace
 hang off that one construction site, and a second outbound path would have to
-re-prove all of them. This module therefore hands `FirePath` an `Occasion` and
+re-prove all of them. This module therefore hands `FirePath` an `Event` and
 reads back its outcome string.
 
 WHY IT FIRES AT MOST ONCE, AND WHY THAT IS THE STRONGER GUARANTEE
@@ -45,12 +45,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from nora.agent.prefill import escape
+from nora.domain.events import Event
 from nora.engagement.slots import ConversationSlots, Key
 from nora.infra.sql.announcements import DONE, FAILED, SqlAnnouncementLog
 from nora.infra.version import OK, VersionManifest
 from nora.obs.metrics import Metrics
 
-from .fire import SENT, Occasion
+from .fire import SENT
 
 log = logging.getLogger("nora.app.announce")
 
@@ -74,7 +75,7 @@ SPEAKER = "the people who build you"
 class AnnouncementTarget:
     """One room to announce into.
 
-    All three parts of the conversation key, for `Occasion`'s reason: a value
+    All three parts of the conversation key, for `Event`'s reason: a value
     carrying the id alone can build neither a `ConversationTarget` nor the
     `ConversationSlots` key. `conversation_type` defaults to `group` because
     `policy.toml`'s `[[conversations]]` are groups — DMs are a separate section
@@ -100,7 +101,7 @@ class VersionAnnouncer:
         manifest: VersionManifest,
         store: SqlAnnouncementLog,
         targets: Sequence[AnnouncementTarget],
-        speak: Callable[[Occasion], Awaitable[str]],
+        speak: Callable[[Event], Awaitable[str]],
         slots: ConversationSlots,
         metrics: Metrics,
         clock: Callable[[], datetime],
@@ -209,14 +210,14 @@ class VersionAnnouncer:
 
 def _occasion(
     version: str, notes: str, target: AnnouncementTarget,
-) -> Occasion:
+) -> Event:
     """The release note, as an occasion to speak.
 
     `person_id=None`: nobody asked. That is what stops `FirePath` refusing the
     turn under §12's «this requester is no longer in identity.toml» rule, which
     is about a grant this occasion never held.
     """
-    return Occasion(
+    return Event(
         platform=target.platform,
         conversation_id=target.conversation_id,
         conversation_type=target.conversation_type,

@@ -1,6 +1,6 @@
-"""`EventService` — the ONE use-case layer for Event business rules (spec
+"""`GatheringService` — the ONE use-case layer for Gathering business rules (spec
 §1: reminders only ever had one adapter, so its rules live inline in a
-tool closure; Event has two adapters from day one, so its rules live
+tool closure; Gathering has two adapters from day one, so its rules live
 here, and both the agent tool and the web read routes call these same
 functions rather than each re-implementing what makes an event valid).
 
@@ -22,23 +22,23 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from nora.agent.security import screen_and_resolve_place
-from nora.domain.events import (
+from nora.domain.gatherings import (
     RSVP,
-    Event,
-    EventStatus,
-    EventStore,
+    Gathering,
+    GatheringStatus,
+    GatheringStore,
     RSVPResponse,
     VenueCandidate,
     VenueSuggestions,
 )
-from nora.domain.events import (
-    AmbiguousOpenEventsError as AmbiguousOpenEventsError,
+from nora.domain.gatherings import (
+    AmbiguousOpenGatheringsError as AmbiguousOpenGatheringsError,
 )
-from nora.domain.events import (
-    EventCancelledError as EventCancelledError,
+from nora.domain.gatherings import (
+    GatheringCancelledError as GatheringCancelledError,
 )
-from nora.domain.events import (
-    EventNotFoundError as EventNotFoundError,
+from nora.domain.gatherings import (
+    GatheringNotFoundError as GatheringNotFoundError,
 )
 from nora.domain.reminders import (
     Reminder,
@@ -71,11 +71,11 @@ class _Honcho(Protocol):
     ) -> str | None: ...
 
 
-class EventService:
+class GatheringService:
     def __init__(
         self,
         *,
-        store: EventStore,
+        store: GatheringStore,
         reminders: ReminderStore,
         reminder_caps: ReminderCaps,
         route_source: _RouteSource | None,
@@ -94,13 +94,13 @@ class EventService:
     async def create_event(
         self, *, conversation_id: str, requester_person_id: str, title: str,
         when: datetime | None = None, venue_text: str | None = None,
-        person_names: frozenset[str] | None = None,
-    ) -> Event:
+        person_names: frozenset[str] | None = None, platform: str,
+    ) -> Gathering:
         """Spec §3.1: the CALLER (the `create_event` tool) is expected to
         have already checked `list_events(status=PROPOSED)` and decided a
         new event is genuinely wanted — this method does not silently
         merge or refuse on its behalf. It DOES still raise
-        `AmbiguousOpenEventsError` if two-or-more open events already
+        `AmbiguousOpenGatheringsError` if two-or-more open events already
         exist, as a last-resort backstop, not the primary mechanism.
 
         Fix I1: only a PROPOSED event that is STILL OPEN — `when is None`
@@ -113,14 +113,14 @@ class EventService:
         a past event out of PROPOSED (a deliberate scope decision, not a
         gap this fix reopens)."""
         open_events = await self.list_events(
-            conversation_id=conversation_id, status=EventStatus.PROPOSED,
+            conversation_id=conversation_id, status=GatheringStatus.PROPOSED,
         )
         now = self._now()
         still_open = [e for e in open_events if e.when is None or e.when >= now]
         if len(still_open) >= 2:
-            raise AmbiguousOpenEventsError(conversation_id, still_open)
+            raise AmbiguousOpenGatheringsError(conversation_id, still_open)
 
-        event = Event(
+        event = Gathering(
             id=uuid.uuid4(),
             conversation_id=conversation_id,
             title=title,
@@ -134,14 +134,14 @@ class EventService:
             venue_price_level="",
             venue_maps_url=None,
             venue_resolved_at=None,
-            status=EventStatus.PROPOSED,
+            status=GatheringStatus.PROPOSED,
             reminder_id=None,
             created_at=now,
         )
         if when is not None:
             event = await self._link_reminder(
                 event, requester_person_id=requester_person_id,
-                conversation_id=conversation_id,
+                conversation_id=conversation_id, platform=platform,
             )
         if venue_text is not None:
             event = await self._resolve_venue(
@@ -153,20 +153,20 @@ class EventService:
     async def update_event(
         self, *, event_id: UUID, conversation_id: str,
         when: datetime | None = None, venue_text: str | None = None,
-        person_names: frozenset[str] | None = None,
-    ) -> Event:
+        person_names: frozenset[str] | None = None, platform: str,
+    ) -> Gathering:
         current = await self._require_in_conversation(event_id, conversation_id)
-        if current.status is EventStatus.CANCELLED:
+        if current.status is GatheringStatus.CANCELLED:
             # Fix I2: a new `when` here would run `_link_reminder` and mint a
             # fresh PENDING reminder for a gathering that was called off —
             # refuse rather than silently reactivating it.
-            raise EventCancelledError(event_id)
+            raise GatheringCancelledError(event_id)
         updated = current
         if when is not None:
             updated = replace(updated, when=ensure_utc(when, field="when"))
             updated = await self._link_reminder(
                 updated, requester_person_id=updated.created_by,
-                conversation_id=updated.conversation_id,
+                conversation_id=updated.conversation_id, platform=platform,
             )
         if venue_text is not None:
             updated = await self._resolve_venue(
@@ -180,11 +180,11 @@ class EventService:
         response: RSVPResponse,
     ) -> RSVP:
         current = await self._require_in_conversation(event_id, conversation_id)
-        if current.status is EventStatus.CANCELLED:
+        if current.status is GatheringStatus.CANCELLED:
             # Fix I2: the same refusal `update_event` gives — recording an
             # RSVP against a called-off gathering is not useful and reads as
             # though it is still on.
-            raise EventCancelledError(event_id)
+            raise GatheringCancelledError(event_id)
         row = RSVP(
             event_id=event_id, person_id=person_id, response=response,
             responded_at=self._now(),
@@ -192,27 +192,27 @@ class EventService:
         await self._store.add_rsvp(row)
         return row
 
-    async def cancel_event(self, *, event_id: UUID, conversation_id: str) -> Event:
+    async def cancel_event(self, *, event_id: UUID, conversation_id: str) -> Gathering:
         current = await self._require_in_conversation(event_id, conversation_id)
         if current.reminder_id is not None:
             await self._reminders.cancel(
                 current.reminder_id, conversation_id=current.conversation_id,
             )
-        updated = replace(current, status=EventStatus.CANCELLED)
+        updated = replace(current, status=GatheringStatus.CANCELLED)
         await self._store.update(updated)
         return updated
 
     async def list_events(
-        self, *, conversation_id: str, status: EventStatus | None = None,
-    ) -> Sequence[Event]:
+        self, *, conversation_id: str, status: GatheringStatus | None = None,
+    ) -> Sequence[Gathering]:
         return await self._store.list_for_conversation(
             conversation_id=conversation_id, status=status,
         )
 
-    async def get_event(self, *, event_id: UUID) -> Event | None:
+    async def get_event(self, *, event_id: UUID) -> Gathering | None:
         return await self._store.get(event_id)
 
-    async def list_events_for_person(self, *, person_id: str) -> Sequence[Event]:
+    async def list_events_for_person(self, *, person_id: str) -> Sequence[Gathering]:
         """The web app's ONLY read path (not conversation-scoped, unlike
         `list_events`, which the chat tools use): every event `person_id`
         created or RSVP'd to, across every conversation — deliberately not
@@ -222,7 +222,7 @@ class EventService:
 
     async def get_event_for_person(
         self, *, event_id: UUID, person_id: str,
-    ) -> Event | None:
+    ) -> Gathering | None:
         """The web app's per-event read: `None` (→ 404, never a distinct
         "forbidden") unless `person_id` created this event or has an RSVP
         on it — the same "an id from outside your scope reads as unknown"
@@ -241,7 +241,7 @@ class EventService:
 
     async def rsvps_for(self, *, event_id: UUID) -> Sequence[RSVP]:
         """Read-only RSVP projection for a given event — the public
-        passthrough `nora.web.events` calls instead of reaching past the
+        passthrough `nora.web.gatherings` calls instead of reaching past the
         underscore into `self._store` directly."""
         return await self._store.rsvps_for(event_id)
 
@@ -293,35 +293,44 @@ class EventService:
 
     # ── internals ────────────────────────────────────────────────────────
 
-    async def _require(self, event_id: UUID) -> Event:
+    async def _require(self, event_id: UUID) -> Gathering:
         event = await self._store.get(event_id)
         if event is None:
-            raise EventNotFoundError(event_id)
+            raise GatheringNotFoundError(event_id)
         return event
 
     async def _require_in_conversation(
         self, event_id: UUID, conversation_id: str,
-    ) -> Event:
+    ) -> Gathering:
         """`_require`, plus the scope check `ReminderStore.cancel`
         (`nora.domain.reminders`) already documents the reasoning for: "a
         uuid carries no scope of its own — the STORE enforces the scope."
         Fix I5: `update_event`/`cancel_event`/`rsvp`/`suggest_venue` all
         accept a bare event id from the model with no prior proof it belongs
         to the room asking — an id from ANOTHER conversation refuses exactly
-        like an unknown one (`EventNotFoundError`), never a distinct "wrong
+        like an unknown one (`GatheringNotFoundError`), never a distinct "wrong
         room" message that would confirm a stranger's event id is real."""
         event = await self._require(event_id)
         if event.conversation_id != conversation_id:
-            raise EventNotFoundError(event_id)
+            raise GatheringNotFoundError(event_id)
         return event
 
     async def _link_reminder(
-        self, event: Event, *, requester_person_id: str, conversation_id: str,
-    ) -> Event:
-        """One-shot reminder only — Event never has a recurrence concept
+        self, event: Gathering, *, requester_person_id: str, conversation_id: str,
+        platform: str,
+    ) -> Gathering:
+        """One-shot reminder only — Gathering never has a recurrence concept
         (Global Constraints). Respects the SAME `ReminderCaps` a manually
         requested reminder would, so an event cannot bypass the anti-runaway
-        limits `remind` enforces (`min_lead_seconds`, `max_horizon_days`)."""
+        limits `remind` enforces (`min_lead_seconds`, `max_horizon_days`).
+
+        `platform` is the REAL delivery platform of the conversation this
+        gathering belongs to — the caller (the tool layer, which knows the
+        room) passes `room.platform`. It replaces the historical
+        `platform="event"` sentinel, which was never a wired adapter key, so
+        a gathering reminder written with it could never be delivered
+        (DEC-139; see design/event-abstraction/05-gathering-fold-in.md).
+        """
         if event.when is None:
             raise ValueError("_link_reminder requires event.when to be set")
         now = self._now()
@@ -350,9 +359,15 @@ class EventService:
         row = Reminder(
             id=reminder_id,
             requester_person_id=requester_person_id,
-            platform="event",
+            # The REAL delivery platform of the conversation — never the
+            # "event" sentinel (DEC-139). A gathering-notify must resolve an
+            # adapter exactly like a plain reminder does.
+            platform=platform,
             conversation_id=conversation_id,
             conversation_type="group",
+            # Legacy string kept for readers that still consume `text`;
+            # the fire path reads payload["title"] for kind="gathering"
+            # (design/event-abstraction/03-reminder-schema.md).
             text=f"Event: {event.title}",
             created_at=now,
             due_at=event.when,
@@ -360,14 +375,16 @@ class EventService:
             fired_at=None,
             outcome=None,
             series=None,
+            kind="gathering",
+            payload={"title": event.title},
         )
         await self._reminders.create(row)
         return replace(event, reminder_id=reminder_id)
 
     async def _resolve_venue(
-        self, event: Event, venue_text: str, *, now: datetime,
+        self, event: Gathering, venue_text: str, *, now: datetime,
         person_names: frozenset[str] | None = None,
-    ) -> Event:
+    ) -> Gathering:
         resolved = await self._resolve_place(venue_text, person_names=person_names)
         if resolved is None:
             # A failed (or refused) re-resolution must not leave a PREVIOUS
@@ -406,7 +423,7 @@ class EventService:
         `try/except` around the call, and no return-path screen on
         Google's own `name`/`address` before they were persisted.
 
-        `person_names` is optional because `EventService` is built once at
+        `person_names` is optional because `GatheringService` is built once at
         process start and has no per-tag address book of its own — callers
         that have one (the tool closures in `nora.agent.tools`, which build
         it once per tag from the whole `persons` roster) pass it through;
