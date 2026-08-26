@@ -126,6 +126,14 @@ class MusicPlayer:
         # resolved during prewarm, which itself ran during the previous
         # track). Consumed on pop, cleared on cancel.
         self._prewarm_streams: dict[str, ResolvedTrack] = {}
+        # Set when `_advance` finds the voice connection dead (R-65) — the
+        # player has torn down its own queue/session/voice state but CANNOT
+        # remove itself from `MusicPlayerManager._players` (external audit
+        # MAJOR-2, 2026-08-26: the manager kept holding the dead player, so
+        # the idle timer still fired and a `/music play` before the timeout
+        # reused the dead player). The manager reads this after every
+        # transition and calls `_leave` to drop the player entirely.
+        self._session_dead = False
 
     async def _persist_session(self) -> None:
         now_playing = self._now_playing
@@ -386,6 +394,12 @@ class MusicPlayer:
                     except Exception:
                         log.warning("voice disconnect after dead voice failed", exc_info=True)
                     await self._session.delete(self._guild_id)
+                    # External audit MAJOR-2 (2026-08-26): mark the player
+                    # dead so the manager drops it from `_players` on this
+                    # transition — otherwise a `/music play` before the idle
+                    # timeout reuses this dead player and fails again, and
+                    # the voice-death monitor can double-teardown.
+                    self._session_dead = True
                     return
                 await self._persist_session()
                 # Prewarm only when this track is the LAST one in the
@@ -405,13 +419,22 @@ class MusicPlayer:
         08-autoplay.md). The completed pick lands in `self._prewarmed` for
         `_advance` to consume with zero network calls. Any earlier prewarm
         was for a DIFFERENT track and is cancelled/replaced, never consumed
-        by this one."""
+        by this one.
+
+        Cancels the previous timer/task FIRST: an advance (natural track-end
+        or a skip) happens while the last track's prewarm timer may still be
+        pending or its task still in flight. Left alone, the old timer fires
+        and spawns a second `_prewarm_pick` for the SAME new track (the
+        locator check passes — `_prewarm_for_locator` was already updated),
+        issuing a wasted `related()` network call and racing to fill
+        `_prewarm_streams` (external audit MAJOR-1, 2026-08-26)."""
         now = self._now_playing
         if now is None or not duration_seconds or self._loop is None:
             return
         delay = duration_seconds - self._autoplay_prewarm_seconds
         if delay <= 0:
             return
+        self._cancel_prewarm()
         # A stale pick from the previous track must not be consumed as if
         # it belonged to this one (a `related()` answer for the OLD seed
         # would seed the next autoplay from the wrong track).

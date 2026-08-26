@@ -120,6 +120,23 @@ class _FakeVoiceSession:
         self.disconnected += 1
 
 
+class _FailingVoiceSession(_FakeVoiceSession):
+    """Plays `fail_after` tracks, then every later `play()` raises -- the
+    live 2026-08-26 shape (a voice websocket that drops mid-session while
+    `is_connected()` keeps reporting True)."""
+
+    def __init__(self, *, fail_after: int = 1) -> None:
+        super().__init__()
+        self._fail_after = fail_after
+        self._play_count = 0
+
+    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+        self._play_count += 1
+        if self._play_count > self._fail_after:
+            raise RuntimeError("Not connected to voice.")
+        super().play(stream_url, duration_seconds=duration_seconds)
+
+
 _TRACK_A = ResolvedTrack(
     title="Track A", stream_url="https://cdn.example/a", duration_seconds=200,
     source="youtube", source_id="a", locator="locator-a",
@@ -720,3 +737,50 @@ async def test_resume_persisted_session_never_clobbers_an_already_live_player() 
     )
 
     assert connect_calls == 0
+
+
+async def test_dead_voice_teardown_removes_the_player_from_the_manager() -> None:
+    """External audit MAJOR-2 (2026-08-26): when `_advance` finds the voice
+    connection dead and tears the session down, the manager must drop the
+    player from `_players` -- otherwise the idle timer is armed for a
+    zombie and the next `/music play` reuses the dead player and fails
+    again."""
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B})
+    voice = _FailingVoiceSession(fail_after=1)
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    assert "guild-1" in manager._players  # type: ignore[attr-defined]
+    # Queue a second track -- the next advance must PLAY it, and will
+    # discover the voice connection is dead.
+    queued = await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+    assert queued is not None and queued.status == "queued"
+
+    await manager.on_track_finished("guild-1")
+
+    assert "guild-1" not in manager._players  # type: ignore[attr-defined]
+    assert "guild-1" not in manager._idle_tasks  # type: ignore[attr-defined]
+
+    # A fresh `/music play` joins a NEW connection and works.
+    voice2 = _FakeVoiceSession()
+
+    async def connect2() -> _FakeVoiceSession:
+        return voice2
+
+    outcome = await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=connect2,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    assert outcome is not None
+    assert outcome.status == "playing"
+    assert voice2.played == ["https://cdn.example/b"]

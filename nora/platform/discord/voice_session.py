@@ -254,6 +254,16 @@ class DiscordVoiceSession:
             return
         if error is not None:
             log.warning("voice playback ended with an error: %s", error)
+        # A NATURAL track end clears the loaded-track marker right here, on
+        # the thread that observed it (plain attribute writes; no asyncio
+        # state). Without this the voice-death monitor (R-66) would see
+        # `is_playing() == False` while a source is still loaded and, after
+        # two 5s ticks, tear the session down ~10s after the final track
+        # ends instead of respecting `idle_timeout_seconds` (external audit
+        # CRITICAL-1, 2026-08-26). `play()`/crossfade re-populate both
+        # fields for the next track; `stop()` clears them itself.
+        self._current_raw = None
+        self._current_source = None
         self._pending_finish = asyncio.run_coroutine_threadsafe(
             self._run_on_finished(), self._loop,
         )

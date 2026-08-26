@@ -833,3 +833,41 @@ async def test_a_dead_voice_connection_tears_down_the_session() -> None:
     assert voice.disconnected == 1
     assert await session.get("guild-1") is None
     assert await queue.queue_for("guild-1") == []
+    # External audit MAJOR-2 (2026-08-26): the player marks itself dead so
+    # `MusicPlayerManager._after_transition` drops it from `_players` --
+    # without this the manager would keep the zombie and a `/music play`
+    # before the idle timeout would reuse the dead player.
+    assert player._session_dead is True  # type: ignore[attr-defined]
+
+
+async def test_scheduling_a_new_prewarm_cancels_the_previous_timer_and_task() -> None:
+    """External audit MAJOR-1 (2026-08-26): `_schedule_prewarm` must cancel
+    the previous timer/task before arming the new one. Left alone, an old
+    timer fires after a skip/advance, sees `_prewarm_for_locator` already
+    updated to the NEW track, spawns a duplicate `_prewarm_pick` for it and
+    races to fill `_prewarm_streams` -- a wasted `related()` network call
+    per advance."""
+    player, _voice, _session = _player(
+        {"locator-a": _TRACK_A}, autoplay_enabled=True,
+        autoplay_prewarm_seconds=20.0, loop=asyncio.get_running_loop(),
+    )
+    player._now_playing = QueuedTrack(  # type: ignore[attr-defined]
+        id=uuid4(), guild_id="guild-1", position=0, source="youtube",
+        url="locator-a", title="Track A", added_by_person_id="miles", added_at=T0,
+    )
+    player._schedule_prewarm(200.0)  # type: ignore[attr-defined]
+    old_timer = player._prewarm_timer  # type: ignore[attr-defined]
+    assert old_timer is not None
+    assert not old_timer.cancelled()
+
+    # An advance for a second track re-arms prewarm -- the old timer must
+    # be cancelled, not left to fire.
+    player._now_playing = QueuedTrack(  # type: ignore[attr-defined]
+        id=uuid4(), guild_id="guild-1", position=0, source="youtube",
+        url="locator-b", title="Track B", added_by_person_id="miles", added_at=T0,
+    )
+    player._schedule_prewarm(180.0)  # type: ignore[attr-defined]
+
+    assert old_timer.cancelled(), "the earlier prewarm timer must be cancelled"
+    assert player._prewarm_timer is not None  # type: ignore[attr-defined]
+    player._cancel_prewarm()  # type: ignore[attr-defined]

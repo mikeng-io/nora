@@ -634,3 +634,38 @@ async def test_the_voice_death_monitor_stays_silent_while_the_connection_is_aliv
     session.stop()  # cancels the still-running monitor so no task leaks
 
     assert deaths == 0
+
+
+async def test_the_voice_death_monitor_stays_silent_after_a_natural_track_end() -> None:
+    """External audit CRITICAL-1 (2026-08-26): after a track ends NATURALLY
+    (the queue is empty, nothing else was queued), the loaded-track marker
+    is cleared so the monitor must NOT treat the now-idle session as a dead
+    voice connection. Before the fix the monitor saw `is_playing()==False`
+    while a source was still loaded and tore the session down ~10s after
+    the final track, instead of respecting `idle_timeout_seconds`."""
+    voice_client = _FakeVoiceClient()
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+    )
+    session.play("https://cdn.example/a")
+
+    # Simulate the track reaching EOF on its own -- the same path a real
+    # natural end takes (`_after` fires with no preceding `stop()`).
+    voice_client.stop()
+    await asyncio.sleep(0.05)
+    # The session is now idle (nothing loaded, nothing playing) but the
+    # voice connection itself is still healthy and the guild may keep it
+    # open until the idle timeout -- the monitor must not tear it down.
+    await asyncio.sleep(0.1)
+    session.stop()
+
+    assert deaths == 0

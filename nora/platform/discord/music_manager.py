@@ -143,11 +143,19 @@ class MusicPlayerManager:
         return skipped
 
     async def on_track_finished(self, guild_id: str) -> None:
-        player = self._players.get(guild_id)
-        if player is None:
-            return
-        await player.on_track_finished()
-        status = await self._after_transition(guild_id, player)
+        # Under the same per-guild lock as `play()` — the monitor's
+        # `on_voice_death` can fire while a natural track-end is mid-
+        # `_advance`; without serialization the two transitions would
+        # interleave `stop()`/`queue.clear()`/`session.delete()` with
+        # `pop_next()`/`resolve()`/`voice.play()` on the same `MusicPlayer`
+        # (external audit MAJOR-3, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            player = self._players.get(guild_id)
+            if player is None:
+                return
+            await player.on_track_finished()
+            status = await self._after_transition(guild_id, player)
         # This is the ONE transition with no slash-command reply of its own
         # — a track ending naturally and the next one auto-starting is
         # otherwise silent in Discord.
@@ -200,7 +208,12 @@ class MusicPlayerManager:
         believes it is playing; end the session like a stop so a fresh
         `/music play` joins a clean connection instead of streaming into a
         dead socket."""
-        await self._leave(guild_id)
+        # Same per-guild lock as `play()`/`on_track_finished` — the monitor
+        # can fire while a natural track-end is mid-`_advance` (external
+        # audit MAJOR-3, 2026-08-26).
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            await self._leave(guild_id)
 
     async def persisted_sessions(self) -> Sequence[MusicSession]:
         """Every session a PRIOR process left behind — the boot-time
@@ -291,6 +304,17 @@ class MusicPlayerManager:
 
     async def _after_transition(self, guild_id: str, player: MusicPlayer) -> PlayerStatus:
         status = await player.status()
+        if getattr(player, "_session_dead", False):
+            # R-65: `_advance` already tore the session down (queue cleared,
+            # session row deleted, voice disconnected) but cannot remove
+            # itself from `_players` — drop the dead player entirely so the
+            # next `/music play` joins a clean connection and the idle timer
+            # is not armed for a zombie (external audit MAJOR-2, 2026-08-26).
+            # `_leave` re-runs `player.stop()`, which is safe on the torn
+            # state (clear/stop/disconnect on empty/already-left are
+            # idempotent no-ops in `DiscordVoiceSession`).
+            await self._leave(guild_id)
+            return status
         if status.now_playing is None:
             self._schedule_idle_disconnect(guild_id)
         else:
