@@ -117,7 +117,21 @@ async def device_flow_login(
                         "client_id": client_id,
                     },
                 ) as resp:
-                    body = await resp.json(content_type=None)
+                    # xAI's token endpoint can answer an empty body mid-poll
+                    # (aiohttp returns None, not a raise). Treat it as
+                    # "not approved yet" — same as authorization_pending —
+                    # and keep waiting, but NEVER crash the flow on it.
+                    try:
+                        body = await resp.json(content_type=None)
+                    except (aiohttp.ClientError, ValueError):
+                        body = None
+                    if body is None:
+                        if resp.status == 200:
+                            raise XaiOAuthFlowError(
+                                "xAI returned an empty success body — "
+                                "no refresh token; try again"
+                            )
+                        body = {}
             except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 raise XaiOAuthFlowError(
                     "lost contact with xAI while waiting for approval"
