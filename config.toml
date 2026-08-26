@@ -279,6 +279,13 @@ crossfade_seconds = 3.0
 # YouTube "Mix" recommendation from whatever just finished instead of
 # going idle.
 autoplay_enabled = true
+# Prewarm (design/discord-music/08-autoplay.md, R-64, PR #54): resolve the
+# next autoplay pick (Mix lookup + its playable stream) this many seconds
+# before the current track's expected end, so the track-end advance plays
+# it with zero network calls at the gap. 12.0s chosen: tracks far shorter
+# than yt-dlp reported still fall back to the at-end lookup. 0 = off (old
+# behaviour, gap = two network calls after the track ends).
+autoplay_prewarm_seconds = 12.0
 
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version
