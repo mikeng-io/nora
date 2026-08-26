@@ -157,3 +157,81 @@ async def test_a_degraded_self_id_set_never_engages_on_a_reply():
     from nora.ingest.policy import ReplyToNoraPolicy
     p = ReplyToNoraPolicy(frozenset())
     assert (await p.should_engage(message=_reply_msg(NORA_ACI, "x"))).engage is False
+
+
+# ── a voice note engages her by being a voice note ──────────────────────────
+
+
+def _voice_msg(voice=True, body="[voice note #ab12: 餵你今日得唔得閒]"):
+    from nora.domain.media import MediaRef
+    from nora.domain.models import NormalizedMessage
+    return NormalizedMessage(
+        "signal", "g1", "group", "+8521", "Miles", 1, body, {},
+        media=(MediaRef(platform_id="a1", media_type="audio/aac",
+                        filename="signal-2026-08-26-10-00-00-000.m4a",
+                        voice_note=voice),),
+    )
+
+
+async def test_any_voice_note_engages():
+    """Operator directive 2026-08-26: 總之任何 Voice Note 都會直入上 Nora 度先囉.
+    The note is conversation content whether or not the transcript succeeded —
+    the handle alone must engage her (R-27: never invent words, never drop)."""
+    from nora.ingest.policy import VoiceNotePolicy
+    p = VoiceNotePolicy()
+    d = await p.should_engage(message=_voice_msg())
+    assert d.engage is True and d.reason == "voice_note"
+
+
+async def test_a_failed_transcription_still_engages():
+    from nora.ingest.policy import VoiceNotePolicy
+    p = VoiceNotePolicy()
+    d = await p.should_engage(message=_voice_msg(body="[voice note #ab12]"))
+    assert d.engage is True and d.reason == "voice_note"
+
+
+async def test_an_audio_file_that_is_not_a_voice_note_does_not_engage():
+    """A shared song is an audio FILE, not conversation content addressed to
+    her — the parser's `voice_note` flag is what decides, not the MIME type."""
+    from nora.ingest.policy import VoiceNotePolicy
+    p = VoiceNotePolicy()
+    d = await p.should_engage(message=_voice_msg(voice=False, body="[audio #cd34]"))
+    assert d.engage is False
+
+
+async def test_a_plain_text_message_does_not_engage_on_voice_note_grounds():
+    from nora.ingest.policy import VoiceNotePolicy
+    p = VoiceNotePolicy()
+    from nora.domain.models import NormalizedMessage
+    m = NormalizedMessage("signal", "g1", "group", "+8521", "Miles", 1, "食飯未", {})
+    assert (await p.should_engage(message=m)).engage is False
+
+
+async def test_voice_note_engages_in_the_composite_without_a_trigger_word():
+    """Even with trigger text matching nothing, a voice note alone engages —
+    the pipeline gates on the flag, and the transcript (when present) rides
+    in the body for her to read."""
+    from nora.domain.media import MediaRef
+    from nora.domain.models import NormalizedMessage
+    from nora.ingest.policy import (
+        CompositePolicy,
+        MentionPolicy,
+        ReplyToNoraPolicy,
+        TriggerTextPolicy,
+        VoiceNotePolicy,
+    )
+    p = CompositePolicy((
+        TriggerTextPolicy("nora"),
+        MentionPolicy(frozenset()),
+        ReplyToNoraPolicy(frozenset()),
+        VoiceNotePolicy(),
+    ))
+    m = NormalizedMessage(
+        "signal", "g1", "group", "+8521", "Miles", 1,
+        "[voice note #ab12: 餵你今日得唔得閒]", {},
+        media=(MediaRef(platform_id="a1", media_type="audio/aac",
+                        filename="signal-2026-08-26-10-00-00-000.m4a",
+                        voice_note=True),),
+    )
+    d = await p.should_engage(message=m)
+    assert d.engage is True and d.reason == "voice_note"

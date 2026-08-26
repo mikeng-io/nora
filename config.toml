@@ -227,11 +227,12 @@ enabled = true
 max_depth = 16
 
 [engagement.trigger]
-# Off (operator, 2026-08-21): a real @mention or a reply to one of her own
-# messages still engage her (MentionPolicy/ReplyToNoraPolicy, unaffected by
-# this flag) — only the spoken/typed "nora.000" phrase stops matching.
-enabled = false
-text = "nora.000"
+# Text trigger phrase (re-enabled 2026-08-26, operator): "nora" — any message
+# (typed or transcribed from a voice note) containing the word engages her.
+# A real @mention or a reply to one of her own messages also engages her
+# (MentionPolicy/ReplyToNoraPolicy, unaffected by this flag).
+enabled = true
+text = "nora"
 min_interval_seconds = 5
 
 [store]

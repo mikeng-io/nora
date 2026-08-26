@@ -94,6 +94,7 @@ from nora.ingest.policy import (
     MentionPolicy,
     ReplyToNoraPolicy,
     TriggerTextPolicy,
+    VoiceNotePolicy,
 )
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
@@ -748,6 +749,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         engage_policies.append(TriggerTextPolicy(cfg.engagement.trigger.text))
     engage_policies.append(MentionPolicy(self_aliases))
     engage_policies.append(ReplyToNoraPolicy(self_aliases))
+    # Any voice note engages her, independent of trigger text (operator
+    # directive 2026-08-26) — the transcription is conversation content in the
+    # body by the time the gate runs. Last so the deterministic text paths
+    # keep their reasons, but it fires on any note regardless.
+    engage_policies.append(VoiceNotePolicy())
     policy = CompositePolicy(tuple(engage_policies))
     assembler = TranscriptInjection(
         audit=audit, memory=memory, persons=persons,

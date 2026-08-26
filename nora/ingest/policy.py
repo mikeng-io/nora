@@ -94,6 +94,29 @@ class ReplyToNoraPolicy:
         return EngageDecision(engage=False, reason="no_trigger")
 
 
+class VoiceNotePolicy:
+    """Engage when the message carried a voice note (operator directive 2026-08-26).
+
+    Miles: 「總之任何 Voice Note 都會直入上 Nora 度先囉」 — a voice note is
+    conversation content whose transcription the ingest pipeline already put in
+    the body (`[voice note #hex: …]`), so any voice note addressed to the group
+    is addressed to Nora too: she reads it, and replies when the words warrant
+    it. This policy exists so that engagement does not depend on the
+    transcription succeeding or on the speaker happening to say her name — the
+    note engages her by being a voice note.
+
+    It is gated on the parser's `voice_note` flag (`MediaRef.voice_note`),
+    NOT on the rendered body containing a transcript: a failed transcription
+    still leaves the handle and the note is still content she should see
+    (R-27 — never invent words, but never drop the note either).
+    """
+
+    async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:
+        if any(ref.voice_note for ref in message.media):
+            return EngageDecision(engage=True, reason="voice_note")
+        return EngageDecision(engage=False, reason="no_trigger")
+
+
 class CompositePolicy:
     """First match wins. Satisfies `EngagePolicy`.
 
